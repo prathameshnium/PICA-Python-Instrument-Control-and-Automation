@@ -1,13 +1,3 @@
-#-------------------------------------------------------------------------------
-# Name:        module2
-# Purpose:
-#
-# Author:      Instrument-DSL
-#
-# Created:     28/10/2022
-# Copyright:   (c) Instrument-DSL 2022
-# Licence:     <your licence>
-#-------------------------------------------------------------------------------
 
 #-------------------------------------------------------------------------------
 # Name:        #interfacing Keithley2400(current source) and Keithley2182(nano_voltmeter)
@@ -15,8 +5,8 @@
 #
 # Author:      Instrument-DSL
 #
-# Created:     27/10/2022
-# Copyright:   (c) Instrument-DSL 2022
+# Created:     31/10/2022
+# Changes_done:   delay_reduce
 # Licence:     <your licence>
 #-------------------------------------------------------------------------------#Importing packages ----------------------------------
 
@@ -65,7 +55,7 @@ def IV_Measure(cur):
 
     keithley_2400.ramp_to_current(cur*1e-3)
 
-    sleep(2)
+    sleep(1)
     keithley_2182.write("status:measurement:enable 512; *sre 1")
     keithley_2182.write("sample:count %d" % number_of_readings)
     keithley_2182.write("trigger:source bus")
@@ -74,16 +64,16 @@ def IV_Measure(cur):
     keithley_2182.write("trace:feed sense1; feed:control next")
     keithley_2182.write("initiate")
     keithley_2182.assert_trigger()
-    sleep(2)
+    sleep(1)
     keithley_2182.wait_for_srq()
-    sleep(2)
+    sleep(1)
     voltages = keithley_2182.query_ascii_values("trace:data?")
     keithley_2182.query("status:measurement?")
     keithley_2182.write("trace:clear; feed:control next")
 
     v_avr=sum(voltages) / len(voltages)
 
-    sleep(2)
+    sleep(1)
     #I.append(keithley_2400.current) # actual current in 2400 (in Amps)
     I.append(cur*1e-3)
     Volt.append(v_avr) #voltage avg list
@@ -91,7 +81,7 @@ def IV_Measure(cur):
     keithley_2182.write("*rst; status:preset; *cls")
 
     keithley_2182.clear()
-    sleep(2)
+    sleep(1)
 
 #loop1---------------------------------------------
 print("In loop 1")
@@ -100,23 +90,23 @@ for i1 in np.arange(0,I_range+I_step,I_step):
 #--------------------------------------------------
 #loop2---------------------------------------------
 print("In loop 2")
-for i1 in np.arange(I_range,0-I_step,-I_step):
-    IV_Measure(i1)
+for i2 in np.arange(I_range,0-I_step,-I_step):
+    IV_Measure(i2)
 #--------------------------------------------------
 #loop3---------------------------------------------
 print("In loop 3")
-for i1 in np.arange(0,-I_range-I_step,-I_step):
-    IV_Measure(i1)
+for i3 in np.arange(0,-I_range-I_step,-I_step):
+    IV_Measure(i3)
 #--------------------------------------------------
 #loop4---------------------------------------------
 print("In loop 4")
-for i1 in np.arange(-I_range,0+I_step,I_step):
-    IV_Measure(i1)
+for i4 in np.arange(-I_range,0+I_step,I_step):
+    IV_Measure(i4)
 #--------------------------------------------------
 #loop5---------------------------------------------
 print("In loop 5")
-for i1 in np.arange(0,I_range+I_step,I_step):
-    IV_Measure(i1)
+for i5 in np.arange(0,I_range+I_step,I_step):
+    IV_Measure(i5)
 #--------------------------------------------------
 # data saving in file ----------------------------
 
@@ -126,7 +116,7 @@ df['V']=pd.DataFrame(Volt)
 
 print(df)
 
-df.to_csv(r'E:/Python/Python output files/IV Output/Test_IV_data_at_RT_'+str(filename)+'.txt', index=None, sep='	', mode='w')
+df.to_csv(r'E:/Python/Python output files/Smita output/IV_data_at_RT_'+str(filename)+'.txt', index=None, sep='	', mode='w')
 
 #graph ploting ----------------------------
 
