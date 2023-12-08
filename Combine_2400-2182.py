@@ -1,5 +1,14 @@
-#interfacing Keithley2400(current source) and Keithley2182(nano_voltmeter)
-#Importing packages ----------------------------------
+
+#-------------------------------------------------------------------------------
+# Name:        #interfacing Keithley2400(current source) and Keithley2182(nano_voltmeter)
+# Purpose:
+#
+# Author:      Instrument-DSL
+#
+# Created:     27/10/2022
+# Copyright:   (c) Instrument-DSL 2022
+# Licence:     <your licence>
+#-------------------------------------------------------------------------------#Importing packages ----------------------------------
 
 import pymeasure
 import numpy as np
@@ -17,10 +26,8 @@ keithley_2400 = Keithley2400("GPIB::4")
 
 sleep(5)
 
-lcur=[]
-lvol=[]
-
 I=[]
+I1=[]
 Volt=[]
 interval = 1
 number_of_readings = 2
@@ -38,7 +45,8 @@ sleep(10)
 keithley_2400.compliance_voltage = 150       # Sets the compliance voltage to 150 V
 keithley_2400.source_current = 0            # Sets the source current to 0 mA
 keithley_2400.enable_source()              # Enables the source output
-
+keithley_2400.measure_current()
+keithley_2400.measure_voltage()
 sleep(15)
 
 # current loop voltage measured ------------------------------
@@ -47,7 +55,7 @@ for cur in np.arange(-I_range,I_range+I_step,I_step):
 
 
 
-    keithley_2400.ramp_to_current(cur)
+    keithley_2400.ramp_to_current(cur*1e-6)
 
     sleep(15)
     keithley_2182.write("status:measurement:enable 512; *sre 1")
@@ -65,15 +73,20 @@ for cur in np.arange(-I_range,I_range+I_step,I_step):
     keithley_2182.query("status:measurement?")
     keithley_2182.write("trace:clear; feed:control next")
 
-
-    lcur.append(keithley_2400.current) # backup_current variable
     v_avr=sum(voltages) / len(voltages)
-    lvol.append(v_avr) #backup voltage variable
-    I.append(cur) # actual current list
-    Volt.append(voltages) #actual voltage list
 
-    print(str(cur) + "   " +str(v_avr))
+    sleep(10)
+    #I.append(keithley_2400.current) # actual current in 2400 (in Amps)
+    I.append(cur*1e-6)
+    Volt.append(v_avr) #voltage avg list
+    print(str(keithley_2400.current) + "   "+"   " +str(cur*1e-6)+"  "+str(v_avr)+ "   "+str(keithley_2400.voltage))
+    keithley_2182.write("*rst; status:preset; *cls")
+
+    keithley_2182.clear()
     sleep(15)
+
+
+
 
 
 # data saving in file ----------------------------
@@ -84,7 +97,7 @@ df['V']=pd.DataFrame(Volt)
 
 print(df)
 
-df.to_csv(r'E:/Python/Python output files/IV Output/Test_IV_data_at_RT_'+str(filename), index=None, sep='	', mode='w')
+df.to_csv(r'E:/Python/Python output files/IV Output/Test_IV_data_at_RT_'+str(filename)+'.txt', index=None, sep='	', mode='w')
 
 #graph ploting ----------------------------
 
@@ -98,4 +111,6 @@ plt.show()
 # turning of instrument ----------------------------
 
 keithley_2400.shutdown()                     # Ramps the current to 0 mA and disables output
+keithley_2182.clear()
+keithley_2182.close()
 
