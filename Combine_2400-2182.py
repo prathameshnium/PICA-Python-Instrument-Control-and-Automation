@@ -10,10 +10,6 @@ rm1 = pyvisa.ResourceManager()
 
 keithley_2182= rm1.open_resource("GPIB::7")
 keithley_2182.write("*rst; status:preset; *cls")
-
-
-
-
 keithley_2400 = Keithley2400("GPIB::4")
 
 sleep(5)
@@ -25,7 +21,7 @@ number_of_readings = 2
 
 
 keithley_2400.apply_current()                # Sets up to source current
-keithley_2400.source_current_range = 1e-3   # Sets the source current range to 1 mA
+keithley_2400.source_current_range = 1e-6   # Sets the source current range to 1 mA
 keithley_2400.compliance_voltage = 10        # Sets the compliance voltage to 10 V
 keithley_2400.source_current = 0             # Sets the source current to 0 mA
 keithley_2400.enable_source()             # Enables the source output
