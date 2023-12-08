@@ -36,7 +36,7 @@ keithley.measure_voltage()              # Sets up to measure voltage
 #keithley.measure_current()
 
 #for cur in numpy.linspace(5e-4,10e-4,5) :
-for cur in numpy.linspace(5e-4,10e-4,1) :
+for cur in numpy.linspace(5e-4,10e-4,15) :
 
 
     keithley.ramp_to_current(cur)
@@ -51,18 +51,20 @@ for cur in numpy.linspace(5e-4,10e-4,1) :
     keithley_2182.assert_trigger()
     keithley_2182.wait_for_srq()
     voltages = keithley_2182.query_ascii_values("trace:data?")
-    print("Average voltage: ", sum(voltages) / len(voltages))
-    print(voltages)
+    #print("Average voltage: ", sum(voltages) / len(voltages))
+    #print(voltages)
     keithley_2182.query("status:measurement?")
     keithley_2182.write("trace:clear; feed:control next")
 
     # Ramps the current to 0.5 mA]
-    #lcur.append(keithley.current)
+    lcur.append(keithley.current)
     #lvol.append(keithley.voltage)
     v_avr=sum(voltages) / len(voltages)
     #print(vavg)
 
     lvol.append(v_avr)
+
+    print(str(cur) + "   " +str(v_avr))
 
 
 
@@ -73,12 +75,11 @@ for cur in numpy.linspace(5e-4,10e-4,1) :
 print(cur)
 print(lvol)
 
-plt.plot(numpy.linspace(5e-4,10e-4,5),lvol)
+#plt.plot(numpy.linspace(5e-4,10e-4,5),lvol)
 plt.show()
 
 
 
 
 keithley.shutdown()                     # Ramps the current to 0 mA and disables output
-
 
