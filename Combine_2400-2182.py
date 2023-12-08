@@ -1,3 +1,13 @@
+#-------------------------------------------------------------------------------
+# Name:        module2
+# Purpose:
+#
+# Author:      Instrument-DSL
+#
+# Created:     28/10/2022
+# Copyright:   (c) Instrument-DSL 2022
+# Licence:     <your licence>
+#-------------------------------------------------------------------------------
 
 #-------------------------------------------------------------------------------
 # Name:        #interfacing Keithley2400(current source) and Keithley2182(nano_voltmeter)
@@ -40,140 +50,22 @@ filename = input("Enter filename: ")
 
 #initial set up keithley_2400
 keithley_2400.apply_current()               # Sets up to source current
-keithley_2400.source_current_range = 1e-6   # Sets the source current range to 1 microA
-sleep(5)
-keithley_2400.compliance_voltage = 150       # Sets the compliance voltage to 150 V
+keithley_2400.source_current_range = 1e-3   # Sets the source current range to 1 mA
+sleep(10)
+keithley_2400.compliance_voltage = 210       # Sets the compliance voltage to 210 V
 keithley_2400.source_current = 0            # Sets the source current to 0 mA
 keithley_2400.enable_source()              # Enables the source output
-sleep(5)
-
-# current loop 1-----------------------------------
-print("in loop 1")
-
-for cur in np.arange(0,I_range+I_step,I_step):
-
-
-
-    keithley_2400.ramp_to_current(cur*1e-6)
-
-    sleep(2)
-    keithley_2182.write("status:measurement:enable 512; *sre 1")
-    keithley_2182.write("sample:count %d" % number_of_readings)
-    keithley_2182.write("trigger:source bus")
-    keithley_2182.write("trigger:delay %f" % (interval))
-    keithley_2182.write("trace:points %d" % number_of_readings)
-    keithley_2182.write("trace:feed sense1; feed:control next")
-    keithley_2182.write("initiate")
-    keithley_2182.assert_trigger()
-    sleep(2)
-    keithley_2182.wait_for_srq()
-    sleep(2)
-    voltages = keithley_2182.query_ascii_values("trace:data?")
-    keithley_2182.query("status:measurement?")
-    keithley_2182.write("trace:clear; feed:control next")
-
-    v_avr=sum(voltages) / len(voltages)
-
-    sleep(2)
-    #I.append(keithley_2400.current) # actual current in 2400 (in Amps)
-    I.append(cur*1e-6)
-    Volt.append(v_avr) #voltage avg list
-    print(str(cur*1e-6)+"  "+str(v_avr))
-    keithley_2182.write("*rst; status:preset; *cls")
-
-    keithley_2182.clear()
-    sleep(2)
-
-#---------------------------------------------------------------
-# current loop 2-----------------------------------
-sleep(5)
-print("in loop 2")
-
-for cur in np.arange(I_range,0-I_step,-I_step):
-
-
-
-    keithley_2400.ramp_to_current(cur*1e-6)
-
-    sleep(2)
-    keithley_2182.write("status:measurement:enable 512; *sre 1")
-    keithley_2182.write("sample:count %d" % number_of_readings)
-    keithley_2182.write("trigger:source bus")
-    keithley_2182.write("trigger:delay %f" % (interval))
-    keithley_2182.write("trace:points %d" % number_of_readings)
-    keithley_2182.write("trace:feed sense1; feed:control next")
-    keithley_2182.write("initiate")
-    keithley_2182.assert_trigger()
-    sleep(2)
-    keithley_2182.wait_for_srq()
-    sleep(2)
-    voltages = keithley_2182.query_ascii_values("trace:data?")
-    keithley_2182.query("status:measurement?")
-    keithley_2182.write("trace:clear; feed:control next")
-
-    v_avr=sum(voltages) / len(voltages)
-
-    sleep(2)
-    #I.append(keithley_2400.current) # actual current in 2400 (in Amps)
-    I.append(cur*1e-6)
-    Volt.append(v_avr) #voltage avg list
-    print(str(cur*1e-6)+"  "+str(v_avr))
-    keithley_2182.write("*rst; status:preset; *cls")
-
-    keithley_2182.clear()
-    sleep(2)
-
-#---------------------------------------------------------------
-# current loop 3-----------------------------------
-sleep(5)
-print("in loop 3")
-
-for cur in np.arange(0,-I_range-I_step,-I_step):
-
-
-
-    keithley_2400.ramp_to_current(cur*1e-6)
-
-    sleep(2)
-    keithley_2182.write("status:measurement:enable 512; *sre 1")
-    keithley_2182.write("sample:count %d" % number_of_readings)
-    keithley_2182.write("trigger:source bus")
-    keithley_2182.write("trigger:delay %f" % (interval))
-    keithley_2182.write("trace:points %d" % number_of_readings)
-    keithley_2182.write("trace:feed sense1; feed:control next")
-    keithley_2182.write("initiate")
-    keithley_2182.assert_trigger()
-    sleep(2)
-    keithley_2182.wait_for_srq()
-    sleep(5)
-    voltages = keithley_2182.query_ascii_values("trace:data?")
-    keithley_2182.query("status:measurement?")
-    keithley_2182.write("trace:clear; feed:control next")
-
-    v_avr=sum(voltages) / len(voltages)
-
-    sleep(10)
-    #I.append(keithley_2400.current) # actual current in 2400 (in Amps)
-    I.append(cur*1e-6)
-    Volt.append(v_avr) #voltage avg list
-    print(str(cur*1e-6)+"  "+str(v_avr))
-    keithley_2182.write("*rst; status:preset; *cls")
-
-    keithley_2182.clear()
-    sleep(15)
-
-#---------------------------------------------------------------
-# current loop 4-----------------------------------
 sleep(15)
-print("in loop 4")
 
-for cur in np.arange(-I_range,0+I_step,I_step):
-
+# current loop voltage measured ------------------------------
 
 
-    keithley_2400.ramp_to_current(cur*1e-6)
 
-    sleep(15)
+def IV_Measure(cur):
+
+    keithley_2400.ramp_to_current(cur*1e-3)
+
+    sleep(2)
     keithley_2182.write("status:measurement:enable 512; *sre 1")
     keithley_2182.write("sample:count %d" % number_of_readings)
     keithley_2182.write("trigger:source bus")
@@ -182,67 +74,50 @@ for cur in np.arange(-I_range,0+I_step,I_step):
     keithley_2182.write("trace:feed sense1; feed:control next")
     keithley_2182.write("initiate")
     keithley_2182.assert_trigger()
-    sleep(10)
+    sleep(2)
     keithley_2182.wait_for_srq()
-    sleep(20)
+    sleep(2)
     voltages = keithley_2182.query_ascii_values("trace:data?")
     keithley_2182.query("status:measurement?")
     keithley_2182.write("trace:clear; feed:control next")
 
     v_avr=sum(voltages) / len(voltages)
 
-    sleep(10)
+    sleep(2)
     #I.append(keithley_2400.current) # actual current in 2400 (in Amps)
-    I.append(cur*1e-6)
+    I.append(cur*1e-3)
     Volt.append(v_avr) #voltage avg list
-    print(str(cur*1e-6)+"  "+str(v_avr))
+    print(str(cur*1e-3)+"  "+str(v_avr))
     keithley_2182.write("*rst; status:preset; *cls")
 
     keithley_2182.clear()
-    sleep(15)
+    sleep(2)
 
-#---------------------------------------------------------------
-# current loop 5-----------------------------------
-
-sleep(15)
-print("in loop 5")
-
-for cur in np.arange(0,I_range+I_step,I_step):
-
-
-
-    keithley_2400.ramp_to_current(cur*1e-6)
-
-    sleep(15)
-    keithley_2182.write("status:measurement:enable 512; *sre 1")
-    keithley_2182.write("sample:count %d" % number_of_readings)
-    keithley_2182.write("trigger:source bus")
-    keithley_2182.write("trigger:delay %f" % (interval))
-    keithley_2182.write("trace:points %d" % number_of_readings)
-    keithley_2182.write("trace:feed sense1; feed:control next")
-    keithley_2182.write("initiate")
-    keithley_2182.assert_trigger()
-    sleep(10)
-    keithley_2182.wait_for_srq()
-    sleep(20)
-    voltages = keithley_2182.query_ascii_values("trace:data?")
-    keithley_2182.query("status:measurement?")
-    keithley_2182.write("trace:clear; feed:control next")
-
-    v_avr=sum(voltages) / len(voltages)
-
-    sleep(10)
-    #I.append(keithley_2400.current) # actual current in 2400 (in Amps)
-    I.append(cur*1e-6)
-    Volt.append(v_avr) #voltage avg list
-    print(str(cur*1e-6)+"  "+str(v_avr))
-    keithley_2182.write("*rst; status:preset; *cls")
-
-    keithley_2182.clear()
-    sleep(15)
-
-#---------------------------------------------------------------
-
+#loop1---------------------------------------------
+print("In loop 1")
+for i1 in np.arange(0,I_range+I_step,I_step):
+    IV_Measure(i1)
+#--------------------------------------------------
+#loop2---------------------------------------------
+print("In loop 2")
+for i1 in np.arange(I_range,0-I_step,-I_step):
+    IV_Measure(i1)
+#--------------------------------------------------
+#loop3---------------------------------------------
+print("In loop 3")
+for i1 in np.arange(0,-I_range-I_step,-I_step):
+    IV_Measure(i1)
+#--------------------------------------------------
+#loop4---------------------------------------------
+print("In loop 4")
+for i1 in np.arange(-I_range,0+I_step,I_step):
+    IV_Measure(i1)
+#--------------------------------------------------
+#loop5---------------------------------------------
+print("In loop 5")
+for i1 in np.arange(0,I_range+I_step,I_step):
+    IV_Measure(i1)
+#--------------------------------------------------
 # data saving in file ----------------------------
 
 df=pd.DataFrame()
@@ -264,7 +139,8 @@ plt.show()
 
 # turning of instrument ----------------------------
 
-keithley_2400.shutdown()                     # Ramps the current to 0 mA and disables output
+keithley_2400.shutdown()
+sleep(1)                   # Ramps the current to 0 mA and disables output
 keithley_2182.clear()
 keithley_2182.close()
 
