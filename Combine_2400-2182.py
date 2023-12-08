@@ -36,7 +36,7 @@ keithley.measure_voltage()              # Sets up to measure voltage
 #keithley.measure_current()
 
 #for cur in numpy.linspace(5e-4,10e-4,5) :
-for cur in numpy.linspace(5e-4,10e-4,15) :
+for cur in numpy.linspace(-5e-4,5e-4,15) :
 
 
     keithley.ramp_to_current(cur)
@@ -75,7 +75,8 @@ for cur in numpy.linspace(5e-4,10e-4,15) :
 print(cur)
 print(lvol)
 
-#plt.plot(numpy.linspace(5e-4,10e-4,5),lvol)
+plt.plot(numpy.linspace(-5e-4,5e-4,15),lvol)
+
 plt.show()
 
 
