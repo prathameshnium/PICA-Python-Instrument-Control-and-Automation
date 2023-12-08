@@ -45,8 +45,6 @@ sleep(10)
 keithley_2400.compliance_voltage = 150       # Sets the compliance voltage to 150 V
 keithley_2400.source_current = 0            # Sets the source current to 0 mA
 keithley_2400.enable_source()              # Enables the source output
-keithley_2400.measure_current()
-keithley_2400.measure_voltage()
 sleep(15)
 
 # current loop voltage measured ------------------------------
@@ -79,7 +77,7 @@ for cur in np.arange(-I_range,I_range+I_step,I_step):
     #I.append(keithley_2400.current) # actual current in 2400 (in Amps)
     I.append(cur*1e-6)
     Volt.append(v_avr) #voltage avg list
-    print(str(keithley_2400.current) + "   "+"   " +str(cur*1e-6)+"  "+str(v_avr)+ "   "+str(keithley_2400.voltage))
+    print(str(cur*1e-6)+"  "+str(v_avr))
     keithley_2182.write("*rst; status:preset; *cls")
 
     keithley_2182.clear()
