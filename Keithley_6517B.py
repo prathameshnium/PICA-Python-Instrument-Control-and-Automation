@@ -6,7 +6,7 @@
 #
 # Created:     03-03-2024
 # Copyright:   (c) ketan 2024
-# updates: V1.2
+# updates: V1.3
 #-------------------------------------------------------------------------------
 
 import time
@@ -40,7 +40,6 @@ try:
         #data_df = data_df.append({"Timestamp": timestamp, "Current (A)": current}, ignore_index=True)
         t.append(timestamp)
         I.append(current)
-        
         print("Time: " +str(timestamp)+"\t\t\t|\t\t\t Current: "+str(current)+" A")
 
         time.sleep(2)
