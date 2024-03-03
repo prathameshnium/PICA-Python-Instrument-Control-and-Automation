@@ -16,24 +16,24 @@ import pyvisa
 from pymeasure.instruments.keithley import Keithley6517B
 
 
+I=[]
+t=[]
 #rm = pyvisa.ResourceManager()
 #keithley = rm.open_resource("GPIB::1")
 
-
-keithley = Keithley6517B("GPIB::1")
-#keithley.apply_current()  # Sets up to source current
-#keithley.current_range = 10e-3  # Sets the source current range to 10 mA
-#keithley.compliance_voltage = 10  # Sets the compliance voltage to 10 V
-keithley.enable_source()  # Enables the source output
-keithley.measure_current()
-
-I=[]
-t=[]
-
-#data_columns = ["Timestamp", "Current (A)"]
-#data_df = pd.DataFrame(columns=data_columns)
-
 try:
+
+    keithley = Keithley6517B("GPIB::1")
+    #keithley.apply_current()  # Sets up to source current
+    #keithley.current_range = 10e-3  # Sets the source current range to 10 mA
+    #keithley.compliance_voltage = 10  # Sets the compliance voltage to 10 V
+    keithley.enable_source()  # Enables the source output
+    keithley.measure_current()
+
+
+    #data_columns = ["Timestamp", "Current (A)"]
+    #data_df = pd.DataFrame(columns=data_columns)
+
     while True:
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         current = keithley.current  # Read current in Amps
@@ -45,11 +45,15 @@ try:
         time.sleep(2)
     print("Measurement stopped...")
 
-data_df.to_csv("demo_data.dat", index=False)
-print(f"Data saved to file : demo_data.dat")
+    data_df.to_csv("demo_data.dat", index=False)
+    print(f"Data saved to file : demo_data.dat")
 
 
-keithley.clear()
-keithley.reset()
+    keithley.clear()
+    keithley.reset()
 
-keithley.shutdown()  # Ramps the current to 0 mA and disables output
+    keithley.shutdown()  # Ramps the current to 0 mA and disables output
+
+
+except Exception as e:
+    print(f"error with keithley : {e}")
