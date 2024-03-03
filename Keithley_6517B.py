@@ -23,20 +23,25 @@ keithley.compliance_voltage = 10  # Sets the compliance voltage to 10 V
 keithley.enable_source()  # Enables the source output
 keithley.measure_current()
 
-data_columns = ["Timestamp", "Current (A)"]
-data_df = pd.DataFrame(columns=data_columns)
+I=[]
+t=[]
+
+#data_columns = ["Timestamp", "Current (A)"]
+#data_df = pd.DataFrame(columns=data_columns)
 
 try:
     while True:
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         current = keithley.current  # Read current in Amps
-        data_df = data_df.append({"Timestamp": timestamp, "Current (A)": current}, ignore_index=True)
-        time.sleep(1)  # Adjust the sampling interval as needed
-except KeyboardInterrupt:
-    print("Measurement stopped by user.")
+        #data_df = data_df.append({"Timestamp": timestamp, "Current (A)": current}, ignore_index=True)
+        t.append(timestamp)
+        I.append(current)
+        print("Time: " +str(timestamp)+"\t\t\t|\t\t\t Current: "+str(current)+" A")
 
-# Save data to a CSV file
-data_df.to_csv("current_data.csv", index=False)
-print(f"Data saved to current_data.csv")
+        time.sleep(2)
+    print("Measurement stopped...")
+
+data_df.to_csv("demo_data.dat", index=False)
+print(f"Data saved to file : demo_data.dat")
 
 keithley.shutdown()  # Ramps the current to 0 mA and disables output
