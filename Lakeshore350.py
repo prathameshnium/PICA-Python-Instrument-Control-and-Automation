@@ -1,4 +1,3 @@
-
 #-------------------------------------------------------------------------------
 # Name:        #interfacing Lakeshore350_Temprature_Controller
 # Purpose:
@@ -6,7 +5,7 @@
 # Author:      Ketan
 #
 # Created:    3/3/24
-# Changes_done:   V1
+# Changes_done:   V1.1
 #-------------------------------------------------------------------------------#Importing packages ----------------------------------
 
 
@@ -35,7 +34,7 @@ try:
         file.write("Time (s)\tTemperature (K)\n")
 
 except Exception as e:
-    print(f"error with Lakeshore  : {e}")
+    print(f"Initialization error with Lakeshore  : {e}")
 
 
 def main():
@@ -50,7 +49,7 @@ def main():
             temperature = temp_controller.query('KRDG? A').strip()
             print(f"Time: {elapsed_time:.2f} s, Temperature: {temperature} K")
 
-            with open('temperature_data.txt', 'a') as file:
+            with open(filename, 'a') as file:
                 file.write(f"{elapsed_time:.2f}\t{temperature}\n")
 
             time.sleep(2)
