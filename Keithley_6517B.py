@@ -6,20 +6,24 @@
 #
 # Created:     03-03-2024
 # Copyright:   (c) ketan 2024
-# updates: V1
+# updates: V1.2
 #-------------------------------------------------------------------------------
 
 import time
 import numpy as np
 import pandas as pd
 import pyvisa
+from pymeasure.instruments.keithley import Keithley6517B
 
-rm = pyvisa.ResourceManager()
-keithley = rm.open_resource("GPIB::1")
 
-keithley.apply_current()  # Sets up to source current
-keithley.source_current_range = 10e-3  # Sets the source current range to 10 mA
-keithley.compliance_voltage = 10  # Sets the compliance voltage to 10 V
+#rm = pyvisa.ResourceManager()
+#keithley = rm.open_resource("GPIB::1")
+
+
+keithley = Keithley6517B("GPIB::1")
+#keithley.apply_current()  # Sets up to source current
+#keithley.current_range = 10e-3  # Sets the source current range to 10 mA
+#keithley.compliance_voltage = 10  # Sets the compliance voltage to 10 V
 keithley.enable_source()  # Enables the source output
 keithley.measure_current()
 
@@ -43,5 +47,9 @@ try:
 
 data_df.to_csv("demo_data.dat", index=False)
 print(f"Data saved to file : demo_data.dat")
+
+
+keithley.clear()
+keithley.reset()
 
 keithley.shutdown()  # Ramps the current to 0 mA and disables output
