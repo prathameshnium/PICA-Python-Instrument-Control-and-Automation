@@ -109,7 +109,9 @@ def LCR_fcn(volt_ind):
     #output=my_instrument. query_ascii_values( ':MEM:READ? DBUF' )
     time. sleep( 2)
 
-    output1=LCR.freq_sweep([freq], False)
+    #output1=LCR.freq_sweep([freq], False)
+    output1=LCR.values(":FETCh:IMPedance:FORMatted?")
+    time. sleep( 2)
 
     C_list+=output1[0]
     #v1=my_instrument.query( ':VOLT:LEVEL?' )
