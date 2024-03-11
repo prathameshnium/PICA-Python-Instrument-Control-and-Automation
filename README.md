@@ -10,4 +10,4 @@
 * Temperature Controler (Lakeshore350 , Lakeshore340)
 * Electrometer: Keithley 6517B electrometer
 
-*Pyroelectric Measurements (Keithley 6517B electrometer & Lakeshore340)
+* Pyroelectric Measurements (Keithley 6517B electrometer & Lakeshore340)
