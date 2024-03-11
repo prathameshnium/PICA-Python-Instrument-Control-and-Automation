@@ -1,4 +1,8 @@
 
+# prg for LCR Keysight E 4980 A
+#supplimentry stuff 20-6-23
+
+
 import pyvisa
 from pymeasure.instruments.agilent import AgilentE4980
 import time
@@ -6,21 +10,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
-rm = pyvisa.ResourceManager()
-my_instrument= rm.open_resource("GPIB::17")
-LCR = AgilentE4980("GPIB::17")
 
 
 #---------------------------------------------------------------
 #user input
 
-V=5 # volt for loop (V)
-V_step=1 #interval between measurements (V)
-freq=1000000 #freq in Hz
+V=2 # volt for loop (V)
+V_step=2 #interval between measurements (V)
+freq=1000 #freq in Hz
 loop=1
-name="new_prg_cap_test1122"
+name="Swastika_Test2_"
 
-V_ac=1
+V_ac=0.5
 
 
 #---------------------------------------------------------------
@@ -35,49 +36,93 @@ protocol_list=[]
 V_list=[]
 C_list=[]
 loop_list=[]
+#---------------------------------
+rm = pyvisa.ResourceManager()
+my_instrument= rm.open_resource("GPIB::17")
+LCR = AgilentE4980("GPIB::17")
+
+
+
+my_instrument.timeout = 100000
+my_instrument.read_termination = '\n'
+my_instrument.write_termination = '\n'
 
 
 my_instrument. write( '*RST; *CLS' )
+my_instrument. write( ':DISP:ENAB' )
+
+time. sleep( 2)
+
+my_instrument. write( ':INIT:CONT' )
+my_instrument. write( ':TRIG:SOUR EXT' )
+
+time. sleep( 2)
+
+my_instrument. write( ':APER MED' )
+my_instrument. write( ':FUNC:IMP:RANGE:AUTO ON' )
+
+time. sleep( 2)
+
+my_instrument. write( ':MMEM EXT' )
+time. sleep( 2)
+
+my_instrument. write( ':MEM:DIM DBUF, ' , str(100))
 time. sleep( 1)
 
-my_instrument. write( ':VOLT:LEVEL ' , str(V_ac))
-
-time. sleep( 3)
-LCR.frequency=freq
+my_instrument. write( ':MEM:FILL DBUF' )
+time. sleep( 2)
+my_instrument. write( ':MEM:CLE DBUF' )
 time. sleep( 3)
 print(my_instrument.write( ':BIAS:STATe ON' ))
+time. sleep(2)
+my_instrument. write( ':VOLT:LEVEL ' , str(V_ac))
+time. sleep(2)
+#---------------------------------
 
 
-'''
-print(dir(LCR))
-#freq[10,20,30]
-#LCR.freq_sweep([freq], False)
-x= LCR.measurement(
-        ":FETCH?",
-        "Measured data A and B, according to :attr:`~.AgilentE4980.mode`",
-        get_process=lambda x: x[:2])
 
-print(x)
-my_instrument.write( ':BIAS:VOLTage:LEVel '+str(0))
-print(LCR.values(":FETCh:IMPedance:FORMatted?"))
-time.sleep(1)
-my_instrument.write( ':BIAS:VOLTage:LEVel '+str(1))
-print(LCR.values(":FETCh:IMPedance:FORMatted?"))
-time.sleep(2)
 
-time.sleep(1)
-my_instrument.write( ':BIAS:VOLTage:LEVel '+str(2))
-print(LCR.values(":FETCh:IMPedance:FORMatted?"))
-time.sleep(2)
-V=5
-V_step=0.5
+# LCR_fcn for the actual measurements
+def LCR_fcn(volt_ind):
 
-for v_ind in np.arange(0,V+V_step,V_step) :
-    my_instrument.write( ':BIAS:VOLTage:LEVel '+str(v_ind))
-    print(LCR.values(":FETCh:IMPedance:FORMatted?"))
-    time.sleep(2)
+    #C=V33+3*np.random.rand()
 
-'''
+
+    #V_list.append(V33)
+    #C_list.append(C)
+    global v1
+    global V_list
+    global output1
+    global C_list
+    global Volt
+    #v1=[]
+    #V_list=[]
+    #output1=[]
+    #C_list=[]
+
+    #my_instrument. write( ':VOLT:LEVEL ' , str(volt_ind))
+    my_instrument.write( ':BIAS:VOLTage:LEVel '+str(volt_ind))
+
+    time. sleep( 5)
+    my_instrument. write( ':INITiate[:IMMediate]')
+
+    #output=my_instrument. query_ascii_values( ':MEM:READ? DBUF' )
+    time. sleep( 2)
+
+    output1=LCR.freq_sweep([freq], False)
+
+    C_list+=output1[0]
+    #v1=my_instrument.query( ':VOLT:LEVEL?' )
+    v1=my_instrument.query( ':BIAS:VOLTage:LEVel?')
+    V_list.append(v1)
+    time. sleep( 4)
+
+    print("Output: "+str(output1)+"    |  Volt : "+str(v1)+"   |  Cp : "+str(output1[0])+" | Loop: "+str(loop_ind_new)+"  |  ")
+
+
+
+
+# Proto_fcn for the measurements protocol
 
 def Proto_fcn():
     global loop_ind_new
@@ -112,46 +157,10 @@ def Proto_fcn():
         protocol_list.append("D")
 
 
-# LCR_fcn for the actual measurements
-def LCR_fcn(volt_ind):
-
-    #C=V33+3*np.random.rand()
 
 
-    #V_list.append(V33)
-    #C_list.append(C)
-    global v1
-    global V_list
-    global output1
-    global C_list
-    global Volt
-    #v1=[]
-    #V_list=[]
-    #output1=[]
-    #C_list=[]
 
-    #my_instrument. write( ':VOLT:LEVEL ' , str(volt_ind))
-    my_instrument.write( ':BIAS:VOLTage:LEVel '+str(volt_ind))
-
-    time. sleep( 5)
-    #my_instrument. write( ':INITiate[:IMMediate]')
-
-    #output=my_instrument. query_ascii_values( ':MEM:READ? DBUF' )
-    time. sleep( 2)
-
-    #output1=LCR.freq_sweep([freq], False)
-    output1=LCR.values(":FETCh:IMPedance:FORMatted?")
-
-    C_list.append(output1[0])
-    #v1=my_instrument.query( ':VOLT:LEVEL?' )
-    v1=my_instrument.query( ':BIAS:VOLTage:LEVel?')
-    V_list.append(float(v1))
-    time. sleep( 4)
-
-    print("Output: "+str(output1)+"    |  Volt : "+str(v1)+"   |  Cp : "+str(output1[0])+" | Loop: "+str(loop_ind_new)+"  |  ")
-
-
-#Proto_fcn()
+# Loop_fcn for the looping number of times
 
 def Loop_fcn(loop):
 
@@ -162,12 +171,45 @@ def Loop_fcn(loop):
 
 
 Loop_fcn(loop)
+#print(C_list)
+
+
+my_instrument. write( ':MEM:CLE DBUF' )
+my_instrument. write( ':DISP:PAGE MEAS' )
+time. sleep( 1)
+LCR.shutdown()
+
+
+
+
 dict = {'Volt': V_list, 'Cp':C_list,'Loop':loop_list,'Protocol':protocol_list}
 df = pd.DataFrame(dict)
 df.to_csv(filename, sep=',',index=False, encoding='utf-8')
-time. sleep( 1)
-LCR.shutdown()
-time. sleep( 1)
+
+'''
+#ploting seprate plots
+
+for plt_loop in range(1,loop+1):
+    Loop_df =df.loc[df['Loop'] == plt_loop]
+    Loop_df.plot(x="Volt",y="Cp",c="red",label=plt_loop)
+'''
+
+print(dict)
+plt.show()
+print(df)
+
+#
+
+#plt.scatter(V_list, C_list,s=3,c=loop_list,cmap='YlOrRd') # s is a size of marker
+#plt.plot(V_list, C_list,'-o',c=loop_list,cmap='YlOrRd')
+#plt.plot(V_list, C_list, linestyle="-", marker="o",color='#CB4335')
+
+
+
 print("Measurements Completed and Data saved ")
+plt.scatter(V_list,C_list)
+plt.title("Cp vs V , Loops:"+str(loop)+"   V_max:"+str(V)+"   step size : "+str(V_step))
+plt.xlabel("V")
+plt.ylabel("Cp")
 
-
+plt.show()
