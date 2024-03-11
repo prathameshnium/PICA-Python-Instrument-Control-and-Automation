@@ -44,48 +44,26 @@ time. sleep( 2)
 my_instrument. write( ':MEM:CLE DBUF' )
 time. sleep( 2)
 
-#---------------------------------
+#-----------------------------------------------------------------
+#print(my_instrument.write( ':BIAS:VOLTage[:LEVel] ',str(5)))
+time. sleep( 5)
+my_instrument. write( ':INITiate[:IMMediate]')
 
+#output=my_instrument. query_ascii_values( ':MEM:READ? DBUF' )
 
-def LCR_fcn (volt_ind):
+#output1=LCR.freq_sweep([1000], False)
+#C_list+=output1[0]
+print(my_instrument.query( ':BIAS:STATe?' ))
 
-    global v1
-    global V_list
-    global output1
-    global C_list
-    global Volt
-    v1=[]
-    V_list=[]
-    output1=[]
-    C_list=[]
+#print(my_instrument.write( ':BIAS:STATe?' ,str(1)))
+print(my_instrument.write( ':BIAS:STATe ON' ))
 
-    #my_instrument. write( ':VOLT:LEVEL ' , str(volt_ind))
-    print(my_instrument.write( ':BIAS:VOLTage[:LEVel] ',str(5)))
-    time. sleep( 5)
-    my_instrument. write( ':INITiate[:IMMediate]')
+#print(my_instrument.write( ':BIAS:VOLTage:LEVel 3'))
+print(my_instrument.write( ':BIAS:VOLTage:LEVel '+str(2.1)))
 
-    #output=my_instrument. query_ascii_values( ':MEM:READ? DBUF' )
+#print(my_instrument.write( ':FUNCtion:SMONitor:VDC[:STATe] ON'))
 
-    output1=LCR.freq_sweep([1000], False)
-    C_list+=output1[0]
-    v1=my_instrument.query( ':VOLT:LEVEL?' )
-    print(my_instrument.write( ':BIAS:VOLTage[:LEVel] ',str(volt_ind)))
-    #:LIST:BIAS:VOLTage?
+print(my_instrument.query( ':BIAS:VOLTage:LEVel?'))
+print(my_instrument.query( ':BIAS:STATe?' ))
 
-    V_list.append(v1)
-    time. sleep( 2)
-
-
-
-LCR_fcn(4)
-
-time. sleep( 2)
-print(C_list)
-print(V_list)
-
-my_instrument. write( ':MEM:CLE DBUF' )
-my_instrument. write( ':DISP:PAGE MEAS' )
-time. sleep( 1)
-LCR.shutdown()
-
-
+#print(my_instrument.write( ':BIAS:VOLTage[:LEVel] ',str(volt_ind)))
