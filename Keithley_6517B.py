@@ -23,24 +23,29 @@ t=[]
 
 try:
 
-    keithley = Keithley6517B("GPIB::1")
+    keithley = Keithley6517B("GPIB0::27::INSTR")
+    time.sleep(0.5)
+
     #keithley.apply_current()  # Sets up to source current
     #keithley.current_range = 10e-3  # Sets the source current range to 10 mA
     #keithley.compliance_voltage = 10  # Sets the compliance voltage to 10 V
-    keithley.enable_source()  # Enables the source output
+    #keithley.enable_source()  # Enables the source output
     keithley.measure_current()
+    time.sleep(0.5)
 
 
     #data_columns = ["Timestamp", "Current (A)"]
     #data_df = pd.DataFrame(columns=data_columns)
+    start_time = time.time()
 
     while True:
-        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        elapsed_time = time.time() - start_time
+        #timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         current = keithley.current  # Read current in Amps
-        #data_df = data_df.append({"Timestamp": timestamp, "Current (A)": current}, ignore_index=True)
-        t.append(timestamp)
+        #data_df = data_df.append({"Timestamp": elapsed_time, "Current (A)": current}, ignore_index=True)
+        t.append(elapsed_time)
         I.append(current)
-        print("Time: " +str(timestamp)+"\t\t\t|\t\t\t Current: "+str(current)+" A")
+        print("Time: " +str(elapsed_time)+"\t\t\t|\t\t\t Current: "+str(current)+" A")
 
         time.sleep(2)
     print("Measurement stopped...")
@@ -49,11 +54,18 @@ try:
     print(f"Data saved to file : demo_data.dat")
 
 
-    keithley.clear()
-    keithley.reset()
-
-    keithley.shutdown()  # Ramps the current to 0 mA and disables output
 
 
 except Exception as e:
     print(f"error with keithley : {e}")
+
+except KeyboardInterrupt:
+    time.sleep(0.5)
+
+    keithley.clear()
+    #keithley.reset()
+    time.sleep(0.5)
+
+    keithley.shutdown()  # Ramps the current to 0 mA and disables output
+    print("\n\nkeithley closed")
+    print("\n Measurement stopped by User ")
