@@ -6,7 +6,7 @@
 # Author:      Instrument-DSL
 #
 # Created:     31/10/2022
-# Changes_done:   delay_reduce
+# Changes_done:   delay_reduce , tempory data storage added
 # Licence:     <your licence>
 #-------------------------------------------------------------------------------#Importing packages ----------------------------------
 
@@ -82,6 +82,23 @@ def IV_Measure(cur):
 
     keithley_2182.clear()
     sleep(1)
+    #Temporary data storage
+
+    filename_new="temporary_data_"+str(filename)+'.txt'
+    #file1 = open(filename_new, "w")
+    with open(filename_new, "w") as f:
+        file1 = open(filename_new, "a") # append mode
+        file1.write("temporary data of "+str(filename)+"\ncurrent\tvoltage\n")
+        l1=[]
+        l2=[]
+        file1 = open(filename_new, "a")
+        file1.write('loop1\n')
+        for i in range(20):
+            l1.append(i)
+            l2.append(i*i)
+            file1.write(str(l1[i])+"\t"+str(l2[i]))
+            file1.write('\n')
+
 
 #loop1---------------------------------------------
 print("In loop 1")
@@ -108,6 +125,9 @@ print("In loop 5")
 for i5 in np.arange(0,I_range+I_step,I_step):
     IV_Measure(i5)
 #--------------------------------------------------
+
+file1.close()
+
 # data saving in file ----------------------------
 
 df=pd.DataFrame()
