@@ -16,17 +16,26 @@ import numpy as np
 import pandas as pd
 #from lakeshore import Model350
 from pymeasure.instruments.keithley import Keithley6517B
+from datetime import datetime
+base_filename = 'E:/Prathamesh/Python Stuff/Py Pyroelectric/Test_data/Pyro_data'
+# Create a unique filename
 
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+filename = f"{base_filename}_{timestamp}.csv"
+print(f'Filename: {filename}')
+time.sleep(0.01)  # Delay for 0.5 seconds
 
-filename = 'E:/Prathamesh/Python Stuff/Py Pyroelectric/Test_data/Pyro_data.csv'
-T_final=308 #cutoff
+T_final=360 #cutoff
+Tset=312 #setpoint
+ramp=5 #K/min
+range=1 # 3 is 1W , 4 is 100 W
 
 try:
 
     rm1 = pyvisa.ResourceManager()
     print(rm1.list_resources())
 
-    time.sleep(0.5)
+    time.sleep(1)
     temp_controller= rm1.open_resource("GPIB::12")
     #initilization of Both Instrumnets
 
@@ -37,22 +46,25 @@ try:
     #rm = visa.ResourceManager()
     #temp_controller = rm.open_resource(address)
     print(f"\nConnected to {temp_controller.query('*IDN?').strip()}")
-    time.sleep(0.5)
+    time.sleep(1)
 
 
     temp_controller.write('*RST')
-    time.sleep(0.2)
+    time.sleep(0.5)
     temp_controller.write('*CLS')
-    time.sleep(0.2)
-    temp_controller.write('RAMP 1, 1, 1')
     time.sleep(0.5)
-    temp_controller.write('RANGE 2') # 3 is 1W , 4 is 100 W
+    temp_controller.write(f'RAMP 1, 1, {ramp}') #third parameter is range in K/min
     time.sleep(0.5)
-    temp_controller.write('SETP 1,305')
+    temp_controller.write(f'RANGE {range}') # 3 is 1W , 4 is 100 W
+    time.sleep(0.5)
+    #temp_controller.write('MOUT 1, 100')
+    #print(temp_controller.query('CLIMIT?'))
+    time.sleep(1)
+    temp_controller.write(f'SETP 1,{Tset}')
     time.sleep(0.5)
     #temp_controller.write('SETP 2,305')
     time.sleep(0.5)
-    temp_controller.write('CLIMIT 1, 305.0, 10, 0')
+    temp_controller.write(f'CLIMIT 1, {Tset}, 10, 0')
     time.sleep(0.5)
     #temp_controller.write('CLIMIT 1, 307')
 
@@ -60,7 +72,7 @@ try:
     #---------------------------------------
 
     keithley = Keithley6517B("GPIB0::27::INSTR")
-    time.sleep(1)
+    time.sleep(2)
     print(f"\nConnected to {keithley.id}")
     print(f"\n-----------------------------------------------------\n")
 
@@ -101,25 +113,25 @@ def main():
                 file.write(f"{elapsed_time:.2f},{temperature},{current}\n")
             if float(temperature)>T_final:
                 temp_controller.write('RANGE 0')
-                time.sleep(0.1)
+                time.sleep(2)
                 print(f"T larger than {T_final}")
                 Check=False
 
-            time.sleep(0.5) #old 0.2
+            time.sleep(1) #old 0.2
 
     except Exception as e:
         print(f"error : {e}")
     except KeyboardInterrupt:
         temp_controller.write('RANGE 0')
-        time.sleep(0.5)
+        time.sleep(1)
         print("\n Measurement stopped ")
         temp_controller.close()
         print("Lakeshore closed")
-        time.sleep(0.2)
+        time.sleep(1)
         keithley.clear()
         #keithley.reset()
 
-        time.sleep(1)
+        time.sleep(2)
         keithley.shutdown()  # Ramps the current to 0 mA and disables output
         print("keithley closed")
 
