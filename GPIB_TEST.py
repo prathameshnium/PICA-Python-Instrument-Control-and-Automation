@@ -1,11 +1,9 @@
 #basic test
 
-import pymeasure
-import numpy
-import matplotlib.pyplot as plt
+#import pymeasure
 from time import sleep
 import pyvisa
-from pymeasure.instruments.keithley import Keithley2400
+#from pymeasure.instruments.keithley import Keithley2400
 
 
 rm = pyvisa.ResourceManager()
