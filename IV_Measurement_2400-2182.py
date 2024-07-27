@@ -7,7 +7,7 @@
 #
 # Created:     31/10/2022
 # Changes_done:   delay_reduce , tempory data storage added
-# Licence:     <your licence>
+# Licence:    
 #-------------------------------------------------------------------------------#Importing packages ----------------------------------
 
 import pymeasure
