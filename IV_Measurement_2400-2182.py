@@ -3,7 +3,7 @@
 # Name:        #interfacing Keithley2400(current source) and Keithley2182(nano_voltmeter)
 # Purpose:
 #
-# Author:      Instrument-DSL
+# Author:     Prathamesh, Instrument-DSL
 #
 # Created:     31/10/2022
 # Changes_done:   delay_reduce , tempory data storage added
