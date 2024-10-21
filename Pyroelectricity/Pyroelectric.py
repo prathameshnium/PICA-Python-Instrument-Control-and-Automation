@@ -17,7 +17,7 @@ import pandas as pd
 #from lakeshore import Model350
 from pymeasure.instruments.keithley import Keithley6517B
 from datetime import datetime
-base_filename = 'E:/Prathamesh/Python Stuff/Py Pyroelectric/Test_data/Pyro_data'
+base_filename = 'E:/Prathamesh/Python Stuff/Py Pyroelectric/Test_data/Pyro_data_test'
 # Create a unique filename
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
