@@ -1,105 +1,227 @@
 import tkinter as tk
-from tkinter import Label, Entry, Scrollbar, Listbox, LabelFrame, Button, filedialog, messagebox
-from PIL import ImageTk, Image
+from tkinter import Label, Entry, LabelFrame, Button, filedialog, messagebox
 import numpy as np
+import csv
+import os
+import time
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-class IVMeasurementApp:
+class TemperatureSweepApp:
+    """
+    A GUI application for simulating and live-plotting a temperature-dependent
+    resistance and voltage measurement.
+    """
+    # --- Styling Constants ---
+    BG_COLOR = '#F0F0F0'
+    FRAME_BG = '#2C3E50'
+    FRAME_FG = '#ECF0F1'
+    FONT_NORMAL = ('Helvetica', 12)
+    FONT_BOLD = ('Helvetica', 12, 'bold')
+    FONT_TITLE = ('Helvetica', 14, 'bold')
+    COLOR_R = '#E74C3C'  # Red for Resistance
+    COLOR_V = '#3498DB'  # Blue for Voltage
+
     def __init__(self, root):
+        """Initializes the application, UI, and state variables."""
         self.root = root
-        self.root.title("IV Measurement")
-        self.root.geometry("800x600")
-        self.root['background'] = '#F0F0F0'
+        self.root.title("Delta Mode V-T Measurement")
+        self.root.geometry("1100x800")
+        self.root['background'] = self.BG_COLOR
+
+        # --- State variables ---
+        self.is_running = False
+        self.start_time = None
+        self.data_filepath = ""
+
+        self.root.grid_columnconfigure(1, weight=1)
+        self.root.grid_rowconfigure(0, weight=1)
 
         self.create_widgets()
 
+    # --- GUI Setup ---
+
     def create_widgets(self):
+        """Creates the main frames for the application."""
         self.create_input_frame()
-        self.create_output_frame()
-        self.create_output_list_frame()
         self.create_graph_frame()
 
     def create_input_frame(self):
-        self.frame_input = LabelFrame(self.root, text='Input', bd=4, bg='#2C3E50', fg='#ECF0F1', font=('Helvetica', 14, 'bold'))
-        self.frame_input.grid(row=0, column=0, padx=10, pady=5, sticky="nsew")
+        """Builds the left-side panel for user input and controls."""
+        frame = LabelFrame(self.root, text='Experiment Parameters', bd=4, bg=self.FRAME_BG, fg=self.FRAME_FG, font=self.FONT_TITLE)
+        frame.grid(row=0, column=0, padx=10, pady=10, sticky="ns")
 
-        Label(self.frame_input, text="IV Measurement", font=('Helvetica', 18, 'bold'), fg='#ECF0F1', bg='#2C3E50').grid(
-            row=0, column=0, columnspan=4, padx=10, pady=10)
+        # --- Input Fields ---
+        self.entries = {}
+        fields = ["Sample Name", "Initial Temp (K)", "Final Temp (K)", "Ramp Rate (K/min)", "Apply Current (A)"]
+        for i, field in enumerate(fields):
+            self.entries[field] = self._create_labeled_entry(frame, field, i)
 
-        Label(self.frame_input, text="Enter Current", font=('Helvetica', 12), fg='#ECF0F1', bg='#2C3E50').grid(row=1, column=0, padx=10, pady=10)
-        self.i_entry = Entry(self.frame_input, width=20, font=('Helvetica', 16))
-        self.i_entry.grid(row=1, column=1, padx=20, pady=10)
+        # --- File Location ---
+        row_after_fields = len(fields)
+        Label(frame, text="Save Location:", font=self.FONT_NORMAL, fg=self.FRAME_FG, bg=self.FRAME_BG).grid(row=row_after_fields, column=0, padx=10, pady=8, sticky='w')
+        self.file_location_button = Button(frame, text="Browse...", command=self._browse_file_location, font=('Helvetica', 10), bg=self.COLOR_V, fg=self.FRAME_FG)
+        self.file_location_button.grid(row=row_after_fields, column=1, padx=10, pady=8, sticky='ew')
 
-        Label(self.frame_input, text="Enter Step Size", font=('Helvetica', 12), fg='#ECF0F1', bg='#2C3E50').grid(row=2, column=0, padx=10, pady=10)
-        self.i_step_entry = Entry(self.frame_input, width=20, font=('Helvetica', 16))
-        self.i_step_entry.grid(row=2, column=1, padx=20, pady=10)
+        # --- Control Buttons ---
+        self.start_button = Button(frame, text="Start Measurement", command=self.start_measurement, height=2, font=self.FONT_BOLD, bg='#2ECC71', fg=self.FRAME_FG)
+        self.start_button.grid(row=row_after_fields + 1, column=0, columnspan=2, padx=10, pady=20, sticky='ew')
 
-        Label(self.frame_input, text="Select Location", font=('Helvetica', 12), fg='#ECF0F1', bg='#2C3E50').grid(row=3, column=0, padx=10, pady=10)
-        self.file_location_button = Button(self.frame_input, text="Browse", command=self.browse_file_location, font=('Helvetica', 12), bg='#3498DB', fg='#ECF0F1')
-        self.file_location_button.grid(row=3, column=1, padx=20, pady=10)
+        self.stop_button = Button(frame, text="Stop Measurement", command=self.stop_measurement, height=2, font=self.FONT_BOLD, bg=self.COLOR_R, fg=self.FRAME_FG, state='disabled')
+        self.stop_button.grid(row=row_after_fields + 2, column=0, columnspan=2, padx=10, pady=5, sticky='ew')
 
-        Button(self.frame_input, text="Measure IV", command=self.my_measure, height=2, width=15, font=('Helvetica', 12), bg='#E74C3C', fg='#ECF0F1').grid(
-            row=5, column=1, columnspan=1, padx=2, pady=10)
-
-    def browse_file_location(self):
-        file_location = filedialog.askdirectory()
-        self.file_location_button.config(text=file_location)
-
-    def create_output_frame(self):
-        self.frame_output = LabelFrame(self.root, text='Data Entered', bd=4, bg='#2C3E50', fg='#ECF0F1', font=('Helvetica', 14, 'bold'))
-        self.frame_output.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
-
-    def create_output_list_frame(self):
-        self.frame_output_list = LabelFrame(self.root, text='Current        Voltage', bd=4, bg='#2C3E50', fg='#ECF0F1', font=('Helvetica', 14, 'bold'))
-        self.frame_output_list.grid(row=1, column=1, padx=10, pady=5, sticky="nsew")
+        # --- Info Footer ---
+        footer_frame = LabelFrame(frame, text="Info", bd=2, bg=self.FRAME_BG, fg=self.FRAME_FG)
+        footer_frame.grid(row=row_after_fields + 3, column=0, columnspan=2, padx=10, pady=30, sticky='ew')
+        Label(footer_frame, text="Institute: UGC DAE CSR Mumbai", font=('Helvetica', 11, 'italic'), fg=self.FRAME_FG, bg=self.FRAME_BG).pack(anchor='w')
+        Label(footer_frame, text="Purpose: Delta mode V vs T", font=('Helvetica', 11, 'italic'), fg=self.FRAME_FG, bg=self.FRAME_BG).pack(anchor='w')
 
     def create_graph_frame(self):
-        self.frame_graph = LabelFrame(self.root, text='Graph', bd=4, bg='#2C3E50', fg='#ECF0F1', font=('Helvetica', 14, 'bold'))
-        self.frame_graph.grid(row=0, column=1, padx=10, pady=5, sticky="nsew")
+        """Builds the right-side panel for the live graphs."""
+        frame = LabelFrame(self.root, text='Live Graphs', bd=4, bg='white', fg=self.FRAME_BG, font=self.FONT_TITLE)
+        frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
-    def my_measure(self):
+        self.figure = Figure(figsize=(7, 6), dpi=100)
+        self.ax1, self.ax2 = self.figure.subplots(2, 1, sharex=True)
+
+        # --- Initialize empty plot lines ---
+        self.line_r, = self.ax1.plot([], [], color=self.COLOR_R, marker='.', markersize=4) # Resistance line
+        self.line_v, = self.ax2.plot([], [], color=self.COLOR_V, marker='.', markersize=4) # Voltage line
+
+        self.ax1.set_ylabel("Resistance (Ohms)")
+        self.ax1.grid(True)
+
+        self.ax2.set_ylabel("Voltage (V)")
+        self.ax2.set_xlabel("Temperature (K)")
+        self.ax2.grid(True)
+
+        self.figure.tight_layout(pad=2.0)
+        self.canvas = FigureCanvasTkAgg(self.figure, frame)
+        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    # --- Measurement Logic ---
+
+    def start_measurement(self):
+        """Validates inputs, sets up files, and starts the measurement loop."""
         try:
-            I_value = float(self.i_entry.get())
-            I_step_value = float(self.i_step_entry.get())
-            file_location = self.file_location_button.cget("text")
+            params = {key: float(entry.get()) for key, entry in self.entries.items() if key != "Sample Name"}
+            self.sample_name = self.entries["Sample Name"].get()
+            self.initial_temp = params["Initial Temp (K)"]
+            self.final_temp = params["Final Temp (K)"]
+            self.ramp_rate_k_per_sec = params["Ramp Rate (K/min)"] / 60.0
+            self.apply_current = params["Apply Current (A)"]
 
-            Label(self.frame_output, text=f"I value: {I_value}, Step Size: {I_step_value}, Location: {file_location}", font=('Helvetica', 12), fg='#ECF0F1', bg='#2C3E50').grid(
-                row=7, column=0, columnspan=3)
+            if not self.sample_name or not hasattr(self, 'file_location_path') or not self.file_location_path:
+                raise ValueError("Sample Name and Save Location are required.")
+            if self.initial_temp >= self.final_temp or self.ramp_rate_k_per_sec <= 0:
+                raise ValueError("Invalid temperature or ramp rate settings.")
 
-            scrollbar = Scrollbar(self.frame_output_list)
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        except (ValueError, KeyError) as e:
+            messagebox.showerror("Input Error", f"Please check your parameters.\n{e}")
+            return
 
-            list_current = Listbox(self.frame_output_list, yscrollcommand=scrollbar.set, font=('Helvetica', 12), bg='#ECF0F1')
-            for i in range(int(I_value)):
-                list_current.insert(tk.END, f"{i}                         {i}")
+        # --- Setup the data file ---
+        file_name = f"{self.sample_name}_Live_V-T_Sweep.dat"
+        self.data_filepath = os.path.join(self.file_location_path, file_name)
+        with open(self.data_filepath, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([f"# Sample Name: {self.sample_name}"])
+            writer.writerow([f"# Applied Current (A): {self.apply_current}"])
+            writer.writerow(["Time (s)", "Temperature (K)", "Resistance (Ohms)", "Voltage (V)"])
 
-            list_current.pack(side=tk.LEFT, fill=tk.BOTH)
-            scrollbar.config(command=list_current.yview)
+        # --- Reset UI and start loop ---
+        self.is_running = True
+        self.start_time = time.time()
+        self.start_button.config(state='disabled')
+        self.stop_button.config(state='normal')
 
-            # graph putting out
-            figure = Figure(figsize=(5, 5), dpi=100)
-            plot = figure.add_subplot(1, 1, 1)
-            x = range(int(I_value))
-            y = np.sin(x)
-            plot.plot(x, y, color="red", marker="o", linestyle="")
-            canvas = FigureCanvasTkAgg(figure, self.frame_graph)
-            canvas.get_tk_widget().grid(row=20, column=20)
+        # Reset and configure plots once
+        self.line_r.set_data([], [])
+        self.line_v.set_data([], [])
+        self.ax1.set_title(f"Sample: {self.sample_name} | Current: {self.apply_current} A")
+        self.canvas.draw()
 
-            specified_name = "IV_Data.dat"  # Replace with your desired name
-            file_path = f"{file_location}/{specified_name}"
+        self.root.after(1000, self._update_measurement_loop) # Start loop after 1s
 
-            with open(file_path, 'w') as file:
-                file.write(f"I value: {I_value}, Step Size: {I_step_value}\n")
-                for i in range(int(I_value)):
-                    file.write(f"{i}                         {i}\n")
+    def stop_measurement(self):
+        """Stops the measurement loop and resets the UI state."""
+        if self.is_running:
+            self.is_running = False
+            self.start_button.config(state='normal')
+            self.stop_button.config(state='disabled')
+            messagebox.showinfo("Info", "Measurement stopped.")
 
-            messagebox.showinfo("Success", f"Data saved successfully at:\n{file_path}")
+    def _update_measurement_loop(self):
+        """Core loop: simulates data, saves it, updates graphs, and schedules next run."""
+        if not self.is_running:
+            return
 
-        except ValueError:
-            messagebox.showerror("Error", "Please enter valid numeric values for Current and Step Size.")
+        elapsed_time = time.time() - self.start_time
+        current_temp = self.initial_temp + (elapsed_time * self.ramp_rate_k_per_sec)
+
+        # --- Stop condition ---
+        if current_temp >= self.final_temp:
+            current_temp = self.final_temp # Clamp to final value
+            self.is_running = False # Stop loop after this run
+            messagebox.showinfo("Success", "Measurement complete!")
+
+        # --- Simulate and save one new data point ---
+        base_resistance = 500 * np.exp(-current_temp / 100) + np.random.normal(0, 5)
+        voltage = base_resistance * self.apply_current
+        with open(self.data_filepath, 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([f"{elapsed_time:.2f}", f"{current_temp:.4f}", f"{base_resistance:.4f}", f"{voltage:.4f}"])
+
+        # --- Read all data and update graph ---
+        try:
+            data = np.loadtxt(self.data_filepath, delimiter=',', skiprows=3)
+            # Ensure data is 2D even if there's only one row
+            if data.ndim == 1:
+                data = data.reshape(1, -1)
+
+            temps, resistances, voltages = data[:, 1], data[:, 2], data[:, 3]
+
+            self.line_r.set_data(temps, resistances)
+            self.line_v.set_data(temps, voltages)
+
+            # Rescale axes
+            self.ax1.relim()
+            self.ax1.autoscale_view()
+            self.ax2.relim()
+            self.ax2.autoscale_view()
+
+            self.canvas.draw()
+        except Exception as e:
+            print(f"Could not update graph: {e}")
+
+        # --- Schedule next update or stop ---
+        if self.is_running:
+            self.root.after(1000, self._update_measurement_loop)
+        else:
+            self.stop_measurement()
+
+    # --- Helpers ---
+
+    def _create_labeled_entry(self, parent, text, row_index):
+        """Helper to create a Label and an Entry widget, returning the Entry."""
+        Label(parent, text=f"{text}:", font=self.FONT_NORMAL, fg=self.FRAME_FG, bg=self.FRAME_BG).grid(row=row_index, column=0, padx=10, pady=8, sticky='w')
+        entry = Entry(parent, width=20, font=self.FONT_NORMAL)
+        entry.grid(row=row_index, column=1, padx=10, pady=8)
+        return entry
+
+    def _browse_file_location(self):
+        """Opens a dialog to select a save directory."""
+        path = filedialog.askdirectory()
+        if path:
+            self.file_location_path = path
+            display_path = path if len(path) <= 25 else f"...{path[-22:]}"
+            self.file_location_button.config(text=display_path)
+
+def main():
+    """Main function to create the Tkinter window and run the application."""
+    root = tk.Tk()
+    app = TemperatureSweepApp(root)
+    root.mainloop()
 
 if __name__ == '__main__':
-    root = tk.Tk()
-    app = IVMeasurementApp(root)
-    root.mainloop()
+    main()
