@@ -63,6 +63,7 @@ class TemperatureSweepApp:
     FONT_TITLE = ('Helvetica', 14, 'bold')
     COLOR_R = '#E74C3C'  # Red for Resistance
     COLOR_V = '#3498DB'  # Blue for Voltage
+    COLOR_T = '#2ECC71'  # Green for Temperature vs. Time
 
     def __init__(self, root):
         self.root = root
@@ -95,17 +96,13 @@ class TemperatureSweepApp:
         frame = LabelFrame(parent, text='Experiment Parameters', bd=4, bg=self.FRAME_BG, fg=self.FRAME_FG, font=self.FONT_TITLE)
         frame.pack(pady=10, padx=10)
 
-        # === FIX IS HERE: Create labels and entries directly ===
         self.entries = {}
         fields = ["Sample Name", "Initial Temp (K)", "Final Temp (K)", "Ramp Rate (K/min)", "Apply Current (A)"]
         for i, field_text in enumerate(fields):
-            # Create Label
             Label(frame, text=f"{field_text}:", font=self.FONT_NORMAL, fg=self.FRAME_FG, bg=self.FRAME_BG).grid(row=i, column=0, padx=10, pady=8, sticky='w')
-            # Create Entry
             entry = Entry(frame, width=20, font=self.FONT_NORMAL)
             entry.grid(row=i, column=1, padx=10, pady=8)
             self.entries[field_text] = entry
-        # =======================================================
 
         row_after_fields = len(fields)
         Label(frame, text="Save Location:", font=self.FONT_NORMAL, fg=self.FRAME_FG, bg=self.FRAME_BG).grid(row=row_after_fields, column=0, padx=10, pady=8, sticky='w')
@@ -131,14 +128,32 @@ class TemperatureSweepApp:
         self.log("Console initialized. Ready for measurement.")
 
     def create_graph_frame(self):
+        """Builds the right-side panel for the live graphs with three subplots."""
         frame = LabelFrame(self.root, text='Live Graphs', bd=4, bg='white', fg=self.FRAME_BG, font=self.FONT_TITLE)
         frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
-        self.figure = Figure(figsize=(7, 6), dpi=100)
-        self.ax1, self.ax2 = self.figure.subplots(2, 1, sharex=True)
+
+        # === CHANGE: Create 3 subplots instead of 2 ===
+        self.figure = Figure(figsize=(7, 8), dpi=100)
+        self.ax1, self.ax2, self.ax3 = self.figure.subplots(3, 1)
+
+        # --- Initialize three empty plot lines ---
         self.line_r, = self.ax1.plot([], [], color=self.COLOR_R, marker='.', markersize=4)
         self.line_v, = self.ax2.plot([], [], color=self.COLOR_V, marker='.', markersize=4)
-        self.ax1.set_ylabel("Resistance (Ohms)"); self.ax1.grid(True)
-        self.ax2.set_ylabel("Voltage (V)"); self.ax2.set_xlabel("Temperature (K)"); self.ax2.grid(True)
+        self.line_t, = self.ax3.plot([], [], color=self.COLOR_T, marker='.', markersize=4)
+
+        # --- Configure all three axes ---
+        self.ax1.set_ylabel("Resistance (Ohms)")
+        self.ax1.set_xlabel("Temperature (K)")
+        self.ax1.grid(True)
+
+        self.ax2.set_ylabel("Voltage (V)")
+        self.ax2.set_xlabel("Temperature (K)")
+        self.ax2.grid(True)
+
+        self.ax3.set_ylabel("Temperature (K)")
+        self.ax3.set_xlabel("Time (s)")
+        self.ax3.grid(True)
+
         self.figure.tight_layout(pad=2.0)
         self.canvas = FigureCanvasTkAgg(self.figure, frame)
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -164,7 +179,7 @@ class TemperatureSweepApp:
             if not params['sample_name'] or not hasattr(self, 'file_location_path') or not self.file_location_path:
                 raise ValueError("Sample Name and Save Location are required.")
 
-            timestamp = datetime.now().strftime("%Y%d%m_%H%M%S")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             file_name = f"{params['sample_name']}_{timestamp}_V-T_Sweep.dat"
             params['data_filepath'] = os.path.join(self.file_location_path, file_name)
 
@@ -182,7 +197,8 @@ class TemperatureSweepApp:
             self.start_button.config(state='disabled')
             self.stop_button.config(state='normal')
 
-            self.line_r.set_data([], []); self.line_v.set_data([], [])
+            # === CHANGE: Reset the third plot line ===
+            self.line_r.set_data([], []); self.line_v.set_data([], []); self.line_t.set_data([], [])
             self.ax1.set_title(f"Sample: {params['sample_name']} | Current: {params['apply_current']} A")
             self.canvas.draw()
 
@@ -223,11 +239,17 @@ class TemperatureSweepApp:
 
             data = np.loadtxt(self.backend.params['data_filepath'], delimiter=',', skiprows=3)
             if data.ndim == 1: data = data.reshape(1, -1)
-            temps, resistances, voltages = data[:, 1], data[:, 2], data[:, 3]
+
+            # === CHANGE: Extract time data and update all three plots ===
+            times, temps, resistances, voltages = data[:, 0], data[:, 1], data[:, 2], data[:, 3]
+
             self.line_r.set_data(temps, resistances)
             self.line_v.set_data(temps, voltages)
+            self.line_t.set_data(times, temps)
+
             self.ax1.relim(); self.ax1.autoscale_view()
             self.ax2.relim(); self.ax2.autoscale_view()
+            self.ax3.relim(); self.ax3.autoscale_view()
             self.canvas.draw()
 
         except Exception:
