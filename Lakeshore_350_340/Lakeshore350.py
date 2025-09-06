@@ -2,7 +2,7 @@
 # Name:        #interfacing Lakeshore350_Temprature_Controller
 # Purpose:
 #
-# Author:      Ketan
+# Author:      Ketan 
 #
 # Created:    3/3/24
 # Changes_done:   V1.2
