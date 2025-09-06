@@ -4,10 +4,11 @@
 #
 # Author:      Ketan
 #
-# Created:    21/10/24
-# Changes_done:   V1
+# Created:    22/10/24
+# Updated:    01/7/25
+# Changes_done:   V3
 #-----------------------------------------------------------------------
-#-------------------------------------------------------------------------------#Importing packages ----------------------------------
+#Importing packages ----------------------------------
 
 import pymeasure
 import numpy as np
@@ -19,30 +20,31 @@ import pandas as pd
 from datetime import datetime
 #import visa
 import time
-#from lakeshore import Model350
 # variable declration
 
 I=[]
-
 Volt=[]
 interval = 1
 number_of_readings = 2
 #base_filename = 'E:/Prathamesh/Python Stuff/Py Pyroelectric/Test_data/Pyro_data_test'
-base_filename = 'C:/Users/Instrument-DSL/Desktop/test1'
+base_filename = 'E:/Prathamesh/Python Stuff/T_dependent_V/test1/'
+sample_name = input("enter the sample name: ")
+
 # E:\Prathamesh\Python Stuff\T dependent V\test1
 # Create a unique filename
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-filename = f"{base_filename}_{timestamp}.csv"
+filename = f"{base_filename}{sample_name}_{timestamp}.csv"
 print(f'Filename: {filename}')
 time.sleep(1)  # Delay for 0.5 seconds
+# user inputs ------------------------------------------------------------------------------------
+
 current_input=1 # in mili amps
-
-T_final=360 #cutoff
-Tset=312 #setpoint
+T_final=330 #cutoff
+Tset=310 #setpoint
 ramp=5 #K/min
-range=1 # 3 is 1W , 4 is 100 W
-
+range=3 # 3 is 1W , 4 is 100 W
+#----------------------------------------------------------------------------------------------------
 
 try:
         #object creation ----------------------------------
@@ -61,10 +63,10 @@ try:
         #filename = input("Enter filename:")
 
         #initial set up keithley_2400
-        keithley_2400.apply_current()               # Sets up to source current
+        keithley_2400.apply_current()        # Sets up to source current
         keithley_2400.source_current_range = 1e-3   # Sets the source current range to 1 mA
         sleep(10)
-        keithley_2400.compliance_voltage = 210       # Sets the compliance voltage to 210 V
+        keithley_2400.compliance_voltage = 210      # Sets the compliance voltage to 210 V
         keithley_2400.source_current = 0            # Sets the source current to 0 mA
         keithley_2400.enable_source()              # Enables the source output
         sleep(15)
@@ -81,31 +83,30 @@ try:
 
         rm1 = pyvisa.ResourceManager()
         print(rm1.list_resources())
-
-        time.sleep(2)
-        temp_controller= rm1.open_resource("GPIB::12")
-        time.sleep(2)
-        print(f"\nConnected to {temp_controller.query('*IDN?').strip()}")
-        time.sleep(1)
-
+        time.sleep(0.5)
         temp_controller.write('*RST')
         time.sleep(0.5)
         temp_controller.write('*CLS')
-        time.sleep(0.5)
-        temp_controller.write(f'RAMP 1, 1, {ramp}') #third parameter is range in K/min
-        time.sleep(0.5)
-        temp_controller.write(f'RANGE {range}') # 3 is 1W , 4 is 100 W
-        time.sleep(0.5)
-        #temp_controller.write('MOUT 1, 100')
-        #print(temp_controller.query('CLIMIT?'))
         time.sleep(1)
-        temp_controller.write(f'SETP 1,{Tset}')
-        time.sleep(0.5)
+        temp_controller.write('RAMP 2')
+        #temp_controller.write('HTRSET 1,1,1,0,1')
+        temp_controller.write('SETP 1,310')
+        time.sleep(2)
         #temp_controller.write('SETP 2,305')
+        temp_controller.write('CLIMIT 1, 310.0, 10, 0')
+        time.sleep(2)
+        #temp_controller.write("INSET 305")
+        temp_controller.write('RANGE 0') # 3 is 1W , 4 is 10 W
+        #temp_controller.write('SETP 2,305')
+
+
+        time.sleep(2)
+        #print("Heating data" +str(temp_controller.query('HTRSET?')))
+        time.sleep(2)
+        #print("Heating data 1" +str(temp_controller.query('SETP?')))
+
         time.sleep(0.5)
-        temp_controller.write(f'CLIMIT 1, {Tset}, 10, 0')
-        time.sleep(0.5)
-        #temp_controller.write('CLIMIT 1, 307')
+
         #------------------------------------------------------------------------
 except Exception as e:
     print(f"Initialization error : {e}")
@@ -130,7 +131,9 @@ def IV_Measure(cur):
         keithley_2182.wait_for_srq()
         sleep(1)
         voltages = keithley_2182.query_ascii_values("trace:data?")
+        sleep(0.25)
         keithley_2182.query("status:measurement?")
+        sleep(0.25)
         keithley_2182.write("trace:clear; feed:control next")
 
         v_avr=sum(voltages) / len(voltages)
@@ -139,14 +142,16 @@ def IV_Measure(cur):
         #I.append(keithley_2400.current) # actual current in 2400 (in Amps)
         I.append(cur*1e-3)
 
-        sleep(0.5)
+        sleep(1)
         temperature = temp_controller.query('KRDG? A').strip()
-        sleep(0.1)
+        sleep(2.5)
         #print(temperature)
         Volt.append(v_avr) #voltage avg list
         print(f"{cur*1e-3} A |{elapsed_time:.2f} s| {temperature} K| {v_avr} V")
         #print(str(cur*1e-3)+"  "+str(v_avr))
+        sleep(0.5)
         keithley_2182.write("*rst; status:preset; *cls")
+        sleep(0.25)
 
         keithley_2182.clear()
         sleep(1)
@@ -214,7 +219,6 @@ except Exception as e:
 
 
 
-#--------------------------------------------------
 
 
 # turning of instrument ----------------------------
