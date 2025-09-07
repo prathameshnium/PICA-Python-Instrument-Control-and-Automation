@@ -16,11 +16,11 @@ These scripts rely on a few key Python packages for communication and data handl
 
 <p align="center">
   <a href="https://pyvisa.readthedocs.io/" target="_blank" rel="noreferrer">
-    <img src="https://raw.githubusercontent.com/pyvisa/pyvisa-logo/master/pyvisa-logo-light.png" alt="PyVISA Logo" width="140"/>
+    <img src="https://raw.githubusercontent.com/pyvisa/pyvisa-logo/master/pyvisa-logo-light.png" alt="PyVISA" width="140"/>
   </a>
   &nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://pymeasure.readthedocs.io/" target="_blank" rel="noreferrer">
-    <img src="https://pymeasure.readthedocs.io/en/latest/_images/logo-text.png" alt="PyMeasure Logo" width="140"/>
+    <img src="https://pymeasure.readthedocs.io/en/latest/_images/logo-text.png" alt="PyMeasure" width="140"/>
   </a>
   &nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://numpy.org/" target="_blank" rel="noreferrer">
