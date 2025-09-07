@@ -15,16 +15,20 @@ A suite of Python scripts using PyVISA to control and automate laboratory instru
 These scripts rely on a few key Python packages for communication and data handling. Ensure you have them installed in your environment.
 
 <p align="center">
-  <a href="https://pyvisa.readthedocs.io/" target="_blank" rel="noreferrer"> 
-    <img src="https://raw.githubusercontent.com/pyvisa/pyvisa-logo/master/pyvisa-logo-light.png" alt="pyvisa" width="120"/> 
+  <a href="https://pyvisa.readthedocs.io/" target="_blank" rel="noreferrer">
+    <img src="https://raw.githubusercontent.com/pyvisa/pyvisa-logo/master/pyvisa-logo-light.png" alt="PyVISA Logo" width="140"/>
   </a>
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://numpy.org/" target="_blank" rel="noreferrer"> 
-    <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/numpy/numpy-original.svg" alt="numpy" width="50" height="50"/> 
+  <a href="https://pymeasure.readthedocs.io/" target="_blank" rel="noreferrer">
+    <img src="https://pymeasure.readthedocs.io/en/latest/_images/logo-text.png" alt="PyMeasure Logo" width="140"/>
   </a>
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://pandas.pydata.org/" target="_blank" rel="noreferrer"> 
-    <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/pandas/pandas-original.svg" alt="pandas" width="50" height="50"/> 
+  <a href="https://numpy.org/" target="_blank" rel="noreferrer">
+    <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/numpy/numpy-original.svg" alt="NumPy" width="50" height="50"/>
+  </a>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://pandas.pydata.org/" target="_blank" rel="noreferrer">
+    <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/pandas/pandas-original.svg" alt="Pandas" width="50" height="50"/>
   </a>
 </p>
 
@@ -37,7 +41,7 @@ This collection provides practical, ready-to-use Python scripts for automating c
 ### Instrument Scripts & Drivers
 Each folder is dedicated to a specific instrument or measurement setup, containing the necessary control logic and experimental procedures.
 
-### Manuals & Guides  invaluable for Refrences
+### Manuals & Guides invaluable for References
 A collection of official instrument manuals and programming guides are available in the **[assets/Manuals](assets/Manuals)** directory. These are invaluable references for understanding instrument commands and capabilities.
 
 ---
