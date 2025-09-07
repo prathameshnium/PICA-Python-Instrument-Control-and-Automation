@@ -1,39 +1,43 @@
-Instruments & Control
-Electrical Measurement Systems
-IV (Current-Voltage) Measurement
+# Instruments & Control
 
-    Current Source: Keithley 2400 SourceMeter
+## Electrical Measurement Systems
 
-    Nanovoltmeter: Keithley 2182A
+### IV (Current-Voltage) Measurement
+* **Current Source:** Keithley 2400 SourceMeter
+* **Nanovoltmeter:** Keithley 2182A
 
-LCR Meter
+### LCR Meter
+* **Keysight E4980A**
+    * Used for CV (Capacitance-Voltage) Measurements
 
-    Keysight E4980A
+### Delta Mode Resistivity Measurement
+> *This setup is used for temperature-dependent resistivity studies.*
+* **Current Source:** Keithley 6221
+* **Nanovoltmeter:** Keithley 2182A
 
-        CV (Capacitance-Voltage) Measurements
+### Electrometer / High Resistance Measurement
+* **Keithley 6517B** Electrometer
 
-Delta Mode Resistivity Measurement
+---
 
-This setup is used for temperature-dependent resistivity studies.
+## Specialized Measurement Systems
 
-    Current Source: Keithley 6221
+### Pyroelectric Measurements
+* **Electrometer:** Keithley 6517B
+* **Temperature Controller:** Lakeshore 340
 
-    Nanovoltmeter: Keithley 2182A
+---
 
-Electrometer / High Resistance Measurement
+## Environmental Control
 
-    Keithley 6517B Electrometer
+### Temperature Controllers
+* **Lakeshore 350**
+* **Lakeshore 340**
 
-Specialized Measurement Systems
-Pyroelectric Measurements
+---
 
-    Electrometer: Keithley 6517B
+# Author and Acknowledgment
 
-    Temperature Controller: Lakeshore 340
+This software was developed by **Prathamesh Deshmukh** during his PhD tenure.
 
-Environmental Control
-Temperature Controllers
-
-    Lakeshore 350
-
-    Lakeshore 340
+The work was conducted at the **Mumbai Centre** of the **UGC-DAE Consortium for Scientific Research (CSR)**, a facility dedicated to providing advanced research infrastructure to the academic community. The development took place within the [Sudip Mukherjee Materials Physics Lab](https://www.researchgate.net/lab/Sudip-Mukherjee-Materials-Physics-Lab-Sudip-Mukherjee) and supports the experimental setups described on the lab's profile.
