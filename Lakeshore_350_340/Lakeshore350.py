@@ -2,7 +2,7 @@
 # Name:        #interfacing Lakeshore350_Temprature_Controller
 # Purpose:
 #
-# Author:      Ketan 
+# Author:      Ketan
 #
 # Created:    3/3/24
 # Changes_done:   V1.2
@@ -17,9 +17,9 @@ import pyvisa
 rm1 = pyvisa.ResourceManager()
 print(f"List of Inst: {rm1.list_resources()}\n")
 
-temp_controller= rm1.open_resource("GPIB::12")
+temp_controller= rm1.open_resource("GPIB1::15::INSTR")
 time.sleep(0.5)
-filename = 'E:/Prathamesh/Python Stuff/Py Pyroelectric/Test_data/temperature_data.csv'
+filename = 'E:\Prathamesh/Python Stuff/ready_to_use/Delta/test-data/Temprature_350.csv'
 
 try:
 
