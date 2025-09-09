@@ -4,7 +4,7 @@
 #               Keithley 6221/2182A and Lakeshore 350.
 # Author:       Prathamesh & Gemini
 # Created:      09/09/2025
-# Version:      10.1 (Final Layout & Aesthetic Polish)
+# Version:      11.0 (Final Professional Layout)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -23,7 +23,7 @@ import matplotlib as mpl
 
 # --- Pillow for Logo Image ---
 try:
-    from PIL import Image, ImageTk
+    from PIL import Image, ImageTk, ImageDraw
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
@@ -54,7 +54,6 @@ class Combined_Backend:
         """Receives all parameters from the GUI and configures the instruments."""
         print("\n--- [Backend] Initializing Instruments ---")
         self.params = parameters
-        # ... (backend code remains unchanged)
         if not self.rm:
             raise ConnectionError("VISA Resource Manager is not available.")
         try:
@@ -110,7 +109,7 @@ class Combined_Backend:
 class MeasurementAppGUI:
     """The main GUI application class (Front End)."""
     # --- Theming and Styling ---
-    PROGRAM_VERSION = "10.1"
+    PROGRAM_VERSION = "11.0"
     # Colors
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B' # Harmonious blue-grey header
@@ -175,7 +174,7 @@ class MeasurementAppGUI:
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
-        left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=480)
+        left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=500)
         main_pane.add(left_panel, weight=1)
 
         right_panel = tk.Frame(main_pane, bg='white')
@@ -197,6 +196,33 @@ class MeasurementAppGUI:
         Label(header_frame, text="Temperature Dependent Resistance Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='right', padx=20, pady=10)
 
+    def _process_logo_image(self, input_path, size=120):
+        """Dynamically processes the input jpeg to a circular, transparent-background image."""
+        if not (PIL_AVAILABLE and os.path.exists(input_path)):
+            return None
+        try:
+            with Image.open(input_path) as img:
+                width, height = img.size
+                crop_diameter = min(width, height) * 0.65
+                left = (width - crop_diameter) / 2
+                top = (height - crop_diameter) / 2
+                right = (width + crop_diameter) / 2
+                bottom = (height + crop_diameter) / 2
+
+                img_cropped = img.crop((left, top, right, bottom))
+
+                mask = Image.new('L', img_cropped.size, 0)
+                draw = ImageDraw.Draw(mask)
+                draw.ellipse((0, 0) + img_cropped.size, fill=255)
+
+                img_cropped.putalpha(mask)
+                img_hd = img_cropped.resize((size, size), Image.Resampling.LANCZOS)
+
+                return ImageTk.PhotoImage(img_hd)
+        except Exception as e:
+            print(f"ERROR: Could not process logo image '{input_path}'. Reason: {e}")
+            return None
+
     def create_info_frame(self, parent):
         frame = LabelFrame(parent, text='Information', bd=2, relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         frame.pack(pady=(10, 10), padx=10, fill='x')
@@ -205,15 +231,9 @@ class MeasurementAppGUI:
         logo_canvas = Canvas(frame, width=120, height=120, bg=self.CLR_BG_DARK, highlightthickness=0)
         logo_canvas.grid(row=0, column=0, padx=15, pady=15)
 
-        logo_path = "logo_hd.png"
-        if PIL_AVAILABLE and os.path.exists(logo_path):
-            try:
-                img = Image.open(logo_path).resize((120, 120), Image.Resampling.LANCZOS)
-                self.logo_image = ImageTk.PhotoImage(img)
-                logo_canvas.create_image(60, 60, image=self.logo_image)
-            except Exception as e:
-                logo_canvas.create_text(60, 60, text="LOGO\n(Error)", font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
-                print(f"Logo Error: {e}")
+        self.logo_image = self._process_logo_image("UGC_DAE_CSR.jpeg")
+        if self.logo_image:
+            logo_canvas.create_image(60, 60, image=self.logo_image)
         else:
             logo_canvas.create_text(60, 60, text="LOGO", font=self.FONT_TITLE, fill=self.CLR_FG_LIGHT)
 
@@ -230,39 +250,40 @@ class MeasurementAppGUI:
     def create_input_frame(self, parent):
         frame = LabelFrame(parent, text='Experiment Parameters', bd=2, relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         frame.pack(pady=10, padx=10, fill='x')
+        frame.grid_columnconfigure(0, weight=1)
         frame.grid_columnconfigure(1, weight=1)
 
         self.entries = {}
-        Label(frame, text="Sample Name:", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=0, column=0, padx=10, pady=10, sticky='w')
-        self.entries["Sample Name"] = Entry(frame, width=25, font=self.FONT_BASE)
-        self.entries["Sample Name"].grid(row=0, column=1, columnspan=2, padx=10, pady=10, sticky='ew')
+        Label(frame, text="Sample Name:", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky='w')
+        self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE)
+        self.entries["Sample Name"].grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 10), sticky='ew')
 
-        Label(frame, text="Apply Current (A):", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=1, column=0, padx=10, pady=(10,0), sticky='w')
-        self.entries["Apply Current (A)"] = Entry(frame, width=25, font=self.FONT_BASE)
-        self.entries["Apply Current (A)"].grid(row=1, column=1, columnspan=2, padx=10, pady=(10,0), sticky='ew')
-        Label(frame, text="(Limits: 100pA to 105mA)", font=self.FONT_SUB_LABEL, fg=self.CLR_ACCENT_BLUE, bg=self.CLR_BG_DARK).grid(row=2, column=1, columnspan=2, padx=10, pady=(0,5), sticky='w')
+        Label(frame, text="Apply Current (A):", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=2, column=0, columnspan=2, padx=10, pady=(10,0), sticky='w')
+        self.entries["Apply Current (A)"] = Entry(frame, font=self.FONT_BASE)
+        self.entries["Apply Current (A)"].grid(row=3, column=0, columnspan=2, padx=10, pady=(0,0), sticky='ew')
+        Label(frame, text="(Limits: 100pA to 105mA)", font=self.FONT_SUB_LABEL, fg=self.CLR_ACCENT_BLUE, bg=self.CLR_BG_DARK).grid(row=4, column=0, columnspan=2, padx=10, pady=(0,10), sticky='w')
 
-        Label(frame, text="Keithley 6221 VISA:", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=3, column=0, padx=10, pady=(10,0), sticky='w')
+        # --- Side-by-side VISA selection ---
+        Label(frame, text="Keithley 6221 VISA:", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=5, column=0, padx=10, pady=(10,0), sticky='w')
         self.keithley_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
-        self.keithley_combobox.grid(row=3, column=1, columnspan=2, padx=10, pady=(10,0), sticky='ew')
-        Label(frame, text="(Default VISA: 13)", font=self.FONT_SUB_LABEL, fg=self.CLR_ACCENT_BLUE, bg=self.CLR_BG_DARK).grid(row=4, column=1, columnspan=2, padx=10, pady=(0,5), sticky='w')
+        self.keithley_combobox.grid(row=6, column=0, padx=(10,5), pady=(0,0), sticky='ew')
+        Label(frame, text="(Default: 13)", font=self.FONT_SUB_LABEL, fg=self.CLR_ACCENT_BLUE, bg=self.CLR_BG_DARK).grid(row=7, column=0, padx=10, pady=(0,10), sticky='w')
 
-        Label(frame, text="Lakeshore 350 VISA:", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=5, column=0, padx=10, pady=(10,0), sticky='w')
+        Label(frame, text="Lakeshore 350 VISA:", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=5, column=1, padx=10, pady=(10,0), sticky='w')
         self.lakeshore_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
-        self.lakeshore_combobox.grid(row=5, column=1, columnspan=2, padx=10, pady=(10,0), sticky='ew')
-        Label(frame, text="(Default VISA: 15)", font=self.FONT_SUB_LABEL, fg=self.CLR_ACCENT_BLUE, bg=self.CLR_BG_DARK).grid(row=6, column=1, columnspan=2, padx=10, pady=(0,5), sticky='w')
+        self.lakeshore_combobox.grid(row=6, column=1, padx=(5,10), pady=(0,0), sticky='ew')
+        Label(frame, text="(Default: 15)", font=self.FONT_SUB_LABEL, fg=self.CLR_ACCENT_BLUE, bg=self.CLR_BG_DARK).grid(row=7, column=1, padx=10, pady=(0,10), sticky='w')
 
         self.scan_button = ttk.Button(frame, text="Scan for Instruments", command=self._scan_for_visa_instruments)
-        self.scan_button.grid(row=7, column=0, columnspan=3, padx=10, pady=(15,5), sticky='ew')
+        self.scan_button.grid(row=8, column=0, columnspan=2, padx=10, pady=15, sticky='ew')
 
-        Label(frame, text="Save Location:", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=8, column=0, padx=10, pady=10, sticky='w')
-        self.file_location_button = ttk.Button(frame, text="Browse...", command=self._browse_file_location)
-        self.file_location_button.grid(row=8, column=1, columnspan=2, padx=10, pady=10, sticky='ew')
+        self.file_location_button = ttk.Button(frame, text="Browse Save Location...", command=self._browse_file_location)
+        self.file_location_button.grid(row=9, column=0, columnspan=2, padx=10, pady=5, sticky='ew')
 
         self.start_button = ttk.Button(frame, text="Start", command=self.start_measurement, style='Start.TButton')
-        self.start_button.grid(row=9, column=0, padx=10, pady=20, sticky='ew')
+        self.start_button.grid(row=10, column=0, padx=10, pady=20, sticky='ew')
         self.stop_button = ttk.Button(frame, text="Stop", command=self.stop_measurement, style='Stop.TButton', state='disabled')
-        self.stop_button.grid(row=9, column=1, padx=10, pady=20, sticky='ew')
+        self.stop_button.grid(row=10, column=1, padx=10, pady=20, sticky='ew')
 
     def create_console_frame(self, parent):
         frame = LabelFrame(parent, text='Console Output', bd=2, relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
@@ -271,8 +292,8 @@ class MeasurementAppGUI:
         self.log("Console initialized. Please scan for instruments.")
         if not PIL_AVAILABLE:
             self.log("WARNING: Pillow not found. Logo cannot be displayed. Run 'pip install Pillow'.")
-        if not os.path.exists("logo_hd.png"):
-             self.log("WARNING: 'logo_hd.png' not found. Please run the logo processor script.")
+        if not os.path.exists("UGC_DAE_CSR.jpeg"):
+             self.log("WARNING: 'UGC_DAE_CSR.jpeg' not found. Please place it in the same folder.")
         return frame
 
     def create_graph_frame(self, parent):
@@ -292,10 +313,9 @@ class MeasurementAppGUI:
         ttk.Radiobutton(controls_frame, text="Log", variable=self.y_scale_var, value="log", command=self._update_plot_scales, style='Toggle.TRadiobutton').pack(side='left', padx=2)
 
         self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
-        # Use a simpler GridSpec for better layout control
         gs = gridspec.GridSpec(2, 2, figure=self.figure, height_ratios=[3, 2])
 
-        self.ax_main = self.figure.add_subplot(gs[0, :]) # Main plot spans the entire top row
+        self.ax_main = self.figure.add_subplot(gs[0, :])
         self.ax_sub1 = self.figure.add_subplot(gs[1, 0])
         self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
 
@@ -311,7 +331,7 @@ class MeasurementAppGUI:
         self.ax_sub1.set_xlabel("Temperature (K)"); self.ax_sub1.set_ylabel("Voltage (V)")
         self.ax_sub2.set_xlabel("Time (s)"); self.ax_sub2.set_ylabel("Temperature (K)")
 
-        self.figure.tight_layout(pad=2.5) # Adjust padding
+        self.figure.tight_layout(pad=2.5)
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
@@ -377,7 +397,7 @@ class MeasurementAppGUI:
             self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
             for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
                 ax.relim(); ax.autoscale_view()
-            self.figure.tight_layout(pad=2.5) # Re-apply tight layout
+            self.figure.tight_layout(pad=2.5)
             self.canvas.draw()
         except Exception:
             self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
