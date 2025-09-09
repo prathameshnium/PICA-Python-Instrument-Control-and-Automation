@@ -85,10 +85,10 @@ def IV_Measure(cur):
 
     keithley_2182.clear()
     sleep(1)
-
+# [0.0005,0.001,0.0015,0.002,0.0025,0.003,0.0035,0.004,0.0045,0.005,0.0055,0.006,0.0065,0.007,0.0075,0.008,0.0085,0.009,0.0095,0.01,0.011,0.012,0.013,0.014,0.015,0.016,0.017,0.018,0.019,0.020,0.021,0.022,0.023,0.024,0.025]
 #loop1---------------------------------------------
 print("In loop 1")
-for i1 in [0.0005,0.001,0.0015,0.002,0.0025,0.003,0.0035,0.004,0.0045,0.005,0.0055,0.006,0.0065,0.007,0.0075,0.008,0.0085,0.009,0.0095,0.01,0.011,0.012,0.013,0.014,0.015,0.016,0.017,0.018,0.019,0.020,0.021,0.022,0.023,0.024,0.025]:
+for i1 in np.arange(0,1,0.01) :
     IV_Measure(i1)
 #--------------------------------------------------
 
@@ -123,7 +123,7 @@ df['V']=pd.DataFrame(Volt)
 print(df)
 
 #df.to_csv(r'C:/Users/Instrument-DSL/Desktop/IV_data_26-05-23'+str(filename)+'.txt', index=None, sep='	', mode='w')
-df.to_csv(r'C:/Users/Instrument-DSL/Desktop/LED_IV/'+str(filename)+'.txt', index=None, sep='	', mode='w')
+df.to_csv(r'C:/Users/Instrument-DSL/Desktop/Swastik_IV/'+str(filename)+'.txt', index=None, sep='	', mode='w')
 
 
 
