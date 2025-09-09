@@ -2,9 +2,9 @@
 # Name:         Temperature Dependent Resistance GUI
 # Purpose:      Perform a temperature-dependent Delta mode measurement with a
 #               Keithley 6221/2182A and Lakeshore 350.
-# Author:       Prathamesh & Gemini
+# Author:       Prathamesh
 # Created:      09/09/2025
-# Version:      11.0 (Final Professional Layout)
+# Version:      V: 07.0 (Final Layout Correction)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -109,10 +109,10 @@ class Combined_Backend:
 class MeasurementAppGUI:
     """The main GUI application class (Front End)."""
     # --- Theming and Styling ---
-    PROGRAM_VERSION = "11.0"
+    PROGRAM_VERSION = "7.0"
     # Colors
     CLR_BG_DARK = '#2B3D4F'
-    CLR_HEADER = '#3A506B' # Harmonious blue-grey header
+    CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
     CLR_ACCENT_BLUE = '#8D99AE'
     CLR_ACCENT_GREEN = '#A7C957'
@@ -180,14 +180,16 @@ class MeasurementAppGUI:
         right_panel = tk.Frame(main_pane, bg='white')
         main_pane.add(right_panel, weight=3)
 
-        top_controls_pane = ttk.Frame(left_panel)
-        left_panel.add(top_controls_pane, weight=1)
+        # This frame holds the top two info/parameter sections
+        top_controls_frame = ttk.Frame(left_panel)
+        left_panel.add(top_controls_frame, weight=0) # Give it non-expanding weight
 
-        self.create_info_frame(top_controls_pane)
-        self.create_input_frame(top_controls_pane)
+        self.create_info_frame(top_controls_frame)
+        self.create_input_frame(top_controls_frame)
 
+        # The console frame is added directly to the paned window
         console_pane = self.create_console_frame(left_panel)
-        left_panel.add(console_pane, weight=2)
+        left_panel.add(console_pane, weight=1) # Give it expanding weight
         self.create_graph_frame(right_panel)
 
     def create_header(self):
@@ -203,7 +205,10 @@ class MeasurementAppGUI:
         try:
             with Image.open(input_path) as img:
                 width, height = img.size
-                crop_diameter = min(width, height) * 0.65
+                # Adjust crop diameter to better capture the circular logo
+                crop_diameter = min(width, height) * 0.8
+
+                # Center the crop box
                 left = (width - crop_diameter) / 2
                 top = (height - crop_diameter) / 2
                 right = (width + crop_diameter) / 2
@@ -254,36 +259,39 @@ class MeasurementAppGUI:
         frame.grid_columnconfigure(1, weight=1)
 
         self.entries = {}
-        Label(frame, text="Sample Name:", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky='w')
-        self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE)
-        self.entries["Sample Name"].grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 10), sticky='ew')
+        # Use a consistent padding for all rows
+        pady_val = (5, 5)
 
-        Label(frame, text="Apply Current (A):", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=2, column=0, columnspan=2, padx=10, pady=(10,0), sticky='w')
+        Label(frame, text="Sample Name:", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=0, column=0, columnspan=2, padx=10, pady=pady_val, sticky='w')
+        self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE)
+        self.entries["Sample Name"].grid(row=1, column=0, columnspan=2, padx=10, pady=(0, pady_val[1]), sticky='ew')
+
+        Label(frame, text="Apply Current (A):", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=2, column=0, columnspan=2, padx=10, pady=pady_val, sticky='w')
         self.entries["Apply Current (A)"] = Entry(frame, font=self.FONT_BASE)
         self.entries["Apply Current (A)"].grid(row=3, column=0, columnspan=2, padx=10, pady=(0,0), sticky='ew')
-        Label(frame, text="(Limits: 100pA to 105mA)", font=self.FONT_SUB_LABEL, fg=self.CLR_ACCENT_BLUE, bg=self.CLR_BG_DARK).grid(row=4, column=0, columnspan=2, padx=10, pady=(0,10), sticky='w')
+        Label(frame, text="(Limits: 100pA to 105mA)", font=self.FONT_SUB_LABEL, fg=self.CLR_ACCENT_BLUE, bg=self.CLR_BG_DARK).grid(row=4, column=0, columnspan=2, padx=10, pady=(0, pady_val[1]), sticky='w')
 
         # --- Side-by-side VISA selection ---
-        Label(frame, text="Keithley 6221 VISA:", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=5, column=0, padx=10, pady=(10,0), sticky='w')
+        Label(frame, text="Keithley 6221 VISA:", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=5, column=0, padx=10, pady=pady_val, sticky='w')
         self.keithley_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
         self.keithley_combobox.grid(row=6, column=0, padx=(10,5), pady=(0,0), sticky='ew')
-        Label(frame, text="(Default: 13)", font=self.FONT_SUB_LABEL, fg=self.CLR_ACCENT_BLUE, bg=self.CLR_BG_DARK).grid(row=7, column=0, padx=10, pady=(0,10), sticky='w')
+        Label(frame, text="(Default: 13)", font=self.FONT_SUB_LABEL, fg=self.CLR_ACCENT_BLUE, bg=self.CLR_BG_DARK).grid(row=7, column=0, padx=10, pady=(0, pady_val[1]), sticky='w')
 
-        Label(frame, text="Lakeshore 350 VISA:", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=5, column=1, padx=10, pady=(10,0), sticky='w')
+        Label(frame, text="Lakeshore 350 VISA:", font=self.FONT_BASE, fg=self.CLR_FG_LIGHT, bg=self.CLR_BG_DARK).grid(row=5, column=1, padx=10, pady=pady_val, sticky='w')
         self.lakeshore_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
         self.lakeshore_combobox.grid(row=6, column=1, padx=(5,10), pady=(0,0), sticky='ew')
-        Label(frame, text="(Default: 15)", font=self.FONT_SUB_LABEL, fg=self.CLR_ACCENT_BLUE, bg=self.CLR_BG_DARK).grid(row=7, column=1, padx=10, pady=(0,10), sticky='w')
+        Label(frame, text="(Default: 15)", font=self.FONT_SUB_LABEL, fg=self.CLR_ACCENT_BLUE, bg=self.CLR_BG_DARK).grid(row=7, column=1, padx=10, pady=(0, pady_val[1]), sticky='w')
 
         self.scan_button = ttk.Button(frame, text="Scan for Instruments", command=self._scan_for_visa_instruments)
-        self.scan_button.grid(row=8, column=0, columnspan=2, padx=10, pady=15, sticky='ew')
+        self.scan_button.grid(row=8, column=0, columnspan=2, padx=10, pady=10, sticky='ew')
 
         self.file_location_button = ttk.Button(frame, text="Browse Save Location...", command=self._browse_file_location)
         self.file_location_button.grid(row=9, column=0, columnspan=2, padx=10, pady=5, sticky='ew')
 
         self.start_button = ttk.Button(frame, text="Start", command=self.start_measurement, style='Start.TButton')
-        self.start_button.grid(row=10, column=0, padx=10, pady=20, sticky='ew')
+        self.start_button.grid(row=10, column=0, padx=(10,5), pady=15, sticky='ew')
         self.stop_button = ttk.Button(frame, text="Stop", command=self.stop_measurement, style='Stop.TButton', state='disabled')
-        self.stop_button.grid(row=10, column=1, padx=10, pady=20, sticky='ew')
+        self.stop_button.grid(row=10, column=1, padx=(5,10), pady=15, sticky='ew')
 
     def create_console_frame(self, parent):
         frame = LabelFrame(parent, text='Console Output', bd=2, relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
