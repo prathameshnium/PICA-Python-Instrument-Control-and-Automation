@@ -5,7 +5,7 @@
 #               controlled by a graphical user interface.
 # Author:       Prathamesh
 # Created:      09/09/2025
-# Version:      1.3 (Final VISA Conflict Fix)
+# Version:      1.2 (AttributeError Fix)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -37,11 +37,8 @@ class Combined_Backend:
         self.lakeshore = None
         if pyvisa:
             try:
-                # --- FINAL FIX APPLIED HERE ---
-                # Explicitly specify the National Instruments VISA backend ('@ni').
-                # This is the most robust way to resolve VISA conflicts when multiple
-                # libraries are installed, which is the cause of the VI_ERROR_RSRC_NFOUND.
-                self.rm = pyvisa.ResourceManager('@ni')
+                # Let PyVISA automatically find the best VISA backend.
+                self.rm = pyvisa.ResourceManager()
             except Exception as e:
                 print(f"Could not initialize VISA resource manager. Error: {e}")
                 self.rm = None
@@ -146,6 +143,9 @@ class MeasurementAppGUI:
         self.is_running = False
         self.start_time = None
         self.backend = Combined_Backend()
+        # --- FIX APPLIED HERE ---
+        # Initialize file_location_path to an empty string. This ensures the
+        # attribute always exists, preventing the AttributeError.
         self.file_location_path = ""
         self.root.grid_columnconfigure(1, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
@@ -242,6 +242,7 @@ class MeasurementAppGUI:
             params['keithley_visa'] = self.keithley_combobox.get()
             params['lakeshore_visa'] = self.lakeshore_combobox.get()
 
+            # The check now safely accesses self.file_location_path because it was initialized.
             if not all([params['sample_name'], self.file_location_path,
                         params['keithley_visa'], params['lakeshore_visa']]):
                 raise ValueError("All fields, VISA addresses, and a save location are required.")
@@ -293,6 +294,7 @@ class MeasurementAppGUI:
                 writer = csv.writer(f)
                 writer.writerow([f"{elapsed_time:.3f}", f"{voltage:.8f}", f"{resistance:.8f}", f"{temperature:.4f}"])
 
+            # It's more efficient to append to lists than to reload the file each time for plotting
             data = np.loadtxt(self.data_filepath, delimiter=',', skiprows=3)
             if data.ndim == 1: data = data.reshape(1, -1)
 
