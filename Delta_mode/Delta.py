@@ -6,73 +6,87 @@
 #-------------------------------------------------------------------------------
 import pyvisa
 from time import sleep
+import time
 
-rm1 = pyvisa.ResourceManager()
-print(rm1.list_resources())
+# user input
+DELTA_CURRENT=0.002 # in amps
+temperature=300 # temprory
+Volt=[]
+try:
+    rm1 = pyvisa.ResourceManager()
+    print(rm1.list_resources())
+    keithley_6221= rm1.open_resource("GPIB0::13::INSTR")
+    print(f"ID is : {keithley_6221.query('*IDN?')}")
+    sleep(0.5)
+    #temp_controller= rm1.open_resource("GPIB::15") # Lakeshore 350 (new)
+    time.sleep(0.5)
+    #print(f"ID is : {temp_controller.query('*IDN?')}")
+    time.sleep(0.5)
 
-keithley_6221= rm1.open_resource("GPIB0::13::INSTR")
-print(f"ID is : {keithley_6221.query('*IDN?')}")
+    #initilization
+    keithley_6221.write("*rst; status:preset; *cls")
+    sleep(1)
+    keithley_6221.write("UNIT V")
+    sleep(1)
+    keithley_6221.write(f"SOUR:DELT:HIGH {DELTA_CURRENT}") # Current in Amps
+    sleep(1)
+    keithley_6221.write("SOUR:DELT:ARM")
+    sleep(1)
+    keithley_6221.write("INIT:IMM")
+    sleep(1)
+
+
 #-----------------------------------------------------------------------------
 
+except Exception as e:
+    print(f"Initialization error : {e}")
+def IV_Measure(DELTA_CURRENT):
 
-# Delta mode measurement parameters
-DELTA_CURRENT = 0.002  # 1 uA test current
-DELTA_DELAY = 0.1     # 100 ms delay between current reversals
-NUM_READINGS = 10     # Number of delta readings to take
+    try:
+        elapsed_time = time.time() - start_time
+        #print(elapsed_time)
+        #keithley_6221.write("TRACe:CLEar")
+        #sleep(0.1)
 
+        V_fresh = keithley_6221.query('SENSe:DATA:FRESh?')
+        Volt.append(V_fresh) #voltage  lisT
+        print(f"Voltage: {V_fresh}")
+        #resistance = float(V_fresh/DELTA_CURRENT)
 
-#-----------------------------------------------------------------------------
-print(f"ID is : {keithley_6221.query('*IDN?')}")
-#print(dir(keithley_6221))
-keithley_6221.write("*rst; status:preset; *cls")
-
-sleep(2)
-    #keithley_2182.write("trigger:delay %f" % (interval))
-
-#keithley_6221.write("SOUR:CURR  0.002")
-#keithley_6221.write(f"SOUR:DELT:HIGH 0.002") # Current in Amps
-
-keithley_6221.write(f"SOUR:DELT:HIGH {DELTA_CURRENT}") # Current in Amps
-
-sleep(5)
-keithley_6221.write("SOUR:DELT:ARM")
-
-sleep(3)
-keithley_6221.write("INIT:IMM")
-
-sleep(3)
-
-#-----------------------------------------------------------------------------
-# Retrieve the data
-#data_string = keithley_6221.query('TRAC:DATA?')
-#print(f"Raw data: {data_string}")
-
-keithley_6221.write("UNIT V")
+        print(f"{DELTA_CURRENT} A |{elapsed_time:.2f} s| {temperature} K| {V_fresh} V")
+        keithley_6221.write("TRACe:CLEar")
+        sleep(0.1)
 
 
-data_string = keithley_6221.query('SENSe:DATA:FRESh?')
-print(f"Raw data: {data_string}")
-sleep(0.03)
-#keithley_6221.write("UNIT OHMS")
-data_string = keithley_6221.query('SENSe:DATA:FRESh?')
-print(f"Raw data: {data_string}")
+        #------------------------------------------------------------------------
 
-results = data_string.strip().split(',')
-voltage = float(results[0])
-resistance = float(voltage/DELTA_CURRENT)
+    except Exception as e:
+        print(f"error : {e}")
+        Check=False
 
-print("\n" + "="*30)
-print("      RESULTS")
-print("="*30)
-print(f"  Voltage:    {voltage:.15f} V")
-print(f"  Resistance: {resistance:.15f} Ohms")
-print("="*30)
-
-keithley_6221.write("TRACe:CLEar")
-data_string = keithley_6221.query('TRAC:DATA?')
-print(f"Raw data: {data_string}")
+    except KeyboardInterrupt:
+        keithley_6221.write(f"SOUR:DELT:HIGH 0") # Current in Amps
+        sleep(0.1)
+        keithley_6221.write("SOUR:CLE")
+        sleep(0.1)
+        #keithley_6221.write("CURRent 0")
+        keithley_6221.write("OUTPut OFF")
+        sleep(0.1)
 
 
-keithley_6221.write("SOUR:CLE")
-#keithley_6221.write("CURRent 0")
-keithley_6221.write("OUTPut OFF")
+
+
+global Check
+Check=True
+start_time = time.time()
+
+try:
+    while Check:
+        IV_Measure(DELTA_CURRENT)
+
+except Exception as e:
+    print(f"Initialization error : {e}")
+    Check=False
+
+
+
