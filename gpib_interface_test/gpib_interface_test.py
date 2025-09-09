@@ -1,49 +1,56 @@
-# Name:        GPIB Test
+# Name:         Simple GPIB/VISA Connection Check
+# File:         gpib_interface_test.py
+# Purpose:      Finds all connected instruments and prints their ID strings.
 
 '''
-File:         gpib_temp_controller_interface.py
+File:         gpib_interface_test.py
 Author:       Prathamesh Deshmukh
-Date:         04/03/2024
+Date:         10/09/2025
 Licence:      MIT
 
 Description:
-This script provides a basic framework for communicating with and controlling a
-temperature controller via a GPIB interface. It utilizes the pyvisa library
-to discover connected instruments, establish a connection to a specific device,
-and send Standard Commands for Programmable Instruments (SCPI) to query its
-status and configure its settings, such as temperature ramps and heater output.
+This is a simple, general-purpose script to verify connections with any
+instrument recognized by VISA (e.g., via GPIB, USB, Ethernet). It automatically
+scans for all connected devices and attempts to query each one for its
+identification string (*IDN?).
+
+The script will print the ID for each responsive instrument and report an
+error for any that are unreachable, making it a quick diagnostic tool for
+debugging instrument control setups.
 
 Dependencies:
 - pyvisa: A Python package for instrument control.
-- A VISA backend must be installed (e.g., NI-VISA).
+- A VISA backend must be installed (e.g., NI-VISA, Keysight VISA).
 
 Usage:
-Modify the resource string in the rm1.open_resource() call
-(e.g., "GPIB0::13::INSTR") to match the address of your specific instrument.
-Run the script to perform the programmed control and query operations.
+Run the script directly from your terminal. No code modification is needed,
+as it will automatically find and test all connected instruments.
+  
+  python simple_gpib_check.py
 '''
 
 import pyvisa
-rm1 = pyvisa.ResourceManager()
-print(rm1.list_resources())
 
-temp_controller= rm1.open_resource("GPIB0::13::INSTR")
-print(f"ID is : {temp_controller.query('*IDN?')}")
+# Initialize the tool to find connected instruments
+rm = pyvisa.ResourceManager()
+instrument_addresses = rm.list_resources()
 
-"""
-print(f"ID is : {temp_controller.query('*IDN?')}")
-print(temp_controller.query('INTYPE?'))
+# Check if any instruments were found
+if not instrument_addresses:
+    print("No instruments found. Check connections and VISA installation.")
+else:
+    print(f"Found {len(instrument_addresses)} instrument(s). Checking them now...\n")
 
-temp_controller.write('RAMP 2')
+    # Loop through each instrument and try to get its ID
+    for address in instrument_addresses:
+        try:
+            # Connect to the instrument (connection closes automatically)
+            with rm.open_resource(address) as instrument:
+                instrument.timeout = 2000  # Set a 2-second timeout
+                idn = instrument.query('*IDN?')
+                print(f"Address: {address}\n  ID: {idn.strip()}\n")
+        except Exception as e:
+            # If something goes wrong, print an error and continue
+            print(f"Address: {address}\n  Error: Could not get ID. {e}\n")
 
-print(temp_controller.query('KRDG? B').strip())
-print(temp_controller.query("HTR?"))
-
-temp_controller.write('HTRSET 2,1,2,0,1')
-
-temp_controller.write("RAMP 1,1,10.5")
-
-
-print(temp_controller.query("HTRST?"))
-
-"""
+print("Scan complete.")
