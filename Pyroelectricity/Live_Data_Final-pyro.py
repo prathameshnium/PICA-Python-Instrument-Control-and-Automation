@@ -1,4 +1,3 @@
-# ploter for the Live_plots_Temperature_dependendent_V
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -48,7 +47,7 @@ def animate(i):
     data = pd.read_csv(selected_file)
     x = data['Time (s)']
     y1 = data['Temperature (K)']
-    y2 = data['Voltage (V)']
+    y2 = data['Current (A)']
 
 
     # Clear previous plots
@@ -58,23 +57,23 @@ def animate(i):
     # Update subplots
     axs[0].plot(x, y1, label='T', color='b',linewidth=0.8)
     axs[0].scatter(x, y1, color='b')
-    axs[0].set_title('V vs time',fontsize=13)
+    axs[0].set_title('T vs time',fontsize=13)
     axs[0].set_xlabel('Time (s)',fontsize=13)
     axs[0].set_ylabel('Temperature (K)',fontsize=13)
     axs[0].legend(loc='upper left')
 
-    axs[1].plot(x, y2, label='V', color='g',linewidth=0.8)
+    axs[1].plot(x, y2, label='I', color='g',linewidth=0.8)
     axs[1].scatter(x, y2, color='g')
-    axs[1].set_title('V vs time',fontsize=13)
+    axs[1].set_title('I vs time',fontsize=13)
     axs[1].set_xlabel('Time (s)',fontsize=13)
-    axs[1].set_ylabel('Voltage (V)',fontsize=13)
+    axs[1].set_ylabel('Current (A)',fontsize=13)
     axs[1].legend(loc='upper left')
 
-    axs[2].plot(y1, y2, label='V vs T', color='r',linewidth=0.8)
+    axs[2].plot(y1, y2, label='I vs T', color='r',linewidth=0.8)
     axs[2].scatter(y1, y2, color='r')
-    axs[2].set_title('V vs T',fontsize=13)
+    axs[2].set_title('I vs T',fontsize=13)
     axs[2].set_xlabel('Temperature (K)',fontsize=13)
-    axs[2].set_ylabel('Voltage (V)',fontsize=13)
+    axs[2].set_ylabel('Current (A)',fontsize=13)
     axs[2].legend(loc='upper left')
 
 
