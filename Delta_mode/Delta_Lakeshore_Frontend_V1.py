@@ -5,7 +5,7 @@
 #               controlled by a graphical user interface.
 # Author:       Prathamesh
 # Created:      09/09/2025
-# Version:      1.0
+# Version:      1.3 (Final VISA Conflict Fix)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -37,9 +37,11 @@ class Combined_Backend:
         self.lakeshore = None
         if pyvisa:
             try:
-                # Specify the 64-bit VISA library path for robustness
-                visa_library_path = 'C:\\Windows\\System32\\visa64.dll'
-                self.rm = pyvisa.ResourceManager(visa_library_path)
+                # --- FINAL FIX APPLIED HERE ---
+                # Explicitly specify the National Instruments VISA backend ('@ni').
+                # This is the most robust way to resolve VISA conflicts when multiple
+                # libraries are installed, which is the cause of the VI_ERROR_RSRC_NFOUND.
+                self.rm = pyvisa.ResourceManager('@ni')
             except Exception as e:
                 print(f"Could not initialize VISA resource manager. Error: {e}")
                 self.rm = None
@@ -144,6 +146,7 @@ class MeasurementAppGUI:
         self.is_running = False
         self.start_time = None
         self.backend = Combined_Backend()
+        self.file_location_path = ""
         self.root.grid_columnconfigure(1, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
         self.create_widgets()
@@ -239,9 +242,9 @@ class MeasurementAppGUI:
             params['keithley_visa'] = self.keithley_combobox.get()
             params['lakeshore_visa'] = self.lakeshore_combobox.get()
 
-            if not all([params['sample_name'], hasattr(self, 'file_location_path'),
-                        self.file_location_path, params['keithley_visa'], params['lakeshore_visa']]):
-                raise ValueError("All fields and VISA addresses are required.")
+            if not all([params['sample_name'], self.file_location_path,
+                        params['keithley_visa'], params['lakeshore_visa']]):
+                raise ValueError("All fields, VISA addresses, and a save location are required.")
 
             self.backend.initialize_instruments(params)
 
@@ -290,7 +293,6 @@ class MeasurementAppGUI:
                 writer = csv.writer(f)
                 writer.writerow([f"{elapsed_time:.3f}", f"{voltage:.8f}", f"{resistance:.8f}", f"{temperature:.4f}"])
 
-            # It's more efficient to append to lists than to reload the file each time for plotting
             data = np.loadtxt(self.data_filepath, delimiter=',', skiprows=3)
             if data.ndim == 1: data = data.reshape(1, -1)
 
@@ -330,8 +332,8 @@ class MeasurementAppGUI:
                 for res in resources:
                     if "13" in res: self.keithley_combobox.set(res)
                     if "15" in res or "12" in res: self.lakeshore_combobox.set(res)
-                if not self.keithley_combobox.get(): self.keithley_combobox.set(resources[0])
-                if not self.lakeshore_combobox.get(): self.lakeshore_combobox.set(resources[-1])
+                if not self.keithley_combobox.get() and resources: self.keithley_combobox.set(resources[0])
+                if not self.lakeshore_combobox.get() and resources: self.lakeshore_combobox.set(resources[-1])
             else:
                 self.log("No VISA instruments found.")
         except Exception as e:
