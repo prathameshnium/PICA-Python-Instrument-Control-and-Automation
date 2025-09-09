@@ -16,7 +16,7 @@ print(f"ID is : {keithley_6221.query('*IDN?')}")
 
 
 # Delta mode measurement parameters
-DELTA_CURRENT = 1  # 1 uA test current
+DELTA_CURRENT = 0.002  # 1 uA test current
 DELTA_DELAY = 0.1     # 100 ms delay between current reversals
 NUM_READINGS = 10     # Number of delta readings to take
 
@@ -30,7 +30,9 @@ sleep(2)
     #keithley_2182.write("trigger:delay %f" % (interval))
 
 #keithley_6221.write("SOUR:CURR  0.002")
-keithley_6221.write("SOUR:DELT:HIGH 0.002") # Current in Amps
+#keithley_6221.write(f"SOUR:DELT:HIGH 0.002") # Current in Amps
+
+keithley_6221.write(f"SOUR:DELT:HIGH {DELTA_CURRENT}") # Current in Amps
 
 sleep(5)
 keithley_6221.write("SOUR:DELT:ARM")
@@ -42,8 +44,8 @@ sleep(3)
 
 #-----------------------------------------------------------------------------
 # Retrieve the data
-data_string = keithley_6221.query('TRAC:DATA?')
-print(f"Raw data: {data_string}")
+#data_string = keithley_6221.query('TRAC:DATA?')
+#print(f"Raw data: {data_string}")
 
 keithley_6221.write("UNIT V")
 
