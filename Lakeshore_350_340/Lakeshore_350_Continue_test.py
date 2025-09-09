@@ -1,19 +1,36 @@
+'''
+This script provides a continuous temperature logging utility for a 
+Lakeshore Model 340 Temperature Controller.
+
+It connects to the instrument via a GPIB interface and repeatedly queries 
+the temperature from sensor input 'A'. The data, including the exact timestamp,
+elapsed time, and temperature in Kelvin, is saved to a unique, timestamped 
+CSV file for each run to prevent data overwriting.
+
+The logging process continues until the user manually stops the script with 
+a KeyboardInterrupt (Ctrl+C), at which point the connection to the 
+instrument is safely closed.
+
+Configuration:
+- `base_filename`: Set the desired path and base name for the output data file.
+- `rm1.open_resource("GPIB::12")`: Change the GPIB address to match your instrument's setup.
+'''
 #-----------------------------------------------------------------------
-# Name:       Lakeshore340_Temprature_Controller Continue Measurement
-# Purpose: Testing 340
+# Name:        Lakeshore340_Temprature_Controller Continue Measurement
+# Purpose:     Testing 340
 #
 # Author:      Ketan
 #
-# Created:    15/08/24
+# Created:     15/08/24
 # Changes_done:   V1
 #-----------------------------------------------------------------------
-
 
 #import visa
 import pyvisa
 import time
 #from lakeshore import Model350
 from datetime import datetime
+
 base_filename = 'E:/Prathamesh/Python Stuff/Lakeshore340_tests/Test1'        # Create a unique filename (without_extension)
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
