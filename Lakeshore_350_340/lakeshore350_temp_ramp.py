@@ -1,3 +1,23 @@
+'''
+This script automates a temperature ramp experiment using a Lakeshore Model 350
+Temperature Controller.
+
+The program connects to the instrument via GPIB and configures it for a
+heating ramp with a setpoint of 310 K. It then continuously logs the elapsed
+time and temperature from sensor 'A' to a specified CSV file.
+
+The experiment runs until one of two conditions is met:
+1. The temperature automatically exceeds a predefined threshold (302.5 K),
+   at which point the heater is turned off and the script terminates.
+2. The user manually stops the script with a KeyboardInterrupt (Ctrl+C),
+   which also safely shuts down the heater and closes the connection.
+
+Configuration:
+- `filename`: Set the full path for the output data CSV file.
+- `rm1.open_resource("GPIB1::15::INSTR")`: Change the GPIB address to match
+  your instrument's setup.
+- `temp_controller.write('SETP 1,310')`: Adjust the temperature setpoint as needed.
+'''
 #-------------------------------------------------------------------------------
 # Name:        #interfacing Lakeshore350_Temprature_Controller
 # Purpose:
