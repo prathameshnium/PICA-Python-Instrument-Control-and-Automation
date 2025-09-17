@@ -12,8 +12,8 @@ from pyvisa.errors import VisaIOError
 # --- 1. USER CONFIGURATION ---
 # Set your measurement parameters here
 VISA_ADDRESS = "GPIB1::27::INSTR"
-TEST_VOLTAGE = 100.0  # Voltage to apply, in Volts
-SETTLING_DELAY_S = 5   # Delay time in seconds after turning on voltage
+TEST_VOLTAGE = 1  # Voltage to apply, in Volts
+SETTLING_DELAY_S =0.5   # Delay time in seconds after turning on voltage
 
 # ----------------------------------------------------------------------
 
@@ -29,11 +29,13 @@ try:
     # --- 3. CONFIGURE MEASUREMENT ---
     print("Configuring instrument...")
     keithley.reset()                # Reset to a known default state
-    keithley.apply_voltage()        # Set instrument to source voltage, measure current
-    keithley.source_voltage = TEST_VOLTAGE
-    keithley.resistance_autoranging() # Enable autorange
-    keithley.resistance_nplc = 1      # Set integration rate for noise reduction
+    keithley.clear()                # Reset to a known default state
 
+    #keithley.apply_voltage()        # Set instrument to source voltage, measure current # this is the conflict
+    time.sleep(0.5)
+    keithley.source_voltage = TEST_VOLTAGE
+    keithley.measure_resistance() # Sets up to measure resistance
+    keithley.resistance_nplc = 1      # Set integration rate for noise reduction
 
     # --- 4. PERFORM MEASUREMENT ---
     print(f"Configuration complete. Applying {TEST_VOLTAGE} V...")
@@ -50,7 +52,7 @@ try:
     # Check for an over-range condition (a very large number)
     if resistance > 1e37:
         print("\n--- Measurement Complete ---")
-        print("Result: OVER RANGE (Resistance is too high to measure)")
+        print(f"Result: OVER RANGE (Resistance is too high to measure: {resistance:.4e} Ω)")
     else:
         print("\n--- Measurement Complete ---")
         print(f"Measured Resistance: {resistance:.4e} Ω")
@@ -69,3 +71,4 @@ finally:
         print("\nShutting down instrument...")
         keithley.shutdown()
         print("Voltage source OFF and instrument is safe.")
+
