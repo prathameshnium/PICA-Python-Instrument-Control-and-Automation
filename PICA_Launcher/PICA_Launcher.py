@@ -3,7 +3,7 @@
 # Purpose:      A central meta front end to launch various measurement GUIs.
 # Author:       Prathamesh Deshmukh
 # Created:      10/09/2025
-# Version:      2.3 (Final Theme Synthesis)
+# Version:      2.4 (Final Polish)
 # Last Edit:    17/09/2025
 # -------------------------------------------------------------------------------
 
@@ -31,9 +31,9 @@ except ImportError:
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "2.3"
+    PROGRAM_VERSION = "2.4"
 
-    # --- Synthesized Professional Color Palette ---
+    # --- Final Professional Color Palette ---
     CLR_BG_DARK = '#2B3D4F'
     CLR_FRAME_BG = '#3A506B'
     CLR_ACCENT_GOLD = '#FFC107'
@@ -45,6 +45,8 @@ class PICALauncherApp:
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 6, 'bold')
     FONT_SUBTITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
+
+    # --- Ensure this logo file is in the same directory as the script ---
     LOGO_FILE = "UGC_DAE_CSR.jpeg"
     MANUAL_FILE = "PICA_User_Manuals"
     README_FILE = "README.md"
@@ -75,7 +77,6 @@ class PICALauncherApp:
         style = ttk.Style(self.root)
         style.theme_use('clam')
 
-        # --- Base styling with the lighter blue-grey theme ---
         style.configure('.', background=self.CLR_BG_DARK, foreground=self.CLR_TEXT)
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_TEXT, font=self.FONT_BASE)
@@ -84,7 +85,6 @@ class PICALauncherApp:
         style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_FRAME_BG, padding=12)
         style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_TEXT, font=self.FONT_SUBTITLE)
 
-        # --- High-contrast Gold Accent Button Theme ---
         style.configure('App.TButton', font=self.FONT_BASE, padding=(10, 9),
                         foreground=self.CLR_ACCENT_GOLD, background=self.CLR_FRAME_BG,
                         borderwidth=0, focusthickness=0, focuscolor='none')
@@ -119,7 +119,16 @@ class PICALauncherApp:
 
         logo_canvas = Canvas(info_frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
         logo_canvas.pack(pady=(0, 20))
-        # ... (logo loading logic)
+        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE):
+            try:
+                img = Image.open(self.LOGO_FILE).resize((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
+                self.logo_image = ImageTk.PhotoImage(img)
+                logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
+            except Exception as e:
+                # If logo loading fails, show an error text on the canvas
+                logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nERROR", font=self.FONT_BASE, fill=self.CLR_TEXT, justify='center')
+        else:
+            logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill=self.CLR_TEXT, justify='center')
 
         ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, justify='center', anchor='center').pack(pady=(0, 15))
         desc_text = "A suite of Python scripts for automating laboratory instruments for materials science and physics research."
@@ -136,9 +145,11 @@ class PICALauncherApp:
 
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', pady=(20, 0))
-        author_text = ("This software was developed by Prathamesh Deshmukh during his PhD tenure.\n"
-                       "The work was conducted at the Mumbai Centre of the UGC-DAE CSR\n"
-                       "within the Sudip Mukherjee Materials Physics Lab.")
+
+        # --- Final, Refined Acknowledgment Text ---
+        author_text = ("Developed by Prathamesh Deshmukh\n"
+                       "Vision & Guidance by Dr. Sudip Mukherjee\n"
+                       "UGC-DAE Consortium for Scientific Research, Mumbai Centre")
         ttk.Label(bottom_frame, text=author_text, font=('Segoe UI', 10), justify='center', anchor='center').pack(pady=(0,10))
 
         license_text = "This project is licensed under the MIT License. See the LICENSE file for details."
@@ -169,7 +180,6 @@ class PICALauncherApp:
         left_col = ttk.Frame(scrollable_frame); left_col.grid(row=0, column=0, sticky='new')
         right_col = ttk.Frame(scrollable_frame); right_col.grid(row=0, column=1, sticky='new')
 
-        # Populate columns...
         low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (Delta Mode)'); low_res_frame.pack(fill='x', expand=True, pady=10)
         self._create_launch_button(low_res_frame, "R vs. T Measurement", "Delta Mode R-T").pack(fill='x', pady=4)
         self._create_launch_button(low_res_frame, "I-V Measurement", "Delta Mode I-V").pack(fill='x', pady=4)
@@ -191,7 +201,6 @@ class PICALauncherApp:
         return container
 
     def _open_path(self, path):
-        # (This logic remains unchanged)
         if path == self.LICENSE_FILE and not os.path.exists(path):
             if os.path.exists(path + ".md"): path += ".md"
             elif os.path.exists(path + ".txt"): path += ".txt"
@@ -206,7 +215,6 @@ class PICALauncherApp:
             messagebox.showerror("Error", f"Could not open path: {path}\n\nError: {e}")
 
     def open_script_folder(self, script_key):
-        # (This logic remains unchanged)
         script_path = self.SCRIPT_PATHS.get(script_key)
         if not script_path or not os.path.exists(script_path):
             messagebox.showwarning("Path Invalid", f"Script path for '{script_key}' is invalid.")
@@ -219,7 +227,6 @@ class PICALauncherApp:
     def open_license(self): self._open_path(self.LICENSE_FILE)
 
     def launch_script(self, script_path):
-        # (This logic remains unchanged)
         if not os.path.exists(script_path):
             messagebox.showerror("File Not Found", f"Script not found:\n\n{script_path}")
             return
@@ -230,7 +237,6 @@ class PICALauncherApp:
             messagebox.showerror("Launch Error", f"An error occurred while launching the script:\n\n{e}")
 
     def run_gpib_test(self):
-        # (This logic remains unchanged)
         if not PYVISA_AVAILABLE:
             messagebox.showerror("Dependency Missing", "The 'pyvisa' library is required.\n\nInstall via pip:\npip install pyvisa pyvisa-py")
             return
