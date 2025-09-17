@@ -3,7 +3,7 @@
 # Purpose:      A central meta front end to launch various measurement GUIs.
 # Author:       Prathamesh Deshmukh
 # Created:      10/09/2025
-# Version:      2.9 (Final Polished UI)
+# Version:      3.3 (Final Layout Fix)
 # Last Edit:    17/09/2025
 # -------------------------------------------------------------------------------
 
@@ -14,7 +14,6 @@ import sys
 import subprocess
 import platform
 from datetime import datetime
-import webbrowser
 
 # --- Pillow for Logo Image ---
 try:
@@ -33,16 +32,15 @@ except ImportError:
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "2.9"
+    PROGRAM_VERSION = "3.3"
 
-    # --- Final Professional Color Palette ---
     CLR_BG_DARK = '#2B3D4F'
     CLR_FRAME_BG = '#3A506B'
     CLR_ACCENT_GOLD = '#FFC107'
     CLR_TEXT = '#EDF2F4'
     CLR_TEXT_DARK = '#1A1A1A'
     CLR_CONSOLE_BG = '#1E2B38'
-    CLR_LINK = '#61AFEF' # A pleasant blue for hyperlinks
+    CLR_LINK = '#61AFEF'
 
     FONT_SIZE_BASE = 11
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
@@ -55,14 +53,14 @@ class PICALauncherApp:
     MANUAL_FILE = "PICA_User_Manuals"
     README_FILE = "README.md"
     LICENSE_FILE = "LICENSE"
-
     LOGO_SIZE = 140
 
     SCRIPT_PATHS = {
         "Delta Mode R-T": "Delta_mode/Delta_Mode_RT_GUI.py", "Delta Mode I-V": "Delta_mode/Delta_Mode_IV_GUI.py",
-        "K2400 I-V": "Keithley_2400/IV_GUI.py", "K2400 Time-Current": "Keithley_2400/Time_Current_GUI.py",
+        "K2400 I-V": "Keithley_2400/IV_GUI.py", "K2400 R-T": "Keithley_2400/RT_GUI.py",
         "K2400_2182 R-T": "Keithley_2400_Keithley_2182/Four_Probe_RT_GUI.py", "K2400_2182 I-V": "Keithley_2400_Keithley_2182/Four_Probe_IV_GUI.py",
-        "K6517B Resistivity": "Keithley_6517B/High_Res_GUI.py", "Pyroelectric Current": "Keithley_6517B/Pyro_GUI.py",
+        "K6517B Resistivity": "Keithley_6517B/High_Res_RT_GUI.py", "K6517B I-V": "Keithley_6517B/High_Res_IV_GUI.py",
+        "Pyroelectric Current": "Keithley_6517B/Pyro_GUI.py",
         "Lakeshore Temp Control": "Lakeshore_350_340/Temp_Control_GUI.py",
         "LCR C-V Measurement": "LCR_Keysight_E4980A/CV_GUI.py",
         "Lock-in AC Measurement": "Lock_in_Amplifier/AC_Transport_GUI.py",
@@ -93,7 +91,6 @@ class PICALauncherApp:
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_TEXT, font=self.FONT_BASE)
         style.configure('TSeparator', background=self.CLR_FRAME_BG)
-        style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_FRAME_BG, padding=12)
         style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_TEXT, font=self.FONT_SUBTITLE)
         style.configure('App.TButton', font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_FRAME_BG, borderwidth=0, focusthickness=0, focuscolor='none')
@@ -125,7 +122,7 @@ class PICALauncherApp:
                 img = Image.open(self.LOGO_FILE).resize((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
                 self.logo_image = ImageTk.PhotoImage(img)
                 logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
-            except Exception as e:
+            except Exception:
                 logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nERROR", font=self.FONT_BASE, fill=self.CLR_TEXT, justify='center')
         else:
             logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill=self.CLR_TEXT, justify='center')
@@ -148,7 +145,6 @@ class PICALauncherApp:
                        "UGC-DAE Consortium for Scientific Research, Mumbai Centre")
         ttk.Label(bottom_frame, text=author_text, font=('Segoe UI', 9), justify='center', anchor='center').pack(pady=(0,10))
 
-        # --- Clickable License Label ---
         license_font = font.Font(family='Segoe UI', size=9, underline=True)
         license_label = ttk.Label(bottom_frame, text="This project is licensed under the MIT License.",
                                   font=license_font, foreground=self.CLR_LINK, cursor="hand2")
@@ -167,17 +163,19 @@ class PICALauncherApp:
             self.console_widget.config(state='disabled')
 
     def create_launcher_panel(self, parent):
+        # --- Main container for the right side, now using grid ---
         main_container = ttk.Frame(parent)
-        pane = ttk.PanedWindow(main_container, orient='vertical')
-        pane.pack(fill='both', expand=True)
+        main_container.grid_rowconfigure(0, weight=1) # Button area gets all extra space
+        main_container.grid_rowconfigure(1, weight=0) # Console area does not expand
+        main_container.grid_columnconfigure(0, weight=1)
 
-        button_container = ttk.Frame(pane)
-        pane.add(button_container, weight=4)
+        # --- Top Area (Scrollable Buttons) ---
+        button_container = ttk.Frame(main_container)
+        button_container.grid(row=0, column=0, sticky="nsew")
 
         canvas = Canvas(button_container, bg=self.CLR_BG_DARK, highlightthickness=0)
         scrollbar = ttk.Scrollbar(button_container, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
-
         scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
@@ -187,18 +185,19 @@ class PICALauncherApp:
         left_col = ttk.Frame(scrollable_frame); left_col.grid(row=0, column=0, sticky='new')
         right_col = ttk.Frame(scrollable_frame); right_col.grid(row=0, column=1, sticky='new')
 
+        # ... (Populating columns, logic remains the same) ...
         low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (Delta Mode)'); low_res_frame.pack(fill='x', expand=True, pady=10)
         self._create_launch_button(low_res_frame, "R vs. T Measurement", "Delta Mode R-T").pack(fill='x', pady=4)
         self._create_launch_button(low_res_frame, "I-V Measurement", "Delta Mode I-V").pack(fill='x', pady=4)
         mid_res_frame1 = ttk.LabelFrame(left_col, text='Mid Resistance (Keithley 2400)'); mid_res_frame1.pack(fill='x', expand=True, pady=10)
         self._create_launch_button(mid_res_frame1, "I-V Measurement", "K2400 I-V").pack(fill='x', pady=4)
-        self._create_launch_button(mid_res_frame1, "Time vs. Current", "K2400 Time-Current").pack(fill='x', pady=4)
+        self._create_launch_button(mid_res_frame1, "R vs. T Measurement", "K2400 R-T").pack(fill='x', pady=4)
         mid_res_frame2 = ttk.LabelFrame(left_col, text='Mid Resistance (K2400 / K2182)'); mid_res_frame2.pack(fill='x', expand=True, pady=10)
         self._create_launch_button(mid_res_frame2, "R vs. T Measurement", "K2400_2182 R-T").pack(fill='x', pady=4)
         self._create_launch_button(mid_res_frame2, "I-V Measurement", "K2400_2182 I-V").pack(fill='x', pady=4)
         high_res_frame = ttk.LabelFrame(left_col, text='High Resistance (Keithley 6517B)'); high_res_frame.pack(fill='x', expand=True, pady=10)
-        self._create_launch_button(high_res_frame, "Resistivity Measurement", "K6517B Resistivity").pack(fill='x', pady=4)
-
+        self._create_launch_button(high_res_frame, "R vs. T (Resistivity)", "K6517B Resistivity").pack(fill='x', pady=4)
+        self._create_launch_button(high_res_frame, "I-V Measurement", "K6517B I-V").pack(fill='x', pady=4)
         pyro_frame = ttk.LabelFrame(right_col, text='Pyroelectric Measurement (K6517B)'); pyro_frame.pack(fill='x', expand=True, pady=10)
         self._create_launch_button(pyro_frame, "Pyro Current vs. Temp", "Pyroelectric Current").pack(fill='x', pady=4)
         lakeshore_frame = ttk.LabelFrame(right_col, text='Environmental Control'); lakeshore_frame.pack(fill='x', expand=True, pady=10)
@@ -211,12 +210,13 @@ class PICALauncherApp:
         canvas.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
 
-        console_container = ttk.LabelFrame(pane, text="Console", padding=(5,10))
-        pane.add(console_container, weight=1)
+        # --- Bottom Area (Console) ---
+        console_container = ttk.LabelFrame(main_container, text="Console", padding=(5,10))
+        console_container.grid(row=1, column=0, sticky="ew", pady=(10,0))
 
         self.console_widget = scrolledtext.ScrolledText(console_container, state='disabled', bg=self.CLR_CONSOLE_BG,
                                                         fg=self.CLR_TEXT, font=self.FONT_CONSOLE,
-                                                        wrap='word', bd=0, relief='flat')
+                                                        wrap='word', bd=0, relief='flat', height=5) # Height in lines
         self.console_widget.pack(fill='both', expand=True)
 
         return main_container
