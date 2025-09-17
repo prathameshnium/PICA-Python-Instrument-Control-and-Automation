@@ -2,10 +2,11 @@
 # Name:         Pyroelectric Measurement GUI
 # Purpose:      Perform a pyroelectric current measurement by interfacing a
 #               Lakeshore 350 Temperature Controller and a Keithley 6517B.
-# Author:       Prathamesh Deshmukh
+# Author:       Prathamesh deshmukh
 # Created:      17/09/2025
-# Version:      V1.0
+# Version:      V1.1 (Graph Layout Update)
 # -------------------------------------------------------------------------------
+
 
 # --- Packages for Front end ---
 import tkinter as tk
@@ -17,6 +18,7 @@ from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
+from matplotlib import gridspec # Import gridspec for advanced subplot layout
 
 # --- Packages for Back end ---
 try:
@@ -25,6 +27,7 @@ try:
     PYVISA_AVAILABLE = True
 except ImportError:
     PYVISA_AVAILABLE = False
+
 
 class PyroelectricBackend:
     """
@@ -121,10 +124,11 @@ class PyroelectricBackend:
             except Exception: pass
             finally: self.lakeshore = None
 
+
 class PyroelectricAppGUI:
     """The main GUI application class (Front End)."""
     # --- Theming and Styling ---
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "1.1"
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -220,7 +224,6 @@ class PyroelectricAppGUI:
             "Heater Range": "3" # 1=Low, 2=Med, 3=High
         }
 
-        # Create entry for each parameter
         for i, (text, default) in enumerate(params.items()):
             ttk.Label(frame, text=f"{text}:").grid(row=i, column=0, padx=10, pady=6, sticky='w')
             entry = ttk.Entry(frame, font=self.FONT_BASE)
@@ -230,7 +233,6 @@ class PyroelectricAppGUI:
 
         row_offset = len(params)
 
-        # VISA Instrument Selection
         ttk.Label(frame, text="Lakeshore 350 VISA:").grid(row=row_offset, column=0, padx=10, pady=6, sticky='w')
         self.lakeshore_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
         self.lakeshore_combobox.grid(row=row_offset, column=1, padx=10, pady=6, sticky='ew')
@@ -239,7 +241,6 @@ class PyroelectricAppGUI:
         self.keithley_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
         self.keithley_combobox.grid(row=row_offset + 1, column=1, padx=10, pady=6, sticky='ew')
 
-        # Control Buttons
         button_frame = ttk.Frame(frame)
         button_frame.grid(row=row_offset + 2, column=0, columnspan=2, pady=10)
         button_frame.grid_columnconfigure(0, weight=1); button_frame.grid_columnconfigure(1, weight=1)
@@ -269,38 +270,48 @@ class PyroelectricAppGUI:
 
     def create_graph_frame(self, parent):
         graph_container = LabelFrame(parent, text='Live Graphs', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
-        graph_container.pack(fill='both', expand=True, padx=(5,10), pady=0)
+        graph_container.pack(fill='both', expand=True, padx=(5, 10), pady=0)
 
         self.figure = Figure(figsize=(10, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
-        # Create 3 vertically stacked subplots
-        self.ax1 = self.figure.add_subplot(3, 1, 1)
-        self.ax2 = self.figure.add_subplot(3, 1, 2)
-        self.ax3 = self.figure.add_subplot(3, 1, 3)
-        self.axes = [self.ax1, self.ax2, self.ax3]
 
-        # Plot 1: Temperature vs. Time
-        self.line1, = self.ax1.plot([], [], color='#0077b6', marker='o', markersize=3, linestyle='-')
-        self.ax1.set_title("Temperature vs. Time")
-        self.ax1.set_ylabel("Temperature (K)")
+        # Use GridSpec for a more complex layout: 1 big plot on top, 2 smaller plots below
+        gs = self.figure.add_gridspec(2, 2, height_ratios=[2, 1])
 
-        # Plot 2: Current vs. Time
-        self.line2, = self.ax2.plot([], [], color='#06d6a0', marker='o', markersize=3, linestyle='-')
-        self.ax2.set_title("Current vs. Time")
-        self.ax2.set_ylabel("Current (A)")
+        # Main plot (Current vs. Temperature) takes the whole top row
+        self.ax_main = self.figure.add_subplot(gs[0, :])
 
-        # Plot 3: Current vs. Temperature
-        self.line3, = self.ax3.plot([], [], color='#e63946', marker='o', markersize=3, linestyle='-')
-        self.ax3.set_title("Current vs. Temperature")
-        self.ax3.set_xlabel("Temperature (K)")
-        self.ax3.set_ylabel("Current (A)")
+        # Subplots for time-series data
+        self.ax_sub1 = self.figure.add_subplot(gs[1, 0])
+        self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
+
+        self.axes = [self.ax_main, self.ax_sub1, self.ax_sub2]
+
+        # Plot 1 (Main): Current vs. Temperature
+        self.line_main, = self.ax_main.plot([], [], color='#e63946', marker='o', markersize=4, linestyle='-')
+        self.ax_main.set_title("Current vs. Temperature", fontsize=14, weight='bold')
+        self.ax_main.set_xlabel("Temperature (K)")
+        self.ax_main.set_ylabel("Current (A)")
+
+        # Plot 2 (Sub1): Temperature vs. Time
+        self.line_sub1, = self.ax_sub1.plot([], [], color='#0077b6', marker='.', markersize=4)
+        self.ax_sub1.set_title("Temperature vs. Time")
+        self.ax_sub1.set_xlabel("Time (s)")
+        self.ax_sub1.set_ylabel("Temperature (K)")
+
+        # Plot 3 (Sub2): Current vs. Time
+        self.line_sub2, = self.ax_sub2.plot([], [], color='#06d6a0', marker='.', markersize=4)
+        self.ax_sub2.set_title("Current vs. Time")
+        self.ax_sub2.set_xlabel("Time (s)")
+        self.ax_sub2.set_ylabel("Current (A)")
 
         for ax in self.axes:
             ax.grid(True, linestyle='--', alpha=0.6)
-            ax.ticklabel_format(axis='y', style='sci', scilimits=(-2,3))
+            ax.ticklabel_format(axis='y', style='sci', scilimits=(-2, 3), useMathText=True)
 
-        self.figure.tight_layout(pad=2.0)
+        self.figure.tight_layout(pad=2.5)
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
         self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
+
 
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -326,7 +337,6 @@ class PyroelectricAppGUI:
             self.backend.initialize_instruments(params)
             self.log(f"Backend initialized for sample: {params['sample_name']}")
 
-            # Create data file
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             file_name = f"{params['sample_name']}_{timestamp}_Pyro.csv"
             self.data_filepath = os.path.join(self.file_location_path, file_name)
@@ -336,13 +346,12 @@ class PyroelectricAppGUI:
                 f.write("Time (s),Temperature (K),Current (A)\n")
             self.log(f"Output file created: {os.path.basename(self.data_filepath)}")
 
-            # Reset UI and start loop
             self.is_running = True
             self.start_time = time.time()
             self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
-            for line in [self.line1, self.line2, self.line3]: line.set_data([], [])
-            self.ax1.set_title(f"T vs Time | Sample: {params['sample_name']}")
+            for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_data([], [])
+            self.ax_main.set_title(f"I vs T | Sample: {params['sample_name']}", fontsize=14, weight='bold')
             self.canvas.draw()
 
             self.log("Measurement loop started.")
@@ -368,23 +377,22 @@ class PyroelectricAppGUI:
             temp, current, continues = self.backend.get_measurement()
             elapsed_time = time.time() - self.start_time
 
-            # Log to file
             with open(self.data_filepath, 'a', newline='') as f:
                 f.write(f"{elapsed_time:.2f},{temp},{current}\n")
 
-            # Store and plot data
             self.data_storage['time'].append(elapsed_time)
             self.data_storage['temperature'].append(temp)
             self.data_storage['current'].append(current)
 
-            self.line1.set_data(self.data_storage['time'], self.data_storage['temperature'])
-            self.line2.set_data(self.data_storage['time'], self.data_storage['current'])
-            self.line3.set_data(self.data_storage['temperature'], self.data_storage['current'])
+            # Update plot data based on the new layout
+            self.line_main.set_data(self.data_storage['temperature'], self.data_storage['current'])
+            self.line_sub1.set_data(self.data_storage['time'], self.data_storage['temperature'])
+            self.line_sub2.set_data(self.data_storage['time'], self.data_storage['current'])
 
             for ax in self.axes:
                 ax.relim(); ax.autoscale_view()
 
-            self.figure.tight_layout(pad=2.0)
+            self.figure.tight_layout(pad=2.5)
             self.canvas.draw()
 
             if not continues:
@@ -397,7 +405,7 @@ class PyroelectricAppGUI:
             messagebox.showerror("Runtime Error", "An error occurred during measurement. Check console for details.")
 
         if self.is_running:
-            self.root.after(2000, self._update_measurement_loop) # Update every 2 seconds
+            self.root.after(2000, self._update_measurement_loop)
 
     def _scan_for_visa_instruments(self):
         if not PYVISA_AVAILABLE:
@@ -412,11 +420,9 @@ class PyroelectricAppGUI:
                 self.log(f"Found: {resources}")
                 self.keithley_combobox['values'] = resources
                 self.lakeshore_combobox['values'] = resources
-                # Attempt to set defaults based on common GPIB addresses
                 for res in resources:
                     if "27" in res: self.keithley_combobox.set(res)
                     if "12" in res: self.lakeshore_combobox.set(res)
-                # Fallback if defaults not found
                 if not self.keithley_combobox.get() and resources: self.keithley_combobox.set(resources[0])
                 if not self.lakeshore_combobox.get() and resources: self.lakeshore_combobox.set(resources[-1])
             else:
@@ -442,4 +448,3 @@ if __name__ == '__main__':
     root = tk.Tk()
     app = PyroelectricAppGUI(root)
     root.mainloop()
-
