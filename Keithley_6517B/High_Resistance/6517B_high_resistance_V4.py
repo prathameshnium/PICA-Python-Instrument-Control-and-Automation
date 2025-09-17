@@ -12,7 +12,7 @@ from pyvisa.errors import VisaIOError
 # --- 1. USER CONFIGURATION ---
 # Set your measurement parameters here
 VISA_ADDRESS = "GPIB1::27::INSTR"
-TEST_VOLTAGE = 1  # Voltage to apply, in Volts
+TEST_VOLTAGE = 10  # Voltage to apply, in Volts
 SETTLING_DELAY_S =0.5   # Delay time in seconds after turning on voltage
 
 # ----------------------------------------------------------------------
@@ -30,6 +30,28 @@ try:
     print("Configuring instrument...")
     keithley.reset()                # Reset to a known default state
     keithley.clear()                # Reset to a known default state
+   # --- 2. Perform Zero Check & Correction Sequence ---
+    print("\nStarting zero correction procedure...")
+
+    # Step 1: Enable Zero Check. This disconnects the input and connects to an internal reference.
+    print("Step 1: Enabling Zero Check mode...")
+    keithley.write(':SYSTem:ZCHeck ON')
+    time.sleep(1) # Allow a moment for the internal relays to switch
+
+    # Step 2: Acquire the zero measurement. The instrument measures its internal offset.
+    print("Step 2: Acquiring zero correction value...")
+    #keithley.write(':SYSTem:ZCORrect:ACQuire')
+    time.sleep(2) # Acquiring the value takes a moment
+
+    # Step 3: Disable Zero Check. This reconnects the input for actual measurements.
+    print("Step 3: Disabling Zero Check mode...")
+    keithley.write(':SYSTem:ZCHeck OFF')
+
+    # Step 4: Enable Zero Correct. This tells the instrument to subtract the
+    # acquired offset from all future measurements.
+    print("Step 4: Enabling Zero Correction for subsequent measurements...")
+    keithley.write(':SYSTem:ZCORrect ON')
+
 
     #keithley.apply_voltage()        # Set instrument to source voltage, measure current # this is the conflict
     time.sleep(0.5)
@@ -37,12 +59,7 @@ try:
     A=keithley.ask("*IDN?")
     print(f"Successfully connected to: {A}")
     time.sleep(0.5)
-    keithley.write(":SYSTem:ZCHeck ON")
-    keithley.write(":SYSTem:ZCORrect:ACQuire")
-    keithley.write(":SYSTem:ZCORrect ON")
-
-
-    time.sleep(5)
+    time.sleep(2)
 
     keithley.source_voltage = TEST_VOLTAGE
     keithley.measure_resistance() # Sets up to measure resistance
