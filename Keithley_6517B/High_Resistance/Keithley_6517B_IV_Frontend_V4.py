@@ -1,10 +1,10 @@
 # -------------------------------------------------------------------------------
 # Name:         High Resistance IV GUI for Keithley 6517B
 # Purpose:      Perform a voltage sweep and measure resistance using a
-#               Keithley 6517B Electrometer.
+#               Keithley 6517B Electrometer with a real instrument backend.
 # Author:       Prathamesh Deshmukh
 # Created:      17/09/2025
-# Version:      V: 2.0 (I-V Plot Focus)
+# Version:      V: 3.0 (Integrated Backend)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -30,81 +30,117 @@ except ImportError:
 # --- Packages for Back end ---
 try:
     import pyvisa
+    from pymeasure.instruments.keithley import Keithley6517B
+    from pyvisa.errors import VisaIOError
+    PYMEASURE_AVAILABLE = True
 except ImportError:
     pyvisa = None
+    Keithley6517B = None
+    VisaIOError = None
+    PYMEASURE_AVAILABLE = False
 
 # -------------------------------------------------------------------------------
-# --- BACKEND (PLACEHOLDER) ---
+# --- REAL INSTRUMENT BACKEND ---
 # -------------------------------------------------------------------------------
-class Keithley6517B_Backend_Placeholder:
+class Keithley6517B_Backend:
     """
-    A placeholder class to simulate the Keithley 6517B Electrometer.
-    This allows for GUI development and testing without a live instrument.
-    It simulates measuring a ~10 GigaOhm resistor.
+    A dedicated class to handle backend communication with a real Keithley 6517B
+    using the PyMeasure library. It incorporates proper initialization,
+    zero-correction, and shutdown procedures.
     """
     def __init__(self):
-        self.params = {}
         self.keithley = None
-        self.current_voltage_setting = 0.0
         self.is_connected = False
-        if pyvisa:
-            try:
-                self.rm = pyvisa.ResourceManager()
-            except Exception:
-                self.rm = None
-        else:
-            self.rm = None
+        if not PYMEASURE_AVAILABLE:
+            raise ImportError("PyMeasure or PyVISA is not installed. Please run 'pip install pymeasure'.")
 
     def initialize_instruments(self, parameters):
-        """Receives all parameters from the GUI and 'configures' the placeholder."""
-        print("\n--- [Backend Placeholder] Initializing Instrument ---")
-        self.params = parameters
-        if not self.params['keithley_visa']:
-             raise ConnectionError("VISA address for Keithley 6517B not provided.")
-        print(f"  Attempting to connect to {self.params['keithley_visa']}...")
-        time.sleep(0.5)
-        print("  Connected to: FAKE KEITHLEY 6517B,0,0,0")
-        print("  Configuring for SVMI (Source Voltage, Measure Current) measurement.")
-        self.is_connected = True
-        print("--- [Backend Placeholder] Instrument Initialized ---")
+        """Connects to the instrument and performs the crucial zero-check sequence."""
+        print(f"\n--- [Backend] Initializing Instrument at {parameters['keithley_visa']} ---")
+        try:
+            self.keithley = Keithley6517B(parameters['keithley_visa'])
+            print(f"  Successfully connected to: {self.keithley.id}")
+
+            # --- Configure Measurement and Perform Zero Correction ---
+            print("  Configuring instrument and performing zero correction...")
+            self.keithley.reset()
+            self.keithley.clear()
+
+            # 1. Enable Zero Check (connects ammeter to internal reference)
+            print("    Step 1/4: Enabling Zero Check mode...")
+            self.keithley.write(':SYSTem:ZCHeck ON')
+            time.sleep(1)
+
+            # 2. Acquire the zero measurement
+            print("    Step 2/4: Acquiring zero correction value...")
+            self.keithley.write(':SYSTem:ZCORrect:ACQuire')
+            time.sleep(2) # Allow time for acquisition
+
+            # 3. Disable Zero Check (reconnects input)
+            print("    Step 3/4: Disabling Zero Check mode...")
+            self.keithley.write(':SYSTem:ZCHeck OFF')
+
+            # 4. Enable Zero Correct (subtracts offset from future measurements)
+            print("    Step 4/4: Enabling Zero Correction for all measurements.")
+            self.keithley.write(':SYSTem:ZCORrect ON')
+
+            # Set up the instrument for resistance measurement
+            self.keithley.measure_resistance()
+            self.keithley.resistance_nplc = 1  # Integration rate for noise reduction (1 PLC)
+
+            self.is_connected = True
+            print("--- [Backend] Instrument Initialized and Ready ---")
+
+        except VisaIOError as e:
+            print(f"  [VISA Connection Error] Could not connect. Details: {e}")
+            raise ConnectionError(f"Could not connect to Keithley 6517B.\nCheck address and connections.") from e
+        except Exception as e:
+            print(f"  [Unexpected Error] during initialization. Details: {e}")
+            raise e
 
     def set_voltage(self, voltage):
-        """Placeholder for setting the voltage source."""
+        """Sets the voltage source level and enables the output."""
         if not self.is_connected:
             raise ConnectionError("Instrument not connected.")
-        self.current_voltage_setting = voltage
+        self.keithley.source_voltage = voltage
+        self.keithley.enable_source()
 
     def get_measurement(self):
-        """
-        Performs a single 'measurement' and returns simulated data.
-        Simulates a 10 G-Ohm resistor (I = V / 10e9) with some random noise.
-        """
+        """Reads resistance and current from the instrument."""
         if not self.is_connected:
             raise ConnectionError("Instrument not connected.")
-        ideal_current = self.current_voltage_setting / 10e9
-        noise = ideal_current * 0.02 * (np.random.rand() - 0.5)
-        measured_current = ideal_current + noise
-        if self.current_voltage_setting == 0:
-            resistance = float('inf')
-        else:
-            resistance = self.current_voltage_setting / measured_current
-        return resistance, measured_current, self.current_voltage_setting
+
+        # PyMeasure properties handle the SCPI commands to get the readings
+        resistance = self.keithley.resistance
+        current = self.keithley.current
+        voltage = self.keithley.source_voltage # Read back the set voltage
+
+        # Handle over-range condition, often returned as a very large number
+        if resistance > 1e37:
+            resistance = float('inf') # Standardize over-range representation
+
+        return resistance, current, voltage
 
     def close_instruments(self):
-        """Safely 'shuts down' and disconnects from the placeholder instrument."""
-        print("--- [Backend Placeholder] Closing instrument connection. ---")
-        if self.is_connected:
-            print("  Voltage source turned OFF.")
-            print(f"  Connection to FAKE KEITHLEY 6517B closed.")
-            self.is_connected = False
-
+        """Safely shuts down the voltage source and disconnects."""
+        print("--- [Backend] Closing instrument connection. ---")
+        if self.keithley:
+            try:
+                print("  Shutting down voltage source...")
+                self.keithley.shutdown()
+                print("  Voltage source OFF. Instrument is safe.")
+            except Exception as e:
+                print(f"  Warning: Could not gracefully shut down instrument. Error: {e}")
+            finally:
+                self.is_connected = False
+                self.keithley = None
 
 # -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class HighResistanceIV_GUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "2.0"
+    PROGRAM_VERSION = "3.0"
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -128,7 +164,11 @@ class HighResistanceIV_GUI:
 
         self.is_running = False
         self.start_time = None
-        self.backend = Keithley6517B_Backend_Placeholder()
+        try:
+            self.backend = Keithley6517B_Backend()
+        except Exception as e:
+            messagebox.showerror("Backend Error", f"Could not initialize the backend.\nError: {e}\n\nPlease ensure PyMeasure and NI-VISA are installed correctly.")
+            self.backend = None
         self.file_location_path = ""
         self.data_storage = {'time': [], 'voltage_applied': [], 'current_measured': [], 'resistance': []}
         self.voltage_list = []
@@ -212,11 +252,10 @@ class HighResistanceIV_GUI:
         ttk.Label(frame, text=info_text_institute, justify='left').grid(row=0, column=1, padx=10, pady=(10,5), sticky='w')
 
         info_text_meas = ("High Resistance Measurement:\n"
-                          "  • Voltage Range: 1µV to 200V\n"
-                          "  • Current Range: 10aA to 20mA\n"
+                          "  • Voltage Range: up to ±1000V\n"
+                          "  • Current Range: 1fA to 20mA\n"
                           "  • Resistance Range: up to 10¹⁸ Ω")
         ttk.Label(frame, text=info_text_meas, justify='left').grid(row=1, column=1, padx=10, pady=(0,10), sticky='w')
-
 
     def create_input_frame(self, parent):
         frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
@@ -267,7 +306,7 @@ class HighResistanceIV_GUI:
         self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0)
         self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
         self.log("Console initialized. Configure parameters and scan for instruments.")
-        if not pyvisa: self.log("WARNING: PyVISA not found. Run 'pip install pyvisa'.")
+        if not PYMEASURE_AVAILABLE: self.log("CRITICAL: PyMeasure or PyVISA not found. Please run 'pip install pymeasure'.")
         if not os.path.exists("UGC_DAE_CSR.jpeg"): self.log("WARNING: 'UGC_DAE_CSR.jpeg' not found for logo.")
         return frame
 
@@ -297,6 +336,9 @@ class HighResistanceIV_GUI:
         self.console_widget.config(state='disabled')
 
     def start_measurement(self):
+        if self.backend is None:
+            messagebox.showerror("Backend Error", "Backend is not available. Cannot start measurement.")
+            return
         try:
             params = {}
             params['sample_name'] = self.entries["Sample Name"].get()
@@ -347,7 +389,8 @@ class HighResistanceIV_GUI:
             self.is_running = False
             self.log("Measurement loop stopped by user.")
             self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
-            self.backend.close_instruments()
+            if self.backend:
+                self.backend.close_instruments()
             self.log("Instrument connection closed.")
             messagebox.showinfo("Info", "Measurement stopped and instrument disconnected.")
 
@@ -389,23 +432,26 @@ class HighResistanceIV_GUI:
             messagebox.showerror("Runtime Error", f"An error occurred while reading data. Check console.\n{e}")
 
     def _scan_for_visa_instruments(self):
-        if self.backend.rm is None:
-            self.log("ERROR: VISA manager failed. Is NI-VISA or similar installed?"); return
-        self.log("Scanning for VISA instruments...")
+        if not pyvisa:
+            self.log("ERROR: PyVISA is not installed. Cannot scan.")
+            return
         try:
-            resources = self.backend.rm.list_resources()
+            rm = pyvisa.ResourceManager()
+            self.log("Scanning for VISA instruments...")
+            resources = rm.list_resources()
             if resources:
                 self.log(f"Found: {resources}")
                 self.keithley_combobox['values'] = resources
+                # Attempt to find a likely candidate for the Keithley
                 for res in resources:
-                    if "GPIB" in res and ("24" in res or "25" in res or "26" in res):
+                    if "GPIB" in res.upper() and ("27" in res or "26" in res or "25" in res):
                          self.keithley_combobox.set(res); break
                 else: self.keithley_combobox.set(resources[0])
             else:
                 self.log("No VISA instruments found.")
                 self.keithley_combobox['values'] = []; self.keithley_combobox.set("")
         except Exception as e:
-            self.log(f"ERROR during scan: {e}")
+            self.log(f"ERROR during VISA scan: {e}")
 
     def _browse_file_location(self):
         path = filedialog.askdirectory()
@@ -416,6 +462,8 @@ class HighResistanceIV_GUI:
             if messagebox.askyesno("Exit", "Measurement sweep is running. Stop and exit?"):
                 self.stop_measurement(); self.root.destroy()
         else:
+            if self.backend and self.backend.is_connected:
+                self.backend.close_instruments()
             self.root.destroy()
 
 def main():
