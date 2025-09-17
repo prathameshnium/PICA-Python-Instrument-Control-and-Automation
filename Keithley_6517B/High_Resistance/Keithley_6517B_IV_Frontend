@@ -4,7 +4,7 @@
 #               Keithley 6517B Electrometer.
 # Author:       Prathamesh Deshmukh
 # Created:      17/09/2025
-# Version:      V: 1.0
+# Version:      V: 2.0 (I-V Plot Focus)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -18,7 +18,6 @@ import traceback
 from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import matplotlib.gridspec as gridspec
 import matplotlib as mpl
 
 # --- Pillow for Logo Image ---
@@ -48,12 +47,11 @@ class Keithley6517B_Backend_Placeholder:
         self.keithley = None
         self.current_voltage_setting = 0.0
         self.is_connected = False
-        # Simulate VISA resource manager for scanning
         if pyvisa:
             try:
                 self.rm = pyvisa.ResourceManager()
             except Exception:
-                self.rm = None # Fails gracefully if NI-VISA isn't installed
+                self.rm = None
         else:
             self.rm = None
 
@@ -61,13 +59,12 @@ class Keithley6517B_Backend_Placeholder:
         """Receives all parameters from the GUI and 'configures' the placeholder."""
         print("\n--- [Backend Placeholder] Initializing Instrument ---")
         self.params = parameters
-        # Simulate connection check
         if not self.params['keithley_visa']:
              raise ConnectionError("VISA address for Keithley 6517B not provided.")
         print(f"  Attempting to connect to {self.params['keithley_visa']}...")
-        time.sleep(0.5) # Simulate connection delay
+        time.sleep(0.5)
         print("  Connected to: FAKE KEITHLEY 6517B,0,0,0")
-        print("  Configuring for SVMI (Source Voltage, Measure Current) resistance measurement.")
+        print("  Configuring for SVMI (Source Voltage, Measure Current) measurement.")
         self.is_connected = True
         print("--- [Backend Placeholder] Instrument Initialized ---")
 
@@ -76,7 +73,6 @@ class Keithley6517B_Backend_Placeholder:
         if not self.is_connected:
             raise ConnectionError("Instrument not connected.")
         self.current_voltage_setting = voltage
-        # No print here to avoid flooding console during sweep
 
     def get_measurement(self):
         """
@@ -85,19 +81,13 @@ class Keithley6517B_Backend_Placeholder:
         """
         if not self.is_connected:
             raise ConnectionError("Instrument not connected.")
-
-        # Simulate Ohm's law for a high-value resistor
-        ideal_current = self.current_voltage_setting / 10e9 # I = V/R for 10 GOhms
-        # Add realistic noise
-        noise = ideal_current * 0.02 * (np.random.rand() - 0.5) # 2% peak-to-peak noise
+        ideal_current = self.current_voltage_setting / 10e9
+        noise = ideal_current * 0.02 * (np.random.rand() - 0.5)
         measured_current = ideal_current + noise
-
-        # Calculate resistance, handle division by zero if voltage is 0
         if self.current_voltage_setting == 0:
             resistance = float('inf')
         else:
             resistance = self.current_voltage_setting / measured_current
-
         return resistance, measured_current, self.current_voltage_setting
 
     def close_instruments(self):
@@ -114,9 +104,7 @@ class Keithley6517B_Backend_Placeholder:
 # -------------------------------------------------------------------------------
 class HighResistanceIV_GUI:
     """The main GUI application class (Front End)."""
-    # --- Theming and Styling ---
-    PROGRAM_VERSION = "1.0"
-    # Colors
+    PROGRAM_VERSION = "2.0"
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -125,7 +113,6 @@ class HighResistanceIV_GUI:
     CLR_ACCENT_RED = '#EF233C'
     CLR_CONSOLE_BG = '#1E2B38'
     CLR_GRAPH_BG = '#FFFFFF'
-    # Fonts
     FONT_SIZE_BASE = 11
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_SUB_LABEL = ('Segoe UI', FONT_SIZE_BASE - 2)
@@ -155,17 +142,14 @@ class HighResistanceIV_GUI:
         """Configures ttk styles and Matplotlib for a modern look."""
         style = ttk.Style(self.root)
         style.theme_use('clam')
-
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
-
         style.configure('TButton', font=self.FONT_BASE, padding=(10, 8))
         style.map('TButton', foreground=[('!active', self.CLR_BG_DARK), ('active', self.CLR_FG_LIGHT)],
                   background=[('!active', self.CLR_ACCENT_BLUE), ('active', self.CLR_BG_DARK)])
         style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN)
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED)
-
         mpl.rcParams['font.family'] = 'Segoe UI'
         mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
         mpl.rcParams['axes.titlesize'] = self.FONT_SIZE_BASE + 4
@@ -174,22 +158,16 @@ class HighResistanceIV_GUI:
     def create_widgets(self):
         """Lays out the main frames and populates them with widgets."""
         self.create_header()
-
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
-
-        left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=480)
+        left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=500)
         main_pane.add(left_panel, weight=1)
-
         right_panel = tk.Frame(main_pane, bg='white')
         main_pane.add(right_panel, weight=3)
-
         top_controls_frame = ttk.Frame(left_panel)
         left_panel.add(top_controls_frame, weight=0)
-
         self.create_info_frame(top_controls_frame)
         self.create_input_frame(top_controls_frame)
-
         console_pane = self.create_console_frame(left_panel)
         left_panel.add(console_pane, weight=1)
         self.create_graph_frame(right_panel)
@@ -200,14 +178,45 @@ class HighResistanceIV_GUI:
         Label(header_frame, text="High Resistance I-V Sweep", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
+    def _process_logo_image(self, input_path, size=120):
+        """Dynamically processes the input jpeg to a circular, transparent-background image."""
+        if not (PIL_AVAILABLE and os.path.exists(input_path)):
+            return None
+        try:
+            with Image.open(input_path) as img:
+                img_cropped = img.crop((18, 18, 237, 237)) # Cropped for this specific logo
+                mask = Image.new('L', img_cropped.size, 0)
+                draw = ImageDraw.Draw(mask)
+                draw.ellipse((0, 0) + img_cropped.size, fill=255)
+                img_cropped.putalpha(mask)
+                img_hd = img_cropped.resize((size, size), Image.Resampling.LANCZOS)
+                return ImageTk.PhotoImage(img_hd)
+        except Exception as e:
+            print(f"ERROR: Could not process logo image '{input_path}'. Reason: {e}")
+            return None
+
     def create_info_frame(self, parent):
         frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         frame.pack(pady=(10, 10), padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
-        info_text = ("Measurement: High-R I-V Sweep\n"
-                     "(SVMI Method)\n\n"
-                     "Instrument:\n  • Keithley 6517B Electrometer")
-        ttk.Label(frame, text=info_text, justify='left').grid(row=0, column=0, padx=15, pady=15, sticky='w')
+
+        logo_canvas = Canvas(frame, width=120, height=120, bg=self.CLR_BG_DARK, highlightthickness=0)
+        logo_canvas.grid(row=0, column=0, rowspan=2, padx=15, pady=10)
+        self.logo_image = self._process_logo_image("UGC_DAE_CSR.jpeg")
+        if self.logo_image:
+            logo_canvas.create_image(60, 60, image=self.logo_image)
+        else:
+            logo_canvas.create_text(60, 60, text="LOGO", font=self.FONT_TITLE, fill=self.CLR_FG_LIGHT)
+
+        info_text_institute = "Institute: UGC DAE CSR, Mumbai\nInstrument: Keithley 6517B Electrometer"
+        ttk.Label(frame, text=info_text_institute, justify='left').grid(row=0, column=1, padx=10, pady=(10,5), sticky='w')
+
+        info_text_meas = ("High Resistance Measurement:\n"
+                          "  • Voltage Range: 1µV to 200V\n"
+                          "  • Current Range: 10aA to 20mA\n"
+                          "  • Resistance Range: up to 10¹⁸ Ω")
+        ttk.Label(frame, text=info_text_meas, justify='left').grid(row=1, column=1, padx=10, pady=(0,10), sticky='w')
+
 
     def create_input_frame(self, parent):
         frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
@@ -221,7 +230,6 @@ class HighResistanceIV_GUI:
         self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE)
         self.entries["Sample Name"].grid(row=1, column=0, columnspan=4, padx=10, pady=(0, 10), sticky='ew')
 
-        # Voltage Sweep Parameters
         Label(frame, text="Start V:").grid(row=2, column=0, padx=(10,0), pady=pady_val, sticky='w')
         self.entries["Start V"] = Entry(frame, font=self.FONT_BASE, width=8)
         self.entries["Start V"].grid(row=2, column=1, padx=(0,10), pady=pady_val, sticky='w')
@@ -237,9 +245,8 @@ class HighResistanceIV_GUI:
         Label(frame, text="Delay (s):").grid(row=3, column=2, padx=(10,0), pady=pady_val, sticky='w')
         self.entries["Delay (s)"] = Entry(frame, font=self.FONT_BASE, width=8)
         self.entries["Delay (s)"].grid(row=3, column=3, padx=(0,10), pady=pady_val, sticky='w')
-        self.entries["Delay (s)"].insert(0, "1.0") # Default delay
+        self.entries["Delay (s)"].insert(0, "1.0")
 
-        # VISA Address
         Label(frame, text="Keithley 6517B VISA:").grid(row=4, column=0, columnspan=4, padx=10, pady=(10,5), sticky='w')
         self.keithley_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
         self.keithley_combobox.grid(row=5, column=0, columnspan=4, padx=10, pady=(0,5), sticky='ew')
@@ -250,7 +257,6 @@ class HighResistanceIV_GUI:
         self.file_location_button = ttk.Button(frame, text="Browse Save Location...", command=self._browse_file_location)
         self.file_location_button.grid(row=7, column=0, columnspan=4, padx=10, pady=5, sticky='ew')
 
-        # Control Buttons
         self.start_button = ttk.Button(frame, text="Start Sweep", command=self.start_measurement, style='Start.TButton')
         self.start_button.grid(row=8, column=0, columnspan=2, padx=10, pady=15, sticky='ew')
         self.stop_button = ttk.Button(frame, text="Stop", command=self.stop_measurement, style='Stop.TButton', state='disabled')
@@ -260,41 +266,26 @@ class HighResistanceIV_GUI:
         frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0)
         self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
-        self.log("Console initialized. Please configure parameters and scan for instruments.")
-        if not pyvisa:
-            self.log("WARNING: PyVISA not found. Cannot connect to instruments. Run 'pip install pyvisa'.")
+        self.log("Console initialized. Configure parameters and scan for instruments.")
+        if not pyvisa: self.log("WARNING: PyVISA not found. Run 'pip install pyvisa'.")
+        if not os.path.exists("UGC_DAE_CSR.jpeg"): self.log("WARNING: 'UGC_DAE_CSR.jpeg' not found for logo.")
         return frame
 
     def create_graph_frame(self, parent):
-        graph_container = LabelFrame(parent, text='Live Graphs', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
+        graph_container = LabelFrame(parent, text='Live I-V Curve', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
 
-        self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
-        gs = gridspec.GridSpec(2, 2, figure=self.figure)
+        self.figure = Figure(figsize=(8, 6), dpi=100, facecolor=self.CLR_GRAPH_BG)
+        self.ax_iv = self.figure.add_subplot(111)
 
-        self.ax_main = self.figure.add_subplot(gs[0, :])
-        self.ax_sub1 = self.figure.add_subplot(gs[1, 0])
-        self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
+        self.line_iv, = self.ax_iv.plot([], [], color=self.CLR_ACCENT_BLUE, marker='o', markersize=5, linestyle='-')
 
-        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
-        self.line_sub1, = self.ax_sub1.plot([], [], color=self.CLR_ACCENT_BLUE, marker='o', markersize=4, linestyle='-')
-        self.line_sub2, = self.ax_sub2.plot([], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=4)
+        self.ax_iv.set_title("Current vs. Voltage", fontweight='bold')
+        self.ax_iv.set_xlabel("Applied Voltage (V)")
+        self.ax_iv.set_ylabel("Measured Current (A)")
+        self.ax_iv.grid(True, linestyle='--', alpha=0.6)
 
-        self.ax_main.set_title("Resistance vs. Voltage", fontweight='bold')
-        self.ax_main.set_xlabel("Applied Voltage (V)"); self.ax_main.set_ylabel("Resistance (Ohms)")
-        self.ax_main.set_yscale('log') # Default to log scale for resistance
-
-        self.ax_sub1.set_title("I-V Curve")
-        self.ax_sub1.set_xlabel("Applied Voltage (V)"); self.ax_sub1.set_ylabel("Measured Current (A)")
-
-        self.ax_sub2.set_title("Stability")
-        self.ax_sub2.set_xlabel("Time (s)"); self.ax_sub2.set_ylabel("Resistance (Ohms)")
-        self.ax_sub2.set_yscale('log')
-
-        for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
-             ax.grid(True, linestyle='--', alpha=0.6)
-
-        self.figure.tight_layout(pad=2.0)
+        self.figure.tight_layout(pad=2.5)
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
@@ -317,8 +308,7 @@ class HighResistanceIV_GUI:
 
             if not all([params['sample_name'], params['keithley_visa']]) or not self.file_location_path:
                 raise ValueError("All fields, VISA address, and a save location are required.")
-            if steps < 2:
-                raise ValueError("Number of steps must be 2 or more.")
+            if steps < 2: raise ValueError("Number of steps must be 2 or more.")
 
             self.voltage_list = np.linspace(start_v, stop_v, steps)
             self.log(f"Generated voltage sweep from {start_v}V to {stop_v}V in {steps} steps.")
@@ -341,12 +331,12 @@ class HighResistanceIV_GUI:
             self.start_time = time.time()
             self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
-            for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_data([], [])
-            self.ax_main.set_title(f"Sample: {params['sample_name']}", fontweight='bold')
+            self.line_iv.set_data([], [])
+            self.ax_iv.set_title(f"I-V Curve: {params['sample_name']}", fontweight='bold')
             self.canvas.draw()
             self.log("Measurement sweep started.")
             self.current_step_index = 0
-            self.root.after(100, self._update_measurement_loop) # Start the first step
+            self.root.after(100, self._update_measurement_loop)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
@@ -362,39 +352,23 @@ class HighResistanceIV_GUI:
             messagebox.showinfo("Info", "Measurement stopped and instrument disconnected.")
 
     def _update_measurement_loop(self):
-        """Manages the sweep progression. Sets voltage and schedules the read."""
-        if not self.is_running: return
-
-        # Check if sweep is complete
-        if self.current_step_index >= len(self.voltage_list):
-            self.log("Sweep finished.")
-            self.stop_measurement()
+        if not self.is_running or self.current_step_index >= len(self.voltage_list):
+            if self.is_running: self.log("Sweep finished."); self.stop_measurement()
             return
-
         try:
-            # Set the voltage for the current step
             voltage = self.voltage_list[self.current_step_index]
             self.backend.set_voltage(voltage)
             self.log(f"Step {self.current_step_index + 1}/{len(self.voltage_list)}: Set V = {voltage:.3f} V. Waiting {self.delay_ms}ms...")
-
-            # Schedule the actual measurement after the delay
             self.root.after(self.delay_ms, self._perform_actual_read)
-
         except Exception as e:
-            self.log(f"SWEEP ERROR: {traceback.format_exc()}")
-            self.stop_measurement()
+            self.log(f"SWEEP ERROR: {traceback.format_exc()}"); self.stop_measurement()
             messagebox.showerror("Runtime Error", f"An error occurred during the sweep. Check console.\n{e}")
 
     def _perform_actual_read(self):
-        """This function executes after the delay to read the data."""
         if not self.is_running: return
-
         try:
-            # Perform the measurement
             res, cur, volt = self.backend.get_measurement()
             elapsed_time = time.time() - self.start_time
-
-            # Save and store data
             with open(self.data_filepath, 'a', newline='') as f:
                 csv.writer(f).writerow([f"{elapsed_time:.3f}", f"{volt:.4e}", f"{cur:.4e}", f"{res:.4e}"])
 
@@ -403,27 +377,16 @@ class HighResistanceIV_GUI:
             self.data_storage['current_measured'].append(cur)
             self.data_storage['resistance'].append(res)
 
-            # Update plots
-            self.line_main.set_data(self.data_storage['voltage_applied'], self.data_storage['resistance'])
-            self.line_sub1.set_data(self.data_storage['voltage_applied'], self.data_storage['current_measured'])
-            self.line_sub2.set_data(self.data_storage['time'], self.data_storage['resistance'])
-
-            for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
-                ax.relim(); ax.autoscale_view()
-            self.figure.tight_layout(pad=2.0)
+            self.line_iv.set_data(self.data_storage['voltage_applied'], self.data_storage['current_measured'])
+            self.ax_iv.relim(); self.ax_iv.autoscale_view()
+            self.figure.tight_layout(pad=2.5)
             self.canvas.draw()
 
-            # Move to the next step
             self.current_step_index += 1
-            # Schedule the next step of the loop with a minimal GUI delay
-            if self.is_running:
-                self.root.after(10, self._update_measurement_loop)
-
+            if self.is_running: self.root.after(10, self._update_measurement_loop)
         except Exception as e:
-            self.log(f"READ ERROR: {traceback.format_exc()}")
-            self.stop_measurement()
+            self.log(f"READ ERROR: {traceback.format_exc()}"); self.stop_measurement()
             messagebox.showerror("Runtime Error", f"An error occurred while reading data. Check console.\n{e}")
-
 
     def _scan_for_visa_instruments(self):
         if self.backend.rm is None:
@@ -434,31 +397,24 @@ class HighResistanceIV_GUI:
             if resources:
                 self.log(f"Found: {resources}")
                 self.keithley_combobox['values'] = resources
-                # Try to auto-select a common GPIB address for Keithley
                 for res in resources:
                     if "GPIB" in res and ("24" in res or "25" in res or "26" in res):
-                         self.keithley_combobox.set(res)
-                         break
-                else: # if no specific address found, set the first one
-                    self.keithley_combobox.set(resources[0])
+                         self.keithley_combobox.set(res); break
+                else: self.keithley_combobox.set(resources[0])
             else:
                 self.log("No VISA instruments found.")
-                self.keithley_combobox['values'] = []
-                self.keithley_combobox.set("")
+                self.keithley_combobox['values'] = []; self.keithley_combobox.set("")
         except Exception as e:
             self.log(f"ERROR during scan: {e}")
 
     def _browse_file_location(self):
         path = filedialog.askdirectory()
-        if path:
-            self.file_location_path = path
-            self.log(f"Save location set to: {path}")
+        if path: self.file_location_path = path; self.log(f"Save location set to: {path}")
 
     def _on_closing(self):
         if self.is_running:
             if messagebox.askyesno("Exit", "Measurement sweep is running. Stop and exit?"):
-                self.stop_measurement()
-                self.root.destroy()
+                self.stop_measurement(); self.root.destroy()
         else:
             self.root.destroy()
 
