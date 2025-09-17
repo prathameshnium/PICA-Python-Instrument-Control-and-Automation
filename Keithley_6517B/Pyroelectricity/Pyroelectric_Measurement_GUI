@@ -4,7 +4,7 @@
 #               temperature ramp control.
 # Author:       Prathamesh Deshmukh 
 # Created:      17/09/2025
-# Version:      V2.2 (Bug Fix)
+# Version:      V2.3 (Button Color Reverted)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -17,7 +17,7 @@ from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
-import matplotlib.pyplot as plt  # <-- ADD THIS LINE to fix the NameError
+import matplotlib.pyplot as plt
 from matplotlib import gridspec
 
 # --- Pillow for Logo Image ---
@@ -138,7 +138,7 @@ class PyroelectricBackend:
 
 class PyroelectricAppGUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "2.2"
+    PROGRAM_VERSION = "2.3"
     CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'
     CLR_ACCENT_BLUE = '#8D99AE'; CLR_ACCENT_GREEN = '#A7C957'; CLR_ACCENT_RED = '#EF233C'
     CLR_CONSOLE_BG = '#1E2B38'; CLR_GRAPH_BG = '#FFFFFF'
@@ -177,10 +177,9 @@ class PyroelectricAppGUI:
             foreground=[('!active', self.CLR_BG_DARK), ('active', self.CLR_BG_DARK)],
             background=[('!active', self.CLR_ACCENT_BLUE), ('pressed', self.CLR_FG_LIGHT), ('hover', self.CLR_FG_LIGHT)]
         )
+        # --- REVERTED: Solid colors for Start/Stop buttons ---
         style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN)
-        style.map('Start.TButton', background=[('pressed', self.CLR_ACCENT_GREEN), ('hover', '#b7e468')])
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED)
-        style.map('Stop.TButton', background=[('pressed', self.CLR_ACCENT_RED), ('hover', '#ff586a')])
 
         # --- Entry and Combobox ---
         style.configure('TEntry', fieldbackground=self.CLR_FG_LIGHT, foreground=self.CLR_BG_DARK, borderwidth=1, insertcolor=self.CLR_BG_DARK)
