@@ -2,14 +2,14 @@
 # Name:         Pyroelectric Measurement GUI
 # Purpose:      Perform a pyroelectric current measurement with enhanced, two-stage
 #               temperature ramp control.
-# Author:       Prathamesh Deshmukh
+# Author:       Prathamesh Deshmukh 
 # Created:      17/09/2025
-# Version:      V2.0 (Integrated Advanced Ramp Control)
+# Version:      V2.2 (Bug Fix)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
 import tkinter as tk
-from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext
+from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext, Canvas
 import os
 import time
 import traceback
@@ -17,7 +17,15 @@ from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
+import matplotlib.pyplot as plt  # <-- ADD THIS LINE to fix the NameError
 from matplotlib import gridspec
+
+# --- Pillow for Logo Image ---
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 # --- Packages for Back end ---
 try:
@@ -130,18 +138,19 @@ class PyroelectricBackend:
 
 class PyroelectricAppGUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "2.0"
+    PROGRAM_VERSION = "2.2"
     CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'
     CLR_ACCENT_BLUE = '#8D99AE'; CLR_ACCENT_GREEN = '#A7C957'; CLR_ACCENT_RED = '#EF233C'
     CLR_CONSOLE_BG = '#1E2B38'; CLR_GRAPH_BG = '#FFFFFF'
     FONT_SIZE_BASE = 11; FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
-    FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold'); FONT_CONSOLE = ('Consolas', 10)
+    FONT_LABEL_BOLD = ('Segoe UI', FONT_SIZE_BASE, 'bold')
+    FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 4, 'bold'); FONT_CONSOLE = ('Consolas', 10)
 
     def __init__(self, root):
         self.root = root
         self.root.title("Pyroelectric Measurement Interface")
-        self.root.geometry("1600x900"); self.root.configure(bg=self.CLR_BG_DARK)
-        self.root.minsize(1200, 800)
+        self.root.geometry("1600x950"); self.root.configure(bg=self.CLR_BG_DARK)
+        self.root.minsize(1300, 850)
 
         self.is_running, self.start_time = False, None
         self.experiment_state = 'idle'  # States: idle, stabilizing, ramping
@@ -154,23 +163,43 @@ class PyroelectricAppGUI:
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def setup_styles(self):
-        """Configures ttk styles for a modern look."""
+        """Configures ttk styles for a modern, beautiful look."""
         style = ttk.Style(self.root); style.theme_use('clam')
+
+        # --- General ---
         style.configure('TFrame', background=self.CLR_BG_DARK)
-        style.configure('TPanedWindow', background=self.CLR_BG_DARK)
+        style.configure('TPanedWindow', background=self.CLR_BG_DARK, sashwidth=8)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
-        style.configure('TButton', font=self.FONT_BASE, padding=(10, 8))
-        style.map('TButton', foreground=[('!active', self.CLR_BG_DARK)], background=[('!active', self.CLR_ACCENT_BLUE)])
+
+        # --- Buttons ---
+        style.configure('TButton', font=self.FONT_LABEL_BOLD, padding=(10, 8), borderwidth=0)
+        style.map('TButton',
+            foreground=[('!active', self.CLR_BG_DARK), ('active', self.CLR_BG_DARK)],
+            background=[('!active', self.CLR_ACCENT_BLUE), ('pressed', self.CLR_FG_LIGHT), ('hover', self.CLR_FG_LIGHT)]
+        )
         style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN)
+        style.map('Start.TButton', background=[('pressed', self.CLR_ACCENT_GREEN), ('hover', '#b7e468')])
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED)
-        mpl.rcParams['font.family'] = 'Segoe UI'; mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
+        style.map('Stop.TButton', background=[('pressed', self.CLR_ACCENT_RED), ('hover', '#ff586a')])
+
+        # --- Entry and Combobox ---
+        style.configure('TEntry', fieldbackground=self.CLR_FG_LIGHT, foreground=self.CLR_BG_DARK, borderwidth=1, insertcolor=self.CLR_BG_DARK)
+        style.configure('TCombobox', fieldbackground=self.CLR_FG_LIGHT, foreground=self.CLR_BG_DARK, borderwidth=1, arrowcolor=self.CLR_BG_DARK)
+
+        # --- LabelFrame ---
+        style.configure('TLabelframe', background=self.CLR_BG_DARK, borderwidth=1, relief='solid')
+        style.configure('TLabelframe.Label', background=self.CLR_BG_DARK, foreground=self.CLR_ACCENT_BLUE, font=self.FONT_LABEL_BOLD)
+
+        # --- Matplotlib ---
+        mpl.rcParams['font.family'] = 'Segoe UI'
+        mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
 
     def create_widgets(self):
         """Lays out the main frames and populates them with widgets."""
         self.create_header()
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
-        main_pane.pack(fill='both', expand=True, padx=10, pady=10)
-        left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=450)
+        main_pane.pack(fill='both', expand=True, padx=15, pady=15)
+        left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=500)
         main_pane.add(left_panel, weight=1)
         right_panel = tk.Frame(main_pane, bg=self.CLR_BG_DARK)
         main_pane.add(right_panel, weight=3)
@@ -184,86 +213,109 @@ class PyroelectricAppGUI:
 
     def create_header(self):
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
-        header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="Pyroelectric Current Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
-        Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).pack(side='right', padx=20, pady=10)
+        header_frame.pack(side='top', fill='x', pady=(0, 5))
+        Label(header_frame, text="Pyroelectric Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=15)
+        Label(header_frame, text=f"Version {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).pack(side='right', padx=20, pady=15)
 
     def create_info_frame(self, parent):
-        frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame = ttk.LabelFrame(parent, text=' Information ')
         frame.pack(pady=(10, 10), padx=10, fill='x')
-        info_text = ("Measurement: Pyroelectric Current vs. Temp\n\n"
-                     "Instruments:\n  • Lakeshore 350 Temp. Controller\n  • Keithley 6517B Electrometer")
-        ttk.Label(frame, text=info_text, justify='left').pack(padx=15, pady=10, anchor='w')
+        frame.grid_columnconfigure(1, weight=1)
+
+        logo_canvas = Canvas(frame, width=100, height=100, bg=self.CLR_BG_DARK, highlightthickness=0)
+        logo_canvas.grid(row=0, column=0, rowspan=2, padx=15, pady=15)
+        self.logo_image = self._process_logo_image("logo.png")
+        if self.logo_image: logo_canvas.create_image(50, 50, image=self.logo_image)
+        else: logo_canvas.create_text(50, 50, text="LOGO", font=self.FONT_TITLE, fill=self.CLR_FG_LIGHT)
+
+        info_text = ("Measurement: Pyroelectric Current vs. Temperature")
+        ttk.Label(frame, text=info_text, font=self.FONT_LABEL_BOLD).grid(row=0, column=1, padx=10, pady=(15, 5), sticky='sw')
+        instruments_text = " • Lakeshore 350 Temp. Controller\n • Keithley 6517B Electrometer"
+        ttk.Label(frame, text=instruments_text, justify='left').grid(row=1, column=1, padx=10, pady=(0, 15), sticky='nw')
 
     def create_input_frame(self, parent):
-        frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame = ttk.LabelFrame(parent, text=' Experiment Parameters ')
         frame.pack(pady=10, padx=10, fill='x')
         for i in range(2): frame.grid_columnconfigure(i, weight=1)
 
         self.entries = {}
-        # UPDATED parameters to reflect new workflow
-        params = [
-            ("Sample Name", "SampleX"),
-            ("Start Temp (K)", "300"),
-            ("End Temp (K)", "350"),
-            ("Ramp Rate (K/min)", "5"),
-            ("Safety Cutoff (K)", "360")
-        ]
+        # Side-by-side layout for temperature inputs
+        ttk.Label(frame, text="Start Temp (K):", font=self.FONT_LABEL_BOLD).grid(row=1, column=0, padx=(15,5), pady=(10,0), sticky='w')
+        self.entries['Start Temp'] = ttk.Entry(frame, font=self.FONT_BASE, width=15); self.entries['Start Temp'].grid(row=2, column=0, padx=(15,5), pady=(0,10), sticky='ew')
 
-        for i, (text, default) in enumerate(params):
-            ttk.Label(frame, text=f"{text}:").grid(row=i, column=0, columnspan=2, padx=10, pady=(6,0), sticky='w')
-            entry = ttk.Entry(frame, font=self.FONT_BASE)
-            entry.grid(row=i+1, column=0, columnspan=2, padx=10, pady=(0,6), sticky='ew')
-            entry.insert(0, default)
-            self.entries[text] = entry
+        ttk.Label(frame, text="End Temp (K):", font=self.FONT_LABEL_BOLD).grid(row=1, column=1, padx=(5,15), pady=(10,0), sticky='w')
+        self.entries['End Temp'] = ttk.Entry(frame, font=self.FONT_BASE, width=15); self.entries['End Temp'].grid(row=2, column=1, padx=(5,15), pady=(0,10), sticky='ew')
 
-        row_offset = (len(params) * 2)
+        # Side-by-side layout for rate and safety
+        ttk.Label(frame, text="Ramp Rate (K/min):", font=self.FONT_LABEL_BOLD).grid(row=3, column=0, padx=(15,5), pady=(5,0), sticky='w')
+        self.entries['Ramp Rate'] = ttk.Entry(frame, font=self.FONT_BASE, width=15); self.entries['Ramp Rate'].grid(row=4, column=0, padx=(15,5), pady=(0,15), sticky='ew')
 
-        ttk.Label(frame, text="Lakeshore 350 VISA:").grid(row=row_offset, column=0, columnspan=2, padx=10, pady=(6,0), sticky='w')
-        self.lakeshore_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
-        self.lakeshore_combobox.grid(row=row_offset + 1, column=0, columnspan=2, padx=10, pady=(0,6), sticky='ew')
+        ttk.Label(frame, text="Safety Cutoff (K):", font=self.FONT_LABEL_BOLD).grid(row=3, column=1, padx=(5,15), pady=(5,0), sticky='w')
+        self.entries['Safety Cutoff'] = ttk.Entry(frame, font=self.FONT_BASE, width=15); self.entries['Safety Cutoff'].grid(row=4, column=1, padx=(5,15), pady=(0,15), sticky='ew')
 
-        ttk.Label(frame, text="Keithley 6517B VISA:").grid(row=row_offset + 2, column=0, columnspan=2, padx=10, pady=(6,0), sticky='w')
-        self.keithley_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
-        self.keithley_combobox.grid(row=row_offset + 3, column=0, columnspan=2, padx=10, pady=(0,10), sticky='ew')
+        # Populate with defaults
+        self.entries['Start Temp'].insert(0, "300"); self.entries['End Temp'].insert(0, "350");
+        self.entries['Ramp Rate'].insert(0, "5"); self.entries['Safety Cutoff'].insert(0, "360")
 
-        button_frame = ttk.Frame(frame)
-        button_frame.grid(row=row_offset + 4, column=0, columnspan=2, pady=10)
+        # Sample Name and VISA inputs
+        ttk.Label(frame, text="Sample Name:", font=self.FONT_LABEL_BOLD).grid(row=0, column=0, columnspan=2, padx=15, pady=(10,0), sticky='w')
+        self.entries['Sample Name'] = ttk.Entry(frame, font=self.FONT_BASE); self.entries['Sample Name'].grid(row=0, column=1, padx=(5,15), pady=(10,10), sticky='ew')
+        self.entries['Sample Name'].insert(0, "SampleX")
+
+        ttk.Label(frame, text="Lakeshore 350 VISA:", font=self.FONT_LABEL_BOLD).grid(row=5, column=0, columnspan=2, padx=15, pady=(5,0), sticky='w')
+        self.lakeshore_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly'); self.lakeshore_combobox.grid(row=6, column=0, columnspan=2, padx=15, pady=(0,5), sticky='ew')
+
+        ttk.Label(frame, text="Keithley 6517B VISA:", font=self.FONT_LABEL_BOLD).grid(row=7, column=0, columnspan=2, padx=15, pady=(5,0), sticky='w')
+        self.keithley_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly'); self.keithley_combobox.grid(row=8, column=0, columnspan=2, padx=15, pady=(0,15), sticky='ew')
+
+        # Buttons in a 2x2 grid
+        button_frame = ttk.Frame(frame); button_frame.grid(row=9, column=0, columnspan=2, padx=10, pady=10, sticky='ew')
         for i in range(2): button_frame.grid_columnconfigure(i, weight=1)
-
-        self.scan_button = ttk.Button(button_frame, text="Scan Instruments", command=self._scan_for_visa_instruments)
-        self.scan_button.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
-
-        self.file_location_button = ttk.Button(button_frame, text="Browse Save Location", command=self._browse_file_location)
-        self.file_location_button.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
-
-        self.start_button = ttk.Button(button_frame, text="Start", command=self.start_measurement, style='Start.TButton')
-        self.start_button.grid(row=2, column=0, padx=5, pady=10, sticky='ew')
-
-        self.stop_button = ttk.Button(button_frame, text="Stop", command=self.stop_measurement, style='Stop.TButton', state='disabled')
-        self.stop_button.grid(row=2, column=1, padx=5, pady=10, sticky='ew')
+        self.scan_button = ttk.Button(button_frame, text="Scan Instruments", command=self._scan_for_visa_instruments); self.scan_button.grid(row=0, column=0, padx=5, pady=5, sticky='ew')
+        self.file_location_button = ttk.Button(button_frame, text="Browse Save Location", command=self._browse_file_location); self.file_location_button.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
+        self.start_button = ttk.Button(button_frame, text="START", command=self.start_measurement, style='Start.TButton'); self.start_button.grid(row=1, column=0, padx=5, pady=5, sticky='ew')
+        self.stop_button = ttk.Button(button_frame, text="STOP", command=self.stop_measurement, style='Stop.TButton', state='disabled'); self.stop_button.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
 
     def create_console_frame(self, parent):
-        frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0)
-        self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
+        frame = ttk.LabelFrame(parent, text=' Console Output ')
+        self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0, relief='flat')
+        self.console_widget.pack(pady=10, padx=10, fill='both', expand=True)
         self.log("Console initialized.")
+        if not PIL_AVAILABLE: self.log("Note: 'Pillow' not found. Logo cannot be displayed. Run 'pip install Pillow'.")
         if not PYVISA_AVAILABLE: self.log("CRITICAL ERROR: pyvisa or pymeasure not found.")
-        else: self.log("Please scan for instruments and select a save location.")
+        else: self.log("Please select a save location and scan for instruments.")
         return frame
 
     def create_graph_frame(self, parent):
-        graph_container = LabelFrame(parent, text='Live Graphs', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
-        graph_container.pack(fill='both', expand=True, padx=(5, 10), pady=0)
+        graph_container = ttk.LabelFrame(parent, text=' Live Graphs ')
+        graph_container.pack(fill='both', expand=True, padx=(10, 0), pady=0)
+        plt.style.use('seaborn-v0_8-whitegrid')
         self.figure = Figure(figsize=(10, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
-        gs = self.figure.add_gridspec(2, 2, height_ratios=[2, 1])
+        gs = self.figure.add_gridspec(2, 2, height_ratios=[2, 1.2])
         self.ax_main = self.figure.add_subplot(gs[0, :]); self.ax_sub1 = self.figure.add_subplot(gs[1, 0]); self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
         self.axes = [self.ax_main, self.ax_sub1, self.ax_sub2]
-        self.line_main, = self.ax_main.plot([], [], color='#e63946', marker='o', markersize=4, linestyle='-'); self.ax_main.set_title("Current vs. Temperature", fontsize=14, weight='bold'); self.ax_main.set_xlabel("Temperature (K)"); self.ax_main.set_ylabel("Current (A)")
-        self.line_sub1, = self.ax_sub1.plot([], [], color='#0077b6', marker='.', markersize=4); self.ax_sub1.set_title("Temperature vs. Time"); self.ax_sub1.set_xlabel("Time (s)"); self.ax_sub1.set_ylabel("Temperature (K)")
-        self.line_sub2, = self.ax_sub2.plot([], [], color='#06d6a0', marker='.', markersize=4); self.ax_sub2.set_title("Current vs. Time"); self.ax_sub2.set_xlabel("Time (s)"); self.ax_sub2.set_ylabel("Current (A)")
-        for ax in self.axes: ax.grid(True, linestyle='--', alpha=0.6); ax.ticklabel_format(axis='y', style='sci', scilimits=(-2, 3), useMathText=True)
-        self.figure.tight_layout(pad=2.5); self.canvas = FigureCanvasTkAgg(self.figure, graph_container); self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
+
+        self.line_main, = self.ax_main.plot([], [], color='#e63946', marker='o', markersize=4, linestyle='-', linewidth=1.5)
+        self.ax_main.set_title("Current vs. Temperature", fontsize=14, weight='bold'); self.ax_main.set_xlabel("Temperature (K)"); self.ax_main.set_ylabel("Current (A)")
+
+        self.line_sub1, = self.ax_sub1.plot([], [], color='#0077b6', marker='.', markersize=4, linestyle='-', linewidth=1)
+        self.ax_sub1.set_title("Temperature vs. Time", fontsize=11); self.ax_sub1.set_xlabel("Time (s)"); self.ax_sub1.set_ylabel("Temperature (K)")
+
+        self.line_sub2, = self.ax_sub2.plot([], [], color='#06d6a0', marker='.', markersize=4, linestyle='-', linewidth=1)
+        self.ax_sub2.set_title("Current vs. Time", fontsize=11); self.ax_sub2.set_xlabel("Time (s)"); self.ax_sub2.set_ylabel("Current (A)")
+
+        for ax in self.axes: ax.set_facecolor('#f7f7f7'); ax.ticklabel_format(axis='y', style='sci', scilimits=(-2, 3), useMathText=True)
+        self.figure.tight_layout(pad=3.0); self.canvas = FigureCanvasTkAgg(self.figure, graph_container); self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
+
+    def _process_logo_image(self, input_path, size=100):
+        if not (PIL_AVAILABLE and os.path.exists(input_path)): return None
+        try:
+            with Image.open(input_path) as img:
+                img_resized = img.resize((size, size), Image.Resampling.LANCZOS)
+                return ImageTk.PhotoImage(img_resized)
+        except Exception as e:
+            print(f"ERROR: Could not process logo image '{input_path}'. Reason: {e}")
+            return None
 
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -273,55 +325,42 @@ class PyroelectricAppGUI:
         try:
             params = {
                 'sample_name': self.entries["Sample Name"].get(),
-                'start_temp': float(self.entries["Start Temp (K)"].get()),
-                'end_temp': float(self.entries["End Temp (K)"].get()),
-                'rate': float(self.entries["Ramp Rate (K/min)"].get()),
-                'safety_cutoff': float(self.entries["Safety Cutoff (K)"].get()),
+                'start_temp': float(self.entries["Start Temp"].get()),
+                'end_temp': float(self.entries["End Temp"].get()),
+                'rate': float(self.entries["Ramp Rate"].get()),
+                'safety_cutoff': float(self.entries["Safety Cutoff"].get()),
                 'lakeshore_visa': self.lakeshore_combobox.get(),
                 'keithley_visa': self.keithley_combobox.get()
             }
-            # --- Validation ---
-            if not all([params['sample_name'], params['lakeshore_visa'], params['keithley_visa'], self.file_location_path]):
-                raise ValueError("All fields, VISA addresses, and a save location are required.")
-            if not (params['start_temp'] < params['end_temp'] < params['safety_cutoff']):
-                raise ValueError("Temperatures must be in ascending order (Start < End < Cutoff).")
+            if not all([params['sample_name'], params['lakeshore_visa'], params['keithley_visa'], self.file_location_path]): raise ValueError("All fields, VISA addresses, and a save location are required.")
+            if not (params['start_temp'] < params['end_temp'] < params['safety_cutoff']): raise ValueError("Temperatures must be in ascending order (Start < End < Cutoff).")
             if params['rate'] <= 0: raise ValueError("Ramp rate must be a positive number.")
 
             self.backend.initialize_instruments(params)
             self.log(f"Backend initialized for sample: {params['sample_name']}")
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            file_name = f"{params['sample_name']}_{timestamp}_Pyro.csv"
-            self.data_filepath = os.path.join(self.file_location_path, file_name)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S"); file_name = f"{params['sample_name']}_{timestamp}_Pyro.csv"; self.data_filepath = os.path.join(self.file_location_path, file_name)
             with open(self.data_filepath, 'w', newline='') as f:
                 header = f"# Sample: {params['sample_name']}\n# Start: {params['start_temp']} K, End: {params['end_temp']} K, Ramp: {params['rate']} K/min\n"
                 f.write(header); f.write("Time (s),Temperature (K),Current (A)\n")
             self.log(f"Output file created: {os.path.basename(self.data_filepath)}")
 
-            self.is_running = True
-            self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
+            self.is_running = True; self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
             for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_data([], [])
-            self.ax_main.set_title(f"I vs T | Sample: {params['sample_name']}", fontsize=14, weight='bold')
-            self.canvas.draw()
+            self.ax_main.set_title(f"I vs T | Sample: {params['sample_name']}", fontsize=14, weight='bold'); self.canvas.draw()
 
-            self.log("Moving to start temperature for stabilization...")
-            self.experiment_state = 'stabilizing'
-            self.backend.start_stabilization()
+            self.log("Moving to start temperature for stabilization..."); self.experiment_state = 'stabilizing'; self.backend.start_stabilization()
             self.root.after(2000, self._update_measurement_loop)
 
         except Exception as e:
-            self.log(f"ERROR during startup: {traceback.format_exc()}")
-            messagebox.showerror("Initialization Error", f"Could not start measurement.\n\nDetails:\n{e}")
+            self.log(f"ERROR during startup: {traceback.format_exc()}"); messagebox.showerror("Initialization Error", f"Could not start measurement.\n\nDetails:\n{e}")
 
     def stop_measurement(self, reason="stopped by user"):
         if self.is_running:
-            self.is_running = False; self.experiment_state = 'idle'
-            self.log(f"Measurement loop {reason}.")
-            self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
-            self.backend.close_instruments()
-            self.log("Instrument connections closed.")
-            messagebox.showinfo("Info", f"Measurement stopped.\nReason: {reason}")
+            self.is_running = False; self.experiment_state = 'idle'; self.log(f"Measurement loop {reason}.")
+            self.start_button.config(state='normal'); self.stop_button.config(state='disabled'); self.backend.close_instruments()
+            self.log("Instrument connections closed."); messagebox.showinfo("Info", f"Measurement stopped.\nReason: {reason}")
 
     def _update_measurement_loop(self):
         if not self.is_running: return
@@ -329,39 +368,27 @@ class PyroelectricAppGUI:
             current_temp, current_val = self.backend.get_measurement()
             params = self.backend.params
 
-            # --- STATE: STABILIZING ---
             if self.experiment_state == 'stabilizing':
                 self.log(f"Stabilizing... Current Temp: {current_temp:.4f} K (Target: {params['start_temp']} K)")
-                if abs(current_temp - params['start_temp']) < 0.1: # Stabilization tolerance
-                    self.log(f"Stabilized at {params['start_temp']} K. Starting ramp.")
-                    self.experiment_state = 'ramping'
-                    self.backend.start_ramp()
-                    self.start_time = time.time() # Start timer NOW
+                if abs(current_temp - params['start_temp']) < 0.1:
+                    self.log(f"Stabilized at {params['start_temp']} K. Starting ramp."); self.experiment_state = 'ramping'; self.backend.start_ramp(); self.start_time = time.time()
 
-            # --- STATE: RAMPING ---
             elif self.experiment_state == 'ramping':
                 elapsed_time = time.time() - self.start_time
                 self.log(f"Ramping... Time: {elapsed_time:7.1f}s | Temp: {current_temp:8.4f}K | Current: {current_val:.3e} A")
 
-                with open(self.data_filepath, 'a', newline='') as f:
-                    f.write(f"{elapsed_time:.2f},{current_temp:.4f},{current_val}\n")
+                with open(self.data_filepath, 'a', newline='') as f: f.write(f"{elapsed_time:.2f},{current_temp:.4f},{current_val}\n")
 
-                self.data_storage['time'].append(elapsed_time)
-                self.data_storage['temperature'].append(current_temp)
-                self.data_storage['current'].append(current_val)
-
-                self.line_main.set_data(self.data_storage['temperature'], self.data_storage['current'])
-                self.line_sub1.set_data(self.data_storage['time'], self.data_storage['temperature'])
-                self.line_sub2.set_data(self.data_storage['time'], self.data_storage['current'])
+                self.data_storage['time'].append(elapsed_time); self.data_storage['temperature'].append(current_temp); self.data_storage['current'].append(current_val)
+                self.line_main.set_data(self.data_storage['temperature'], self.data_storage['current']); self.line_sub1.set_data(self.data_storage['time'], self.data_storage['temperature']); self.line_sub2.set_data(self.data_storage['time'], self.data_storage['current'])
                 for ax in self.axes: ax.relim(); ax.autoscale_view()
-                self.figure.tight_layout(pad=2.5); self.canvas.draw()
+                self.figure.tight_layout(pad=3.0); self.canvas.draw()
 
                 if current_temp >= params['safety_cutoff']: self.stop_measurement(f"SAFETY CUTOFF REACHED at {current_temp:.4f} K!"); return
                 if current_temp >= params['end_temp']: self.stop_measurement(f"Target temperature of {params['end_temp']} K reached."); return
 
         except Exception:
-            self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement(reason="runtime error")
-            messagebox.showerror("Runtime Error", "An error occurred. Check console for details."); return
+            self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement(reason="runtime error"); messagebox.showerror("Runtime Error", "An error occurred. Check console for details."); return
 
         if self.is_running: self.root.after(2000, self._update_measurement_loop)
 
@@ -372,8 +399,7 @@ class PyroelectricAppGUI:
         try:
             resources = self.backend.rm.list_resources()
             if resources:
-                self.log(f"Found: {resources}")
-                self.keithley_combobox['values'] = resources; self.lakeshore_combobox['values'] = resources
+                self.log(f"Found: {resources}"); self.keithley_combobox['values'] = resources; self.lakeshore_combobox['values'] = resources
                 for res in resources:
                     if "27" in res: self.keithley_combobox.set(res)
                     if "12" in res: self.lakeshore_combobox.set(res)
