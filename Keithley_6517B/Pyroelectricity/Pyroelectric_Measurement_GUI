@@ -1,12 +1,11 @@
 # -------------------------------------------------------------------------------
 # Name:         Pyroelectric Measurement GUI
-# Purpose:      Perform a pyroelectric current measurement by interfacing a
-#               Lakeshore 350 Temperature Controller and a Keithley 6517B.
-# Author:       Prathamesh deshmukh
+# Purpose:      Perform a pyroelectric current measurement with enhanced, two-stage
+#               temperature ramp control.
+# Author:       Prathamesh Deshmukh
 # Created:      17/09/2025
-# Version:      V1.1 (Graph Layout Update)
+# Version:      V2.0 (Integrated Advanced Ramp Control)
 # -------------------------------------------------------------------------------
-
 
 # --- Packages for Front end ---
 import tkinter as tk
@@ -18,7 +17,7 @@ from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
-from matplotlib import gridspec # Import gridspec for advanced subplot layout
+from matplotlib import gridspec
 
 # --- Packages for Back end ---
 try:
@@ -31,14 +30,13 @@ except ImportError:
 
 class PyroelectricBackend:
     """
-    A dedicated class to handle backend instrument communication for the
-    pyroelectric measurement.
+    Handles all backend instrument communication.
+    Integrates advanced ramp control with pyroelectric current measurement.
     """
     def __init__(self):
         self.params = {}
         self.keithley = None
         self.lakeshore = None
-        self.t_final = 350.0  # Default final temperature
         if PYVISA_AVAILABLE:
             try:
                 self.rm = pyvisa.ResourceManager()
@@ -49,11 +47,9 @@ class PyroelectricBackend:
             self.rm = None
 
     def initialize_instruments(self, parameters):
-        """Receives all parameters from the GUI and configures the instruments."""
+        """Connects, resets, and performs initial configuration of instruments."""
         print("\n--- [Backend] Initializing Instruments ---")
         self.params = parameters
-        self.t_final = self.params['final_temp']
-
         if not self.rm:
             raise ConnectionError("VISA Resource Manager is not available.")
         try:
@@ -65,46 +61,54 @@ class PyroelectricBackend:
 
             self.lakeshore.write('*RST'); time.sleep(0.5)
             self.lakeshore.write('*CLS'); time.sleep(0.5)
-            # Command format: RAMP <output>,<mode>,<rate> (mode 1 = ramp on setpoint)
-            self.lakeshore.write(f"RAMP 1, 1, {self.params['ramp_rate']}"); time.sleep(0.5)
-            # Command format: RANGE <output>,<range>
-            self.lakeshore.write(f"RANGE 1, {self.params['heater_range']}"); time.sleep(0.5)
-            # Command format: SETP <output>,<value>
-            self.lakeshore.write(f"SETP 1,{self.params['setpoint_temp']}"); time.sleep(0.5)
-            print("  Lakeshore 350 Configured and ramping.")
+
+            # HTRSET <output>,<resistance>,<max current>,<max user current>,<display>
+            # resistance=1 (25Ω), max_current=2 (1A)
+            self.lakeshore.write('HTRSET 1,1,2,0,1')
+            print("  Lakeshore heater configured (25Ω, 1A max).")
 
             # --- Connect and Configure Keithley 6517B ---
             print(f"  Connecting to Keithley 6517B via {self.params['keithley_visa']}...")
-            # Pymeasure handles the VISA resource opening
             self.keithley = Keithley6517B(self.params['keithley_visa'])
             time.sleep(1)
             print(f"    Connected to: {self.keithley.id}")
-            self.keithley.measure_current() # Set to measure current
-            print("  Keithley 6517B Configured to measure current.")
+            self.keithley.measure_current()
+            print("  Keithley 6517B configured to measure current.")
             print("--- [Backend] Instrument Initialization Complete ---")
 
         except Exception as e:
             print(f"  ERROR: Could not connect/configure an instrument. {e}")
-            self.close_instruments() # Attempt to clean up
+            self.close_instruments()
             raise e
 
+    def start_stabilization(self):
+        """Begins moving to the start temperature for stabilization."""
+        print(f"  Moving to start temperature: {self.params['start_temp']} K")
+        self.lakeshore.write(f"SETP 1,{self.params['start_temp']}")
+        self.lakeshore.write("RANGE 1,4") # Use 'medium' range for stabilization
+        print("  Heater range set to 'Medium' for stabilization.")
+
+    def start_ramp(self):
+        """Configures and starts the temperature ramp."""
+        print(f"  Ramp starting towards {self.params['end_temp']} K at {self.params['rate']} K/min.")
+        # RAMP <output>,<on/off>,<rate>
+        self.lakeshore.write(f"RAMP 1,1,{self.params['rate']}")
+        self.lakeshore.write(f"SETP 1,{self.params['end_temp']}")
+        # Ensure heater range is sufficient for ramp
+        self.lakeshore.write("RANGE 1,4") # 'Medium' is often a good choice
+        print("  Ramp configured and setpoint updated.")
+
     def get_measurement(self):
-        """Performs a single measurement and returns all relevant data."""
+        """Reads temperature and current from the instruments."""
         if not self.keithley or not self.lakeshore:
             raise ConnectionError("One or more instruments are not connected.")
-
-        temp_str = self.lakeshore.query('KRDG? A').strip()
-        temperature = float(temp_str)
-        current = self.keithley.current  # Read current in Amps
-
-        # Check if the final temperature is reached
-        measurement_continues = (temperature < self.t_final)
-        if not measurement_continues:
-            print(f"  Final temperature {self.t_final} K reached.")
-            self.lakeshore.write('RANGE 1, 0') # Turn off heater
-            print("  Lakeshore heater turned OFF.")
-
-        return temperature, current, measurement_continues
+        try:
+            temp_str = self.lakeshore.query('KRDG? A').strip()
+            temperature = float(temp_str)
+            current = self.keithley.current
+            return temperature, current
+        except (pyvisa.errors.VisaIOError, ValueError):
+            return float('nan'), float('nan') # Return NaN on error
 
     def close_instruments(self):
         """Safely shuts down and disconnects from all instruments."""
@@ -117,8 +121,7 @@ class PyroelectricBackend:
             finally: self.keithley = None
         if self.lakeshore:
             try:
-                # Set heater range to 0 (OFF)
-                self.lakeshore.write("RANGE 1, 0")
+                self.lakeshore.write("RANGE 1, 0") # Turn off heater
                 self.lakeshore.close()
                 print("  Lakeshore 350 connection closed.")
             except Exception: pass
@@ -127,29 +130,21 @@ class PyroelectricBackend:
 
 class PyroelectricAppGUI:
     """The main GUI application class (Front End)."""
-    # --- Theming and Styling ---
-    PROGRAM_VERSION = "1.1"
-    CLR_BG_DARK = '#2B3D4F'
-    CLR_HEADER = '#3A506B'
-    CLR_FG_LIGHT = '#EDF2F4'
-    CLR_ACCENT_BLUE = '#8D99AE'
-    CLR_ACCENT_GREEN = '#A7C957'
-    CLR_ACCENT_RED = '#EF233C'
-    CLR_CONSOLE_BG = '#1E2B38'
-    CLR_GRAPH_BG = '#FFFFFF'
-    FONT_SIZE_BASE = 11
-    FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
-    FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
-    FONT_CONSOLE = ('Consolas', 10)
+    PROGRAM_VERSION = "2.0"
+    CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'
+    CLR_ACCENT_BLUE = '#8D99AE'; CLR_ACCENT_GREEN = '#A7C957'; CLR_ACCENT_RED = '#EF233C'
+    CLR_CONSOLE_BG = '#1E2B38'; CLR_GRAPH_BG = '#FFFFFF'
+    FONT_SIZE_BASE = 11; FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
+    FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold'); FONT_CONSOLE = ('Consolas', 10)
 
     def __init__(self, root):
         self.root = root
         self.root.title("Pyroelectric Measurement Interface")
-        self.root.geometry("1600x900")
-        self.root.configure(bg=self.CLR_BG_DARK)
+        self.root.geometry("1600x900"); self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1200, 800)
 
         self.is_running, self.start_time = False, None
+        self.experiment_state = 'idle'  # States: idle, stabilizing, ramping
         self.backend = PyroelectricBackend()
         self.file_location_path = ""
         self.data_storage = {'time': [], 'temperature': [], 'current': []}
@@ -160,39 +155,29 @@ class PyroelectricAppGUI:
 
     def setup_styles(self):
         """Configures ttk styles for a modern look."""
-        style = ttk.Style(self.root)
-        style.theme_use('clam')
+        style = ttk.Style(self.root); style.theme_use('clam')
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
         style.configure('TButton', font=self.FONT_BASE, padding=(10, 8))
-        style.map('TButton',
-                  foreground=[('!active', self.CLR_BG_DARK), ('active', self.CLR_FG_LIGHT)],
-                  background=[('!active', self.CLR_ACCENT_BLUE), ('active', self.CLR_BG_DARK)])
+        style.map('TButton', foreground=[('!active', self.CLR_BG_DARK)], background=[('!active', self.CLR_ACCENT_BLUE)])
         style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN)
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED)
-        mpl.rcParams['font.family'] = 'Segoe UI'
-        mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
+        mpl.rcParams['font.family'] = 'Segoe UI'; mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
 
     def create_widgets(self):
         """Lays out the main frames and populates them with widgets."""
         self.create_header()
-
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
-
         left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=450)
         main_pane.add(left_panel, weight=1)
-
         right_panel = tk.Frame(main_pane, bg=self.CLR_BG_DARK)
         main_pane.add(right_panel, weight=3)
-
         top_controls_frame = ttk.Frame(left_panel)
         left_panel.add(top_controls_frame, weight=0)
-
         self.create_info_frame(top_controls_frame)
         self.create_input_frame(top_controls_frame)
-
         console_pane = self.create_console_frame(left_panel)
         left_panel.add(console_pane, weight=1)
         self.create_graph_frame(right_panel)
@@ -213,37 +198,38 @@ class PyroelectricAppGUI:
     def create_input_frame(self, parent):
         frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         frame.pack(pady=10, padx=10, fill='x')
-        frame.grid_columnconfigure(1, weight=1)
+        for i in range(2): frame.grid_columnconfigure(i, weight=1)
 
         self.entries = {}
-        params = {
-            "Sample Name": "SampleX",
-            "Setpoint Temp (K)": "310",
-            "Final Temp (K)": "360",
-            "Ramp Rate (K/min)": "5",
-            "Heater Range": "3" # 1=Low, 2=Med, 3=High
-        }
+        # UPDATED parameters to reflect new workflow
+        params = [
+            ("Sample Name", "SampleX"),
+            ("Start Temp (K)", "300"),
+            ("End Temp (K)", "350"),
+            ("Ramp Rate (K/min)", "5"),
+            ("Safety Cutoff (K)", "360")
+        ]
 
-        for i, (text, default) in enumerate(params.items()):
-            ttk.Label(frame, text=f"{text}:").grid(row=i, column=0, padx=10, pady=6, sticky='w')
+        for i, (text, default) in enumerate(params):
+            ttk.Label(frame, text=f"{text}:").grid(row=i, column=0, columnspan=2, padx=10, pady=(6,0), sticky='w')
             entry = ttk.Entry(frame, font=self.FONT_BASE)
-            entry.grid(row=i, column=1, padx=10, pady=6, sticky='ew')
+            entry.grid(row=i+1, column=0, columnspan=2, padx=10, pady=(0,6), sticky='ew')
             entry.insert(0, default)
             self.entries[text] = entry
 
-        row_offset = len(params)
+        row_offset = (len(params) * 2)
 
-        ttk.Label(frame, text="Lakeshore 350 VISA:").grid(row=row_offset, column=0, padx=10, pady=6, sticky='w')
+        ttk.Label(frame, text="Lakeshore 350 VISA:").grid(row=row_offset, column=0, columnspan=2, padx=10, pady=(6,0), sticky='w')
         self.lakeshore_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
-        self.lakeshore_combobox.grid(row=row_offset, column=1, padx=10, pady=6, sticky='ew')
+        self.lakeshore_combobox.grid(row=row_offset + 1, column=0, columnspan=2, padx=10, pady=(0,6), sticky='ew')
 
-        ttk.Label(frame, text="Keithley 6517B VISA:").grid(row=row_offset + 1, column=0, padx=10, pady=6, sticky='w')
+        ttk.Label(frame, text="Keithley 6517B VISA:").grid(row=row_offset + 2, column=0, columnspan=2, padx=10, pady=(6,0), sticky='w')
         self.keithley_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
-        self.keithley_combobox.grid(row=row_offset + 1, column=1, padx=10, pady=6, sticky='ew')
+        self.keithley_combobox.grid(row=row_offset + 3, column=0, columnspan=2, padx=10, pady=(0,10), sticky='ew')
 
         button_frame = ttk.Frame(frame)
-        button_frame.grid(row=row_offset + 2, column=0, columnspan=2, pady=10)
-        button_frame.grid_columnconfigure(0, weight=1); button_frame.grid_columnconfigure(1, weight=1)
+        button_frame.grid(row=row_offset + 4, column=0, columnspan=2, pady=10)
+        for i in range(2): button_frame.grid_columnconfigure(i, weight=1)
 
         self.scan_button = ttk.Button(button_frame, text="Scan Instruments", command=self._scan_for_visa_instruments)
         self.scan_button.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
@@ -262,77 +248,44 @@ class PyroelectricAppGUI:
         self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0)
         self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
         self.log("Console initialized.")
-        if not PYVISA_AVAILABLE:
-            self.log("CRITICAL ERROR: pyvisa or pymeasure not found. Please run 'pip install pyvisa pymeasure'.")
-        else:
-            self.log("Please scan for instruments and select a save location.")
+        if not PYVISA_AVAILABLE: self.log("CRITICAL ERROR: pyvisa or pymeasure not found.")
+        else: self.log("Please scan for instruments and select a save location.")
         return frame
 
     def create_graph_frame(self, parent):
         graph_container = LabelFrame(parent, text='Live Graphs', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
         graph_container.pack(fill='both', expand=True, padx=(5, 10), pady=0)
-
         self.figure = Figure(figsize=(10, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
-
-        # Use GridSpec for a more complex layout: 1 big plot on top, 2 smaller plots below
         gs = self.figure.add_gridspec(2, 2, height_ratios=[2, 1])
-
-        # Main plot (Current vs. Temperature) takes the whole top row
-        self.ax_main = self.figure.add_subplot(gs[0, :])
-
-        # Subplots for time-series data
-        self.ax_sub1 = self.figure.add_subplot(gs[1, 0])
-        self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
-
+        self.ax_main = self.figure.add_subplot(gs[0, :]); self.ax_sub1 = self.figure.add_subplot(gs[1, 0]); self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
         self.axes = [self.ax_main, self.ax_sub1, self.ax_sub2]
-
-        # Plot 1 (Main): Current vs. Temperature
-        self.line_main, = self.ax_main.plot([], [], color='#e63946', marker='o', markersize=4, linestyle='-')
-        self.ax_main.set_title("Current vs. Temperature", fontsize=14, weight='bold')
-        self.ax_main.set_xlabel("Temperature (K)")
-        self.ax_main.set_ylabel("Current (A)")
-
-        # Plot 2 (Sub1): Temperature vs. Time
-        self.line_sub1, = self.ax_sub1.plot([], [], color='#0077b6', marker='.', markersize=4)
-        self.ax_sub1.set_title("Temperature vs. Time")
-        self.ax_sub1.set_xlabel("Time (s)")
-        self.ax_sub1.set_ylabel("Temperature (K)")
-
-        # Plot 3 (Sub2): Current vs. Time
-        self.line_sub2, = self.ax_sub2.plot([], [], color='#06d6a0', marker='.', markersize=4)
-        self.ax_sub2.set_title("Current vs. Time")
-        self.ax_sub2.set_xlabel("Time (s)")
-        self.ax_sub2.set_ylabel("Current (A)")
-
-        for ax in self.axes:
-            ax.grid(True, linestyle='--', alpha=0.6)
-            ax.ticklabel_format(axis='y', style='sci', scilimits=(-2, 3), useMathText=True)
-
-        self.figure.tight_layout(pad=2.5)
-        self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
-        self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
-
+        self.line_main, = self.ax_main.plot([], [], color='#e63946', marker='o', markersize=4, linestyle='-'); self.ax_main.set_title("Current vs. Temperature", fontsize=14, weight='bold'); self.ax_main.set_xlabel("Temperature (K)"); self.ax_main.set_ylabel("Current (A)")
+        self.line_sub1, = self.ax_sub1.plot([], [], color='#0077b6', marker='.', markersize=4); self.ax_sub1.set_title("Temperature vs. Time"); self.ax_sub1.set_xlabel("Time (s)"); self.ax_sub1.set_ylabel("Temperature (K)")
+        self.line_sub2, = self.ax_sub2.plot([], [], color='#06d6a0', marker='.', markersize=4); self.ax_sub2.set_title("Current vs. Time"); self.ax_sub2.set_xlabel("Time (s)"); self.ax_sub2.set_ylabel("Current (A)")
+        for ax in self.axes: ax.grid(True, linestyle='--', alpha=0.6); ax.ticklabel_format(axis='y', style='sci', scilimits=(-2, 3), useMathText=True)
+        self.figure.tight_layout(pad=2.5); self.canvas = FigureCanvasTkAgg(self.figure, graph_container); self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
 
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self.console_widget.config(state='normal')
-        self.console_widget.insert('end', f"[{timestamp}] {message}\n")
-        self.console_widget.see('end')
-        self.console_widget.config(state='disabled')
+        self.console_widget.config(state='normal'); self.console_widget.insert('end', f"[{timestamp}] {message}\n"); self.console_widget.see('end'); self.console_widget.config(state='disabled')
 
     def start_measurement(self):
         try:
             params = {
                 'sample_name': self.entries["Sample Name"].get(),
-                'setpoint_temp': float(self.entries["Setpoint Temp (K)"].get()),
-                'final_temp': float(self.entries["Final Temp (K)"].get()),
-                'ramp_rate': float(self.entries["Ramp Rate (K/min)"].get()),
-                'heater_range': int(self.entries["Heater Range"].get()),
+                'start_temp': float(self.entries["Start Temp (K)"].get()),
+                'end_temp': float(self.entries["End Temp (K)"].get()),
+                'rate': float(self.entries["Ramp Rate (K/min)"].get()),
+                'safety_cutoff': float(self.entries["Safety Cutoff (K)"].get()),
                 'lakeshore_visa': self.lakeshore_combobox.get(),
                 'keithley_visa': self.keithley_combobox.get()
             }
-            if not all([params['sample_name'], params['lakeshore_visa'], params['keithley_visa']]) or not self.file_location_path:
+            # --- Validation ---
+            if not all([params['sample_name'], params['lakeshore_visa'], params['keithley_visa'], self.file_location_path]):
                 raise ValueError("All fields, VISA addresses, and a save location are required.")
+            if not (params['start_temp'] < params['end_temp'] < params['safety_cutoff']):
+                raise ValueError("Temperatures must be in ascending order (Start < End < Cutoff).")
+            if params['rate'] <= 0: raise ValueError("Ramp rate must be a positive number.")
 
             self.backend.initialize_instruments(params)
             self.log(f"Backend initialized for sample: {params['sample_name']}")
@@ -341,30 +294,29 @@ class PyroelectricAppGUI:
             file_name = f"{params['sample_name']}_{timestamp}_Pyro.csv"
             self.data_filepath = os.path.join(self.file_location_path, file_name)
             with open(self.data_filepath, 'w', newline='') as f:
-                header = f"# Sample: {params['sample_name']}\n# Setpoint: {params['setpoint_temp']} K, Final: {params['final_temp']} K, Ramp: {params['ramp_rate']} K/min\n"
-                f.write(header)
-                f.write("Time (s),Temperature (K),Current (A)\n")
+                header = f"# Sample: {params['sample_name']}\n# Start: {params['start_temp']} K, End: {params['end_temp']} K, Ramp: {params['rate']} K/min\n"
+                f.write(header); f.write("Time (s),Temperature (K),Current (A)\n")
             self.log(f"Output file created: {os.path.basename(self.data_filepath)}")
 
             self.is_running = True
-            self.start_time = time.time()
             self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
             for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_data([], [])
             self.ax_main.set_title(f"I vs T | Sample: {params['sample_name']}", fontsize=14, weight='bold')
             self.canvas.draw()
 
-            self.log("Measurement loop started.")
-            self.root.after(1000, self._update_measurement_loop)
+            self.log("Moving to start temperature for stabilization...")
+            self.experiment_state = 'stabilizing'
+            self.backend.start_stabilization()
+            self.root.after(2000, self._update_measurement_loop)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
             messagebox.showerror("Initialization Error", f"Could not start measurement.\n\nDetails:\n{e}")
-            self.backend.close_instruments()
 
     def stop_measurement(self, reason="stopped by user"):
         if self.is_running:
-            self.is_running = False
+            self.is_running = False; self.experiment_state = 'idle'
             self.log(f"Measurement loop {reason}.")
             self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
             self.backend.close_instruments()
@@ -374,75 +326,70 @@ class PyroelectricAppGUI:
     def _update_measurement_loop(self):
         if not self.is_running: return
         try:
-            temp, current, continues = self.backend.get_measurement()
-            elapsed_time = time.time() - self.start_time
+            current_temp, current_val = self.backend.get_measurement()
+            params = self.backend.params
 
-            with open(self.data_filepath, 'a', newline='') as f:
-                f.write(f"{elapsed_time:.2f},{temp},{current}\n")
+            # --- STATE: STABILIZING ---
+            if self.experiment_state == 'stabilizing':
+                self.log(f"Stabilizing... Current Temp: {current_temp:.4f} K (Target: {params['start_temp']} K)")
+                if abs(current_temp - params['start_temp']) < 0.1: # Stabilization tolerance
+                    self.log(f"Stabilized at {params['start_temp']} K. Starting ramp.")
+                    self.experiment_state = 'ramping'
+                    self.backend.start_ramp()
+                    self.start_time = time.time() # Start timer NOW
 
-            self.data_storage['time'].append(elapsed_time)
-            self.data_storage['temperature'].append(temp)
-            self.data_storage['current'].append(current)
+            # --- STATE: RAMPING ---
+            elif self.experiment_state == 'ramping':
+                elapsed_time = time.time() - self.start_time
+                self.log(f"Ramping... Time: {elapsed_time:7.1f}s | Temp: {current_temp:8.4f}K | Current: {current_val:.3e} A")
 
-            # Update plot data based on the new layout
-            self.line_main.set_data(self.data_storage['temperature'], self.data_storage['current'])
-            self.line_sub1.set_data(self.data_storage['time'], self.data_storage['temperature'])
-            self.line_sub2.set_data(self.data_storage['time'], self.data_storage['current'])
+                with open(self.data_filepath, 'a', newline='') as f:
+                    f.write(f"{elapsed_time:.2f},{current_temp:.4f},{current_val}\n")
 
-            for ax in self.axes:
-                ax.relim(); ax.autoscale_view()
+                self.data_storage['time'].append(elapsed_time)
+                self.data_storage['temperature'].append(current_temp)
+                self.data_storage['current'].append(current_val)
 
-            self.figure.tight_layout(pad=2.5)
-            self.canvas.draw()
+                self.line_main.set_data(self.data_storage['temperature'], self.data_storage['current'])
+                self.line_sub1.set_data(self.data_storage['time'], self.data_storage['temperature'])
+                self.line_sub2.set_data(self.data_storage['time'], self.data_storage['current'])
+                for ax in self.axes: ax.relim(); ax.autoscale_view()
+                self.figure.tight_layout(pad=2.5); self.canvas.draw()
 
-            if not continues:
-                self.stop_measurement(reason="final temperature reached")
-                return
+                if current_temp >= params['safety_cutoff']: self.stop_measurement(f"SAFETY CUTOFF REACHED at {current_temp:.4f} K!"); return
+                if current_temp >= params['end_temp']: self.stop_measurement(f"Target temperature of {params['end_temp']} K reached."); return
 
         except Exception:
-            self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
-            self.stop_measurement(reason="runtime error")
-            messagebox.showerror("Runtime Error", "An error occurred during measurement. Check console for details.")
+            self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement(reason="runtime error")
+            messagebox.showerror("Runtime Error", "An error occurred. Check console for details."); return
 
-        if self.is_running:
-            self.root.after(2000, self._update_measurement_loop)
+        if self.is_running: self.root.after(2000, self._update_measurement_loop)
 
     def _scan_for_visa_instruments(self):
-        if not PYVISA_AVAILABLE:
-            self.log("ERROR: PyVISA not installed."); return
-        if self.backend.rm is None:
-            self.log("ERROR: VISA manager failed. Is NI-VISA (or similar) installed?"); return
-
+        if not PYVISA_AVAILABLE: self.log("ERROR: PyVISA not installed."); return
+        if self.backend.rm is None: self.log("ERROR: VISA manager failed. Is NI-VISA installed?"); return
         self.log("Scanning for VISA instruments...")
         try:
             resources = self.backend.rm.list_resources()
             if resources:
                 self.log(f"Found: {resources}")
-                self.keithley_combobox['values'] = resources
-                self.lakeshore_combobox['values'] = resources
+                self.keithley_combobox['values'] = resources; self.lakeshore_combobox['values'] = resources
                 for res in resources:
                     if "27" in res: self.keithley_combobox.set(res)
                     if "12" in res: self.lakeshore_combobox.set(res)
                 if not self.keithley_combobox.get() and resources: self.keithley_combobox.set(resources[0])
                 if not self.lakeshore_combobox.get() and resources: self.lakeshore_combobox.set(resources[-1])
-            else:
-                self.log("No VISA instruments found.")
-        except Exception as e:
-            self.log(f"ERROR during scan: {e}")
+            else: self.log("No VISA instruments found.")
+        except Exception as e: self.log(f"ERROR during scan: {e}")
 
     def _browse_file_location(self):
         path = filedialog.askdirectory()
-        if path:
-            self.file_location_path = path
-            self.log(f"Save location set to: {path}")
+        if path: self.file_location_path = path; self.log(f"Save location set to: {path}")
 
     def _on_closing(self):
         if self.is_running:
-            if messagebox.askyesno("Exit", "Measurement is running. Stop and exit?"):
-                self.stop_measurement()
-                self.root.destroy()
-        else:
-            self.root.destroy()
+            if messagebox.askyesno("Exit", "Measurement is running. Stop and exit?"): self.stop_measurement(); self.root.destroy()
+        else: self.root.destroy()
 
 if __name__ == '__main__':
     root = tk.Tk()
