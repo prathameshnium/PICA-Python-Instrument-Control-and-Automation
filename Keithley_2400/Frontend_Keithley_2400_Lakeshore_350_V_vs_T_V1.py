@@ -2,9 +2,9 @@
 # Name:          Temperature Dependent I-V Measurement GUI
 # Purpose:       Provide a graphical user interface for controlling a Lakeshore
 #                350 and a Keithley 2400 to perform automated V vs. T sweeps.
-# Author:        Prathamesh deshmukh
+# Author:        Prathamesh Deshmukh
 # Created:       18/09/2025
-# Version:       2.7 (Final Layout Fix using reliable .pack geometry)
+# Version:       2.8 (Efficient Multi-Column Grid Layout)
 # -------------------------------------------------------------------------------
 
 # --- GUI and Plotting Packages ---
@@ -115,7 +115,7 @@ class ExperimentBackend:
 # FRONTEND CLASS - The Main GUI Application
 #===============================================================================
 class TemperatureIVGUI:
-    PROGRAM_VERSION = "2.7"
+    PROGRAM_VERSION = "2.8"
     CLR_BG_DARK, CLR_HEADER, CLR_FG_LIGHT = '#2B3D4F', '#3A506B', '#EDF2F4'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#EF233C', '#8D99AE'
     CLR_CONSOLE_BG = '#1E2B38'
@@ -128,7 +128,7 @@ class TemperatureIVGUI:
         self.root.title("Temperature Dependent I-V Sweep Control")
         self.root.geometry("1600x950")
         self.root.configure(bg=self.CLR_BG_DARK)
-        self.root.minsize(1300, 850)
+        self.root.minsize(1400, 800)
 
         self.backend = ExperimentBackend()
         self.experiment_state = 'idle'
@@ -149,7 +149,6 @@ class TemperatureIVGUI:
         style.map('TButton', background=[('!active', self.CLR_ACCENT_BLUE), ('active', self.CLR_BG_DARK)])
         style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN)
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED)
-        style.configure('Vertical.TScrollbar', background=self.CLR_BG_DARK, troughcolor=self.CLR_HEADER)
         style.configure('TLabelframe', background=self.CLR_BG_DARK, bordercolor=self.CLR_ACCENT_BLUE)
         style.configure('TLabelframe.Label', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         mpl.rcParams['font.family'] = 'Segoe UI'
@@ -160,47 +159,18 @@ class TemperatureIVGUI:
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
-        # --- LEFT PANEL: Contains controls and console ---
-        left_panel = ttk.Frame(main_pane)
-        main_pane.add(left_panel, weight=1)
+        left_panel = ttk.Frame(main_pane); main_pane.add(left_panel, weight=2)
+        right_panel = ttk.Frame(main_pane); main_pane.add(right_panel, weight=3)
 
-        # --- RIGHT PANEL: Contains graph ---
-        right_panel = ttk.Frame(main_pane)
-        main_pane.add(right_panel, weight=3)
+        # --- EFFICIENT GRID LAYOUT for left_panel ---
+        left_panel.grid_columnconfigure((0, 1), weight=1)
+        left_panel.grid_rowconfigure(3, weight=1) # Let the console expand vertically
+
+        self.create_info_frame(left_panel)
+        self.create_parameter_frames(left_panel)
+        self.create_console_frame(left_panel)
+
         self.create_graph_frame(right_panel)
-
-        # --- DEFINITIVE LAYOUT FIX for left_panel ---
-        # A reliable .pack() structure.
-
-        # Create the console first
-        console_frame = self.create_console_frame(left_panel)
-        # Pack it to the bottom. It will only take its minimum required height.
-        # A fixed height is set for the ScrolledText widget inside create_console_frame.
-        console_frame.pack(side='bottom', fill='x', expand=False, pady=(10, 0))
-
-        # Create the scrollable controls area
-        scroll_container = self.create_scrollable_controls(left_panel)
-        # Pack it above the console. It will expand to fill all remaining vertical space.
-        scroll_container.pack(side='top', fill='both', expand=True)
-
-    def create_scrollable_controls(self, parent):
-        container = ttk.Frame(parent)
-        canvas = tk.Canvas(container, bg=self.CLR_BG_DARK, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview, style='Vertical.TScrollbar')
-        self.scrollable_frame = ttk.Frame(canvas)
-        self.scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        # The order of packing is important for layout
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-
-        # Populate the scrollable frame with all input widgets
-        self.create_info_frame(self.scrollable_frame)
-        self.create_input_frames(self.scrollable_frame)
-
-        return container
 
     def create_header(self):
         header = tk.Frame(self.root, bg=self.CLR_HEADER)
@@ -209,44 +179,55 @@ class TemperatureIVGUI:
         Label(header, text=f"v{self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).pack(side='right', padx=20, pady=10)
 
     def create_info_frame(self, parent):
-        frame = ttk.LabelFrame(parent, text='Information')
-        frame.pack(pady=5, padx=10, fill='x')
-        info_subframe = ttk.Frame(frame); info_subframe.pack(padx=10, pady=5, fill='x')
-        logo_canvas = tk.Canvas(info_subframe, width=100, height=100, bg=self.CLR_BG_DARK, highlightthickness=0)
-        logo_canvas.pack(side='left', padx=(0, 15))
+        frame = ttk.LabelFrame(parent, text='Information & Control')
+        frame.grid(row=0, column=0, columnspan=2, sticky='new', padx=5, pady=5)
+        frame.grid_columnconfigure(1, weight=1)
 
+        logo_canvas = tk.Canvas(frame, width=80, height=80, bg=self.CLR_BG_DARK, highlightthickness=0)
+        logo_canvas.grid(row=0, column=0, rowspan=2, padx=10, pady=5)
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE):
             try:
-                img = Image.open(self.LOGO_FILE).resize((100, 100), Image.Resampling.LANCZOS)
-                self.logo_image = ImageTk.PhotoImage(img); logo_canvas.create_image(50, 50, image=self.logo_image)
+                img = Image.open(self.LOGO_FILE).resize((80, 80), Image.Resampling.LANCZOS)
+                self.logo_image = ImageTk.PhotoImage(img); logo_canvas.create_image(40, 40, image=self.logo_image)
             except Exception: pass
 
-        info_text = ("Institute: UGC DAE CSR, Mumbai\n"
-                     "Measurement: Voltage vs. Temperature\n\n"
-                     "Instruments:\n • Lakeshore Model 350\n • Keithley 2400")
-        Label(info_subframe, text=info_text, justify='left').pack(side='left', anchor='w')
+        info_text = ("Institute: UGC DAE CSR, Mumbai\nMeasurement: Voltage vs. Temperature")
+        Label(frame, text=info_text, justify='left').grid(row=0, column=1, sticky='sw', padx=5)
 
-    def create_input_frames(self, parent):
         self.entries = {}
-        exp_frame = ttk.LabelFrame(parent, text='Experiment Control')
-        exp_frame.pack(pady=5, padx=10, fill='x')
-        self._create_entry(exp_frame, "Sample Name", "SampleA_Run1")
-        self._create_entry(exp_frame, "Save Location", "", browse=True)
-        temp_frame = ttk.LabelFrame(parent, text='Temperature Parameters')
-        temp_frame.pack(pady=5, padx=10, fill='x')
-        self._create_entry(temp_frame, "Start Temp (K)", "300")
-        self._create_entry(temp_frame, "End Temp (K)", "280")
-        self._create_entry(temp_frame, "Temp Step (K)", "-5")
+        self._create_entry(frame, "Sample Name", "SampleA_Run1").grid(row=1, column=1, sticky='ew')
+        self._create_entry(frame, "Save Location", "", browse=True).grid(row=2, column=0, columnspan=2, sticky='ew')
+
+    def create_parameter_frames(self, parent):
+        # --- This frame will hold the two side-by-side parameter frames ---
+        container = ttk.Frame(parent)
+        container.grid(row=1, column=0, columnspan=2, sticky='new', padx=5, pady=5)
+        container.grid_columnconfigure((0, 1), weight=1)
+
+        # Temperature Parameters (Left Column)
+        temp_frame = ttk.LabelFrame(container, text='Temperature Parameters')
+        temp_frame.grid(row=0, column=0, sticky='nsew', padx=(0,5))
+        temp_frame.grid_columnconfigure(0, weight=1)
+        self._create_entry(temp_frame, "Start Temp (K)", "300").pack(fill='x', padx=5, pady=2)
+        self._create_entry(temp_frame, "End Temp (K)", "280").pack(fill='x', padx=5, pady=2)
+        self._create_entry(temp_frame, "Temp Step (K)", "-5").pack(fill='x', padx=5, pady=2)
         self.lakeshore_combobox = self._create_combobox(temp_frame, "Lakeshore VISA")
-        iv_frame = ttk.LabelFrame(parent, text='I-V Sweep Parameters')
-        iv_frame.pack(pady=5, padx=10, fill='x')
-        self._create_entry(iv_frame, "Max Current (µA)", "100")
-        self._create_entry(iv_frame, "Step Current (µA)", "5")
-        self._create_entry(iv_frame, "Compliance (V)", "10")
-        self._create_entry(iv_frame, "Dwell Time (s)", "0.2")
+        self.lakeshore_combobox.pack(fill='x', padx=5, pady=2)
+
+        # I-V Sweep Parameters (Right Column)
+        iv_frame = ttk.LabelFrame(container, text='I-V Sweep Parameters')
+        iv_frame.grid(row=0, column=1, sticky='nsew', padx=(5,0))
+        iv_frame.grid_columnconfigure(0, weight=1)
+        self._create_entry(iv_frame, "Max Current (µA)", "100").pack(fill='x', padx=5, pady=2)
+        self._create_entry(iv_frame, "Step Current (µA)", "5").pack(fill='x', padx=5, pady=2)
+        self._create_entry(iv_frame, "Compliance (V)", "10").pack(fill='x', padx=5, pady=2)
+        self._create_entry(iv_frame, "Dwell Time (s)", "0.2").pack(fill='x', padx=5, pady=2)
         self.keithley_combobox = self._create_combobox(iv_frame, "Keithley VISA")
+        self.keithley_combobox.pack(fill='x', padx=5, pady=2)
+
+        # --- Control Buttons below the parameter frames ---
         control_frame = ttk.Frame(parent)
-        control_frame.pack(fill='x', padx=10, pady=10)
+        control_frame.grid(row=2, column=0, columnspan=2, sticky='ew', padx=5, pady=5)
         control_frame.grid_columnconfigure((0,1,2), weight=1)
         self.scan_button = ttk.Button(control_frame, text="Scan", command=self._scan_for_visa_instruments)
         self.scan_button.grid(row=0, column=0, padx=(0,5), sticky='ew')
@@ -257,14 +238,14 @@ class TemperatureIVGUI:
 
     def create_console_frame(self, parent):
         frame = ttk.LabelFrame(parent, text='Console Output')
-        # By setting a fixed height on the ScrolledText widget, we control the console's size
-        self.console = scrolledtext.ScrolledText(frame, height=8, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=('Consolas', 9), wrap='word', borderwidth=0)
+        frame.grid(row=3, column=0, columnspan=2, sticky='nsew', padx=5, pady=5)
+        self.console = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=('Consolas', 9), wrap='word', borderwidth=0)
         self.console.pack(fill='both', expand=True, padx=5, pady=5)
         return frame
 
     def create_graph_frame(self, parent):
         container = ttk.LabelFrame(parent, text='Live I-V Curve')
-        container.pack(fill='both', expand=True, padx=5, pady=5)
+        container.pack(fill='both', expand=True, padx=(5,0), pady=5)
         self.figure = Figure(dpi=100, facecolor='white'); self.ax_main = self.figure.add_subplot(111)
         self.ax_main.set_facecolor('#f0f0f0')
         self.ax_main.grid(True, linestyle='--', color='white'); self.ax_main.axhline(0, color='k', lw=0.5); self.ax_main.axvline(0, color='k', lw=0.5)
@@ -375,17 +356,21 @@ class TemperatureIVGUI:
         if path: self.entries["Save Location"].delete(0, 'end'); self.entries["Save Location"].insert(0, path)
 
     def _create_entry(self, parent, label_text, default_value, browse=False):
-        frame = ttk.Frame(parent); frame.pack(fill='x', padx=10, pady=3)
-        Label(frame, text=f"{label_text}:", width=15, anchor='w').pack(side='left')
-        entry = Entry(frame, font=self.FONT_BASE); entry.pack(side='left', expand=True, fill='x', padx=5); entry.insert(0, default_value)
+        container = ttk.Frame(parent)
+        container.grid_columnconfigure(1, weight=1)
+        Label(container, text=f"{label_text}:", width=15, anchor='w').grid(row=0, column=0, sticky='w', padx=5, pady=2)
+        entry = Entry(container, font=self.FONT_BASE); entry.grid(row=0, column=1, sticky='ew', padx=5)
+        entry.insert(0, default_value)
         self.entries[label_text] = entry
-        if browse: ttk.Button(frame, text="...", width=3, command=self._browse_file_location).pack(side='right')
+        if browse: ttk.Button(container, text="...", width=3, command=self._browse_file_location).grid(row=0, column=2, padx=5)
+        return container
 
     def _create_combobox(self, parent, label_text):
-        frame = ttk.Frame(parent); frame.pack(fill='x', padx=10, pady=3)
-        Label(frame, text=f"{label_text}:", width=15, anchor='w').pack(side='left')
-        cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly'); cb.pack(side='left', expand=True, fill='x', padx=5)
-        return cb
+        container = ttk.Frame(parent)
+        container.grid_columnconfigure(1, weight=1)
+        Label(container, text=f"{label_text}:", width=15, anchor='w').grid(row=0, column=0, sticky='w', padx=5, pady=2)
+        cb = ttk.Combobox(container, font=self.FONT_BASE, state='readonly'); cb.grid(row=0, column=1, sticky='ew', padx=5)
+        return container
 
     def _on_closing(self):
         if self.experiment_state != 'idle' and messagebox.askyesno("Exit", "Experiment running. Stop and exit?"):
