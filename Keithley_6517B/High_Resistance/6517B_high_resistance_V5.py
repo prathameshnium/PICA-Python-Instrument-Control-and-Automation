@@ -1,5 +1,5 @@
 #-----------------------------------------------------------------------
-# Name:         Keithley 6517B High Resistance Measurement (V2.1 - User Style)
+# Name:         Keithley 6517B High Resistance Measurement (V2.2 - Corrected)
 # Purpose:      A robust, single-file script for a specific resistance measurement.
 # Author:       Prathamesh
 # Created:      15/09/2025
@@ -13,7 +13,7 @@ from pyvisa.errors import VisaIOError
 # Set your measurement parameters here
 VISA_ADDRESS = "GPIB1::27::INSTR"
 TEST_VOLTAGE = 10  # Voltage to apply, in Volts
-SETTLING_DELAY_S =0.5   # Delay time in seconds after turning on voltage
+SETTLING_DELAY_S = 0.5   # Delay time in seconds after turning on voltage
 
 # ----------------------------------------------------------------------
 
@@ -27,48 +27,48 @@ try:
     print(f"Successfully connected to: {keithley.id}")
 
     # --- 3. CONFIGURE MEASUREMENT ---
-    print("Configuring instrument...")
-    keithley.reset()                # Reset to a known default state
-    keithley.clear()                # Reset to a known default state
-   # --- 2. Perform Zero Check & Correction Sequence ---
-    print("\nStarting zero correction procedure...")
+    print("\nConfiguring instrument for resistance measurement...")
+    keithley.reset()
+    # Set the function to resistance measurement. This also sets the instrument
+    # to the source-voltage, measure-current mode, which is necessary for the
+    # zero correction to be applied to the ammeter.
+    keithley.measure_resistance()
 
-    # Step 1: Enable Zero Check. This disconnects the input and connects to an internal reference.
+    # --- 4. PERFORM ZERO CHECK & CORRECTION ---
+    print("\nStarting zero correction procedure...")
+    time.sleep(5)
+
+    # Step 1: Enable Zero Check.
     print("Step 1: Enabling Zero Check mode...")
     keithley.write(':SYSTem:ZCHeck ON')
-    time.sleep(1) # Allow a moment for the internal relays to switch
+    time.sleep(5) # Allow time for relays to switch
 
-    # Step 2: Acquire the zero measurement. The instrument measures its internal offset.
+    # Step 2: Acquire the zero measurement.
     print("Step 2: Acquiring zero correction value...")
-    #keithley.write(':SYSTem:ZCORrect:ACQuire')
-    time.sleep(2) # Acquiring the value takes a moment
+    keithley.write(':SYSTem:ZCORrect:ACQuire')
+    # This command can take a few seconds. The manual suggests waiting.
+    time.sleep(5)
 
-    # Step 3: Disable Zero Check. This reconnects the input for actual measurements.
+    # Step 3: Disable Zero Check.
     print("Step 3: Disabling Zero Check mode...")
     keithley.write(':SYSTem:ZCHeck OFF')
+    time.sleep(5)
 
-    # Step 4: Enable Zero Correct. This tells the instrument to subtract the
-    # acquired offset from all future measurements.
-    print("Step 4: Enabling Zero Correction for subsequent measurements...")
+    # Step 4: Enable Zero Correction for subsequent measurements.
+    print("Step 4: Enabling Zero Correction...")
     keithley.write(':SYSTem:ZCORrect ON')
+    time.sleep(5)
 
-
-    #keithley.apply_voltage()        # Set instrument to source voltage, measure current # this is the conflict
-    time.sleep(0.5)
-    #keithley.write(":SYSTem:ZCHeck ON")
-    A=keithley.ask("*IDN?")
-    print(f"Successfully connected to: {A}")
-    time.sleep(0.5)
-    time.sleep(2)
-
+    # --- 5. SETUP AND PERFORM MEASUREMENT ---
+    print("\nSetting up measurement parameters...")
+    # Set the source voltage
     keithley.source_voltage = TEST_VOLTAGE
-    keithley.measure_resistance() # Sets up to measure resistance
-    keithley.resistance_nplc = 1      # Set integration rate for noise reduction
+    # Set integration rate for noise reduction (1 PLC is a good starting point)
+    keithley.resistance_nplc = 1
 
-    # --- 4. PERFORM MEASUREMENT ---
     print(f"Configuration complete. Applying {TEST_VOLTAGE} V...")
     keithley.enable_source()
-    print(f"Voltage source ON. Waiting for {SETTLING_DELAY_S}s to settle...")
+    print(f"Voltage source ON. Waiting {SETTLING_DELAY_S}s for settling...")
 
     # A delay is CRITICAL for high-resistance measurements to stabilize
     time.sleep(SETTLING_DELAY_S)
@@ -76,7 +76,7 @@ try:
     print("Taking reading...")
     resistance = keithley.resistance
 
-    # --- 5. DISPLAY RESULT ---
+    # --- 6. DISPLAY RESULT ---
     # Check for an over-range condition (a very large number)
     if resistance > 1e37:
         print("\n--- Measurement Complete ---")
@@ -86,17 +86,16 @@ try:
         print(f"Measured Resistance: {resistance:.4e} Ω")
 
 except VisaIOError:
-    print("\n[VISA Connection Error]")
+    print(f"\n[VISA Connection Error]")
     print(f"Could not connect to the instrument at '{VISA_ADDRESS}'.")
     print("Please check the address, cable connections, and if the instrument is on.")
 except Exception as e:
     print(f"\n[An Unexpected Error Occurred] Details: {e}")
 
 finally:
-    # --- 6. SAFELY SHUT DOWN ---
+    # --- 7. SAFELY SHUT DOWN ---
     # This block ALWAYS runs, ensuring the instrument is left in a safe state
     if keithley:
         print("\nShutting down instrument...")
         keithley.shutdown()
         print("Voltage source OFF and instrument is safe.")
-
