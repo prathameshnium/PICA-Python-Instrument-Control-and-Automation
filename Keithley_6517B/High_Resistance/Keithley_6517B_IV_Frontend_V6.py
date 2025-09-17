@@ -4,7 +4,7 @@
 #                 Keithley 6517B Electrometer with a real instrument backend.
 # Author:         Prathamesh Deshmukh
 # Created:        17/09/2025
-# Version:        V: 4.1 (Backend logic from V5 Core incorporated)
+# Version:        V: 4.2 (R-V Plot set to Linear Scale)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -147,11 +147,10 @@ class Keithley6517B_Backend:
 
 # -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---
-# No changes are needed in this section.
 # -------------------------------------------------------------------------------
 class HighResistanceIV_GUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "4.1" # Updated version number
+    PROGRAM_VERSION = "4.2" # Updated version number
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -343,7 +342,11 @@ class HighResistanceIV_GUI:
         self.ax_rv.set_title("Resistance vs. Voltage", fontweight='bold')
         self.ax_rv.set_xlabel("Applied Voltage (V)")
         self.ax_rv.set_ylabel("Resistance (Ω)")
-        self.ax_rv.set_yscale('log') # Resistance is often better viewed on a log scale
+
+        # --- COSMETIC CHANGE HERE ---
+        # The following line was commented out to change the y-axis to a linear scale.
+        # self.ax_rv.set_yscale('log')
+
         self.ax_rv.grid(True, which="both", linestyle='--', alpha=0.6)
 
         self.figure.tight_layout(pad=3.0)
