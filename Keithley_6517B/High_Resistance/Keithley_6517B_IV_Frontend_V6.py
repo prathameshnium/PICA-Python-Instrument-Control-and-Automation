@@ -1,10 +1,10 @@
 # -------------------------------------------------------------------------------
-# Name:         High Resistance IV GUI for Keithley 6517B
-# Purpose:      Perform a voltage sweep and measure resistance using a
-#               Keithley 6517B Electrometer with a real instrument backend.
-# Author:       Prathamesh Deshmukh
-# Created:      17/09/2025
-# Version:      V: 4.0 (Dual Plot & Enhanced Logging)
+# Name:           High Resistance IV GUI for Keithley 6517B
+# Purpose:        Perform a voltage sweep and measure resistance using a
+#                 Keithley 6517B Electrometer with a real instrument backend.
+# Author:         Prathamesh Deshmukh
+# Created:        17/09/2025
+# Version:        V: 4.1 (Backend logic from V5 Core incorporated)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -41,12 +41,12 @@ except ImportError:
 
 # -------------------------------------------------------------------------------
 # --- REAL INSTRUMENT BACKEND ---
+# This section has been updated to incorporate the logic from the V5 Core script.
 # -------------------------------------------------------------------------------
 class Keithley6517B_Backend:
     """
-    A dedicated class to handle backend communication with a real Keithley 6517B
-    using the PyMeasure library. It incorporates proper initialization,
-    zero-correction, and shutdown procedures.
+    A dedicated class to handle backend communication with a real Keithley 6517B.
+    *** The setup and measurement logic from the V5 Core script is incorporated here. ***
     """
     def __init__(self):
         self.keithley = None
@@ -55,40 +55,48 @@ class Keithley6517B_Backend:
             raise ImportError("PyMeasure or PyVISA is not installed. Please run 'pip install pymeasure'.")
 
     def initialize_instruments(self, parameters):
-        """Connects to the instrument and performs the crucial zero-check sequence."""
+        """
+        Connects to the instrument and performs the zero-check sequence
+        based on the V5 Core script's methodology.
+        """
         print(f"\n--- [Backend] Initializing Instrument at {parameters['keithley_visa']} ---")
         try:
-            # Set a timeout for the connection
             self.keithley = Keithley6517B(parameters['keithley_visa'], timeout=20000)
             print(f"  Successfully connected to: {self.keithley.id}")
 
-            # --- Configure Measurement and Perform Zero Correction ---
+            # --- Configure Measurement and Perform Zero Correction (V5 Core Logic) ---
             print("  Configuring instrument and performing zero correction...")
             self.keithley.reset()
-            self.keithley.clear()
-            time.sleep(1)
+            # Set the function to resistance to ensure the ammeter is configured for zero correction.
+            self.keithley.measure_resistance()
 
-            # 1. Enable Zero Check (connects ammeter to internal reference)
+            # --- Perform Zero Correction Sequence ---
+            print("  Starting zero correction procedure...")
+            time.sleep(1) # Reduced wait time for GUI responsiveness
+
+            # 1. Enable Zero Check
             print("    Step 1/4: Enabling Zero Check mode...")
             self.keithley.write(':SYSTem:ZCHeck ON')
-            time.sleep(1)
+            time.sleep(2)
 
             # 2. Acquire the zero measurement
             print("    Step 2/4: Acquiring zero correction value...")
             self.keithley.write(':SYSTem:ZCORrect:ACQuire')
             time.sleep(2) # Allow time for acquisition
 
-            # 3. Disable Zero Check (reconnects input)
+            # 3. Disable Zero Check
             print("    Step 3/4: Disabling Zero Check mode...")
             self.keithley.write(':SYSTem:ZCHeck OFF')
+            time.sleep(1)
 
-            # 4. Enable Zero Correct (subtracts offset from future measurements)
+            # 4. Enable Zero Correct
             print("    Step 4/4: Enabling Zero Correction for all measurements.")
             self.keithley.write(':SYSTem:ZCORrect ON')
+            time.sleep(1)
+            print("  Zero Correction Complete.")
 
-            # Set up the instrument for resistance measurement
-            self.keithley.measure_resistance()
-            self.keithley.resistance_nplc = 1  # Integration rate for noise reduction (1 PLC)
+            # Set integration rate for noise reduction (as per V5 core script)
+            self.keithley.current_nplc = 1
 
             self.is_connected = True
             print("--- [Backend] Instrument Initialized and Ready ---")
@@ -108,18 +116,18 @@ class Keithley6517B_Backend:
         self.keithley.enable_source()
 
     def get_measurement(self):
-        """Reads resistance and current from the instrument."""
+        """
+        Reads current and calculates resistance, mirroring the V5 Core script's method.
+        """
         if not self.is_connected:
             raise ConnectionError("Instrument not connected.")
 
-        # PyMeasure properties handle the SCPI commands to get the readings
-        resistance = self.keithley.resistance
+        # Read voltage and current from the instrument
+        voltage = self.keithley.source_voltage_get # Read back the actual source voltage
         current = self.keithley.current
-        voltage = self.keithley.source_voltage # Read back the set voltage
 
-        # Handle over-range condition, often returned as a very large number
-        if resistance > 1e37:
-            resistance = float('inf') # Standardize over-range representation
+        # Calculate resistance as done in the command-line script
+        resistance = voltage / current if current != 0 else float('inf')
 
         return resistance, current, voltage
 
@@ -139,10 +147,11 @@ class Keithley6517B_Backend:
 
 # -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---
+# No changes are needed in this section.
 # -------------------------------------------------------------------------------
 class HighResistanceIV_GUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "4.0"
+    PROGRAM_VERSION = "4.1" # Updated version number
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -472,7 +481,7 @@ class HighResistanceIV_GUI:
                 # Attempt to find a likely candidate for the Keithley
                 for res in resources:
                     if "GPIB" in res.upper() and ("27" in res or "26" in res or "25" in res):
-                         self.keithley_combobox.set(res); break
+                        self.keithley_combobox.set(res); break
                 else: self.keithley_combobox.set(resources[0])
             else:
                 self.log("No VISA instruments found.")
