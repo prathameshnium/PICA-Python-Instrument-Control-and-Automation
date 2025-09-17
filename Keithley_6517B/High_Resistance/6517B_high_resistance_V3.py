@@ -33,6 +33,17 @@ try:
 
     #keithley.apply_voltage()        # Set instrument to source voltage, measure current # this is the conflict
     time.sleep(0.5)
+    #keithley.write(":SYSTem:ZCHeck ON")
+    A=keithley.ask("*IDN?")
+    print(f"Successfully connected to: {A}")
+    time.sleep(0.5)
+    keithley.write(":SYSTem:ZCHeck ON")
+    keithley.write(":SYSTem:ZCORrect:ACQuire")
+    keithley.write(":SYSTem:ZCORrect ON")
+
+
+    time.sleep(5)
+
     keithley.source_voltage = TEST_VOLTAGE
     keithley.measure_resistance() # Sets up to measure resistance
     keithley.resistance_nplc = 1      # Set integration rate for noise reduction
