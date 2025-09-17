@@ -3,27 +3,35 @@
 # Purpose:      A central meta front end to launch various measurement GUIs.
 # Author:       Prathamesh Deshmukh
 # Created:      10/09/2025
-# Version:      1.1
+# Version:      1.2
+# Last Edit:    17/09/2025
 # -------------------------------------------------------------------------------
 
 import tkinter as tk
-from tkinter import ttk, Label, LabelFrame, Button, messagebox
+from tkinter import ttk, Label, LabelFrame, Button, messagebox, Toplevel, Text
 import os
 import sys
 import subprocess
+import platform
 
 # --- Pillow for Logo Image ---
 try:
     from PIL import Image, ImageTk
     PIL_AVAILABLE = True
-
 except ImportError:
     PIL_AVAILABLE = False
+
+# --- PyVISA for GPIB Test ---
+try:
+    import pyvisa
+    PYVISA_AVAILABLE = True
+except ImportError:
+    PYVISA_AVAILABLE = False
 
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "1.1"
+    PROGRAM_VERSION = "1.2"
     CLR_BG_DARK, CLR_HEADER, CLR_FG_LIGHT = '#2B3D4F', '#3A506B', '#EDF2F4'
     FONT_SIZE_BASE = 12
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
@@ -31,6 +39,7 @@ class PICALauncherApp:
     FONT_SUBTITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE - 1)
     LOGO_FILE = "UGC_DAE_CSR.jpeg"
+    MANUAL_FILE = "PICA_User_Manual.pdf"
     LOGO_SIZE = 150
 
     # ---------------------------------------------------------------------------
@@ -42,21 +51,27 @@ class PICALauncherApp:
     # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
     # ---------------------------------------------------------------------------
     SCRIPT_PATHS = {
-        # Electrical Characterization
-        "I-V Measurement (Keithley 2400)": "C:/Users/ketan/Downloads/ready_to_use/PICA-Python-Instrument-Control-and-Automation/Keithley_2400/_untested_new/Frontend_IV_2400_V2.py",
-        "Delta Mode Resistivity (K6221/2182A)": "Keithley_6221_2182A/Temp_vs_Res_GUI.py",
-        "C-V Measurement (Keysight E4980A)": "Keysight_E4980A/CV_GUI.py",
-        # Specialized & Thermal Systems
-        "Pyroelectric Measurement (K6517B)": "Pyroelectric/Pyro_GUI.py",
-        "Temperature Control (Lakeshore)": "Lakeshore_350/Temp_Control_GUI.py"
+        # Low Resistance
+        "Delta Mode Resistivity (K6221/2182A)": "Delta_mode/Delta_Mode_GUI.py",
+
+        # Mid Resistance
+        "I-V Measurement (Keithley 2400)": "Keithley_2400/Frontend_IV_2400_V2.py",
+        "4-Probe Measurement (K2400/2182)": "Keithley_2400_Keithley_2182/Four_Probe_GUI.py", # <-- EDIT THIS PATH
+
+        # High Resistance
+        "High Resistance Measurement (K6517B)": "Keithley_6517B/High_Res_GUI.py",
+
+        # Other Instruments
+        "C-V Measurement (Keysight E4980A)": "LCR_Keysight_E4980A/CV_GUI.py",
+        "Temperature Control (Lakeshore)": "Lakeshore_350_340/Temp_Control_GUI.py"
     }
 
     def __init__(self, root):
         self.root = root
-        self.root.title("PICA Launcher")
-        self.root.geometry("1200x700")
+        self.root.title(f"PICA Launcher v{self.PROGRAM_VERSION}")
+        self.root.geometry("1200x750")
         self.root.configure(bg=self.CLR_BG_DARK)
-        self.root.minsize(1000, 650)
+        self.root.minsize(1000, 700)
 
         self.logo_image = None
         self.setup_styles()
@@ -72,7 +87,6 @@ class PICALauncherApp:
                   background=[('!active', '#8D99AE'), ('active', self.CLR_BG_DARK)])
 
     def create_widgets(self):
-        # Configure the main grid
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1, minsize=400)  # Info Panel
         self.root.grid_columnconfigure(1, weight=2)  # Launcher Panel
@@ -99,39 +113,40 @@ class PICALauncherApp:
         else:
             logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill="white", justify='center')
 
-        # --- Title and Description ---
         Label(info_frame, text="PICA: Python Instrument\nControl & Automation", bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE, justify='center').pack(pady=(0, 15))
-
         desc_text = "A suite of Python scripts for controlling and automating laboratory instruments for materials science and physics research."
         Label(info_frame, text=desc_text, bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_INFO, wraplength=350, justify='center').pack(pady=(0, 20))
-
         ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=20)
-
-        # --- Author Info at the bottom ---
         author_text = ("Developed by Prathamesh Deshmukh\n"
                        "UGC-DAE Consortium for Scientific Research, Mumbai Centre\n"
                        "Sudip Mukherjee Materials Physics Lab")
         Label(info_frame, text=author_text, bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=('Segoe UI', 10), justify='center').pack(side='bottom', pady=(20,0))
-
         return info_frame
 
     def create_launcher_panel(self, parent):
         launcher_frame = ttk.Frame(parent, padding=10)
 
-        # --- Electrical Characterization Group ---
-        elec_frame = LabelFrame(launcher_frame, text='Electrical Characterization', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_SUBTITLE, labelanchor='n')
-        elec_frame.pack(fill='x', expand=True, padx=10, pady=(10, 5))
+        # --- Low Resistance ---
+        low_res_frame = LabelFrame(launcher_frame, text='Low Resistance Measurement', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_SUBTITLE, labelanchor='n')
+        low_res_frame.pack(fill='x', expand=True, padx=10, pady=5)
+        Button(low_res_frame, text="Delta Mode Resistivity (K6221/2182A)", command=lambda: self.launch_script(self.SCRIPT_PATHS["Delta Mode Resistivity (K6221/2182A)"])).pack(fill='x', padx=15, pady=15)
 
-        Button(elec_frame, text="I-V Measurement (Keithley 2400)", command=lambda: self.launch_script(self.SCRIPT_PATHS["I-V Measurement (Keithley 2400)"])).pack(fill='x', padx=15, pady=(15,7))
-        Button(elec_frame, text="Delta Mode Resistivity (K6221/2182A)", command=lambda: self.launch_script(self.SCRIPT_PATHS["Delta Mode Resistivity (K6221/2182A)"])).pack(fill='x', padx=15, pady=7)
-        Button(elec_frame, text="C-V Measurement (Keysight E4980A)", command=lambda: self.launch_script(self.SCRIPT_PATHS["C-V Measurement (Keysight E4980A)"])).pack(fill='x', padx=15, pady=(7,15))
+        # --- Mid Resistance ---
+        mid_res_frame = LabelFrame(launcher_frame, text='Mid Resistance Measurement', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_SUBTITLE, labelanchor='n')
+        mid_res_frame.pack(fill='x', expand=True, padx=10, pady=5)
+        Button(mid_res_frame, text="I-V Measurement (Keithley 2400)", command=lambda: self.launch_script(self.SCRIPT_PATHS["I-V Measurement (Keithley 2400)"])).pack(fill='x', padx=15, pady=(15,7))
+        Button(mid_res_frame, text="4-Probe Measurement (K2400/2182)", command=lambda: self.launch_script(self.SCRIPT_PATHS["4-Probe Measurement (K2400/2182)"])).pack(fill='x', padx=15, pady=(7,15))
 
-        # --- Specialized & Thermal Systems Group ---
-        spec_frame = LabelFrame(launcher_frame, text='Specialized & Thermal Systems', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_SUBTITLE, labelanchor='n')
-        spec_frame.pack(fill='x', expand=True, padx=10, pady=(15, 5))
+        # --- High Resistance ---
+        high_res_frame = LabelFrame(launcher_frame, text='High Resistance Measurement', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_SUBTITLE, labelanchor='n')
+        high_res_frame.pack(fill='x', expand=True, padx=10, pady=5)
+        Button(high_res_frame, text="High Resistance Measurement (K6517B)", command=lambda: self.launch_script(self.SCRIPT_PATHS["High Resistance Measurement (K6517B)"])).pack(fill='x', padx=15, pady=15)
 
-        Button(spec_frame, text="Pyroelectric Measurement (K6517B)", command=lambda: self.launch_script(self.SCRIPT_PATHS["Pyroelectric Measurement (K6517B)"])).pack(fill='x', padx=15, pady=(15,7))
-        Button(spec_frame, text="Temperature Control (Lakeshore)", command=lambda: self.launch_script(self.SCRIPT_PATHS["Temperature Control (Lakeshore)"])).pack(fill='x', padx=15, pady=(7,15))
+        # --- Utilities & Diagnostics ---
+        util_frame = LabelFrame(launcher_frame, text='Utilities & Diagnostics', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_SUBTITLE, labelanchor='n')
+        util_frame.pack(fill='x', expand=True, padx=10, pady=15)
+        Button(util_frame, text="Test Connected GPIB/VISA Instruments", command=self.run_gpib_test).pack(fill='x', padx=15, pady=(15,7))
+        Button(util_frame, text="Open User Manual", command=self.open_manual).pack(fill='x', padx=15, pady=(7,15))
 
         return launcher_frame
 
@@ -141,16 +156,58 @@ class PICALauncherApp:
         if not os.path.exists(script_path):
             messagebox.showerror("File Not Found", f"The script could not be found at the specified path:\n\n{script_path}\n\nPlease edit the SCRIPT_PATHS dictionary in the launcher script.")
             return
-
         try:
-            # Use sys.executable to ensure the script runs with the same Python interpreter
-            # Set the current working directory to the script's directory to resolve relative paths (like logos)
             script_directory = os.path.dirname(script_path) or '.'
             subprocess.Popen([sys.executable, script_path], cwd=script_directory)
             print(f"Successfully launched '{os.path.basename(script_path)}'")
         except Exception as e:
             messagebox.showerror("Launch Error", f"An error occurred while trying to launch the script:\n\n{e}")
             print(f"Error launching script: {e}")
+
+    def open_manual(self):
+        """Opens the user manual PDF file."""
+        if not os.path.exists(self.MANUAL_FILE):
+            messagebox.showwarning("Manual Not Found", f"The manual file '{self.MANUAL_FILE}' was not found in the same directory as the launcher.")
+            return
+        try:
+            if platform.system() == "Windows":
+                os.startfile(self.MANUAL_FILE)
+            elif platform.system() == "Darwin": # macOS
+                subprocess.run(['open', self.MANUAL_FILE])
+            else: # linux
+                subprocess.run(['xdg-open', self.MANUAL_FILE])
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open the manual file.\n\nError: {e}")
+
+    def run_gpib_test(self):
+        """Opens a window to list all available VISA resources."""
+        if not PYVISA_AVAILABLE:
+            messagebox.showerror("Dependency Missing", "The 'pyvisa' library is required for this feature.\n\nPlease install it by running:\npip install pyvisa")
+            return
+
+        test_win = Toplevel(self.root)
+        test_win.title("Connected VISA Instruments")
+        test_win.geometry("600x400")
+        test_win.configure(bg=self.CLR_BG_DARK)
+
+        Label(test_win, text="Found VISA Resources:", font=self.FONT_SUBTITLE, bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT).pack(pady=10)
+
+        text_area = Text(test_win, bg='#1E2D3B', fg='white', font=self.FONT_BASE, relief='flat', height=10, width=70)
+        text_area.pack(padx=10, pady=5, expand=True, fill='both')
+
+        try:
+            rm = pyvisa.ResourceManager()
+            resources = rm.list_resources()
+            if resources:
+                resource_list = "\n".join(resources)
+                text_area.insert('1.0', resource_list)
+            else:
+                text_area.insert('1.0', "No VISA instruments found.\n\n- Check NI-VISA or other backend installation.\n- Ensure instruments are powered on and connected.")
+        except Exception as e:
+            text_area.insert('1.0', f"An error occurred while scanning for instruments:\n\n{e}\n\nMake sure a VISA backend (like NI-VISA) is installed correctly.")
+
+        text_area.config(state='disabled') # Make text read-only
+        Button(test_win, text="Close", command=test_win.destroy).pack(pady=10)
 
 def main():
     root = tk.Tk()
