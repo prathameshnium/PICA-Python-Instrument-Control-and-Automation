@@ -1,0 +1,445 @@
+# -------------------------------------------------------------------------------
+# Name:         Pyroelectric Measurement GUI
+# Purpose:      Perform a pyroelectric current measurement by interfacing a
+#               Lakeshore 350 Temperature Controller and a Keithley 6517B.
+# Author:       Prathamesh Deshmukh
+# Created:      17/09/2025
+# Version:      V1.0
+# -------------------------------------------------------------------------------
+
+# --- Packages for Front end ---
+import tkinter as tk
+from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext
+import os
+import time
+import traceback
+from datetime import datetime
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib as mpl
+
+# --- Packages for Back end ---
+try:
+    import pyvisa
+    from pymeasure.instruments.keithley import Keithley6517B
+    PYVISA_AVAILABLE = True
+except ImportError:
+    PYVISA_AVAILABLE = False
+
+class PyroelectricBackend:
+    """
+    A dedicated class to handle backend instrument communication for the
+    pyroelectric measurement.
+    """
+    def __init__(self):
+        self.params = {}
+        self.keithley = None
+        self.lakeshore = None
+        self.t_final = 350.0  # Default final temperature
+        if PYVISA_AVAILABLE:
+            try:
+                self.rm = pyvisa.ResourceManager()
+            except Exception as e:
+                print(f"Could not initialize VISA resource manager. Error: {e}")
+                self.rm = None
+        else:
+            self.rm = None
+
+    def initialize_instruments(self, parameters):
+        """Receives all parameters from the GUI and configures the instruments."""
+        print("\n--- [Backend] Initializing Instruments ---")
+        self.params = parameters
+        self.t_final = self.params['final_temp']
+
+        if not self.rm:
+            raise ConnectionError("VISA Resource Manager is not available.")
+        try:
+            # --- Connect and Configure Lakeshore 350 ---
+            print(f"  Connecting to Lakeshore 350 via {self.params['lakeshore_visa']}...")
+            self.lakeshore = self.rm.open_resource(self.params['lakeshore_visa'])
+            self.lakeshore.timeout = 15000
+            print(f"    Connected to: {self.lakeshore.query('*IDN?').strip()}")
+
+            self.lakeshore.write('*RST'); time.sleep(0.5)
+            self.lakeshore.write('*CLS'); time.sleep(0.5)
+            # Command format: RAMP <output>,<mode>,<rate> (mode 1 = ramp on setpoint)
+            self.lakeshore.write(f"RAMP 1, 1, {self.params['ramp_rate']}"); time.sleep(0.5)
+            # Command format: RANGE <output>,<range>
+            self.lakeshore.write(f"RANGE 1, {self.params['heater_range']}"); time.sleep(0.5)
+            # Command format: SETP <output>,<value>
+            self.lakeshore.write(f"SETP 1,{self.params['setpoint_temp']}"); time.sleep(0.5)
+            print("  Lakeshore 350 Configured and ramping.")
+
+            # --- Connect and Configure Keithley 6517B ---
+            print(f"  Connecting to Keithley 6517B via {self.params['keithley_visa']}...")
+            # Pymeasure handles the VISA resource opening
+            self.keithley = Keithley6517B(self.params['keithley_visa'])
+            time.sleep(1)
+            print(f"    Connected to: {self.keithley.id}")
+            self.keithley.measure_current() # Set to measure current
+            print("  Keithley 6517B Configured to measure current.")
+            print("--- [Backend] Instrument Initialization Complete ---")
+
+        except Exception as e:
+            print(f"  ERROR: Could not connect/configure an instrument. {e}")
+            self.close_instruments() # Attempt to clean up
+            raise e
+
+    def get_measurement(self):
+        """Performs a single measurement and returns all relevant data."""
+        if not self.keithley or not self.lakeshore:
+            raise ConnectionError("One or more instruments are not connected.")
+
+        temp_str = self.lakeshore.query('KRDG? A').strip()
+        temperature = float(temp_str)
+        current = self.keithley.current  # Read current in Amps
+
+        # Check if the final temperature is reached
+        measurement_continues = (temperature < self.t_final)
+        if not measurement_continues:
+            print(f"  Final temperature {self.t_final} K reached.")
+            self.lakeshore.write('RANGE 1, 0') # Turn off heater
+            print("  Lakeshore heater turned OFF.")
+
+        return temperature, current, measurement_continues
+
+    def close_instruments(self):
+        """Safely shuts down and disconnects from all instruments."""
+        print("--- [Backend] Closing instrument connections. ---")
+        if self.keithley:
+            try:
+                self.keithley.shutdown()
+                print("  Keithley 6517B connection closed.")
+            except Exception: pass
+            finally: self.keithley = None
+        if self.lakeshore:
+            try:
+                # Set heater range to 0 (OFF)
+                self.lakeshore.write("RANGE 1, 0")
+                self.lakeshore.close()
+                print("  Lakeshore 350 connection closed.")
+            except Exception: pass
+            finally: self.lakeshore = None
+
+class PyroelectricAppGUI:
+    """The main GUI application class (Front End)."""
+    # --- Theming and Styling ---
+    PROGRAM_VERSION = "1.0"
+    CLR_BG_DARK = '#2B3D4F'
+    CLR_HEADER = '#3A506B'
+    CLR_FG_LIGHT = '#EDF2F4'
+    CLR_ACCENT_BLUE = '#8D99AE'
+    CLR_ACCENT_GREEN = '#A7C957'
+    CLR_ACCENT_RED = '#EF233C'
+    CLR_CONSOLE_BG = '#1E2B38'
+    CLR_GRAPH_BG = '#FFFFFF'
+    FONT_SIZE_BASE = 11
+    FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
+    FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
+    FONT_CONSOLE = ('Consolas', 10)
+
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Pyroelectric Measurement Interface")
+        self.root.geometry("1600x900")
+        self.root.configure(bg=self.CLR_BG_DARK)
+        self.root.minsize(1200, 800)
+
+        self.is_running, self.start_time = False, None
+        self.backend = PyroelectricBackend()
+        self.file_location_path = ""
+        self.data_storage = {'time': [], 'temperature': [], 'current': []}
+
+        self.setup_styles()
+        self.create_widgets()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+
+    def setup_styles(self):
+        """Configures ttk styles for a modern look."""
+        style = ttk.Style(self.root)
+        style.theme_use('clam')
+        style.configure('TFrame', background=self.CLR_BG_DARK)
+        style.configure('TPanedWindow', background=self.CLR_BG_DARK)
+        style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
+        style.configure('TButton', font=self.FONT_BASE, padding=(10, 8))
+        style.map('TButton',
+                  foreground=[('!active', self.CLR_BG_DARK), ('active', self.CLR_FG_LIGHT)],
+                  background=[('!active', self.CLR_ACCENT_BLUE), ('active', self.CLR_BG_DARK)])
+        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN)
+        style.configure('Stop.TButton', background=self.CLR_ACCENT_RED)
+        mpl.rcParams['font.family'] = 'Segoe UI'
+        mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
+
+    def create_widgets(self):
+        """Lays out the main frames and populates them with widgets."""
+        self.create_header()
+
+        main_pane = ttk.PanedWindow(self.root, orient='horizontal')
+        main_pane.pack(fill='both', expand=True, padx=10, pady=10)
+
+        left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=450)
+        main_pane.add(left_panel, weight=1)
+
+        right_panel = tk.Frame(main_pane, bg=self.CLR_BG_DARK)
+        main_pane.add(right_panel, weight=3)
+
+        top_controls_frame = ttk.Frame(left_panel)
+        left_panel.add(top_controls_frame, weight=0)
+
+        self.create_info_frame(top_controls_frame)
+        self.create_input_frame(top_controls_frame)
+
+        console_pane = self.create_console_frame(left_panel)
+        left_panel.add(console_pane, weight=1)
+        self.create_graph_frame(right_panel)
+
+    def create_header(self):
+        header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
+        header_frame.pack(side='top', fill='x')
+        Label(header_frame, text="Pyroelectric Current Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
+        Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).pack(side='right', padx=20, pady=10)
+
+    def create_info_frame(self, parent):
+        frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame.pack(pady=(10, 10), padx=10, fill='x')
+        info_text = ("Measurement: Pyroelectric Current vs. Temp\n\n"
+                     "Instruments:\n  • Lakeshore 350 Temp. Controller\n  • Keithley 6517B Electrometer")
+        ttk.Label(frame, text=info_text, justify='left').pack(padx=15, pady=10, anchor='w')
+
+    def create_input_frame(self, parent):
+        frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame.pack(pady=10, padx=10, fill='x')
+        frame.grid_columnconfigure(1, weight=1)
+
+        self.entries = {}
+        params = {
+            "Sample Name": "SampleX",
+            "Setpoint Temp (K)": "310",
+            "Final Temp (K)": "360",
+            "Ramp Rate (K/min)": "5",
+            "Heater Range": "3" # 1=Low, 2=Med, 3=High
+        }
+
+        # Create entry for each parameter
+        for i, (text, default) in enumerate(params.items()):
+            ttk.Label(frame, text=f"{text}:").grid(row=i, column=0, padx=10, pady=6, sticky='w')
+            entry = ttk.Entry(frame, font=self.FONT_BASE)
+            entry.grid(row=i, column=1, padx=10, pady=6, sticky='ew')
+            entry.insert(0, default)
+            self.entries[text] = entry
+
+        row_offset = len(params)
+
+        # VISA Instrument Selection
+        ttk.Label(frame, text="Lakeshore 350 VISA:").grid(row=row_offset, column=0, padx=10, pady=6, sticky='w')
+        self.lakeshore_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
+        self.lakeshore_combobox.grid(row=row_offset, column=1, padx=10, pady=6, sticky='ew')
+
+        ttk.Label(frame, text="Keithley 6517B VISA:").grid(row=row_offset + 1, column=0, padx=10, pady=6, sticky='w')
+        self.keithley_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
+        self.keithley_combobox.grid(row=row_offset + 1, column=1, padx=10, pady=6, sticky='ew')
+
+        # Control Buttons
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=row_offset + 2, column=0, columnspan=2, pady=10)
+        button_frame.grid_columnconfigure(0, weight=1); button_frame.grid_columnconfigure(1, weight=1)
+
+        self.scan_button = ttk.Button(button_frame, text="Scan Instruments", command=self._scan_for_visa_instruments)
+        self.scan_button.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
+
+        self.file_location_button = ttk.Button(button_frame, text="Browse Save Location", command=self._browse_file_location)
+        self.file_location_button.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
+
+        self.start_button = ttk.Button(button_frame, text="Start", command=self.start_measurement, style='Start.TButton')
+        self.start_button.grid(row=2, column=0, padx=5, pady=10, sticky='ew')
+
+        self.stop_button = ttk.Button(button_frame, text="Stop", command=self.stop_measurement, style='Stop.TButton', state='disabled')
+        self.stop_button.grid(row=2, column=1, padx=5, pady=10, sticky='ew')
+
+    def create_console_frame(self, parent):
+        frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0)
+        self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
+        self.log("Console initialized.")
+        if not PYVISA_AVAILABLE:
+            self.log("CRITICAL ERROR: pyvisa or pymeasure not found. Please run 'pip install pyvisa pymeasure'.")
+        else:
+            self.log("Please scan for instruments and select a save location.")
+        return frame
+
+    def create_graph_frame(self, parent):
+        graph_container = LabelFrame(parent, text='Live Graphs', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
+        graph_container.pack(fill='both', expand=True, padx=(5,10), pady=0)
+
+        self.figure = Figure(figsize=(10, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
+        # Create 3 vertically stacked subplots
+        self.ax1 = self.figure.add_subplot(3, 1, 1)
+        self.ax2 = self.figure.add_subplot(3, 1, 2)
+        self.ax3 = self.figure.add_subplot(3, 1, 3)
+        self.axes = [self.ax1, self.ax2, self.ax3]
+
+        # Plot 1: Temperature vs. Time
+        self.line1, = self.ax1.plot([], [], color='#0077b6', marker='o', markersize=3, linestyle='-')
+        self.ax1.set_title("Temperature vs. Time")
+        self.ax1.set_ylabel("Temperature (K)")
+
+        # Plot 2: Current vs. Time
+        self.line2, = self.ax2.plot([], [], color='#06d6a0', marker='o', markersize=3, linestyle='-')
+        self.ax2.set_title("Current vs. Time")
+        self.ax2.set_ylabel("Current (A)")
+
+        # Plot 3: Current vs. Temperature
+        self.line3, = self.ax3.plot([], [], color='#e63946', marker='o', markersize=3, linestyle='-')
+        self.ax3.set_title("Current vs. Temperature")
+        self.ax3.set_xlabel("Temperature (K)")
+        self.ax3.set_ylabel("Current (A)")
+
+        for ax in self.axes:
+            ax.grid(True, linestyle='--', alpha=0.6)
+            ax.ticklabel_format(axis='y', style='sci', scilimits=(-2,3))
+
+        self.figure.tight_layout(pad=2.0)
+        self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
+        self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
+
+    def log(self, message):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.console_widget.config(state='normal')
+        self.console_widget.insert('end', f"[{timestamp}] {message}\n")
+        self.console_widget.see('end')
+        self.console_widget.config(state='disabled')
+
+    def start_measurement(self):
+        try:
+            params = {
+                'sample_name': self.entries["Sample Name"].get(),
+                'setpoint_temp': float(self.entries["Setpoint Temp (K)"].get()),
+                'final_temp': float(self.entries["Final Temp (K)"].get()),
+                'ramp_rate': float(self.entries["Ramp Rate (K/min)"].get()),
+                'heater_range': int(self.entries["Heater Range"].get()),
+                'lakeshore_visa': self.lakeshore_combobox.get(),
+                'keithley_visa': self.keithley_combobox.get()
+            }
+            if not all([params['sample_name'], params['lakeshore_visa'], params['keithley_visa']]) or not self.file_location_path:
+                raise ValueError("All fields, VISA addresses, and a save location are required.")
+
+            self.backend.initialize_instruments(params)
+            self.log(f"Backend initialized for sample: {params['sample_name']}")
+
+            # Create data file
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file_name = f"{params['sample_name']}_{timestamp}_Pyro.csv"
+            self.data_filepath = os.path.join(self.file_location_path, file_name)
+            with open(self.data_filepath, 'w', newline='') as f:
+                header = f"# Sample: {params['sample_name']}\n# Setpoint: {params['setpoint_temp']} K, Final: {params['final_temp']} K, Ramp: {params['ramp_rate']} K/min\n"
+                f.write(header)
+                f.write("Time (s),Temperature (K),Current (A)\n")
+            self.log(f"Output file created: {os.path.basename(self.data_filepath)}")
+
+            # Reset UI and start loop
+            self.is_running = True
+            self.start_time = time.time()
+            self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
+            for key in self.data_storage: self.data_storage[key].clear()
+            for line in [self.line1, self.line2, self.line3]: line.set_data([], [])
+            self.ax1.set_title(f"T vs Time | Sample: {params['sample_name']}")
+            self.canvas.draw()
+
+            self.log("Measurement loop started.")
+            self.root.after(1000, self._update_measurement_loop)
+
+        except Exception as e:
+            self.log(f"ERROR during startup: {traceback.format_exc()}")
+            messagebox.showerror("Initialization Error", f"Could not start measurement.\n\nDetails:\n{e}")
+            self.backend.close_instruments()
+
+    def stop_measurement(self, reason="stopped by user"):
+        if self.is_running:
+            self.is_running = False
+            self.log(f"Measurement loop {reason}.")
+            self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
+            self.backend.close_instruments()
+            self.log("Instrument connections closed.")
+            messagebox.showinfo("Info", f"Measurement stopped.\nReason: {reason}")
+
+    def _update_measurement_loop(self):
+        if not self.is_running: return
+        try:
+            temp, current, continues = self.backend.get_measurement()
+            elapsed_time = time.time() - self.start_time
+
+            # Log to file
+            with open(self.data_filepath, 'a', newline='') as f:
+                f.write(f"{elapsed_time:.2f},{temp},{current}\n")
+
+            # Store and plot data
+            self.data_storage['time'].append(elapsed_time)
+            self.data_storage['temperature'].append(temp)
+            self.data_storage['current'].append(current)
+
+            self.line1.set_data(self.data_storage['time'], self.data_storage['temperature'])
+            self.line2.set_data(self.data_storage['time'], self.data_storage['current'])
+            self.line3.set_data(self.data_storage['temperature'], self.data_storage['current'])
+
+            for ax in self.axes:
+                ax.relim(); ax.autoscale_view()
+
+            self.figure.tight_layout(pad=2.0)
+            self.canvas.draw()
+
+            if not continues:
+                self.stop_measurement(reason="final temperature reached")
+                return
+
+        except Exception:
+            self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
+            self.stop_measurement(reason="runtime error")
+            messagebox.showerror("Runtime Error", "An error occurred during measurement. Check console for details.")
+
+        if self.is_running:
+            self.root.after(2000, self._update_measurement_loop) # Update every 2 seconds
+
+    def _scan_for_visa_instruments(self):
+        if not PYVISA_AVAILABLE:
+            self.log("ERROR: PyVISA not installed."); return
+        if self.backend.rm is None:
+            self.log("ERROR: VISA manager failed. Is NI-VISA (or similar) installed?"); return
+
+        self.log("Scanning for VISA instruments...")
+        try:
+            resources = self.backend.rm.list_resources()
+            if resources:
+                self.log(f"Found: {resources}")
+                self.keithley_combobox['values'] = resources
+                self.lakeshore_combobox['values'] = resources
+                # Attempt to set defaults based on common GPIB addresses
+                for res in resources:
+                    if "27" in res: self.keithley_combobox.set(res)
+                    if "12" in res: self.lakeshore_combobox.set(res)
+                # Fallback if defaults not found
+                if not self.keithley_combobox.get() and resources: self.keithley_combobox.set(resources[0])
+                if not self.lakeshore_combobox.get() and resources: self.lakeshore_combobox.set(resources[-1])
+            else:
+                self.log("No VISA instruments found.")
+        except Exception as e:
+            self.log(f"ERROR during scan: {e}")
+
+    def _browse_file_location(self):
+        path = filedialog.askdirectory()
+        if path:
+            self.file_location_path = path
+            self.log(f"Save location set to: {path}")
+
+    def _on_closing(self):
+        if self.is_running:
+            if messagebox.askyesno("Exit", "Measurement is running. Stop and exit?"):
+                self.stop_measurement()
+                self.root.destroy()
+        else:
+            self.root.destroy()
+
+if __name__ == '__main__':
+    root = tk.Tk()
+    app = PyroelectricAppGUI(root)
+    root.mainloop()
+
