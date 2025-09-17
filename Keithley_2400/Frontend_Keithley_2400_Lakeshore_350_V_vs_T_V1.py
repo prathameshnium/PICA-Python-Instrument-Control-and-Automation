@@ -2,9 +2,9 @@
 # Name:          Temperature Dependent I-V Measurement GUI
 # Purpose:       Provide a graphical user interface for controlling a Lakeshore
 #                350 and a Keithley 2400 to perform automated V vs. T sweeps.
-# Author:        Prathamesh Deshmukh
+# Author:        Prathamesh deshmukh
 # Created:       18/09/2025
-# Version:       2.4 (Resized Console Window)
+# Version:       2.7 (Final Layout Fix using reliable .pack geometry)
 # -------------------------------------------------------------------------------
 
 # --- GUI and Plotting Packages ---
@@ -115,7 +115,7 @@ class ExperimentBackend:
 # FRONTEND CLASS - The Main GUI Application
 #===============================================================================
 class TemperatureIVGUI:
-    PROGRAM_VERSION = "2.4"
+    PROGRAM_VERSION = "2.7"
     CLR_BG_DARK, CLR_HEADER, CLR_FG_LIGHT = '#2B3D4F', '#3A506B', '#EDF2F4'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#EF233C', '#8D99AE'
     CLR_CONSOLE_BG = '#1E2B38'
@@ -156,24 +156,32 @@ class TemperatureIVGUI:
 
     def create_widgets(self):
         self.create_header()
+
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
-        left_panel = ttk.Frame(main_pane, width=500); main_pane.add(left_panel, weight=1)
-        right_panel = tk.Frame(main_pane, bg='white'); main_pane.add(right_panel, weight=3)
+        # --- LEFT PANEL: Contains controls and console ---
+        left_panel = ttk.Frame(main_pane)
+        main_pane.add(left_panel, weight=1)
 
-        # ** CHANGE: Adjusted row weights to make the console smaller **
-        left_panel.grid_rowconfigure(0, weight=5) # Give scroll area much more weight
-        left_panel.grid_rowconfigure(1, weight=1) # Give console less weight
-        left_panel.grid_columnconfigure(0, weight=1)
-
-        scroll_container = self.create_scrollable_controls(left_panel)
-        scroll_container.grid(row=0, column=0, sticky='nsew')
-
-        console_frame = self.create_console_frame(left_panel)
-        console_frame.grid(row=1, column=0, sticky='nsew', pady=(10,0))
-
+        # --- RIGHT PANEL: Contains graph ---
+        right_panel = ttk.Frame(main_pane)
+        main_pane.add(right_panel, weight=3)
         self.create_graph_frame(right_panel)
+
+        # --- DEFINITIVE LAYOUT FIX for left_panel ---
+        # A reliable .pack() structure.
+
+        # Create the console first
+        console_frame = self.create_console_frame(left_panel)
+        # Pack it to the bottom. It will only take its minimum required height.
+        # A fixed height is set for the ScrolledText widget inside create_console_frame.
+        console_frame.pack(side='bottom', fill='x', expand=False, pady=(10, 0))
+
+        # Create the scrollable controls area
+        scroll_container = self.create_scrollable_controls(left_panel)
+        # Pack it above the console. It will expand to fill all remaining vertical space.
+        scroll_container.pack(side='top', fill='both', expand=True)
 
     def create_scrollable_controls(self, parent):
         container = ttk.Frame(parent)
@@ -183,8 +191,12 @@ class TemperatureIVGUI:
         self.scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        canvas.pack(side="left", fill="both", expand=True); scrollbar.pack(side="right", fill="y")
 
+        # The order of packing is important for layout
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        # Populate the scrollable frame with all input widgets
         self.create_info_frame(self.scrollable_frame)
         self.create_input_frames(self.scrollable_frame)
 
@@ -199,7 +211,6 @@ class TemperatureIVGUI:
     def create_info_frame(self, parent):
         frame = ttk.LabelFrame(parent, text='Information')
         frame.pack(pady=5, padx=10, fill='x')
-
         info_subframe = ttk.Frame(frame); info_subframe.pack(padx=10, pady=5, fill='x')
         logo_canvas = tk.Canvas(info_subframe, width=100, height=100, bg=self.CLR_BG_DARK, highlightthickness=0)
         logo_canvas.pack(side='left', padx=(0, 15))
@@ -217,19 +228,16 @@ class TemperatureIVGUI:
 
     def create_input_frames(self, parent):
         self.entries = {}
-
         exp_frame = ttk.LabelFrame(parent, text='Experiment Control')
         exp_frame.pack(pady=5, padx=10, fill='x')
         self._create_entry(exp_frame, "Sample Name", "SampleA_Run1")
         self._create_entry(exp_frame, "Save Location", "", browse=True)
-
         temp_frame = ttk.LabelFrame(parent, text='Temperature Parameters')
         temp_frame.pack(pady=5, padx=10, fill='x')
         self._create_entry(temp_frame, "Start Temp (K)", "300")
         self._create_entry(temp_frame, "End Temp (K)", "280")
         self._create_entry(temp_frame, "Temp Step (K)", "-5")
         self.lakeshore_combobox = self._create_combobox(temp_frame, "Lakeshore VISA")
-
         iv_frame = ttk.LabelFrame(parent, text='I-V Sweep Parameters')
         iv_frame.pack(pady=5, padx=10, fill='x')
         self._create_entry(iv_frame, "Max Current (µA)", "100")
@@ -237,7 +245,6 @@ class TemperatureIVGUI:
         self._create_entry(iv_frame, "Compliance (V)", "10")
         self._create_entry(iv_frame, "Dwell Time (s)", "0.2")
         self.keithley_combobox = self._create_combobox(iv_frame, "Keithley VISA")
-
         control_frame = ttk.Frame(parent)
         control_frame.pack(fill='x', padx=10, pady=10)
         control_frame.grid_columnconfigure((0,1,2), weight=1)
@@ -250,7 +257,8 @@ class TemperatureIVGUI:
 
     def create_console_frame(self, parent):
         frame = ttk.LabelFrame(parent, text='Console Output')
-        self.console = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=('Consolas', 9), wrap='word', borderwidth=0)
+        # By setting a fixed height on the ScrolledText widget, we control the console's size
+        self.console = scrolledtext.ScrolledText(frame, height=8, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=('Consolas', 9), wrap='word', borderwidth=0)
         self.console.pack(fill='both', expand=True, padx=5, pady=5)
         return frame
 
