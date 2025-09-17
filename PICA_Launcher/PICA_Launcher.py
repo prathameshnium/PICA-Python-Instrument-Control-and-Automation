@@ -3,17 +3,18 @@
 # Purpose:      A central meta front end to launch various measurement GUIs.
 # Author:       Prathamesh Deshmukh
 # Created:      10/09/2025
-# Version:      2.7 (Final Layout)
+# Version:      2.9 (Final Polished UI)
 # Last Edit:    17/09/2025
 # -------------------------------------------------------------------------------
 
 import tkinter as tk
-from tkinter import ttk, messagebox, Toplevel, Text, Canvas, scrolledtext
+from tkinter import ttk, messagebox, Toplevel, Text, Canvas, scrolledtext, font
 import os
 import sys
 import subprocess
 import platform
 from datetime import datetime
+import webbrowser
 
 # --- Pillow for Logo Image ---
 try:
@@ -32,7 +33,7 @@ except ImportError:
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "2.7"
+    PROGRAM_VERSION = "2.9"
 
     # --- Final Professional Color Palette ---
     CLR_BG_DARK = '#2B3D4F'
@@ -41,6 +42,7 @@ class PICALauncherApp:
     CLR_TEXT = '#EDF2F4'
     CLR_TEXT_DARK = '#1A1A1A'
     CLR_CONSOLE_BG = '#1E2B38'
+    CLR_LINK = '#61AFEF' # A pleasant blue for hyperlinks
 
     FONT_SIZE_BASE = 11
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
@@ -62,8 +64,6 @@ class PICALauncherApp:
         "K2400_2182 R-T": "Keithley_2400_Keithley_2182/Four_Probe_RT_GUI.py", "K2400_2182 I-V": "Keithley_2400_Keithley_2182/Four_Probe_IV_GUI.py",
         "K6517B Resistivity": "Keithley_6517B/High_Res_GUI.py", "Pyroelectric Current": "Keithley_6517B/Pyro_GUI.py",
         "Lakeshore Temp Control": "Lakeshore_350_340/Temp_Control_GUI.py",
-
-        # --- NEW: Add paths for these new instruments ---
         "LCR C-V Measurement": "LCR_Keysight_E4980A/CV_GUI.py",
         "Lock-in AC Measurement": "Lock_in_Amplifier/AC_Transport_GUI.py",
     }
@@ -119,7 +119,16 @@ class PICALauncherApp:
 
         logo_canvas = Canvas(info_frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
         logo_canvas.pack(pady=(0, 20))
-        # ... (logo loading logic)
+
+        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE):
+            try:
+                img = Image.open(self.LOGO_FILE).resize((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
+                self.logo_image = ImageTk.PhotoImage(img)
+                logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
+            except Exception as e:
+                logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nERROR", font=self.FONT_BASE, fill=self.CLR_TEXT, justify='center')
+        else:
+            logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill=self.CLR_TEXT, justify='center')
 
         ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, justify='center', anchor='center').pack(pady=(0, 15))
         desc_text = "A suite of Python scripts for automating laboratory instruments for materials science and physics research."
@@ -131,7 +140,6 @@ class PICALauncherApp:
         util_frame.pack(fill='x', expand=True, pady=5)
         ttk.Button(util_frame, text="Open README", style='App.TButton', command=self.open_readme).pack(fill='x', pady=4)
         ttk.Button(util_frame, text="Open Instrument Manuals", style='App.TButton', command=self.open_manual_folder).pack(fill='x', pady=4)
-        ttk.Button(util_frame, text="View License", style='App.TButton', command=self.open_license).pack(fill='x', pady=4)
         ttk.Button(util_frame, text="Test GPIB Connection", style='App.TButton', command=self.run_gpib_test).pack(fill='x', pady=4)
 
         bottom_frame = ttk.Frame(info_frame)
@@ -139,8 +147,13 @@ class PICALauncherApp:
         author_text = ("Developed by Prathamesh Deshmukh | Vision & Guidance by Dr. Sudip Mukherjee\n"
                        "UGC-DAE Consortium for Scientific Research, Mumbai Centre")
         ttk.Label(bottom_frame, text=author_text, font=('Segoe UI', 9), justify='center', anchor='center').pack(pady=(0,10))
-        license_text = "This project is licensed under the MIT License. See the LICENSE file for details."
-        ttk.Label(bottom_frame, text=license_text, font=('Segoe UI', 9), justify='center', anchor='center').pack()
+
+        # --- Clickable License Label ---
+        license_font = font.Font(family='Segoe UI', size=9, underline=True)
+        license_label = ttk.Label(bottom_frame, text="This project is licensed under the MIT License.",
+                                  font=license_font, foreground=self.CLR_LINK, cursor="hand2")
+        license_label.pack()
+        license_label.bind("<Button-1>", lambda e: self.open_license())
 
         return info_frame
 
@@ -169,44 +182,35 @@ class PICALauncherApp:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
 
-        scrollable_frame.grid_columnconfigure(0, weight=1, uniform="group1", pad=10)
-        scrollable_frame.grid_columnconfigure(1, weight=1, uniform="group1", pad=10)
+        scrollable_frame.grid_columnconfigure(0, weight=1, uniform="group1", pad=5)
+        scrollable_frame.grid_columnconfigure(1, weight=1, uniform="group1", pad=5)
         left_col = ttk.Frame(scrollable_frame); left_col.grid(row=0, column=0, sticky='new')
         right_col = ttk.Frame(scrollable_frame); right_col.grid(row=0, column=1, sticky='new')
 
-        # --- Populate Column 1: Resistance Systems ---
         low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (Delta Mode)'); low_res_frame.pack(fill='x', expand=True, pady=10)
         self._create_launch_button(low_res_frame, "R vs. T Measurement", "Delta Mode R-T").pack(fill='x', pady=4)
         self._create_launch_button(low_res_frame, "I-V Measurement", "Delta Mode I-V").pack(fill='x', pady=4)
-
         mid_res_frame1 = ttk.LabelFrame(left_col, text='Mid Resistance (Keithley 2400)'); mid_res_frame1.pack(fill='x', expand=True, pady=10)
         self._create_launch_button(mid_res_frame1, "I-V Measurement", "K2400 I-V").pack(fill='x', pady=4)
         self._create_launch_button(mid_res_frame1, "Time vs. Current", "K2400 Time-Current").pack(fill='x', pady=4)
-
         mid_res_frame2 = ttk.LabelFrame(left_col, text='Mid Resistance (K2400 / K2182)'); mid_res_frame2.pack(fill='x', expand=True, pady=10)
         self._create_launch_button(mid_res_frame2, "R vs. T Measurement", "K2400_2182 R-T").pack(fill='x', pady=4)
         self._create_launch_button(mid_res_frame2, "I-V Measurement", "K2400_2182 I-V").pack(fill='x', pady=4)
-
         high_res_frame = ttk.LabelFrame(left_col, text='High Resistance (Keithley 6517B)'); high_res_frame.pack(fill='x', expand=True, pady=10)
         self._create_launch_button(high_res_frame, "Resistivity Measurement", "K6517B Resistivity").pack(fill='x', pady=4)
 
-        # --- Populate Column 2: Specialized Systems ---
         pyro_frame = ttk.LabelFrame(right_col, text='Pyroelectric Measurement (K6517B)'); pyro_frame.pack(fill='x', expand=True, pady=10)
         self._create_launch_button(pyro_frame, "Pyro Current vs. Temp", "Pyroelectric Current").pack(fill='x', pady=4)
-
         lakeshore_frame = ttk.LabelFrame(right_col, text='Environmental Control'); lakeshore_frame.pack(fill='x', expand=True, pady=10)
         self._create_launch_button(lakeshore_frame, "Temperature Control (Lakeshore)", "Lakeshore Temp Control").pack(fill='x', pady=4)
-
         lcr_frame = ttk.LabelFrame(right_col, text='LCR Meter (Keysight E4980A)'); lcr_frame.pack(fill='x', expand=True, pady=10)
         self._create_launch_button(lcr_frame, "C-V Measurement", "LCR C-V Measurement").pack(fill='x', pady=4)
-
         lockin_frame = ttk.LabelFrame(right_col, text='Lock-in Amplifier'); lockin_frame.pack(fill='x', expand=True, pady=10)
         self._create_launch_button(lockin_frame, "AC Measurement", "Lock-in AC Measurement").pack(fill='x', pady=4)
 
         canvas.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
 
-        # --- Bottom Pane (Console) ---
         console_container = ttk.LabelFrame(pane, text="Console", padding=(5,10))
         pane.add(console_container, weight=1)
 
@@ -225,7 +229,6 @@ class PICALauncherApp:
         return frame
 
     def _open_path(self, path):
-        # ... (This logic remains unchanged)
         if path == self.LICENSE_FILE and not os.path.exists(path):
             if os.path.exists(path + ".md"): path += ".md"
             elif os.path.exists(path + ".txt"): path += ".txt"
@@ -240,7 +243,6 @@ class PICALauncherApp:
             messagebox.showerror("Error", f"Could not open path: {path}\n\nError: {e}")
 
     def open_script_folder(self, script_key):
-        # ... (This logic remains unchanged)
         script_path = self.SCRIPT_PATHS.get(script_key)
         if not script_path or not os.path.exists(script_path):
             self.log(f"ERROR: Path for '{script_key}' is invalid.")
@@ -268,7 +270,6 @@ class PICALauncherApp:
             messagebox.showerror("Launch Error", f"An error occurred while launching the script:\n\n{e}")
 
     def run_gpib_test(self):
-        # ... (This logic remains unchanged)
         if not PYVISA_AVAILABLE:
             self.log("ERROR: GPIB test failed, PyVISA is not available.")
             messagebox.showerror("Dependency Missing", "The 'pyvisa' library is required.\n\nInstall via pip:\npip install pyvisa pyvisa-py")
