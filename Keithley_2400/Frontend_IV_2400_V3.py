@@ -1,10 +1,10 @@
 # -------------------------------------------------------------------------------
-# Name:         Keithley 2400 I-V Measurement GUI
-# Purpose:      Perform an automated I-V sweep using a Keithley 2400.
-#               (Grid-based layout for stability)
-# Author:       Prathamesh 
-# Created:      10/09/2025
-# Version:      11.0 (Robust Grid Layout)
+# Name:           Keithley 2400 I-V Measurement GUI
+# Purpose:        Perform an automated I-V sweep using a Keithley 2400.
+#                 (Grid-based layout for stability)
+# Author:         Prathamesh (Modified by Gemini)
+# Created:        10/09/2025
+# Version:        12.0 (User-Requested Sweep Protocols)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -62,24 +62,59 @@ class Keithley2400_IV_Backend:
         self.keithley.use_front_terminals()
         self.keithley.apply_current()
         self.keithley.source_current = 0
-        max_abs_current = max(abs(params['max_current']), abs(params['min_current']))
+
+        # --- MODIFIED: Determine max current range based on sweep type ---
+        max_abs_current = 0
+        if params['sweep_type'] == 'Custom List':
+            try:
+                points = [float(p.strip()) * 1e-6 for p in params['custom_list_str'].split(',') if p.strip()]
+                if points:
+                    max_abs_current = max(abs(p) for p in points)
+            except:
+                 max_abs_current = 1.0 # Default to 1A range if parsing fails
+        else:
+            max_abs_current = abs(params['max_current'])
+
         self.keithley.source_current_range = max_abs_current * 1.05 if max_abs_current > 0 else 1e-5
         self.keithley.compliance_voltage = params['compliance_v']
         self.keithley.enable_source()
 
     def generate_sweep_points(self, params):
-        imin, imax, istep = params['min_current'], params['max_current'], params['step_current']
-        forward = np.arange(imin, imax + istep, istep)
-        reverse = np.arange(imax, imin - istep, -istep)
-        zero_to_max = np.arange(0, imax + istep, istep)
-        max_to_min = np.arange(imax, imin - istep, -istep)
-        min_to_zero = np.arange(imin, 0 + istep, istep)
+        # --- MODIFIED: New sweep generation logic ---
         sweep_type = params['sweep_type']
-        if sweep_type == "Forward": base_sweep = forward
-        elif sweep_type == "Forward & Reverse": base_sweep = np.concatenate([forward, reverse[1:]])
-        elif sweep_type == "Hysteresis (0->Max->Min->0)": base_sweep = np.concatenate([zero_to_max, max_to_min[1:], min_to_zero[1:]])
-        else: base_sweep = np.array([])
+        base_sweep = np.array([])
+
+        if sweep_type == "Custom List":
+            try:
+                custom_list_str = params['custom_list_str']
+                # Convert comma-separated string of µA values to a numpy array of A values
+                points = [float(p.strip()) * 1e-6 for p in custom_list_str.split(',') if p.strip()]
+                if not points:
+                    raise ValueError("Custom list is empty or invalid.")
+                base_sweep = np.array(points)
+            except ValueError as e:
+                raise ValueError(f"Invalid format in custom list. Please use comma-separated numbers. Error: {e}")
+
+        else: # Handle the other sweep types
+            imax, istep = params['max_current'], params['step_current']
+            if istep <= 0:
+                raise ValueError("Step Current must be positive.")
+
+            if sweep_type == "0 to Max":
+                base_sweep = np.arange(0, imax + istep, istep)
+
+            elif sweep_type == "Loop (0 → Max → 0 → -Max → 0)":
+                s1 = np.arange(0, imax + istep, istep)           # 0 -> Max
+                s2 = np.arange(imax, 0 - istep, -istep)          # Max -> 0
+                s3 = np.arange(0, -imax - istep, -istep)         # 0 -> -Max
+                s4 = np.arange(-imax, 0 + istep, istep)          # -Max -> 0
+                base_sweep = np.concatenate([s1, s2[1:], s3[1:], s4[1:]])
+
+        if base_sweep.size == 0 and sweep_type != "Custom List":
+             raise ValueError(f"Unknown sweep type or invalid parameters for '{sweep_type}'")
+
         return np.tile(base_sweep, params['num_loops'])
+
 
     def measure_at_current(self, current_setpoint, delay):
         self.keithley.ramp_to_current(current_setpoint, steps=5, pause=0.01)
@@ -94,7 +129,7 @@ class Keithley2400_IV_Backend:
                 self.keithley = None
 
 class MeasurementAppGUI:
-    PROGRAM_VERSION = "11.0"
+    PROGRAM_VERSION = "12.0" # Updated Version
     CLR_BG_DARK, CLR_HEADER, CLR_FG_LIGHT = '#2B3D4F', '#3A506B', '#EDF2F4'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED = '#A7C957', '#EF233C'
     CLR_CONSOLE_BG = '#1E2B38'
@@ -118,9 +153,14 @@ class MeasurementAppGUI:
         self.logo_image = None
         self.pre_init_logs = []
 
+        # --- NEW: Initialize custom UI widget variables ---
+        self.custom_list_label = None
+        self.custom_list_text = None
+
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+        self._on_sweep_type_change() # Call once to set initial UI state
 
     def setup_styles(self):
         style = ttk.Style(self.root)
@@ -142,12 +182,9 @@ class MeasurementAppGUI:
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
-        # --- ROBUST GRID LAYOUT FOR LEFT PANEL ---
         left_panel = ttk.Frame(main_pane)
-        # Configure the grid rows/columns for the left_panel itself
-        left_panel.grid_rowconfigure(1, weight=1) # Row 1 (console) will expand
-        left_panel.grid_columnconfigure(0, weight=1) # The single column will expand
-
+        left_panel.grid_rowconfigure(1, weight=1)
+        left_panel.grid_columnconfigure(0, weight=1)
         main_pane.add(left_panel, weight=1)
 
         right_panel = tk.Frame(main_pane, bg='white')
@@ -159,7 +196,6 @@ class MeasurementAppGUI:
 
         console_pane = self.create_console_frame(left_panel)
 
-        # Place the frames into the left_panel's grid
         top_controls_frame.grid(row=0, column=0, sticky="ew")
         console_pane.grid(row=1, column=0, sticky="nsew", pady=(10,0))
 
@@ -200,25 +236,37 @@ class MeasurementAppGUI:
         ttk.Label(info_text_frame, text=info_text, justify='left').pack(pady=20, anchor='w')
 
     def create_input_frame(self, parent):
+        # --- MODIFIED: Updated UI layout for new sweep options ---
         frame = LabelFrame(parent, text='Sweep Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         frame.pack(pady=10, padx=10, fill='x')
         self.entries = {}
         grid = ttk.Frame(frame); grid.pack(padx=10, pady=10, fill='x')
-        grid.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        grid.grid_columnconfigure((0, 1, 2), weight=1)
 
-        ttk.Label(grid, text="Sample Name:").grid(row=0, column=0, columnspan=4, sticky='w')
-        self.entries["Sample Name"] = Entry(grid, font=self.FONT_BASE); self.entries["Sample Name"].grid(row=1, column=0, columnspan=4, sticky='ew', pady=(0, 10))
+        ttk.Label(grid, text="Sample Name:").grid(row=0, column=0, columnspan=3, sticky='w')
+        self.entries["Sample Name"] = Entry(grid, font=self.FONT_BASE); self.entries["Sample Name"].grid(row=1, column=0, columnspan=3, sticky='ew', pady=(0, 10))
 
-        ttk.Label(grid, text="Min Current (µA):").grid(row=2, column=0, sticky='w'); self.entries["Min Current"] = Entry(grid, font=self.FONT_BASE); self.entries["Min Current"].grid(row=3, column=0, sticky='ew', padx=(0, 5))
-        ttk.Label(grid, text="Max Current (µA):").grid(row=2, column=1, sticky='w'); self.entries["Max Current"] = Entry(grid, font=self.FONT_BASE); self.entries["Max Current"].grid(row=3, column=1, sticky='ew', padx=(0, 5))
-        ttk.Label(grid, text="Step Current (µA):").grid(row=2, column=2, sticky='w'); self.entries["Step Current"] = Entry(grid, font=self.FONT_BASE); self.entries["Step Current"].grid(row=3, column=2, sticky='ew', padx=(0, 5))
-        ttk.Label(grid, text="Loops:").grid(row=2, column=3, sticky='w'); self.entries["Num Loops"] = Entry(grid, font=self.FONT_BASE); self.entries["Num Loops"].grid(row=3, column=3, sticky='ew'); self.entries["Num Loops"].insert(0, "1")
+        ttk.Label(grid, text="Max Current (µA):").grid(row=2, column=0, sticky='w'); self.entries["Max Current"] = Entry(grid, font=self.FONT_BASE); self.entries["Max Current"].grid(row=3, column=0, sticky='ew', padx=(0, 5))
+        ttk.Label(grid, text="Step Current (µA):").grid(row=2, column=1, sticky='w'); self.entries["Step Current"] = Entry(grid, font=self.FONT_BASE); self.entries["Step Current"].grid(row=3, column=1, sticky='ew', padx=(0, 5))
+        ttk.Label(grid, text="Loops:").grid(row=2, column=2, sticky='w'); self.entries["Num Loops"] = Entry(grid, font=self.FONT_BASE); self.entries["Num Loops"].grid(row=3, column=2, sticky='ew'); self.entries["Num Loops"].insert(0, "1")
 
         ttk.Label(grid, text="Compliance (V):").grid(row=4, column=0, columnspan=2, sticky='w', pady=(10, 0)); self.entries["Compliance"] = Entry(grid, font=self.FONT_BASE); self.entries["Compliance"].grid(row=5, column=0, columnspan=2, sticky='ew', padx=(0, 5))
-        ttk.Label(grid, text="Delay (s):").grid(row=4, column=2, columnspan=2, sticky='w', pady=(10, 0)); self.entries["Delay"] = Entry(grid, font=self.FONT_BASE); self.entries["Delay"].grid(row=5, column=2, columnspan=2, sticky='ew'); self.entries["Delay"].insert(0, "0.1")
+        ttk.Label(grid, text="Delay (s):").grid(row=4, column=2, sticky='w', pady=(10, 0)); self.entries["Delay"] = Entry(grid, font=self.FONT_BASE); self.entries["Delay"].grid(row=5, column=2, sticky='ew'); self.entries["Delay"].insert(0, "0.1")
 
-        ttk.Label(grid, text="Sweep Type:").grid(row=6, column=0, columnspan=4, sticky='w', pady=(10, 0)); self.sweep_type_var = tk.StringVar(); self.sweep_type_cb = ttk.Combobox(grid, textvariable=self.sweep_type_var, state='readonly', font=self.FONT_BASE, values=["Forward", "Forward & Reverse", "Hysteresis (0->Max->Min->0)"]); self.sweep_type_cb.grid(row=7, column=0, columnspan=4, sticky='ew', pady=(0, 10)); self.sweep_type_cb.set("Forward")
-        ttk.Label(grid, text="Keithley 2400 VISA:").grid(row=8, column=0, columnspan=4, sticky='w'); self.keithley_combobox = ttk.Combobox(grid, font=self.FONT_BASE, state='readonly'); self.keithley_combobox.grid(row=9, column=0, columnspan=4, sticky='ew', pady=(0, 10))
+        ttk.Label(grid, text="Sweep Type:").grid(row=6, column=0, columnspan=3, sticky='w', pady=(10, 0))
+        self.sweep_type_var = tk.StringVar()
+        self.sweep_type_cb = ttk.Combobox(grid, textvariable=self.sweep_type_var, state='readonly', font=self.FONT_BASE, values=["0 to Max", "Loop (0 → Max → 0 → -Max → 0)", "Custom List"])
+        self.sweep_type_cb.grid(row=7, column=0, columnspan=3, sticky='ew', pady=(0, 10))
+        self.sweep_type_cb.set("0 to Max")
+        self.sweep_type_cb.bind("<<ComboboxSelected>>", self._on_sweep_type_change)
+
+        # --- NEW: Custom list widgets ---
+        self.custom_list_label = ttk.Label(grid, text="Custom Current List (µA, comma-separated):")
+        self.custom_list_label.grid(row=8, column=0, columnspan=3, sticky='w', pady=(10, 0))
+        self.custom_list_text = scrolledtext.ScrolledText(grid, height=4, font=self.FONT_BASE, wrap='word')
+        self.custom_list_text.grid(row=9, column=0, columnspan=3, sticky='ew')
+
+        ttk.Label(grid, text="Keithley 2400 VISA:").grid(row=10, column=0, columnspan=3, sticky='w'); self.keithley_combobox = ttk.Combobox(grid, font=self.FONT_BASE, state='readonly'); self.keithley_combobox.grid(row=11, column=0, columnspan=3, sticky='ew', pady=(0, 10))
 
         self.scan_button = ttk.Button(frame, text="Scan for Instruments", command=self._scan_for_visa_instruments); self.scan_button.pack(padx=10, pady=5, fill='x')
         self.file_location_button = ttk.Button(frame, text="Browse Save Location...", command=self._browse_file_location); self.file_location_button.pack(padx=10, pady=5, fill='x')
@@ -228,6 +276,25 @@ class MeasurementAppGUI:
         self.stop_button = ttk.Button(bf, text="Stop", command=self.stop_measurement, style='Stop.TButton', state='disabled'); self.stop_button.grid(row=0, column=1, sticky='ew')
 
         self.progress_bar = ttk.Progressbar(frame, orient='horizontal', mode='determinate'); self.progress_bar.pack(padx=10, pady=(5,10), fill='x')
+
+    # --- NEW: Method to handle UI changes based on sweep type ---
+    def _on_sweep_type_change(self, event=None):
+        """Shows/hides UI elements based on the selected sweep type."""
+        if not hasattr(self, 'sweep_type_var'): return # Avoid error during initialization
+
+        selection = self.sweep_type_var.get()
+        standard_sweep_entries = [self.entries["Max Current"], self.entries["Step Current"]]
+
+        if selection == "Custom List":
+            self.custom_list_label.grid()
+            self.custom_list_text.grid()
+            for entry in standard_sweep_entries:
+                entry.config(state='disabled')
+        else:
+            self.custom_list_label.grid_remove()
+            self.custom_list_text.grid_remove()
+            for entry in standard_sweep_entries:
+                entry.config(state='normal')
 
     def create_console_frame(self, parent):
         frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
@@ -268,9 +335,28 @@ class MeasurementAppGUI:
 
     def start_measurement(self):
         try:
-            params = { 'sample_name': self.entries["Sample Name"].get(), 'min_current': float(self.entries["Min Current"].get())*1e-6, 'max_current': float(self.entries["Max Current"].get())*1e-6, 'step_current': float(self.entries["Step Current"].get())*1e-6, 'num_loops': int(self.entries["Num Loops"].get()), 'compliance_v': float(self.entries["Compliance"].get()), 'delay_s': float(self.entries["Delay"].get()), 'sweep_type': self.sweep_type_var.get() }
+            # --- MODIFIED: New parameter collection logic ---
+            sweep_type = self.sweep_type_var.get()
+            params = {
+                'sample_name': self.entries["Sample Name"].get(),
+                'num_loops': int(self.entries["Num Loops"].get()),
+                'compliance_v': float(self.entries["Compliance"].get()),
+                'delay_s': float(self.entries["Delay"].get()),
+                'sweep_type': sweep_type,
+                'max_current': 0, 'step_current': 0, 'custom_list_str': ''
+            }
+
+            if sweep_type == "Custom List":
+                params['custom_list_str'] = self.custom_list_text.get("1.0", tk.END)
+                if not params['custom_list_str'].strip():
+                    raise ValueError("Custom list cannot be empty.")
+            else:
+                params['max_current'] = float(self.entries["Max Current"].get()) * 1e-6
+                params['step_current'] = float(self.entries["Step Current"].get()) * 1e-6
+
             visa_address = self.keithley_combobox.get()
-            if not all([params['sample_name'], visa_address, self.file_location_path]): raise ValueError("All fields are required.")
+            if not all([params['sample_name'], visa_address, self.file_location_path]):
+                raise ValueError("Sample Name, VISA address, and Save Location are required.")
 
             self.backend.connect_and_configure(visa_address, params)
             self.sweep_points = self.backend.generate_sweep_points(params)
