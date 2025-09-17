@@ -4,7 +4,7 @@
 #               Keithley 6517B Electrometer with a real instrument backend.
 # Author:       Prathamesh Deshmukh
 # Created:      17/09/2025
-# Version:      V: 3.0 (Integrated Backend)
+# Version:      V: 4.0 (Dual Plot & Enhanced Logging)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -58,13 +58,15 @@ class Keithley6517B_Backend:
         """Connects to the instrument and performs the crucial zero-check sequence."""
         print(f"\n--- [Backend] Initializing Instrument at {parameters['keithley_visa']} ---")
         try:
-            self.keithley = Keithley6517B(parameters['keithley_visa'])
+            # Set a timeout for the connection
+            self.keithley = Keithley6517B(parameters['keithley_visa'], timeout=20000)
             print(f"  Successfully connected to: {self.keithley.id}")
 
             # --- Configure Measurement and Perform Zero Correction ---
             print("  Configuring instrument and performing zero correction...")
             self.keithley.reset()
             self.keithley.clear()
+            time.sleep(1)
 
             # 1. Enable Zero Check (connects ammeter to internal reference)
             print("    Step 1/4: Enabling Zero Check mode...")
@@ -140,7 +142,7 @@ class Keithley6517B_Backend:
 # -------------------------------------------------------------------------------
 class HighResistanceIV_GUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "3.0"
+    PROGRAM_VERSION = "4.0"
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -311,20 +313,31 @@ class HighResistanceIV_GUI:
         return frame
 
     def create_graph_frame(self, parent):
-        graph_container = LabelFrame(parent, text='Live I-V Curve', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
+        """Creates the frame for graphs, now with two subplots."""
+        graph_container = LabelFrame(parent, text='Live Graphs', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
 
-        self.figure = Figure(figsize=(8, 6), dpi=100, facecolor=self.CLR_GRAPH_BG)
-        self.ax_iv = self.figure.add_subplot(111)
+        self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
 
+        # Create two subplots stacked vertically
+        self.ax_iv = self.figure.add_subplot(2, 1, 1) # Top plot
+        self.ax_rv = self.figure.add_subplot(2, 1, 2) # Bottom plot
+
+        # --- Configure Top Plot: I-V Curve ---
         self.line_iv, = self.ax_iv.plot([], [], color=self.CLR_ACCENT_BLUE, marker='o', markersize=5, linestyle='-')
-
         self.ax_iv.set_title("Current vs. Voltage", fontweight='bold')
-        self.ax_iv.set_xlabel("Applied Voltage (V)")
         self.ax_iv.set_ylabel("Measured Current (A)")
         self.ax_iv.grid(True, linestyle='--', alpha=0.6)
 
-        self.figure.tight_layout(pad=2.5)
+        # --- Configure Bottom Plot: R-V Curve ---
+        self.line_rv, = self.ax_rv.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=5, linestyle='-')
+        self.ax_rv.set_title("Resistance vs. Voltage", fontweight='bold')
+        self.ax_rv.set_xlabel("Applied Voltage (V)")
+        self.ax_rv.set_ylabel("Resistance (Ω)")
+        self.ax_rv.set_yscale('log') # Resistance is often better viewed on a log scale
+        self.ax_rv.grid(True, which="both", linestyle='--', alpha=0.6)
+
+        self.figure.tight_layout(pad=3.0)
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
@@ -373,7 +386,11 @@ class HighResistanceIV_GUI:
             self.start_time = time.time()
             self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
+
+            # Clear both plot lines
             self.line_iv.set_data([], [])
+            self.line_rv.set_data([], [])
+
             self.ax_iv.set_title(f"I-V Curve: {params['sample_name']}", fontweight='bold')
             self.canvas.draw()
             self.log("Measurement sweep started.")
@@ -412,6 +429,10 @@ class HighResistanceIV_GUI:
         try:
             res, cur, volt = self.backend.get_measurement()
             elapsed_time = time.time() - self.start_time
+
+            # Log the detailed reading to the console
+            self.log(f"  Read -> V: {volt:.3e} V, I: {cur:.3e} A, R: {res:.3e} Ω, t: {elapsed_time:.2f} s")
+
             with open(self.data_filepath, 'a', newline='') as f:
                 csv.writer(f).writerow([f"{elapsed_time:.3f}", f"{volt:.4e}", f"{cur:.4e}", f"{res:.4e}"])
 
@@ -420,9 +441,15 @@ class HighResistanceIV_GUI:
             self.data_storage['current_measured'].append(cur)
             self.data_storage['resistance'].append(res)
 
+            # Update I-V plot
             self.line_iv.set_data(self.data_storage['voltage_applied'], self.data_storage['current_measured'])
             self.ax_iv.relim(); self.ax_iv.autoscale_view()
-            self.figure.tight_layout(pad=2.5)
+
+            # Update R-V plot
+            self.line_rv.set_data(self.data_storage['voltage_applied'], self.data_storage['resistance'])
+            self.ax_rv.relim(); self.ax_rv.autoscale_view()
+
+            self.figure.tight_layout(pad=3.0)
             self.canvas.draw()
 
             self.current_step_index += 1
