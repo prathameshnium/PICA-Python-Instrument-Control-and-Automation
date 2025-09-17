@@ -4,7 +4,7 @@
 #               temperature ramp control.
 # Author:       Prathamesh Deshmukh 
 # Created:      17/09/2025
-# Version:      V2.3 (Button Color Reverted)
+# Version:      V2.4 (Final UI Polish)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -138,7 +138,7 @@ class PyroelectricBackend:
 
 class PyroelectricAppGUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "2.3"
+    PROGRAM_VERSION = "2.4"
     CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'
     CLR_ACCENT_BLUE = '#8D99AE'; CLR_ACCENT_GREEN = '#A7C957'; CLR_ACCENT_RED = '#EF233C'
     CLR_CONSOLE_BG = '#1E2B38'; CLR_GRAPH_BG = '#FFFFFF'
@@ -177,7 +177,6 @@ class PyroelectricAppGUI:
             foreground=[('!active', self.CLR_BG_DARK), ('active', self.CLR_BG_DARK)],
             background=[('!active', self.CLR_ACCENT_BLUE), ('pressed', self.CLR_FG_LIGHT), ('hover', self.CLR_FG_LIGHT)]
         )
-        # --- REVERTED: Solid colors for Start/Stop buttons ---
         style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN)
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED)
 
@@ -227,10 +226,12 @@ class PyroelectricAppGUI:
         if self.logo_image: logo_canvas.create_image(50, 50, image=self.logo_image)
         else: logo_canvas.create_text(50, 50, text="LOGO", font=self.FONT_TITLE, fill=self.CLR_FG_LIGHT)
 
-        info_text = ("Measurement: Pyroelectric Current vs. Temperature")
-        ttk.Label(frame, text=info_text, font=self.FONT_LABEL_BOLD).grid(row=0, column=1, padx=10, pady=(15, 5), sticky='sw')
-        instruments_text = " • Lakeshore 350 Temp. Controller\n • Keithley 6517B Electrometer"
-        ttk.Label(frame, text=instruments_text, justify='left').grid(row=1, column=1, padx=10, pady=(0, 15), sticky='nw')
+        # --- UPDATED: Added Institute Name ---
+        institute_text = "UGC-DAE Consortium For Scientific Research"
+        ttk.Label(frame, text=institute_text, font=self.FONT_LABEL_BOLD, wraplength=300).grid(row=0, column=1, padx=10, pady=(15, 5), sticky='sw')
+
+        details_text = "Pyroelectric Current Measurement\n • Lakeshore 350 & Keithley 6517B"
+        ttk.Label(frame, text=details_text, justify='left').grid(row=1, column=1, padx=10, pady=(0, 15), sticky='nw')
 
     def create_input_frame(self, parent):
         frame = ttk.LabelFrame(parent, text=' Experiment Parameters ')
@@ -252,14 +253,9 @@ class PyroelectricAppGUI:
         ttk.Label(frame, text="Safety Cutoff (K):", font=self.FONT_LABEL_BOLD).grid(row=3, column=1, padx=(5,15), pady=(5,0), sticky='w')
         self.entries['Safety Cutoff'] = ttk.Entry(frame, font=self.FONT_BASE, width=15); self.entries['Safety Cutoff'].grid(row=4, column=1, padx=(5,15), pady=(0,15), sticky='ew')
 
-        # Populate with defaults
-        self.entries['Start Temp'].insert(0, "300"); self.entries['End Temp'].insert(0, "350");
-        self.entries['Ramp Rate'].insert(0, "5"); self.entries['Safety Cutoff'].insert(0, "360")
-
         # Sample Name and VISA inputs
         ttk.Label(frame, text="Sample Name:", font=self.FONT_LABEL_BOLD).grid(row=0, column=0, columnspan=2, padx=15, pady=(10,0), sticky='w')
         self.entries['Sample Name'] = ttk.Entry(frame, font=self.FONT_BASE); self.entries['Sample Name'].grid(row=0, column=1, padx=(5,15), pady=(10,10), sticky='ew')
-        self.entries['Sample Name'].insert(0, "SampleX")
 
         ttk.Label(frame, text="Lakeshore 350 VISA:", font=self.FONT_LABEL_BOLD).grid(row=5, column=0, columnspan=2, padx=15, pady=(5,0), sticky='w')
         self.lakeshore_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly'); self.lakeshore_combobox.grid(row=6, column=0, columnspan=2, padx=15, pady=(0,5), sticky='ew')
