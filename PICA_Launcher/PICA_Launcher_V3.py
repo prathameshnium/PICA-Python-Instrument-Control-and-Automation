@@ -3,7 +3,7 @@
 # Purpose:        A central meta front end to launch various measurement GUIs.
 # Author:         Prathamesh Deshmukh
 # Created:        10/09/2025
-# Version:        3.5 (Final, Stable Release)
+# Version:        3.6 (Final Layout with Indentation Fix)
 # Last Edit:      19/09/2025
 # -------------------------------------------------------------------------------
 
@@ -34,7 +34,7 @@ except ImportError:
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "3.5"
+    PROGRAM_VERSION = "3.6"
 
     # --- Color and Font Palette ---
     CLR_BG_DARK = '#2B3D4F'
@@ -111,8 +111,12 @@ class PICALauncherApp:
     def create_widgets(self):
         """Creates and places the main panels of the application."""
         self.root.grid_rowconfigure(0, weight=1)
-        self.root.grid_columnconfigure(0, weight=1, minsize=420)
-        self.root.grid_columnconfigure(1, weight=2)
+
+        # --- MODIFIED LINES ---
+        # Set left column to a fixed width (weight=0) and reduced minsize.
+        self.root.grid_columnconfigure(0, weight=0, minsize=380)
+        # Set right column to take all available horizontal space.
+        self.root.grid_columnconfigure(1, weight=1)
 
         info_panel = self.create_resource_panel(self.root)
         info_panel.grid(row=0, column=0, sticky="nsew", padx=(15, 10), pady=15)
@@ -121,10 +125,11 @@ class PICALauncherApp:
         launcher_container.grid(row=0, column=1, sticky="nsew", padx=(10, 15), pady=15)
 
     def create_resource_panel(self, parent):
-        """Creates the left-side panel with logo, info, and utility buttons."""
+        """Creates the left-side panel with info, utilities, and the console."""
         info_frame = ttk.Frame(parent)
-        info_frame.configure(padding=20) # Set internal padding correctly.
+        info_frame.configure(padding=20)
 
+        # --- Top Section (Logo, Title, Description) ---
         logo_canvas = Canvas(info_frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
         logo_canvas.pack(pady=(0, 20))
 
@@ -140,13 +145,21 @@ class PICALauncherApp:
 
         ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, justify='center', anchor='center').pack(pady=(0, 15))
         desc_text = "A suite of Python scripts for automating laboratory instruments for materials science and physics research."
-        ttk.Label(info_frame, text=desc_text, font=self.FONT_INFO, wraplength=400, justify='center', anchor='center').pack(pady=(0, 20))
+
+        # --- MODIFIED LINE ---
+        # Adjusted wraplength to fit the new, narrower panel.
+        ttk.Label(info_frame, text=desc_text, font=self.FONT_INFO, wraplength=360, justify='center', anchor='center').pack(pady=(0, 20))
+
         ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=25)
+
+        # --- Middle Section (Utility Buttons) ---
         util_frame = ttk.Frame(info_frame)
-        util_frame.pack(fill='x', expand=True, pady=5)
+        util_frame.pack(fill='x', expand=False, pady=5)
         ttk.Button(util_frame, text="Open README", style='App.TButton', command=self.open_readme).pack(fill='x', pady=4)
         ttk.Button(util_frame, text="Open Instrument Manuals", style='App.TButton', command=self.open_manual_folder).pack(fill='x', pady=4)
         ttk.Button(util_frame, text="Test GPIB Connection", style='App.TButton', command=self.run_gpib_test).pack(fill='x', pady=4)
+
+        # --- Bottom Section (Contribution and License) ---
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', pady=(20, 0))
         author_text = ("Developed by Prathamesh Deshmukh | Vision & Guidance by Dr. Sudip Mukherjee\n"
@@ -158,22 +171,34 @@ class PICALauncherApp:
         license_label.pack()
         license_label.bind("<Button-1>", lambda e: self.open_license())
 
+        # --- Console Section ---
+        console_container = ttk.LabelFrame(info_frame, text="Console", padding=(5,10))
+        console_container.pack(side='bottom', fill='x', pady=(25, 0))
+
+        self.console_widget = scrolledtext.ScrolledText(console_container, state='disabled', bg=self.CLR_CONSOLE_BG,
+                                                       fg=self.CLR_TEXT, font=self.FONT_CONSOLE,
+                                                       wrap='word', bd=0, relief='flat', height=7)
+        self.console_widget.pack(fill='both', expand=True)
+
         return info_frame
+
 
     def create_launcher_panel(self, parent):
         """Creates the right-side panel with the scrollable list of script launchers."""
         main_container = ttk.Frame(parent)
         main_container.grid_rowconfigure(0, weight=1)
-        main_container.grid_rowconfigure(1, weight=0)
         main_container.grid_columnconfigure(0, weight=1)
+
         button_container = ttk.Frame(main_container)
         button_container.grid(row=0, column=0, sticky="nsew")
+
         canvas = Canvas(button_container, bg=self.CLR_BG_DARK, highlightthickness=0)
         scrollbar = ttk.Scrollbar(button_container, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
         scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
+
         scrollable_frame.grid_columnconfigure(0, weight=1, uniform="group1")
         scrollable_frame.grid_columnconfigure(1, weight=1, uniform="group1")
         left_col = ttk.Frame(scrollable_frame); left_col.grid(row=0, column=0, sticky='new', padx=(15, 8), pady=10)
@@ -208,12 +233,7 @@ class PICALauncherApp:
 
         canvas.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
-        console_container = ttk.LabelFrame(main_container, text="Console", padding=(5,10))
-        console_container.grid(row=1, column=0, sticky="ew", pady=(10,0))
-        self.console_widget = scrolledtext.ScrolledText(console_container, state='disabled', bg=self.CLR_CONSOLE_BG,
-                                                       fg=self.CLR_TEXT, font=self.FONT_CONSOLE,
-                                                       wrap='word', bd=0, relief='flat', height=5)
-        self.console_widget.pack(fill='both', expand=True)
+
         return main_container
 
     def log(self, message):
