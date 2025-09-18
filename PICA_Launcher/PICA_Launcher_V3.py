@@ -3,7 +3,7 @@
 # Purpose:        A central meta front end to launch various measurement GUIs.
 # Author:         Prathamesh Deshmukh
 # Created:        10/09/2025
-# Version:        3.6 (Final Layout with Indentation Fix)
+# Version:        5.1 (Path Correction)
 # Last Edit:      19/09/2025
 # -------------------------------------------------------------------------------
 
@@ -34,7 +34,7 @@ except ImportError:
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "3.6"
+    PROGRAM_VERSION = "5.1"
 
     # --- Color and Font Palette ---
     CLR_BG_DARK = '#2B3D4F'
@@ -53,25 +53,28 @@ class PICALauncherApp:
     FONT_CONSOLE = ('Consolas', 10)
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
 
-    # --- Asset and File Paths ---
-    LOGO_FILE = "UGC_DAE_CSR.jpeg"
-    MANUAL_FILE = "PICA_User_Manuals"
-    README_FILE = "README.md"
-    LICENSE_FILE = "LICENSE"
+    # --- Asset and File Paths (Corrected with ../ to go up one directory) ---
+    LOGO_FILE = "../assets/LOGO/UGC_DAE_CSR.jpeg"
+    MANUAL_FILE = "../assets/Manuals"
+    README_FILE = "../README.md"
+    LICENSE_FILE = "../LICENSE"
     LOGO_SIZE = 140
 
-    # --- Script Definitions ---
+    # --- Script Definitions (Corrected with ../ to go up one directory) ---
     SCRIPT_PATHS = {
-        "Delta Mode R-T": "Delta_mode/Delta_Mode_RT_GUI.py", "Delta Mode I-V": "Delta_mode/Delta_Mode_IV_GUI.py",
-        "K2400 I-V": "Keithley_2400/IV_GUI.py", "K2400 R-T": "Keithley_2400/RT_GUI.py",
-        "K2400_2182 R-T": "Keithley_2400_Keithley_2182/Four_Probe_RT_GUI.py", "K2400_2182 I-V": "Keithley_2400_Keithley_2182/Four_Probe_IV_GUI.py",
-        "K6517B Resistivity": "Keithley_6517B/High_Res_RT_GUI.py", "K6517B I-V": "Keithley_6517B/High_Res_IV_GUI.py",
-        "Pyroelectric Current": "Keithley_6517B/Pyro_GUI.py",
-        "Lakeshore Temp Control": "Lakeshore_350_340/Temp_Control_GUI.py",
-        "LCR C-V Measurement": "LCR_Keysight_E4980A/CV_GUI.py",
-        "Lock-in AC Measurement": "Lock_in_Amplifier/AC_Transport_GUI.py",
+        "Delta Mode I-V": "../Delta_mode/Delta_V7.py",
+        "Delta Mode R-T": "../Delta_mode/Delta_Lakeshore_Front_end_V7.py",
+        "K2400 I-V": "../Keithley_2400/Frontend_IV_2400_v3.py",
+        "K2400 R-T": "../Keithley_2400/Frontend_Keithley_2400_350_V_vs_T_V1.py",
+        "K2400_2182 I-V": "../Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182.py",
+        "K2400_2182 R-T": "../Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py",
+        "K6517B I-V": "../Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V7.py",
+        "K6517B Resistivity": "../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V7.py",
+        "Pyroelectric Current": "../Keithley_6517B/Pyroelectric/Pyroelectric_Measurement_GUI_V3.py",
+        "Lakeshore Temp Control": "../Lakeshore_350_340/lakeshore350_temp_ramp_v4_Frontend_v1.py",
+        "LCR C-V Measurement": "../LCR_Keysight_E4980A/LCR_CV.py",
+        "Lock-in AC Measurement": "../Lock_in_amplifier/AC_Transport_GUI.py",
     }
-
     def __init__(self, root):
         self.root = root
         self.root.title(f"PICA Launcher v{self.PROGRAM_VERSION}")
@@ -111,11 +114,7 @@ class PICALauncherApp:
     def create_widgets(self):
         """Creates and places the main panels of the application."""
         self.root.grid_rowconfigure(0, weight=1)
-
-        # --- MODIFIED LINES ---
-        # Set left column to a fixed width (weight=0) and reduced minsize.
         self.root.grid_columnconfigure(0, weight=0, minsize=380)
-        # Set right column to take all available horizontal space.
         self.root.grid_columnconfigure(1, weight=1)
 
         info_panel = self.create_resource_panel(self.root)
@@ -129,7 +128,6 @@ class PICALauncherApp:
         info_frame = ttk.Frame(parent)
         info_frame.configure(padding=20)
 
-        # --- Top Section (Logo, Title, Description) ---
         logo_canvas = Canvas(info_frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
         logo_canvas.pack(pady=(0, 20))
 
@@ -145,21 +143,13 @@ class PICALauncherApp:
 
         ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, justify='center', anchor='center').pack(pady=(0, 15))
         desc_text = "A suite of Python scripts for automating laboratory instruments for materials science and physics research."
-
-        # --- MODIFIED LINE ---
-        # Adjusted wraplength to fit the new, narrower panel.
         ttk.Label(info_frame, text=desc_text, font=self.FONT_INFO, wraplength=360, justify='center', anchor='center').pack(pady=(0, 20))
-
         ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=25)
-
-        # --- Middle Section (Utility Buttons) ---
         util_frame = ttk.Frame(info_frame)
         util_frame.pack(fill='x', expand=False, pady=5)
         ttk.Button(util_frame, text="Open README", style='App.TButton', command=self.open_readme).pack(fill='x', pady=4)
         ttk.Button(util_frame, text="Open Instrument Manuals", style='App.TButton', command=self.open_manual_folder).pack(fill='x', pady=4)
         ttk.Button(util_frame, text="Test GPIB Connection", style='App.TButton', command=self.run_gpib_test).pack(fill='x', pady=4)
-
-        # --- Bottom Section (Contribution and License) ---
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', pady=(20, 0))
         author_text = ("Developed by Prathamesh Deshmukh | Vision & Guidance by Dr. Sudip Mukherjee\n"
@@ -170,8 +160,6 @@ class PICALauncherApp:
                                   font=license_font, foreground=self.CLR_LINK, cursor="hand2")
         license_label.pack()
         license_label.bind("<Button-1>", lambda e: self.open_license())
-
-        # --- Console Section ---
         console_container = ttk.LabelFrame(info_frame, text="Console", padding=(5,10))
         console_container.pack(side='bottom', fill='x', pady=(25, 0))
 
@@ -182,6 +170,10 @@ class PICALauncherApp:
 
         return info_frame
 
+    def _create_launch_button(self, parent, text, script_key):
+        """Factory function to create a single, simple launch button."""
+        return ttk.Button(parent, text=text, style='App.TButton',
+                          command=lambda: self.launch_script(self.SCRIPT_PATHS[script_key]))
 
     def create_launcher_panel(self, parent):
         """Creates the right-side panel with the scrollable list of script launchers."""
@@ -205,31 +197,58 @@ class PICALauncherApp:
         right_col = ttk.Frame(scrollable_frame); right_col.grid(row=0, column=1, sticky='new', padx=(8, 15), pady=10)
 
         GROUP_PAD_Y = 15
-        BUTTON_PAD_Y = 6
 
-        # --- Populate Left Column ---
-        low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (Delta Mode)'); low_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        self._create_launch_button(low_res_frame, "R vs. T Measurement", "Delta Mode R-T").pack(fill='x', pady=BUTTON_PAD_Y)
-        self._create_launch_button(low_res_frame, "I-V Measurement", "Delta Mode I-V").pack(fill='x', pady=BUTTON_PAD_Y)
+        # --- Low Resistance Group ---
+        low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (Delta Mode:Keithley 6221/2182A)'); low_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        low_res_frame.columnconfigure(0, weight=1)
+        self._create_launch_button(low_res_frame, "I-V Measurement", "Delta Mode I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
+        self._create_launch_button(low_res_frame, "R vs. T Measurement", "Delta Mode R-T").grid(row=1, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
+        ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V")).grid(row=0, column=1, rowspan=2, sticky='ns')
+
+        # --- Mid Resistance (K2400) Group ---
         mid_res_frame1 = ttk.LabelFrame(left_col, text='Mid Resistance (Keithley 2400)'); mid_res_frame1.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        self._create_launch_button(mid_res_frame1, "I-V Measurement", "K2400 I-V").pack(fill='x', pady=BUTTON_PAD_Y)
-        self._create_launch_button(mid_res_frame1, "R vs. T Measurement", "K2400 R-T").pack(fill='x', pady=BUTTON_PAD_Y)
-        mid_res_frame2 = ttk.LabelFrame(left_col, text='Mid Resistance (K2400 / K2182)'); mid_res_frame2.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        self._create_launch_button(mid_res_frame2, "R vs. T Measurement", "K2400_2182 R-T").pack(fill='x', pady=BUTTON_PAD_Y)
-        self._create_launch_button(mid_res_frame2, "I-V Measurement", "K2400_2182 I-V").pack(fill='x', pady=BUTTON_PAD_Y)
-        high_res_frame = ttk.LabelFrame(left_col, text='High Resistance (Keithley 6517B)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        self._create_launch_button(high_res_frame, "R vs. T (Resistivity)", "K6517B Resistivity").pack(fill='x', pady=BUTTON_PAD_Y)
-        self._create_launch_button(high_res_frame, "I-V Measurement", "K6517B I-V").pack(fill='x', pady=BUTTON_PAD_Y)
+        mid_res_frame1.columnconfigure(0, weight=1)
+        self._create_launch_button(mid_res_frame1, "I-V Measurement", "K2400 I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
+        self._create_launch_button(mid_res_frame1, "R vs. T Measurement", "K2400 R-T").grid(row=1, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
+        ttk.Button(mid_res_frame1, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400 I-V")).grid(row=0, column=1, rowspan=2, sticky='ns')
 
-        # --- Populate Right Column ---
-        pyro_frame = ttk.LabelFrame(right_col, text='Pyroelectric Measurement (K6517B)'); pyro_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        self._create_launch_button(pyro_frame, "Pyro Current vs. Temp", "Pyroelectric Current").pack(fill='x', pady=BUTTON_PAD_Y)
-        lakeshore_frame = ttk.LabelFrame(right_col, text='Environmental Control'); lakeshore_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        self._create_launch_button(lakeshore_frame, "Temperature Control (Lakeshore)", "Lakeshore Temp Control").pack(fill='x', pady=BUTTON_PAD_Y)
+        # --- Mid Resistance (K2400/K2182) Group ---
+        mid_res_frame2 = ttk.LabelFrame(left_col, text='Mid Resistance (Keithley 2400 / 2182)'); mid_res_frame2.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        mid_res_frame2.columnconfigure(0, weight=1)
+        self._create_launch_button(mid_res_frame2, "I-V Measurement", "K2400_2182 I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
+        self._create_launch_button(mid_res_frame2, "R vs. T Measurement", "K2400_2182 R-T").grid(row=1, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
+        ttk.Button(mid_res_frame2, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400_2182 I-V")).grid(row=0, column=1, rowspan=2, sticky='ns')
+
+        # --- High Resistance Group ---
+        high_res_frame = ttk.LabelFrame(left_col, text='High Resistance (Keithley 6517B)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        high_res_frame.columnconfigure(0, weight=1)
+        self._create_launch_button(high_res_frame, "I-V Measurement", "K6517B I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
+        self._create_launch_button(high_res_frame, "Resistivity vs. Temp", "K6517B Resistivity").grid(row=1, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
+        ttk.Button(high_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K6517B I-V")).grid(row=0, column=1, rowspan=2, sticky='ns')
+
+        # --- Pyroelectric Group ---
+        pyro_frame = ttk.LabelFrame(right_col, text='Pyroelectric Measurement (Keithley 6517B)'); pyro_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        pyro_frame.columnconfigure(0, weight=1)
+        self._create_launch_button(pyro_frame, "Pyro Current vs. Temp", "Pyroelectric Current").grid(row=0, column=0, sticky='ew', padx=(0, 4))
+        ttk.Button(pyro_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Pyroelectric Current")).grid(row=0, column=1, sticky='ns')
+
+        # --- Environmental Control Group ---
+        lakeshore_frame = ttk.LabelFrame(right_col, text='Temperature Control (Lakeshore)'); lakeshore_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        lakeshore_frame.columnconfigure(0, weight=1)
+        self._create_launch_button(lakeshore_frame, "Temperature Ramp", "Lakeshore Temp Control").grid(row=0, column=0, sticky='ew', padx=(0, 4))
+        ttk.Button(lakeshore_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Lakeshore Temp Control")).grid(row=0, column=1, sticky='ns')
+
+        # --- LCR Meter Group ---
         lcr_frame = ttk.LabelFrame(right_col, text='LCR Meter (Keysight E4980A)'); lcr_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        self._create_launch_button(lcr_frame, "C-V Measurement", "LCR C-V Measurement").pack(fill='x', pady=BUTTON_PAD_Y)
+        lcr_frame.columnconfigure(0, weight=1)
+        self._create_launch_button(lcr_frame, "C-V Measurement", "LCR C-V Measurement").grid(row=0, column=0, sticky='ew', padx=(0, 4))
+        ttk.Button(lcr_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("LCR C-V Measurement")).grid(row=0, column=1, sticky='ns')
+
+        # --- Lock-in Amplifier Group ---
         lockin_frame = ttk.LabelFrame(right_col, text='Lock-in Amplifier'); lockin_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        self._create_launch_button(lockin_frame, "AC Measurement", "Lock-in AC Measurement").pack(fill='x', pady=BUTTON_PAD_Y)
+        lockin_frame.columnconfigure(0, weight=1)
+        self._create_launch_button(lockin_frame, "AC Measurement", "Lock-in AC Measurement").grid(row=0, column=0, sticky='ew', padx=(0, 4))
+        ttk.Button(lockin_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Lock-in AC Measurement")).grid(row=0, column=1, sticky='ns')
 
         canvas.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
@@ -246,26 +265,19 @@ class PICALauncherApp:
             self.console_widget.see('end')
             self.console_widget.config(state='disabled')
 
-    def _create_launch_button(self, parent, text, script_key):
-        """Factory function to create a composite launch button with a folder icon."""
-        frame = ttk.Frame(parent, style='TLabelframe')
-        frame.columnconfigure(0, weight=1)
-        ttk.Button(frame, text=text, style='App.TButton', command=lambda: self.launch_script(self.SCRIPT_PATHS[script_key])).grid(row=0, column=0, sticky='ew')
-        ttk.Button(frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder(script_key)).grid(row=0, column=1, padx=(8,0))
-        return frame
-
     def _open_path(self, path):
         """Cross-platform function to open a file or directory path."""
         if path == self.LICENSE_FILE and not os.path.exists(path):
             if os.path.exists(path + ".md"): path += ".md"
             elif os.path.exists(path + ".txt"): path += ".txt"
         if not os.path.exists(path):
+            self.log(f"ERROR: Path not found: {os.path.abspath(path)}")
             messagebox.showwarning("Path Not Found", f"The specified path does not exist:\n\n{os.path.abspath(path)}")
             return
         try:
-            if platform.system() == "Windows": os.startfile(path)
-            elif platform.system() == "Darwin": subprocess.run(['open', path], check=True)
-            else: subprocess.run(['xdg-open', path], check=True)
+            if platform.system() == "Windows": os.startfile(os.path.abspath(path))
+            elif platform.system() == "Darwin": subprocess.run(['open', os.path.abspath(path)], check=True)
+            else: subprocess.run(['xdg-open', os.path.abspath(path)], check=True)
         except Exception as e:
             messagebox.showerror("Error", f"Could not open path: {path}\n\nError: {e}")
 
@@ -284,15 +296,18 @@ class PICALauncherApp:
 
     def launch_script(self, script_path):
         """Launches a specified Python script in a new process."""
-        self.log(f"Attempting to launch: {os.path.basename(script_path)}")
+        self.log(f"Launching: {os.path.basename(script_path)}")
         if not os.path.exists(script_path):
             self.log(f"ERROR: Script not found at {os.path.abspath(script_path)}")
             messagebox.showerror("File Not Found", f"Script not found:\n\n{os.path.abspath(script_path)}")
             return
         try:
-            script_directory = os.path.dirname(script_path) or '.'
-            subprocess.Popen([sys.executable, script_path], cwd=script_directory)
-            self.log(f"Successfully launched '{os.path.basename(script_path)}'")
+            # Popen requires the script path relative to the cwd.
+            # The cwd should be the script's own directory to handle its internal relative paths.
+            script_directory = os.path.dirname(os.path.abspath(script_path))
+            script_filename = os.path.basename(script_path)
+            subprocess.Popen([sys.executable, script_filename], cwd=script_directory)
+            self.log(f"Successfully launched '{script_filename}'")
         except Exception as e:
             self.log(f"ERROR: Failed to launch script. Reason: {e}")
             messagebox.showerror("Launch Error", f"An error occurred while launching the script:\n\n{e}")
