@@ -1,10 +1,10 @@
 # -------------------------------------------------------------------------------
-# Name:         PICA Launcher - Python Instrument Control & Automation
-# Purpose:      A central meta front end to launch various measurement GUIs.
-# Author:       Prathamesh Deshmukh
-# Created:      10/09/2025
-# Version:      3.3 (Final Layout Fix)
-# Last Edit:    17/09/2025
+# Name:           PICA Launcher - Python Instrument Control & Automation
+# Purpose:        A central meta front end to launch various measurement GUIs.
+# Author:         Prathamesh Deshmukh
+# Created:        10/09/2025
+# Version:        3.4 (Integrated Advanced GPIB Scanner)
+# Last Edit:      19/09/2025
 # -------------------------------------------------------------------------------
 
 import tkinter as tk
@@ -14,6 +14,8 @@ import sys
 import subprocess
 import platform
 from datetime import datetime
+import threading
+import queue
 
 # --- Pillow for Logo Image ---
 try:
@@ -32,11 +34,12 @@ except ImportError:
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "3.3"
+    PROGRAM_VERSION = "3.4"
 
     CLR_BG_DARK = '#2B3D4F'
     CLR_FRAME_BG = '#3A506B'
     CLR_ACCENT_GOLD = '#FFC107'
+    CLR_ACCENT_GREEN = '#A7C957'
     CLR_TEXT = '#EDF2F4'
     CLR_TEXT_DARK = '#1A1A1A'
     CLR_CONSOLE_BG = '#1E2B38'
@@ -95,6 +98,8 @@ class PICALauncherApp:
         style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_TEXT, font=self.FONT_SUBTITLE)
         style.configure('App.TButton', font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_FRAME_BG, borderwidth=0, focusthickness=0, focuscolor='none')
         style.map('App.TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
+        style.configure('Scan.TButton', font=self.FONT_BASE, padding=(10, 8), foreground=self.CLR_TEXT_DARK, background=self.CLR_ACCENT_GREEN)
+        style.map('Scan.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')]) # Darker green on hover/active
         style.configure('Icon.TButton', font=('Segoe UI', 12), padding=(5, 9), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_FRAME_BG, borderwidth=0)
         style.map('Icon.TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
         style.configure("Vertical.TScrollbar", troughcolor=self.CLR_BG_DARK, background=self.CLR_FRAME_BG, arrowcolor=self.CLR_ACCENT_GOLD, bordercolor=self.CLR_BG_DARK)
@@ -163,13 +168,11 @@ class PICALauncherApp:
             self.console_widget.config(state='disabled')
 
     def create_launcher_panel(self, parent):
-        # --- Main container for the right side, now using grid ---
         main_container = ttk.Frame(parent)
-        main_container.grid_rowconfigure(0, weight=1) # Button area gets all extra space
-        main_container.grid_rowconfigure(1, weight=0) # Console area does not expand
+        main_container.grid_rowconfigure(0, weight=1)
+        main_container.grid_rowconfigure(1, weight=0)
         main_container.grid_columnconfigure(0, weight=1)
 
-        # --- Top Area (Scrollable Buttons) ---
         button_container = ttk.Frame(main_container)
         button_container.grid(row=0, column=0, sticky="nsew")
 
@@ -185,7 +188,6 @@ class PICALauncherApp:
         left_col = ttk.Frame(scrollable_frame); left_col.grid(row=0, column=0, sticky='new')
         right_col = ttk.Frame(scrollable_frame); right_col.grid(row=0, column=1, sticky='new')
 
-        # ... (Populating columns, logic remains the same) ...
         low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (Delta Mode)'); low_res_frame.pack(fill='x', expand=True, pady=10)
         self._create_launch_button(low_res_frame, "R vs. T Measurement", "Delta Mode R-T").pack(fill='x', pady=4)
         self._create_launch_button(low_res_frame, "I-V Measurement", "Delta Mode I-V").pack(fill='x', pady=4)
@@ -210,13 +212,12 @@ class PICALauncherApp:
         canvas.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
 
-        # --- Bottom Area (Console) ---
         console_container = ttk.LabelFrame(main_container, text="Console", padding=(5,10))
         console_container.grid(row=1, column=0, sticky="ew", pady=(10,0))
 
         self.console_widget = scrolledtext.ScrolledText(console_container, state='disabled', bg=self.CLR_CONSOLE_BG,
-                                                        fg=self.CLR_TEXT, font=self.FONT_CONSOLE,
-                                                        wrap='word', bd=0, relief='flat', height=5) # Height in lines
+                                                       fg=self.CLR_TEXT, font=self.FONT_CONSOLE,
+                                                       wrap='word', bd=0, relief='flat', height=5)
         self.console_widget.pack(fill='both', expand=True)
 
         return main_container
@@ -269,26 +270,128 @@ class PICALauncherApp:
             self.log(f"ERROR: Failed to launch script. Reason: {e}")
             messagebox.showerror("Launch Error", f"An error occurred while launching the script:\n\n{e}")
 
+    # ---------------------------------------------------------------------------
+    # --- NEW INTEGRATED GPIB/VISA SCANNER ---
+    # ---------------------------------------------------------------------------
     def run_gpib_test(self):
+        """
+        Launches an advanced, non-blocking GPIB/VISA instrument scanner window.
+        """
         if not PYVISA_AVAILABLE:
             self.log("ERROR: GPIB test failed, PyVISA is not available.")
             messagebox.showerror("Dependency Missing", "The 'pyvisa' library is required.\n\nInstall via pip:\npip install pyvisa pyvisa-py")
             return
-        test_win = Toplevel(self.root); test_win.title("Connected VISA Instruments"); test_win.geometry("600x400"); test_win.configure(bg=self.CLR_BG_DARK)
-        ttk.Label(test_win, text="Found VISA Resources:", font=self.FONT_SUBTITLE, foreground=self.CLR_ACCENT_GOLD).pack(pady=10)
-        text_area = Text(test_win, bg='#000000', fg=self.CLR_TEXT, font=self.FONT_CONSOLE, relief='flat', bd=0)
-        text_area.pack(padx=10, pady=5, expand=True, fill='both')
-        self.log("Scanning for VISA instruments...")
-        try:
-            rm = pyvisa.ResourceManager(); resources = rm.list_resources()
-            log_msg = "Found: " + ", ".join(resources) if resources else "No VISA instruments found."
-            self.log(log_msg)
-            text_area.insert('1.0', "\n".join(resources) if resources else "No VISA instruments found.")
-        except Exception as e:
-            self.log(f"ERROR during VISA scan: {e}")
-            text_area.insert('1.0', f"An error occurred while scanning:\n\n{e}")
-        text_area.config(state='disabled')
-        ttk.Button(test_win, text="Close", style='App.TButton', command=test_win.destroy).pack(pady=15, padx=10, fill='x')
+
+        test_win = Toplevel(self.root)
+        test_win.title("GPIB/VISA Instrument Scanner")
+        test_win.geometry("750x550")
+        test_win.configure(bg=self.CLR_BG_DARK)
+        test_win.minsize(600, 400)
+        test_win.transient(self.root)
+        test_win.grab_set()
+
+        # Queue for thread-safe communication
+        result_queue = queue.Queue()
+
+        # --- UI Elements ---
+        main_frame = ttk.Frame(test_win, padding=15)
+        main_frame.pack(fill='both', expand=True)
+        main_frame.rowconfigure(1, weight=1)
+        main_frame.columnconfigure(0, weight=1)
+
+        # Controls Frame
+        controls_frame = ttk.Frame(main_frame)
+        controls_frame.grid(row=0, column=0, sticky='ew', pady=(0, 15))
+        controls_frame.columnconfigure(0, weight=1)
+        controls_frame.columnconfigure(1, weight=1)
+
+        console_area = scrolledtext.ScrolledText(main_frame, state='disabled', bg=self.CLR_CONSOLE_BG,
+                                                 fg=self.CLR_TEXT, font=self.FONT_CONSOLE, wrap='word', bd=0)
+        console_area.grid(row=1, column=0, sticky='nsew')
+
+        # --- Helper functions for the scanner window ---
+        def log_to_scanner(message, add_timestamp=True):
+            console_area.config(state='normal')
+            if add_timestamp:
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                console_area.insert('end', f"[{timestamp}] {message}\n")
+            else:
+                console_area.insert('end', message)
+            console_area.see('end')
+            console_area.config(state='disabled')
+
+        def clear_log():
+            console_area.config(state='normal')
+            console_area.delete(1.0, 'end')
+            console_area.config(state='disabled')
+            log_to_scanner("Log cleared.")
+
+        def _gpib_scan_worker():
+            """Backend VISA scan logic that runs in a separate thread."""
+            try:
+                rm = pyvisa.ResourceManager()
+                resources = rm.list_resources()
+
+                if not resources:
+                    result_queue.put("-> No instruments found. Check connections and VISA installation.\n")
+                else:
+                    result_queue.put(f"-> Found {len(resources)} instrument(s). Querying them now...\n\n")
+                    for address in resources:
+                        try:
+                            with rm.open_resource(address) as instrument:
+                                instrument.timeout = 2000  # 2-second timeout
+                                idn = instrument.query('*IDN?').strip()
+                                result = f"Address: {address}\n   ID: {idn}\n\n"
+                                result_queue.put(result)
+                        except Exception as e:
+                            result = f"Address: {address}\n   Error: Could not get ID. {e}\n\n"
+                            result_queue.put(result)
+            except Exception as e:
+                error_msg = f"A critical VISA error occurred: {e}\n" \
+                            "Please ensure a VISA backend (e.g., NI-VISA) is installed correctly.\n"
+                result_queue.put(error_msg)
+            finally:
+                result_queue.put("SCAN_COMPLETE")
+
+        def start_scan():
+            """Starts the GPIB scan in a new thread."""
+            scan_button.config(state='disabled')
+            log_to_scanner("Starting scan... The GUI will remain responsive.")
+            threading.Thread(target=_gpib_scan_worker, daemon=True).start()
+
+        def _process_gpib_queue():
+            """Checks the queue for messages from the worker thread."""
+            try:
+                while True:
+                    message = result_queue.get_nowait()
+                    if message == "SCAN_COMPLETE":
+                        scan_button.config(state='normal')
+                        log_to_scanner("Scan complete.")
+                    else:
+                        # Messages are already formatted strings from the worker
+                        log_to_scanner(message, add_timestamp=False)
+            except queue.Empty:
+                pass  # Do nothing if the queue is empty
+            finally:
+                test_win.after(100, _process_gpib_queue)
+
+        # --- Button Definitions ---
+        scan_button = ttk.Button(controls_frame, text="Scan for Instruments", command=start_scan, style='Scan.TButton')
+        scan_button.grid(row=0, column=0, padx=(0, 5), sticky='ew')
+
+        clear_button = ttk.Button(controls_frame, text="Clear Log", command=clear_log, style='App.TButton')
+        clear_button.grid(row=0, column=1, padx=(5, 0), sticky='ew')
+
+        ttk.Button(main_frame, text="Close", style='App.TButton', command=test_win.destroy).grid(row=2, column=0, sticky='ew', pady=(15, 0))
+
+        # --- Initial State ---
+        log_to_scanner("Welcome to the GPIB/VISA Instrument Scanner.")
+        log_to_scanner("Click 'Scan for Instruments' to begin.")
+        self.log("GPIB/VISA scanner window opened.")
+
+        # Start the queue processor
+        test_win.after(100, _process_gpib_queue)
+
 
 def main():
     root = tk.Tk()
