@@ -1,10 +1,10 @@
 # -------------------------------------------------------------------------------
-# Name:           Integrated R-T Measurement GUI (Heating Logic Corrected)
+# Name:           Integrated R-T Measurement GUI (Plot Reverted)
 # Purpose:        Provide a graphical user interface for the combined Lakeshore 350
 #                 and Keithley 6517B Resistance vs. Temperature experiment.
 # Author:         Prathamesh Deshmukh 
 # Created:        18/09/2025
-# Version:        V: 2.4 (Heating Logic Fix)
+# Version:        V: 2.5 (Reverted Subplot to T-t)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -154,7 +154,7 @@ class Combined_Backend:
 # -------------------------------------------------------------------------------
 class Integrated_RT_GUI:
     """The main GUI application class."""
-    PROGRAM_VERSION = "2.4"
+    PROGRAM_VERSION = "2.5"
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -347,11 +347,14 @@ class Integrated_RT_GUI:
         self.ax_sub1.set_ylabel("Current (A)")
         self.ax_sub1.grid(True, linestyle='--', alpha=0.6)
 
+        # --- MODIFICATION START ---
+        # Reverted the third subplot to show Temperature vs. Time
         self.line_sub2, = self.ax_sub2.plot([], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=3, linestyle='-')
         self.ax_sub2.set_xlabel("Time (s)")
-        self.ax_sub2.set_ylabel("Resistance (Ω)")
-        self.ax_sub2.set_yscale('log')
-        self.ax_sub2.grid(True, which="both", linestyle='--', alpha=0.6)
+        self.ax_sub2.set_ylabel("Temperature (K)") # Changed back from "Resistance (Ω)"
+        # self.ax_sub2.set_yscale('log') # Removed log scale for temperature
+        self.ax_sub2.grid(True, linestyle='--', alpha=0.6)
+        # --- MODIFICATION END ---
 
         self.figure.tight_layout(pad=3.0)
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
@@ -437,8 +440,6 @@ class Integrated_RT_GUI:
             if abs(current_temp - params['start_temp']) < 0.1:
                 self.log(f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
                 self.is_stabilizing = False
-                # --- CORRECTION 1: Removed heater OFF command ---
-                # self.backend.lakeshore.set_heater_range(1, 'off') # This was the error
                 self.root.after(5000, self._start_ramp_and_measurement)
             else:
                 self.root.after(2000, self._stabilization_loop) # Continue loop if not stable
@@ -449,7 +450,6 @@ class Integrated_RT_GUI:
         params = self.backend.params
         self.backend.lakeshore.setup_ramp(1, params['rate'])
         self.backend.lakeshore.set_setpoint(1, params['end_temp'])
-        # --- CORRECTION 2: Added command to ensure heater is ON for the ramp ---
         self.backend.lakeshore.set_heater_range(1, 'medium')
         self.log(f"Ramp started towards {params['end_temp']} K at {params['rate']} K/min. Heater set to 'medium'.")
         
@@ -478,7 +478,11 @@ class Integrated_RT_GUI:
 
             self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
             self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['current'])
-            self.line_sub2.set_data(self.data_storage['time'], self.data_storage['resistance'])
+            
+            # --- MODIFICATION START ---
+            # Update the third subplot with Temperature vs. Time data
+            self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
+            # --- MODIFICATION END ---
 
             for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
                 ax.relim(); ax.autoscale_view()
