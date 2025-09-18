@@ -1,6 +1,6 @@
 '''
 File:         resistance_vs_temperature.py
-Author:       Prathamesh Deshmukh 
+Author:       Prathamesh Deshmukh
 Date:         17/09/2025
 Version:      3.0
 
@@ -65,7 +65,7 @@ except ImportError:
 
 # --- Configuration Constants ---
 # TODO: Change these to your instruments' actual VISA addresses
-LAKESHORE_VISA = "GPIB0::13::INSTR"
+LAKESHORE_VISA = "GPIB1::15::INSTR"
 KEITHLEY_VISA = "GPIB1::27::INSTR"
 
 # Lakeshore hardware configuration
@@ -195,7 +195,6 @@ def perform_keithley_zero_check(keithley):
     time.sleep(2)
     print("Step 2: Acquiring zero correction value...")
     # keithley.write(':SYSTem:ZCORrect:ACQuire') # This command can be instrument specific, using the driver's method is safer
-    keithley.auto_zero()
     time.sleep(2)
     print("Step 3: Disabling Zero Check mode...")
     keithley.write(':SYSTem:ZCHeck OFF')
@@ -262,7 +261,7 @@ def main():
         ax2.grid(True, linestyle=':')
         ax2.set_yscale('log') # Resistance often spans orders of magnitude
         fig.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout for main title
-        
+
         time_data, temp_data, res_data = [], [], []
 
         # --- 4. Go to Start Temperature and Stabilize ---
@@ -337,7 +336,7 @@ def main():
             line2.set_data(temp_data, res_data)
             ax2.relim()
             ax2.autoscale_view()
-            
+
             fig.canvas.draw()
             fig.canvas.flush_events()
 
@@ -365,7 +364,7 @@ def main():
             print("Keithley voltage source is OFF and connection is closed.")
         if lakeshore:
             lakeshore.close() # Turns off heater and closes connection
-        
+
         plt.ioff()
         print("\nExperiment finished. Data saved to '{}'.".format(filename))
         print("Plot window can now be closed.")
