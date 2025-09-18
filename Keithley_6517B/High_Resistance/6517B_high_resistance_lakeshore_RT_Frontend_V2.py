@@ -1,17 +1,15 @@
 # -------------------------------------------------------------------------------
-# Name:          Integrated R-T Measurement GUI
+# Name:          Integrated R-T Measurement GUI (Corrected Logic)
 # Purpose:       Provide a graphical user interface for the combined Lakeshore 350
 #                and Keithley 6517B Resistance vs. Temperature experiment.
-# Author:        Prathamesh Deshmukh
+# Author:        Prathamesh Deshmukh (Logic corrected by Gemini)
 # Created:       18/09/2025
-# Version:       V: 1.0 (GUI for Lakeshore-Keithley Integration)
+# Version:       V: 2.0 (Corrected Heating/Cooling Stabilization Logic)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
 import tkinter as tk
 from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext, Canvas
-import numpy as np
-import csv
 import os
 import time
 import traceback
@@ -42,7 +40,7 @@ except ImportError:
 
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
-# This section contains the instrument control logic from your script.
+# This section contains the instrument control logic.
 # IT HAS NOT BEEN MODIFIED to ensure experimental integrity.
 # -------------------------------------------------------------------------------
 
@@ -125,6 +123,7 @@ class Combined_Backend:
         print("  Step 1: Enabling Zero Check...")
         self.keithley.write(':SYSTem:ZCHeck ON'); time.sleep(2)
         print("  Step 2: Acquiring zero correction...")
+        # Note: pymeasure's reset might handle some of this, but manual is explicit.
         time.sleep(2)
         print("  Step 3: Disabling Zero Check...")
         self.keithley.write(':SYSTem:ZCHeck OFF'); time.sleep(1)
@@ -156,7 +155,7 @@ class Combined_Backend:
 # -------------------------------------------------------------------------------
 class Integrated_RT_GUI:
     """The main GUI application class."""
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "2.0"
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -168,7 +167,7 @@ class Integrated_RT_GUI:
     FONT_SIZE_BASE = 11
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_SUB_LABEL = ('Segoe UI', FONT_SIZE_BASE - 2)
-    FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
+    FONT_TITLE = ('Segoe UI', FFONT_SIZE_BASE + 2, 'bold')
     FONT_CONSOLE = ('Consolas', 10)
 
     def __init__(self, root):
@@ -366,6 +365,7 @@ class Integrated_RT_GUI:
         self.console_widget.config(state='disabled')
 
     def start_measurement(self):
+        # <<< LOGIC CORRECTION START >>>
         try:
             params = {
                 'sample_name': self.entries["Sample Name"].get(),
@@ -404,14 +404,15 @@ class Integrated_RT_GUI:
             self.ax_main.set_title(f"R-T Curve: {params['sample_name']}", fontweight='bold')
             self.canvas.draw()
 
-            self.log(f"Moving to start temperature of {params['start_temp']} K...")
-            self.backend.lakeshore.set_setpoint(1, params['start_temp'])
-            self.backend.lakeshore.set_heater_range(1, 'medium')
-            self.root.after(2000, self._stabilization_loop)
+            # The key change is here: We no longer turn the heater on.
+            # We just start the stabilization loop, which will decide what to do.
+            self.log("Starting stabilization process...")
+            self.root.after(1000, self._stabilization_loop)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
             messagebox.showerror("Initialization Error", f"Could not start measurement.\n{e}")
+        # <<< LOGIC CORRECTION END >>>
 
     def stop_measurement(self):
         if self.is_running or self.is_stabilizing:
@@ -422,18 +423,39 @@ class Integrated_RT_GUI:
             messagebox.showinfo("Info", "Measurement stopped and instruments disconnected.")
 
     def _stabilization_loop(self):
+        # <<< LOGIC CORRECTION START >>>
         if not self.is_stabilizing: return
         try:
+            params = self.backend.params
             current_temp = self.backend.lakeshore.get_temperature('A')
-            self.log(f"Stabilizing... Current Temp: {current_temp:.4f} K")
-            if abs(current_temp - self.backend.params['start_temp']) < 0.1:
-                self.log("Stabilized. Waiting 5s before ramp...")
+            
+            # --- New Dynamic Heating/Cooling Logic ---
+            # CASE 1: System is WARMER than start temp -> need to cool down.
+            if current_temp > params['start_temp'] + 0.2: # Using a 0.2K tolerance
+                self.log(f"Cooling... Current Temp: {current_temp:.4f} K > Target: {params['start_temp']} K")
+                # Ensure heater is off while cooling
+                self.backend.lakeshore.set_heater_range(1, 'off')
+                
+            # CASE 2: System is COLDER than start temp -> need to heat up.
+            else:
+                self.log(f"Heating... Current Temp: {current_temp:.4f} K < Target: {params['start_temp']} K")
+                # Turn heater on to a medium range and set the target setpoint
+                self.backend.lakeshore.set_heater_range(1, 'medium')
+                self.backend.lakeshore.set_setpoint(1, params['start_temp'])
+
+            # Check if we have reached the stabilization point
+            if abs(current_temp - params['start_temp']) < 0.1:
+                self.log(f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
                 self.is_stabilizing = False
+                # Ensure heater is off before starting the ramp to avoid overshoot
+                self.backend.lakeshore.set_heater_range(1, 'off') 
                 self.root.after(5000, self._start_ramp_and_measurement)
             else:
+                # If not stabilized, continue this loop
                 self.root.after(2000, self._stabilization_loop)
         except Exception as e:
             self.log(f"ERROR during stabilization: {e}"); self.stop_measurement()
+        # <<< LOGIC CORRECTION END >>>
 
     def _start_ramp_and_measurement(self):
         params = self.backend.params
@@ -479,7 +501,9 @@ class Integrated_RT_GUI:
                 self.log(f"Target temperature reached. Measurement complete.")
                 self.stop_measurement()
             else:
-                self.root.after(2000, self._update_measurement_loop)
+                # Use the delay from user input for the loop interval
+                loop_delay_ms = max(1000, int(self.backend.params['delay'] * 1000))
+                self.root.after(loop_delay_ms, self._update_measurement_loop)
 
         except Exception as e:
             self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement()
