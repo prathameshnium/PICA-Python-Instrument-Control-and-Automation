@@ -2,9 +2,9 @@
 # Name:         Pyroelectric Measurement GUI
 # Purpose:      Perform a pyroelectric current measurement with enhanced, two-stage
 #               temperature ramp control.
-# Author:       Prathamesh Deshmukh 
+# Author:       Prathamesh Deshmukh
 # Created:      17/09/2025
-# Version:      V2.4 (Final UI Polish)
+# Version:      V2.5 (Matplotlib Style Fix)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -138,7 +138,7 @@ class PyroelectricBackend:
 
 class PyroelectricAppGUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "2.4"
+    PROGRAM_VERSION = "2.5" # Updated version number
     CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'
     CLR_ACCENT_BLUE = '#8D99AE'; CLR_ACCENT_GREEN = '#A7C957'; CLR_ACCENT_RED = '#EF233C'
     CLR_CONSOLE_BG = '#1E2B38'; CLR_GRAPH_BG = '#FFFFFF'
@@ -284,7 +284,22 @@ class PyroelectricAppGUI:
     def create_graph_frame(self, parent):
         graph_container = ttk.LabelFrame(parent, text=' Live Graphs ')
         graph_container.pack(fill='both', expand=True, padx=(10, 0), pady=0)
-        plt.style.use('seaborn-v0_8-whitegrid')
+        
+        # --- FIX IMPLEMENTED HERE ---
+        # This try-except block makes the plotting style compatible with different
+        # versions of matplotlib.
+        try:
+            # Use the newer style name for modern matplotlib versions
+            plt.style.use('seaborn-v0_8-whitegrid')
+        except OSError:
+            # Fallback to the older name for compatibility
+            try:
+                plt.style.use('seaborn-whitegrid')
+            except OSError:
+                # If both fail, log a warning but continue without a special style
+                self.log("Warning: Seaborn plot style not found. Using default.")
+                pass # Continue with the default matplotlib style
+
         self.figure = Figure(figsize=(10, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
         gs = self.figure.add_gridspec(2, 2, height_ratios=[2, 1.2])
         self.ax_main = self.figure.add_subplot(gs[0, :]); self.ax_sub1 = self.figure.add_subplot(gs[1, 0]); self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
