@@ -1,10 +1,10 @@
 # -------------------------------------------------------------------------------
-# Name:          Integrated R-T Measurement GUI (Corrected Logic)
-# Purpose:       Provide a graphical user interface for the combined Lakeshore 350
-#                and Keithley 6517B Resistance vs. Temperature experiment.
-# Author:        Prathamesh Deshmukh
-# Created:       18/09/2025
-# Version:       V: 2.2 (Import Fix)
+# Name:           Integrated R-T Measurement GUI (Heating Logic Corrected)
+# Purpose:        Provide a graphical user interface for the combined Lakeshore 350
+#                 and Keithley 6517B Resistance vs. Temperature experiment.
+# Author:         Prathamesh Deshmukh 
+# Created:        18/09/2025
+# Version:        V: 2.4 (Heating Logic Fix)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -14,7 +14,7 @@ import os
 import time
 import traceback
 from datetime import datetime
-import csv  # <<< FIX IS HERE: Added missing import
+import csv
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.gridspec as gridspec
@@ -41,8 +41,7 @@ except ImportError:
 
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
-# This section contains the instrument control logic.
-# IT HAS NOT BEEN MODIFIED to ensure experimental integrity.
+# This section contains the instrument control logic and remains unchanged.
 # -------------------------------------------------------------------------------
 
 class Lakeshore350_Backend:
@@ -155,7 +154,7 @@ class Combined_Backend:
 # -------------------------------------------------------------------------------
 class Integrated_RT_GUI:
     """The main GUI application class."""
-    PROGRAM_VERSION = "2.2"
+    PROGRAM_VERSION = "2.4"
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -350,8 +349,9 @@ class Integrated_RT_GUI:
 
         self.line_sub2, = self.ax_sub2.plot([], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=3, linestyle='-')
         self.ax_sub2.set_xlabel("Time (s)")
-        self.ax_sub2.set_ylabel("Temperature (K)")
-        self.ax_sub2.grid(True, linestyle='--', alpha=0.6)
+        self.ax_sub2.set_ylabel("Resistance (Ω)")
+        self.ax_sub2.set_yscale('log')
+        self.ax_sub2.grid(True, which="both", linestyle='--', alpha=0.6)
 
         self.figure.tight_layout(pad=3.0)
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
@@ -424,30 +424,24 @@ class Integrated_RT_GUI:
             params = self.backend.params
             current_temp = self.backend.lakeshore.get_temperature('A')
             
-            # --- New Dynamic Heating/Cooling Logic ---
-            # CASE 1: System is WARMER than start temp -> need to cool down.
-            if current_temp > params['start_temp'] + 0.2: # Using a 0.2K tolerance
-                self.log(f"Cooling... Current Temp: {current_temp:.4f} K > Target: {params['start_temp']} K")
-                # Ensure heater is off while cooling
+            # Dynamic Heating/Cooling Logic
+            if current_temp > params['start_temp'] + 0.2: # System is too warm
+                self.log(f"Cooling... Current: {current_temp:.4f} K > Target: {params['start_temp']} K")
                 self.backend.lakeshore.set_heater_range(1, 'off')
-                
-            # CASE 2: System is COLDER than start temp -> need to heat up.
-            else:
-                self.log(f"Heating... Current Temp: {current_temp:.4f} K < Target: {params['start_temp']} K")
-                # Turn heater on to a medium range and set the target setpoint
+            else: # System is too cold or within tolerance
+                self.log(f"Heating... Current: {current_temp:.4f} K <= Target: {params['start_temp']} K")
                 self.backend.lakeshore.set_heater_range(1, 'medium')
                 self.backend.lakeshore.set_setpoint(1, params['start_temp'])
 
-            # Check if we have reached the stabilization point
+            # Check for stabilization
             if abs(current_temp - params['start_temp']) < 0.1:
                 self.log(f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
                 self.is_stabilizing = False
-                # Ensure heater is off before starting the ramp to avoid overshoot
-                self.backend.lakeshore.set_heater_range(1, 'off') 
+                # --- CORRECTION 1: Removed heater OFF command ---
+                # self.backend.lakeshore.set_heater_range(1, 'off') # This was the error
                 self.root.after(5000, self._start_ramp_and_measurement)
             else:
-                # If not stabilized, continue this loop
-                self.root.after(2000, self._stabilization_loop)
+                self.root.after(2000, self._stabilization_loop) # Continue loop if not stable
         except Exception as e:
             self.log(f"ERROR during stabilization: {e}"); self.stop_measurement()
 
@@ -455,7 +449,10 @@ class Integrated_RT_GUI:
         params = self.backend.params
         self.backend.lakeshore.setup_ramp(1, params['rate'])
         self.backend.lakeshore.set_setpoint(1, params['end_temp'])
-        self.log(f"Ramp started towards {params['end_temp']} K at {params['rate']} K/min.")
+        # --- CORRECTION 2: Added command to ensure heater is ON for the ramp ---
+        self.backend.lakeshore.set_heater_range(1, 'medium')
+        self.log(f"Ramp started towards {params['end_temp']} K at {params['rate']} K/min. Heater set to 'medium'.")
+        
         self.is_running = True
         self.start_time = time.time()
         self.root.after(1000, self._update_measurement_loop)
@@ -481,7 +478,7 @@ class Integrated_RT_GUI:
 
             self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
             self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['current'])
-            self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
+            self.line_sub2.set_data(self.data_storage['time'], self.data_storage['resistance'])
 
             for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
                 ax.relim(); ax.autoscale_view()
@@ -495,7 +492,6 @@ class Integrated_RT_GUI:
                 self.log(f"Target temperature reached. Measurement complete.")
                 self.stop_measurement()
             else:
-                # Use the delay from user input for the loop interval
                 loop_delay_ms = max(1000, int(self.backend.params['delay'] * 1000))
                 self.root.after(loop_delay_ms, self._update_measurement_loop)
 
