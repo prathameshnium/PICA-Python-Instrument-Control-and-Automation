@@ -2,9 +2,9 @@
 # Name:          Integrated R-T Measurement GUI (Corrected Logic)
 # Purpose:       Provide a graphical user interface for the combined Lakeshore 350
 #                and Keithley 6517B Resistance vs. Temperature experiment.
-# Author:        Prathamesh Deshmukh 
+# Author:        Prathamesh Deshmukh
 # Created:       18/09/2025
-# Version:       V: 2.1 (Typo Fix)
+# Version:       V: 2.2 (Import Fix)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -14,6 +14,7 @@ import os
 import time
 import traceback
 from datetime import datetime
+import csv  # <<< FIX IS HERE: Added missing import
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.gridspec as gridspec
@@ -123,7 +124,6 @@ class Combined_Backend:
         print("  Step 1: Enabling Zero Check...")
         self.keithley.write(':SYSTem:ZCHeck ON'); time.sleep(2)
         print("  Step 2: Acquiring zero correction...")
-        # Note: pymeasure's reset might handle some of this, but manual is explicit.
         time.sleep(2)
         print("  Step 3: Disabling Zero Check...")
         self.keithley.write(':SYSTem:ZCHeck OFF'); time.sleep(1)
@@ -155,7 +155,7 @@ class Combined_Backend:
 # -------------------------------------------------------------------------------
 class Integrated_RT_GUI:
     """The main GUI application class."""
-    PROGRAM_VERSION = "2.1" # Incremented version for the fix
+    PROGRAM_VERSION = "2.2"
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -167,7 +167,6 @@ class Integrated_RT_GUI:
     FONT_SIZE_BASE = 11
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_SUB_LABEL = ('Segoe UI', FONT_SIZE_BASE - 2)
-    # <<< TYPO FIX IS HERE >>>
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
     FONT_CONSOLE = ('Consolas', 10)
 
