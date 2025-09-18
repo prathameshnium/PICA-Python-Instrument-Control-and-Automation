@@ -2,7 +2,7 @@
 # Name:          Integrated R-T Measurement GUI (Corrected Logic)
 # Purpose:       Provide a graphical user interface for the combined Lakeshore 350
 #                and Keithley 6517B Resistance vs. Temperature experiment.
-# Author:        Prathamesh Deshmukh (Logic corrected by Gemini)
+# Author:        Prathamesh Deshmukh 
 # Created:       18/09/2025
 # Version:       V: 2.1 (Typo Fix)
 # -------------------------------------------------------------------------------
