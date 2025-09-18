@@ -47,7 +47,9 @@ This project relies on a few key packages. Ensure they are installed in your Pyt
 
 ### Author & Acknowledgment
 
-This software was developed by **Prathamesh Deshmukh** during his PhD tenure at the **Mumbai Centre** of the **UGC-DAE Consortium for Scientific Research (CSR)**.
+Developed by **Prathamesh Deshmukh** | Vision & Guidance by **Dr. Sudip Mukherjee**
+<br>
+*UGC-DAE Consortium for Scientific Research, Mumbai Centre*
 
 ---
 
