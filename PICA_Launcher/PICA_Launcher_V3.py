@@ -3,7 +3,7 @@
 # Purpose:        A central meta front end to launch various measurement GUIs.
 # Author:         Prathamesh Deshmukh
 # Created:        10/09/2025
-# Version:        5.1 (Path Correction)
+# Version:        7.1 (Final Path Correction)
 # Last Edit:      19/09/2025
 # -------------------------------------------------------------------------------
 
@@ -34,7 +34,7 @@ except ImportError:
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "5.1"
+    PROGRAM_VERSION = "7.1"
 
     # --- Color and Font Palette ---
     CLR_BG_DARK = '#2B3D4F'
@@ -53,14 +53,14 @@ class PICALauncherApp:
     FONT_CONSOLE = ('Consolas', 10)
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
 
-    # --- Asset and File Paths (Corrected with ../ to go up one directory) ---
-    LOGO_FILE = "../assets/LOGO/UGC_DAE_CSR.jpeg"
-    MANUAL_FILE = "../assets/Manuals"
-    README_FILE = "../README.md"
+    # --- Asset and File Paths (Corrected) ---
+    LOGO_FILE = "../_assets/LOGO/UGC_DAE_CSR.jpeg"
+    MANUAL_FILE = "../_assets/Manuals"
+    README_FILE = "../README/README_v1.md"  # The final corrected path
     LICENSE_FILE = "../LICENSE"
     LOGO_SIZE = 140
 
-    # --- Script Definitions (Corrected with ../ to go up one directory) ---
+    # --- Script Definitions ---
     SCRIPT_PATHS = {
         "Delta Mode I-V": "../Delta_mode/Delta_V7.py",
         "Delta Mode R-T": "../Delta_mode/Delta_Lakeshore_Front_end_V7.py",
@@ -127,7 +127,6 @@ class PICALauncherApp:
         """Creates the left-side panel with info, utilities, and the console."""
         info_frame = ttk.Frame(parent)
         info_frame.configure(padding=20)
-
         logo_canvas = Canvas(info_frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
         logo_canvas.pack(pady=(0, 20))
 
@@ -162,12 +161,10 @@ class PICALauncherApp:
         license_label.bind("<Button-1>", lambda e: self.open_license())
         console_container = ttk.LabelFrame(info_frame, text="Console", padding=(5,10))
         console_container.pack(side='bottom', fill='x', pady=(25, 0))
-
         self.console_widget = scrolledtext.ScrolledText(console_container, state='disabled', bg=self.CLR_CONSOLE_BG,
                                                        fg=self.CLR_TEXT, font=self.FONT_CONSOLE,
                                                        wrap='word', bd=0, relief='flat', height=7)
         self.console_widget.pack(fill='both', expand=True)
-
         return info_frame
 
     def _create_launch_button(self, parent, text, script_key):
@@ -180,22 +177,18 @@ class PICALauncherApp:
         main_container = ttk.Frame(parent)
         main_container.grid_rowconfigure(0, weight=1)
         main_container.grid_columnconfigure(0, weight=1)
-
         button_container = ttk.Frame(main_container)
         button_container.grid(row=0, column=0, sticky="nsew")
-
         canvas = Canvas(button_container, bg=self.CLR_BG_DARK, highlightthickness=0)
         scrollbar = ttk.Scrollbar(button_container, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
         scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-
         scrollable_frame.grid_columnconfigure(0, weight=1, uniform="group1")
         scrollable_frame.grid_columnconfigure(1, weight=1, uniform="group1")
         left_col = ttk.Frame(scrollable_frame); left_col.grid(row=0, column=0, sticky='new', padx=(15, 8), pady=10)
         right_col = ttk.Frame(scrollable_frame); right_col.grid(row=0, column=1, sticky='new', padx=(8, 15), pady=10)
-
         GROUP_PAD_Y = 15
 
         # --- Low Resistance Group ---
@@ -252,7 +245,6 @@ class PICALauncherApp:
 
         canvas.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
-
         return main_container
 
     def log(self, message):
@@ -266,20 +258,56 @@ class PICALauncherApp:
             self.console_widget.config(state='disabled')
 
     def _open_path(self, path):
-        """Cross-platform function to open a file or directory path."""
-        if path == self.LICENSE_FILE and not os.path.exists(path):
-            if os.path.exists(path + ".md"): path += ".md"
-            elif os.path.exists(path + ".txt"): path += ".txt"
-        if not os.path.exists(path):
-            self.log(f"ERROR: Path not found: {os.path.abspath(path)}")
-            messagebox.showwarning("Path Not Found", f"The specified path does not exist:\n\n{os.path.abspath(path)}")
+        """Cross-platform function to open a directory path in the file explorer."""
+        abs_path = os.path.abspath(path)
+        if not os.path.exists(abs_path):
+            self.log(f"ERROR: Path not found: {abs_path}")
+            messagebox.showwarning("Path Not Found", f"The specified path does not exist:\n\n{abs_path}")
             return
         try:
-            if platform.system() == "Windows": os.startfile(os.path.abspath(path))
-            elif platform.system() == "Darwin": subprocess.run(['open', os.path.abspath(path)], check=True)
-            else: subprocess.run(['xdg-open', os.path.abspath(path)], check=True)
+            if platform.system() == "Windows":
+                os.startfile(abs_path)
+            elif platform.system() == "Darwin":
+                subprocess.run(['open', abs_path], check=True)
+            else:
+                subprocess.run(['xdg-open', abs_path], check=True)
         except Exception as e:
             messagebox.showerror("Error", f"Could not open path: {path}\n\nError: {e}")
+
+    def _show_file_in_window(self, file_path, title):
+        """Reads a text file and displays its content in a new Toplevel window."""
+        if not os.path.exists(file_path):
+            if os.path.exists(file_path + ".md"):
+                file_path += ".md"
+            elif os.path.exists(file_path + ".txt"):
+                file_path += ".txt"
+
+        abs_path = os.path.abspath(file_path)
+        if not os.path.exists(abs_path):
+            self.log(f"ERROR: File not found: {abs_path}")
+            messagebox.showerror("File Not Found", f"The specified file does not exist:\n\n{abs_path}")
+            return
+
+        try:
+            with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+        except Exception as e:
+            messagebox.showerror("Error Reading File", f"Could not read the file:\n\n{e}")
+            return
+
+        win = Toplevel(self.root)
+        win.title(title)
+        win.geometry("700x500")
+        win.configure(bg=self.CLR_BG_DARK)
+        win.transient(self.root)
+        win.grab_set()
+
+        text_area = scrolledtext.ScrolledText(win, wrap='word', bg=self.CLR_CONSOLE_BG, fg=self.CLR_TEXT, font=self.FONT_CONSOLE, bd=0)
+        text_area.pack(padx=10, pady=10, expand=True, fill='both')
+        text_area.insert('1.0', content)
+        text_area.config(state='disabled')
+
+        ttk.Button(win, text="Close", style='App.TButton', command=win.destroy).pack(pady=10, padx=10, fill='x')
 
     def open_script_folder(self, script_key):
         script_path = self.SCRIPT_PATHS.get(script_key)
@@ -290,20 +318,24 @@ class PICALauncherApp:
         folder_path = os.path.dirname(os.path.abspath(script_path))
         self._open_path(folder_path)
 
-    def open_readme(self): self._open_path(self.README_FILE)
-    def open_manual_folder(self): self._open_path(self.MANUAL_FILE)
-    def open_license(self): self._open_path(self.LICENSE_FILE)
+    def open_readme(self):
+        self._show_file_in_window(self.README_FILE, "README")
+
+    def open_manual_folder(self):
+        self._open_path(self.MANUAL_FILE)
+
+    def open_license(self):
+        self._show_file_in_window(self.LICENSE_FILE, "MIT License")
 
     def launch_script(self, script_path):
         """Launches a specified Python script in a new process."""
         self.log(f"Launching: {os.path.basename(script_path)}")
         if not os.path.exists(script_path):
-            self.log(f"ERROR: Script not found at {os.path.abspath(script_path)}")
-            messagebox.showerror("File Not Found", f"Script not found:\n\n{os.path.abspath(script_path)}")
+            abs_path = os.path.abspath(script_path)
+            self.log(f"ERROR: Script not found at {abs_path}")
+            messagebox.showerror("File Not Found", f"Script not found:\n\n{abs_path}")
             return
         try:
-            # Popen requires the script path relative to the cwd.
-            # The cwd should be the script's own directory to handle its internal relative paths.
             script_directory = os.path.dirname(os.path.abspath(script_path))
             script_filename = os.path.basename(script_path)
             subprocess.Popen([sys.executable, script_filename], cwd=script_directory)
