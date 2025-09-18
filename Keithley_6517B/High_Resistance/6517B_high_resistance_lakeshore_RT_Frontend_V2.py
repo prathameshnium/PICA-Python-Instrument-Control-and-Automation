@@ -4,7 +4,7 @@
 #                and Keithley 6517B Resistance vs. Temperature experiment.
 # Author:        Prathamesh Deshmukh (Logic corrected by Gemini)
 # Created:       18/09/2025
-# Version:       V: 2.0 (Corrected Heating/Cooling Stabilization Logic)
+# Version:       V: 2.1 (Typo Fix)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -155,7 +155,7 @@ class Combined_Backend:
 # -------------------------------------------------------------------------------
 class Integrated_RT_GUI:
     """The main GUI application class."""
-    PROGRAM_VERSION = "2.0"
+    PROGRAM_VERSION = "2.1" # Incremented version for the fix
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -167,7 +167,8 @@ class Integrated_RT_GUI:
     FONT_SIZE_BASE = 11
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_SUB_LABEL = ('Segoe UI', FONT_SIZE_BASE - 2)
-    FONT_TITLE = ('Segoe UI', FFONT_SIZE_BASE + 2, 'bold')
+    # <<< TYPO FIX IS HERE >>>
+    FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
     FONT_CONSOLE = ('Consolas', 10)
 
     def __init__(self, root):
@@ -365,7 +366,6 @@ class Integrated_RT_GUI:
         self.console_widget.config(state='disabled')
 
     def start_measurement(self):
-        # <<< LOGIC CORRECTION START >>>
         try:
             params = {
                 'sample_name': self.entries["Sample Name"].get(),
@@ -404,15 +404,12 @@ class Integrated_RT_GUI:
             self.ax_main.set_title(f"R-T Curve: {params['sample_name']}", fontweight='bold')
             self.canvas.draw()
 
-            # The key change is here: We no longer turn the heater on.
-            # We just start the stabilization loop, which will decide what to do.
             self.log("Starting stabilization process...")
             self.root.after(1000, self._stabilization_loop)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
             messagebox.showerror("Initialization Error", f"Could not start measurement.\n{e}")
-        # <<< LOGIC CORRECTION END >>>
 
     def stop_measurement(self):
         if self.is_running or self.is_stabilizing:
@@ -423,7 +420,6 @@ class Integrated_RT_GUI:
             messagebox.showinfo("Info", "Measurement stopped and instruments disconnected.")
 
     def _stabilization_loop(self):
-        # <<< LOGIC CORRECTION START >>>
         if not self.is_stabilizing: return
         try:
             params = self.backend.params
@@ -455,7 +451,6 @@ class Integrated_RT_GUI:
                 self.root.after(2000, self._stabilization_loop)
         except Exception as e:
             self.log(f"ERROR during stabilization: {e}"); self.stop_measurement()
-        # <<< LOGIC CORRECTION END >>>
 
     def _start_ramp_and_measurement(self):
         params = self.backend.params
