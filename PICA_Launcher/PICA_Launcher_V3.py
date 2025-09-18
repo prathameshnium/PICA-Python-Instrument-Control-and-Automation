@@ -3,7 +3,7 @@
 # Purpose:        A central meta front end to launch various measurement GUIs.
 # Author:         Prathamesh Deshmukh
 # Created:        10/09/2025
-# Version:        7.1 (Final Path Correction)
+# Version:        9.0 (Final Polish)
 # Last Edit:      19/09/2025
 # -------------------------------------------------------------------------------
 
@@ -16,6 +16,8 @@ import platform
 from datetime import datetime
 import threading
 import queue
+import re
+from html import unescape
 
 # --- Pillow for Logo Image ---
 try:
@@ -34,7 +36,7 @@ except ImportError:
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "7.1"
+    PROGRAM_VERSION = "9.0"
 
     # --- Color and Font Palette ---
     CLR_BG_DARK = '#2B3D4F'
@@ -53,10 +55,10 @@ class PICALauncherApp:
     FONT_CONSOLE = ('Consolas', 10)
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
 
-    # --- Asset and File Paths (Corrected) ---
+    # --- Asset and File Paths ---
     LOGO_FILE = "../_assets/LOGO/UGC_DAE_CSR.jpeg"
     MANUAL_FILE = "../_assets/Manuals"
-    README_FILE = "../README/README_v1.md"  # The final corrected path
+    README_FILE = "../README/README_v1.md"
     LICENSE_FILE = "../LICENSE"
     LOGO_SIZE = 140
 
@@ -89,8 +91,8 @@ class PICALauncherApp:
         self.create_widgets()
 
         self.log(f"PICA Launcher v{self.PROGRAM_VERSION} initialized.")
-        self.log(f"PIL/Pillow (for logo): {'Available' if PIL_AVAILABLE else 'Not found'}")
-        self.log(f"PyVISA (for GPIB test): {'Available' if PYVISA_AVAILABLE else 'Not found'}")
+        self.log(f"PIL/Pillow (logo): {'Available' if PIL_AVAILABLE else 'Not found'}")
+        self.log(f"PyVISA (GPIB test): {'Available' if PYVISA_AVAILABLE else 'Not found'}")
 
     def setup_styles(self):
         """Configures all ttk styles for the application."""
@@ -128,29 +130,35 @@ class PICALauncherApp:
         info_frame = ttk.Frame(parent)
         info_frame.configure(padding=20)
         logo_canvas = Canvas(info_frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
-        logo_canvas.pack(pady=(0, 20))
+        logo_canvas.pack(pady=(0, 15)) # Adjusted padding
 
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE):
             try:
-                img = Image.open(self.LOGO_FILE).resize((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
+                img = Image.open(self.LOGO_FILE)
+                # Use thumbnail to resize while preserving aspect ratio
+                img.thumbnail((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
                 self.logo_image = ImageTk.PhotoImage(img)
                 logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
-            except Exception:
+            except Exception as e:
+                self.log(f"ERROR: Failed to load logo. {e}")
                 logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nERROR", font=self.FONT_BASE, fill=self.CLR_TEXT, justify='center')
         else:
             logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill=self.CLR_TEXT, justify='center')
 
-        ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, justify='center', anchor='center').pack(pady=(0, 15))
+        ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, justify='center', anchor='center').pack(pady=(0, 10))
         desc_text = "A suite of Python scripts for automating laboratory instruments for materials science and physics research."
         ttk.Label(info_frame, text=desc_text, font=self.FONT_INFO, wraplength=360, justify='center', anchor='center').pack(pady=(0, 20))
-        ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=25)
+
+        ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=20)
+
         util_frame = ttk.Frame(info_frame)
-        util_frame.pack(fill='x', expand=False, pady=5)
+        util_frame.pack(fill='x', expand=False, pady=10)
         ttk.Button(util_frame, text="Open README", style='App.TButton', command=self.open_readme).pack(fill='x', pady=4)
         ttk.Button(util_frame, text="Open Instrument Manuals", style='App.TButton', command=self.open_manual_folder).pack(fill='x', pady=4)
         ttk.Button(util_frame, text="Test GPIB Connection", style='App.TButton', command=self.run_gpib_test).pack(fill='x', pady=4)
+
         bottom_frame = ttk.Frame(info_frame)
-        bottom_frame.pack(side='bottom', pady=(20, 0))
+        bottom_frame.pack(side='bottom', fill='x', pady=(15, 0)) # Adjusted padding
         author_text = ("Developed by Prathamesh Deshmukh | Vision & Guidance by Dr. Sudip Mukherjee\n"
                        "UGC-DAE Consortium for Scientific Research, Mumbai Centre")
         ttk.Label(bottom_frame, text=author_text, font=('Segoe UI', 9), justify='center', anchor='center').pack(pady=(0,10))
@@ -159,8 +167,9 @@ class PICALauncherApp:
                                   font=license_font, foreground=self.CLR_LINK, cursor="hand2")
         license_label.pack()
         license_label.bind("<Button-1>", lambda e: self.open_license())
+
         console_container = ttk.LabelFrame(info_frame, text="Console", padding=(5,10))
-        console_container.pack(side='bottom', fill='x', pady=(25, 0))
+        console_container.pack(side='bottom', fill='x', pady=(20, 0)) # Adjusted padding
         self.console_widget = scrolledtext.ScrolledText(console_container, state='disabled', bg=self.CLR_CONSOLE_BG,
                                                        fg=self.CLR_TEXT, font=self.FONT_CONSOLE,
                                                        wrap='word', bd=0, relief='flat', height=7)
@@ -275,12 +284,13 @@ class PICALauncherApp:
             messagebox.showerror("Error", f"Could not open path: {path}\n\nError: {e}")
 
     def _show_file_in_window(self, file_path, title):
-        """Reads a text file and displays its content in a new Toplevel window."""
+        """
+        Reads a text file and displays its content in a new Toplevel window.
+        If the file is Markdown (.md), it applies basic styling.
+        """
         if not os.path.exists(file_path):
-            if os.path.exists(file_path + ".md"):
-                file_path += ".md"
-            elif os.path.exists(file_path + ".txt"):
-                file_path += ".txt"
+            if os.path.exists(file_path + ".md"): file_path += ".md"
+            elif os.path.exists(file_path + ".txt"): file_path += ".txt"
 
         abs_path = os.path.abspath(file_path)
         if not os.path.exists(abs_path):
@@ -302,11 +312,56 @@ class PICALauncherApp:
         win.transient(self.root)
         win.grab_set()
 
-        text_area = scrolledtext.ScrolledText(win, wrap='word', bg=self.CLR_CONSOLE_BG, fg=self.CLR_TEXT, font=self.FONT_CONSOLE, bd=0)
-        text_area.pack(padx=10, pady=10, expand=True, fill='both')
-        text_area.insert('1.0', content)
-        text_area.config(state='disabled')
+        text_area = scrolledtext.ScrolledText(win, wrap='word', bg=self.CLR_CONSOLE_BG, fg=self.CLR_TEXT, font=self.FONT_BASE, bd=0, padx=15, pady=10)
 
+        text_area.tag_configure("h1", font=('Segoe UI', 20, 'bold'), foreground=self.CLR_ACCENT_GOLD, spacing3=15)
+        text_area.tag_configure("h3", font=('Segoe UI', 13, 'bold'), spacing3=10)
+        text_area.tag_configure("p", spacing3=8)
+        text_area.tag_configure("list_l1", lmargin1=25, lmargin2=40)
+        text_area.tag_configure("list_l2", lmargin1=45, lmargin2=60)
+        text_area.tag_configure("bold", font=('Segoe UI', self.FONT_SIZE_BASE, 'bold'))
+        text_area.tag_configure("hr", justify='center', spacing1=15, spacing3=15, foreground=self.CLR_FRAME_BG)
+
+        is_markdown = file_path.lower().endswith('.md')
+
+        if is_markdown:
+            content = unescape(content)
+            content = re.sub(r'<.*?>', '', content)
+
+            for line in content.split('\n'):
+                stripped = line.strip()
+                start_index = text_area.index('end-1c')
+
+                if not stripped:
+                    text_area.insert('end', '\n')
+                    continue
+
+                if stripped.startswith('### '):
+                    text_area.insert('end', f"{stripped[4:]}\n", "h3")
+                elif stripped.startswith('# '):
+                    text_area.insert('end', f"{stripped[2:]}\n", "h1")
+                elif stripped.startswith('    * '):
+                    text_area.insert('end', f"  › {stripped[6:]}\n", "list_l2")
+                elif stripped.startswith('* '):
+                    text_area.insert('end', f"• {stripped[2:]}\n", "list_l1")
+                elif stripped in ('---', '***', '___'):
+                    text_area.insert('end', f"{'─'*80}\n", "hr")
+                else:
+                    text_area.insert('end', f"{line}\n", "p")
+
+                end_index = text_area.index('end-1c')
+                line_content = text_area.get(start_index, end_index)
+
+                for match in re.finditer(r'\*\*(.*?)\*\*', line_content):
+                    match_start, match_end = match.span(0)
+                    text_start_index = text_area.index(f"{start_index}+{match_start}c")
+                    text_end_index = text_area.index(f"{start_index}+{match_end}c")
+                    text_area.tag_add("bold", text_start_index, text_end_index)
+        else:
+            text_area.insert('1.0', content)
+
+        text_area.pack(expand=True, fill='both')
+        text_area.config(state='disabled')
         ttk.Button(win, text="Close", style='App.TButton', command=win.destroy).pack(pady=10, padx=10, fill='x')
 
     def open_script_folder(self, script_key):
