@@ -1,10 +1,10 @@
 # -------------------------------------------------------------------------------
-# Name:           Integrated R-T Measurement GUI (Plot Reverted)
+# Name:           Integrated R-T Measurement GUI (R-Measured)
 # Purpose:        Provide a graphical user interface for the combined Lakeshore 350
 #                 and Keithley 6517B Resistance vs. Temperature experiment.
-# Author:         Prathamesh Deshmukh 
+# Author:         Prathamesh Deshmukh
 # Created:        18/09/2025
-# Version:        V: 2.5 (Reverted Subplot to T-t)
+# Version:        V: 2.6 (Measure R, Calc I)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -41,7 +41,7 @@ except ImportError:
 
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
-# This section contains the instrument control logic and remains unchanged.
+# This section contains the instrument control logic.
 # -------------------------------------------------------------------------------
 
 class Lakeshore350_Backend:
@@ -111,7 +111,7 @@ class Combined_Backend:
         self._perform_keithley_zero_check()
 
         self.keithley.source_voltage = self.params['source_voltage']
-        self.keithley.current_nplc = 1
+        self.keithley.current_nplc = 1 # Integration time setting
         self.keithley.enable_source()
         print(f"Keithley source enabled: {self.params['source_voltage']} V")
 
@@ -131,12 +131,26 @@ class Combined_Backend:
         print("  Zero Correction Complete.")
 
     def get_measurement(self):
-        """Gets a single synchronised reading from both instruments."""
+        """
+        Gets a single synchronised reading from both instruments.
+        MODIFIED: Measures resistance and calculates current.
+        """
         time.sleep(self.params['delay'])
         current_temp = self.lakeshore.get_temperature('A')
         heater_output = self.lakeshore.get_heater_output(1)
-        measured_current = self.keithley.current
-        resistance = abs(self.params['source_voltage'] / measured_current) if measured_current != 0 else float('inf')
+
+        # --- MODIFICATION START ---
+        # 1. Measure resistance directly from the instrument.
+        resistance = self.keithley.resistance
+
+        # 2. Calculate the corresponding current using Ohm's Law (I = V/R).
+        #    Handle potential division by zero or infinite resistance.
+        if resistance != 0 and resistance != float('inf') and resistance == resistance: # last check is for NaN
+            measured_current = self.params['source_voltage'] / resistance
+        else:
+            measured_current = 0.0
+        # --- MODIFICATION END ---
+
         return current_temp, heater_output, measured_current, resistance
 
     def close_instruments(self):
@@ -154,7 +168,7 @@ class Combined_Backend:
 # -------------------------------------------------------------------------------
 class Integrated_RT_GUI:
     """The main GUI application class."""
-    PROGRAM_VERSION = "2.5"
+    PROGRAM_VERSION = "2.6"
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -347,14 +361,10 @@ class Integrated_RT_GUI:
         self.ax_sub1.set_ylabel("Current (A)")
         self.ax_sub1.grid(True, linestyle='--', alpha=0.6)
 
-        # --- MODIFICATION START ---
-        # Reverted the third subplot to show Temperature vs. Time
         self.line_sub2, = self.ax_sub2.plot([], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=3, linestyle='-')
         self.ax_sub2.set_xlabel("Time (s)")
-        self.ax_sub2.set_ylabel("Temperature (K)") # Changed back from "Resistance (Ω)"
-        # self.ax_sub2.set_yscale('log') # Removed log scale for temperature
+        self.ax_sub2.set_ylabel("Temperature (K)")
         self.ax_sub2.grid(True, linestyle='--', alpha=0.6)
-        # --- MODIFICATION END ---
 
         self.figure.tight_layout(pad=3.0)
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
@@ -426,7 +436,7 @@ class Integrated_RT_GUI:
         try:
             params = self.backend.params
             current_temp = self.backend.lakeshore.get_temperature('A')
-            
+
             # Dynamic Heating/Cooling Logic
             if current_temp > params['start_temp'] + 0.2: # System is too warm
                 self.log(f"Cooling... Current: {current_temp:.4f} K > Target: {params['start_temp']} K")
@@ -452,7 +462,7 @@ class Integrated_RT_GUI:
         self.backend.lakeshore.set_setpoint(1, params['end_temp'])
         self.backend.lakeshore.set_heater_range(1, 'medium')
         self.log(f"Ramp started towards {params['end_temp']} K at {params['rate']} K/min. Heater set to 'medium'.")
-        
+
         self.is_running = True
         self.start_time = time.time()
         self.root.after(1000, self._update_measurement_loop)
@@ -462,6 +472,11 @@ class Integrated_RT_GUI:
         try:
             temp, htr, cur, res = self.backend.get_measurement()
             elapsed = time.time() - self.start_time
+
+            # --- MODIFICATION START ---
+            # Add a comprehensive log entry for each data point to the console.
+            self.log(f"T: {temp:.4f} K | R: {res:.4e} Ω | I: {cur:.4e} A | V: {self.backend.params['source_voltage']} V | Time: {elapsed:.2f} s")
+            # --- MODIFICATION END ---
 
             with open(self.data_filepath, 'a', newline='') as f:
                 writer = csv.writer(f)
@@ -478,11 +493,7 @@ class Integrated_RT_GUI:
 
             self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
             self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['current'])
-            
-            # --- MODIFICATION START ---
-            # Update the third subplot with Temperature vs. Time data
             self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
-            # --- MODIFICATION END ---
 
             for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
                 ax.relim(); ax.autoscale_view()
