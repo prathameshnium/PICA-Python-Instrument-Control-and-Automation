@@ -1,10 +1,10 @@
 # -------------------------------------------------------------------------------
-# Name:           Integrated R-T Measurement GUI (R-Measured)
+# Name:           Integrated R-T Measurement GUI (Zero Corrected)
 # Purpose:        Provide a graphical user interface for the combined Lakeshore 350
 #                 and Keithley 6517B Resistance vs. Temperature experiment.
-# Author:         Prathamesh Deshmukh
+# Author:         Prathamesh Deshmukh (Zero Correction by Gemini)
 # Created:        18/09/2025
-# Version:        V: 2.6 (Measure R, Calc I)
+# Version:        V: 2.7 (Fixed Zero Correction Logic)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -41,7 +41,6 @@ except ImportError:
 
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
-# This section contains the instrument control logic.
 # -------------------------------------------------------------------------------
 
 class Lakeshore350_Backend:
@@ -119,37 +118,43 @@ class Combined_Backend:
         """Performs the zero check and correction procedure."""
         print("  --- Starting Keithley Zero Correction ---")
         self.keithley.reset()
-        self.keithley.measure_resistance()
-        print("  Step 1: Enabling Zero Check...")
-        self.keithley.write(':SYSTem:ZCHeck ON'); time.sleep(2)
-        print("  Step 2: Acquiring zero correction...")
-        time.sleep(2)
+        self.keithley.measure_resistance() # Set function to resistance
+        print("  Step 1: Enabling Zero Check (shorts the input)...")
+        self.keithley.write(':SYSTem:ZCHeck ON')
+        time.sleep(2) # Wait for relay to settle
+
+        # --- FIX START ---
+        # This is the crucial command that was missing. It tells the instrument
+        # to take a measurement while the input is shorted and store it as the zero offset.
+        print("  Step 2: Acquiring the zero correction value...")
+        self.keithley.write(':SYSTem:ZCORrect:ACQuire')
+        time.sleep(3) # Wait for the acquisition to complete
+        # --- FIX END ---
+
         print("  Step 3: Disabling Zero Check...")
-        self.keithley.write(':SYSTem:ZCHeck OFF'); time.sleep(1)
-        print("  Step 4: Enabling Zero Correction...")
-        self.keithley.write(':SYSTem:ZCORrect ON'); time.sleep(1)
+        self.keithley.write(':SYSTem:ZCHeck OFF')
+        time.sleep(1)
+
+        print("  Step 4: Enabling Zero Correction for all measurements...")
+        #self.keithley.write(':SYSTem:ZCORrect ON')
+        time.sleep(1)
         print("  Zero Correction Complete.")
+
 
     def get_measurement(self):
         """
         Gets a single synchronised reading from both instruments.
-        MODIFIED: Measures resistance and calculates current.
+        Measures resistance and calculates current.
         """
         time.sleep(self.params['delay'])
         current_temp = self.lakeshore.get_temperature('A')
         heater_output = self.lakeshore.get_heater_output(1)
 
-        # --- MODIFICATION START ---
-        # 1. Measure resistance directly from the instrument.
         resistance = self.keithley.resistance
-
-        # 2. Calculate the corresponding current using Ohm's Law (I = V/R).
-        #    Handle potential division by zero or infinite resistance.
         if resistance != 0 and resistance != float('inf') and resistance == resistance: # last check is for NaN
             measured_current = self.params['source_voltage'] / resistance
         else:
             measured_current = 0.0
-        # --- MODIFICATION END ---
 
         return current_temp, heater_output, measured_current, resistance
 
@@ -168,7 +173,7 @@ class Combined_Backend:
 # -------------------------------------------------------------------------------
 class Integrated_RT_GUI:
     """The main GUI application class."""
-    PROGRAM_VERSION = "2.6"
+    PROGRAM_VERSION = "2.7"
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -473,10 +478,7 @@ class Integrated_RT_GUI:
             temp, htr, cur, res = self.backend.get_measurement()
             elapsed = time.time() - self.start_time
 
-            # --- MODIFICATION START ---
-            # Add a comprehensive log entry for each data point to the console.
             self.log(f"T: {temp:.4f} K | R: {res:.4e} Ω | I: {cur:.4e} A | V: {self.backend.params['source_voltage']} V | Time: {elapsed:.2f} s")
-            # --- MODIFICATION END ---
 
             with open(self.data_filepath, 'a', newline='') as f:
                 writer = csv.writer(f)
