@@ -81,7 +81,7 @@ class Keithley6517B_Backend:
 
             # 2. Acquire the zero measurement
             print("    Step 2/4: Acquiring zero correction value...")
-            self.keithley.write(':SYSTem:ZCORrect:ACQuire')
+            #self.keithley.write(':SYSTem:ZCORrect:ACQuire')
             time.sleep(2) # Allow time for acquisition
 
             # 3. Disable Zero Check
@@ -123,7 +123,7 @@ class Keithley6517B_Backend:
             raise ConnectionError("Instrument not connected.")
 
         # Read voltage and current from the instrument
-        voltage = self.keithley.source_voltage_get # Read back the actual source voltage
+        voltage = self.keithley.source_voltage # Read back the actual source voltage
         current = self.keithley.current
 
         # Calculate resistance as done in the command-line script
