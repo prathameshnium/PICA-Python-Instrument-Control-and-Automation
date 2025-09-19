@@ -17,3 +17,9 @@ Place: Home
 ## General Enhancements
 - **PICA:** Improved front-end user interface.
 - **GPIB:** Added a new test interface.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+18-09-25
+
+PICA paths are provided. The high-resistance module's backend logic has been improved, and the frontend UI has been updated with better button colors.
