@@ -2,9 +2,9 @@
 # Name:           Integrated R-T Measurement GUI (Zero Corrected)
 # Purpose:        Provide a graphical user interface for the combined Lakeshore 350
 #                 and Keithley 6517B Resistance vs. Temperature experiment.
-# Author:         Prathamesh Deshmukh
+# Author:         Prathamesh Deshmukh 
 # Created:        18/09/2025
-# Version:        V: 3.2 (Fixed Canvas Initialization Order)
+# Version:        V: 3.3 (Final Layout & UX Polish)
 # -------------------------------------------------------------------------------
 
 
@@ -87,7 +87,7 @@ class Lakeshore350_Backend:
     def close(self):
         if self.instrument:
             try:
-                self.set_heater_range(1, 'off') # Uses default output 1
+                self.set_heater_range(1, 'off')
                 time.sleep(0.5)
                 self.instrument.close()
             except Exception as e:
@@ -104,33 +104,31 @@ class Combined_Backend:
         self.params = {}
 
     def initialize_instruments(self, parameters):
-        """Connects to and configures both instruments."""
         self.params = parameters
         print("\n--- [Backend] Initializing Instruments ---")
         self.lakeshore = Lakeshore350_Backend(self.params['lakeshore_visa'])
         self.lakeshore.reset_and_clear()
-        self.lakeshore.setup_heater(1, 1, 2) # Using default HTRSET values
+        self.lakeshore.setup_heater(1, 1, 2)
 
         self.keithley = Keithley6517B(self.params['keithley_visa'])
         print(f"Keithley Connected: {self.keithley.id}")
         self._perform_keithley_zero_check()
 
         self.keithley.source_voltage = self.params['source_voltage']
-        self.keithley.current_nplc = 1 # Integration time setting
+        self.keithley.current_nplc = 1
         self.keithley.enable_source()
         print(f"Keithley source enabled: {self.params['source_voltage']} V")
 
     def _perform_keithley_zero_check(self):
-        """Performs the zero check and correction procedure."""
         print("  --- Starting Keithley Zero Correction ---")
         self.keithley.reset()
-        self.keithley.measure_resistance() # Set function to resistance
+        self.keithley.measure_resistance()
         print("  Step 1: Enabling Zero Check (shorts the input)...")
         self.keithley.write(':SYSTem:ZCHeck ON')
-        time.sleep(2) # Wait for relay to settle
+        time.sleep(2)
         print("  Step 2: Acquiring the zero correction value...")
         self.keithley.write(':SYSTem:ZCORrect:ACQuire')
-        time.sleep(3) # Wait for the acquisition to complete
+        time.sleep(3)
         print("  Step 3: Disabling Zero Check...")
         self.keithley.write(':SYSTem:ZCHeck OFF')
         time.sleep(1)
@@ -146,7 +144,7 @@ class Combined_Backend:
         heater_output = self.lakeshore.get_heater_output(1)
 
         resistance = self.keithley.resistance
-        if resistance != 0 and resistance != float('inf') and resistance == resistance: # last check is for NaN
+        if resistance != 0 and resistance != float('inf') and resistance == resistance:
             measured_current = self.params['source_voltage'] / resistance
         else:
             measured_current = 0.0
@@ -168,15 +166,13 @@ class Combined_Backend:
 
 # -------------------------------------------------------------------------------
 class Integrated_RT_GUI:
-    """The main GUI application class."""
-    PROGRAM_VERSION = "3.2"
+    PROGRAM_VERSION = "3.3"
     try:
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
         LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
     except NameError:
         LOGO_FILE_PATH = "../_assets/LOGO/UGC_DAE_CSR.jpeg"
 
-    # --- UI Theme Colors ---
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -187,7 +183,6 @@ class Integrated_RT_GUI:
     CLR_CONSOLE_BG = '#1E2B38'
     CLR_GRAPH_BG = '#FFFFFF'
 
-    # --- UI Fonts ---
     FONT_SIZE_BASE = 11
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_SUB_LABEL = ('Segoe UI', FONT_SIZE_BASE - 2)
@@ -220,10 +215,9 @@ class Integrated_RT_GUI:
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
-        style.configure('TCheckbutton', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
-        style.map('TCheckbutton',
-                  background=[('active', self.CLR_BG_DARK)],
-                  indicatorcolor=[('selected', self.CLR_ACCENT_GOLD), ('!selected', self.CLR_HEADER)])
+
+        style.configure('TCheckbutton', background=self.CLR_GRAPH_BG, foreground=self.CLR_TEXT_DARK, font=self.FONT_BASE)
+        style.map('TCheckbutton', background=[('active', self.CLR_GRAPH_BG)])
 
         style.configure('TButton',
                         font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD,
@@ -255,7 +249,7 @@ class Integrated_RT_GUI:
         left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=500)
         main_pane.add(left_panel, weight=1)
 
-        right_panel = tk.Frame(main_pane, bg='white')
+        right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG) # Changed BG to match graph
         main_pane.add(right_panel, weight=3)
 
         top_controls_frame = ttk.Frame(left_panel)
@@ -276,8 +270,9 @@ class Integrated_RT_GUI:
         Label(header_frame, text="Resistance vs. Temperature Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
-    def _process_logo_image(self, input_path, size=120):
-        if not (PIL_AVAILABLE and os.path.exists(input_path)): return None
+    def _process_logo_image(self, input_path, size=110): # <-- CHANGE: Reduced size
+        if not (PIL_AVAILABLE and os.path.exists(input_path)):
+            return None
         try:
             with Image.open(input_path) as img:
                 img_cropped = img.crop((18, 18, 237, 237))
@@ -287,20 +282,27 @@ class Integrated_RT_GUI:
                 img_cropped.putalpha(mask)
                 img_hd = img_cropped.resize((size, size), Image.Resampling.LANCZOS)
                 return ImageTk.PhotoImage(img_hd)
-        except Exception: return None
+        # --- CHANGE: Added specific exception logging for debugging ---
+        except Exception as e:
+            self.log(f"ERROR: Pillow failed to process logo image. Reason: {e}")
+            return None
 
     def create_info_frame(self, parent):
         frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        frame.pack(pady=(5, 5), padx=10, fill='x')
+        # --- CHANGE: Further reduced vertical padding ---
+        frame.pack(pady=(5, 0), padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
 
-        logo_canvas = Canvas(frame, width=120, height=120, bg=self.CLR_BG_DARK, highlightthickness=0)
+        logo_canvas = Canvas(frame, width=110, height=110, bg=self.CLR_BG_DARK, highlightthickness=0) # <-- CHANGE: Reduced size
         logo_canvas.grid(row=0, column=0, rowspan=2, padx=15, pady=10)
         self.logo_image = self._process_logo_image(self.LOGO_FILE_PATH)
+
         if self.logo_image:
-            logo_canvas.create_image(60, 60, image=self.logo_image)
+            logo_canvas.create_image(55, 55, image=self.logo_image) #<-- CHANGE: Centered in new size
         else:
-            self.log(f"Warning: Could not find logo at '{self.LOGO_FILE_PATH}'")
+            # --- CHANGE: Added print statement for immediate feedback in terminal ---
+            print(f"DEBUG: Logo not found. Checked absolute path: {os.path.normpath(self.LOGO_FILE_PATH)}")
+            self.log(f"Warning: Could not find logo at the specified path.")
 
         info_text = ("Institute: UGC DAE CSR, Mumbai\n"
                      "Instruments:\n"
@@ -310,12 +312,13 @@ class Integrated_RT_GUI:
 
     def create_input_frame(self, parent):
         frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        # --- CHANGE: Reduced vertical padding ---
         frame.pack(pady=5, padx=10, fill='x')
         for i in range(2): frame.grid_columnconfigure(i, weight=1)
 
         self.entries = {}
+        # ... (Entry and Label setup remains the same, no changes here) ...
         pady_val = (5, 5)
-
         Label(frame, text="Sample Name:").grid(row=0, column=0, columnspan=2, padx=10, pady=pady_val, sticky='w')
         self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE)
         self.entries["Sample Name"].grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 10), sticky='ew')
@@ -350,15 +353,12 @@ class Integrated_RT_GUI:
         self.file_button = ttk.Button(frame, text="Browse Save Location...", command=self._browse_file_location)
         self.file_button.grid(row=11, column=0, columnspan=2, padx=10, pady=4, sticky='ew')
 
-        self.log_scale_cb = ttk.Checkbutton(frame, text="Logarithmic Resistance Axis",
-                                            variable=self.log_scale_var,
-                                            command=self._update_y_scale)
-        self.log_scale_cb.grid(row=12, column=0, columnspan=2, padx=10, pady=8, sticky='w')
+        # --- CHANGE: Checkbox is now created in create_graph_frame ---
 
         self.start_button = ttk.Button(frame, text="Start Measurement", command=self.start_measurement, style='Start.TButton')
-        self.start_button.grid(row=13, column=0, padx=10, pady=(5, 10), sticky='ew')
+        self.start_button.grid(row=13, column=0, padx=10, pady=(10, 10), sticky='ew')
         self.stop_button = ttk.Button(frame, text="Stop", command=self.stop_measurement, style='Stop.TButton', state='disabled')
-        self.stop_button.grid(row=13, column=1, padx=10, pady=(5, 10), sticky='ew')
+        self.stop_button.grid(row=13, column=1, padx=10, pady=(10, 10), sticky='ew')
 
     def create_console_frame(self, parent):
         frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
@@ -372,9 +372,20 @@ class Integrated_RT_GUI:
         graph_container = LabelFrame(parent, text='Live Graphs', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
 
-        self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
-        gs = gridspec.GridSpec(2, 2, figure=self.figure)
+        # --- CHANGE: New frame to hold the checkbox ---
+        top_bar = ttk.Frame(graph_container, style='TFrame')
+        top_bar.pack(side='top', fill='x', pady=(0, 5))
 
+        self.log_scale_cb = ttk.Checkbutton(top_bar, text="Logarithmic Resistance Axis",
+                                            variable=self.log_scale_var,
+                                            command=self._update_y_scale)
+        self.log_scale_cb.pack(side='right', padx=5)
+        # --- END CHANGE ---
+
+        self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
+        self.canvas = FigureCanvasTkAgg(self.figure, graph_container) # Moved canvas creation up
+
+        gs = gridspec.GridSpec(2, 2, figure=self.figure)
         self.ax_main = self.figure.add_subplot(gs[0, :])
         self.ax_sub1 = self.figure.add_subplot(gs[1, 0])
         self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
@@ -383,12 +394,10 @@ class Integrated_RT_GUI:
         self.ax_main.set_title("Resistance vs. Temperature", fontweight='bold')
         self.ax_main.set_ylabel("Resistance (Ω)")
 
-        # <--- FIX: Set the initial scale directly from the variable ---
         if self.log_scale_var.get():
             self.ax_main.set_yscale('log')
         else:
             self.ax_main.set_yscale('linear')
-
         self.ax_main.grid(True, which="both", linestyle='--', alpha=0.6)
 
         self.line_sub1, = self.ax_sub1.plot([], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=3, linestyle='-')
@@ -402,19 +411,17 @@ class Integrated_RT_GUI:
         self.ax_sub2.grid(True, linestyle='--', alpha=0.6)
 
         self.figure.tight_layout(pad=3.0)
-        self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
     def _update_y_scale(self):
-        """Updates the main graph's Y-axis based on the checkbox state."""
         if self.log_scale_var.get():
             self.ax_main.set_yscale('log')
         else:
             self.ax_main.set_yscale('linear')
-        # Redraw the canvas to apply the change
         self.canvas.draw()
 
     def log(self, message):
+        # ... (method remains unchanged)
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.console_widget.config(state='normal')
         self.console_widget.insert('end', f"[{timestamp}] {message}\n")
@@ -422,7 +429,7 @@ class Integrated_RT_GUI:
         self.console_widget.config(state='disabled')
 
     def start_measurement(self):
-        # This method remains unchanged
+        # ... (method remains unchanged)
         try:
             params = {
                 'sample_name': self.entries["Sample Name"].get(),
@@ -439,37 +446,30 @@ class Integrated_RT_GUI:
                 raise ValueError("All fields, VISA addresses, and save location are required.")
             if not (params['start_temp'] < params['end_temp'] < params['cutoff']):
                 raise ValueError("Temperatures must be in order: start < end < cutoff.")
-
             self.backend.initialize_instruments(params)
             self.log(f"Backend initialized for sample: {params['sample_name']}")
-
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             file_name = f"{params['sample_name']}_{ts}_RT.dat"
             self.data_filepath = os.path.join(self.file_location_path, file_name)
-
             with open(self.data_filepath, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([f"# Sample: {params['sample_name']}", f"Source V: {params['source_voltage']}V"])
-                writer.writerow(["Timestamp", "Elapsed Time (s)", "Temperature (K)", "Heater Output (%)",
-                                 "Applied Voltage (V)", "Measured Current (A)", "Resistance (Ohm)"])
+                writer.writerow(["Timestamp", "Elapsed Time (s)", "Temperature (K)", "Heater Output (%)", "Applied Voltage (V)", "Measured Current (A)", "Resistance (Ohm)"])
             self.log(f"Output file created: {os.path.basename(self.data_filepath)}")
-
             self.is_stabilizing, self.is_running = True, False
             self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
             for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_data([], [])
             self.ax_main.set_title(f"R-T Curve: {params['sample_name']}", fontweight='bold')
             self.canvas.draw()
-
             self.log("Starting stabilization process...")
             self.root.after(1000, self._stabilization_loop)
-
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
             messagebox.showerror("Initialization Error", f"Could not start measurement.\n{e}")
 
     def stop_measurement(self):
-        # This method remains unchanged
+        # ... (method remains unchanged)
         if self.is_running or self.is_stabilizing:
             self.is_running, self.is_stabilizing = False, False
             self.log("Measurement stopped by user.")
@@ -478,7 +478,7 @@ class Integrated_RT_GUI:
             messagebox.showinfo("Info", "Measurement stopped and instruments disconnected.")
 
     def _stabilization_loop(self):
-        # This method remains unchanged
+        # ... (method remains unchanged)
         if not self.is_stabilizing: return
         try:
             params = self.backend.params
@@ -500,7 +500,7 @@ class Integrated_RT_GUI:
             self.log(f"ERROR during stabilization: {e}"); self.stop_measurement()
 
     def _start_ramp_and_measurement(self):
-        # This method remains unchanged
+        # ... (method remains unchanged)
         params = self.backend.params
         self.backend.lakeshore.setup_ramp(1, params['rate'])
         self.backend.lakeshore.set_setpoint(1, params['end_temp'])
@@ -511,7 +511,7 @@ class Integrated_RT_GUI:
         self.root.after(1000, self._update_measurement_loop)
 
     def _update_measurement_loop(self):
-        # This method remains unchanged
+        # ... (method remains unchanged)
         if not self.is_running: return
         try:
             temp, htr, cur, res = self.backend.get_measurement()
@@ -519,11 +519,7 @@ class Integrated_RT_GUI:
             self.log(f"T: {temp:.4f} K | R: {res:.4e} Ω | I: {cur:.4e} A | V: {self.backend.params['source_voltage']} V | Time: {elapsed:.2f} s")
             with open(self.data_filepath, 'a', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow([
-                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}",
-                    f"{temp:.4f}", f"{htr:.2f}", f"{self.backend.params['source_voltage']:.4e}",
-                    f"{cur:.4e}", f"{res:.4e}"
-                ])
+                writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}", f"{htr:.2f}", f"{self.backend.params['source_voltage']:.4e}", f"{cur:.4e}", f"{res:.4e}"])
             self.data_storage['time'].append(elapsed)
             self.data_storage['temperature'].append(temp)
             self.data_storage['current'].append(cur)
@@ -548,7 +544,7 @@ class Integrated_RT_GUI:
             self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement()
 
     def _scan_for_visa_instruments(self):
-        # This method remains unchanged
+        # ... (method remains unchanged)
         if not pyvisa: self.log("ERROR: PyVISA is not installed."); return
         try:
             rm = pyvisa.ResourceManager()
@@ -567,12 +563,12 @@ class Integrated_RT_GUI:
             self.log(f"ERROR during VISA scan: {e}")
 
     def _browse_file_location(self):
-        # This method remains unchanged
+        # ... (method remains unchanged)
         path = filedialog.askdirectory()
         if path: self.file_location_path = path; self.log(f"Save location: {path}")
 
     def _on_closing(self):
-        # This method remains unchanged
+        # ... (method remains unchanged)
         if self.is_running or self.is_stabilizing:
             if messagebox.askyesno("Exit", "Measurement running. Stop and exit?"):
                 self.stop_measurement(); self.root.destroy()
