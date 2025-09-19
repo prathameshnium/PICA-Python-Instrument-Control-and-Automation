@@ -1,51 +1,12 @@
-'''
-File:         resistance_vs_temperature.py
-Author:       Prathamesh Deshmukh
-Date:         17/09/2025
-Version:      3.0
-
-Description:
-This script automates a Resistance vs. Temperature (R-T) experiment by
-integrating a Lakeshore Model 350 Temperature Controller and a Keithley
-Model 6517B Electrometer.
-
-The program first establishes connections to both instruments. It then prompts
-the user for all necessary experiment parameters, including the temperature
-range (start, end, safety cutoff), ramp rate, and the constant voltage to be
-applied by the Keithley for resistance measurement.
-
-The script executes the following sequence:
-1.  Performs a zero-check and correction on the Keithley for accurate readings.
-2.  Ramps the temperature to the specified starting point and waits for it
-    to stabilize.
-3.  Initiates a linear temperature ramp using the Lakeshore controller.
-4.  During the ramp, it continuously measures the sample's resistance using
-    the Keithley at fixed intervals.
-5.  Logs the timestamp, elapsed time, temperature, heater output, applied
-    voltage, measured current, and calculated resistance to a user-selected
-    CSV file.
-6.  Provides a live, dual-panel plot showing both Temperature vs. Time and
-    Resistance vs. Temperature, giving immediate feedback on the
-    experiment's progress.
-
-The program is designed for robustness, ensuring that both instruments are
-safely shut down (heater off, voltage source off) upon normal completion,
-user interruption (Ctrl+C), or any unexpected error.
-
-Dependencies:
-- pyvisa: For instrument communication.
-- pymeasure: For the Keithley 6517B instrument driver.
-- matplotlib: For live data plotting.
-- tkinter: For the graphical file-save dialog.
-- A VISA backend (e.g., NI-VISA) must be installed.
-'''
-
 #-------------------------------------------------------------------------------
-# Name:          Integrated R-T Measurement Control
-# Purpose:       Automate and log a Resistance vs. Temperature measurement.
-# Changes_done:  V3.0 - Merged Lakeshore 350 ramp control with Keithley 6517B
-#                resistance measurement. Added dual live plotting and robust
-#                two-instrument error handling.
+# Name:           Integrated R-T Measurement Control
+# Purpose:        Automate and log a Resistance vs. Temperature measurement.
+# Author:         Prathamesh Deshmukh
+# Date:           19/09/2025
+# Version:        3.1 (Gemini-Enhanced Heating Logic)
+# Changes_done:   V3.1 - Incorporated active heating/cooling logic for the
+#                 stabilization phase from the GUI version for faster and
+#                 more robust temperature settling.
 #-------------------------------------------------------------------------------
 
 import pyvisa
@@ -78,7 +39,6 @@ MAX_HEATER_CURRENT_CODE = 2 # 1=0.707A, 2=1A, 3=1.414A, 4=1.732A
 
 class Lakeshore350:
     """A class to control the Lakeshore Model 350 Temperature Controller."""
-    # This class remains unchanged from the original script to preserve backend commands.
     def __init__(self, visa_address):
         self.instrument = None
         try:
@@ -124,7 +84,8 @@ class Lakeshore350:
             raise ValueError("Invalid heater range. Must be 'off', 'low', 'medium', or 'high'.")
         range_code = range_map[heater_range.lower()]
         command = f'RANGE {output},{range_code}'
-        print(f"Setting heater range: {command}")
+        # To avoid spamming the console, we'll only print this when it's a meaningful change
+        # print(f"Setting heater range: {command}")
         self.instrument.write(command)
 
     def get_temperature(self, sensor):
@@ -157,6 +118,7 @@ class Lakeshore350:
             finally:
                 self.instrument = None
 
+
 def get_user_parameters():
     """Prompts the user for all experiment parameters and validates them."""
     print("\n--- Experiment Configuration ---")
@@ -187,19 +149,18 @@ def get_user_parameters():
 def perform_keithley_zero_check(keithley):
     """Performs the zero check and correction procedure on the Keithley 6517B."""
     print("\n--- Starting Keithley Zero Correction ---")
-    # Backend commands are preserved from the original Keithley script.
     keithley.reset()
-    keithley.measure_resistance() # Configure ammeter for zero correction
-    print("Step 1: Enabling Zero Check mode...")
+    keithley.measure_resistance()
+    print("Step 1: Enabling Zero Check mode (shorts the input)...")
     keithley.write(':SYSTem:ZCHeck ON')
     time.sleep(2)
     print("Step 2: Acquiring zero correction value...")
-    # keithley.write(':SYSTem:ZCORrect:ACQuire') # This command can be instrument specific, using the driver's method is safer
-    time.sleep(2)
+    keithley.write(':SYSTem:ZCORrect:ACQuire')
+    time.sleep(3)
     print("Step 3: Disabling Zero Check mode...")
     keithley.write(':SYSTem:ZCHeck OFF')
     time.sleep(1)
-    print("Step 4: Enabling Zero Correction...")
+    print("Step 4: Enabling Zero Correction for all measurements...")
     keithley.write(':SYSTem:ZCORrect ON')
     time.sleep(1)
     print("Zero Correction Complete.")
@@ -207,7 +168,6 @@ def perform_keithley_zero_check(keithley):
 # --- Main Program Execution ---
 def main():
     """Main function to run the R-T experiment."""
-    # --- 1. Get User Input and Filename ---
     root = tk.Tk()
     root.withdraw()
     filename = filedialog.asksaveasfilename(
@@ -225,7 +185,7 @@ def main():
     lakeshore = None
     keithley = None
     try:
-        # --- 2. Initialize Instruments ---
+        # --- Initialize Instruments ---
         lakeshore = Lakeshore350(LAKESHORE_VISA)
         lakeshore.reset_and_clear()
         lakeshore.setup_heater(HEATER_OUTPUT, HEATER_RESISTANCE_CODE, MAX_HEATER_CURRENT_CODE)
@@ -235,57 +195,58 @@ def main():
         print(f"Successfully connected to: {keithley.id}")
         perform_keithley_zero_check(keithley)
 
-        # Configure Keithley for the measurement
         keithley.source_voltage = source_voltage
-        keithley.current_nplc = 1 # Integration rate for noise reduction
+        keithley.current_nplc = 1
         keithley.enable_source()
         print(f"\nKeithley source enabled and set to {source_voltage} V.")
 
-        # --- 3. Setup Live Plot ---
+        # --- Setup Live Plot ---
         plt.ion()
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8))
         fig.suptitle('Live R-T Measurement', fontsize=16)
-
-        # Plot 1: Temperature vs. Time
         line1, = ax1.plot([], [], 'b-o', markersize=3)
         ax1.set_xlabel('Elapsed Time (s)')
         ax1.set_ylabel('Temperature (K)')
         ax1.set_title('Temperature Ramp Profile')
         ax1.grid(True, linestyle=':')
-
-        # Plot 2: Resistance vs. Temperature
         line2, = ax2.plot([], [], 'r-s', markersize=3)
         ax2.set_xlabel('Temperature (K)')
         ax2.set_ylabel('Resistance (Ω)')
         ax2.set_title('Resistance vs. Temperature')
         ax2.grid(True, linestyle=':')
-        ax2.set_yscale('log') # Resistance often spans orders of magnitude
-        fig.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout for main title
-
+        ax2.set_yscale('log')
+        fig.tight_layout(rect=[0, 0.03, 1, 0.95])
         time_data, temp_data, res_data = [], [], []
 
-        # --- 4. Go to Start Temperature and Stabilize ---
-        print(f"\nMoving to start temperature of {start_temp} K...")
-        lakeshore.set_setpoint(HEATER_OUTPUT, start_temp)
-        lakeshore.set_heater_range(HEATER_OUTPUT, 'medium')
-
+        # --- NEW: Go to Start Temp and Stabilize with Active Control ---
+        print(f"\nMoving to start temperature of {start_temp} K using active control...")
         while True:
             current_temp = lakeshore.get_temperature(SENSOR_INPUT)
-            print(f"Stabilizing... Current Temp: {current_temp:.4f} K", end='\r')
-            if abs(current_temp - start_temp) < 0.1: # Stabilization tolerance
-                print(f"\nStabilized at {start_temp} K. Waiting 5 seconds before starting ramp.")
+
+            # Active heating/cooling logic
+            if current_temp > start_temp + 0.2:  # System is too warm
+                print(f"Cooling... Current: {current_temp:.4f} K > Target: {start_temp} K", end='\r')
+                lakeshore.set_heater_range(HEATER_OUTPUT, 'off')
+            else:  # System is too cold or within tolerance
+                print(f"Heating... Current: {current_temp:.4f} K <= Target: {start_temp} K", end='\r')
+                lakeshore.set_heater_range(HEATER_OUTPUT, 'medium')
+                lakeshore.set_setpoint(HEATER_OUTPUT, start_temp)
+
+            # Check for stabilization
+            if abs(current_temp - start_temp) < 0.1:  # Stabilization tolerance
+                print(f"\nStabilized at {current_temp:.4f} K. Waiting 5 seconds before starting ramp.")
                 time.sleep(5)
                 break
-            time.sleep(2)
+            time.sleep(2) # Interval for checking stabilization status
 
-        # --- 5. Start Ramp and Data Logging ---
+        # --- Start Ramp and Data Logging ---
         lakeshore.setup_ramp(HEATER_OUTPUT, rate)
         lakeshore.set_setpoint(HEATER_OUTPUT, end_temp)
+        lakeshore.set_heater_range(HEATER_OUTPUT, 'medium') # Ensure heater is on for the ramp
         print(f"Ramp started towards {end_temp} K at {rate} K/min.")
 
         start_time = time.time()
 
-        # Write header to CSV
         with open(filename, 'w', newline='') as file:
             writer = csv.writer(file)
             writer.writerow([
@@ -293,19 +254,16 @@ def main():
                 "Applied Voltage (V)", "Measured Current (A)", "Resistance (Ohm)"
             ])
 
-        # Main experiment loop
+        # --- Main experiment loop ---
         while True:
-            # Get data from Lakeshore
             elapsed_time = time.time() - start_time
             current_temp = lakeshore.get_temperature(SENSOR_INPUT)
             heater_output = lakeshore.get_heater_output(HEATER_OUTPUT)
 
-            # Get data from Keithley
             time.sleep(delay)
             measured_current = keithley.current
             resistance = abs(source_voltage / measured_current) if measured_current != 0 else float('inf')
 
-            # Print status
             status_str = (
                 f"Time: {elapsed_time:7.2f}s | "
                 f"Temp: {current_temp:8.4f}K | "
@@ -313,7 +271,6 @@ def main():
             )
             print(status_str, end='\r')
 
-            # Log data to CSV
             with open(filename, 'a', newline='') as file:
                 writer = csv.writer(file)
                 writer.writerow([
@@ -322,33 +279,26 @@ def main():
                     f"{source_voltage:.4e}", f"{measured_current:.4e}", f"{resistance:.4e}"
                 ])
 
-            # Update plot data
             time_data.append(elapsed_time)
             temp_data.append(current_temp)
             res_data.append(resistance)
 
-            # Update Temperature vs. Time plot
             line1.set_data(time_data, temp_data)
-            ax1.relim()
-            ax1.autoscale_view()
-
-            # Update Resistance vs. Temperature plot
+            ax1.relim(); ax1.autoscale_view()
             line2.set_data(temp_data, res_data)
-            ax2.relim()
-            ax2.autoscale_view()
+            ax2.relim(); ax2.autoscale_view()
+            fig.canvas.draw(); fig.canvas.flush_events()
 
-            fig.canvas.draw()
-            fig.canvas.flush_events()
-
-            # --- 6. Check for End Conditions ---
+            # --- Check for End Conditions ---
             if current_temp >= safety_cutoff:
                 print(f"\n\n!!! SAFETY CUTOFF REACHED at {current_temp:.4f} K (Limit: {safety_cutoff} K) !!!")
                 break
             if current_temp >= end_temp:
                 print(f"\n\nTarget temperature of {end_temp} K reached.")
                 break
-
-            time.sleep(2) # Data logging interval
+            
+            # The main data logging interval. Should be independent of Keithley delay.
+            time.sleep(2)
 
     except ConnectionError as e:
         print(f"\nCould not start experiment due to a connection failure: {e}")
@@ -357,16 +307,16 @@ def main():
     except Exception as e:
         print(f"\n\nAn unexpected error occurred: {e}")
     finally:
-        # --- 7. Guaranteed Safe Shutdown ---
+        # --- Guaranteed Safe Shutdown ---
         print("\n--- Initiating Safe Shutdown of All Instruments ---")
         if keithley:
-            keithley.shutdown() # Turns off voltage source and closes connection
+            keithley.shutdown()
             print("Keithley voltage source is OFF and connection is closed.")
         if lakeshore:
-            lakeshore.close() # Turns off heater and closes connection
+            lakeshore.close()
 
         plt.ioff()
-        print("\nExperiment finished. Data saved to '{}'.".format(filename))
+        print(f"\nExperiment finished. Data saved to '{filename}'.")
         print("Plot window can now be closed.")
         plt.show()
 
