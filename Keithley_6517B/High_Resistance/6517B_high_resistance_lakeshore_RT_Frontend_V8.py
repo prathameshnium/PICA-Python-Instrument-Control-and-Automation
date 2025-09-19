@@ -2,10 +2,11 @@
 # Name:           Integrated R-T Measurement GUI (Zero Corrected)
 # Purpose:        Provide a graphical user interface for the combined Lakeshore 350
 #                 and Keithley 6517B Resistance vs. Temperature experiment.
-# Author:         Prathamesh Deshmukh (Zero Correction by Gemini)
+# Author:         Prathamesh Deshmukh
 # Created:        18/09/2025
-# Version:        V: 2.7 (Fixed Zero Correction Logic)
+# Version:        V: 3.2 (Fixed Canvas Initialization Order)
 # -------------------------------------------------------------------------------
+
 
 # --- Packages for Front end ---
 import tkinter as tk
@@ -24,6 +25,7 @@ import matplotlib as mpl
 try:
     from PIL import Image, ImageTk, ImageDraw
     PIL_AVAILABLE = True
+
 except ImportError:
     PIL_AVAILABLE = False
 
@@ -33,6 +35,7 @@ try:
     from pymeasure.instruments.keithley import Keithley6517B
     from pyvisa.errors import VisaIOError
     PYMEASURE_AVAILABLE = True
+
 except ImportError:
     pyvisa = None
     Keithley6517B = None
@@ -40,7 +43,9 @@ except ImportError:
     PYMEASURE_AVAILABLE = False
 
 # -------------------------------------------------------------------------------
-# --- BACKEND INSTRUMENT CONTROL ---
+
+# --- BACKEND INSTRUMENT CONTROL (UNCHANGED) ---
+
 # -------------------------------------------------------------------------------
 
 class Lakeshore350_Backend:
@@ -90,6 +95,7 @@ class Lakeshore350_Backend:
             finally:
                 self.instrument = None
 
+
 class Combined_Backend:
     """Manages both the Lakeshore 350 and Keithley 6517B."""
     def __init__(self):
@@ -122,30 +128,19 @@ class Combined_Backend:
         print("  Step 1: Enabling Zero Check (shorts the input)...")
         self.keithley.write(':SYSTem:ZCHeck ON')
         time.sleep(2) # Wait for relay to settle
-
-        # --- FIX START ---
-        # This is the crucial command that was missing. It tells the instrument
-        # to take a measurement while the input is shorted and store it as the zero offset.
         print("  Step 2: Acquiring the zero correction value...")
         self.keithley.write(':SYSTem:ZCORrect:ACQuire')
         time.sleep(3) # Wait for the acquisition to complete
-        # --- FIX END ---
-
         print("  Step 3: Disabling Zero Check...")
         self.keithley.write(':SYSTem:ZCHeck OFF')
         time.sleep(1)
-
         print("  Step 4: Enabling Zero Correction for all measurements...")
-        #self.keithley.write(':SYSTem:ZCORrect ON')
+        self.keithley.write(':SYSTem:ZCORrect ON')
         time.sleep(1)
         print("  Zero Correction Complete.")
 
 
     def get_measurement(self):
-        """
-        Gets a single synchronised reading from both instruments.
-        Measures resistance and calculates current.
-        """
         time.sleep(self.params['delay'])
         current_temp = self.lakeshore.get_temperature('A')
         heater_output = self.lakeshore.get_heater_output(1)
@@ -159,7 +154,6 @@ class Combined_Backend:
         return current_temp, heater_output, measured_current, resistance
 
     def close_instruments(self):
-        """Safely shuts down both instruments."""
         print("\n--- [Backend] Closing all instrument connections. ---")
         if self.keithley:
             self.keithley.shutdown()
@@ -169,19 +163,31 @@ class Combined_Backend:
             print("  Lakeshore connection closed and heater OFF.")
 
 # -------------------------------------------------------------------------------
+
 # --- FRONT END (GUI) ---
+
 # -------------------------------------------------------------------------------
 class Integrated_RT_GUI:
     """The main GUI application class."""
-    PROGRAM_VERSION = "2.7"
+    PROGRAM_VERSION = "3.2"
+    try:
+        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
+    except NameError:
+        LOGO_FILE_PATH = "../_assets/LOGO/UGC_DAE_CSR.jpeg"
+
+    # --- UI Theme Colors ---
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
-    CLR_ACCENT_BLUE = '#8D99AE'
+    CLR_TEXT_DARK = '#1A1A1A'
+    CLR_ACCENT_GOLD = '#FFC107'
     CLR_ACCENT_GREEN = '#A7C957'
-    CLR_ACCENT_RED = '#EF233C'
+    CLR_ACCENT_RED = '#E74C3C'
     CLR_CONSOLE_BG = '#1E2B38'
     CLR_GRAPH_BG = '#FFFFFF'
+
+    # --- UI Fonts ---
     FONT_SIZE_BASE = 11
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_SUB_LABEL = ('Segoe UI', FONT_SIZE_BASE - 2)
@@ -202,22 +208,40 @@ class Integrated_RT_GUI:
         self.file_location_path = ""
         self.data_storage = {'time': [], 'temperature': [], 'current': [], 'resistance': []}
 
+        self.log_scale_var = tk.BooleanVar(value=True)
+
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def setup_styles(self):
-        """Configures ttk styles and Matplotlib for a modern look."""
         style = ttk.Style(self.root)
         style.theme_use('clam')
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
-        style.configure('TButton', font=self.FONT_BASE, padding=(10, 8))
-        style.map('TButton', foreground=[('!active', self.CLR_BG_DARK), ('active', self.CLR_FG_LIGHT)],
-                  background=[('!active', self.CLR_ACCENT_BLUE), ('active', self.CLR_BG_DARK)])
-        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN)
-        style.configure('Stop.TButton', background=self.CLR_ACCENT_RED)
+        style.configure('TCheckbutton', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
+        style.map('TCheckbutton',
+                  background=[('active', self.CLR_BG_DARK)],
+                  indicatorcolor=[('selected', self.CLR_ACCENT_GOLD), ('!selected', self.CLR_HEADER)])
+
+        style.configure('TButton',
+                        font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD,
+                        background=self.CLR_HEADER, borderwidth=0, focusthickness=0, focuscolor='none')
+        style.map('TButton',
+                  background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)],
+                  foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
+
+        style.configure('Start.TButton',
+                        font=self.FONT_BASE, padding=(10, 9), background=self.CLR_ACCENT_GREEN,
+                        foreground=self.CLR_TEXT_DARK)
+        style.map('Start.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
+
+        style.configure('Stop.TButton',
+                        font=self.FONT_BASE, padding=(10, 9), background=self.CLR_ACCENT_RED,
+                        foreground=self.CLR_FG_LIGHT)
+        style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
+
         mpl.rcParams['font.family'] = 'Segoe UI'
         mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
         mpl.rcParams['axes.titlesize'] = self.FONT_SIZE_BASE + 4
@@ -227,16 +251,23 @@ class Integrated_RT_GUI:
         self.create_header()
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
+
         left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=500)
         main_pane.add(left_panel, weight=1)
+
         right_panel = tk.Frame(main_pane, bg='white')
         main_pane.add(right_panel, weight=3)
+
         top_controls_frame = ttk.Frame(left_panel)
         left_panel.add(top_controls_frame, weight=0)
+
+        console_pane = self.create_console_frame(left_panel)
+
         self.create_info_frame(top_controls_frame)
         self.create_input_frame(top_controls_frame)
-        console_pane = self.create_console_frame(left_panel)
+
         left_panel.add(console_pane, weight=1)
+
         self.create_graph_frame(right_panel)
 
     def create_header(self):
@@ -260,13 +291,16 @@ class Integrated_RT_GUI:
 
     def create_info_frame(self, parent):
         frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        frame.pack(pady=(10, 10), padx=10, fill='x')
+        frame.pack(pady=(5, 5), padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
 
         logo_canvas = Canvas(frame, width=120, height=120, bg=self.CLR_BG_DARK, highlightthickness=0)
         logo_canvas.grid(row=0, column=0, rowspan=2, padx=15, pady=10)
-        self.logo_image = self._process_logo_image("UGC_DAE_CSR.jpeg")
-        if self.logo_image: logo_canvas.create_image(60, 60, image=self.logo_image)
+        self.logo_image = self._process_logo_image(self.LOGO_FILE_PATH)
+        if self.logo_image:
+            logo_canvas.create_image(60, 60, image=self.logo_image)
+        else:
+            self.log(f"Warning: Could not find logo at '{self.LOGO_FILE_PATH}'")
 
         info_text = ("Institute: UGC DAE CSR, Mumbai\n"
                      "Instruments:\n"
@@ -276,65 +310,55 @@ class Integrated_RT_GUI:
 
     def create_input_frame(self, parent):
         frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        frame.pack(pady=10, padx=10, fill='x')
+        frame.pack(pady=5, padx=10, fill='x')
         for i in range(2): frame.grid_columnconfigure(i, weight=1)
 
         self.entries = {}
         pady_val = (5, 5)
 
-        # Row 0: Sample Name
         Label(frame, text="Sample Name:").grid(row=0, column=0, columnspan=2, padx=10, pady=pady_val, sticky='w')
         self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE)
         self.entries["Sample Name"].grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 10), sticky='ew')
-
-        # Row 2: Temperature Params
         Label(frame, text="Start Temp (K):").grid(row=2, column=0, padx=10, pady=pady_val, sticky='w')
         self.entries["Start Temp"] = Entry(frame, font=self.FONT_BASE)
         self.entries["Start Temp"].grid(row=3, column=0, padx=(10,5), pady=(0,5), sticky='ew')
-
         Label(frame, text="End Temp (K):").grid(row=2, column=1, padx=10, pady=pady_val, sticky='w')
         self.entries["End Temp"] = Entry(frame, font=self.FONT_BASE)
         self.entries["End Temp"].grid(row=3, column=1, padx=(5,10), pady=(0,5), sticky='ew')
-
-        # Row 4: Rate and Cutoff
         Label(frame, text="Ramp Rate (K/min):").grid(row=4, column=0, padx=10, pady=pady_val, sticky='w')
         self.entries["Rate"] = Entry(frame, font=self.FONT_BASE)
         self.entries["Rate"].grid(row=5, column=0, padx=(10,5), pady=(0,10), sticky='ew')
-
         Label(frame, text="Safety Cutoff (K):").grid(row=4, column=1, padx=10, pady=pady_val, sticky='w')
         self.entries["Cutoff"] = Entry(frame, font=self.FONT_BASE)
         self.entries["Cutoff"].grid(row=5, column=1, padx=(5,10), pady=(0,10), sticky='ew')
-
-        # Row 6: Keithley Params
         Label(frame, text="Source Voltage (V):").grid(row=6, column=0, padx=10, pady=pady_val, sticky='w')
         self.entries["Source Voltage"] = Entry(frame, font=self.FONT_BASE)
         self.entries["Source Voltage"].grid(row=7, column=0, padx=(10,5), pady=(0,5), sticky='ew')
-
         Label(frame, text="Settling Delay (s):").grid(row=6, column=1, padx=10, pady=pady_val, sticky='w')
         self.entries["Delay"] = Entry(frame, font=self.FONT_BASE)
         self.entries["Delay"].grid(row=7, column=1, padx=(5,10), pady=(0,5), sticky='ew')
         self.entries["Delay"].insert(0, "0.5")
-
-        # Row 8: VISA Addresses
         Label(frame, text="Lakeshore VISA:").grid(row=8, column=0, padx=10, pady=pady_val, sticky='w')
         self.lakeshore_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
         self.lakeshore_cb.grid(row=9, column=0, padx=(10,5), pady=(0,10), sticky='ew')
-
         Label(frame, text="Keithley VISA:").grid(row=8, column=1, padx=10, pady=pady_val, sticky='w')
         self.keithley_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
         self.keithley_cb.grid(row=9, column=1, padx=(5,10), pady=(0,10), sticky='ew')
 
-        # Row 10: Buttons
         self.scan_button = ttk.Button(frame, text="Scan for Instruments", command=self._scan_for_visa_instruments)
-        self.scan_button.grid(row=10, column=0, columnspan=2, padx=10, pady=5, sticky='ew')
-
+        self.scan_button.grid(row=10, column=0, columnspan=2, padx=10, pady=4, sticky='ew')
         self.file_button = ttk.Button(frame, text="Browse Save Location...", command=self._browse_file_location)
-        self.file_button.grid(row=11, column=0, columnspan=2, padx=10, pady=5, sticky='ew')
+        self.file_button.grid(row=11, column=0, columnspan=2, padx=10, pady=4, sticky='ew')
+
+        self.log_scale_cb = ttk.Checkbutton(frame, text="Logarithmic Resistance Axis",
+                                            variable=self.log_scale_var,
+                                            command=self._update_y_scale)
+        self.log_scale_cb.grid(row=12, column=0, columnspan=2, padx=10, pady=8, sticky='w')
 
         self.start_button = ttk.Button(frame, text="Start Measurement", command=self.start_measurement, style='Start.TButton')
-        self.start_button.grid(row=12, column=0, padx=10, pady=15, sticky='ew')
+        self.start_button.grid(row=13, column=0, padx=10, pady=(5, 10), sticky='ew')
         self.stop_button = ttk.Button(frame, text="Stop", command=self.stop_measurement, style='Stop.TButton', state='disabled')
-        self.stop_button.grid(row=12, column=1, padx=10, pady=15, sticky='ew')
+        self.stop_button.grid(row=13, column=1, padx=10, pady=(5, 10), sticky='ew')
 
     def create_console_frame(self, parent):
         frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
@@ -358,10 +382,16 @@ class Integrated_RT_GUI:
         self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-')
         self.ax_main.set_title("Resistance vs. Temperature", fontweight='bold')
         self.ax_main.set_ylabel("Resistance (Ω)")
-        self.ax_main.set_yscale('log')
+
+        # <--- FIX: Set the initial scale directly from the variable ---
+        if self.log_scale_var.get():
+            self.ax_main.set_yscale('log')
+        else:
+            self.ax_main.set_yscale('linear')
+
         self.ax_main.grid(True, which="both", linestyle='--', alpha=0.6)
 
-        self.line_sub1, = self.ax_sub1.plot([], [], color=self.CLR_ACCENT_BLUE, marker='.', markersize=3, linestyle='-')
+        self.line_sub1, = self.ax_sub1.plot([], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=3, linestyle='-')
         self.ax_sub1.set_xlabel("Temperature (K)")
         self.ax_sub1.set_ylabel("Current (A)")
         self.ax_sub1.grid(True, linestyle='--', alpha=0.6)
@@ -375,6 +405,15 @@ class Integrated_RT_GUI:
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
+    def _update_y_scale(self):
+        """Updates the main graph's Y-axis based on the checkbox state."""
+        if self.log_scale_var.get():
+            self.ax_main.set_yscale('log')
+        else:
+            self.ax_main.set_yscale('linear')
+        # Redraw the canvas to apply the change
+        self.canvas.draw()
+
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.console_widget.config(state='normal')
@@ -383,6 +422,7 @@ class Integrated_RT_GUI:
         self.console_widget.config(state='disabled')
 
     def start_measurement(self):
+        # This method remains unchanged
         try:
             params = {
                 'sample_name': self.entries["Sample Name"].get(),
@@ -429,6 +469,7 @@ class Integrated_RT_GUI:
             messagebox.showerror("Initialization Error", f"Could not start measurement.\n{e}")
 
     def stop_measurement(self):
+        # This method remains unchanged
         if self.is_running or self.is_stabilizing:
             self.is_running, self.is_stabilizing = False, False
             self.log("Measurement stopped by user.")
@@ -437,49 +478,45 @@ class Integrated_RT_GUI:
             messagebox.showinfo("Info", "Measurement stopped and instruments disconnected.")
 
     def _stabilization_loop(self):
+        # This method remains unchanged
         if not self.is_stabilizing: return
         try:
             params = self.backend.params
             current_temp = self.backend.lakeshore.get_temperature('A')
-
-            # Dynamic Heating/Cooling Logic
-            if current_temp > params['start_temp'] + 0.2: # System is too warm
+            if current_temp > params['start_temp'] + 0.2:
                 self.log(f"Cooling... Current: {current_temp:.4f} K > Target: {params['start_temp']} K")
                 self.backend.lakeshore.set_heater_range(1, 'off')
-            else: # System is too cold or within tolerance
+            else:
                 self.log(f"Heating... Current: {current_temp:.4f} K <= Target: {params['start_temp']} K")
                 self.backend.lakeshore.set_heater_range(1, 'medium')
                 self.backend.lakeshore.set_setpoint(1, params['start_temp'])
-
-            # Check for stabilization
             if abs(current_temp - params['start_temp']) < 0.1:
                 self.log(f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
                 self.is_stabilizing = False
                 self.root.after(5000, self._start_ramp_and_measurement)
             else:
-                self.root.after(2000, self._stabilization_loop) # Continue loop if not stable
+                self.root.after(2000, self._stabilization_loop)
         except Exception as e:
             self.log(f"ERROR during stabilization: {e}"); self.stop_measurement()
 
     def _start_ramp_and_measurement(self):
+        # This method remains unchanged
         params = self.backend.params
         self.backend.lakeshore.setup_ramp(1, params['rate'])
         self.backend.lakeshore.set_setpoint(1, params['end_temp'])
         self.backend.lakeshore.set_heater_range(1, 'medium')
         self.log(f"Ramp started towards {params['end_temp']} K at {params['rate']} K/min. Heater set to 'medium'.")
-
         self.is_running = True
         self.start_time = time.time()
         self.root.after(1000, self._update_measurement_loop)
 
     def _update_measurement_loop(self):
+        # This method remains unchanged
         if not self.is_running: return
         try:
             temp, htr, cur, res = self.backend.get_measurement()
             elapsed = time.time() - self.start_time
-
             self.log(f"T: {temp:.4f} K | R: {res:.4e} Ω | I: {cur:.4e} A | V: {self.backend.params['source_voltage']} V | Time: {elapsed:.2f} s")
-
             with open(self.data_filepath, 'a', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([
@@ -487,21 +524,17 @@ class Integrated_RT_GUI:
                     f"{temp:.4f}", f"{htr:.2f}", f"{self.backend.params['source_voltage']:.4e}",
                     f"{cur:.4e}", f"{res:.4e}"
                 ])
-
             self.data_storage['time'].append(elapsed)
             self.data_storage['temperature'].append(temp)
             self.data_storage['current'].append(cur)
             self.data_storage['resistance'].append(res)
-
             self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
             self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['current'])
             self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
-
             for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
                 ax.relim(); ax.autoscale_view()
             self.figure.tight_layout(pad=3.0)
             self.canvas.draw()
-
             if temp >= self.backend.params['cutoff']:
                 self.log(f"!!! SAFETY CUTOFF REACHED at {temp:.4f} K !!!")
                 self.stop_measurement()
@@ -511,11 +544,11 @@ class Integrated_RT_GUI:
             else:
                 loop_delay_ms = max(1000, int(self.backend.params['delay'] * 1000))
                 self.root.after(loop_delay_ms, self._update_measurement_loop)
-
         except Exception as e:
             self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement()
 
     def _scan_for_visa_instruments(self):
+        # This method remains unchanged
         if not pyvisa: self.log("ERROR: PyVISA is not installed."); return
         try:
             rm = pyvisa.ResourceManager()
@@ -525,7 +558,6 @@ class Integrated_RT_GUI:
                 self.log(f"Found: {resources}")
                 self.lakeshore_cb['values'] = resources
                 self.keithley_cb['values'] = resources
-                # Heuristic to set defaults
                 for res in resources:
                     if "15" in res or "12" in res: self.lakeshore_cb.set(res)
                     if "27" in res or "26" in res: self.keithley_cb.set(res)
@@ -535,10 +567,12 @@ class Integrated_RT_GUI:
             self.log(f"ERROR during VISA scan: {e}")
 
     def _browse_file_location(self):
+        # This method remains unchanged
         path = filedialog.askdirectory()
         if path: self.file_location_path = path; self.log(f"Save location: {path}")
 
     def _on_closing(self):
+        # This method remains unchanged
         if self.is_running or self.is_stabilizing:
             if messagebox.askyesno("Exit", "Measurement running. Stop and exit?"):
                 self.stop_measurement(); self.root.destroy()
