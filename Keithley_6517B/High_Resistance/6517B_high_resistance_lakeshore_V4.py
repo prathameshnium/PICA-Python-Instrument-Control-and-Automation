@@ -261,8 +261,8 @@ def main():
             heater_output = lakeshore.get_heater_output(HEATER_OUTPUT)
 
             time.sleep(delay)
-            measured_current = keithley.current
-            resistance = abs(source_voltage / measured_current) if measured_current != 0 else float('inf')
+            resistance = keithley.resistance
+            current = abs(source_voltage / resistance) if resistance != 0 else float('inf')
 
             status_str = (
                 f"Time: {elapsed_time:7.2f}s | "
@@ -276,7 +276,7 @@ def main():
                 writer.writerow([
                     datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     f"{elapsed_time:.2f}", f"{current_temp:.4f}", f"{heater_output:.2f}",
-                    f"{source_voltage:.4e}", f"{measured_current:.4e}", f"{resistance:.4e}"
+                    f"{source_voltage:.4e}", f"{current:.4e}", f"{resistance:.4e}"
                 ])
 
             time_data.append(elapsed_time)
