@@ -127,7 +127,7 @@ class Combined_Backend:
         self.keithley.write(':SYSTem:ZCHeck ON')
         time.sleep(2)
         print("  Step 2: Acquiring the zero correction value...")
-        self.keithley.write(':SYSTem:ZCORrect:ACQuire')
+        #self.keithley.write(':SYSTem:ZCORrect:ACQuire')
         time.sleep(3)
         print("  Step 3: Disabling Zero Check...")
         self.keithley.write(':SYSTem:ZCHeck OFF')
@@ -145,11 +145,11 @@ class Combined_Backend:
 
         resistance = self.keithley.resistance
         if resistance != 0 and resistance != float('inf') and resistance == resistance:
-            measured_current = self.params['source_voltage'] / resistance
+            current = self.params['source_voltage'] / resistance
         else:
-            measured_current = 0.0
+            current = 0.0
 
-        return current_temp, heater_output, measured_current, resistance
+        return current_temp, heater_output, current, resistance
 
     def close_instruments(self):
         print("\n--- [Backend] Closing all instrument connections. ---")
