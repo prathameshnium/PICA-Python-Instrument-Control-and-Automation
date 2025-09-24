@@ -4,6 +4,7 @@
 # Author:       Prathamesh Deshmukh 
 # Created:      17/09/2025
 # Version:      5.1
+#This measures resistance and calculate current
 #-------------------------------------------------------------------------------
 
 import time
@@ -111,9 +112,10 @@ try:
         for i, voltage in enumerate(voltage_sweep):
             keithley.source_voltage = voltage
             time.sleep(delay)
-            current = keithley.current # Measure the current
+            resistance = keithley.resistance
             timestamp = time.time() - start_time
-            resistance = voltage / current if current != 0 else float('inf')
+            #resistance = keithley.resistance
+            current = voltage/resistance if resistance != 0 else float('inf')
 
             print(f"Step {i+1}/{steps}: V={voltage:.3f} V, I={current:.4e} A, R={resistance:.4e} Ω")
 
