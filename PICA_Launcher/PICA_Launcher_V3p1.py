@@ -3,7 +3,7 @@
 # Purpose:        A central meta front end to launch various measurement GUIs.
 # Author:         Prathamesh Deshmukh
 # Created:        10/09/2025
-# Version:        9.0 (Final Polish)
+# Version:        9.1 (Final Polish)
 # Last Edit:      19/09/2025
 # -------------------------------------------------------------------------------
 
@@ -70,8 +70,8 @@ class PICALauncherApp:
         "K2400 R-T": "../Keithley_2400/Frontend_Keithley_2400_350_V_vs_T_V1.py",
         "K2400_2182 I-V": "../Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182.py",
         "K2400_2182 R-T": "../Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py",
-        "K6517B I-V": "../Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V7.py",
-        "K6517B Resistivity": "../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V7.py",
+        "K6517B I-V": "../Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V8.py",
+        "K6517B Resistivity": "../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V9.py",
         "Pyroelectric Current": "../Keithley_6517B/Pyroelectric/Pyroelectric_Measurement_GUI_V3.py",
         "Lakeshore Temp Control": "../Lakeshore_350_340/lakeshore350_temp_ramp_v4_Frontend_v1.py",
         "LCR C-V Measurement": "../LCR_Keysight_E4980A/LCR_CV.py",
