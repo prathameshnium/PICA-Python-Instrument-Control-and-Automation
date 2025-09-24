@@ -124,10 +124,10 @@ class Keithley6517B_Backend:
 
         # Read voltage and current from the instrument
         voltage = self.keithley.source_voltage # Read back the actual source voltage
-        current = self.keithley.current
+        resistance = self.keithley.resistance
 
         # Calculate resistance as done in the command-line script
-        resistance = voltage / current if current != 0 else float('inf')
+        current = voltage / resistance if resistance != 0 else float('inf')
 
         return resistance, current, voltage
 
