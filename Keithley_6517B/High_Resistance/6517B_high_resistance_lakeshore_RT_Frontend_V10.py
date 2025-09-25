@@ -1,13 +1,11 @@
-
 # -------------------------------------------------------------------------------
-# Name:           Integrated R-T Measurement GUI (Advanced Control)
+# Name:           Integrated R-T Measurement GUI (Merged Control)
 # Purpose:        Provide a GUI for the Lakeshore 350 and Keithley 6517B
-#                 with dynamic heater and rate control.
+#                 combining robust stabilization with a dynamic software ramp.
 # Author:         Prathamesh Deshmukh
-# Created:        25/09/2025
-# Version:        V: 3.4 (Dynamic Heater & Setpoint Stepping)
+# Created:        26/09/2025
+# Version:        V: 3.5 (Merged: Robust Stabilization + Dynamic Heater)
 # -------------------------------------------------------------------------------
-
 
 # --- Packages for Front end ---
 import tkinter as tk
@@ -42,8 +40,9 @@ except ImportError:
     PYMEASURE_AVAILABLE = False
 
 # -------------------------------------------------------------------------------
-# --- BACKEND INSTRUMENT CONTROL (UNCHANGED) ---
+# --- BACKEND INSTRUMENT CONTROL ---
 # -------------------------------------------------------------------------------
+
 class Lakeshore350_Backend:
     """A class to control the Lakeshore Model 350 Temperature Controller."""
     def __init__(self, visa_address):
@@ -58,10 +57,6 @@ class Lakeshore350_Backend:
         self.instrument.write('*CLS'); time.sleep(1)
 
     def setup_heater(self, output, resistance_code, max_current_code):
-        # HTRSET <output>,<resistance>,<max current>,<max user current>,<heater output display>
-        # resistance: 1=25Ohm, 2=50Ohm
-        # max current: 0=User, 1=0.707A, 2=1A, 3=1.41A, 4=1.73A
-        # heater output display: 1=Current(%), 2=Power(W)
         self.instrument.write(f'HTRSET {output},{resistance_code},{max_current_code},0,1')
         time.sleep(0.5)
 
@@ -104,7 +99,7 @@ class Combined_Backend:
         print("\n--- [Backend] Initializing Instruments ---")
         self.lakeshore = Lakeshore350_Backend(self.params['lakeshore_visa'])
         self.lakeshore.reset_and_clear()
-        self.lakeshore.setup_heater(1, 1, 2) # Setup for 25 Ohm heater, 1A max current
+        self.lakeshore.setup_heater(1, 1, 2)  # Setup for 25 Ohm heater, 1A max current
 
         self.keithley = Keithley6517B(self.params['keithley_visa'])
         print(f"Keithley Connected: {self.keithley.id}")
@@ -133,19 +128,15 @@ class Combined_Backend:
         time.sleep(1)
         print("  Zero Correction Complete.")
 
-
     def get_measurement(self):
         time.sleep(self.params['delay'])
         current_temp = self.lakeshore.get_temperature('A')
         heater_output = self.lakeshore.get_heater_output(1)
-
         resistance = self.keithley.resistance
-        # Check for non-numeric or infinite resistance values
         if resistance != 0 and resistance != float('inf') and resistance == resistance:
             current = self.params['source_voltage'] / resistance
         else:
             current = 0.0
-
         return current_temp, heater_output, current, resistance
 
     def close_instruments(self):
@@ -161,13 +152,12 @@ class Combined_Backend:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class Integrated_RT_GUI:
-    PROGRAM_VERSION = "3.4"
+    PROGRAM_VERSION = "3.5"
     try:
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
         LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
     except NameError:
-        # Fallback for when running in an environment where __file__ is not defined
-        LOGO_FILE_PATH = "UGC_DAE_CSR.jpeg"
+        LOGO_FILE_PATH = "../_assets/LOGO/UGC_DAE_CSR.jpeg"
 
     # --- THEME AND STYLING ---
     CLR_BG_DARK = '#2B3D4F'
@@ -200,8 +190,8 @@ class Integrated_RT_GUI:
         self.file_location_path = ""
         self.data_storage = {'time': [], 'temperature': [], 'current': [], 'resistance': []}
         self.log_scale_var = tk.BooleanVar(value=True)
-        self.current_heater_range = 'medium' # For dynamic switching
-        self.current_setpoint = 300.0       # For setpoint stepping
+        self.current_heater_range = 'medium'  # For dynamic switching
+        self.current_setpoint = 300.0         # For setpoint stepping
 
         self.setup_styles()
         self.create_widgets()
@@ -346,7 +336,7 @@ class Integrated_RT_GUI:
         top_bar = ttk.Frame(graph_container, style='TFrame')
         top_bar.pack(side='top', fill='x', pady=(0, 5))
         self.log_scale_cb = ttk.Checkbutton(top_bar, text="Logarithmic Resistance Axis",
-                                            variable=self.log_scale_var, command=self._update_y_scale)
+                                             variable=self.log_scale_var, command=self._update_y_scale)
         self.log_scale_cb.pack(side='right', padx=5)
         self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
@@ -414,16 +404,12 @@ class Integrated_RT_GUI:
                 writer.writerow(["Timestamp", "Elapsed Time (s)", "Temperature (K)", "Heater Output (%)", "Applied Voltage (V)", "Measured Current (A)", "Resistance (Ohm)"])
 
             self.log(f"Output file created: {os.path.basename(self.data_filepath)}")
-
-            # --- Configure GUI for Run ---
             self.is_stabilizing, self.is_running = True, False
             self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
             for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_data([], [])
             self.ax_main.set_title(f"R-T Curve: {params['sample_name']}", fontweight='bold')
             self.canvas.draw()
-
-            # --- Start the Measurement Process ---
             self.log("Starting stabilization process...")
             self.root.after(1000, self._stabilization_loop)
 
@@ -440,21 +426,27 @@ class Integrated_RT_GUI:
             messagebox.showinfo("Info", "Measurement stopped and instruments disconnected.")
 
     def _stabilization_loop(self):
+        """
+        MERGED LOGIC: Uses the robust stabilization from the old script (V3.3).
+        This includes an explicit cooling step if the temperature is too high.
+        """
         if not self.is_stabilizing: return
         try:
             params = self.backend.params
             current_temp = self.backend.lakeshore.get_temperature('A')
 
-            # Simple logic: use medium heater to get to start temp
-            self.backend.lakeshore.set_heater_range(1, 'medium')
-            self.backend.lakeshore.set_setpoint(1, params['start_temp'])
-
-            self.log(f"Stabilizing... Current: {current_temp:.4f} K | Target: {params['start_temp']} K")
-
-            # Check if we are stable enough to start
+            if current_temp > params['start_temp'] + 0.2:
+                self.log(f"Cooling... Current: {current_temp:.4f} K > Target: {params['start_temp']} K")
+                self.backend.lakeshore.set_heater_range(1, 'off')
+            else:
+                self.log(f"Heating... Current: {current_temp:.4f} K <= Target: {params['start_temp']} K")
+                self.backend.lakeshore.set_heater_range(1, 'medium')
+                self.backend.lakeshore.set_setpoint(1, params['start_temp'])
+            
             if abs(current_temp - params['start_temp']) < 0.1:
                 self.log(f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
                 self.is_stabilizing = False
+                # Call the NEW software ramp function after stabilization
                 self.root.after(5000, self._start_software_ramp)
             else:
                 self.root.after(2000, self._stabilization_loop)
@@ -462,21 +454,23 @@ class Integrated_RT_GUI:
             self.log(f"ERROR during stabilization: {e}"); self.stop_measurement()
 
     def _start_software_ramp(self):
-        """Initializes the software-controlled ramp."""
+        """
+        MERGED LOGIC: Initializes the software-controlled ramp from the new script (V3.4).
+        """
         params = self.backend.params
-        self.current_heater_range = 'medium' # Start with medium power
+        self.current_heater_range = 'medium'  # Start with medium power
         self.backend.lakeshore.set_heater_range(1, 'medium')
-
-        # Initialize the setpoint to the starting temperature
         self.current_setpoint = params['start_temp']
         self.backend.lakeshore.set_setpoint(1, self.current_setpoint)
-
         self.log(f"Software ramp started. Initial setpoint: {self.current_setpoint:.2f} K. Heater: 'medium'.")
         self.is_running = True
         self.start_time = time.time()
         self.root.after(1000, self._update_measurement_loop)
 
     def _update_measurement_loop(self):
+        """
+        MERGED LOGIC: Uses the dynamic heating and rate control from the new script (V3.4).
+        """
         if not self.is_running: return
         try:
             params = self.backend.params
@@ -484,24 +478,21 @@ class Integrated_RT_GUI:
             elapsed = time.time() - self.start_time
 
             # --- DYNAMIC HEATER & RATE CONTROL ---
-            # 1. Advance the setpoint based on elapsed time to control the rate
             rate_k_per_sec = params['rate'] / 60.0
             self.current_setpoint = params['start_temp'] + (elapsed * rate_k_per_sec)
             self.backend.lakeshore.set_setpoint(1, self.current_setpoint)
-
-            # 2. Check if the heater is struggling and switch range if needed
+            
             if htr > 95.0 and self.current_heater_range == 'medium':
                 self.log("Heater at >95% output. Switching to HIGH range.")
                 self.backend.lakeshore.set_heater_range(1, 'high')
-                self.current_heater_range = 'high' # Update the state
+                self.current_heater_range = 'high'
 
             # --- Logging and Data Storage ---
             self.log(f"T:{temp:.3f}K | Setpoint:{self.current_setpoint:.2f}K | R:{res:.3e}Ω | Htr:{htr:.1f}% ({self.current_heater_range})")
-
             with open(self.data_filepath, 'a', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}", f"{htr:.2f}", f"{params['source_voltage']:.4e}", f"{cur:.4e}", f"{res:.4e}"])
-
+            
             self.data_storage['time'].append(elapsed)
             self.data_storage['temperature'].append(temp)
             self.data_storage['current'].append(cur)
@@ -526,7 +517,6 @@ class Integrated_RT_GUI:
             else:
                 loop_delay_ms = max(1000, int(params['delay'] * 1000))
                 self.root.after(loop_delay_ms, self._update_measurement_loop)
-
         except Exception as e:
             self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement()
 
@@ -540,7 +530,6 @@ class Integrated_RT_GUI:
                 self.log(f"Found: {resources}")
                 self.lakeshore_cb['values'] = resources
                 self.keithley_cb['values'] = resources
-                # Attempt to auto-select common GPIB addresses
                 for res in resources:
                     if "15" in res or "12" in res: self.lakeshore_cb.set(res)
                     if "27" in res or "26" in res: self.keithley_cb.set(res)
