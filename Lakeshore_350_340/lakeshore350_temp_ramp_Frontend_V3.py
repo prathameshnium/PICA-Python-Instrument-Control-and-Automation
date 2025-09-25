@@ -1,11 +1,10 @@
 # -------------------------------------------------------------------------------
-# Name:           Lakeshore 350 Temp Ramp GUI (Advanced Control)
-# Purpose:        Provide a user-friendly interface for running a temperature
-#                 ramp with dynamic heater and rate control.
+# Name:           Lakeshore 350 Temp Ramp GUI (Improved Control)
+# Purpose:        Provide a user-friendly interface for a temperature ramp
+#                 using robust stabilization and simplified hardware control.
 # Author:         Prathamesh Deshmukh
-# Created:        25/09/2025
-# Version:        2.0 (Dynamic Heater & Setpoint Stepping)
-# Inspired by:    Delta_Lakeshore_Front_end_V7.py by Prathamesh
+# Created:        26/09/2025
+# Version:        2.1 (Robust Stabilization & Simplified Hardware Ramp)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -71,6 +70,11 @@ class LakeshoreBackend:
             print(f"  ERROR: Could not connect/configure the instrument. {e}")
             raise e
 
+    def setup_ramp(self, output, rate_k_per_min, ramp_on=True):
+        """ Configures the instrument's internal ramp generator. """
+        self.instrument.write(f'RAMP {output},{1 if ramp_on else 0},{rate_k_per_min}')
+        time.sleep(0.5)
+        
     def set_setpoint(self, output, temperature_k):
         """Sets the temperature setpoint."""
         self.instrument.write(f'SETP {output},{temperature_k}')
@@ -81,13 +85,6 @@ class LakeshoreBackend:
         range_code = range_map.get(heater_range.lower())
         if range_code is None: raise ValueError("Invalid heater range.")
         self.instrument.write(f'RANGE {output},{range_code}')
-
-    def start_stabilization(self):
-        """Begins the process of moving to the start temperature."""
-        print(f"  Moving to start temperature: {self.params['start_temp']} K")
-        self.set_setpoint(1, self.params['start_temp'])
-        self.set_heater_range(1, 'medium') # Start with medium power
-        print("  Heater range set to 'medium' for stabilization.")
 
     def get_measurement(self):
         """Performs a single measurement and returns temperature and heater output."""
@@ -120,7 +117,7 @@ class LakeshoreBackend:
 #===============================================================================
 class LakeshoreRampGUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "2.0"
+    PROGRAM_VERSION = "2.1"
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -142,15 +139,13 @@ class LakeshoreRampGUI:
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1300, 850)
 
-        # --- State Variables ---
         self.is_running = False
+        self.is_stabilizing = False
         self.start_time = None
-        self.experiment_state = 'idle' # Can be 'idle', 'stabilizing', 'ramping'
         self.backend = LakeshoreBackend()
         self.file_location_path = ""
         self.data_storage = {'time': [], 'temperature': [], 'heater': []}
-        self.current_heater_range = 'medium'
-        self.current_setpoint = 0.0
+        self.current_heater_range = 'off'
 
         self.setup_styles()
         self.create_widgets()
@@ -309,11 +304,11 @@ class LakeshoreRampGUI:
 
             self.backend.initialize_instrument(params)
             self.log(f"Backend initialized for sample: {params['sample_name']}")
-            
+
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             file_name = f"{params['sample_name']}_{timestamp}_T_vs_Time.csv"
             self.data_filepath = os.path.join(self.file_location_path, file_name)
-            
+
             with open(self.data_filepath, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([f"# Sample: {params['sample_name']}", f"Rate: {params['rate']} K/min"])
@@ -321,25 +316,24 @@ class LakeshoreRampGUI:
             self.log(f"Output file created: {os.path.basename(self.data_filepath)}")
 
             self.is_running = True
+            self.is_stabilizing = True
             self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
             for line in [self.line_main, self.line_sub1]: line.set_data([], [])
             self.ax_main.set_title(f"Ramp for Sample: {params['sample_name']}", fontweight='bold')
             self.canvas.draw()
             
-            self.log("Moving to start temperature for stabilization...")
-            self.experiment_state = 'stabilizing'
-            self.backend.start_stabilization()
-            self.root.after(2000, self._update_measurement_loop)
+            self.log("Starting stabilization process...")
+            self.root.after(1000, self._stabilization_loop)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
             messagebox.showerror("Initialization Error", f"Could not start measurement.\n\n{e}")
 
     def stop_measurement(self, reason=""):
-        if self.is_running:
+        if self.is_running or self.is_stabilizing:
             self.is_running = False
-            self.experiment_state = 'idle'
+            self.is_stabilizing = False
             if reason: self.log(f"Measurement stopped: {reason}")
             else: self.log("Measurement stopped by user.")
             self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
@@ -348,74 +342,93 @@ class LakeshoreRampGUI:
             if reason: messagebox.showinfo("Info", f"Measurement finished.\nReason: {reason}")
             else: messagebox.showinfo("Info", "Measurement stopped and instrument disconnected.")
 
+    def _stabilization_loop(self):
+        """Robustly stabilizes at the start temperature, cooling if necessary."""
+        if not self.is_stabilizing: return
+        try:
+            params = self.backend.params
+            current_temp, _ = self.backend.get_measurement()
+
+            if current_temp > params['start_temp'] + 0.2:
+                self.log(f"Cooling... Current: {current_temp:.4f} K > Target: {params['start_temp']} K")
+                self.backend.set_heater_range(1, 'off')
+            else:
+                self.log(f"Heating... Current: {current_temp:.4f} K <= Target: {params['start_temp']} K")
+                self.backend.set_heater_range(1, 'medium')
+                self.backend.set_setpoint(1, params['start_temp'])
+            
+            if abs(current_temp - params['start_temp']) < 0.1:
+                self.log(f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
+                self.is_stabilizing = False
+                self.root.after(5000, self._start_hardware_ramp)
+            else:
+                self.root.after(2000, self._stabilization_loop)
+        except Exception as e:
+            self.log(f"ERROR during stabilization: {e}"); self.stop_measurement("Error during stabilization")
+
+    def _start_hardware_ramp(self):
+        """Initializes the Lakeshore's internal hardware ramp."""
+        params = self.backend.params
+        
+        self.backend.set_setpoint(1, params['end_temp'])
+        self.backend.setup_ramp(1, params['rate'])
+        
+        self.current_heater_range = 'medium'
+        self.backend.set_heater_range(1, self.current_heater_range)
+        
+        self.log(f"Hardware ramp started towards {params['end_temp']} K at {params['rate']} K/min.")
+        self.log(f"Initial heater range set to '{self.current_heater_range}' (Range 4).")
+        
+        self.start_time = time.time()
+        self.root.after(1000, self._update_measurement_loop)
+
     def _update_measurement_loop(self):
+        """Main loop for data acquisition during the hardware ramp."""
         if not self.is_running: return
         try:
             current_temp, heater_output = self.backend.get_measurement()
             params = self.backend.params
+            elapsed_time = time.time() - self.start_time
 
-            # --- STATE: STABILIZING ---
-            if self.experiment_state == 'stabilizing':
-                self.log(f"Stabilizing... Current Temp: {current_temp:.4f} K (Target: {params['start_temp']} K)")
-                if abs(current_temp - params['start_temp']) < 0.1: # Stabilization tolerance
-                    self.log(f"Stabilized at {params['start_temp']} K. Starting software ramp.")
-                    self.experiment_state = 'ramping'
-                    self.current_heater_range = 'medium' # Ensure we start ramp on medium
-                    self.backend.set_heater_range(1, self.current_heater_range)
-                    self.current_setpoint = params['start_temp']
-                    self.start_time = time.time() # Start timer now
+            # --- Simplified Temperature-Based Heater Logic ---
+            if current_temp > 150.0 and self.current_heater_range == 'medium':
+                self.log("Temperature > 150 K. Switching to HIGH range (5).")
+                self.current_heater_range = 'high'
+                self.backend.set_heater_range(1, self.current_heater_range)
 
-            # --- STATE: RAMPING ---
-            elif self.experiment_state == 'ramping':
-                elapsed_time = time.time() - self.start_time
+            # --- Logging, Data Storage, and Plotting ---
+            self.log(f"Time: {elapsed_time:7.1f}s | Temp: {current_temp:8.4f}K | Heater: {heater_output:5.1f}% ({self.current_heater_range})")
+            
+            with open(self.data_filepath, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                 f"{elapsed_time:.2f}", f"{current_temp:.4f}", f"{heater_output:.2f}"])
+            
+            self.data_storage['time'].append(elapsed_time)
+            self.data_storage['temperature'].append(current_temp)
+            self.data_storage['heater'].append(heater_output)
 
-                # --- DYNAMIC HEATER & RATE CONTROL ---
-                # 1. Advance the setpoint based on elapsed time
-                rate_k_per_sec = params['rate'] / 60.0
-                self.current_setpoint = params['start_temp'] + (elapsed_time * rate_k_per_sec)
-                self.backend.set_setpoint(1, self.current_setpoint)
+            self.line_main.set_data(self.data_storage['time'], self.data_storage['temperature'])
+            self.line_sub1.set_data(self.data_storage['time'], self.data_storage['heater'])
+            for ax in [self.ax_main, self.ax_sub1]:
+                ax.relim(); ax.autoscale_view()
+            self.figure.tight_layout(pad=2.5)
+            self.canvas.draw()
 
-                # 2. Check if heater is struggling and switch range if needed
-                if heater_output > 95.0 and self.current_heater_range == 'medium':
-                    self.log("Heater at >95% output. Switching to HIGH range.")
-                    self.current_heater_range = 'high'
-                    self.backend.set_heater_range(1, self.current_heater_range)
+            # --- Check for end conditions ---
+            if current_temp >= params['safety_cutoff']:
+                self.stop_measurement(f"SAFETY CUTOFF REACHED at {current_temp:.4f} K!")
+                return
+            if current_temp >= params['end_temp']:
+                self.stop_measurement(f"Target temperature of {params['end_temp']} K reached.")
+                return
 
-                # --- Logging, Data Storage, and Plotting ---
-                self.log(f"T:{current_temp:.3f}K | Setpoint:{self.current_setpoint:.2f}K | Htr:{heater_output:.1f}% ({self.current_heater_range})")
-                
-                with open(self.data_filepath, 'a', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                     f"{elapsed_time:.2f}", f"{current_temp:.4f}", f"{heater_output:.2f}"])
-                
-                self.data_storage['time'].append(elapsed_time)
-                self.data_storage['temperature'].append(current_temp)
-                self.data_storage['heater'].append(heater_output)
-
-                self.line_main.set_data(self.data_storage['time'], self.data_storage['temperature'])
-                self.line_sub1.set_data(self.data_storage['time'], self.data_storage['heater'])
-                for ax in [self.ax_main, self.ax_sub1]:
-                    ax.relim(); ax.autoscale_view()
-                self.figure.tight_layout(pad=2.5)
-                self.canvas.draw()
-
-                # --- Check for end conditions ---
-                if current_temp >= params['safety_cutoff']:
-                    self.stop_measurement(f"SAFETY CUTOFF REACHED at {current_temp:.4f} K!")
-                    return
-                if current_temp >= params['end_temp']:
-                    self.stop_measurement(f"Target temperature of {params['end_temp']} K reached.")
-                    return
+            self.root.after(2000, self._update_measurement_loop) # Loop every 2 seconds
 
         except Exception:
             self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
             self.stop_measurement("A critical error occurred.")
             messagebox.showerror("Runtime Error", "An error occurred during measurement. Check console.")
-            return
-
-        if self.is_running:
-            self.root.after(2000, self._update_measurement_loop) # Loop every 2 seconds
 
     def _scan_for_visa_instruments(self):
         if pyvisa is None: self.log("ERROR: PyVISA not found. Run 'pip install pyvisa'."); return
@@ -439,7 +452,7 @@ class LakeshoreRampGUI:
         if path: self.file_location_path = path; self.log(f"Save location set to: {path}")
 
     def _on_closing(self):
-        if self.is_running:
+        if self.is_running or self.is_stabilizing:
             if messagebox.askyesno("Exit", "Measurement is running. Stop and exit?"):
                 self.stop_measurement(); self.root.destroy()
         else: self.root.destroy()
