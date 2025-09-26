@@ -1,10 +1,10 @@
 # -------------------------------------------------------------------------------
-# Name:           Integrated R-T Measurement GUI (Simplified Ramp)
+# Name:           Integrated R-T Measurement GUI (Aggressive Ramp)
 # Purpose:        Provide a GUI for the Lakeshore 350 and Keithley 6517B
-#                 using a hardware ramp with simplified heater range switching.
+#                 using a hardware ramp with a fixed high-power heater setting.
 # Author:         Prathamesh Deshmukh
 # Created:        26/09/2025
-# Version:        V: 3.6 (Simplified Hardware Ramp with Temp-based Switching)
+# Version:        V: 3.7 (Fixed High-Power Hardware Ramp)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -157,7 +157,7 @@ class Combined_Backend:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class Integrated_RT_GUI:
-    PROGRAM_VERSION = "3.6"
+    PROGRAM_VERSION = "3.7"
     try:
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
         LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
@@ -454,20 +454,20 @@ class Integrated_RT_GUI:
     def _start_hardware_ramp(self):
         """Initializes the Lakeshore's internal hardware ramp."""
         params = self.backend.params
-        
+
         # 1. Set the final setpoint
         self.backend.lakeshore.set_setpoint(1, params['end_temp'])
-        
+
         # 2. Configure the hardware ramp rate
         self.backend.lakeshore.setup_ramp(1, params['rate'])
-        
-        # 3. Set the initial heater range to Medium (4)
-        self.current_heater_range = 'medium'
+
+        # 3. Set the heater range to High (5) for the entire ramp
+        self.current_heater_range = 'high'
         self.backend.lakeshore.set_heater_range(1, self.current_heater_range)
-        
+
         self.log(f"Hardware ramp started towards {params['end_temp']} K at {params['rate']} K/min.")
-        self.log(f"Initial heater range set to '{self.current_heater_range}'.")
-        
+        self.log(f"Heater range set to '{self.current_heater_range}'.")
+
         self.is_running = True
         self.start_time = time.time()
         self.root.after(1000, self._update_measurement_loop)
@@ -479,18 +479,16 @@ class Integrated_RT_GUI:
             temp, htr, cur, res = self.backend.get_measurement()
             elapsed = time.time() - self.start_time
 
-            # --- NEW SIMPLIFIED HEATER LOGIC ---
-            if temp > 150.0 and self.current_heater_range == 'medium':
-                self.log("Temperature > 150 K. Switching to HIGH range (5).")
-                self.current_heater_range = 'high'
-                self.backend.lakeshore.set_heater_range(1, self.current_heater_range)
+            # --- HEATER LOGIC REMOVED ---
+            # Heater is now set to 'high' at the start of the ramp and remains there.
+            # No dynamic switching is needed in the loop.
 
             # --- Logging and Data Storage ---
             self.log(f"T:{temp:.3f}K | R:{res:.3e}Ω | Htr:{htr:.1f}% ({self.current_heater_range})")
             with open(self.data_filepath, 'a', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}", f"{htr:.2f}", f"{params['source_voltage']:.4e}", f"{cur:.4e}", f"{res:.4e}"])
-            
+
             self.data_storage['time'].append(elapsed)
             self.data_storage['temperature'].append(temp)
             self.data_storage['current'].append(cur)
