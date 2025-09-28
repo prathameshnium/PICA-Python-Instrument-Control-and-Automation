@@ -27,23 +27,27 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Build with Nuitka
-        # --- THE FINAL, VERIFIED CONFIGURATION ---
+        # --- THE FINAL, POLISHED CONFIGURATION ---
         uses: Nuitka/Nuitka-Action@main
         with:
           nuitka-version: '2.6'
           msvc: 'latest'
-          enable-plugins: "numpy,tk-inter"
           
-          # --- CORRECTED SYNTAX BELOW ---
-          # Provide the script name ONLY.
+          # Nuitka 2.6+ auto-detects numpy, pandas, and qt.
+          # We only need tk-inter as a hint for the standard library.
+          enable-plugins: "tk-inter"
+          
           script-name: PICA_Launcher_V4.py
 
-          # Use the 'deployment' flag. On Windows, this implies a one-file build.
+          # The 'deployment' flag handles a one-file build.
           deployment: true
+          
+          # Use the modern option to disable the console.
+          windows-console-mode: 'disable'
 
-          # Action-specific inputs remain separate.
-          disable-console: true
           windows-icon-from-ico: _assets/LOGO/UGC_DAE_CSR.ico
+          
+          # These directories MUST exist in your GitHub repository and not be empty.
           include-data-dir: |
             _assets=_assets
             Delta_mode=Delta_mode
@@ -59,7 +63,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          # The output is now in the root of the repo by default with --deployment
+          # The 'deployment' flag places the final .exe in the repository root.
           file: PICA_Launcher_V4.exe
           asset_name: PICA_Launcher-Windows-${{ github.ref_name }}.exe
           tag: ${{ github.ref }}
