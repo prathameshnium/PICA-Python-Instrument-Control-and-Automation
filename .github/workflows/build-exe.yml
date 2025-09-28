@@ -23,22 +23,18 @@ jobs:
           python-version: '3.9'
 
       - name: Install Dependencies
-        # Using a requirements file with pinned numpy and explicit PySide6 is crucial for stability.
+        # A stable requirements file is the foundation of a reliable build.
         run: pip install -r requirements.txt
 
       - name: Build with Nuitka
         # --- THE FINAL, VERIFIED CONFIGURATION ---
-        # Use the standard and officially documented '@main' branch reference.
         uses: Nuitka/Nuitka-Action@main
         with:
-          # Lock Nuitka to a recent, known-stable version.
           nuitka-version: '2.6'
-          
-          # This ensures Nuitka finds and uses the MSVC compiler.
           msvc: 'latest'
 
-          # Modern Nuitka auto-detects Qt usage. The other plugins are still necessary.
-          enable-plugins: "numpy,pandas,tk-inter"
+          # Nuitka 2.6+ auto-detects pandas and qt. We only need numpy and tk-inter.
+          enable-plugins: "numpy,tk-inter"
 
           # Pass Nuitka command-line arguments.
           script-name: PICA_Launcher_V4.py --onefile
