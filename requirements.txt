@@ -6,3 +6,4 @@ pyvisa
 pyvisa-py
 pyqtgraph
 pillow
+PySide6
