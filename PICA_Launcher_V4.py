@@ -3,7 +3,7 @@
 # Purpose:          A central meta front end to launch various measurement GUIs.
 # Author:           Prathamesh Deshmukh
 # Created:          10/09/2025
-# Version:          10.3 (Robust Pathing Fix)
+# Version:          11.0 (Final Build Version)
 # Last Edit:        28/09/2025
 # -------------------------------------------------------------------------------
 
@@ -35,25 +35,21 @@ except ImportError:
 
 
 def resource_path(relative_path):
-    """
-    Get absolute path to resource, works for dev and for PyInstaller.
-    This is the robust, standard way to handle paths.
-    """
+    """ Get absolute path to resource, works for dev and for PyInstaller """
     # Check if the application is running as a bundled executable
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         # If so, the base path is the temporary folder created by PyInstaller
         base_path = sys._MEIPASS
     else:
-        # If running as a normal .py script, the base path is the project root
-        # This assumes the PICA_Launcher script is in a subfolder of the project root.
-        base_path = os.path.abspath("../")
+        # If running as a normal .py script, the base path is the script's directory
+        base_path = os.path.abspath(".")
 
     return os.path.join(base_path, relative_path)
 
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "10.3"
+    PROGRAM_VERSION = "11.0"
 
     # --- Color and Font Palette ---
     CLR_BG_DARK = '#2B3D4F'
@@ -79,7 +75,7 @@ class PICALauncherApp:
     LICENSE_FILE = resource_path("LICENSE")
     LOGO_SIZE = 140
 
-    # --- Script Definitions (CRITICAL FIX: All paths are relative to the project root) ---
+    # --- Script Definitions (Paths are relative to the script's location) ---
     SCRIPT_PATHS = {
         "Delta Mode I-V": resource_path("Delta_mode/Delta_V7.py"),
         "Delta Mode R-T": resource_path("Delta_mode/Delta_Lakeshore_Front_end_V7.py"),
@@ -97,7 +93,7 @@ class PICALauncherApp:
         "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/LCR_CV.py"),
         "Lock-in AC Measurement": resource_path("Lock_in_amplifier/AC_Transport_GUI.py"),
     }
-
+    
     def __init__(self, root):
         self.root = root
         self.root.title(f"PICA Launcher v{self.PROGRAM_VERSION}")
