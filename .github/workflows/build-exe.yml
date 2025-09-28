@@ -27,11 +27,11 @@ jobs:
         with:
           nuitka-version: main
           script-name: PICA_Launcher_V4.py
-          standalone: true
-          onefile: true
-          windows-disable-console: true
+          # --- CORRECTED SYNTAX BELOW ---
+          standalone: "yes"
+          onefile: "yes"
+          windows-disable-console: "yes"
           windows-icon-from-ico: _assets/LOGO/UGC_DAE_CSR.ico
-          # Include all necessary data and script folders
           include-data-dir: |
             _assets
             Delta_mode
@@ -47,7 +47,6 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          # Nuitka places the final .exe in the 'build' directory
           file: build/PICA_Launcher_V4.exe
           asset_name: PICA_Launcher-Windows-${{ github.ref_name }}.exe
           tag: ${{ github.ref }}
