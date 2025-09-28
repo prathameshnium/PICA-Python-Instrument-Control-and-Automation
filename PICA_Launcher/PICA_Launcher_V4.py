@@ -3,7 +3,7 @@
 # Purpose:          A central meta front end to launch various measurement GUIs.
 # Author:           Prathamesh Deshmukh
 # Created:          10/09/2025
-# Version:          9.9 (Updated GPIB Test Message)
+# Version:          10.1 (Hybrid Launcher Fix)
 # Last Edit:        28/09/2025
 # -------------------------------------------------------------------------------
 
@@ -34,9 +34,21 @@ except ImportError:
     PYVISA_AVAILABLE = False
 
 
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # If not running as a bundled exe, the base path is the script's directory
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "9.9"
+    PROGRAM_VERSION = "10.1"
 
     # --- Color and Font Palette ---
     CLR_BG_DARK = '#2B3D4F'
@@ -55,30 +67,31 @@ class PICALauncherApp:
     FONT_CONSOLE = ('Consolas', 10)
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
 
-    # --- Asset and File Paths ---
-    LOGO_FILE = "../_assets/LOGO/UGC_DAE_CSR.jpeg"
-    MANUAL_FILE = "../_assets/Manuals"
-    README_FILE = "../README/README_v1.md"
-    LICENSE_FILE = "../LICENSE"
+    # --- Asset and File Paths (UPDATED for PyInstaller) ---
+    LOGO_FILE = resource_path("../_assets/LOGO/UGC_DAE_CSR.jpeg")
+    MANUAL_FILE = resource_path("../_assets/Manuals")
+    README_FILE = resource_path("../README/README_v1.md")
+    LICENSE_FILE = resource_path("../LICENSE")
     LOGO_SIZE = 140
 
-    # --- Script Definitions ---
+    # --- Script Definitions (UPDATED for PyInstaller) ---
+    # NOTE: For the final distributable, these should point to the .exe versions of your scripts
     SCRIPT_PATHS = {
-        "Delta Mode I-V": "../Delta_mode/Delta_V7.py",
-        "Delta Mode R-T": "../Delta_mode/Delta_Lakeshore_Front_end_V7.py",
-        "Delta Mode R-T (Passive)": "../Delta_mode/Delta_Lakeshore_passive_Frontend.py",
-        "K2400 I-V": "../Keithley_2400/Frontend_IV_2400_v3.py",
-        "K2400 R-T": "../Keithley_2400/Frontend_Keithley_2400_350_V_vs_T_V1.py",
-        "K2400_2182 I-V": "../Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182.py",
-        "K2400_2182 R-T": "../Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py",
-        "K6517B I-V": "../Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V9.py",
-        "K6517B Resistivity": "../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_5AAlways.py",
-        "K6517B R-T (Passive)": "../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py",
-        "Pyroelectric Current": "../Keithley_6517B/Pyroelectric/Pyroelectric_Measurement_GUI_V3.py",
-        "Lakeshore Temp Control": "../Lakeshore_350_340/lakeshore350_temp_ramp_Frontend_V4.py",
-        "Lakeshore Temp Monitor": "../Lakeshore_350_340/lakeshore350_passive_monitor_Frontend_V1.py",
-        "LCR C-V Measurement": "../LCR_Keysight_E4980A/LCR_CV.py",
-        "Lock-in AC Measurement": "../Lock_in_amplifier/AC_Transport_GUI.py",
+        "Delta Mode I-V": resource_path("../Delta_mode/Delta_V7.py"),
+        "Delta Mode R-T": resource_path("../Delta_mode/Delta_Lakeshore_Front_end_V7.py"),
+        "Delta Mode R-T (Passive)": resource_path("../Delta_mode/Delta_Lakeshore_passive_Frontend.py"),
+        "K2400 I-V": resource_path("../Keithley_2400/Frontend_IV_2400_v3.py"),
+        "K2400 R-T": resource_path("../Keithley_2400/Frontend_Keithley_2400_350_V_vs_T_V1.py"),
+        "K2400_2182 I-V": resource_path("../Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182.py"),
+        "K2400_2182 R-T": resource_path("../Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py"),
+        "K6517B I-V": resource_path("../Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V9.py"),
+        "K6517B Resistivity": resource_path("../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_5Always.py"),
+        "K6517B R-T (Passive)": resource_path("../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py"),
+        "Pyroelectric Current": resource_path("../Keithley_6517B/Pyroelectric/Pyroelectric_Measurement_GUI_V3.py"),
+        "Lakeshore Temp Control": resource_path("../Lakeshore_350_340/lakeshore350_temp_ramp_Frontend_V4.py"),
+        "Lakeshore Temp Monitor": resource_path("../Lakeshore_350_340/lakeshore350_passive_monitor_Frontend_V1.py"),
+        "LCR C-V Measurement": resource_path("../LCR_Keysight_E4980A/LCR_CV.py"),
+        "Lock-in AC Measurement": resource_path("../Lock_in_amplifier/AC_Transport_GUI.py"),
     }
     def __init__(self, root):
         self.root = root
@@ -134,7 +147,7 @@ class PICALauncherApp:
         info_frame = ttk.Frame(parent)
         info_frame.configure(padding=20)
         logo_canvas = Canvas(info_frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
-        logo_canvas.pack(pady=(0, 15)) # Adjusted padding
+        logo_canvas.pack(pady=(0, 15))  # Adjusted padding
 
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE):
             try:
@@ -162,7 +175,7 @@ class PICALauncherApp:
         ttk.Button(util_frame, text="Test GPIB Connection", style='App.TButton', command=self.run_gpib_test).pack(fill='x', pady=4)
 
         bottom_frame = ttk.Frame(info_frame)
-        bottom_frame.pack(side='bottom', fill='x', pady=(15, 0)) # Adjusted padding
+        bottom_frame.pack(side='bottom', fill='x', pady=(15, 0))  # Adjusted padding
         author_text = ("Developed by Prathamesh Deshmukh | Vision & Guidance by Dr. Sudip Mukherjee\n"
                        "UGC-DAE Consortium for Scientific Research, Mumbai Centre")
         ttk.Label(bottom_frame, text=author_text, font=('Segoe UI', 9), justify='center', anchor='center').pack(pady=(0,10))
@@ -173,10 +186,10 @@ class PICALauncherApp:
         license_label.bind("<Button-1>", lambda e: self.open_license())
 
         console_container = ttk.LabelFrame(info_frame, text="Console", padding=(5,10))
-        console_container.pack(side='bottom', fill='x', pady=(20, 0)) # Adjusted padding
+        console_container.pack(side='bottom', fill='x', pady=(20, 0))  # Adjusted padding
         self.console_widget = scrolledtext.ScrolledText(console_container, state='disabled', bg=self.CLR_CONSOLE_BG,
-                                                      fg=self.CLR_TEXT, font=self.FONT_CONSOLE,
-                                                      wrap='word', bd=0, relief='flat', height=7)
+                                                        fg=self.CLR_TEXT, font=self.FONT_CONSOLE,
+                                                        wrap='word', bd=0, relief='flat', height=7)
         self.console_widget.pack(fill='both', expand=True)
         return info_frame
 
@@ -390,18 +403,30 @@ class PICALauncherApp:
         self._show_file_in_window(self.LICENSE_FILE, "MIT License")
 
     def launch_script(self, script_path):
-        """Launches a specified Python script in a new process."""
+        """
+        Launches a specified script/executable in a new process.
+        UPDATED to handle both .py files (development) and .exe files (deployment).
+        """
         self.log(f"Launching: {os.path.basename(script_path)}")
         if not os.path.exists(script_path):
             abs_path = os.path.abspath(script_path)
-            self.log(f"ERROR: Script not found at {abs_path}")
-            messagebox.showerror("File Not Found", f"Script not found:\n\n{abs_path}")
+            self.log(f"ERROR: Script/Executable not found at {abs_path}")
+            messagebox.showerror("File Not Found", f"Script/Executable not found:\n\n{abs_path}")
             return
         try:
+            command = []
+            # Check if we are launching a Python script or a compiled executable
+            if script_path.lower().endswith('.py'):
+                # It's a Python script, so we need to run it with the Python interpreter (sys.executable)
+                command = [sys.executable, script_path]
+            else:
+                # It's likely a compiled executable, so we run it directly
+                command = [script_path]
+
             script_directory = os.path.dirname(os.path.abspath(script_path))
-            script_filename = os.path.basename(script_path)
-            subprocess.Popen([sys.executable, script_filename], cwd=script_directory)
-            self.log(f"Successfully launched '{script_filename}'")
+            # Use the command list we just created
+            subprocess.Popen(command, cwd=script_directory)
+            self.log(f"Successfully launched '{os.path.basename(script_path)}'")
         except Exception as e:
             self.log(f"ERROR: Failed to launch script. Reason: {e}")
             messagebox.showerror("Launch Error", f"An error occurred while launching the script:\n\n{e}")
@@ -431,7 +456,7 @@ class PICALauncherApp:
         controls_frame.columnconfigure(0, weight=1)
         controls_frame.columnconfigure(1, weight=1)
         console_area = scrolledtext.ScrolledText(main_frame, state='disabled', bg=self.CLR_CONSOLE_BG,
-                                              fg=self.CLR_TEXT, font=self.FONT_CONSOLE, wrap='word', bd=0)
+                                                 fg=self.CLR_TEXT, font=self.FONT_CONSOLE, wrap='word', bd=0)
         console_area.grid(row=1, column=0, sticky='nsew')
 
         def log_to_scanner(message, add_timestamp=True):
