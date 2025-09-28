@@ -32,11 +32,11 @@ jobs:
           
           # --- FINAL CORRECTED CONFIGURATION ---
 
-          # This is the corrected input name to specify the MSVC compiler.
+          # This ensures Nuitka finds and uses the MSVC compiler.
           msvc: 'latest'
 
-          # Enable plugins for GUI and scientific libraries.
-          enable-plugins: "qt-binding,numpy"
+          # Corrected the plugin name to 'qt-bindings' and added 'tk-inter' for robustness.
+          enable-plugins: "qt-bindings,numpy,tk-inter"
 
           # Pass Nuitka command-line arguments.
           script-name: PICA_Launcher_V4.py --onefile
