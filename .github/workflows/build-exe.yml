@@ -32,20 +32,18 @@ jobs:
         with:
           nuitka-version: '2.6'
           msvc: 'latest'
-
-          # Nuitka 2.6+ auto-detects pandas and qt. We only need numpy and tk-inter.
           enable-plugins: "numpy,tk-inter"
+          
+          # --- CORRECTED SYNTAX BELOW ---
+          # Provide the script name ONLY.
+          script-name: PICA_Launcher_V4.py
+          
+          # Provide all other Nuitka command-line flags here.
+          nuitka-args: --onefile
 
-          # Pass Nuitka command-line arguments.
-          script-name: PICA_Launcher_V4.py --onefile
-
-          # Hide the console window.
+          # Action-specific inputs remain separate.
           disable-console: true
-          
-          # Set the application icon.
           windows-icon-from-ico: _assets/LOGO/UGC_DAE_CSR.ico
-          
-          # Include necessary data directories.
           include-data-dir: |
             _assets=_assets
             Delta_mode=Delta_mode
