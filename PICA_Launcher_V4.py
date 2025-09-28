@@ -47,7 +47,7 @@ def resource_path(relative_path):
 class PICALauncherApp:
     # --- Paste your entire existing PICALauncherApp class here ---
     # --- The only function you will replace is launch_script() ---
-
+    
     PROGRAM_VERSION = "12.5"
     CLR_BG_DARK = '#2B3D4F'
     CLR_FRAME_BG = '#3A506B'
@@ -329,13 +329,13 @@ class PICALauncherApp:
         This is the robust solution for PyInstaller executables.
         """
         self.log(f"Launching: {os.path.basename(script_path)}")
-
+        
         abs_path = os.path.abspath(script_path)
         if not os.path.exists(abs_path):
             self.log(f"ERROR: Script not found at {abs_path}")
             messagebox.showerror("File Not Found", f"Script not found:\n\n{abs_path}")
             return
-
+            
         try:
             # Create a new process that will run our wrapper function
             proc = Process(target=run_script_process, args=(abs_path,))
