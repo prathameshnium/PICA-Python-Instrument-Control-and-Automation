@@ -30,27 +30,24 @@ jobs:
         with:
           nuitka-version: main
           
-          # --- CORRECTED AND OPTIMIZED CONFIGURATION ---
+          # --- FINAL CORRECTED CONFIGURATION ---
 
-          # 1. EXPLICITLY SET THE C COMPILER
-          # This is the most critical fix. It ensures Nuitka finds and uses the MSVC compiler.
-          msvc-version: 'latest'
+          # This is the corrected input name to specify the MSVC compiler.
+          msvc: 'latest'
 
-          # 2. ENABLE PLUGINS
-          # Instrument control apps often use Qt and NumPy. These plugins are essential
-          # for Nuitka to find all necessary files and hidden imports.
+          # Enable plugins for GUI and scientific libraries.
           enable-plugins: "qt-binding,numpy"
 
-          # Pass Nuitka command-line arguments directly with the script name.
+          # Pass Nuitka command-line arguments.
           script-name: PICA_Launcher_V4.py --onefile
 
-          # 'disable-console' is the correct input for the action to hide the command window.
+          # Hide the console window.
           disable-console: true
           
-          # This is a valid action input. Ensure the path is correct from the repo root.
+          # Set the application icon.
           windows-icon-from-ico: _assets/LOGO/UGC_DAE_CSR.ico
           
-          # For including data directories, the format is source=destination.
+          # Include necessary data directories.
           include-data-dir: |
             _assets=_assets
             Delta_mode=Delta_mode
@@ -66,8 +63,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          # Nuitka automatically puts the onefile executable in a '.dist' folder
-          # e.g., PICA_Launcher_V4.dist/PICA_Launcher_V4.exe
+          # Nuitka's --onefile mode creates a .dist folder for the output.
           file: PICA_Launcher_V4.dist/PICA_Launcher_V4.exe
           asset_name: PICA_Launcher-Windows-${{ github.ref_name }}.exe
           tag: ${{ github.ref }}
