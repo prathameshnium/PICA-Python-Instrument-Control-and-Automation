@@ -23,20 +23,23 @@ jobs:
           python-version: '3.9'
 
       - name: Install Dependencies
+        # Using a requirements file with pinned numpy and explicit PySide6 is crucial for stability.
         run: pip install -r requirements.txt
 
       - name: Build with Nuitka
-        uses: Nuitka/Nuitka-Action@main
+        # --- THE DEFINITIVE STABLE CONFIGURATION ---
+        # Lock the action to a stable release.
+        uses: Nuitka/Nuitka-Action@v0.5.0
         with:
-          nuitka-version: main
+          # Lock Nuitka to a recent, known-stable version.
+          nuitka-version: '2.6'
           
-          # --- FINAL CORRECTED CONFIGURATION ---
-
           # This ensures Nuitka finds and uses the MSVC compiler.
           msvc: 'latest'
 
-          # Corrected the plugin name to 'qt-bindings' and added 'tk-inter' for robustness.
-          enable-plugins: "qt-bindings,numpy,tk-inter"
+          # REMOVED 'qt-bindings'. Modern Nuitka auto-detects Qt usage from your imports.
+          # The other plugins are still necessary for complex libraries.
+          enable-plugins: "numpy,pandas,tk-inter"
 
           # Pass Nuitka command-line arguments.
           script-name: PICA_Launcher_V4.py --onefile
@@ -63,7 +66,6 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          # Nuitka's --onefile mode creates a .dist folder for the output.
           file: PICA_Launcher_V4.dist/PICA_Launcher_V4.exe
           asset_name: PICA_Launcher-Windows-${{ github.ref_name }}.exe
           tag: ${{ github.ref }}
