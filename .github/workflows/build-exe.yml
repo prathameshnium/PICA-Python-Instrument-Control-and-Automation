@@ -17,10 +17,10 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Install Dependencies
+      - name: Install Dependencies Directly
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller -r requirements.txt
+          pip install pyinstaller numpy pandas matplotlib pymeasure pyvisa pyvisa-py Pillow
 
       - name: Build with PyInstaller
         run: pyinstaller --onefile --windowed PICA_Launcher_V4.py
