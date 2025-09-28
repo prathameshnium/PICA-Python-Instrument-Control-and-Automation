@@ -1,14 +1,17 @@
+# This workflow builds a standalone Python executable for Windows using Nuitka
+# and attaches it to a new GitHub Release.
+
 name: Build Python Executable with Nuitka
 
 on:
   release:
-    types: [created]
+    types: [created] # This workflow runs automatically whenever a new release is published.
 
 jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: write
+      contents: write # Required to write the release asset.
 
     steps:
       - name: Checkout repository
@@ -26,27 +29,40 @@ jobs:
         uses: Nuitka/Nuitka-Action@main
         with:
           nuitka-version: main
-          script-name: PICA_Launcher_V4.py
-          # --- CORRECTED FLAGS BELOW ---
-          onefile: "yes" # This implies standalone
-          windows-disable-console: "yes"
+          
+          # --- CORRECTED FLAGS AND INPUTS BELOW ---
+
+          # Nuitka command-line arguments are passed directly with the script name.
+          # We add --onefile to create a single executable.
+          script-name: PICA_Launcher_V4.py --onefile
+
+          # 'disable-console' is the correct input for the action to hide the command window.
+          disable-console: true
+
+          # Specify the output directory to keep the project root clean.
+          output-dir: build
+
+          # This is a valid action input. Ensure the path is correct from the repo root.
           windows-icon-from-ico: _assets/LOGO/UGC_DAE_CSR.ico
+          
+          # For including data directories, the format is source=destination.
+          # This copies the entire folder into the build at the specified destination path.
           include-data-dir: |
-            _assets
-            Delta_mode
-            Keithley_2400
-            Keithley_2400_Keithley_2182
-            Keithley_6517B
-            LCR_Keysight_E4980A
-            Lakeshore_350_340
-            Lock_in_amplifier
-            Utilities
+            _assets=_assets
+            Delta_mode=Delta_mode
+            Keithley_2400=Keithley_2400
+            Keithley_2400_Keithley_2182=Keithley_2400_Keithley_2182
+            Keithley_6517B=Keithley_6517B
+            LCR_Keysight_E4980A=LCR_Keysight_E4980A
+            Lakeshore_350_340=Lakeshore_350_340
+            Lock_in_amplifier=Lock_in_amplifier
+            Utilities=Utilities
 
       - name: Upload Executable to Release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          # Nuitka onefile build places the .exe directly in the `build` folder
+          # The file path now correctly points to the output directory we specified.
           file: build/PICA_Launcher_V4.exe
           asset_name: PICA_Launcher-Windows-${{ github.ref_name }}.exe
           tag: ${{ github.ref }}
