@@ -58,13 +58,17 @@ jobs:
             Lakeshore_350_340=Lakeshore_350_340
             Lock_in_amplifier=Lock_in_amplifier
             Utilities=Utilities
+          
+          # We explicitly tell Nuitka to put the output here.
+          output-dir: build
 
       - name: Upload Executable to Release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          # The 'deployment' flag places the final .exe in the repository root.
-          file: PICA_Launcher_V4.exe
+          # --- CORRECTED FILE PATH BELOW ---
+          # The file is inside the 'build' directory we specified above.
+          file: build/PICA_Launcher_V4.exe
           asset_name: PICA_Launcher-Windows-${{ github.ref_name }}.exe
           tag: ${{ github.ref }}
           overwrite: true
