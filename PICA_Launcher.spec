@@ -50,6 +50,7 @@ exe = EXE(
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
-    entitlements_file=None
-    # The 'icon=' line has been removed from here
+    entitlements_file=None,
+    # --- THIS LINE ADDS YOUR ICON ---
+    icon='_assets/LOGO/UGC_DAE_CSR.ico'
 )
