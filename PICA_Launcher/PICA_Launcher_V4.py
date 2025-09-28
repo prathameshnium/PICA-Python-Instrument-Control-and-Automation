@@ -3,7 +3,7 @@
 # Purpose:          A central meta front end to launch various measurement GUIs.
 # Author:           Prathamesh Deshmukh
 # Created:          10/09/2025
-# Version:          9.5 (Updated K6517B Script Paths)
+# Version:          9.8 (Personalized Welcome Message)
 # Last Edit:        28/09/2025
 # -------------------------------------------------------------------------------
 
@@ -36,7 +36,7 @@ except ImportError:
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "9.5"
+    PROGRAM_VERSION = "9.8"
 
     # --- Color and Font Palette ---
     CLR_BG_DARK = '#2B3D4F'
@@ -72,11 +72,11 @@ class PICALauncherApp:
         "K2400_2182 I-V": "../Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182.py",
         "K2400_2182 R-T": "../Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py",
         "K6517B I-V": "../Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V9.py",
-        "K6517B Resistivity": "../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_5Always.py",
+        "K6517B Resistivity": "../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_5AAlways.py",
         "K6517B R-T (Passive)": "../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py",
         "Pyroelectric Current": "../Keithley_6517B/Pyroelectric/Pyroelectric_Measurement_GUI_V3.py",
-        "Lakeshore Temp Control": "../Lakeshore_350_340/lakeshore350_temp_ramp_v4_Frontend_v1.py",
-        "Lakeshore Temp Monitor": "../Lakeshore_350_340/lakeshore350_temp_monitor_Frontend.py",
+        "Lakeshore Temp Control": "../Lakeshore_350_340/lakeshore350_temp_ramp_Frontend_V4.py",
+        "Lakeshore Temp Monitor": "../Lakeshore_350_340/lakeshore350_passive_monitor_Frontend_V1.py",
         "LCR C-V Measurement": "../LCR_Keysight_E4980A/LCR_CV.py",
         "Lock-in AC Measurement": "../Lock_in_amplifier/AC_Transport_GUI.py",
     }
@@ -96,6 +96,7 @@ class PICALauncherApp:
         self.log(f"PICA Launcher v{self.PROGRAM_VERSION} initialized.")
         self.log(f"PIL/Pillow (logo): {'Available' if PIL_AVAILABLE else 'Not found'}")
         self.log(f"PyVISA (GPIB test): {'Available' if PYVISA_AVAILABLE else 'Not found'}")
+        self.log("Welcome to PICA, first check connections and do a GPIB test before running any modules - Prathamesh")
 
     def setup_styles(self):
         """Configures all ttk styles for the application."""
