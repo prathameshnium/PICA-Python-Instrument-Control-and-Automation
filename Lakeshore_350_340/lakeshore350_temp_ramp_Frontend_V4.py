@@ -1,11 +1,12 @@
 # -------------------------------------------------------------------------------
 # Name:           Lakeshore 350 Temp Ramp GUI (Improved Control)
 # Purpose:        Provide a user-friendly interface for a temperature ramp
-#                 using robust stabilization and simplified hardware control.
+#                 using robust stabilization and a constant high-power ramp.
 # Author:         Prathamesh Deshmukh
 # Created:        26/09/2025
-# Version:        2.1 (Robust Stabilization & Simplified Hardware Ramp)
+# Version:        2.3 (Constant High-Power Ramp Logic)
 # -------------------------------------------------------------------------------
+
 
 # --- Packages for Front end ---
 import tkinter as tk
@@ -22,7 +23,7 @@ import matplotlib as mpl
 
 # --- Pillow for Logo Image ---
 try:
-    from PIL import Image, ImageTk, ImageDraw
+    from PIL import Image, ImageTk
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
@@ -74,7 +75,8 @@ class LakeshoreBackend:
         """ Configures the instrument's internal ramp generator. """
         self.instrument.write(f'RAMP {output},{1 if ramp_on else 0},{rate_k_per_min}')
         time.sleep(0.5)
-        
+
+
     def set_setpoint(self, output, temperature_k):
         """Sets the temperature setpoint."""
         self.instrument.write(f'SETP {output},{temperature_k}')
@@ -117,10 +119,21 @@ class LakeshoreBackend:
 #===============================================================================
 class LakeshoreRampGUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "2.1"
+    PROGRAM_VERSION = "2.3"
+    LOGO_SIZE = 110
+    try:
+        # Robust path finding for assets
+        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
+    except NameError:
+        # Fallback for environments where __file__ is not defined
+        LOGO_FILE_PATH = "../_assets/LOGO/UGC_DAE_CSR.jpeg"
+
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
+    CLR_TEXT_DARK = '#1A1A1A'
+    CLR_ACCENT_GOLD = '#FFC107'
     CLR_ACCENT_BLUE = '#8D99AE'
     CLR_ACCENT_GREEN = '#A7C957'
     CLR_ACCENT_RED = '#EF233C'
@@ -146,6 +159,7 @@ class LakeshoreRampGUI:
         self.file_location_path = ""
         self.data_storage = {'time': [], 'temperature': [], 'heater': []}
         self.current_heater_range = 'off'
+        self.logo_image = None # Attribute to hold the logo image reference
 
         self.setup_styles()
         self.create_widgets()
@@ -157,11 +171,24 @@ class LakeshoreRampGUI:
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
-        style.configure('TButton', font=self.FONT_BASE, padding=(10, 8))
-        style.map('TButton', foreground=[('!active', self.CLR_BG_DARK), ('active', self.CLR_FG_LIGHT)],
-                  background=[('!active', self.CLR_ACCENT_BLUE), ('active', self.CLR_BG_DARK)])
-        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN)
-        style.configure('Stop.TButton', background=self.CLR_ACCENT_RED)
+
+        style.configure('TButton',
+                        font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD,
+                        background=self.CLR_HEADER, borderwidth=0, focusthickness=0, focuscolor='none')
+        style.map('TButton',
+                  background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)],
+                  foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
+
+        style.configure('Start.TButton',
+                        font=self.FONT_BASE, padding=(10, 9), background=self.CLR_ACCENT_GREEN,
+                        foreground=self.CLR_TEXT_DARK)
+        style.map('Start.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
+
+        style.configure('Stop.TButton',
+                        font=self.FONT_BASE, padding=(10, 9), background=self.CLR_ACCENT_RED,
+                        foreground=self.CLR_FG_LIGHT)
+        style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
+
         mpl.rcParams['font.family'] = 'Segoe UI'
         mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
         mpl.rcParams['axes.titlesize'] = self.FONT_SIZE_BASE + 6
@@ -189,34 +216,32 @@ class LakeshoreRampGUI:
         Label(header_frame, text="Lakeshore 350 Temperature Ramp Control", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
-    def _process_logo_image(self, input_path="UGC_DAE_CSR.jpeg", size=120):
-        if not (PIL_AVAILABLE and os.path.exists(input_path)): return None
-        try:
-            with Image.open(input_path) as img:
-                w, h = img.size; d = min(w, h) * 0.8
-                l, t, r, b = (w - d) / 2, (h - d) / 2, (w + d) / 2, (h + d) / 2
-                img_cropped = img.crop((l, t, r, b))
-                mask = Image.new('L', img_cropped.size, 0)
-                ImageDraw.Draw(mask).ellipse((0, 0) + img_cropped.size, fill=255)
-                img_cropped.putalpha(mask)
-                return ImageTk.PhotoImage(img_cropped.resize((size, size), Image.Resampling.LANCZOS))
-        except Exception as e:
-            print(f"ERROR: Could not process logo. Reason: {e}")
-            return None
-
     def create_info_frame(self, parent):
         frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         frame.pack(pady=(10, 10), padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
-        logo_canvas = Canvas(frame, width=120, height=120, bg=self.CLR_BG_DARK, highlightthickness=0)
-        logo_canvas.grid(row=0, column=0, padx=15, pady=15)
-        self.logo_image = self._process_logo_image()
-        if self.logo_image:
-            logo_canvas.create_image(60, 60, image=self.logo_image)
+
+        logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
+        logo_canvas.grid(row=0, column=0, rowspan=2, padx=15, pady=15)
+
+        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
+            try:
+                img = Image.open(self.LOGO_FILE_PATH)
+                img.thumbnail((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
+                self.logo_image = ImageTk.PhotoImage(img)
+                logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
+            except Exception as e:
+                self.log(f"ERROR: Failed to load logo. {e}")
+                logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nERROR", font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
+        else:
+            self.log(f"Warning: Logo not found at '{self.LOGO_FILE_PATH}'")
+            logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
+
         info_text = ("Institute: UGC DAE CSR, Mumbai\n"
                      "Measurement: Temperature vs. Time Ramp\n\n"
                      "Instrument:\n  • Lakeshore Model 350")
-        ttk.Label(frame, text=info_text, justify='left').grid(row=0, column=1, padx=10, sticky='w')
+        ttk.Label(frame, text=info_text, justify='left').grid(row=0, column=1, rowspan=2, padx=10, sticky='w')
+
 
     def create_input_frame(self, parent):
         frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
@@ -322,7 +347,8 @@ class LakeshoreRampGUI:
             for line in [self.line_main, self.line_sub1]: line.set_data([], [])
             self.ax_main.set_title(f"Ramp for Sample: {params['sample_name']}", fontweight='bold')
             self.canvas.draw()
-            
+
+
             self.log("Starting stabilization process...")
             self.root.after(1000, self._stabilization_loop)
 
@@ -356,7 +382,8 @@ class LakeshoreRampGUI:
                 self.log(f"Heating... Current: {current_temp:.4f} K <= Target: {params['start_temp']} K")
                 self.backend.set_heater_range(1, 'medium')
                 self.backend.set_setpoint(1, params['start_temp'])
-            
+
+
             if abs(current_temp - params['start_temp']) < 0.1:
                 self.log(f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
                 self.is_stabilizing = False
@@ -369,16 +396,20 @@ class LakeshoreRampGUI:
     def _start_hardware_ramp(self):
         """Initializes the Lakeshore's internal hardware ramp."""
         params = self.backend.params
-        
+
+        # 1. Set the final setpoint
         self.backend.set_setpoint(1, params['end_temp'])
+
+        # 2. Configure the hardware ramp rate
         self.backend.setup_ramp(1, params['rate'])
-        
-        self.current_heater_range = 'medium'
+
+        # 3. Set the heater range to High (5) for the entire ramp
+        self.current_heater_range = 'high'
         self.backend.set_heater_range(1, self.current_heater_range)
-        
+
         self.log(f"Hardware ramp started towards {params['end_temp']} K at {params['rate']} K/min.")
-        self.log(f"Initial heater range set to '{self.current_heater_range}' (Range 4).")
-        
+        self.log(f"Heater range permanently set to '{self.current_heater_range}' (Range 5).")
+
         self.start_time = time.time()
         self.root.after(1000, self._update_measurement_loop)
 
@@ -390,20 +421,20 @@ class LakeshoreRampGUI:
             params = self.backend.params
             elapsed_time = time.time() - self.start_time
 
-            # --- Simplified Temperature-Based Heater Logic ---
-            if current_temp > 150.0 and self.current_heater_range == 'medium':
-                self.log("Temperature > 150 K. Switching to HIGH range (5).")
-                self.current_heater_range = 'high'
-                self.backend.set_heater_range(1, self.current_heater_range)
+            # --- HEATER LOGIC REMOVED ---
+            # Heater is now set to 'high' at the start of the ramp and remains there.
+            # No dynamic switching is needed in the loop.
 
             # --- Logging, Data Storage, and Plotting ---
             self.log(f"Time: {elapsed_time:7.1f}s | Temp: {current_temp:8.4f}K | Heater: {heater_output:5.1f}% ({self.current_heater_range})")
-            
+
+
             with open(self.data_filepath, 'a', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                                  f"{elapsed_time:.2f}", f"{current_temp:.4f}", f"{heater_output:.2f}"])
-            
+
+
             self.data_storage['time'].append(elapsed_time)
             self.data_storage['temperature'].append(current_temp)
             self.data_storage['heater'].append(heater_output)
