@@ -30,23 +30,27 @@ jobs:
         with:
           nuitka-version: main
           
-          # --- CORRECTED FLAGS AND INPUTS BELOW ---
+          # --- CORRECTED AND OPTIMIZED CONFIGURATION ---
 
-          # Nuitka command-line arguments are passed directly with the script name.
-          # We add --onefile to create a single executable.
+          # 1. EXPLICITLY SET THE C COMPILER
+          # This is the most critical fix. It ensures Nuitka finds and uses the MSVC compiler.
+          msvc-version: 'latest'
+
+          # 2. ENABLE PLUGINS
+          # Instrument control apps often use Qt and NumPy. These plugins are essential
+          # for Nuitka to find all necessary files and hidden imports.
+          enable-plugins: "qt-binding,numpy"
+
+          # Pass Nuitka command-line arguments directly with the script name.
           script-name: PICA_Launcher_V4.py --onefile
 
           # 'disable-console' is the correct input for the action to hide the command window.
           disable-console: true
-
-          # Specify the output directory to keep the project root clean.
-          output-dir: build
-
+          
           # This is a valid action input. Ensure the path is correct from the repo root.
           windows-icon-from-ico: _assets/LOGO/UGC_DAE_CSR.ico
           
           # For including data directories, the format is source=destination.
-          # This copies the entire folder into the build at the specified destination path.
           include-data-dir: |
             _assets=_assets
             Delta_mode=Delta_mode
@@ -62,8 +66,10 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          # The file path now correctly points to the output directory we specified.
-          file: build/PICA_Launcher_V4.exe
+          # Nuitka automatically puts the onefile executable in a '.dist' folder
+          # e.g., PICA_Launcher_V4.dist/PICA_Launcher_V4.exe
+          file: PICA_Launcher_V4.dist/PICA_Launcher_V4.exe
           asset_name: PICA_Launcher-Windows-${{ github.ref_name }}.exe
           tag: ${{ github.ref }}
           overwrite: true
+
