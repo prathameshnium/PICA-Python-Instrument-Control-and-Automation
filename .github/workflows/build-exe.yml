@@ -24,7 +24,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller numpy pandas matplotlib pymeasure pyvisa pyvisa-py Pillow
 
-      # --- KEY CHANGE IS HERE ---
       - name: Build with PyInstaller using .spec file
         run: pyinstaller PICA_Launcher.spec
 
@@ -32,8 +31,8 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          # The name in the .spec file determines the output .exe name
-          file: dist/PICA_Launcher.exe
+          # --- CORRECTED FILE PATH ---
+          file: dist/PICA_Launcher/PICA_Launcher.exe
           asset_name: PICA_Launcher-Windows-${{ github.ref_name }}.exe
           tag: ${{ github.ref }}
           overwrite: true
