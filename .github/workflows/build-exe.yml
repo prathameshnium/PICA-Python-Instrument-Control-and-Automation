@@ -37,9 +37,9 @@ jobs:
           # --- CORRECTED SYNTAX BELOW ---
           # Provide the script name ONLY.
           script-name: PICA_Launcher_V4.py
-          
-          # Provide all other Nuitka command-line flags here.
-          nuitka-args: --onefile
+
+          # Use the 'deployment' flag. On Windows, this implies a one-file build.
+          deployment: true
 
           # Action-specific inputs remain separate.
           disable-console: true
@@ -59,7 +59,8 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: PICA_Launcher_V4.dist/PICA_Launcher_V4.exe
+          # The output is now in the root of the repo by default with --deployment
+          file: PICA_Launcher_V4.exe
           asset_name: PICA_Launcher-Windows-${{ github.ref_name }}.exe
           tag: ${{ github.ref }}
           overwrite: true
