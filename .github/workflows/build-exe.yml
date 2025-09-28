@@ -27,9 +27,9 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Build with Nuitka
-        # --- THE DEFINITIVE STABLE CONFIGURATION ---
-        # Lock the action to a known-good, stable release version (v0.4.0).
-        uses: Nuitka/Nuitka-Action@v0.4.0
+        # --- THE FINAL, VERIFIED CONFIGURATION ---
+        # Use the standard and stable major version tag '@v0'. This is the correct way.
+        uses: Nuitka/Nuitka-Action@v0
         with:
           # Lock Nuitka to a recent, known-stable version.
           nuitka-version: '2.6'
