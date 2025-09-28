@@ -3,7 +3,7 @@
 # Purpose:        A central meta front end to launch various measurement GUIs.
 # Author:         Prathamesh Deshmukh
 # Created:        10/09/2025
-# Version:        9.2 (Added Passive R-T)
+# Version:        9.4 (UI Text Update)
 # Last Edit:      28/09/2025
 # -------------------------------------------------------------------------------
 
@@ -36,7 +36,7 @@ except ImportError:
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "9.2"
+    PROGRAM_VERSION = "9.4"
 
     # --- Color and Font Palette ---
     CLR_BG_DARK = '#2B3D4F'
@@ -76,6 +76,7 @@ class PICALauncherApp:
         "K6517B R-T (Passive)": "../Keithley_6517B/High_Resistance/6517B_high_resistance_passive_lakeshore_RT_Frontend.py",
         "Pyroelectric Current": "../Keithley_6517B/Pyroelectric/Pyroelectric_Measurement_GUI_V3.py",
         "Lakeshore Temp Control": "../Lakeshore_350_340/lakeshore350_temp_ramp_v4_Frontend_v1.py",
+        "Lakeshore Temp Monitor": "../Lakeshore_350_340/lakeshore350_temp_monitor_Frontend.py",
         "LCR C-V Measurement": "../LCR_Keysight_E4980A/LCR_CV.py",
         "Lock-in AC Measurement": "../Lock_in_amplifier/AC_Transport_GUI.py",
     }
@@ -239,10 +240,11 @@ class PICALauncherApp:
         ttk.Button(pyro_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Pyroelectric Current")).grid(row=0, column=1, sticky='ns')
 
         # --- Environmental Control Group ---
-        lakeshore_frame = ttk.LabelFrame(right_col, text='Temperature Control (Lakeshore)'); lakeshore_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        lakeshore_frame = ttk.LabelFrame(right_col, text='Temperature Control (Lakeshore 350)'); lakeshore_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         lakeshore_frame.columnconfigure(0, weight=1)
-        self._create_launch_button(lakeshore_frame, "Temperature Ramp", "Lakeshore Temp Control").grid(row=0, column=0, sticky='ew', padx=(0, 4))
-        ttk.Button(lakeshore_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Lakeshore Temp Control")).grid(row=0, column=1, sticky='ns')
+        self._create_launch_button(lakeshore_frame, "Temperature Ramp", "Lakeshore Temp Control").grid(row=0, column=0, sticky='ew', padx=(0, 4), pady=(0, 2))
+        self._create_launch_button(lakeshore_frame, "Temperature Monitor", "Lakeshore Temp Monitor").grid(row=1, column=0, sticky='ew', padx=(0, 4), pady=(2, 0))
+        ttk.Button(lakeshore_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Lakeshore Temp Control")).grid(row=0, column=1, rowspan=2, sticky='ns')
 
         # --- LCR Meter Group ---
         lcr_frame = ttk.LabelFrame(right_col, text='LCR Meter (Keysight E4980A)'); lcr_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
