@@ -3,7 +3,7 @@
 # Purpose:          A central meta front end to launch various measurement GUIs.
 # Author:           Prathamesh Deshmukh
 # Created:          10/09/2025
-# Version:          9.8 (Personalized Welcome Message)
+# Version:          9.9 (Updated GPIB Test Message)
 # Last Edit:        28/09/2025
 # -------------------------------------------------------------------------------
 
@@ -36,7 +36,7 @@ except ImportError:
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "9.8"
+    PROGRAM_VERSION = "9.9"
 
     # --- Color and Font Palette ---
     CLR_BG_DARK = '#2B3D4F'
@@ -450,7 +450,7 @@ class PICALauncherApp:
                 rm = pyvisa.ResourceManager()
                 resources = rm.list_resources()
                 if not resources:
-                    result_queue.put("-> No instruments found. Check connections and VISA installation.\n")
+                    result_queue.put("-> No instruments found. Check the wires and turn off the instruments once and retry the test. If it fails, please restart the PC and instrument once, this will resolve the issue.\n")
                 else:
                     result_queue.put(f"-> Found {len(resources)} instrument(s). Querying them now...\n\n")
                     for address in resources:
