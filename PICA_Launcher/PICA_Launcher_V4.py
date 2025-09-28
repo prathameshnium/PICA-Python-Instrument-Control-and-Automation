@@ -1,10 +1,10 @@
 # -------------------------------------------------------------------------------
-# Name:         PICA Launcher - Python Instrument Control & Automation
-# Purpose:        A central meta front end to launch various measurement GUIs.
-# Author:         Prathamesh Deshmukh
-# Created:        10/09/2025
-# Version:        9.4 (UI Text Update)
-# Last Edit:      28/09/2025
+# Name:             PICA Launcher - Python Instrument Control & Automation
+# Purpose:          A central meta front end to launch various measurement GUIs.
+# Author:           Prathamesh Deshmukh
+# Created:          10/09/2025
+# Version:          9.5 (Updated K6517B Script Paths)
+# Last Edit:        28/09/2025
 # -------------------------------------------------------------------------------
 
 import tkinter as tk
@@ -36,7 +36,7 @@ except ImportError:
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "9.4"
+    PROGRAM_VERSION = "9.5"
 
     # --- Color and Font Palette ---
     CLR_BG_DARK = '#2B3D4F'
@@ -71,9 +71,9 @@ class PICALauncherApp:
         "K2400 R-T": "../Keithley_2400/Frontend_Keithley_2400_350_V_vs_T_V1.py",
         "K2400_2182 I-V": "../Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182.py",
         "K2400_2182 R-T": "../Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py",
-        "K6517B I-V": "../Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V8.py",
-        "K6517B Resistivity": "../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V9.py",
-        "K6517B R-T (Passive)": "../Keithley_6517B/High_Resistance/6517B_high_resistance_passive_lakeshore_RT_Frontend.py",
+        "K6517B I-V": "../Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V9.py",
+        "K6517B Resistivity": "../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_5Always.py",
+        "K6517B R-T (Passive)": "../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py",
         "Pyroelectric Current": "../Keithley_6517B/Pyroelectric/Pyroelectric_Measurement_GUI_V3.py",
         "Lakeshore Temp Control": "../Lakeshore_350_340/lakeshore350_temp_ramp_v4_Frontend_v1.py",
         "Lakeshore Temp Monitor": "../Lakeshore_350_340/lakeshore350_temp_monitor_Frontend.py",
@@ -430,7 +430,7 @@ class PICALauncherApp:
         controls_frame.columnconfigure(0, weight=1)
         controls_frame.columnconfigure(1, weight=1)
         console_area = scrolledtext.ScrolledText(main_frame, state='disabled', bg=self.CLR_CONSOLE_BG,
-                                               fg=self.CLR_TEXT, font=self.FONT_CONSOLE, wrap='word', bd=0)
+                                              fg=self.CLR_TEXT, font=self.FONT_CONSOLE, wrap='word', bd=0)
         console_area.grid(row=1, column=0, sticky='nsew')
 
         def log_to_scanner(message, add_timestamp=True):
