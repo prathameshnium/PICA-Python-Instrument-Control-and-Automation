@@ -1,0 +1,7 @@
+numpy
+pandas
+matplotlib
+pymeasure
+pyvisa
+pyvisa-py
+Pillow
