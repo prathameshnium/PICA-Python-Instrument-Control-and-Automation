@@ -1,12 +1,13 @@
 # -------------------------------------------------------------------------------
-# Name:           Integrated R-T Passive Data Logger
-# Purpose:        Provide a GUI to passively measure and record Resistance vs.
-#                 Temperature from a Lakeshore 350 and Keithley 6517B.
-#                 This version DOES NOT control the temperature.
-# Author:         Prathamesh Deshmukh
-# Created:        26/09/2025
-# Version:        V: 4.0 (Passive Monitoring Only)
+# Name:             Integrated R-T Passive Data Logger
+# Purpose:          Provide a GUI to passively measure and record Resistance vs.
+#                   Temperature from a Lakeshore 350 and Keithley 6517B.
+#                   This version DOES NOT control the temperature.
+# Author:           Prathamesh Deshmukh
+# Created:          26/09/2025
+# Version:          V: 4.1 (Logo Fix)
 # -------------------------------------------------------------------------------
+
 
 # --- Packages for Front end ---
 import tkinter as tk
@@ -23,7 +24,7 @@ import matplotlib as mpl
 
 # --- Pillow for Logo Image ---
 try:
-    from PIL import Image, ImageTk, ImageDraw
+    from PIL import Image, ImageTk
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
@@ -79,6 +80,7 @@ class Lakeshore350_Backend:
                 print(f"Warning: Issue during Lakeshore shutdown: {e}")
             finally:
                 self.instrument = None
+
 
 
 class Combined_Backend:
@@ -148,12 +150,17 @@ class Combined_Backend:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class Integrated_RT_GUI:
-    PROGRAM_VERSION = "4.0"
+    PROGRAM_VERSION = "4.1"
+    LOGO_SIZE = 110
+
     try:
+        # Robust path finding for assets
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
+        # Path is two directories up from the script location
+        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
     except NameError:
-        LOGO_FILE_PATH = "../_assets/LOGO/UGC_DAE_CSR.jpeg"
+        # Fallback for environments where __file__ is not defined
+        LOGO_FILE_PATH = "../../_assets/LOGO/UGC_DAE_CSR.jpeg"
 
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
@@ -183,6 +190,7 @@ class Integrated_RT_GUI:
         self.file_location_path = ""
         self.data_storage = {'time': [], 'temperature': [], 'current': [], 'resistance': []}
         self.log_scale_var = tk.BooleanVar(value=True)
+        self.logo_image = None # Attribute to hold the logo image reference
 
         self.setup_styles()
         self.create_widgets()
@@ -237,33 +245,28 @@ class Integrated_RT_GUI:
         Label(header_frame, text="Resistance vs. Temperature (Passive Logger)", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
-    def _process_logo_image(self, input_path, size=110):
-        if not (PIL_AVAILABLE and os.path.exists(input_path)):
-            return None
-        try:
-            with Image.open(input_path) as img:
-                img_cropped = img.crop((18, 18, 237, 237))
-                mask = Image.new('L', img_cropped.size, 0)
-                draw = ImageDraw.Draw(mask)
-                draw.ellipse((0, 0) + img_cropped.size, fill=255)
-                img_cropped.putalpha(mask)
-                img_hd = img_cropped.resize((size, size), Image.Resampling.LANCZOS)
-                return ImageTk.PhotoImage(img_hd)
-        except Exception as e:
-            self.log(f"ERROR: Pillow failed to process logo. Reason: {e}")
-            return None
-
     def create_info_frame(self, parent):
         frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         frame.pack(pady=(5, 0), padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
-        logo_canvas = Canvas(frame, width=110, height=110, bg=self.CLR_BG_DARK, highlightthickness=0)
+
+        logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
         logo_canvas.grid(row=0, column=0, rowspan=2, padx=15, pady=10)
-        self.logo_image = self._process_logo_image(self.LOGO_FILE_PATH)
-        if self.logo_image:
-            logo_canvas.create_image(55, 55, image=self.logo_image)
+
+        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
+            try:
+                img = Image.open(self.LOGO_FILE_PATH)
+                img.thumbnail((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
+                # IMPORTANT: Keep a reference to the image to prevent it from being garbage collected
+                self.logo_image = ImageTk.PhotoImage(img)
+                logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
+            except Exception as e:
+                self.log(f"ERROR: Failed to load logo. {e}")
+                logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nERROR", font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
         else:
             self.log(f"Warning: Logo not found at '{self.LOGO_FILE_PATH}'")
+            logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
+
         info_text = ("Institute: UGC DAE CSR, Mumbai\n"
                      "Instruments:\n"
                      "  • Lakeshore 350 Controller\n"
@@ -322,7 +325,7 @@ class Integrated_RT_GUI:
         top_bar = ttk.Frame(graph_container, style='TFrame')
         top_bar.pack(side='top', fill='x', pady=(0, 5))
         self.log_scale_cb = ttk.Checkbutton(top_bar, text="Logarithmic Resistance Axis",
-                                             variable=self.log_scale_var, command=self._update_y_scale)
+                                              variable=self.log_scale_var, command=self._update_y_scale)
         self.log_scale_cb.pack(side='right', padx=5)
         self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
