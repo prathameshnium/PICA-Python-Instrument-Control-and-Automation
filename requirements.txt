@@ -1,7 +1,8 @@
-numpy
+numpy==1.26.4
 pandas
 matplotlib
 pymeasure
 pyvisa
 pyvisa-py
-Pillow
+pyqtgraph
+pillow
