@@ -20,9 +20,7 @@ jobs:
           python-version: '3.9'
 
       - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller numpy pandas matplotlib pymeasure pyvisa pyvisa-py Pillow
+        run: pip install pyinstaller numpy pandas matplotlib pymeasure pyvisa pyvisa-py Pillow
 
       - name: Build with PyInstaller using .spec file
         run: pyinstaller PICA_Launcher.spec
@@ -31,8 +29,8 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          # --- CORRECTED FILE PATH ---
-          file: dist/PICA_Launcher/PICA_Launcher.exe
+          # --- CORRECTED FILE PATH FOR ONE-FILE BUILD ---
+          file: dist/PICA_Launcher.exe
           asset_name: PICA_Launcher-Windows-${{ github.ref_name }}.exe
           tag: ${{ github.ref }}
           overwrite: true
