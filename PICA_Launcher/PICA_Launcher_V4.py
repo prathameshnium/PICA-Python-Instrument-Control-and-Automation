@@ -3,7 +3,7 @@
 # Purpose:          A central meta front end to launch various measurement GUIs.
 # Author:           Prathamesh Deshmukh
 # Created:          10/09/2025
-# Version:          10.1 (Hybrid Launcher Fix)
+# Version:          10.2 (Final PyInstaller Path Fix)
 # Last Edit:        28/09/2025
 # -------------------------------------------------------------------------------
 
@@ -41,14 +41,16 @@ def resource_path(relative_path):
         base_path = sys._MEIPASS
     except Exception:
         # If not running as a bundled exe, the base path is the script's directory
-        base_path = os.path.abspath(".")
+        # which is the PICA_Launcher folder in this project structure.
+        # We need to go one level up to find the sibling directories.
+        base_path = os.path.abspath("..")
 
     return os.path.join(base_path, relative_path)
 
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "10.1"
+    PROGRAM_VERSION = "10.2"
 
     # --- Color and Font Palette ---
     CLR_BG_DARK = '#2B3D4F'
@@ -67,32 +69,33 @@ class PICALauncherApp:
     FONT_CONSOLE = ('Consolas', 10)
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
 
-    # --- Asset and File Paths (UPDATED for PyInstaller) ---
-    LOGO_FILE = resource_path("../_assets/LOGO/UGC_DAE_CSR.jpeg")
-    MANUAL_FILE = resource_path("../_assets/Manuals")
-    README_FILE = resource_path("../README/README_v1.md")
-    LICENSE_FILE = resource_path("../LICENSE")
+    # --- Asset and File Paths (CORRECTED for PyInstaller) ---
+    LOGO_FILE = resource_path("_assets/LOGO/UGC_DAE_CSR.jpeg")
+    MANUAL_FILE = resource_path("_assets/Manuals")
+    README_FILE = resource_path("README/README_v1.md")
+    LICENSE_FILE = resource_path("LICENSE")
     LOGO_SIZE = 140
 
-    # --- Script Definitions (UPDATED for PyInstaller) ---
+    # --- Script Definitions (CORRECTED for PyInstaller) ---
     # NOTE: For the final distributable, these should point to the .exe versions of your scripts
     SCRIPT_PATHS = {
-        "Delta Mode I-V": resource_path("../Delta_mode/Delta_V7.py"),
-        "Delta Mode R-T": resource_path("../Delta_mode/Delta_Lakeshore_Front_end_V7.py"),
-        "Delta Mode R-T (Passive)": resource_path("../Delta_mode/Delta_Lakeshore_passive_Frontend.py"),
-        "K2400 I-V": resource_path("../Keithley_2400/Frontend_IV_2400_v3.py"),
-        "K2400 R-T": resource_path("../Keithley_2400/Frontend_Keithley_2400_350_V_vs_T_V1.py"),
-        "K2400_2182 I-V": resource_path("../Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182.py"),
-        "K2400_2182 R-T": resource_path("../Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py"),
-        "K6517B I-V": resource_path("../Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V9.py"),
-        "K6517B Resistivity": resource_path("../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_5Always.py"),
-        "K6517B R-T (Passive)": resource_path("../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py"),
-        "Pyroelectric Current": resource_path("../Keithley_6517B/Pyroelectric/Pyroelectric_Measurement_GUI_V3.py"),
-        "Lakeshore Temp Control": resource_path("../Lakeshore_350_340/lakeshore350_temp_ramp_Frontend_V4.py"),
-        "Lakeshore Temp Monitor": resource_path("../Lakeshore_350_340/lakeshore350_passive_monitor_Frontend_V1.py"),
-        "LCR C-V Measurement": resource_path("../LCR_Keysight_E4980A/LCR_CV.py"),
-        "Lock-in AC Measurement": resource_path("../Lock_in_amplifier/AC_Transport_GUI.py"),
+        "Delta Mode I-V": resource_path("Delta_mode/Delta_V7.py"),
+        "Delta Mode R-T": resource_path("Delta_mode/Delta_Lakeshore_Front_end_V7.py"),
+        "Delta Mode R-T (Passive)": resource_path("Delta_mode/Delta_Lakeshore_passive_Frontend.py"),
+        "K2400 I-V": resource_path("Keithley_2400/Frontend_IV_2400_v3.py"),
+        "K2400 R-T": resource_path("Keithley_2400/Frontend_Keithley_2400_350_V_vs_T_V1.py"),
+        "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182.py"),
+        "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py"),
+        "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V9.py"),
+        "K6517B Resistivity": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_5Always.py"),
+        "K6517B R-T (Passive)": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py"),
+        "Pyroelectric Current": resource_path("Keithley_6517B/Pyroelectric/Pyroelectric_Measurement_GUI_V3.py"),
+        "Lakeshore Temp Control": resource_path("Lakeshore_350_340/lakeshore350_temp_ramp_Frontend_V4.py"),
+        "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/lakeshore350_passive_monitor_Frontend_V1.py"),
+        "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/LCR_CV.py"),
+        "Lock-in AC Measurement": resource_path("Lock_in_amplifier/AC_Transport_GUI.py"),
     }
+
     def __init__(self, root):
         self.root = root
         self.root.title(f"PICA Launcher v{self.PROGRAM_VERSION}")
@@ -152,7 +155,6 @@ class PICALauncherApp:
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE):
             try:
                 img = Image.open(self.LOGO_FILE)
-                # Use thumbnail to resize while preserving aspect ratio
                 img.thumbnail((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
                 self.logo_image = ImageTk.PhotoImage(img)
                 logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
@@ -160,6 +162,7 @@ class PICALauncherApp:
                 self.log(f"ERROR: Failed to load logo. {e}")
                 logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nERROR", font=self.FONT_BASE, fill=self.CLR_TEXT, justify='center')
         else:
+            self.log(f"WARNING: Logo file not found at {self.LOGO_FILE}")
             logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill=self.CLR_TEXT, justify='center')
 
         ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, justify='center', anchor='center').pack(pady=(0, 10))
