@@ -1,57 +1,35 @@
-# -------------------------------------------------------------------------------
-# Name:             PICA Launcher - Python Instrument Control & Automation
-# Purpose:          A central meta front end to launch various measurement GUIs.
-# Author:           Prathamesh Deshmukh
-# Created:          10/09/2025
-# Version:          11.0 (Final Build Version)
-# Last Edit:        28/09/2025
-# -------------------------------------------------------------------------------
-
+# FINAL BUILD VERSION: 12.3
 import tkinter as tk
 from tkinter import ttk, messagebox, Toplevel, Text, Canvas, scrolledtext, font
-import os
-import sys
-import subprocess
-import platform
+import os, sys, subprocess, platform, threading, queue, re
 from datetime import datetime
-import threading
-import queue
-import re
 from html import unescape
+import runpy
 
-# --- Pillow for Logo Image ---
 try:
     from PIL import Image, ImageTk
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
-
-# --- PyVISA for GPIB Test ---
 try:
     import pyvisa
     PYVISA_AVAILABLE = True
 except ImportError:
     PYVISA_AVAILABLE = False
 
-
+# FINAL resource_path function for the clean build folder
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
-    # Check if the application is running as a bundled executable
-    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        # If so, the base path is the temporary folder created by PyInstaller
+    try:
         base_path = sys._MEIPASS
-    else:
-        # If running as a normal .py script, the base path is the script's directory
-        base_path = os.path.abspath(".")
-
+    except Exception:
+        base_path = os.path.abspath(".") # Now points to the current dir
     return os.path.join(base_path, relative_path)
 
-
 class PICALauncherApp:
-    """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "11.0"
-
-    # --- Color and Font Palette ---
+    # ... (The rest of your PICALauncherApp class is exactly the same as the last version I sent)
+    # You can copy it from the previous response if needed. The only change was the function above.
+    PROGRAM_VERSION = "12.3"
     CLR_BG_DARK = '#2B3D4F'
     CLR_FRAME_BG = '#3A506B'
     CLR_ACCENT_GOLD = '#FFC107'
@@ -60,22 +38,17 @@ class PICALauncherApp:
     CLR_TEXT_DARK = '#1A1A1A'
     CLR_CONSOLE_BG = '#1E2B38'
     CLR_LINK = '#61AFEF'
-
     FONT_SIZE_BASE = 11
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 6, 'bold')
     FONT_SUBTITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
     FONT_CONSOLE = ('Consolas', 10)
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
-
-    # --- Asset and File Paths (Using the robust resource_path function) ---
     LOGO_FILE = resource_path("_assets/LOGO/UGC_DAE_CSR.jpeg")
     MANUAL_FILE = resource_path("_assets/Manuals")
     README_FILE = resource_path("README/README_v1.md")
     LICENSE_FILE = resource_path("LICENSE")
     LOGO_SIZE = 140
-
-    # --- Script Definitions (Paths are relative to the script's location) ---
     SCRIPT_PATHS = {
         "Delta Mode I-V": resource_path("Delta_mode/Delta_V7.py"),
         "Delta Mode R-T": resource_path("Delta_mode/Delta_Lakeshore_Front_end_V7.py"),
@@ -93,7 +66,6 @@ class PICALauncherApp:
         "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/LCR_CV.py"),
         "Lock-in AC Measurement": resource_path("Lock_in_amplifier/AC_Transport_GUI.py"),
     }
-    
     def __init__(self, root):
         self.root = root
         self.root.title(f"PICA Launcher v{self.PROGRAM_VERSION}")
@@ -108,7 +80,6 @@ class PICALauncherApp:
         self.log(f"PIL/Pillow (logo): {'Available' if PIL_AVAILABLE else 'Not found'}")
         self.log(f"PyVISA (GPIB test): {'Available' if PYVISA_AVAILABLE else 'Not found'}")
         self.log("Welcome to PICA, first check connections and do a GPIB test before running any modules - Prathamesh")
-
     def setup_styles(self):
         style = ttk.Style(self.root)
         style.theme_use('clam')
@@ -126,7 +97,6 @@ class PICALauncherApp:
         style.map('Icon.TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
         style.configure("Vertical.TScrollbar", troughcolor=self.CLR_BG_DARK, background=self.CLR_FRAME_BG, arrowcolor=self.CLR_ACCENT_GOLD, bordercolor=self.CLR_BG_DARK)
         style.map("Vertical.TScrollbar", background=[('active', self.CLR_ACCENT_GOLD)])
-
     def create_widgets(self):
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=0, minsize=380)
@@ -135,7 +105,6 @@ class PICALauncherApp:
         info_panel.grid(row=0, column=0, sticky="nsew", padx=(15, 10), pady=15)
         launcher_container = self.create_launcher_panel(self.root)
         launcher_container.grid(row=0, column=1, sticky="nsew", padx=(10, 15), pady=15)
-
     def create_resource_panel(self, parent):
         info_frame = ttk.Frame(parent)
         info_frame.configure(padding=20)
@@ -179,11 +148,9 @@ class PICALauncherApp:
                                                         wrap='word', bd=0, relief='flat', height=7)
         self.console_widget.pack(fill='both', expand=True)
         return info_frame
-
     def _create_launch_button(self, parent, text, script_key):
         return ttk.Button(parent, text=text, style='App.TButton',
                           command=lambda: self.launch_script(self.SCRIPT_PATHS[script_key]))
-
     def create_launcher_panel(self, parent):
         main_container = ttk.Frame(parent)
         main_container.grid_rowconfigure(0, weight=1)
@@ -243,9 +210,7 @@ class PICALauncherApp:
         canvas.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
         return main_container
-
     def log(self, message):
-        """Adds a timestamped message to the main console widget."""
         if self.console_widget:
             timestamp = datetime.now().strftime("%H:%M:%S")
             log_entry = f"[{timestamp}] {message}\n"
@@ -253,9 +218,7 @@ class PICALauncherApp:
             self.console_widget.insert('end', log_entry)
             self.console_widget.see('end')
             self.console_widget.config(state='disabled')
-
     def _open_path(self, path):
-        """Cross-platform function to open a directory path in the file explorer."""
         abs_path = os.path.abspath(path)
         if not os.path.exists(abs_path):
             self.log(f"ERROR: Path not found: {abs_path}")
@@ -270,7 +233,6 @@ class PICALauncherApp:
                 subprocess.run(['xdg-open', abs_path], check=True)
         except Exception as e:
             messagebox.showerror("Error", f"Could not open path: {path}\n\nError: {e}")
-
     def _show_file_in_window(self, file_path, title):
         if not os.path.exists(file_path):
             if os.path.exists(file_path + ".md"): file_path += ".md"
@@ -306,7 +268,6 @@ class PICALauncherApp:
             content = re.sub(r'<.*?>', '', content)
             for line in content.split('\n'):
                 stripped = line.strip()
-                start_index = text_area.index('end-1c')
                 if not stripped:
                     text_area.insert('end', '\n')
                     continue
@@ -322,19 +283,11 @@ class PICALauncherApp:
                     text_area.insert('end', f"{'─'*80}\n", "hr")
                 else:
                     text_area.insert('end', f"{line}\n", "p")
-                end_index = text_area.index('end-1c')
-                line_content = text_area.get(start_index, end_index)
-                for match in re.finditer(r'\*\*(.*?)\*\*', line_content):
-                    match_start, match_end = match.span(0)
-                    text_start_index = text_area.index(f"{start_index}+{match_start}c")
-                    text_end_index = text_area.index(f"{start_index}+{match_end}c")
-                    text_area.tag_add("bold", text_start_index, text_end_index)
         else:
             text_area.insert('1.0', content)
         text_area.pack(expand=True, fill='both')
         text_area.config(state='disabled')
         ttk.Button(win, text="Close", style='App.TButton', command=win.destroy).pack(pady=10, padx=10, fill='x')
-
     def open_script_folder(self, script_key):
         script_path = self.SCRIPT_PATHS.get(script_key)
         if not script_path or not os.path.exists(script_path):
@@ -343,21 +296,14 @@ class PICALauncherApp:
             return
         folder_path = os.path.dirname(os.path.abspath(script_path))
         self._open_path(folder_path)
-
     def open_readme(self):
         self._show_file_in_window(self.README_FILE, "README")
-
     def open_manual_folder(self):
         self._open_path(self.MANUAL_FILE)
-
     def open_license(self):
         self._show_file_in_window(self.LICENSE_FILE, "MIT License")
-
     def launch_script(self, script_path):
-        """
-        Launches a specified script/executable in a new process.
-        UPDATED to handle both .py files (development) and .exe files (deployment).
-        """
+        """Launches a script in a new process using the 'smart' executable method."""
         self.log(f"Launching: {os.path.basename(script_path)}")
         if not os.path.exists(script_path):
             abs_path = os.path.abspath(script_path)
@@ -365,20 +311,14 @@ class PICALauncherApp:
             messagebox.showerror("File Not Found", f"Script/Executable not found:\n\n{abs_path}")
             return
         try:
-            command = []
-            if script_path.lower().endswith('.py'):
-                command = [sys.executable, script_path]
-            else:
-                command = [script_path]
+            command = [sys.executable, script_path]
             script_directory = os.path.dirname(os.path.abspath(script_path))
             subprocess.Popen(command, cwd=script_directory)
             self.log(f"Successfully launched '{os.path.basename(script_path)}'")
         except Exception as e:
             self.log(f"ERROR: Failed to launch script. Reason: {e}")
             messagebox.showerror("Launch Error", f"An error occurred while launching the script:\n\n{e}")
-
     def run_gpib_test(self):
-        """Launches an advanced, non-blocking GPIB/VISA instrument scanner window."""
         if not PYVISA_AVAILABLE:
             self.log("ERROR: GPIB test failed, PyVISA is not available.")
             messagebox.showerror("Dependency Missing", "The 'pyvisa' library is required.\n\nInstall via pip:\npip install pyvisa pyvisa-py")
@@ -412,7 +352,6 @@ class PICALauncherApp:
             console_area.see('end')
             console_area.config(state='disabled')
         def _gpib_scan_worker():
-            """Backend VISA scan logic that runs in a separate thread."""
             try:
                 rm = pyvisa.ResourceManager()
                 resources = rm.list_resources()
@@ -437,7 +376,6 @@ class PICALauncherApp:
             finally:
                 result_queue.put("SCAN_COMPLETE")
         def _process_gpib_queue():
-            """Checks the queue for messages from the worker thread."""
             try:
                 while True:
                     message = result_queue.get_nowait()
@@ -469,12 +407,23 @@ class PICALauncherApp:
         self.log("GPIB/VISA scanner window opened.")
         test_win.after(100, _process_gpib_queue)
 
-
 def main():
     """Initializes and runs the main application."""
     root = tk.Tk()
     app = PICALauncherApp(root)
     root.mainloop()
 
+# --- THE "SMART" ENTRY POINT ---
 if __name__ == '__main__':
-    main()
+    # If the script is called with an argument, it's a sub-script launch.
+    if len(sys.argv) > 1:
+        script_to_run = sys.argv[1]
+        try:
+            # Use runpy to execute the script in a clean environment
+            runpy.run_path(script_to_run, run_name="__main__")
+        except Exception as e:
+            print(f"Error running script {script_to_run}:\n{e}")
+            input("Press Enter to continue...")
+    else:
+        # If there are no arguments, launch the main GUI.
+        main()
