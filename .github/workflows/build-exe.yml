@@ -1,4 +1,4 @@
-name: Build Python Executable
+name: Build Python Executable with Nuitka
 
 on:
   release:
@@ -20,17 +20,35 @@ jobs:
           python-version: '3.9'
 
       - name: Install Dependencies
-        run: pip install pyinstaller numpy pandas matplotlib pymeasure pyvisa pyvisa-py Pillow
+        run: pip install -r requirements.txt
 
-      - name: Build with PyInstaller using .spec file
-        run: pyinstaller PICA_Launcher.spec
+      - name: Build with Nuitka
+        uses: Nuitka/Nuitka-Action@main
+        with:
+          nuitka-version: main
+          script-name: PICA_Launcher_V4.py
+          standalone: true
+          onefile: true
+          windows-disable-console: true
+          windows-icon-from-ico: _assets/LOGO/UGC_DAE_CSR.ico
+          # Include all necessary data and script folders
+          include-data-dir: |
+            _assets
+            Delta_mode
+            Keithley_2400
+            Keithley_2400_Keithley_2182
+            Keithley_6517B
+            LCR_Keysight_E4980A
+            Lakeshore_350_340
+            Lock_in_amplifier
+            Utilities
 
       - name: Upload Executable to Release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          # --- CORRECTED FILE PATH FOR ONE-FILE BUILD ---
-          file: dist/PICA_Launcher.exe
+          # Nuitka places the final .exe in the 'build' directory
+          file: build/PICA_Launcher_V4.exe
           asset_name: PICA_Launcher-Windows-${{ github.ref_name }}.exe
           tag: ${{ github.ref }}
           overwrite: true
