@@ -1,11 +1,12 @@
 # -------------------------------------------------------------------------------
-# Name:           High Resistance IV GUI for Keithley 6517B
-# Purpose:        Perform a voltage sweep and measure resistance using a
-#                 Keithley 6517B Electrometer with a real instrument backend.
-# Author:         Prathamesh Deshmukh
-# Created:        17/09/2025
-# Version:        V: 4.2 (R-V Plot set to Linear Scale)
+# Name:             High Resistance IV GUI for Keithley 6517B
+# Purpose:          Perform a voltage sweep and measure resistance using a
+#                   Keithley 6517B Electrometer with a real instrument backend.
+# Author:           Prathamesh Deshmukh
+# Created:          17/09/2025
+# Version:          V: 4.3 (Logo Added)
 # -------------------------------------------------------------------------------
+
 
 # --- Packages for Front end ---
 import tkinter as tk
@@ -22,8 +23,9 @@ import matplotlib as mpl
 
 # --- Pillow for Logo Image ---
 try:
-    from PIL import Image, ImageTk, ImageDraw
+    from PIL import Image, ImageTk
     PIL_AVAILABLE = True
+
 except ImportError:
     PIL_AVAILABLE = False
 
@@ -33,6 +35,7 @@ try:
     from pymeasure.instruments.keithley import Keithley6517B
     from pyvisa.errors import VisaIOError
     PYMEASURE_AVAILABLE = True
+
 except ImportError:
     pyvisa = None
     Keithley6517B = None
@@ -81,7 +84,7 @@ class Keithley6517B_Backend:
 
             # 2. Acquire the zero measurement
             print("    Step 2/4: Acquiring zero correction value...")
-            #self.keithley.write(':SYSTem:ZCORrect:ACQuire')
+            self.keithley.write(':SYSTem:ZCORrect:ACQuire')
             time.sleep(2) # Allow time for acquisition
 
             # 3. Disable Zero Check
@@ -150,10 +153,21 @@ class Keithley6517B_Backend:
 # -------------------------------------------------------------------------------
 class HighResistanceIV_GUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "4.2" # Updated version number
+    PROGRAM_VERSION = "4.3" # Updated version number
+    LOGO_SIZE = 110
+    try:
+        # Robust path finding for assets
+        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        # Path is two directories up from the script location
+        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
+    except NameError:
+        # Fallback for environments where __file__ is not defined
+        LOGO_FILE_PATH = "../../_assets/LOGO/UGC_DAE_CSR.jpeg"
+
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
+    CLR_TEXT_DARK = '#1A1A1A'
     CLR_ACCENT_BLUE = '#8D99AE'
     CLR_ACCENT_GREEN = '#A7C957'
     CLR_ACCENT_RED = '#EF233C'
@@ -174,6 +188,7 @@ class HighResistanceIV_GUI:
 
         self.is_running = False
         self.start_time = None
+        self.logo_image = None # Attribute to hold the logo image reference
         try:
             self.backend = Keithley6517B_Backend()
         except Exception as e:
@@ -196,10 +211,12 @@ class HighResistanceIV_GUI:
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
         style.configure('TButton', font=self.FONT_BASE, padding=(10, 8))
-        style.map('TButton', foreground=[('!active', self.CLR_BG_DARK), ('active', self.CLR_FG_LIGHT)],
-                  background=[('!active', self.CLR_ACCENT_BLUE), ('active', self.CLR_BG_DARK)])
-        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN)
-        style.configure('Stop.TButton', background=self.CLR_ACCENT_RED)
+        style.map('TButton', foreground=[('!active', self.CLR_TEXT_DARK), ('active', self.CLR_TEXT_DARK)],
+                  background=[('!active', self.CLR_ACCENT_BLUE), ('active', '#A9B4C4')])
+        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_TEXT_DARK)
+        style.map('Start.TButton', background=[('active', '#8AB845')])
+        style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG_LIGHT)
+        style.map('Stop.TButton', background=[('active', '#D63C2A')])
         mpl.rcParams['font.family'] = 'Segoe UI'
         mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
         mpl.rcParams['axes.titlesize'] = self.FONT_SIZE_BASE + 4
@@ -228,44 +245,30 @@ class HighResistanceIV_GUI:
         Label(header_frame, text="High Resistance I-V Sweep", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
-    def _process_logo_image(self, input_path, size=120):
-        """Dynamically processes the input jpeg to a circular, transparent-background image."""
-        if not (PIL_AVAILABLE and os.path.exists(input_path)):
-            return None
-        try:
-            with Image.open(input_path) as img:
-                img_cropped = img.crop((18, 18, 237, 237)) # Cropped for this specific logo
-                mask = Image.new('L', img_cropped.size, 0)
-                draw = ImageDraw.Draw(mask)
-                draw.ellipse((0, 0) + img_cropped.size, fill=255)
-                img_cropped.putalpha(mask)
-                img_hd = img_cropped.resize((size, size), Image.Resampling.LANCZOS)
-                return ImageTk.PhotoImage(img_hd)
-        except Exception as e:
-            print(f"ERROR: Could not process logo image '{input_path}'. Reason: {e}")
-            return None
-
     def create_info_frame(self, parent):
         frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         frame.pack(pady=(10, 10), padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
 
-        logo_canvas = Canvas(frame, width=120, height=120, bg=self.CLR_BG_DARK, highlightthickness=0)
+        logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
         logo_canvas.grid(row=0, column=0, rowspan=2, padx=15, pady=10)
-        self.logo_image = self._process_logo_image("UGC_DAE_CSR.jpeg")
-        if self.logo_image:
-            logo_canvas.create_image(60, 60, image=self.logo_image)
+
+        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
+            try:
+                img = Image.open(self.LOGO_FILE_PATH)
+                img.thumbnail((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
+                # IMPORTANT: Keep a reference to the image to prevent it from being garbage collected
+                self.logo_image = ImageTk.PhotoImage(img)
+                logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
+            except Exception as e:
+                self.log(f"ERROR: Failed to load logo. {e}")
+                logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nERROR", font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
         else:
-            logo_canvas.create_text(60, 60, text="LOGO", font=self.FONT_TITLE, fill=self.CLR_FG_LIGHT)
+            self.log(f"Warning: Logo not found at '{self.LOGO_FILE_PATH}'")
+            logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
 
         info_text_institute = "Institute: UGC DAE CSR, Mumbai\nInstrument: Keithley 6517B Electrometer"
-        ttk.Label(frame, text=info_text_institute, justify='left').grid(row=0, column=1, padx=10, pady=(10,5), sticky='w')
-
-        info_text_meas = ("High Resistance Measurement:\n"
-                          "  • Voltage Range: up to ±1000V\n"
-                          "  • Current Range: 1fA to 20mA\n"
-                          "  • Resistance Range: up to 10¹⁸ Ω")
-        ttk.Label(frame, text=info_text_meas, justify='left').grid(row=1, column=1, padx=10, pady=(0,10), sticky='w')
+        ttk.Label(frame, text=info_text_institute, justify='left').grid(row=0, column=1, rowspan=2, padx=10, pady=(10,5), sticky='w')
 
     def create_input_frame(self, parent):
         frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
@@ -317,7 +320,6 @@ class HighResistanceIV_GUI:
         self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
         self.log("Console initialized. Configure parameters and scan for instruments.")
         if not PYMEASURE_AVAILABLE: self.log("CRITICAL: PyMeasure or PyVISA not found. Please run 'pip install pymeasure'.")
-        if not os.path.exists("UGC_DAE_CSR.jpeg"): self.log("WARNING: 'UGC_DAE_CSR.jpeg' not found for logo.")
         return frame
 
     def create_graph_frame(self, parent):
