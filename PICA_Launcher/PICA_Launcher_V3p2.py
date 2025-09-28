@@ -1,10 +1,10 @@
 # -------------------------------------------------------------------------------
-# Name:           PICA Launcher - Python Instrument Control & Automation
+# Name:         PICA Launcher - Python Instrument Control & Automation
 # Purpose:        A central meta front end to launch various measurement GUIs.
 # Author:         Prathamesh Deshmukh
 # Created:        10/09/2025
-# Version:        9.1 (Final Polish)
-# Last Edit:      19/09/2025
+# Version:        9.2 (Added Passive R-T)
+# Last Edit:      28/09/2025
 # -------------------------------------------------------------------------------
 
 import tkinter as tk
@@ -36,7 +36,7 @@ except ImportError:
 
 class PICALauncherApp:
     """The main GUI application for the PICA Launcher."""
-    PROGRAM_VERSION = "9.0"
+    PROGRAM_VERSION = "9.2"
 
     # --- Color and Font Palette ---
     CLR_BG_DARK = '#2B3D4F'
@@ -66,12 +66,14 @@ class PICALauncherApp:
     SCRIPT_PATHS = {
         "Delta Mode I-V": "../Delta_mode/Delta_V7.py",
         "Delta Mode R-T": "../Delta_mode/Delta_Lakeshore_Front_end_V7.py",
+        "Delta Mode R-T (Passive)": "../Delta_mode/Delta_Lakeshore_passive_Frontend.py",
         "K2400 I-V": "../Keithley_2400/Frontend_IV_2400_v3.py",
         "K2400 R-T": "../Keithley_2400/Frontend_Keithley_2400_350_V_vs_T_V1.py",
         "K2400_2182 I-V": "../Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182.py",
         "K2400_2182 R-T": "../Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py",
         "K6517B I-V": "../Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V8.py",
         "K6517B Resistivity": "../Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V9.py",
+        "K6517B R-T (Passive)": "../Keithley_6517B/High_Resistance/6517B_high_resistance_passive_lakeshore_RT_Frontend.py",
         "Pyroelectric Current": "../Keithley_6517B/Pyroelectric/Pyroelectric_Measurement_GUI_V3.py",
         "Lakeshore Temp Control": "../Lakeshore_350_340/lakeshore350_temp_ramp_v4_Frontend_v1.py",
         "LCR C-V Measurement": "../LCR_Keysight_E4980A/LCR_CV.py",
@@ -171,8 +173,8 @@ class PICALauncherApp:
         console_container = ttk.LabelFrame(info_frame, text="Console", padding=(5,10))
         console_container.pack(side='bottom', fill='x', pady=(20, 0)) # Adjusted padding
         self.console_widget = scrolledtext.ScrolledText(console_container, state='disabled', bg=self.CLR_CONSOLE_BG,
-                                                       fg=self.CLR_TEXT, font=self.FONT_CONSOLE,
-                                                       wrap='word', bd=0, relief='flat', height=7)
+                                                      fg=self.CLR_TEXT, font=self.FONT_CONSOLE,
+                                                      wrap='word', bd=0, relief='flat', height=7)
         self.console_widget.pack(fill='both', expand=True)
         return info_frame
 
@@ -204,8 +206,9 @@ class PICALauncherApp:
         low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (Delta Mode:Keithley 6221/2182A)'); low_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         low_res_frame.columnconfigure(0, weight=1)
         self._create_launch_button(low_res_frame, "I-V Measurement", "Delta Mode I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
-        self._create_launch_button(low_res_frame, "R vs. T Measurement", "Delta Mode R-T").grid(row=1, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
-        ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V")).grid(row=0, column=1, rowspan=2, sticky='ns')
+        self._create_launch_button(low_res_frame, "R vs. T (Active)", "Delta Mode R-T").grid(row=1, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
+        self._create_launch_button(low_res_frame, "R vs. T (Passive)", "Delta Mode R-T (Passive)").grid(row=2, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
+        ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V")).grid(row=0, column=1, rowspan=3, sticky='ns')
 
         # --- Mid Resistance (K2400) Group ---
         mid_res_frame1 = ttk.LabelFrame(left_col, text='Mid Resistance (Keithley 2400)'); mid_res_frame1.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
@@ -225,8 +228,9 @@ class PICALauncherApp:
         high_res_frame = ttk.LabelFrame(left_col, text='High Resistance (Keithley 6517B)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         high_res_frame.columnconfigure(0, weight=1)
         self._create_launch_button(high_res_frame, "I-V Measurement", "K6517B I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
-        self._create_launch_button(high_res_frame, "Resistivity vs. Temp", "K6517B Resistivity").grid(row=1, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
-        ttk.Button(high_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K6517B I-V")).grid(row=0, column=1, rowspan=2, sticky='ns')
+        self._create_launch_button(high_res_frame, "R vs. T (Active)", "K6517B Resistivity").grid(row=1, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
+        self._create_launch_button(high_res_frame, "R vs. T (Passive)", "K6517B R-T (Passive)").grid(row=2, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
+        ttk.Button(high_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K6517B I-V")).grid(row=0, column=1, rowspan=3, sticky='ns')
 
         # --- Pyroelectric Group ---
         pyro_frame = ttk.LabelFrame(right_col, text='Pyroelectric Measurement (Keithley 6517B)'); pyro_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
@@ -424,7 +428,7 @@ class PICALauncherApp:
         controls_frame.columnconfigure(0, weight=1)
         controls_frame.columnconfigure(1, weight=1)
         console_area = scrolledtext.ScrolledText(main_frame, state='disabled', bg=self.CLR_CONSOLE_BG,
-                                                 fg=self.CLR_TEXT, font=self.FONT_CONSOLE, wrap='word', bd=0)
+                                               fg=self.CLR_TEXT, font=self.FONT_CONSOLE, wrap='word', bd=0)
         console_area.grid(row=1, column=0, sticky='nsew')
 
         def log_to_scanner(message, add_timestamp=True):
