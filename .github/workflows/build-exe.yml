@@ -28,8 +28,8 @@ jobs:
 
       - name: Build with Nuitka
         # --- THE FINAL, VERIFIED CONFIGURATION ---
-        # Use the standard and stable major version tag '@v0'. This is the correct way.
-        uses: Nuitka/Nuitka-Action@v0
+        # Use the standard and officially documented '@main' branch reference.
+        uses: Nuitka/Nuitka-Action@main
         with:
           # Lock Nuitka to a recent, known-stable version.
           nuitka-version: '2.6'
