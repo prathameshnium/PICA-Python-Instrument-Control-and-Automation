@@ -1,6 +1,6 @@
 
 
-# PICA: Python-based Instrument Control and Automation
+# PICA: Python-based Instrument Control and Automation 
 
 [](https://opensource.org/licenses/MIT)
 [](https://www.python.org/downloads/)
