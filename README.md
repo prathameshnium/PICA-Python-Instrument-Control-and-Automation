@@ -1,62 +1,119 @@
 
-# PICA: Python Instrument Control & Automation
+#     PICA-Python-Instrument-Control-and-Automation 
 
-PICA is a collection of practical, ready-to-use Python scripts for controlling and automating common electrical and thermal characterization experiments in materials science and physics research. Each folder contains the necessary control logic and GUI for a specific measurement setup.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python Version](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://www.python.org/downloads/)
+[![UI Framework](https://img.shields.io/badge/UI-Tkinter-red.svg)](https://docs.python.org/3/library/tkinter.html)
 
-## ⚙️ Installation & Dependencies
-To get started, clone the repository and install the required packages.
+**PICA Launcher** is the central graphical interface for the **Python Instrument Control & Automation (PICA)** suite. It provides a robust, user-friendly dashboard to launch and manage various materials science and physics measurement scripts.
 
-**Clone the repository:**
+Its core feature is launching each measurement module in a **completely isolated process** using Python's `multiprocessing` library. This ensures that individual experiments run independently, preventing crashes or errors in one module from affecting the main launcher or other running experiments.
+
+---
+
+## Key Features
+
+* **Centralized Dashboard:** A single, intuitive interface to access all measurement modules.
+* **Isolated Process Launching:** Each script runs in its own process, ensuring stability and preventing resource conflicts between different GUIs (e.g., `tkinter`, `PySide6`).
+* **Integrated GPIB/VISA Scanner:** A built-in tool to scan for, identify, and troubleshoot connections with laboratory instruments without leaving the application.
+* **Direct Folder Access:** Quickly open the directory for any measurement module to view scripts or saved data.
+* **Built-in Documentation Viewer:** Read the project's README and LICENSE files directly within the launcher's UI.
+* **Real-time Console Log:** A console in the main window provides status updates, launch confirmations, and error messages.
+
+---
+
+## Available Measurement Modules
+
+The launcher provides access to the following instrument control systems:
+
+#### Low Resistance (Keithley 6221 / 2182A)
+* **I-V Measurement:** High-precision I-V sweeps using Delta Mode.
+* **R vs. T (Active):** Resistance vs. Temperature measurements with active temperature control.
+* **R vs. T (Passive):** Resistance vs. Temperature measurements while monitoring a passive temperature change.
+
+#### Mid Resistance (Keithley 2400 & 2400/2182)
+* **I-V Measurement (K2400):** Standard four-probe I-V sweeps.
+* **R vs. T Measurement (K2400):** Four-probe Resistance vs. Temperature.
+* **I-V Measurement (K2400/2182):** Higher precision I-V sweeps using the 2182 Nanovoltmeter.
+* **R vs. T Measurement (K2400/2182):** Higher precision Resistance vs. Temperature.
+
+#### High Resistance (Keithley 6517B Electrometer)
+* **I-V Measurement:** For high-resistance materials and insulators.
+* **R vs. T (Active):** High-resistance measurements with controlled temperature ramps.
+* **R vs. T (Passive):** High-resistance measurements during passive temperature changes.
+
+#### Dielectric & Pyroelectric Properties (Keithley 6517B)
+* **Pyroelectric Current vs. Temp:** Measures pyroelectric current during a temperature ramp.
+
+#### LCR Meter (Keysight E4980A)
+* **C-V Measurement:** Automates Capacitance vs. Voltage sweeps.
+
+#### Lock-in Amplifier
+* **AC Measurement:** For AC transport and susceptibility measurements.
+
+#### Temperature Control (Lakeshore 340/350)
+* **Temperature Ramp:** A standalone utility to control temperature ramps.
+* **Temperature Monitor:** A passive monitor for logging temperature.
+
+---
+
+## Installation & Usage
+
+### Step 1: Clone the Repository
 ```bash
 git clone [https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git)
 cd PICA-Python-Instrument-Control-and-Automation
 ````
 
-**Install the core dependencies:**
-This project relies on a few key packages. Ensure they are installed in your Python environment.
+### Step 2: Create `requirements.txt`
 
-```bash
-pip install pyvisa pymeasure numpy pandas
+Create a file named `requirements.txt` in the main project directory and paste the following content into it:
+
+```
+numpy==1.26.4
+pandas
+matplotlib
+pymeasure
+pyvisa
+pyvisa-py
+pyqtgraph
+pillow
+PySide6
 ```
 
-## 🚀 Usage
+### Step 3: Install Dependencies
 
-Each directory is a self-contained measurement system. To run an experiment, navigate into the desired folder and execute the main Python script.
-
-For example, to start the Low Resistance I-V measurement:
+It's highly recommended to use a Python virtual environment.
 
 ```bash
-cd "Low Resistance (Delta Mode)"
-python low_resistance_gui.py
+# Create and activate a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows, use: venv\Scripts\activate
+
+# Install all required packages from the file
+pip install -r requirements.txt
 ```
 
-*(Note: Script names may vary. Please see the specific folder for details.)*
+### Step 4: Run the Launcher
 
-## 🔬 Featured Measurement Systems
+Execute the main launcher script from the root directory of the project.
 
-The following table summarizes the automated measurement systems included in this suite.
+```bash
+python PICA_Launcher.py
+```
 
-| Measurement Type          | Primary Instruments            | Key Measurements                  |
-| ------------------------- | ------------------------------ | --------------------------------- |
-| Low Resistance (Delta)    | Keithley 6221 / 2182A          | I-V, Resistance vs. Temperature   |
-| Mid Resistance (4-Probe)  | Keithley 2400, Keithley 2182   | I-V, Resistance vs. Temperature   |
-| High Resistance           | Keithley 6517B Electrometer    | I-V, Resistivity vs. Temperature  |
-| LCR Measurements          | Keysight E4980A LCR Meter      | Capacitance vs. Voltage           |
-| Pyroelectric Current      | Keithley 6517B, Lakeshore      | Pyro. Current vs. Temperature     |
-| AC Transport              | Lock-in Amplifier (e.g., SR830)| AC Resistance                     |
-| Temperature Control       | Lakeshore 340/350              | Ramping and environmental control |
+*(Note: Ensure the launcher script is named `PICA_Launcher.py` or adjust the command accordingly.)*
 
-## 📚 Manuals
+-----
 
-A collection of official instrument manuals is available in the `_assets/Manuals` directory for reference.
+## Author & Acknowledgment
 
-## ✍️ Author & Acknowledgment
+  * Developed by **Prathamesh Deshmukh**
+  * Vision & Guidance by **[Dr. Sudip Mukherjee](https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)**
+  * *UGC-DAE Consortium for Scientific Research, Mumbai Centre*
 
-Developed by **Prathamesh Deshmukh** | Vision & Guidance by **Dr. Sudip Mukherjee**
+-----
 
-*UGC-DAE Consortium for Scientific Research, Mumbai Centre*
-
-## 📜 License
+## License
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
-
