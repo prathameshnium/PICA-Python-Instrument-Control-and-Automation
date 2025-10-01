@@ -21,7 +21,7 @@
 A key architectural feature is the use of isolated process execution for each measurement module via Python's `multiprocessing` library, ensuring high stability and preventing inter-script conflicts. This platform is built to streamline data acquisition, enhance experimental reproducibility, and accelerate research workflows.
 
 <div align="center">
-    <img src="[https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/_assets/Images/PICA_Laucher_V4.png" width="800"/>
+    <img src="https://raw.githubusercontent.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/main/_assets/Images/PICA_Laucher_V4.png" width="800"/>
 </div>
 
 ---
@@ -55,7 +55,7 @@ A key architectural feature is the use of isolated process execution for each me
 
 The PICA suite includes modules for a range of standard electrical and thermal transport measurements.
 
-| Instrument Combination                  | Measurement Type                          | Description                                                                 |
+| Instrument Combination                  | Measurement Type                       | Description                                                                 |
 | --------------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------- |
 | **Keithley 6221 / 2182A** | I-V Characterization (AC Delta)           | High-precision I-V sweeps for low-resistance samples.                       |
 |                                         | Resistance vs. Temperature (R-T)          | Automated R-T data acquisition with active or passive temperature profiles. |
@@ -67,7 +67,7 @@ The PICA suite includes modules for a range of standard electrical and thermal t
 |                                         | Resistivity vs. Temperature               | High-resistance measurements with active or passive temperature control.    |
 |                                         | Pyroelectric Current vs. Temperature      | Quantifies pyroelectric current during a controlled temperature ramp.       |
 | **Keysight E4980A LCR Meter** | Capacitance-Voltage (C-V) Sweeps          | Automated C-V measurements for semiconductor and dielectric analysis.       |
-| **Lock-in Amplifier (Generic)** | AC Resistance Measurement                 | For measuring AC transport properties and contact impedance.                |
+| **Lock-in Amplifier ** | AC Resistance Measurement                 | For measuring AC transport properties and contact impedance.                |
 | **Lakeshore 340/350 Controller** | Temperature Control Utility               | A standalone module for defining and executing temperature profiles.        |
 |                                         | Temperature Monitoring Utility            | A passive data logger for monitoring environmental temperature.             |
 
