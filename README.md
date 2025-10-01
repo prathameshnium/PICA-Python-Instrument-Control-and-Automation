@@ -21,7 +21,7 @@
 A key architectural feature is the use of isolated process execution for each measurement module via Python's `multiprocessing` library, ensuring high stability and preventing inter-script conflicts. This platform is built to streamline data acquisition, enhance experimental reproducibility, and accelerate research workflows.
 
 <div align="center">
-    <img src="_assets/screenshots/PICA_Launcher_Screenshot.png" alt="PICA Launcher Screenshot" width="800"/>
+    <img src="[https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/_assets/Images/PICA_Laucher_V4.png" width="800"/>
 </div>
 
 ---
