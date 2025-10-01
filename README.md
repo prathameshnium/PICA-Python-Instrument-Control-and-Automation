@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="_assets/LOGO/PICA_Logo.png](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/_assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
+  <img src="_assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
   <h1>PICA: Python-based Instrument Control and Automation</h1>
   <p>
     A modular software suite for automating laboratory measurements in physics research.
