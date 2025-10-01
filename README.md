@@ -1,5 +1,5 @@
 
-#     PICA-Python-Instrument-Control-and-Automation 
+#     PICA-Python-Instrument-Control-and-Automation
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://www.python.org/downloads/)
@@ -10,7 +10,6 @@
 Its core feature is launching each measurement module in a **completely isolated process** using Python's `multiprocessing` library. This ensures that individual experiments run independently, preventing crashes or errors in one module from affecting the main launcher or other running experiments.
 
 ---
-
 ## Key Features
 
 * **Centralized Dashboard:** A single, intuitive interface to access all measurement modules.
@@ -21,7 +20,6 @@ Its core feature is launching each measurement module in a **completely isolated
 * **Real-time Console Log:** A console in the main window provides status updates, launch confirmations, and error messages.
 
 ---
-
 ## Available Measurement Modules
 
 The launcher provides access to the following instrument control systems:
@@ -56,7 +54,6 @@ The launcher provides access to the following instrument control systems:
 * **Temperature Monitor:** A passive monitor for logging temperature.
 
 ---
-
 ## Installation & Usage
 
 ### Step 1: Clone the Repository
@@ -106,9 +103,72 @@ python PICA_Launcher.py
 
 -----
 
+## Included Documentation & Manuals 📚
+
+For your convenience, a collection of relevant instrument manuals and software documentation is included in the repository. These are excellent resources for understanding instrument-specific commands and for advanced troubleshooting.
+
+You can find them in the `/_assets/Manuals/` directory.
+
+#### Instrument Manuals
+
+  * Keithley 2182A Nanovoltmeter
+  * Keithley 6221 Current Source
+  * Lakeshore 340 Temperature Controller
+  * Lakeshore 350 Temperature Controller
+  * Keithley Low-Level Measurements Handbook (7th Ed.)
+
+#### Software Documentation
+
+  * PyMeasure Documentation & Examples
+  * PyVISA Documentation & Examples
+
+-----
+
+## Quick Guide to Python Instrument Interfacing
+
+This is a brief guide to setting up and controlling instruments directly with Python.
+
+### 1\. Prerequisites & Setup
+
+#### Hardware
+
+  * **USB to GPIB Converter:** An interface cable (e.g., from Keysight) to connect your computer to the instrument. Ensure the converter's status light is on, indicating a proper connection.
+
+#### Instrument Configuration
+
+  * On your instrument, ensure that **GPIB communication is turned on**.
+  * Take note of the instrument's unique **GPIB Address** (e.g., `12`, `24`).
+
+### 2\. Basic Connection Test
+
+You can quickly verify which instruments are connected and recognized by your system. Ensure you have installed the required packages (especially `pyvisa`) as described in the installation section above.
+
+  * **List Connected Instruments:** Run the following Python code:
+    ```python
+    import pyvisa
+    rm = pyvisa.ResourceManager()
+    print(rm.list_resources())
+    ```
+    This will print a tuple of VISA resource strings (e.g., `'GPIB0::12::INSTR'`). Copy the relevant string for the next step.
+
+### 3\. Communicating with Instruments
+
+Use the resource string from the previous step to establish a connection with a specific instrument.
+
+  * **VISA Initialization:**
+    ```python
+    # Initialize a connection to an instrument at GPIB address 12
+    keithley = rm.open_resource('GPIB0::12::INSTR')
+
+    # It's good practice to reset the instrument to a known state
+    keithley.write("*rst; status:preset; *cls")
+    ```
+
+-----
+
 ## Author & Acknowledgment
 
-  * Developed by **Prathamesh Deshmukh**
+  * Developed by **Prathameshnium Deshmukh**
   * Vision & Guidance by **[Dr. Sudip Mukherjee](https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)**
   * *UGC-DAE Consortium for Scientific Research, Mumbai Centre*
 
