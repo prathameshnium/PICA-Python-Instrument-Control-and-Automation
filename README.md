@@ -1,70 +1,84 @@
 
-#     PICA-Python-Instrument-Control-and-Automation
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python Version](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://www.python.org/downloads/)
-[![UI Framework](https://img.shields.io/badge/UI-Tkinter-red.svg)](https://docs.python.org/3/library/tkinter.html)
+# PICA: Python-based Instrument Control and Automation
 
-**PICA Launcher** is the central graphical interface for the **Python Instrument Control & Automation (PICA)** suite. It provides a robust, user-friendly dashboard to launch and manage various materials science and physics measurement scripts.
+[](https://opensource.org/licenses/MIT)
+[](https://www.python.org/downloads/)
 
-Its core feature is launching each measurement module in a **completely isolated process** using Python's `multiprocessing` library. This ensures that individual experiments run independently, preventing crashes or errors in one module from affecting the main launcher or other running experiments.
+## Abstract
 
----
-## Key Features
+**PICA (Python-based Instrument Control and Automation)** is a software suite designed to provide a robust framework for automating laboratory instruments in materials science and condensed matter physics research. The suite features a central graphical user interface (GUI), the **PICA Launcher**, which serves as a dashboard for managing and executing a variety of characterization experiments. A key architectural feature is the use of isolated process execution for each measurement module via Python's `multiprocessing` library, ensuring high stability and preventing inter-script conflicts. This platform is intended to streamline data acquisition and improve experimental reproducibility.
 
-* **Centralized Dashboard:** A single, intuitive interface to access all measurement modules.
-* **Isolated Process Launching:** Each script runs in its own process, ensuring stability and preventing resource conflicts between different GUIs (e.g., `tkinter`, `PySide6`).
-* **Integrated GPIB/VISA Scanner:** A built-in tool to scan for, identify, and troubleshoot connections with laboratory instruments without leaving the application.
-* **Direct Folder Access:** Quickly open the directory for any measurement module to view scripts or saved data.
-* **Built-in Documentation Viewer:** Read the project's README and LICENSE files directly within the launcher's UI.
-* **Real-time Console Log:** A console in the main window provides status updates, launch confirmations, and error messages.
+-----
 
----
+## Core Features
+
+  * **Centralized Control Dashboard:** A comprehensive GUI for launching all measurement modules.
+  * **Isolated Process Execution:** Each script operates in a discrete process, guaranteeing application stability and preventing resource conflicts between concurrent tasks.
+  * **Integrated VISA Instrument Scanner:** An embedded utility for discovering, identifying, and troubleshooting GPIB/VISA instrument connections.
+  * **Modular Architecture:** Each experimental setup is encapsulated in a self-contained module with direct access to its scripts and data directories.
+  * **Embedded Documentation:** Includes an in-application viewer for essential project documentation, such as the README and software license.
+  * **System Console Log:** A real-time log provides status updates, confirmations, and error diagnostics for all operations.
+
+-----
+
 ## Available Measurement Modules
 
-The launcher provides access to the following instrument control systems:
+The PICA suite includes modules for a range of standard electrical and thermal transport measurements:
 
-#### Low Resistance (Keithley 6221 / 2182A)
-* **I-V Measurement:** High-precision I-V sweeps using Delta Mode.
-* **R vs. T (Active):** Resistance vs. Temperature measurements with active temperature control.
-* **R vs. T (Passive):** Resistance vs. Temperature measurements while monitoring a passive temperature change.
+#### Low-Resistance Measurements (Keithley 6221 / 2182A)
 
-#### Mid Resistance (Keithley 2400 & 2400/2182)
-* **I-V Measurement (K2400):** Standard four-probe I-V sweeps.
-* **R vs. T Measurement (K2400):** Four-probe Resistance vs. Temperature.
-* **I-V Measurement (K2400/2182):** Higher precision I-V sweeps using the 2182 Nanovoltmeter.
-* **R vs. T Measurement (K2400/2182):** Higher precision Resistance vs. Temperature.
+  * **Current-Voltage (I-V) Characterization:** High-precision I-V sweeps employing the AC Delta Mode for noise reduction.
+  * **Resistance vs. Temperature (R-T):** Automated R-T data acquisition with active (controlled ramp) and passive (monitoring) temperature profiles.
 
-#### High Resistance (Keithley 6517B Electrometer)
-* **I-V Measurement:** For high-resistance materials and insulators.
-* **R vs. T (Active):** High-resistance measurements with controlled temperature ramps.
-* **R vs. T (Passive):** High-resistance measurements during passive temperature changes.
+#### Mid-Resistance Measurements (Keithley 2400 SourceMeter)
 
-#### Dielectric & Pyroelectric Properties (Keithley 6517B)
-* **Pyroelectric Current vs. Temp:** Measures pyroelectric current during a temperature ramp.
+  * **Four-Probe I-V Characterization:** Standard I-V sweeps for materials like semiconductors.
+  * **Four-Probe R-T Characterization:** Temperature-dependent resistance measurements.
 
-#### LCR Meter (Keysight E4980A)
-* **C-V Measurement:** Automates Capacitance vs. Voltage sweeps.
+#### Mid-Resistance, High-Precision (Keithley 2400 / 2182)
 
-#### Lock-in Amplifier
-* **AC Measurement:** For AC transport and susceptibility measurements.
+  * **High-Precision I-V:** Enhanced voltage resolution using a Keithley 2182 Nanovoltmeter.
+  * **High-Precision R-T:** Temperature-dependent measurements with enhanced voltage precision.
 
-#### Temperature Control (Lakeshore 340/350)
-* **Temperature Ramp:** A standalone utility to control temperature ramps.
-* **Temperature Monitor:** A passive monitor for logging temperature.
+#### High-Resistance Measurements (Keithley 6517B Electrometer)
 
----
-## Installation & Usage
+  * **I-V Characterization:** For insulating materials, dielectrics, and high-impedance devices.
+  * **Resistivity vs. Temperature:** High-resistance measurements with active or passive temperature control.
+
+#### Dielectric & Pyroelectric Characterization (Keithley 6517B)
+
+  * **Pyroelectric Current Measurement:** Quantifies pyroelectric current as a function of a controlled temperature ramp.
+
+#### LCR Characterization (Keysight E4980A)
+
+  * **Capacitance-Voltage (C-V) Sweeps:** Automated C-V measurements for semiconductor and dielectric analysis.
+
+#### AC Transport Measurements (Lock-in Amplifier)
+
+  * **AC Resistance:** For measuring AC transport properties and contact impedance.
+
+#### Environmental Control (Lakeshore 340/350)
+
+  * **Temperature Control Utility:** A standalone module for defining and executing temperature ramps and setpoints.
+  * **Temperature Monitoring Utility:** A passive data logger for monitoring environmental temperature.
+
+-----
+
+## Installation and Execution
 
 ### Step 1: Clone the Repository
+
+Clone the repository to your local machine using Git.
+
 ```bash
-git clone [https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git)
+git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
 cd PICA-Python-Instrument-Control-and-Automation
-````
+```
 
-### Step 2: Create `requirements.txt`
+### Step 2: Establish Python Environment
 
-Create a file named `requirements.txt` in the main project directory and paste the following content into it:
+It is strongly recommended to use a virtual environment to manage dependencies. Create a file named `requirements.txt` in the project's root directory with the following contents:
 
 ```
 numpy==1.26.4
@@ -80,100 +94,53 @@ PySide6
 
 ### Step 3: Install Dependencies
 
-It's highly recommended to use a Python virtual environment.
+Install the required packages from the `requirements.txt` file.
 
 ```bash
 # Create and activate a virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows, use: venv\Scripts\activate
 
-# Install all required packages from the file
+# Install all required packages
 pip install -r requirements.txt
 ```
 
-### Step 4: Run the Launcher
+### Step 4: Launch the Application
 
-Execute the main launcher script from the root directory of the project.
+Execute the main launcher script from the project's root directory.
 
 ```bash
 python PICA_Launcher.py
 ```
 
-*(Note: Ensure the launcher script is named `PICA_Launcher.py` or adjust the command accordingly.)*
+-----
+
+## Documentation and Technical Guides
+
+#### Included Manuals
+
+A collection of official instrument manuals and software library documentation is provided within the `/_assets/Manuals/` directory. These documents serve as valuable technical references.
+
+#### Instrument Interfacing Guide
+
+For a detailed technical guide on hardware setup, instrument configuration, and connection testing, please consult the **[Python Instrument Interfacing Guide](https://www.google.com/search?q=https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/_assets/Manuals/README.md)**.
 
 -----
 
-## Included Documentation & Manuals 📚
+## Author and Acknowledgments
 
-For your convenience, a collection of relevant instrument manuals and software documentation is included in the repository. These are excellent resources for understanding instrument-specific commands and for advanced troubleshooting.
+\<img src="https://www.google.com/search?q=https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/\_assets/LOGO/UGC\_DAE\_CSR.jpeg%3Fraw%3Dtrue" alt="UGC DAE CSR Logo" width="150"\>
 
-You can find them in the `/_assets/Manuals/` directory.
+  * **Lead Developer:** **[Prathamesh Deshmukh](https://prathameshdeshmukh.site/)**
+  * **Principal Investigator:** **[Dr. Sudip Mukherjee](https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)**
+  * **Affiliation:** *[UGC-DAE Consortium for Scientific Research, Mumbai Centre](https://www.csr.res.in/Mumbai_Centre)*
 
-#### Instrument Manuals
+#### Funding Acknowledgments
 
-  * Keithley 2182A Nanovoltmeter
-  * Keithley 6221 Current Source
-  * Lakeshore 340 Temperature Controller
-  * Lakeshore 350 Temperature Controller
-  * Keithley Low-Level Measurements Handbook (7th Ed.)
-
-#### Software Documentation
-
-  * PyMeasure Documentation & Examples
-  * PyVISA Documentation & Examples
-
------
-
-## Quick Guide to Python Instrument Interfacing
-
-This is a brief guide to setting up and controlling instruments directly with Python.
-
-### 1\. Prerequisites & Setup
-
-#### Hardware
-
-  * **USB to GPIB Converter:** An interface cable (e.g., from Keysight) to connect your computer to the instrument. Ensure the converter's status light is on, indicating a proper connection.
-
-#### Instrument Configuration
-
-  * On your instrument, ensure that **GPIB communication is turned on**.
-  * Take note of the instrument's unique **GPIB Address** (e.g., `12`, `24`).
-
-### 2\. Basic Connection Test
-
-You can quickly verify which instruments are connected and recognized by your system. Ensure you have installed the required packages (especially `pyvisa`) as described in the installation section above.
-
-  * **List Connected Instruments:** Run the following Python code:
-    ```python
-    import pyvisa
-    rm = pyvisa.ResourceManager()
-    print(rm.list_resources())
-    ```
-    This will print a tuple of VISA resource strings (e.g., `'GPIB0::12::INSTR'`). Copy the relevant string for the next step.
-
-### 3\. Communicating with Instruments
-
-Use the resource string from the previous step to establish a connection with a specific instrument.
-
-  * **VISA Initialization:**
-    ```python
-    # Initialize a connection to an instrument at GPIB address 12
-    keithley = rm.open_resource('GPIB0::12::INSTR')
-
-    # It's good practice to reset the instrument to a known state
-    keithley.write("*rst; status:preset; *cls")
-    ```
-
------
-
-## Author & Acknowledgment
-
-  * Developed by **Prathameshnium Deshmukh**
-  * Vision & Guidance by **[Dr. Sudip Mukherjee](https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)**
-  * *UGC-DAE Consortium for Scientific Research, Mumbai Centre*
+Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science & Technology (DST), Government of India.
 
 -----
 
 ## License
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+This project is licensed under the terms of the MIT License. Please see the `LICENSE` file for full details.
