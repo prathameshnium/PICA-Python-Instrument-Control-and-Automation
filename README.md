@@ -8,6 +8,15 @@
     <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.9+-brightgreen.svg" alt="Python 3.9+"></a>
     <a href="#"><img src="https://img.shields.io/badge/Status-Active-success.svg" alt="Project Status: Active"></a>
   </p>
+  <p>
+    <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"><img src="https://img.shields.io/github/last-commit/prathameshnium/PICA-Python-Instrument-Control-and-Automation" alt="Last Commit"></a>
+    <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"><img src="https://img.shields.io/github/repo-size/prathameshnium/PICA-Python-Instrument-Control-and-Automation" alt="Repo Size"></a>
+    <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/stargazers"><img src="https://img.shields.io/github/stars/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=social" alt="GitHub Stars"></a>
+    <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/network/members"><img src="https://img.shields.io/github/forks/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=social" alt="GitHub Forks"></a>
+  </p>
+  <p>
+    <img src="https://komarev.com/ghpvc/?username=prathameshnium&repo=PICA-Python-Instrument-Control-and-Automation&color=brightgreen&style=flat" alt="Profile views">
+  </p>
 </div>
 
 ---
@@ -27,6 +36,7 @@ A key architectural feature is the use of isolated process execution for each me
 ## Table of Contents
 
 - [Core Features](#core-features)
+- [Tech Stack & Dependencies](#tech-stack--dependencies)
 - [Available Measurement Modules](#available-measurement-modules)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
@@ -46,6 +56,31 @@ A key architectural feature is the use of isolated process execution for each me
 - **Modular Architecture:** Each experimental setup is encapsulated in a self-contained module with direct access to its scripts and data directories.
 - **Embedded Documentation:** In-application viewer for essential project documentation, such as the README and software license.
 - **System Console Log:** A real-time log provides status updates, confirmations, and error diagnostics for all operations.
+
+---
+
+## Tech Stack & Dependencies
+
+The core of PICA is built with a stack of robust and widely-used Python libraries.
+
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.9+-blue.svg?logo=python&logoColor=white" alt="Python"></a>
+  <a href="https://github.com/TomSchimansky/CustomTkinter"><img src="https://img.shields.io/badge/CustomTkinter-GUI-orange.svg" alt="CustomTkinter"></a>
+  <a href="https://pyvisa.readthedocs.io/en/latest/"><img src="https://img.shields.io/badge/PyVISA-Instrument%20Control-yellow.svg" alt="PyVISA"></a>
+  <a href="https://numpy.org/"><img src="https://img.shields.io/badge/NumPy-Data%20Handling-blueviolet.svg?logo=numpy&logoColor=white" alt="NumPy"></a>
+  <a href="https://pandas.pydata.org/"><img src="https://img.shields.io/badge/Pandas-Data%20Manipulation-purple.svg?logo=pandas&logoColor=white" alt="Pandas"></a>
+  <a href="https://matplotlib.org/"><img src="https://img.shields.io/badge/Matplotlib-Plotting-green.svg?logo=matplotlib&logoColor=white" alt="Matplotlib"></a>
+</p>
+
+- **Primary Language:** **Python 3.9+**
+- **Graphical User Interface:** **Tkinter** (via the **CustomTkinter** library for a modern look and feel)
+- **Instrument Communication:** **PyVISA** (a Python wrapper for the NI-VISA library)
+- **Numerical Operations:** **NumPy**
+- **Data Structuring:** **Pandas**
+- **Data Visualization:** **Matplotlib**
+- **Concurrency:** **Multiprocessing** (a native Python library for process isolation)
+
+All required packages are listed in the `requirements.txt` file for easy one-step installation.
 
 ---
 
