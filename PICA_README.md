@@ -1,58 +1,60 @@
 # PICA: Python Instrument Control & Automation
 
-A suite of Python scripts using PyVISA to control and automate laboratory instruments for materials science and physics research.
+Developed by **Prathamesh Deshmukh**
+
+A modular software suite for automating laboratory measurements in physics research, featuring a central dashboard for launching experiments in isolated, stable processes.
 
 ---
 
-### About This Project
+### How to Use This Launcher
 
-This collection provides practical, ready-to-use Python scripts for automating common electrical and thermal characterization experiments. Each folder is dedicated to a specific instrument or measurement setup, containing the necessary control logic and GUI.
-
-A collection of official instrument manuals is available in the `_assets/Manuals` directory for reference.
-
-### Core Dependencies
-This project relies on a few key packages. Ensure they are installed in your Python environment:
-* PyVISA
-* PyMeasure
-* NumPy
-* Pandas
+1.  **Check Connections:** Ensure all instruments are powered on and physically connected to the GPIB/VISA interface.
+2.  **Test Communication:** Run the **"Test GPIB Connection"** utility from the launcher to verify that all instruments are recognized by the system.
+3.  **Launch Module:** Select and launch the desired measurement program. Each program runs independently to ensure stability.
 
 ---
 
-### Featured Measurement Systems
+### Available Measurement Modules
 
-* **Low Resistance (Delta Mode)**
-    * *Instruments:* Keithley 6221/2182A
-    * *Measurements:* I-V, Resistance vs. Temperature
-* **Mid Resistance (Four-Probe)**
-    * *Instruments:* Keithley 2400, Keithley 2182
-    * *Measurements:* I-V, Resistance vs. Temperature
-* **High Resistance**
-    * *Instrument:* Keithley 6517B Electrometer
-    * *Measurements:* I-V, Resistivity vs. Temperature
-* **LCR Measurements**
-    * *Instrument:* Keysight E4980A LCR Meter
-    * *Measurement:* Capacitance vs. Voltage
-* **Pyroelectric Measurements**
-    * *Instruments:* Keithley 6517B, Lakeshore Temp. Controller
-    * *Measurement:* Pyroelectric Current vs. Temperature
-* **AC Transport**
-    * *Instrument:* Lock-in Amplifier (e.g., SR830)
-    * *Measurement:* AC Resistance
-* **Temperature Control**
-    * *Instrument:* Lakeshore 340/350
-    * *Function:* Environmental control and temperature ramping.
+#### Keithley 6221 / 2182A (Low-Resistance Delta Mode)
+
+This suite uses the noise-canceling Delta Mode for high-precision measurements.
+
+* **I-V Characterization:** High-precision I-V sweeps for low-resistance samples.
+* **Resistance vs. Temperature (R-T):** Automated R-T data acquisition with either active (ramp and stabilize) or passive temperature profiles.
+
+#### Keithley 6517B Electrometer (High Resistance)
+
+For insulating materials, dielectrics, and high-impedance devices.
+
+* **High-Resistance I-V & Resistivity vs. Temperature:** Characterization with active or passive temperature control.
+* **Pyroelectric Current vs. Temperature:** Quantifies pyroelectric current during a controlled temperature ramp.
+
+#### Keithley 2400 SourceMeter (Mid-Resistance)
+
+Standard four-probe measurements for materials like semiconductors.
+
+* **Four-Probe I-V Characterization:** Can be used standalone or with a Keithley 2182A for enhanced voltage resolution.
+* **Four-Probe R-T Characterization:** Temperature-dependent resistance measurements.
+
+#### Other Systems
+
+* **Keysight E4980A LCR Meter:** Automated Capacitance-Voltage (C-V) measurements.
+* **Lock-in Amplifier:** For measuring AC transport properties.
+* **Lakeshore 340/350 Controller:** Standalone utilities for defining temperature profiles or passive monitoring.
 
 ---
 
-### Author & Acknowledgment
+### Authors & Acknowledgments
 
-Developed by **Prathamesh Deshmukh** | Vision & Guidance by **Dr. Sudip Mukherjee**
-<br>
-*UGC-DAE Consortium for Scientific Research, Mumbai Centre*
+* **Lead Developer:** Prathamesh Deshmukh
+* **Principal Investigator:** Dr. Sudip Mukherjee
+* **Affiliation:** UGC-DAE Consortium for Scientific Research, Mumbai Centre
+
+Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science & Technology (DST), Government of India.
 
 ---
 
 ### License
 
-This project is licensed under the **MIT License**. See the `LICENSE` file for details.
+This project is licensed under the terms of the **MIT License**. See the `LICENSE` file for full details.
