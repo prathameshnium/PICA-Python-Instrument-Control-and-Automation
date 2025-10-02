@@ -11,7 +11,8 @@ import time
 # --- Configuration ---
 # Use constants for easier changes later.
 KEITHLEY_6221_ADDRESS = "GPIB0::13::INSTR"
-DELTA_CURRENT = 0.002  # Current in Amps
+DELTA_CURRENT = 1*10**(-11)  # Current in Amps
+# Example 0.001
 
 def run_delta_measurement():
     """
@@ -36,6 +37,9 @@ def run_delta_measurement():
         # --- 2. keithley_6221 Configuration ---
         print("Configuring Keithley 6221 for Delta Mode...")
         keithley_6221.write("*rst; status:preset; *cls")  # Reset and clear status
+        keithley_6221.write("CURR:COMP 50")  # Reset and clear status
+
+
         time.sleep(1)
         keithley_6221.write("UNIT V")                      # Set measurement unit to Volts
         keithley_6221.write(f"SOUR:DELT:HIGH {DELTA_CURRENT}") # Set delta current
