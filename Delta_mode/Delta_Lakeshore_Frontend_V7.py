@@ -4,7 +4,7 @@
 #               Keithley 6221/2182A and Lakeshore 350.
 # Author:       Prathamesh
 # Created:      09/09/2025
-# Version:      V: 07.0 (Final Layout Correction)
+# Version:      07.0 (Final Layout Correction)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
