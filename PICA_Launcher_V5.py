@@ -1,12 +1,10 @@
-# FINAL BUILD VERSION: 12.7 (UI Text Tweak)
+# FINAL BUILD VERSION: 13.1 (README Parser restored)
 import tkinter as tk
 from tkinter import ttk, messagebox, Toplevel, Text, Canvas, scrolledtext, font
 import os, sys, subprocess, platform, threading, queue, re
 from datetime import datetime
 from html import unescape
 import runpy
-
-# --- NEW IMPORTS FOR THE FIX ---
 import multiprocessing
 from multiprocessing import Process
 
@@ -22,7 +20,6 @@ try:
 except ImportError:
     PYVISA_AVAILABLE = False
 
-# --- NEW FUNCTION TO RUN SCRIPT IN A SEPARATE PROCESS ---
 def run_script_process(script_path):
     """
     Wrapper function to execute a script using runpy in its own directory.
@@ -45,8 +42,8 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 class PICALauncherApp:
-
-    PROGRAM_VERSION = "12.7" # Updated version number
+    
+    PROGRAM_VERSION = "13.1"
     CLR_BG_DARK = '#2B3D4F'
     CLR_FRAME_BG = '#3A506B'
     CLR_ACCENT_GOLD = '#FFC107'
@@ -68,12 +65,9 @@ class PICALauncherApp:
     LOGO_SIZE = 140
 
     SCRIPT_PATHS = {
-        # --- NEW DELTA MODE PROGRAMS ---
         "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_IV_Ambient.py"),
         "Delta Mode R-T (Active)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_Active_Temp_Control.py"),
         "Delta Mode R-T (Passive)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Lakeshore_Front_end_Passive.py"),
-
-        # --- OTHER PROGRAMS (UNCHANGED) ---
         "K2400 I-V": resource_path("Keithley_2400/Frontend_IV_2400_v3.py"),
         "K2400 R-T": resource_path("Keithley_2400/Frontend_Keithley_2400_350_V_vs_T_V1.py"),
         "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182.py"),
@@ -101,8 +95,8 @@ class PICALauncherApp:
         self.log(f"PICA Launcher v{self.PROGRAM_VERSION} initialized.")
         self.log(f"PIL/Pillow (logo): {'Available' if PIL_AVAILABLE else 'Not found'}")
         self.log(f"PyVISA (GPIB test): {'Available' if PYVISA_AVAILABLE else 'Not found'}")
-        self.log("Welcome to PICA, first check connections and do a GPIB test before running any modules - Prathamesh")
-
+        self.log("Welcome to PICA. Check connections and run a GPIB test before starting.")
+        
     def setup_styles(self):
         style = ttk.Style(self.root)
         style.theme_use('clam')
@@ -143,29 +137,32 @@ class PICALauncherApp:
                 logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
             except Exception as e:
                 self.log(f"ERROR: Failed to load logo. {e}")
-                logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nERROR", font=self.FONT_BASE, fill=self.CLR_TEXT, justify='center')
-        else:
-            self.log(f"WARNING: Logo file not found at {self.LOGO_FILE}")
-            logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill=self.CLR_TEXT, justify='center')
-        ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, justify='center', anchor='center').pack(pady=(0, 10))
+        
+        ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, justify='center', anchor='center').pack(pady=(0, 5))
+        ttk.Label(info_frame, text="Developed by Prathamesh Deshmukh", font=self.FONT_INFO, justify='center', anchor='center').pack(pady=(0, 15))
+        
         desc_text = "A suite of Python scripts for automating laboratory instruments for materials science and physics research."
         ttk.Label(info_frame, text=desc_text, font=self.FONT_INFO, wraplength=360, justify='center', anchor='center').pack(pady=(0, 20))
+        
         ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=20)
         util_frame = ttk.Frame(info_frame)
         util_frame.pack(fill='x', expand=False, pady=10)
         ttk.Button(util_frame, text="Open README", style='App.TButton', command=self.open_readme).pack(fill='x', pady=4)
         ttk.Button(util_frame, text="Open Instrument Manuals", style='App.TButton', command=self.open_manual_folder).pack(fill='x', pady=4)
         ttk.Button(util_frame, text="Test GPIB Connection", style='App.TButton', command=self.run_gpib_test).pack(fill='x', pady=4)
+        
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', fill='x', pady=(15, 0))
-        author_text = ("Developed by Prathamesh Deshmukh | Vision & Guidance by Dr. Sudip Mukherjee\n"
+        author_text = ("Vision & Guidance by Dr. Sudip Mukherjee\n"
                        "UGC-DAE Consortium for Scientific Research, Mumbai Centre")
         ttk.Label(bottom_frame, text=author_text, font=('Segoe UI', 9), justify='center', anchor='center').pack(pady=(0,10))
+        
         license_font = font.Font(family='Segoe UI', size=9, underline=True)
         license_label = ttk.Label(bottom_frame, text="This project is licensed under the MIT License.",
                                   font=license_font, foreground=self.CLR_LINK, cursor="hand2")
         license_label.pack()
         license_label.bind("<Button-1>", lambda e: self.open_license())
+        
         console_container = ttk.LabelFrame(info_frame, text="Console", padding=(5,10))
         console_container.pack(side='bottom', fill='x', pady=(20, 0))
         self.console_widget = scrolledtext.ScrolledText(console_container, state='disabled', bg=self.CLR_CONSOLE_BG,
@@ -194,18 +191,14 @@ class PICALauncherApp:
         scrollable_frame.grid_columnconfigure(1, weight=1, uniform="group1")
         left_col = ttk.Frame(scrollable_frame); left_col.grid(row=0, column=0, sticky='new', padx=(15, 8), pady=10)
         right_col = ttk.Frame(scrollable_frame); right_col.grid(row=0, column=1, sticky='new', padx=(8, 15), pady=10)
-
+        
         GROUP_PAD_Y = 15
 
         low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (Delta Mode: Keithley 6221/2182A)'); low_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         low_res_frame.columnconfigure(0, weight=1)
-
-        # --- THIS LINE WAS CORRECTED ---
         self._create_launch_button(low_res_frame, "I-V Sweep", "Delta Mode I-V Sweep").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
-
         self._create_launch_button(low_res_frame, "R vs. T (Active)", "Delta Mode R-T (Active)").grid(row=1, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
         self._create_launch_button(low_res_frame, "R vs. T (Passive)", "Delta Mode R-T (Passive)").grid(row=2, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
-
         ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V Sweep")).grid(row=0, column=1, rowspan=3, sticky='ns')
 
         mid_res_frame1 = ttk.LabelFrame(left_col, text='Mid Resistance (Keithley 2400)'); mid_res_frame1.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
@@ -213,41 +206,41 @@ class PICALauncherApp:
         self._create_launch_button(mid_res_frame1, "I-V Measurement", "K2400 I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
         self._create_launch_button(mid_res_frame1, "R vs. T Measurement", "K2400 R-T").grid(row=1, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
         ttk.Button(mid_res_frame1, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400 I-V")).grid(row=0, column=1, rowspan=2, sticky='ns')
-
+        
         mid_res_frame2 = ttk.LabelFrame(left_col, text='Mid Resistance (Keithley 2400 / 2182)'); mid_res_frame2.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         mid_res_frame2.columnconfigure(0, weight=1)
         self._create_launch_button(mid_res_frame2, "I-V Measurement", "K2400_2182 I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
         self._create_launch_button(mid_res_frame2, "R vs. T Measurement", "K2400_2182 R-T").grid(row=1, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
         ttk.Button(mid_res_frame2, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400_2182 I-V")).grid(row=0, column=1, rowspan=2, sticky='ns')
-
+        
         high_res_frame = ttk.LabelFrame(left_col, text='High Resistance (Keithley 6517B)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         high_res_frame.columnconfigure(0, weight=1)
         self._create_launch_button(high_res_frame, "I-V Measurement", "K6517B I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
         self._create_launch_button(high_res_frame, "R vs. T (Active)", "K6517B Resistivity").grid(row=1, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
         self._create_launch_button(high_res_frame, "R vs. T (Passive)", "K6517B R-T (Passive)").grid(row=2, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
         ttk.Button(high_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K6517B I-V")).grid(row=0, column=1, rowspan=3, sticky='ns')
-
+        
         pyro_frame = ttk.LabelFrame(right_col, text='Pyroelectric Measurement (Keithley 6517B)'); pyro_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         pyro_frame.columnconfigure(0, weight=1)
         self._create_launch_button(pyro_frame, "Pyro Current vs. Temp", "Pyroelectric Current").grid(row=0, column=0, sticky='ew', padx=(0, 4))
         ttk.Button(pyro_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Pyroelectric Current")).grid(row=0, column=1, sticky='ns')
-
+        
         lakeshore_frame = ttk.LabelFrame(right_col, text='Temperature Control (Lakeshore 350)'); lakeshore_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         lakeshore_frame.columnconfigure(0, weight=1)
         self._create_launch_button(lakeshore_frame, "Temperature Ramp", "Lakeshore Temp Control").grid(row=0, column=0, sticky='ew', padx=(0, 4), pady=(0, 2))
         self._create_launch_button(lakeshore_frame, "Temperature Monitor", "Lakeshore Temp Monitor").grid(row=1, column=0, sticky='ew', padx=(0, 4), pady=(2, 0))
         ttk.Button(lakeshore_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Lakeshore Temp Control")).grid(row=0, column=1, rowspan=2, sticky='ns')
-
+        
         lcr_frame = ttk.LabelFrame(right_col, text='LCR Meter (Keysight E4980A)'); lcr_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         lcr_frame.columnconfigure(0, weight=1)
         self._create_launch_button(lcr_frame, "C-V Measurement", "LCR C-V Measurement").grid(row=0, column=0, sticky='ew', padx=(0, 4))
         ttk.Button(lcr_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("LCR C-V Measurement")).grid(row=0, column=1, sticky='ns')
-
+        
         lockin_frame = ttk.LabelFrame(right_col, text='Lock-in Amplifier'); lockin_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         lockin_frame.columnconfigure(0, weight=1)
         self._create_launch_button(lockin_frame, "AC Measurement", "Lock-in AC Measurement").grid(row=0, column=0, sticky='ew', padx=(0, 4))
         ttk.Button(lockin_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Lock-in AC Measurement")).grid(row=0, column=1, sticky='ns')
-
+        
         canvas.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
         return main_container
@@ -277,10 +270,10 @@ class PICALauncherApp:
         except Exception as e:
             messagebox.showerror("Error", f"Could not open path: {path}\n\nError: {e}")
 
+    # =========================================================================
+    # === THIS FUNCTION IS NOW UPDATED WITH THE MARKDOWN PARSER ================
+    # =========================================================================
     def _show_file_in_window(self, file_path, title):
-        if not os.path.exists(file_path):
-            if os.path.exists(file_path + ".md"): file_path += ".md"
-            elif os.path.exists(file_path + ".txt"): file_path += ".txt"
         abs_path = os.path.abspath(file_path)
         if not os.path.exists(abs_path):
             self.log(f"ERROR: File not found: {abs_path}")
@@ -292,43 +285,59 @@ class PICALauncherApp:
         except Exception as e:
             messagebox.showerror("Error Reading File", f"Could not read the file:\n\n{e}")
             return
+            
         win = Toplevel(self.root)
         win.title(title)
-        win.geometry("700x500")
+        win.geometry("800x600")
         win.configure(bg=self.CLR_BG_DARK)
         win.transient(self.root)
         win.grab_set()
+        
         text_area = scrolledtext.ScrolledText(win, wrap='word', bg=self.CLR_CONSOLE_BG, fg=self.CLR_TEXT, font=self.FONT_BASE, bd=0, padx=15, pady=10)
+        
+        # --- Define styles for rendering ---
         text_area.tag_configure("h1", font=('Segoe UI', 20, 'bold'), foreground=self.CLR_ACCENT_GOLD, spacing3=15)
-        text_area.tag_configure("h3", font=('Segoe UI', 13, 'bold'), spacing3=10)
+        text_area.tag_configure("h3", font=('Segoe UI', 13, 'bold'), foreground=self.CLR_TEXT, spacing3=10)
         text_area.tag_configure("p", spacing3=8)
-        text_area.tag_configure("list_l1", lmargin1=25, lmargin2=40)
-        text_area.tag_configure("list_l2", lmargin1=45, lmargin2=60)
+        text_area.tag_configure("list_l1", lmargin1=25, lmargin2=40, spacing3=4)
         text_area.tag_configure("bold", font=('Segoe UI', self.FONT_SIZE_BASE, 'bold'))
         text_area.tag_configure("hr", justify='center', spacing1=15, spacing3=15, foreground=self.CLR_FRAME_BG)
+        
         is_markdown = file_path.lower().endswith('.md')
+        
         if is_markdown:
-            content = unescape(content)
-            content = re.sub(r'<.*?>', '', content)
+            # Simple parser to apply styles line by line
             for line in content.split('\n'):
                 stripped = line.strip()
-                if not stripped:
-                    text_area.insert('end', '\n')
-                    continue
                 if stripped.startswith('### '):
                     text_area.insert('end', f"{stripped[4:]}\n", "h3")
                 elif stripped.startswith('# '):
                     text_area.insert('end', f"{stripped[2:]}\n", "h1")
-                elif stripped.startswith('    * '):
-                    text_area.insert('end', f"  › {stripped[6:]}\n", "list_l2")
                 elif stripped.startswith('* '):
-                    text_area.insert('end', f"• {stripped[2:]}\n", "list_l1")
+                    # Apply bold tags within list items
+                    line_content = stripped[2:]
+                    parts = re.split(r'(\*\*.*?\*\*)', line_content)
+                    text_area.insert('end', "• ", "list_l1")
+                    for part in parts:
+                        if part.startswith('**') and part.endswith('**'):
+                            text_area.insert('end', part[2:-2], ("list_l1", "bold"))
+                        else:
+                            text_area.insert('end', part, "list_l1")
+                    text_area.insert('end', '\n')
                 elif stripped in ('---', '***', '___'):
-                    text_area.insert('end', f"{'─'*80}\n", "hr")
+                    text_area.insert('end', f"{'─'*120}\n", "hr")
                 else:
-                    text_area.insert('end', f"{line}\n", "p")
-        else:
+                    # Apply bold tags within paragraphs
+                    parts = re.split(r'(\*\*.*?\*\*)', line)
+                    for part in parts:
+                        if part.startswith('**') and part.endswith('**'):
+                            text_area.insert('end', part[2:-2], ("p", "bold"))
+                        else:
+                            text_area.insert('end', part, "p")
+                    text_area.insert('end', '\n')
+        else: # For non-markdown files like LICENSE
             text_area.insert('1.0', content)
+            
         text_area.pack(expand=True, fill='both')
         text_area.config(state='disabled')
         ttk.Button(win, text="Close", style='App.TButton', command=win.destroy).pack(pady=10, padx=10, fill='x')
@@ -351,24 +360,16 @@ class PICALauncherApp:
     def open_license(self):
         self._show_file_in_window(self.LICENSE_FILE, "MIT License")
 
-    # --- REPLACED LAUNCH_SCRIPT FUNCTION ---
     def launch_script(self, script_path):
-        """
-        Launches a script in a new, isolated process using multiprocessing.
-        This is the robust solution for PyInstaller executables.
-        """
         self.log(f"Launching: {os.path.basename(script_path)}")
-
         abs_path = os.path.abspath(script_path)
         if not os.path.exists(abs_path):
             self.log(f"ERROR: Script not found at {abs_path}")
             messagebox.showerror("File Not Found", f"Script not found:\n\n{abs_path}")
             return
-
         try:
-            # Create a new process that will run our wrapper function
             proc = Process(target=run_script_process, args=(abs_path,))
-            proc.start() # Start the process
+            proc.start()
             self.log(f"Successfully launched '{os.path.basename(script_path)}' in a new process.")
         except Exception as e:
             self.log(f"ERROR: Failed to launch script. Reason: {e}")
@@ -412,9 +413,9 @@ class PICALauncherApp:
                 rm = pyvisa.ResourceManager()
                 resources = rm.list_resources()
                 if not resources:
-                    result_queue.put("-> No instruments found. Check the wires and turn off the instruments once and retry the test. If it fails, please restart the PC and instrument once, this will resolve the issue.\n")
+                    result_queue.put("-> No instruments found. Check connections and retry.\n")
                 else:
-                    result_queue.put(f"-> Found {len(resources)} instrument(s). Querying them now...\n\n")
+                    result_queue.put(f"-> Found {len(resources)} instrument(s). Querying...\n\n")
                     for address in resources:
                         try:
                             with rm.open_resource(address) as instrument:
@@ -446,7 +447,7 @@ class PICALauncherApp:
                 test_win.after(100, _process_gpib_queue)
         def start_scan():
             scan_button.config(state='disabled')
-            log_to_scanner("Starting scan... The GUI will remain responsive.")
+            log_to_scanner("Starting scan...")
             threading.Thread(target=_gpib_scan_worker, daemon=True).start()
         def clear_log():
             console_area.config(state='normal')
