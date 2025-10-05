@@ -25,12 +25,12 @@ This suite uses the noise-canceling Delta Mode for high-precision measurements.
 
 #### Keithley 6517B Electrometer (High Resistance)
 
-For insulating materials, dielectrics, and high-impedance devices.
+For insulating materials, dielectrics, and high-impedance devices. This suite provides:
 
-* **High-Resistance I-V & Resistivity vs. Temperature:** Characterization with active or passive temperature control.
+* **High-Resistance I-V & R-T:** Characterization with active or passive temperature control.
 * **Pyroelectric Current vs. Temperature:** Quantifies pyroelectric current during a controlled temperature ramp.
 
-#### Keithley 2400 SourceMeter (Mid-Resistance)
+#### Keithley 2400 SourceMeter (Mid-Resistance & Precision)
 
 Standard four-probe measurements for materials like semiconductors.
 
@@ -38,7 +38,7 @@ Standard four-probe measurements for materials like semiconductors.
 * **Four-Probe R-T Characterization:** Temperature-dependent resistance measurements.
 
 #### Other Systems
-
+ 
 * **Keysight E4980A LCR Meter:** Automated Capacitance-Voltage (C-V) measurements.
 * **Lock-in Amplifier:** For measuring AC transport properties.
 * **Lakeshore 340/350 Controller:** Standalone utilities for defining temperature profiles or passive monitoring.

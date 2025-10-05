@@ -1,4 +1,4 @@
-# BUILD VERSION: 13.1 (README Parser restored)
+# BUILD VERSION: 13.2 (K2400/2182 Frontend Integration)
 '''
 ===============================================================================
  PROGRAM:      PICA Launcher
@@ -18,8 +18,8 @@
  GUIDED BY:    Dr. Sudip Mukherjee
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
 
- VERSION:      13.1
- LAST EDITED:  04/10/2025
+ VERSION:      13.2
+ LAST EDITED:  05/10/2025
 ===============================================================================
 '''
 import tkinter as tk
@@ -66,7 +66,7 @@ def resource_path(relative_path):
 
 class PICALauncherApp:
     
-    PROGRAM_VERSION = "13.1"
+    PROGRAM_VERSION = "13.2"
     CLR_BG_DARK = '#2B3D4F'
     CLR_FRAME_BG = '#3A506B'
     CLR_ACCENT_GOLD = '#FFC107'
@@ -95,7 +95,7 @@ class PICALauncherApp:
         "Delta Mode R-T (Passive)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Lakeshore_Frontend_Passive_V1.py"),
         "K2400 I-V": resource_path("Keithley_2400/Frontend_IV_2400_V3.py"),
         "K2400 R-T": resource_path("Keithley_2400/Frontend_Keithley_2400_Lakeshore_350_V_vs_T_V1.py"),
-        "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182_Frontend_V1.py"),
+        "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2400_2182_Frontend_V1.py"),
         "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/VT_Sweep_Keithley_2400_2182_Frontend_V1.py"),
         "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V9.py"),
         "K6517B R-T (Active)": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V11p2_5Always.py"),

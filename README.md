@@ -97,7 +97,7 @@ The PICA suite includes modules for a range of standard electrical and thermal t
 | **Keithley 2400 / 2182A** | High-Precision I-V                   | Enhanced voltage resolution using a nanovoltmeter.                          |
 |                                | High-Precision R-T                   | Temperature-dependent measurements with enhanced voltage precision.         |
 | **Keithley 6517B Electrometer**| High-Resistance I-V Characterization | For insulating materials, dielectrics, and high-impedance devices.          |
-|                                | Resistivity vs. Temperature          | High-resistance measurements with active or passive temperature control.    |
+|                                | High-Resistance R-T                  | High-resistance measurements with active or passive temperature control.    |
 |                                | Pyroelectric Current vs. Temperature | Quantifies pyroelectric current during a controlled temperature ramp.       |
 | **Keysight E4980A LCR Meter** | Capacitance-Voltage (C-V) Sweeps     | Automated C-V measurements for semiconductor and dielectric analysis.       |
 | **Lock-in Amplifier** | AC Resistance Measurement            | For measuring AC transport properties and contact impedance.                |
