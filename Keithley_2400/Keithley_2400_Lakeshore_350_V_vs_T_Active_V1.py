@@ -63,22 +63,17 @@ class RT_Backend_Active:
         self.k2400.measure_voltage()
         self.k2400.enable_source()
 
-    def stabilize_at_start(self, start_temp, stability_log_callback):
-        while True:
-            current_temp = float(self.lakeshore.query('KRDG? A').strip())
-            if current_temp > start_temp + 0.2:
-                stability_log_callback(f"Cooling... Current: {current_temp:.4f} K > Target: {start_temp} K")
-                self.lakeshore.write('RANGE 1,0') # Heater Off
-            else:
-                stability_log_callback(f"Heating... Current: {current_temp:.4f} K <= Target: {start_temp} K")
-                self.lakeshore.write('RANGE 1,4') # Heater Medium
-                self.lakeshore.write(f'SETP 1,{start_temp}')
+    def get_temperature(self):
+        if not self.lakeshore: return 0.0
+        return float(self.lakeshore.query('KRDG? A').strip())
 
-            if abs(current_temp - start_temp) < 0.1:
-                stability_log_callback(f"Stabilized at {current_temp:.4f} K. Waiting 5s before ramp.")
-                time.sleep(5)
-                return
-            time.sleep(2)
+    def set_heater_range(self, output, heater_range):
+        range_map = {'off': 0, 'low': 2, 'medium': 4, 'high': 5}
+        range_code = range_map.get(heater_range.lower())
+        if range_code is None: raise ValueError("Invalid heater range.")
+        self.lakeshore.write(f'RANGE {output},{range_code}')
+    def set_setpoint(self, output, temperature_k):
+        self.lakeshore.write(f'SETP {output},{temperature_k}')
 
     def start_ramp(self, end_temp, rate_k_min):
         self.lakeshore.write(f'SETP 1,{end_temp}')
@@ -138,9 +133,13 @@ class RT_GUI_Active:
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
         ttk.Label(header, text=f"Active R-T Sweep (K2400) v{self.PROGRAM_VERSION}", style='Header.TLabel', font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
-        left_panel = self._create_left_panel(main_pane); main_pane.add(left_panel, weight=2)
-        right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=3)
-
+        
+        # --- FIX: Create both panels first, then add them to the PanedWindow ---
+        left_panel = self._create_left_panel(main_pane)
+        right_panel = self._create_right_panel(main_pane)
+        main_pane.add(left_panel, weight=2)
+        main_pane.add(right_panel, weight=3)
+        
     def _create_left_panel(self, parent):
         panel = ttk.Frame(parent, padding=5); panel.grid_columnconfigure(0, weight=1); panel.grid_rowconfigure(3, weight=1)
         self._create_info_panel(panel, 0)
@@ -235,16 +234,44 @@ class RT_GUI_Active:
         self.ax_main.set_title("Experiment stopped."); self.canvas.draw()
         if reason: messagebox.showinfo("Experiment Finished", f"Reason: {reason}")
 
+    # --- NON-BLOCKING HEATER LOGIC (from 6517B scripts) ---
+    def _stabilization_loop(self):
+        if self.experiment_state != 'stabilizing': return
+        try:
+            current_temp = self.backend.get_temperature()
+            start_temp = self.params['start_temp']
+
+            if current_temp > start_temp + 0.2:
+                self.log(f"Cooling... Current: {current_temp:.4f} K > Target: {start_temp} K")
+                self.backend.set_heater_range(1, 'off')
+            else:
+                self.log(f"Heating... Current: {current_temp:.4f} K <= Target: {start_temp} K")
+                self.backend.set_heater_range(1, 'medium')
+                self.backend.set_setpoint(1, start_temp)
+
+            if abs(current_temp - start_temp) < 0.1:
+                self.log(f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
+                self.experiment_state = 'ramping_setup'
+                self.root.after(5000, self._experiment_loop) # Transition to next state
+            else:
+                self.root.after(2000, self._stabilization_loop) # Continue stabilizing
+        except Exception as e:
+            self.log(f"ERROR during stabilization: {e}"); self.stop_experiment("Stabilization Error")
+
     def _experiment_loop(self):
         if self.experiment_state == 'idle': return
         try:
             if self.experiment_state == 'stabilizing':
-                self.backend.stabilize_at_start(self.params['start_temp'], self.log)
+                self._stabilization_loop()
+                return # Let the after() calls manage the flow
+
+            elif self.experiment_state == 'ramping_setup':
                 self.backend.start_ramp(self.params['end_temp'], self.params['rate'])
                 self.log(f"Ramp started towards {self.params['end_temp']} K.")
                 self.experiment_state = 'ramping'; self.start_time = time.time()
-                self.root.after(100, self._experiment_loop)
-            
+                self.root.after(100, self._experiment_loop) # Transition to measurement
+                return
+
             elif self.experiment_state == 'ramping':
                 temp, voltage = self.backend.get_measurement()
                 resistance = voltage / (self.params['current_ma'] * 1e-3) if self.params['current_ma'] != 0 else float('inf')
@@ -256,9 +283,11 @@ class RT_GUI_Active:
                 self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
                 self.ax_main.relim(); self.ax_main.autoscale_view(); self.figure.tight_layout(); self.canvas.draw()
 
+                # Check end conditions
                 if temp >= self.params['cutoff']:
                     self.stop_experiment(f"Safety cutoff reached at {temp:.2f} K.")
-                elif temp >= self.params['end_temp']:
+                elif (self.params['rate'] > 0 and temp >= self.params['end_temp']) or \
+                     (self.params['rate'] < 0 and temp <= self.params['end_temp']):
                     self.stop_experiment("End temperature reached.")
                 else:
                     self.root.after(int(self.params['delay_s'] * 1000), self._experiment_loop)
@@ -275,7 +304,10 @@ class RT_GUI_Active:
                     'compliance_v': float(self.entries["Compliance (V)"].get()), 'delay_s': float(self.entries["Logging Delay (s)"].get()),
                     'k2400_visa': self.k2400_cb.get()}
             if not all([p for k, p in params.items() if k not in ['rate', 'cutoff']]): raise ValueError("A required field is empty.")
-            if not (params['start_temp'] < params['end_temp'] < params['cutoff']): raise ValueError("Temperatures must be in order: start < end < cutoff.")
+            if params['rate'] > 0 and not (params['start_temp'] < params['end_temp'] < params['cutoff']):
+                raise ValueError("For heating, temperatures must be in order: start < end < cutoff.")
+            if params['rate'] < 0 and not (params['start_temp'] > params['end_temp'] > params['cutoff']):
+                raise ValueError("For cooling, temperatures must be in order: start > end > cutoff.")
             return params
         except Exception as e: raise ValueError(f"Invalid parameter input: {e}")
 
