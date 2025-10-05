@@ -45,19 +45,24 @@ jobs:
           # Use the modern option to disable the console.
           windows-console-mode: 'disable'
 
+          # --- COMPILE SCRIPT DIRECTORIES AS PACKAGES ---
+          # This is the correct way to include all .py files from your instrument modules.
+          include-package: |
+            Delta_mode_Keithley_6221_2182A
+            Keithley_2400
+            Keithley_2400_Keithley_2182
+            Keithley_6517B
+            LCR_Keysight_E4980A
+            Lakeshore_350_340
+            Lock_in_amplifier
+            Utilities
+
           windows-icon-from-ico: _assets/LOGO/UGC_DAE_CSR.ico
           
-          # These directories MUST exist in your GitHub repository and not be empty.
+          # --- COPY NON-PYTHON ASSETS ---
+          # These directories contain assets like images, manuals, etc.
           include-data-dir: |
             _assets=_assets/
-            Delta_mode_Keithley_6221_2182A=Delta_mode_Keithley_6221_2182A/
-            Keithley_2400=Keithley_2400/
-            Keithley_2400_Keithley_2182=Keithley_2400_Keithley_2182/
-            Keithley_6517B=Keithley_6517B/
-            LCR_Keysight_E4980A=LCR_Keysight_E4980A/
-            Lakeshore_350_340=Lakeshore_350_340/
-            Lock_in_amplifier=Lock_in_amplifier/
-            Utilities=Utilities/
           include-data-files: |
             LICENSE=LICENSE
             README.md=README.md
