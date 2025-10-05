@@ -35,7 +35,7 @@ jobs:
           
           # --- PLUGIN CONFIGURATION ---
           # Explicitly enable plugins for Tkinter and Matplotlib.
-          # This ensures Nuitka correctly bundles the GUI backend for plots.
+          # This resolves the warning and ensures Nuitka correctly bundles the GUI backend for plots.
           enable-plugins: "tk-inter,matplotlib"
           
           script-name: PICA_Launcher_V5p1.py
@@ -63,7 +63,7 @@ jobs:
           # --- COPY NON-PYTHON ASSETS ---
           # These directories contain assets like images, manuals, etc.
           include-data-dir: |
-            _assets=_assets/
+            _assets=_assets
           include-data-files: |
             LICENSE=LICENSE
             README.md=README.md
