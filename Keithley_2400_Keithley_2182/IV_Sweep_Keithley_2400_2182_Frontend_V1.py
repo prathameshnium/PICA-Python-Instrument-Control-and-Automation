@@ -1,7 +1,8 @@
 # -------------------------------------------------------------------------------
-# Name:         V-T Sweep with Keithley 2400/2182 & Lakeshore 350
-# Purpose:      Provide a professional GUI for performing automated,
-#               temperature-dependent I-V sweeps.
+# Name:         IV Sweep GUI for Keithley 2400/2182
+# Purpose:      Provide a professional GUI for performing IV sweeps using a
+#               Keithley 2400 as a current source and a Keithley 2182
+#               as a nanovoltmeter.
 # Author:       Prathamesh Deshmukh 
 # Created:      04/10/2025
 # Version:      1.0
@@ -14,18 +15,13 @@ import numpy as np
 import os
 import time
 import traceback
-from datetime import datetime; import csv
+import csv
+from datetime import datetime
 from matplotlib.figure import Figure
-import matplotlib.gridspec as gridspec
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
 
-try:
-    from PIL import Image, ImageTk
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
-
+# --- Instrument Control Packages ---
 try:
     import pyvisa
     from pymeasure.instruments.keithley import Keithley2400
@@ -37,53 +33,53 @@ except ImportError:
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
 # -------------------------------------------------------------------------------
-class VT_Backend:
-    """ Manages communication with the K2400, K2182, and Lakeshore 350. """
+class IV_Backend:
+    """ Manages communication with the Keithley 2400 and 2182. """
     def __init__(self):
-        self.k2400, self.k2182, self.lakeshore = None, None, None
+        self.k2400, self.k2182 = None, None
         if pyvisa:
             try: self.rm = pyvisa.ResourceManager()
             except Exception as e: print(f"Could not initialize VISA: {e}"); self.rm = None
 
-    def connect(self, k2400_visa, k2182_visa, ls_visa):
+    def connect(self, k2400_visa, k2182_visa):
         if not self.rm: raise ConnectionError("PyVISA is not available.")
         if not PYMEASURE_AVAILABLE: raise ImportError("Pymeasure is not available.")
-        self.k2400 = Keithley2400(k2400_visa); print(f"  K2400 Connected: {self.k2400.id}")
-        self.k2182 = self.rm.open_resource(k2182_visa); print(f"  K2182 Connected: {self.k2182.query('*IDN?').strip()}")
-        self.lakeshore = self.rm.open_resource(ls_visa); print(f"  Lakeshore Connected: {self.lakeshore.query('*IDN?').strip()}")
+        self.k2400 = Keithley2400(k2400_visa)
+        print(f"  K2400 Connected: {self.k2400.id}")
+        self.k2182 = self.rm.open_resource(k2182_visa)
+        print(f"  K2182 Connected: {self.k2182.query('*IDN?').strip()}")
 
-    def configure_lakeshore(self):
-        self.lakeshore.write('*RST'); time.sleep(0.5); self.lakeshore.write('*CLS')
-        self.lakeshore.write('HTRSET 1,1,2,0,1') # 25Ω heater, 1A max
-
-    def set_temperature_and_stabilize(self, target_temp, stability_log_callback):
-        self.lakeshore.write(f"SETP 1,{target_temp}")
-        self.lakeshore.write("RANGE 1,5") # High range for heating
-        while True:
-            current_temp = float(self.lakeshore.query('KRDG? A').strip())
-            stability_log_callback(f"Stabilizing... Current: {current_temp:.4f} K (Target: {target_temp:.2f} K)")
-            if abs(current_temp - target_temp) < 0.1:
-                stability_log_callback(f"Temperature stabilized at {current_temp:.4f} K.")
-                return current_temp
-            time.sleep(3)
-
-    def run_iv_sweep(self, current_ma, compliance_v):
-        self.k2400.reset(); self.k2400.apply_current()
-        self.k2400.source_current_range = current_ma * 1e-3
+    def configure_instruments(self, compliance_v, current_range_a):
+        # Keithley 2400 setup
+        self.k2400.reset()
+        self.k2400.apply_current()
+        self.k2400.source_current_range = current_range_a
         self.k2400.compliance_voltage = compliance_v
-        self.k2400.source_current = 0; self.k2400.enable_source()
+        self.k2400.source_current = 0
+        self.k2400.enable_source()
+
+        # Keithley 2182 setup
         self.k2182.write("*rst; status:preset; *cls")
         time.sleep(1)
 
-        self.k2400.ramp_to_current(current_ma * 1e-3, steps=5, pause=0.05)
-        time.sleep(1)
+    def measure_voltage_at_current(self, current_a, delay_s):
+        self.k2400.ramp_to_current(current_a, steps=10, pause=0.05)
+        time.sleep(delay_s)
+
+        # K2182 measurement sequence
         self.k2182.write("status:measurement:enable 512; *sre 1")
-        self.k2182.write("sample:count 2"); self.k2182.write("trigger:source bus")
-        self.k2182.write("trigger:delay 0.5"); self.k2182.write("trace:points 2")
-        self.k2182.write("trace:feed sense1; feed:control next"); self.k2182.write("initiate")
-        self.k2182.assert_trigger(); self.k2182.wait_for_srq(timeout=10)
+        self.k2182.write("sample:count 2")
+        self.k2182.write("trigger:source bus")
+        self.k2182.write("trigger:delay 0.1")
+        self.k2182.write("trace:points 2")
+        self.k2182.write("trace:feed sense1; feed:control next")
+        self.k2182.write("initiate")
+        self.k2182.assert_trigger()
+        self.k2182.wait_for_srq(timeout=10)
         voltages = self.k2182.query_ascii_values("trace:data?")
-        self.k2182.query("status:measurement?"); self.k2182.write("trace:clear; feed:control next")
+        self.k2182.query("status:measurement?")
+        self.k2182.write("trace:clear; feed:control next")
+
         return sum(voltages) / len(voltages) if voltages else float('nan')
 
     def shutdown(self):
@@ -93,15 +89,12 @@ class VT_Backend:
         if self.k2182:
             try: self.k2182.write("*rst"); self.k2182.close()
             except: pass
-        if self.lakeshore:
-            try: self.lakeshore.write("RANGE 1,0"); self.lakeshore.close()
-            except: pass
         print("  Instruments shut down and disconnected.")
 
 # -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
-class VT_GUI:
+class IV_GUI:
     PROGRAM_VERSION = "1.0"
     CLR_BG = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG = '#EDF2F4'
     CLR_FRAME_BG = '#3A506B'; CLR_INPUT_BG = '#4C566A'
@@ -110,11 +103,17 @@ class VT_GUI:
     FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold')
 
     def __init__(self, root):
-        self.root = root; self.root.title("V-T Sweep (K2400/2182 + LS350)")
-        self.root.geometry("1600x950"); self.root.minsize(1400, 800); self.root.configure(bg=self.CLR_BG)
-        self.experiment_state = 'idle'; self.logo_image = None
-        self.backend = VT_Backend(); self.data_storage = {'temperature': [], 'voltage': []}
-        self.setup_styles(); self.create_widgets(); self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+        self.root = root
+        self.root.title("I-V Sweep (K2400 + K2182)")
+        self.root.geometry("1600x950")
+        self.root.minsize(1400, 800)
+        self.root.configure(bg=self.CLR_BG)
+        self.is_running = False
+        self.backend = IV_Backend()
+        self.data_storage = {'current': [], 'voltage': []}
+        self.setup_styles()
+        self.create_widgets()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def setup_styles(self):
         style = ttk.Style(self.root); style.theme_use('clam')
@@ -135,7 +134,7 @@ class VT_GUI:
 
     def create_widgets(self):
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
-        ttk.Label(header, text=f"V-T Sweep (K2400/2182 + LS350) v{self.PROGRAM_VERSION}", style='Header.TLabel', font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
+        ttk.Label(header, text=f"I-V Sweep (K2400 + K2182) v{self.PROGRAM_VERSION}", style='Header.TLabel', font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
         left_panel = self._create_left_panel(main_pane); main_pane.add(left_panel, weight=2)
         right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=3)
@@ -147,34 +146,30 @@ class VT_GUI:
 
     def _create_right_panel(self, parent):
         panel = ttk.Frame(parent, padding=5)
-        container = ttk.LabelFrame(panel, text='Live V-T Curve'); container.pack(fill='both', expand=True)
+        container = ttk.LabelFrame(panel, text='Live I-V Curve'); container.pack(fill='both', expand=True)
         self.figure = Figure(dpi=100, facecolor='white')
         self.ax_main = self.figure.add_subplot(111)
         self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
-        self.ax_main.set_title("Waiting for experiment...", fontweight='bold'); self.ax_main.set_xlabel("Temperature (K)"); self.ax_main.set_ylabel("Voltage (V)")
+        self.ax_main.set_title("Waiting for experiment...", fontweight='bold'); self.ax_main.set_xlabel("Voltage (V)"); self.ax_main.set_ylabel("Current (A)")
         self.ax_main.grid(True, linestyle='--', alpha=0.6); self.figure.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.figure, container); self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
         return panel
 
     def _create_params_panel(self, parent, grid_row):
-        container = ttk.Frame(parent); container.grid(row=grid_row, column=0, sticky='new', pady=5)
-        container.grid_columnconfigure((0, 1), weight=1); self.entries = {}
-        temp_frame = ttk.LabelFrame(container, text='Temperature'); temp_frame.grid(row=0, column=0, sticky='nsew', padx=(0,5))
-        temp_frame.grid_columnconfigure(1, weight=1)
-        self._create_entry(temp_frame, "Start Temp (K)", "300", 0); self._create_entry(temp_frame, "End Temp (K)", "310", 1)
-        self._create_entry(temp_frame, "Temp Step (K)", "2", 2)
-        self.ls_cb = self._create_combobox(temp_frame, "Lakeshore VISA", 3)
-        iv_frame = ttk.LabelFrame(container, text='I-V Settings'); iv_frame.grid(row=0, column=1, sticky='nsew', padx=(5,0))
-        iv_frame.grid_columnconfigure(1, weight=1)
-        self._create_entry(iv_frame, "Source Current (mA)", "1", 0)
-        self._create_entry(iv_frame, "Compliance (V)", "10", 1)
-        self.k2400_cb = self._create_combobox(iv_frame, "Keithley 2400 VISA", 2)
-        self.k2182_cb = self._create_combobox(iv_frame, "Keithley 2182 VISA", 3)
+        container = ttk.LabelFrame(parent, text='Sweep Parameters'); container.grid(row=grid_row, column=0, sticky='new', pady=5)
+        container.grid_columnconfigure(1, weight=1); self.entries = {}
+        self._create_entry(container, "Start Current (mA)", "-1", 0)
+        self._create_entry(container, "Stop Current (mA)", "1", 1)
+        self._create_entry(container, "Step Current (mA)", "0.1", 2)
+        self._create_entry(container, "Compliance (V)", "10", 3)
+        self._create_entry(container, "Dwell Time (s)", "0.5", 4)
+        self.k2400_cb = self._create_combobox(container, "Keithley 2400 VISA", 5)
+        self.k2182_cb = self._create_combobox(container, "Keithley 2182 VISA", 6)
 
     def _create_control_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Experiment Control'); frame.grid(row=grid_row, column=0, sticky='new', pady=5)
         frame.grid_columnconfigure(0, weight=1)
-        self._create_entry(frame, "Sample Name", "Sample_VT", 0)
+        self._create_entry(frame, "Sample Name", "Sample_IV", 0)
         self._create_entry(frame, "Save Location", "", 1, browse=True)
         button_frame = ttk.Frame(frame); button_frame.grid(row=2, column=0, columnspan=4, sticky='ew', pady=5)
         button_frame.grid_columnconfigure((0,1,2), weight=1)
@@ -196,54 +191,51 @@ class VT_GUI:
     def start_experiment(self):
         try:
             self.params = self._validate_and_get_params()
-            self.log("Connecting to instruments..."); self.backend.connect(self.params['k2400_visa'], self.params['k2182_visa'], self.params['ls_visa'])
-            self.backend.configure_lakeshore(); self.log("All instruments connected and configured.")
-            start, end, step = self.params['start_temp'], self.params['end_temp'], self.params['temp_step']
-            if step == 0: raise ValueError("Temp Step cannot be zero.")
-            self.temp_points = np.arange(start, end + step/2 if step > 0 else end - step/2, step)
-            if not len(self.temp_points): raise ValueError("Temperature range results in zero points.")
-            
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S"); filename = f"{self.params['name']}_{ts}_VT.csv"
+            self.log("Connecting to instruments..."); self.backend.connect(self.params['k2400_visa'], self.params['k2182_visa'])
+            self.backend.configure_instruments(self.params['compliance_v'], self.params['stop_i'])
+            self.log("All instruments connected and configured.")
+
+            start_i, stop_i, step_i = self.params['start_i'], self.params['stop_i'], self.params['step_i']
+            self.current_points = np.arange(start_i, stop_i + step_i/2, step_i)
+            if not len(self.current_points): raise ValueError("Current sweep results in zero points.")
+
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S"); filename = f"{self.params['name']}_{ts}_IV.csv"
             self.data_filepath = os.path.join(self.params['save_path'], filename)
             with open(self.data_filepath, 'w', newline='') as f:
-                writer = csv.writer(f); writer.writerow(["Temperature (K)", "Voltage (V)"])
+                writer = csv.writer(f); writer.writerow(["Current (A)", "Voltage (V)"])
 
-            self.current_temp_index = 0; self.set_ui_state(running=True); self.experiment_state = 'stabilizing'
+            self.current_step_index = 0; self.set_ui_state(running=True)
             for key in self.data_storage: self.data_storage[key].clear()
-            self.line_main.set_data([], []); self.ax_main.set_title(f"V-T Curve: {self.params['name']}"); self.canvas.draw()
-            self.log(f"Starting experiment: {len(self.temp_points)} temperature points.")
+            self.line_main.set_data([], []); self.ax_main.set_title(f"I-V Curve: {self.params['name']}"); self.canvas.draw()
+            self.log(f"Starting sweep: {len(self.current_points)} current points.")
             self.root.after(100, self._experiment_loop)
         except Exception as e:
             self.log(f"ERROR: {traceback.format_exc()}"); messagebox.showerror("Start Failed", f"{e}"); self.backend.shutdown()
 
     def stop_experiment(self, reason=""):
-        if self.experiment_state == 'idle': return
+        if not self.is_running: return
         self.log(f"Stopping... {reason}" if reason else "Stopping by user request.")
-        self.experiment_state = 'idle'; self.backend.shutdown(); self.set_ui_state(running=False)
+        self.is_running = False; self.backend.shutdown(); self.set_ui_state(running=False)
         self.ax_main.set_title("Experiment stopped."); self.canvas.draw()
         if reason: messagebox.showinfo("Experiment Finished", f"Reason: {reason}")
 
     def _experiment_loop(self):
-        if self.experiment_state == 'idle': return
+        if not self.is_running: return
         try:
-            temp_setpoint = self.temp_points[self.current_temp_index]
-            self.log(f"--- Moving to T point {self.current_temp_index + 1}/{len(self.temp_points)}: {temp_setpoint:.2f} K ---")
-            
-            actual_temp = self.backend.set_temperature_and_stabilize(temp_setpoint, self.log)
-            if self.experiment_state == 'idle': return # Check if stopped during stabilization
+            current_setpoint = self.current_points[self.current_step_index]
+            self.log(f"--- Setting current to {current_setpoint:.3e} A ({self.current_step_index + 1}/{len(self.current_points)}) ---")
+            self.ax_main.set_title(f"Measuring at {current_setpoint:.3e} A..."); self.canvas.draw()
 
-            self.log(f"Starting measurement at {actual_temp:.4f} K...")
-            self.ax_main.set_title(f"Measuring at {actual_temp:.2f} K..."); self.canvas.draw()
-            voltage = self.backend.run_iv_sweep(self.params['current_ma'], self.params['compliance_v'])
+            voltage = self.backend.measure_voltage_at_current(current_setpoint, self.params['delay_s'])
             self.log(f"  Read: V = {voltage:.6e} V")
-            
-            self.data_storage['temperature'].append(actual_temp); self.data_storage['voltage'].append(voltage)
-            with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{actual_temp:.4f}", f"{voltage:.6e}"])
-            self.line_main.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
+
+            self.data_storage['current'].append(current_setpoint); self.data_storage['voltage'].append(voltage)
+            with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{current_setpoint:.6e}", f"{voltage:.6e}"])
+            self.line_main.set_data(self.data_storage['voltage'], self.data_storage['current'])
             self.ax_main.relim(); self.ax_main.autoscale_view(); self.figure.tight_layout(); self.canvas.draw()
 
-            self.current_temp_index += 1
-            if self.current_temp_index >= len(self.temp_points):
+            self.current_step_index += 1
+            if self.current_step_index >= len(self.current_points):
                 self.stop_experiment("All points measured.")
             else:
                 self.root.after(100, self._experiment_loop)
@@ -252,27 +244,34 @@ class VT_GUI:
 
     def _validate_and_get_params(self):
         try:
-            return {'name': self.entries["Sample Name"].get(), 'save_path': self.entries["Save Location"].get(),
-                    'start_temp': float(self.entries["Start Temp (K)"].get()), 'end_temp': float(self.entries["End Temp (K)"].get()),
-                    'temp_step': float(self.entries["Temp Step (K)"].get()), 'ls_visa': self.ls_cb.get(),
-                    'current_ma': float(self.entries["Source Current (mA)"].get()), 'compliance_v': float(self.entries["Compliance (V)"].get()),
-                    'k2400_visa': self.k2400_cb.get(), 'k2182_visa': self.k2182_cb.get()}
+            params = {
+                'name': self.entries["Sample Name"].get(), 'save_path': self.entries["Save Location"].get(),
+                'start_i': float(self.entries["Start Current (mA)"].get()) * 1e-3,
+                'stop_i': float(self.entries["Stop Current (mA)"].get()) * 1e-3,
+                'step_i': float(self.entries["Step Current (mA)"].get()) * 1e-3,
+                'compliance_v': float(self.entries["Compliance (V)"].get()),
+                'delay_s': float(self.entries["Dwell Time (s)"].get()),
+                'k2400_visa': self.k2400_cb.get(), 'k2182_visa': self.k2182_cb.get()
+            }
+            if not all(params.values()): raise ValueError("All fields must be filled.")
+            if params['step_i'] == 0: raise ValueError("Step Current cannot be zero.")
+            return params
         except Exception as e: raise ValueError(f"Invalid parameter input: {e}")
 
     def set_ui_state(self, running: bool):
+        self.is_running = running
         state = 'disabled' if running else 'normal'
         self.start_button.config(state=state)
         for w in self.entries.values(): w.config(state=state)
-        for cb in [self.ls_cb, self.k2400_cb, self.k2182_cb]: cb.config(state=state if state == 'normal' else 'readonly')
+        for cb in [self.k2400_cb, self.k2182_cb]: cb.config(state=state if state == 'normal' else 'readonly')
         self.stop_button.config(state='normal' if running else 'disabled')
 
     def _scan_for_visa(self):
         if self.backend.rm is None: self.log("ERROR: PyVISA library missing."); return
         self.log("Scanning for VISA instruments..."); resources = self.backend.rm.list_resources()
         if resources:
-            self.log(f"Found: {resources}"); self.ls_cb['values'] = resources; self.k2400_cb['values'] = resources; self.k2182_cb['values'] = resources
+            self.log(f"Found: {resources}"); self.k2400_cb['values'] = resources; self.k2182_cb['values'] = resources
             for r in resources:
-                if '12' in r or '13' in r or '15' in r: self.ls_cb.set(r)
                 if '2400' in r or 'GPIB::4' in r: self.k2400_cb.set(r)
                 if '2182' in r or 'GPIB::7' in r: self.k2182_cb.set(r)
         else: self.log("No VISA instruments found.")
@@ -300,12 +299,12 @@ class VT_GUI:
         return cb
 
     def _on_closing(self):
-        if self.experiment_state != 'idle' and messagebox.askyesno("Exit", "Experiment is running. Stop and exit?"):
+        if self.is_running and messagebox.askyesno("Exit", "Experiment is running. Stop and exit?"):
             self.stop_experiment("Application closed by user."); self.root.destroy()
-        elif self.experiment_state == 'idle': self.root.destroy()
+        elif not self.is_running: self.root.destroy()
 
 if __name__ == '__main__':
     if not PYMEASURE_AVAILABLE:
         messagebox.showerror("Dependency Error", "Pymeasure or PyVISA is not installed. Please run 'pip install pymeasure'.")
     else:
-        root = tk.Tk(); app = VT_GUI(root); root.mainloop()
+        root = tk.Tk(); app = IV_GUI(root); root.mainloop()
