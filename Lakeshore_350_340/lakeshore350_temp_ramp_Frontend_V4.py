@@ -1,11 +1,26 @@
-# -------------------------------------------------------------------------------
-# Name:           Lakeshore 350 Temp Ramp GUI (Improved Control)
-# Purpose:        Provide a user-friendly interface for a temperature ramp
-#                 using robust stabilization and a constant high-power ramp.
-# Author:         Prathamesh Deshmukh
-# Created:        26/09/2025
-# Version:        2.3 (Constant High-Power Ramp Logic)
-# -------------------------------------------------------------------------------
+'''
+===============================================================================
+ PROGRAM:      Lakeshore 350 Temp Ramp GUI
+
+ PURPOSE:      Provide a user-friendly interface for a temperature ramp using
+               robust stabilization and a constant high-power ramp.
+
+ DESCRIPTION:  This program provides a graphical user interface (GUI) for
+               automating a temperature ramp experiment with a Lakeshore 350
+               controller. It features robust temperature stabilization at the
+               start point, followed by a hardware-controlled ramp using a
+               fixed high-power heater setting for consistent results. The GUI
+               provides live plotting of temperature and heater output, a
+               console for logging, and safe instrument handling.
+
+ AUTHOR:       Prathamesh Deshmukh
+ GUIDED BY:    Dr. Sudip Mukherjee
+ INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
+
+ VERSION:      2.3
+ LAST EDITED:  04/10/2025
+===============================================================================
+'''
 
 
 # --- Packages for Front end ---

@@ -1,11 +1,25 @@
-#-------------------------------------------------------------------------------
-# Name:         Keithley 6517B I-V Sweep Measurement (V5 Core)
-# Purpose:      Combines the robust instrument handling of V5 with I-V sweep functionality.
-# Author:       Prathamesh Deshmukh 
-# Created:      17/09/2025
-# Version:      5.1
-#This measures resistance and calculate current
-#-------------------------------------------------------------------------------
+'''
+===============================================================================
+ PROGRAM:      Keithley 6517B I-V Sweep Measurement
+
+ PURPOSE:      Perform a voltage sweep and measure current to generate an I-V
+               curve using a Keithley 6517B.
+
+ DESCRIPTION:  This script automates an I-V sweep measurement using a Keithley
+               6517B electrometer. It prompts the user for sweep parameters
+               (start/stop voltage, steps, delay), performs a zero-check
+               correction, executes the voltage sweep while measuring current,
+               saves the data to a CSV file, and displays a plot of the
+               resulting I-V curve.
+
+ AUTHOR:       Prathamesh Deshmukh
+ GUIDED BY:    Dr. Sudip Mukherjee
+ INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
+
+ VERSION:      5.1
+ LAST EDITED:  04/10/2025
+===============================================================================
+'''
 
 import time
 import csv

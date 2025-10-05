@@ -1,18 +1,25 @@
-#-------------------------------------------------------------------------------
-# Name:          Temperature Dependent I-V Measurement
-#
-# Purpose:       Automates Voltage vs. Temperature characterization by
-#                integrating a Lakeshore 350 Temperature Controller and a
-#                Keithley 2400 SourceMeter. The script sets a temperature,
-#                waits for it to stabilize, then performs a full I-V sweep.
-#
-# Author:        Prathamesh Deshmukh
-#
-# Created:       18/09/2025
-#
-# Dependencies:  pymeasure, pyvisa, pandas, numpy, matplotlib, tkinter
-#
-#-------------------------------------------------------------------------------
+'''
+===============================================================================
+ PROGRAM:      Temperature Dependent I-V Measurement
+
+ PURPOSE:      Automates Voltage vs. Temperature characterization by integrating
+               a Lakeshore 350 and a Keithley 2400.
+
+ DESCRIPTION:  This script automates Voltage vs. Temperature (V-T)
+               characterization by integrating a Lakeshore 350 Temperature
+               Controller and a Keithley 2400 SourceMeter. The script sets a
+               target temperature, waits for it to stabilize, and then
+               performs a full I-V sweep at that temperature, repeating the
+               process for a user-defined range of temperatures.
+
+ AUTHOR:       Prathamesh Deshmukh
+ GUIDED BY:    Dr. Sudip Mukherjee
+ INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
+
+ VERSION:      1.0
+ LAST EDITED:  04/10/2025
+===============================================================================
+'''
 
 import pyvisa
 import pymeasure

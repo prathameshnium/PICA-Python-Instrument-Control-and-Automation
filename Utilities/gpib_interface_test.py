@@ -1,32 +1,24 @@
-# Name:         Simple GPIB/VISA Connection Check
-# File:         gpib_interface_test.py
-# Purpose:      Finds all connected instruments and prints their ID strings.
-
 '''
-File:         gpib_interface_test.py
-Author:       Prathamesh Deshmukh
-Date:         10/09/2025
-Licence:      MIT
+===============================================================================
+ PROGRAM:      Simple GPIB/VISA Connection Check
 
-Description:
-This is a simple, general-purpose script to verify connections with any
-instrument recognized by VISA (e.g., via GPIB, USB, Ethernet). It automatically
-scans for all connected devices and attempts to query each one for its
-identification string (*IDN?).
+ PURPOSE:      Finds all connected instruments and prints their ID strings.
 
-The script will print the ID for each responsive instrument and report an
-error for any that are unreachable, making it a quick diagnostic tool for
-debugging instrument control setups.
+ DESCRIPTION:  This is a simple, general-purpose script to verify connections with any
+               instrument recognized by VISA (e.g., via GPIB, USB, Ethernet). It
+               automatically scans for all connected devices and attempts to query
+               each one for its identification string (*IDN?). The script will print
+               the ID for each responsive instrument and report an error for any
+               that are unreachable, making it a quick diagnostic tool for
+               debugging instrument control setups.
 
-Dependencies:
-- pyvisa: A Python package for instrument control.
-- A VISA backend must be installed (e.g., NI-VISA, Keysight VISA).
+ AUTHOR:       Prathamesh Deshmukh
+ GUIDED BY:    Dr. Sudip Mukherjee
+ INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
 
-Usage:
-Run the script directly from your terminal. No code modification is needed,
-as it will automatically find and test all connected instruments.
-  
-  python simple_gpib_check.py
+ VERSION:      1.0
+ LAST EDITED:  04/10/2025
+===============================================================================
 '''
 
 import pyvisa
