@@ -1,17 +1,15 @@
 # -------------------------------------------------------------------------------
 # Name:         V-T Sweep Frontend for K2400/2182 & LS350
-# Purpose:      Provide a professional GUI for performing automated V-T sweeps.
 # Purpose:      Provide a professional GUI for performing automated V vs T sweeps.
 #               A constant current is sourced, and voltage is measured as a
 #               function of temperature.
-# Author:       Prathamesh Deshmukh (GUI by Gemini)
+# Author:       Prathamesh Deshmukh 
 # Created:      04/10/2025
 # Version:      1.0
 # -------------------------------------------------------------------------------
 
 # --- GUI and Plotting Packages ---
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
 from tkinter import ttk, filedialog, messagebox, scrolledtext, Canvas
 import numpy as np
 import os
@@ -104,7 +102,6 @@ class VT_Backend:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class VT_GUI:
-    PROGRAM_VERSION = "1.0"
     PROGRAM_VERSION = "1.1"
     CLR_BG = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG = '#EDF2F4'
     CLR_FRAME_BG = '#3A506B'; CLR_INPUT_BG = '#4C566A'
@@ -144,8 +141,6 @@ class VT_GUI:
         right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=3)
 
     def _create_left_panel(self, parent):
-        panel = ttk.Frame(parent, padding=5); panel.grid_columnconfigure(0, weight=1); panel.grid_rowconfigure(2, weight=1)
-        self._create_params_panel(panel, 0); self._create_control_panel(panel, 1); self._create_console_panel(panel, 2)
         panel = ttk.Frame(parent, padding=5); panel.grid_columnconfigure(0, weight=1); panel.grid_rowconfigure(3, weight=1)
         self._create_info_panel(panel, 0)
         self._create_params_panel(panel, 1); self._create_control_panel(panel, 2); self._create_console_panel(panel, 3)

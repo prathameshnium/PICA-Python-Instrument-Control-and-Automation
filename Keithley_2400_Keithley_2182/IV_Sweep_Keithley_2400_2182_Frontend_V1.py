@@ -1,6 +1,6 @@
 # -------------------------------------------------------------------------------
 # Name:         IV Sweep GUI for Keithley 2400/2182
-# Purpose:      Provide a professional GUI for performing IV sweeps using a
+# Purpose:      Provide a professional GUI for performing I-V sweeps using a
 #               Keithley 2400 as a current source and a Keithley 2182
 #               as a nanovoltmeter.
 # Author:       Prathamesh Deshmukh 
@@ -9,7 +9,7 @@
 # -------------------------------------------------------------------------------
 
 # --- GUI and Plotting Packages ---
-import tkinter as tk
+import tkinter as tk; from tkinter import Canvas
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import numpy as np
 import os
@@ -20,6 +20,13 @@ from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
+
+# --- Pillow for Logo Image ---
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 # --- Instrument Control Packages ---
 try:
@@ -95,13 +102,13 @@ class IV_Backend:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class IV_GUI:
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "1.1"
     CLR_BG = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG = '#EDF2F4'
     CLR_FRAME_BG = '#3A506B'; CLR_INPUT_BG = '#4C566A'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE'
     CLR_ACCENT_GOLD = '#FFC107'; CLR_CONSOLE_BG = '#1E2B38'
     FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold')
-
+    
     def __init__(self, root):
         self.root = root
         self.root.title("I-V Sweep (K2400 + K2182)")
@@ -109,6 +116,7 @@ class IV_GUI:
         self.root.minsize(1400, 800)
         self.root.configure(bg=self.CLR_BG)
         self.is_running = False
+        self.logo_image = None
         self.backend = IV_Backend()
         self.data_storage = {'current': [], 'voltage': []}
         self.setup_styles()
@@ -140,9 +148,30 @@ class IV_GUI:
         right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=3)
 
     def _create_left_panel(self, parent):
-        panel = ttk.Frame(parent, padding=5); panel.grid_columnconfigure(0, weight=1); panel.grid_rowconfigure(2, weight=1)
-        self._create_params_panel(panel, 0); self._create_control_panel(panel, 1); self._create_console_panel(panel, 2)
+        panel = ttk.Frame(parent, padding=5); panel.grid_columnconfigure(0, weight=1); panel.grid_rowconfigure(3, weight=1)
+        self._create_info_panel(panel, 0)
+        self._create_params_panel(panel, 1); self._create_control_panel(panel, 2); self._create_console_panel(panel, 3)
         return panel
+
+    def _create_info_panel(self, parent, grid_row):
+        frame = ttk.LabelFrame(parent, text='Information'); frame.grid(row=grid_row, column=0, sticky='new', pady=5)
+        frame.grid_columnconfigure(1, weight=1)
+        logo_canvas = Canvas(frame, width=80, height=80, bg=self.CLR_FRAME_BG, highlightthickness=0)
+        logo_canvas.grid(row=0, column=0, rowspan=2, padx=10, pady=10)
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            logo_path = os.path.join(script_dir, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
+            if PIL_AVAILABLE and os.path.exists(logo_path):
+                img = Image.open(logo_path).resize((80, 80), Image.Resampling.LANCZOS)
+                self.logo_image = ImageTk.PhotoImage(img)
+                logo_canvas.create_image(40, 40, image=self.logo_image)
+        except Exception as e:
+            self.log(f"Warning: Could not load logo. {e}")
+
+        info_text = ("Institute: UGC DAE CSR, Mumbai\n"
+                     "Measurement: I-V Sweep (4-Probe)\n"
+                     "Instruments: K2400 & K2182")
+        ttk.Label(frame, text=info_text, justify='left').grid(row=0, column=1, rowspan=2, sticky='w', padx=5)
 
     def _create_right_panel(self, parent):
         panel = ttk.Frame(parent, padding=5)
