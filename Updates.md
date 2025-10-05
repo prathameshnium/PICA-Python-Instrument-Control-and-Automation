@@ -1,6 +1,22 @@
 ## Instrument & Software Update Log
+### Version 13.2 (05/10/2025)
+
+**PICA Launcher & K2400/2182 Suite**
+
+-   **Enhancement:** Updated `PICA_Launcher_V5.py` to integrate the new professional frontends for the Keithley 2400/2182 measurement suite.
+-   **New Launchers Added:**
+    -   `IV_Sweep_Keithley_2400_2182_Frontend_V1.py`: For high-precision I-V sweeps.
+    -   `VT_Sweep_Keithley_2400_2182_Frontend_V1.py`: For automated V-T measurements.
+-   **Files Modified:** `PICA_Launcher_V5.py`.
+
+---
+
+### Version 13.1 (05/10/2025)
+
+*This version number is being retroactively assigned to the previous update for better version tracking.*
 
 ### October 4, 2025
+**New Features & Enhancements:**
 
 **PICA Launcher & Delta Mode Suite**
 
@@ -48,3 +64,9 @@
 
 -   **GPIB:** Deployed a new interface for testing instrument connections.
 -   **PICA:** Improved the graphical user interface.
+*   **New K2400/2182 I-V Frontend:**
+    *   Created `IV_Sweep_Keithley_2182_Frontend_V1.py`, a new professional GUI for I-V sweeps using the Keithley 2400 and 2182.
+    *   Features a modern UI consistent with other PICA modules, live plotting, and robust instrument control.
+*   **New K2400/2182 V-T Frontend:**
+    *   Created `VT_Sweep_Keithley_2400_2182_Frontend_V1.py`, a dedicated GUI for V-T measurements.
+    *   Provides a user-friendly interface for the existing V-T measurement script, including temperature control and live data visualization.
