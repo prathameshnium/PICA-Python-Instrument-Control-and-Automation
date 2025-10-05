@@ -117,12 +117,12 @@ The PICA suite includes modules for a range of standard electrical and thermal t
 
 1.  **Clone the Repository**
     ```bash
-    git clone [https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git)
+    git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
     cd PICA-Python-Instrument-Control-and-Automation
     ```
 
 2.  **Create a Virtual Environment**
-    It is highly recommended to use a virtual environment to manage dependencies.
+    Using a virtual environment is strongly recommended to avoid conflicts with other Python projects.
     ```bash
     # Create the virtual environment
     python -m venv venv
@@ -143,22 +143,22 @@ The PICA suite includes modules for a range of standard electrical and thermal t
 4.  **Launch the Application**
     Execute the main launcher script from the project's root directory.
     ```bash
-    python PICA_Launcher.py
+    python PICA_Launcher_V5.py
     ```
 
 ---
 
-## Resources & Documentation
+## 📚 Resources & Documentation
 
 #### Included Manuals
 A collection of official instrument manuals and software library documentation is provided within the `/_assets/Manuals/` directory. These documents serve as valuable technical references.
 
 #### Instrument Interfacing Guide
-For a detailed technical guide on hardware setup, instrument configuration, and connection testing, please consult the **[Python Instrument Interfacing Guide](_assets/Manuals/README.md)**.
+For a detailed guide on hardware setup, instrument configuration, and connection testing, please consult the **Python Instrument Interfacing Guide**.
 
 ---
 
-## Contributing
+## 🤝 Contributing
 Contributions are welcome! If you have suggestions for improvements or want to add a new instrument module, please feel free to:
 1.  Fork the repository.
 2.  Create a new branch (`git checkout -b feature/YourFeature`).
@@ -170,7 +170,7 @@ Please open an issue first to discuss any major changes you would like to make.
 
 ---
 
-## Authors & Acknowledgments
+## 🧑‍🔬 Authors & Acknowledgments
 
 <div align="center">
   <img src="_assets/LOGO/UGC_DAE_CSR.jpeg" alt="UGC DAE CSR Logo" width="150">
