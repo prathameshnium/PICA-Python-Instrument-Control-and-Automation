@@ -1,4 +1,25 @@
-# FINAL BUILD VERSION: 13.1 (README Parser restored)
+# BUILD VERSION: 13.1 (README Parser restored)
+'''
+PICA Launcher V5
+================
+A graphical launcher for Python Instrument Control & Automation (PICA) scripts, designed for laboratory automation in materials science and physics research. 
+Provides a Tkinter-based GUI to launch measurement scripts, view documentation, and test GPIB/VISA instrument connections.
+Features:
+---------
+- Launches various instrument automation scripts in isolated processes.
+- Displays README and LICENSE files with Markdown rendering.
+- Opens instrument manuals and script folders.
+- Tests GPIB/VISA connections using PyVISA.
+- Styled, user-friendly interface with logging console.
+Dependencies:
+-------------
+- tkinter
+- pyvisa (optional, for GPIB test)
+- Pillow (optional, for logo display)
+Author: Prathamesh K Deshmukh
+Guided by: Dr. Sudip Mukherjee
+Institute: UGC-DAE Consortium for Scientific Research, Mumbai Centre
+'''
 import tkinter as tk
 from tkinter import ttk, messagebox, Toplevel, Text, Canvas, scrolledtext, font
 import os, sys, subprocess, platform, threading, queue, re
