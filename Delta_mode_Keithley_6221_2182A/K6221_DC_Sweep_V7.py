@@ -6,11 +6,11 @@
 # Author:       Prathamesh Deshmukh
 # Created:      03/10/2025
 #
-# Version:      1.2 (Robust Communication & UI Enhancements)
+# Version:      1.6 (Switched to Free-Running Fetch Mode)
 #
-# Description:  Implemented a robust polling loop for reading data to prevent
-#               timing errors. Added buffer clearing before each measurement.
-#               Added GPIB address preference and institute logo to the GUI.
+# Description:  Modified the backend to put the K2182A into continuous
+#               measurement mode and use 'FETC?' to retrieve data. This is a
+#               more robust communication protocol to prevent timing errors.
 #-------------------------------------------------------------------------------
 
 import tkinter as tk
@@ -53,60 +53,45 @@ def resource_path(relative_path):
 class Backend_Passthrough:
     """ Manages K6221 and K2182A via GPIB passthrough communication. """
     def __init__(self):
-        self.k6221 = None
-        self.rm = None
+        self.k6221 = None; self.rm = None
         if pyvisa:
-            try:
-                self.rm = pyvisa.ResourceManager()
-            except Exception as e:
-                print(f"Could not initialize VISA resource manager. Error: {e}")
+            try: self.rm = pyvisa.ResourceManager()
+            except Exception as e: print(f"Could not initialize VISA: {e}")
 
     def connect(self, k6221_visa):
         if not self.rm: raise ConnectionError("VISA is not available.")
-        print("\n--- [Backend] Connecting to K6221 (GPIB Bridge) ---")
         self.k6221 = self.rm.open_resource(k6221_visa); self.k6221.timeout=25000
         print(f"  K6221 Connected: {self.k6221.query('*IDN?').strip()}")
 
     def configure_instruments(self, compliance):
         print("\n--- [Backend] Configuring Instruments via Passthrough ---")
-        self.k6221.write("*RST")
-        self.k6221.write("SOUR:FUNC CURR"); self.k6221.write("SOUR:CURR:RANG:AUTO ON")
-        self.k6221.write(f"SOUR:CURR:COMP {compliance}")
-        print("  K6221 configured for DC current source.")
-
+        self.k6221.write("*RST"); self.k6221.write("SOUR:FUNC CURR"); self.k6221.write("SOUR:CURR:RANG:AUTO ON")
+        self.k6221.write(f"SOUR:CURR:COMP {compliance}"); print("  K6221 configured for DC source.")
         print("  Sending commands to K2182A via K6221 RS-232 Port...")
-        self.k6221.write("SYST:COMM:SER:SEND '*RST'"); time.sleep(2)
-        self.k6221.write("SYST:COMM:SER:SEND 'SENS:FUNC \"VOLT:DC\"'") ; time.sleep(1)
-        self.k6221.write("SYST:COMM:SER:SEND 'SENS:VOLT:DC:RANG:AUTO ON'") ; time.sleep(1)
-        print("  K2182A configured for DC Voltage measurement.") ; time.sleep(2)
+        self.k6221.write("SYST:COMM:SER:SEND '*RST'"); time.sleep(1)
+        self.k6221.write("SYST:COMM:SER:SEND 'FUNC \"VOLT\"'")
+        self.k6221.write("SYST:COMM:SER:SEND 'SENS:VOLT:DC:RANG:AUTO ON'")
+        # --- NEW: Put K2182A into continuous, free-running measurement mode ---
+        self.k6221.write("SYST:COMM:SER:SEND 'INIT:CONT ON'")
+        print("  K2182A configured and set to free-running measurement mode.")
 
-    def measure_point(self, current):
-        """ Sources current, then clears buffer and polls for a voltage reading. """
-        # 1. Set current on K6221
+    def set_current(self, current):
+        """ Sets the current level on the K6221 and turns the output on. """
         self.k6221.write(f"SOUR:CURR {current}")
         self.k6221.write("OUTP:STAT ON")
 
-        # 2. Clear K2182A's buffer via passthrough to ensure a fresh read
-        self.k6221.write("SYST:COMM:SER:SEND 'TRAC:CLE'")
+    def read_voltage(self):
+        """ Fetches the latest reading from the free-running K2182A. """
+        # --- NEW: Use FETC? to get the latest reading instead of READ? ---
+        self.k6221.write("SYST:COMM:SER:SEND 'FETC?'")
 
-        # 3. Request a new reading from the 2182A
-        self.k6221.write("SYST:COMM:SER:SEND 'READ?'")
-
-        # 4. Implement a robust polling loop to wait for the response
-        timeout = 2.0  # 2-second timeout
-        start_poll_time = time.time()
-        voltage_str = ""
+        timeout = 2.0; start_poll_time = time.time(); voltage_str = ""
         while time.time() - start_poll_time < timeout:
             response = self.k6221.query("SYST:COMM:SER:ENT?").strip()
-            if response:  # If we get a non-empty string, break the loop
-                voltage_str = response
-                break
-            time.sleep(0.1) # Wait 100ms before trying again
+            if response: voltage_str = response; break
+            time.sleep(0.1)
 
-        if not voltage_str:
-            raise TimeoutError("No response from K2182A via passthrough.")
-
-        # 5. Parse the last valid line from the response to handle buffer mix-ups
+        if not voltage_str: raise TimeoutError("No response from K2182A via passthrough.")
         last_line = voltage_str.strip().split('\n')[-1]
         return float(last_line)
 
@@ -117,17 +102,21 @@ class Backend_Passthrough:
             print("  K6221 source is OFF.")
 
     def close(self):
-        print("\n--- [Backend] Closing connection. ---")
-        if self.k6221: self.turn_off_output(); self.k6221.close(); print("  K6221 connection closed.")
+        if self.k6221:
+            # Also tell the 2182A to stop continuous measurement
+            try: self.k6221.write("SYST:COMM:SER:SEND 'INIT:CONT OFF'")
+            except: pass
+            self.turn_off_output()
+            self.k6221.close()
+            print("  K6221 connection closed.")
 
 # -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class Passthrough_IV_GUI:
-    PROGRAM_VERSION = "1.2"
+    PROGRAM_VERSION = "1.6"
     LOGO_SIZE = 110
-    LOGO_FILE_PATH = resource_path("_assets/UGC_DAE_CSR.jpeg")
-
+    LOGO_FILE_PATH = resource_path("../_assets/LOGO/UGC_DAE_CSR.jpeg")
     CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'; CLR_TEXT_DARK = '#1A1A1A'
     CLR_ACCENT_GREEN = '#A7C957'; CLR_ACCENT_RED = '#E74C3C'; CLR_CONSOLE_BG = '#1E2B38'; CLR_GRAPH_BG = '#FFFFFF'
     FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold'); FONT_CONSOLE = ('Consolas', 10)
@@ -154,9 +143,8 @@ class Passthrough_IV_GUI:
         left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=500); main_pane.add(left_panel, weight=1)
         right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG); main_pane.add(right_panel, weight=3)
         top_controls = ttk.Frame(left_panel); left_panel.add(top_controls, weight=0)
-        self.create_info_frame(top_controls)
-        self.create_input_frame(top_controls)
         console_pane = self.create_console_frame(left_panel); left_panel.add(console_pane, weight=1)
+        self.create_info_frame(top_controls); self.create_input_frame(top_controls)
         self.create_graph_frame(right_panel)
 
     def create_info_frame(self, parent):
@@ -166,116 +154,95 @@ class Passthrough_IV_GUI:
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
             try:
                 img = Image.open(self.LOGO_FILE_PATH).resize((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
-                self.logo_image = ImageTk.PhotoImage(img)
-                logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
+                self.logo_image = ImageTk.PhotoImage(img); logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
             except Exception as e: self.log(f"ERROR: Failed to load logo. {e}")
+        else:
+            self.log(f"Warning: Logo not found at '{self.LOGO_FILE_PATH}'")
+            logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="Logo not found.\nCreate _assets/LOGO/\nand add image file.", font=('Segoe UI', 9), fill=self.CLR_FG_LIGHT, justify='center')
         info_text = "Instruments:\n  • K6221 (Source via GPIB)\n  • K2182A (Meter via 6221 RS232)"
         ttk.Label(frame, text=info_text, justify='left').grid(row=0, column=1, rowspan=2, padx=10, sticky='w')
 
+    # ... The rest of the GUI is mostly unchanged ...
     def create_input_frame(self, parent):
         frame = LabelFrame(parent, text='Sweep Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE); frame.pack(pady=5, padx=10, fill='x')
         for i in range(2): frame.grid_columnconfigure(i, weight=1)
         self.entries = {}; pady_val, padx_val = (5, 5), 10
-        Label(frame, text="Keithley 6221 (GPIB Address):").grid(row=0, column=0, columnspan=2, padx=padx_val, pady=pady_val, sticky='w')
-        self.k6221_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly'); self.k6221_cb.grid(row=1, column=0, columnspan=2, padx=padx_val, pady=(0, 5), sticky='ew')
+        Label(frame, text="Keithley 6221 (GPIB Address):").grid(row=0, column=0, columnspan=2, padx=padx_val, pady=pady_val, sticky='w'); self.k6221_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly'); self.k6221_cb.grid(row=1, column=0, columnspan=2, padx=padx_val, pady=(0, 5), sticky='ew')
         ttk.Button(frame, text="Scan for Instruments", command=self._scan_for_visa).grid(row=2, column=0, columnspan=2, padx=padx_val, pady=4, sticky='ew')
         Label(frame, text="Sample Name:").grid(row=3, column=0, columnspan=2, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE); self.entries["Sample Name"].grid(row=4, column=0, columnspan=2, padx=padx_val, pady=(0, 10), sticky='ew')
         Label(frame, text="Start Current (A):").grid(row=5, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Start Current"] = Entry(frame, font=self.FONT_BASE); self.entries["Start Current"].grid(row=6, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Start Current"].insert(0, "-1E-5")
         Label(frame, text="Stop Current (A):").grid(row=5, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Stop Current"] = Entry(frame, font=self.FONT_BASE); self.entries["Stop Current"].grid(row=6, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Stop Current"].insert(0, "1E-5")
         Label(frame, text="Number of Points:").grid(row=7, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Num Points"] = Entry(frame, font=self.FONT_BASE); self.entries["Num Points"].grid(row=8, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Num Points"].insert(0, "51")
-        Label(frame, text="Step Delay (s):").grid(row=7, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Delay"] = Entry(frame, font=self.FONT_BASE); self.entries["Delay"].grid(row=8, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Delay"].insert(0, "0.5")
-        Label(frame, text="Compliance (V):").grid(row=9, column=0, columnspan=2, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Compliance"] = Entry(frame, font=self.FONT_BASE); self.entries["Compliance"].grid(row=10, column=0, columnspan=2, padx=padx_val, pady=(0, 10), sticky='ew'); self.entries["Compliance"].insert(0, "10")
+        Label(frame, text="Step Delay (s):").grid(row=7, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Delay"] = Entry(frame, font=self.FONT_BASE); self.entries["Delay"].grid(row=8, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Delay"].insert(0, "0.2")
+        Label(frame, text="Initial Settle Delay (s):").grid(row=9, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Initial Delay"] = Entry(frame, font=self.FONT_BASE); self.entries["Initial Delay"].grid(row=10, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Initial Delay"].insert(0, "2.0")
+        Label(frame, text="Compliance (V):").grid(row=9, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Compliance"] = Entry(frame, font=self.FONT_BASE); self.entries["Compliance"].grid(row=10, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Compliance"].insert(0, "10")
         self.sweep_scale_var = tk.StringVar(value="Linear"); Label(frame, text="Sweep Scale:").grid(row=11, column=0, padx=padx_val, pady=pady_val, sticky='w'); ttk.Radiobutton(frame, text="Linear", variable=self.sweep_scale_var, value="Linear").grid(row=12, column=0, padx=padx_val, sticky='w'); ttk.Radiobutton(frame, text="Logarithmic", variable=self.sweep_scale_var, value="Logarithmic").grid(row=12, column=1, padx=padx_val, sticky='w')
         ttk.Button(frame, text="Browse Save Location...", command=self._browse_save).grid(row=13, column=0, columnspan=2, padx=padx_val, pady=4, sticky='ew')
         self.start_button = ttk.Button(frame, text="Start Sweep", command=self.start_sweep, style='Start.TButton'); self.start_button.grid(row=14, column=0, padx=(padx_val, 5), pady=(15, 10), sticky='ew')
         self.stop_button = ttk.Button(frame, text="Stop Sweep", command=self.stop_sweep, style='Stop.TButton', state='disabled'); self.stop_button.grid(row=14, column=1, padx=(5, padx_val), pady=(15, 10), sticky='ew')
-
-    def create_console_frame(self, parent):
-        frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE); self.console = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0); self.console.pack(pady=5, padx=5, fill='both', expand=True); self.log("Console initialized."); return frame
-    def create_graph_frame(self, parent):
-        container = LabelFrame(parent, text='I-V Curve', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_TEXT_DARK, font=self.FONT_TITLE); container.pack(fill='both', expand=True, padx=5, pady=5)
-        self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG); self.canvas = FigureCanvasTkAgg(self.figure, container)
-        gs = gridspec.GridSpec(2, 1, figure=self.figure); self.ax_main = self.figure.add_subplot(gs[0]); self.ax_sub = self.figure.add_subplot(gs[1])
-        self.line_main, = self.ax_main.plot([], [], 'o-', c=self.CLR_ACCENT_RED, markersize=4); self.ax_main.set_title("I-V Curve", fontweight='bold'); self.ax_main.set_xlabel("Current (A)"); self.ax_main.set_ylabel("Voltage (V)")
-        self.line_sub, = self.ax_sub.plot([], [], 's:', c=self.CLR_ACCENT_GREEN, markersize=4); self.ax_sub.set_xlabel("Current (A)"); self.ax_sub.set_ylabel("Resistance (Ω)")
-        for ax in [self.ax_main, self.ax_sub]: ax.grid(True, ls='--', alpha=0.6)
-        self.figure.tight_layout(pad=3.0); self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-    def log(self, message):
-        ts = datetime.now().strftime("%H:%M:%S"); self.console.config(state='normal'); self.console.insert('end', f"[{ts}] {message}\n"); self.console.see('end'); self.console.config(state='disabled')
-
+    def create_console_frame(self, parent): frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE); self.console = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0); self.console.pack(pady=5, padx=5, fill='both', expand=True); return frame
+    def create_graph_frame(self, parent): container = LabelFrame(parent, text='I-V Curve', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_TEXT_DARK, font=self.FONT_TITLE); container.pack(fill='both', expand=True, padx=5, pady=5); self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG); self.canvas = FigureCanvasTkAgg(self.figure, container); gs = gridspec.GridSpec(2, 1, figure=self.figure); self.ax_main = self.figure.add_subplot(gs[0]); self.ax_sub = self.figure.add_subplot(gs[1]); self.line_main, = self.ax_main.plot([], [], 'o-', c=self.CLR_ACCENT_RED, markersize=4); self.ax_main.set_title("I-V Curve", fontweight='bold'); self.ax_main.set_xlabel("Current (A)"); self.ax_main.set_ylabel("Voltage (V)"); self.line_sub, = self.ax_sub.plot([], [], 's:', c=self.CLR_ACCENT_GREEN, markersize=4); self.ax_sub.set_xlabel("Current (A)"); self.ax_sub.set_ylabel("Resistance (Ω)"); [ax.grid(True, ls='--', alpha=0.6) for ax in [self.ax_main, self.ax_sub]]; self.figure.tight_layout(pad=3.0); self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    def log(self, message): ts = datetime.now().strftime("%H:%M:%S"); self.console.config(state='normal'); self.console.insert('end', f"[{ts}] {message}\n"); self.console.see('end'); self.console.config(state='disabled')
     def start_sweep(self):
         try:
-            self.params = { 'name': self.entries["Sample Name"].get(), 'start_i': float(self.entries["Start Current"].get()), 'stop_i': float(self.entries["Stop Current"].get()), 'points': int(self.entries["Num Points"].get()), 'delay': float(self.entries["Delay"].get()), 'compliance': float(self.entries["Compliance"].get()), 'k6221_visa': self.k6221_cb.get() }
+            self.params = { 'name': self.entries["Sample Name"].get(), 'start_i': float(self.entries["Start Current"].get()), 'stop_i': float(self.entries["Stop Current"].get()), 'points': int(self.entries["Num Points"].get()), 'delay': float(self.entries["Delay"].get()), 'initial_delay': float(self.entries["Initial Delay"].get()), 'compliance': float(self.entries["Compliance"].get()), 'k6221_visa': self.k6221_cb.get() }
             if not all(p for k, p in self.params.items() if k != 'name') or not hasattr(self, 'save_path'): raise ValueError("All fields and a save location are required.")
-            self.start_button.config(state='disabled'); self.stop_button.config(state='normal'); self.is_running = True
-            for key in self.data_storage: self.data_storage[key].clear()
-            for line in [self.line_main, self.line_sub]: line.set_data([], [])
-            self.ax_main.set_title(f"I-V Curve: {self.params['name']}"); self.canvas.draw()
+            self.start_button.config(state='disabled'); self.stop_button.config(state='normal'); self.is_running = True; [self.data_storage[key].clear() for key in self.data_storage]; [line.set_data([], []) for line in [self.line_main, self.line_sub]]; self.ax_main.set_title(f"I-V Curve: {self.params['name']}"); self.canvas.draw()
             self.sweep_thread = threading.Thread(target=self._sweep_worker, args=(self.params,), daemon=True); self.sweep_thread.start()
         except Exception as e:
             self.log(f"ERROR on startup: {traceback.format_exc()}"); messagebox.showerror("Input Error", f"{e}")
-
     def stop_sweep(self):
         if self.is_running: self.is_running = False; self.log("Stop command received..."); self.stop_button.config(state='disabled')
-
     def _sweep_worker(self, params):
         try:
             self.backend.connect(params['k6221_visa']); self.backend.configure_instruments(params['compliance'])
-            if self.sweep_scale_var.get() == 'Linear':
-                current_points = np.linspace(params['start_i'], params['stop_i'], params['points'])
+            if self.sweep_scale_var.get() == 'Linear': current_points = np.linspace(params['start_i'], params['stop_i'], params['points'])
             else:
                 if params['start_i'] * params['stop_i'] <= 0: self.log("ERROR: Log sweep cannot cross zero."); self.root.after(0, self._sweep_cleanup_ui); return
-                start_log, stop_log = np.log10(abs(params['start_i'])), np.log10(abs(params['stop_i']))
-                log_sweep = np.logspace(start_log, stop_log, params['points']); current_points = log_sweep * np.sign(params['start_i'])
+                start_log, stop_log = np.log10(abs(params['start_i'])), np.log10(abs(params['stop_i'])); log_sweep = np.logspace(start_log, stop_log, params['points']); current_points = log_sweep * np.sign(params['start_i'])
             ts = datetime.now().strftime("%Y%m%d_%H%M%S"); filename = f"{params['name']}_{ts}_IV.dat"
             self.data_filepath = os.path.join(self.save_path, filename)
-            with open(self.data_filepath, 'w', newline='') as f:
-                csv.writer(f).writerow([f"# Sample: {params['name']}"]); csv.writer(f).writerow(["Set Current (A)", "Measured Voltage (V)", "Resistance (Ohm)"])
+            with open(self.data_filepath, 'w', newline='') as f: csv.writer(f).writerow([f"# Sample: {params['name']}"]); csv.writer(f).writerow(["Set Current (A)", "Measured Voltage (V)", "Resistance (Ohm)"])
 
-            self.log("Sweep started...")
+            self.log("Sweep process starting...")
+            self.log(f"Applying dummy current (1e-13 A) for stabilization..."); self.backend.set_current(1e-13)
+            self.log(f"Waiting for initial settle delay ({params['initial_delay']}s)..."); time.sleep(params['initial_delay'])
+
+            self.log("Initial stabilization complete. Starting main sweep.")
             for i, current in enumerate(current_points):
                 if not self.is_running: self.log("Sweep aborted by user."); break
-                self.log(f"Step {i+1}/{len(current_points)}: Sourcing {current:.4e} A..."); time.sleep(params['delay'])
-                voltage = self.backend.measure_point(current)
+                self.log(f"Step {i+1}/{len(current_points)}: Setting current to {current:.4e} A...")
+                self.backend.set_current(current); time.sleep(params['delay'])
+                voltage = self.backend.read_voltage()
                 self.root.after(0, self._update_ui_with_point, current, voltage)
             else: self.log("Sweep completed successfully.")
         except Exception as e:
             self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
         finally:
             self.is_running = False; self.backend.close(); self.root.after(0, self._sweep_cleanup_ui)
-
     def _update_ui_with_point(self, current, voltage):
-        resistance = voltage/current if current != 0 else float('inf')
-        self.log(f"  Read: {voltage:.6e} V, R: {resistance:.6e} Ω")
+        resistance = voltage/current if current != 0 else float('inf'); self.log(f"  Read: {voltage:.6e} V, R: {resistance:.6e} Ω")
         self.data_storage['current'].append(current); self.data_storage['voltage'].append(voltage); self.data_storage['resistance'].append(resistance)
         with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{current:.6e}", f"{voltage:.6e}", f"{resistance:.6e}"])
         self.line_main.set_data(self.data_storage['current'], self.data_storage['voltage']); self.line_sub.set_data(self.data_storage['current'], self.data_storage['resistance'])
         for ax in [self.ax_main, self.ax_sub]: ax.relim(); ax.autoscale_view()
         self.figure.tight_layout(pad=3.0); self.canvas.draw()
-
     def _sweep_cleanup_ui(self):
         self.start_button.config(state='normal'); self.stop_button.config(state='disabled'); self.log("Ready for next sweep.")
-
     def _scan_for_visa(self):
         if self.backend.rm: self.log("Scanning..."); resources = self.backend.rm.list_resources()
         else: self.log("VISA manager not found."); return
         if resources:
             self.log(f"Found: {resources}"); gpib_res = [r for r in resources if 'GPIB' in r]
             self.k6221_cb['values'] = gpib_res
-            # --- NEW: Set preferred GPIB address if found ---
             for res in gpib_res:
-                if "GPIB0::13" in res:
-                    self.k6221_cb.set(res)
-                    self.log("Preferred K6221 address found and selected.")
-                    break
+                if "GPIB0::13" in res: self.k6221_cb.set(res); self.log("Preferred K6221 address found and selected."); break
             else:
                 if gpib_res: self.k6221_cb.set(gpib_res[0])
         else: self.log("No instruments found.")
-
     def _browse_save(self):
         path = filedialog.askdirectory();
         if path: self.save_path = path; self.log(f"Save location set to: {path}")
-
     def _on_closing(self):
         if self.is_running: self.is_running = False; time.sleep(0.2)
         self.backend.close(); self.root.destroy()
