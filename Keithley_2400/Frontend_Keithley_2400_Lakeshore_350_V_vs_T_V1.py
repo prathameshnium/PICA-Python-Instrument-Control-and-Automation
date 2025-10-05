@@ -105,7 +105,13 @@ class TemperatureIVGUI:
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#EF233C', '#8D99AE'
     CLR_CONSOLE_BG = '#1E2B38'
     FONT_BASE = ('Segoe UI', 10); FONT_TITLE = ('Segoe UI', 12, 'bold')
-    LOGO_FILE = "UGC_DAE_CSR.jpeg"
+    try:
+        # Robust path finding for assets
+        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        LOGO_FILE = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
+    except NameError:
+        # Fallback for environments where __file__ is not defined
+        LOGO_FILE = "../_assets/LOGO/UGC_DAE_CSR.jpeg"
 
     def __init__(self, root):
         self.root = root

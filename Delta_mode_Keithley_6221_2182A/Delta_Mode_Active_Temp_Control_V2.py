@@ -146,7 +146,12 @@ class Active_Delta_Backend:
 class Advanced_Delta_GUI:
     PROGRAM_VERSION = "2.0"
     LOGO_SIZE = 110
-    LOGO_FILE_PATH = resource_path("_assets/UGC_DAE_CSR.jpeg")
+    try:
+        # Robust path finding for assets relative to the script's location
+        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
+    except NameError:
+        LOGO_FILE_PATH = resource_path("../_assets/LOGO/UGC_DAE_CSR.jpeg")
 
     CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'
     CLR_TEXT_DARK = '#1A1A1A'; CLR_ACCENT_GOLD = '#FFC107'; CLR_ACCENT_GREEN = '#A7C957'

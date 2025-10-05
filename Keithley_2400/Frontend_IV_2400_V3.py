@@ -136,7 +136,13 @@ class MeasurementAppGUI:
     FONT_SIZE_BASE = 12
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
-    LOGO_FILE = "UGC_DAE_CSR.jpeg"
+    try:
+        # Robust path finding for assets
+        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        LOGO_FILE = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
+    except NameError:
+        # Fallback for environments where __file__ is not defined
+        LOGO_FILE = "../_assets/LOGO/UGC_DAE_CSR.jpeg"
     LOGO_SIZE = 120
 
     def __init__(self, root):

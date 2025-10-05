@@ -142,7 +142,13 @@ class MeasurementAppGUI:
     """The main GUI application class (Front End)."""
     PROGRAM_VERSION = "8.0"
     LOGO_SIZE = 110
-    LOGO_FILE_PATH = "UGC_DAE_CSR.jpeg" # Local file as per original script
+    try:
+        # Robust path finding for assets
+        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
+    except NameError:
+        # Fallback for environments where __file__ is not defined
+        LOGO_FILE_PATH = "../_assets/LOGO/UGC_DAE_CSR.jpeg"
 
     # --- Theming and Styling (from 6517B...V12) ---
     CLR_BG_DARK = '#2B3D4F'
