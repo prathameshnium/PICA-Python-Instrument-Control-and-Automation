@@ -33,9 +33,10 @@ jobs:
           nuitka-version: '2.6'
           msvc: 'latest'
           
-          # Nuitka 2.6+ auto-detects numpy, pandas, and qt.
-          # We only need tk-inter as a hint for the standard library.
-          enable-plugins: "tk-inter"
+          # --- PLUGIN CONFIGURATION ---
+          # Explicitly enable plugins for Tkinter and Matplotlib.
+          # This ensures Nuitka correctly bundles the GUI backend for plots.
+          enable-plugins: "tk-inter,matplotlib"
           
           script-name: PICA_Launcher_V5p1.py
 
