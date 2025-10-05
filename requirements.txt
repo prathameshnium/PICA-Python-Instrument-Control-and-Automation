@@ -4,4 +4,5 @@ matplotlib
 pymeasure
 pyvisa
 pyvisa-py
+gpib-ctypes
 pillow
