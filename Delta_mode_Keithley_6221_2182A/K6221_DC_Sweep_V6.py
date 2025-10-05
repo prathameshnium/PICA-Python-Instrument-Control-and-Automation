@@ -75,10 +75,10 @@ class Backend_Passthrough:
         print("  K6221 configured for DC current source.")
 
         print("  Sending commands to K2182A via K6221 RS-232 Port...")
-        self.k6221.write("SYST:COMM:SER:SEND '*RST'"); time.sleep(1)
-        self.k6221.write("SYST:COMM:SER:SEND 'SENS:FUNC \"VOLT:DC\"'")
-        self.k6221.write("SYST:COMM:SER:SEND 'SENS:VOLT:DC:RANG:AUTO ON'")
-        print("  K2182A configured for DC Voltage measurement.")
+        self.k6221.write("SYST:COMM:SER:SEND '*RST'"); time.sleep(2)
+        self.k6221.write("SYST:COMM:SER:SEND 'SENS:FUNC \"VOLT:DC\"'") ; time.sleep(1)
+        self.k6221.write("SYST:COMM:SER:SEND 'SENS:VOLT:DC:RANG:AUTO ON'") ; time.sleep(1)
+        print("  K2182A configured for DC Voltage measurement.") ; time.sleep(2)
 
     def measure_point(self, current):
         """ Sources current, then clears buffer and polls for a voltage reading. """
