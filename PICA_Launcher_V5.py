@@ -1,24 +1,26 @@
 # BUILD VERSION: 13.1 (README Parser restored)
 '''
-PICA Launcher V5
-================
-A graphical launcher for Python Instrument Control & Automation (PICA) scripts, designed for laboratory automation in materials science and physics research. 
-Provides a Tkinter-based GUI to launch measurement scripts, view documentation, and test GPIB/VISA instrument connections.
-Features:
----------
-- Launches various instrument automation scripts in isolated processes.
-- Displays README and LICENSE files with Markdown rendering.
-- Opens instrument manuals and script folders.
-- Tests GPIB/VISA connections using PyVISA.
-- Styled, user-friendly interface with logging console.
-Dependencies:
--------------
-- tkinter
-- pyvisa (optional, for GPIB test)
-- Pillow (optional, for logo display)
-Author: Prathamesh K Deshmukh
-Guided by: Dr. Sudip Mukherjee
-Institute: UGC-DAE Consortium for Scientific Research, Mumbai Centre
+===============================================================================
+ PROGRAM:      PICA Launcher
+
+ PURPOSE:      A graphical dashboard for launching PICA measurement scripts.
+
+ DESCRIPTION:  This application serves as the central graphical user interface (GUI)
+               for the Python Instrument Control & Automation (PICA) suite. It
+               provides a styled, user-friendly dashboard to launch various
+               instrument automation scripts in isolated, stable processes using
+               Python's multiprocessing library. Key features include a utility
+               to test GPIB/VISA instrument connections, viewers for project
+               documentation (README, LICENSE), quick access to script folders
+               and instrument manuals, and a real-time logging console.
+
+ AUTHOR:       Prathamesh K Deshmukh
+ GUIDED BY:    Dr. Sudip Mukherjee
+ INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
+
+ VERSION:      13.1
+ LAST EDITED:  04/10/2025
+===============================================================================
 '''
 import tkinter as tk
 from tkinter import ttk, messagebox, Toplevel, Text, Canvas, scrolledtext, font

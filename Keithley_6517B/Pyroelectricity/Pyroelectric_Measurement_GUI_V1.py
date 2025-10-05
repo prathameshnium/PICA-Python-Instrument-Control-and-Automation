@@ -6,6 +6,29 @@
 # Created:      17/09/2025
 # Version:      V2.5 (Matplotlib Style Fix)
 # -------------------------------------------------------------------------------
+'''
+===============================================================================
+ PROGRAM:      Pyroelectric Measurement GUI
+
+ PURPOSE:      Perform a pyroelectric current measurement with two-stage
+               temperature ramp control.
+
+ DESCRIPTION:  This program provides a graphical user interface (GUI) for
+               automating a pyroelectric current measurement. It integrates a
+               Lakeshore 350 for temperature control and a Keithley 6517B for
+               sensitive current measurement. The experiment involves a
+               two-stage process: first stabilizing at a start temperature,
+               then ramping to an end temperature while logging data. The GUI
+               features live plotting and a detailed console.
+
+ AUTHOR:       Prathamesh Deshmukh
+ GUIDED BY:    Dr. Sudip Mukherjee
+ INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
+
+ VERSION:      2.5
+ LAST EDITED:  04/10/2025
+===============================================================================
+'''
 
 # --- Packages for Front end ---
 import tkinter as tk

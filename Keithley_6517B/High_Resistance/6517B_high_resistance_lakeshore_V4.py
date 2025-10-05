@@ -1,14 +1,29 @@
-#-------------------------------------------------------------------------------
-# Name:           Integrated R-T Measurement Control
-# Purpose:        Automate and log a Resistance vs. Temperature measurement.
-# Author:         Prathamesh Deshmukh
-# Date:           19/09/2025
-# Version:        3.1 (Gemini-Enhanced Heating Logic)
-# Changes_done:   V3.1 - Incorporated active heating/cooling logic for the
-#                 stabilization phase from the GUI version for faster and
-#                 more robust temperature settling.
-#-------------------------------------------------------------------------------
+'''
+===============================================================================
+ PROGRAM:      Integrated R-T Measurement Control
 
+ PURPOSE:      Automate and log a Resistance vs. Temperature (R-T) measurement
+               using a command-line interface.
+
+ DESCRIPTION:  This script provides a command-line framework for automating an
+               R-T characterization by integrating a Lakeshore 350 Temperature
+               Controller and a Keithley 6517B Electrometer. The program
+               prompts the user for all experiment parameters (temperature
+               range, ramp rate, source voltage), performs a robust temperature
+               stabilization, and then executes a linear temperature ramp.
+               During the ramp, it continuously measures resistance and logs
+               all data to a CSV file, while providing a live plot for visual
+               feedback. The script ensures a safe shutdown of all instruments
+               upon completion, error, or user interruption.
+
+ AUTHOR:       Prathamesh Deshmukh
+ GUIDED BY:    Dr. Sudip Mukherjee
+ INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
+
+ VERSION:      3.1
+ LAST EDITED:  19/09/2025
+===============================================================================
+'''
 import pyvisa
 import time
 import csv
