@@ -133,18 +133,22 @@ class RT_GUI_Active:
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
         ttk.Label(header, text=f"Active R-T Sweep (K2400) v{self.PROGRAM_VERSION}", style='Header.TLabel', font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        # --- FIX: Create both panels first, then add them to the PanedWindow ---
-        left_panel = self._create_left_panel(main_pane)
-        right_panel = self._create_right_panel(main_pane)
+
+        # --- FIX: Create empty panels, add them to the PanedWindow, THEN populate them. ---
+        left_panel = ttk.Frame(main_pane, padding=5)
+        right_panel = ttk.Frame(main_pane, padding=5)
+
         main_pane.add(left_panel, weight=2)
         main_pane.add(right_panel, weight=3)
-        
-    def _create_left_panel(self, parent):
-        panel = ttk.Frame(parent, padding=5); panel.grid_columnconfigure(0, weight=1); panel.grid_rowconfigure(3, weight=1)
+
+        # Now that the PanedWindow is correctly structured, populate the panels.
+        self._populate_left_panel(left_panel)
+        self._populate_right_panel(right_panel)
+
+    def _populate_left_panel(self, panel):
+        panel.grid_columnconfigure(0, weight=1); panel.grid_rowconfigure(3, weight=1)
         self._create_info_panel(panel, 0)
         self._create_params_panel(panel, 1); self._create_control_panel(panel, 2); self._create_console_panel(panel, 3)
-        return panel
 
     def _create_info_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Information'); frame.grid(row=grid_row, column=0, sticky='new', pady=5)
@@ -162,8 +166,7 @@ class RT_GUI_Active:
         info_text = ("Institute: UGC DAE CSR, Mumbai\nMeasurement: R vs. T Sweep (Active)\nInstruments: K2400, LS350")
         ttk.Label(frame, text=info_text, justify='left').grid(row=0, column=1, rowspan=2, sticky='w', padx=5)
 
-    def _create_right_panel(self, parent):
-        panel = ttk.Frame(parent, padding=5)
+    def _populate_right_panel(self, panel):
         container = ttk.LabelFrame(panel, text='Live R-T Curve'); container.pack(fill='both', expand=True)
         self.figure = Figure(dpi=100, facecolor='white')
         self.ax_main = self.figure.add_subplot(111)
@@ -171,7 +174,6 @@ class RT_GUI_Active:
         self.ax_main.set_title("Waiting for experiment...", fontweight='bold'); self.ax_main.set_xlabel("Temperature (K)"); self.ax_main.set_ylabel("Resistance (Ω)")
         self.ax_main.grid(True, linestyle='--', alpha=0.6); self.figure.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.figure, container); self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
-
     def _create_params_panel(self, parent, grid_row):
         container = ttk.Frame(parent); container.grid(row=grid_row, column=0, sticky='new', pady=5)
         container.grid_columnconfigure((0, 1), weight=1); self.entries = {}
