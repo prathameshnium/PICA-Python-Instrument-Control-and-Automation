@@ -89,18 +89,17 @@ class PICALauncherApp:
 
     SCRIPT_PATHS = {
         # Based on Updates.md, using the latest versions of scripts.
-        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_IV_Ambient.py"),
-        "Delta Mode R-T (Active)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_Active_Temp_Control.py"),
-        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182A/K6221_DC_Sweep_V7.py"),
+        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_IV_Ambient.py"), # Latest as of Oct 3
+        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182A/K6221_DC_Sweep_V7.py"), # Corrected from Delta_Mode_IV_Ambient.py
         "Delta Mode R-T (Active)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_Active_Temp_Control_V2.py"),
         "Delta Mode R-T (Passive)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Lakeshore_Frontend_Passive_V1.py"),
         "K2400 I-V": resource_path("Keithley_2400/Frontend_IV_2400_V3.py"),
-        "K2400 R-T": resource_path("Keithley_2400/Frontend_Keithley_2400_Lakeshore_350_V_vs_T.py"),
         "K2400 R-T": resource_path("Keithley_2400/Frontend_Keithley_2400_Lakeshore_350_V_vs_T_V1.py"),
         "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182.py"),
         "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py"),
+        "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182_V1.py"), # Corrected from IV_Sweep_Keithley_2182.py
+        "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350_V1.py"), # Corrected from VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py
         "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V9.py"),
-        "K6517B R-T (Active)": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend.py"),
         "K6517B R-T (Active)": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V11p2_5Always.py"),
         "K6517B R-T (Passive)": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py"),
         "Pyroelectric Current": resource_path("Keithley_6517B/Pyroelectricity/Pyroelectric_Measurement_GUI_V1.py"),
@@ -108,6 +107,7 @@ class PICALauncherApp:
         "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/lakeshore350_passive_monitor_Frontend_V1.py"),
         "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/LCR_CV.py"),
         "Lock-in AC Measurement": resource_path("Lock_in_amplifier/AC_Transport_GUI.py"),
+        "Lock-in AC Measurement": resource_path("Lock_in_amplifier/AC_Transport_GUI_V1.py"), # Corrected from AC_Transport_GUI.py
     }
 
     def __init__(self, root):

@@ -1,5 +1,17 @@
 ## Instrument & Software Update Log
 
+### October 4, 2025
+
+**PICA Launcher & Delta Mode Suite**
+
+-   **Enhancement:** Updated `PICA_Launcher_V5.py` to resolve duplicate script paths and ensure it correctly launches the latest versions of all measurement programs.
+-   **Enhancement:** Successfully tested and validated the latest Delta Mode scripts:
+    -   `Delta_Mode_Active_Temp_Control_V2.py`: Active R-T measurements confirmed to be stable and accurate.
+    -   `Delta_Mode_IV_Ambient.py`: I-V sweep functionality verified.
+-   **Files Modified:** `PICA_Launcher_V5.py`, `Delta_Mode_Active_Temp_Control_V2.py`, `Delta_Mode_IV_Ambient.py`.
+
+---
+
 ### October 3, 2025
 
 **Delta Mode Measurement Suite (Keithley 6221/2182A)**
