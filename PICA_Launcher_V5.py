@@ -95,8 +95,8 @@ class PICALauncherApp:
         "Delta Mode R-T (Passive)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Lakeshore_Frontend_Passive_V1.py"),
         "K2400 I-V": resource_path("Keithley_2400/Frontend_IV_2400_V3.py"),
         "K2400 R-T": resource_path("Keithley_2400/Frontend_Keithley_2400_Lakeshore_350_V_vs_T_V1.py"),
-        "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182_V1.py"), # Corrected from IV_Sweep_Keithley_2182.py
-        "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350_V1.py"), # Corrected from VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py
+        "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182_Frontend_V1.py"),
+        "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/VT_Sweep_Keithley_2400_2182_Frontend_V1.py"),
         "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V9.py"),
         "K6517B R-T (Active)": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V11p2_5Always.py"),
         "K6517B R-T (Passive)": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py"),
