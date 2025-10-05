@@ -22,6 +22,15 @@ jobs:
         with:
           python-version: '3.9'
 
+      - name: Cache pip dependencies
+        # This step caches installed packages to speed up subsequent runs.
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.pythonLocation }}\Lib\site-packages
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install Dependencies
         # A stable requirements file is the foundation of a reliable build.
         run: pip install -r requirements.txt
@@ -43,9 +52,9 @@ jobs:
           msvc: 'latest'
           
           # --- PLUGIN CONFIGURATION ---
-          # Explicitly enable plugins for Tkinter and Matplotlib.
-          # This resolves the warning and ensures Nuitka correctly bundles the GUI backend for plots.
-          enable-plugins: "tk-inter,matplotlib"
+          # The tk-inter plugin is essential for GUI apps. Matplotlib is auto-detected.
+          # Removing the redundant 'matplotlib' plugin cleans up build warnings.
+          enable-plugins: "tk-inter"
           
           script-name: PICA_Launcher_V5p1.py
 
