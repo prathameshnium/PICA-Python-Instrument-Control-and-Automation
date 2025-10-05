@@ -37,7 +37,7 @@ jobs:
           # We only need tk-inter as a hint for the standard library.
           enable-plugins: "tk-inter"
           
-          script-name: PICA_Launcher_V5.py
+          script-name: PICA_Launcher_V5p1.py
 
           # The 'deployment' flag handles a one-file build.
           deployment: true
@@ -71,7 +71,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           # --- CORRECTED FILE PATH BELOW ---
           # The file is inside the 'build' directory we specified above.
-          file: build/PICA_Launcher_V5.exe
-          asset_name: PICA_Launcher-Windows-${{ github.ref_name }}.exe
+          file: build/PICA_Launcher_V5p1.exe
+          asset_name: PICA_Launcher-v${{ github.ref_name }}.exe
           tag: ${{ github.ref }}
           overwrite: true

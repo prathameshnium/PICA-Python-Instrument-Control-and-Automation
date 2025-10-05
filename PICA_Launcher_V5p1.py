@@ -1,4 +1,4 @@
-# BUILD VERSION: 13.2 (K2400/2182 Frontend Integration)
+# BUILD VERSION: 13.3 (Active/Passive R-T Launchers)
 '''
 ===============================================================================
  PROGRAM:      PICA Launcher
@@ -17,9 +17,12 @@
  AUTHOR:       Prathamesh K Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
-
- VERSION:      13.2
- LAST EDITED:  05/10/2025
+ 
+ VERSION HISTORY:
+   13.3 (05/10/2025): Added distinct launchers for Active and Passive R-T modes.
+   13.2 (05/10/2025): Integrated new K2400/2182 frontend GUIs.
+   13.1 (04/10/2025): Resolved duplicate script paths and validated Delta Mode scripts.
+ 
 ===============================================================================
 '''
 import tkinter as tk
@@ -66,7 +69,7 @@ def resource_path(relative_path):
 
 class PICALauncherApp:
     
-    PROGRAM_VERSION = "13.2"
+    PROGRAM_VERSION = "13.3"
     CLR_BG_DARK = '#2B3D4F'
     CLR_FRAME_BG = '#3A506B'
     CLR_ACCENT_GOLD = '#FFC107'
