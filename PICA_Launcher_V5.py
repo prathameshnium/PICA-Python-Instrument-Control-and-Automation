@@ -83,26 +83,22 @@ class PICALauncherApp:
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
     LOGO_FILE = resource_path("_assets/LOGO/UGC_DAE_CSR.jpeg")
     MANUAL_FILE = resource_path("_assets/Manuals")
-c    README_FILE = resource_path("PICA_README.md")
     README_FILE = resource_path("README.md")
     LICENSE_FILE = resource_path("LICENSE")
     LOGO_SIZE = 140
 
     SCRIPT_PATHS = {
-        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_IV_GUI_V1.py"),
-        "Delta Mode R-T (Active)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_Active_Temp_Control_V1.py"),
-        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182A/K6221_DC_Sweep_V7.py"),
-        "Delta Mode R-T (Active)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_Active_Temp_Control_V2.py"),
+        # Based on Updates.md, using the latest versions of scripts.
+        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_IV_Ambient.py"),
+        "Delta Mode R-T (Active)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_Active_Temp_Control.py"),
         "Delta Mode R-T (Passive)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Lakeshore_Frontend_Passive_V1.py"),
         "K2400 I-V": resource_path("Keithley_2400/Frontend_IV_2400_V3.py"),
-        "K2400 R-T": resource_path("Keithley_2400/Frontend_Keithley_2400_Lakeshore_350_V_vs_T_V1.py"),
+        "K2400 R-T": resource_path("Keithley_2400/Frontend_Keithley_2400_Lakeshore_350_V_vs_T.py"),
         "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182.py"),
         "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py"),
         "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V9.py"),
-        "K6517B Resistivity": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V11p2_5Always.py"),
-        "K6517B R-T (Active)": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V11p2_5Always.py"),
+        "K6517B R-T (Active)": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend.py"),
         "K6517B R-T (Passive)": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py"),
-        "Pyroelectric Current": resource_path("Keithley_6517B\Pyroelectricity\Pyroelectric_Measurement_GUI_V1.py"),
         "Pyroelectric Current": resource_path("Keithley_6517B/Pyroelectricity/Pyroelectric_Measurement_GUI_V1.py"),
         "Lakeshore Temp Control": resource_path("Lakeshore_350_340/lakeshore350_temp_ramp_Frontend_V4.py"),
         "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/lakeshore350_passive_monitor_Frontend_V1.py"),
@@ -239,14 +235,10 @@ c    README_FILE = resource_path("PICA_README.md")
         mid_res_frame2.columnconfigure(0, weight=1)
         self._create_launch_button(mid_res_frame2, "I-V Measurement", "K2400_2182 I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
         self._create_launch_button(mid_res_frame2, "R vs. T Measurement", "K2400_2182 R-T").grid(row=1, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
-        ttk.Button(mid_res_frame2, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Keithley_2400_Keithley_2182")).grid(row=0, column=1, rowspan=2, sticky='ns')
+        ttk.Button(mid_res_frame2, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400_2182 I-V")).grid(row=0, column=1, rowspan=2, sticky='ns')
         
-        high_res_frame = ttk.LabelFrame(left_col, text='High Resistance (Keithley 6517B)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         high_res_frame = ttk.LabelFrame(right_col, text='High Resistance (Keithley 6517B)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         high_res_frame.columnconfigure(0, weight=1)
-        self._create_launch_button(high_res_frame, "I-V Measurement", "K6517B I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
-        self._create_launch_button(high_res_frame, "R vs. T (Active)", "K6517B Resistivity").grid(row=1, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
-        self._create_launch_button(high_res_frame, "R vs. T (Passive)", "K6517B R-T (Passive)").grid(row=2, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
         self._create_launch_button(high_res_frame, "I-V Measurement", "K6517B I-V").grid(row=0, column=0, sticky='ew', padx=(0, 4), pady=(0,2))
         self._create_launch_button(high_res_frame, "R vs. T (Active)", "K6517B R-T (Active)").grid(row=1, column=0, sticky='ew', padx=(0, 4), pady=(2,2))
         self._create_launch_button(high_res_frame, "R vs. T (Passive)", "K6517B R-T (Passive)").grid(row=2, column=0, sticky='ew', padx=(0, 4), pady=(2,0))
@@ -255,7 +247,7 @@ c    README_FILE = resource_path("PICA_README.md")
         pyro_frame = ttk.LabelFrame(right_col, text='Pyroelectric Measurement (Keithley 6517B)'); pyro_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         pyro_frame.columnconfigure(0, weight=1)
         self._create_launch_button(pyro_frame, "Pyro Current vs. Temp", "Pyroelectric Current").grid(row=0, column=0, sticky='ew', padx=(0, 4))
-        ttk.Button(pyro_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Keithley_6517B\Pyroelectricity")).grid(row=0, column=1, sticky='ns')
+        ttk.Button(pyro_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Pyroelectric Current")).grid(row=0, column=1, sticky='ns')
         
         lakeshore_frame = ttk.LabelFrame(right_col, text='Temperature Control (Lakeshore 350)'); lakeshore_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         lakeshore_frame.columnconfigure(0, weight=1)
@@ -271,7 +263,7 @@ c    README_FILE = resource_path("PICA_README.md")
         lockin_frame = ttk.LabelFrame(right_col, text='Lock-in Amplifier'); lockin_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         lockin_frame.columnconfigure(0, weight=1)
         self._create_launch_button(lockin_frame, "AC Measurement", "Lock-in AC Measurement").grid(row=0, column=0, sticky='ew', padx=(0, 4))
-        ttk.Button(lockin_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Lock_in_amplifier")).grid(row=0, column=1, sticky='ns')
+        ttk.Button(lockin_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Lock-in AC Measurement")).grid(row=0, column=1, sticky='ns')
         
         canvas.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
@@ -373,15 +365,26 @@ c    README_FILE = resource_path("PICA_README.md")
         text_area.pack(expand=True, fill='both')
         text_area.config(state='disabled')
         ttk.Button(win, text="Close", style='App.TButton', command=win.destroy).pack(pady=10, padx=10, fill='x')
-
+    
     def open_script_folder(self, script_key):
-        script_path = self.SCRIPT_PATHS.get(script_key)
-        if not script_path or not os.path.exists(script_path):
-            self.log(f"ERROR: Path for '{script_key}' is invalid.")
-            messagebox.showwarning("Path Invalid", f"Script path for '{script_key}' is invalid.")
+        # Special case for folder names passed directly
+        if script_key == "Keithley_2400":
+            folder_path = os.path.abspath(resource_path(script_key))
+            self._open_path(folder_path)
             return
+
+        script_path = self.SCRIPT_PATHS.get(script_key)
+        if not script_path:
+            self.log(f"ERROR: Script key '{script_key}' not found in SCRIPT_PATHS.")
+            messagebox.showwarning("Key Not Found", f"The script key '{script_key}' is not defined.")
+            return
+        
         folder_path = os.path.dirname(os.path.abspath(script_path))
-        self._open_path(folder_path)
+        if os.path.exists(folder_path):
+            self._open_path(folder_path)
+        else:
+            self.log(f"ERROR: Folder path does not exist: {folder_path}")
+            messagebox.showwarning("Path Not Found", f"The folder for '{script_key}' could not be found.")
 
     def open_readme(self):
         self._show_file_in_window(self.README_FILE, "README")
