@@ -1,7 +1,7 @@
 # This workflow builds a standalone Python executable for Windows using Nuitka
 # and attaches it to a new GitHub Release.
 
-name: Build Python Executable with Nuitka
+name: Build Python Executable
 
 on:
   release:
@@ -37,7 +37,7 @@ jobs:
           # We only need tk-inter as a hint for the standard library.
           enable-plugins: "tk-inter"
           
-          script-name: PICA_Launcher_V4.py
+          script-name: PICA_Launcher_V5.py
 
           # The 'deployment' flag handles a one-file build.
           deployment: true
@@ -49,15 +49,18 @@ jobs:
           
           # These directories MUST exist in your GitHub repository and not be empty.
           include-data-dir: |
-            _assets=_assets
-            Delta_mode=Delta_mode
-            Keithley_2400=Keithley_2400
-            Keithley_2400_Keithley_2182=Keithley_2400_Keithley_2182
-            Keithley_6517B=Keithley_6517B
-            LCR_Keysight_E4980A=LCR_Keysight_E4980A
-            Lakeshore_350_340=Lakeshore_350_340
-            Lock_in_amplifier=Lock_in_amplifier
-            Utilities=Utilities
+            _assets=_assets/
+            Delta_mode_Keithley_6221_2182A=Delta_mode_Keithley_6221_2182A/
+            Keithley_2400=Keithley_2400/
+            Keithley_2400_Keithley_2182=Keithley_2400_Keithley_2182/
+            Keithley_6517B=Keithley_6517B/
+            LCR_Keysight_E4980A=LCR_Keysight_E4980A/
+            Lakeshore_350_340=Lakeshore_350_340/
+            Lock_in_amplifier=Lock_in_amplifier/
+            Utilities=Utilities/
+          include-data-files: |
+            LICENSE=LICENSE
+            README.md=README.md
           
           # We explicitly tell Nuitka to put the output here.
           output-dir: build
@@ -68,8 +71,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           # --- CORRECTED FILE PATH BELOW ---
           # The file is inside the 'build' directory we specified above.
-          file: build/PICA_Launcher_V4.exe
+          file: build/PICA_Launcher_V5.exe
           asset_name: PICA_Launcher-Windows-${{ github.ref_name }}.exe
           tag: ${{ github.ref }}
           overwrite: true
-
