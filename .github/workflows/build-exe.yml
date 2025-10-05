@@ -26,6 +26,15 @@ jobs:
         # A stable requirements file is the foundation of a reliable build.
         run: pip install -r requirements.txt
 
+      - name: Cache Nuitka Compilation Results
+        # This step significantly speeds up subsequent builds.
+        uses: actions/cache@v4
+        with:
+          path: |
+            %APPDATA%\Nuitka\Nuitka\Cache\
+            ~\AppData\Local\Nuitka\Nuitka\Cache\
+          key: ${{ runner.os }}-nuitka-cache-${{ hashFiles('**/*.py', '**/requirements.txt') }}
+
       - name: Build with Nuitka
         # --- THE FINAL, POLISHED CONFIGURATION ---
         uses: Nuitka/Nuitka-Action@main
@@ -67,6 +76,7 @@ jobs:
           include-data-files: |
             LICENSE=LICENSE
             README.md=README.md
+            Updates.md=Updates.md
           
           # We explicitly tell Nuitka to put the output here.
           output-dir: build
