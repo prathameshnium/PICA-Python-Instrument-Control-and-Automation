@@ -85,18 +85,16 @@ class PICALauncherApp:
     MANUAL_FILE = resource_path("_assets/Manuals")
     README_FILE = resource_path("README.md")
     LICENSE_FILE = resource_path("LICENSE")
+    UPDATES_FILE = resource_path("Updates.md")
     LOGO_SIZE = 140
 
     SCRIPT_PATHS = {
         # Based on Updates.md, using the latest versions of scripts.
-        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_IV_Ambient.py"), # Latest as of Oct 3
         "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182A/K6221_DC_Sweep_V7.py"), # Corrected from Delta_Mode_IV_Ambient.py
         "Delta Mode R-T (Active)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_Active_Temp_Control_V2.py"),
         "Delta Mode R-T (Passive)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Lakeshore_Frontend_Passive_V1.py"),
         "K2400 I-V": resource_path("Keithley_2400/Frontend_IV_2400_V3.py"),
         "K2400 R-T": resource_path("Keithley_2400/Frontend_Keithley_2400_Lakeshore_350_V_vs_T_V1.py"),
-        "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182.py"),
-        "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py"),
         "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2182_V1.py"), # Corrected from IV_Sweep_Keithley_2182.py
         "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350_V1.py"), # Corrected from VT_Curve_IV_Sweep_Keithley_2400_2182_Lakeshore_350.py
         "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V9.py"),
@@ -106,7 +104,6 @@ class PICALauncherApp:
         "Lakeshore Temp Control": resource_path("Lakeshore_350_340/lakeshore350_temp_ramp_Frontend_V4.py"),
         "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/lakeshore350_passive_monitor_Frontend_V1.py"),
         "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/LCR_CV.py"),
-        "Lock-in AC Measurement": resource_path("Lock_in_amplifier/AC_Transport_GUI.py"),
         "Lock-in AC Measurement": resource_path("Lock_in_amplifier/AC_Transport_GUI_V1.py"), # Corrected from AC_Transport_GUI.py
     }
 
@@ -176,6 +173,7 @@ class PICALauncherApp:
         util_frame = ttk.Frame(info_frame)
         util_frame.pack(fill='x', expand=False, pady=10)
         ttk.Button(util_frame, text="Open README", style='App.TButton', command=self.open_readme).pack(fill='x', pady=4)
+        ttk.Button(util_frame, text="View Updates", style='App.TButton', command=self.open_updates).pack(fill='x', pady=4)
         ttk.Button(util_frame, text="Open Instrument Manuals", style='App.TButton', command=self.open_manual_folder).pack(fill='x', pady=4)
         ttk.Button(util_frame, text="Test GPIB Connection", style='App.TButton', command=self.run_gpib_test).pack(fill='x', pady=4)
         
@@ -226,32 +224,38 @@ class PICALauncherApp:
         low_res_frame.columnconfigure(0, weight=1)
         self._create_launch_button(low_res_frame, "I-V Sweep", "Delta Mode I-V Sweep").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
         self._create_launch_button(low_res_frame, "R vs. T (Active)", "Delta Mode R-T (Active)").grid(row=1, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
-        self._create_launch_button(low_res_frame, "R vs. T (Passive)", "Delta Mode R-T (Passive)").grid(row=2, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
-        ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V Sweep")).grid(row=0, column=1, rowspan=3, sticky='ns')
-
-        mid_res_frame1 = ttk.LabelFrame(left_col, text='Mid Resistance (Keithley 2400)'); mid_res_frame1.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        mid_res_frame1.columnconfigure(0, weight=1)
-        self._create_launch_button(mid_res_frame1, "I-V Measurement", "K2400 I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
-        self._create_launch_button(mid_res_frame1, "R vs. T Measurement", "K2400 R-T").grid(row=1, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
-        ttk.Button(mid_res_frame1, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Keithley_2400")).grid(row=0, column=1, rowspan=2, sticky='ns')
-        
-        mid_res_frame2 = ttk.LabelFrame(left_col, text='Mid Resistance (Keithley 2400 / 2182)'); mid_res_frame2.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        mid_res_frame2.columnconfigure(0, weight=1)
-        self._create_launch_button(mid_res_frame2, "I-V Measurement", "K2400_2182 I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
-        self._create_launch_button(mid_res_frame2, "R vs. T Measurement", "K2400_2182 R-T").grid(row=1, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
-        ttk.Button(mid_res_frame2, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400_2182 I-V")).grid(row=0, column=1, rowspan=2, sticky='ns')
+        self._create_launch_button(low_res_frame, "R vs. T (Passive)", "Delta Mode R-T (Passive)").grid(row=2, column=0, sticky='ew', pady=(2, 0), padx=(0, 4)); ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V Sweep")).grid(row=0, column=1, rowspan=3, sticky='ns')
         
         high_res_frame = ttk.LabelFrame(right_col, text='High Resistance (Keithley 6517B)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        high_res_frame = ttk.LabelFrame(left_col, text='High Resistance (Keithley 6517B)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         high_res_frame.columnconfigure(0, weight=1)
         self._create_launch_button(high_res_frame, "I-V Measurement", "K6517B I-V").grid(row=0, column=0, sticky='ew', padx=(0, 4), pady=(0,2))
         self._create_launch_button(high_res_frame, "R vs. T (Active)", "K6517B R-T (Active)").grid(row=1, column=0, sticky='ew', padx=(0, 4), pady=(2,2))
-        self._create_launch_button(high_res_frame, "R vs. T (Passive)", "K6517B R-T (Passive)").grid(row=2, column=0, sticky='ew', padx=(0, 4), pady=(2,0))
-        ttk.Button(high_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K6517B I-V")).grid(row=0, column=1, rowspan=3, sticky='ns')
+        self._create_launch_button(high_res_frame, "R vs. T (Passive)", "K6517B R-T (Passive)").grid(row=2, column=0, sticky='ew', padx=(0, 4), pady=(2,0)); ttk.Button(high_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K6517B I-V")).grid(row=0, column=1, rowspan=3, sticky='ns')
         
         pyro_frame = ttk.LabelFrame(right_col, text='Pyroelectric Measurement (Keithley 6517B)'); pyro_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        pyro_frame = ttk.LabelFrame(left_col, text='Pyroelectric Measurement (Keithley 6517B)'); pyro_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         pyro_frame.columnconfigure(0, weight=1)
         self._create_launch_button(pyro_frame, "Pyro Current vs. Temp", "Pyroelectric Current").grid(row=0, column=0, sticky='ew', padx=(0, 4))
         ttk.Button(pyro_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Pyroelectric Current")).grid(row=0, column=1, sticky='ns')
+        
+        mid_res_frame1 = ttk.LabelFrame(left_col, text='Mid Resistance (Keithley 2400)'); mid_res_frame1.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        low_res_frame = ttk.LabelFrame(right_col, text='Low Resistance (Delta Mode: Keithley 6221/2182A)'); low_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        low_res_frame.columnconfigure(0, weight=1)
+        self._create_launch_button(low_res_frame, "I-V Sweep", "Delta Mode I-V Sweep").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
+        self._create_launch_button(low_res_frame, "R vs. T (Active)", "Delta Mode R-T (Active)").grid(row=1, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
+        self._create_launch_button(low_res_frame, "R vs. T (Passive)", "Delta Mode R-T (Passive)").grid(row=2, column=0, sticky='ew', pady=(2, 0), padx=(0, 4)); ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V Sweep")).grid(row=0, column=1, rowspan=3, sticky='ns')
+        
+        mid_res_frame1 = ttk.LabelFrame(right_col, text='Mid Resistance (Keithley 2400)'); mid_res_frame1.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        mid_res_frame1.columnconfigure(0, weight=1)
+        self._create_launch_button(mid_res_frame1, "I-V Measurement", "K2400 I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
+        self._create_launch_button(mid_res_frame1, "R vs. T Measurement", "K2400 R-T").grid(row=1, column=0, sticky='ew', pady=(2, 0), padx=(0, 4)); ttk.Button(mid_res_frame1, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Keithley_2400")).grid(row=0, column=1, rowspan=2, sticky='ns')
+        
+        mid_res_frame2 = ttk.LabelFrame(left_col, text='Mid Resistance (Keithley 2400 / 2182)'); mid_res_frame2.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        mid_res_frame2 = ttk.LabelFrame(right_col, text='Mid Resistance (Keithley 2400 / 2182)'); mid_res_frame2.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        mid_res_frame2.columnconfigure(0, weight=1)
+        self._create_launch_button(mid_res_frame2, "I-V Measurement", "K2400_2182 I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
+        self._create_launch_button(mid_res_frame2, "R vs. T Measurement", "K2400_2182 R-T").grid(row=1, column=0, sticky='ew', pady=(2, 0), padx=(0, 4)); ttk.Button(mid_res_frame2, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400_2182 I-V")).grid(row=0, column=1, rowspan=2, sticky='ns')
         
         lakeshore_frame = ttk.LabelFrame(right_col, text='Temperature Control (Lakeshore 350)'); lakeshore_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         lakeshore_frame.columnconfigure(0, weight=1)
@@ -392,6 +396,9 @@ class PICALauncherApp:
 
     def open_readme(self):
         self._show_file_in_window(self.README_FILE, "README")
+
+    def open_updates(self):
+        self._show_file_in_window(self.UPDATES_FILE, "Update Log")
 
     def open_manual_folder(self):
         self._open_path(self.MANUAL_FILE)
