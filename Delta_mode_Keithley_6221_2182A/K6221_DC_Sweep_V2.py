@@ -6,13 +6,11 @@
 #
 # Created:      03/10/2025
 #
-# Version:      4.0 (Revision: To DC Current Sweeper)
+# Version:      4.1 (Added Source Auto-Ranging)
 #
-# Description:  This program provides a GUI to automatically sweep a range of
-#               DC currents using a Keithley 6221. It is designed for quickly
-#               screening samples by observing the resulting voltage on an
-#               external multimeter. The sweep runs in a background thread
-#               to keep the GUI responsive.
+# Description:  Added 'SOUR:CURR:RANG:AUTO ON' command to ensure the instrument
+#               automatically selects the most accurate source range for
+#               each current step in the sweep.
 #-------------------------------------------------------------------------------
 
 import tkinter as tk
@@ -49,7 +47,6 @@ def resource_path(relative_path):
 # -------------------------------------------------------------------------------
 class Backend_DCS:
     """ Backend for controlling the 6221 as a simple DC Current Source. """
-    # This backend is identical to the previous version (3.0)
     def __init__(self):
         self.keithley = None
         self.rm = None
@@ -72,8 +69,11 @@ class Backend_DCS:
         print("--- [Backend] Configuring for DC Source mode ---")
         self.keithley.write("*RST")
         self.keithley.write("SOUR:FUNC CURR")
+        # --- NEW: Set source auto-ranging for best accuracy ---
+        self.keithley.write("SOUR:CURR:RANG:AUTO ON")
         self.keithley.write(f"SOUR:CURR:COMP {compliance_v}")
         print(f"  Compliance set to {compliance_v} V.")
+        print("  Source auto-ranging enabled.")
 
     def set_current(self, current_level):
         if not self.keithley: raise ConnectionError("Instrument not connected.")
@@ -101,7 +101,7 @@ class Backend_DCS:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class DC_Sweeper_GUI:
-    PROGRAM_VERSION = "4.0"
+    PROGRAM_VERSION = "4.1"
     LOGO_SIZE = 110
     LOGO_FILE_PATH = resource_path("_assets/UGC_DAE_CSR.jpeg")
 
@@ -218,7 +218,6 @@ class DC_Sweeper_GUI:
         self.console.config(state='disabled')
 
     def _scan_for_instruments(self):
-        # ... (code is identical to previous versions)
         if not pyvisa or self.backend.rm is None:
             self.log("ERROR: PyVISA not found or failed to initialize."); return
         self.log("Scanning for VISA instruments...")
@@ -272,7 +271,6 @@ class DC_Sweeper_GUI:
 
             self.backend.configure_source(params['compliance'])
 
-            # Run the sweep in a background thread to keep the GUI responsive
             self.sweep_thread = threading.Thread(target=self._sweep_worker,
                                                  args=(current_points, params['delay']),
                                                  daemon=True)
@@ -286,10 +284,9 @@ class DC_Sweeper_GUI:
         if self.is_sweeping:
             self.is_sweeping = False
             self.log("Stop command received. Finishing current step...")
-            self.stop_button.config(state='disabled') # Prevent multiple clicks
+            self.stop_button.config(state='disabled')
 
     def _sweep_worker(self, current_points, delay):
-        """ This function runs in a separate thread. Do not touch GUI elements from here. """
         self.log("Sweep started...")
         try:
             for i, current in enumerate(current_points):
@@ -300,29 +297,26 @@ class DC_Sweeper_GUI:
                 self.log(f"Step {i+1}/{len(current_points)}: Setting current to {current:.4e} A")
                 self.backend.set_current(current)
                 time.sleep(delay)
-            else: # This 'else' belongs to the 'for' loop, runs if loop completes without 'break'
+            else:
                 self.log("Sweep completed successfully.")
 
         except Exception as e:
             self.log(f"RUNTIME ERROR: {e}")
             messagebox.showerror("Runtime Error", f"A critical error occurred during the sweep.\n{e}")
         finally:
-            # Always turn off the output and clean up the UI
             self.is_sweeping = False
             self.backend.turn_off_output()
-            # Schedule the UI update to run on the main GUI thread
             self.root.after(0, self._sweep_cleanup_ui)
 
     def _sweep_cleanup_ui(self):
-        """ This function is called from the worker thread to safely update the GUI. """
         self.start_button.config(state='normal')
         self.stop_button.config(state='disabled')
         self.log("Output is OFF. Ready for next sweep.")
 
     def _on_closing(self):
         if self.is_sweeping:
-            self.is_sweeping = False # Signal the thread to stop
-            time.sleep(0.2) # Give a moment for the thread to see the flag
+            self.is_sweeping = False
+            time.sleep(0.2)
         self.backend.close()
         self.root.destroy()
 
