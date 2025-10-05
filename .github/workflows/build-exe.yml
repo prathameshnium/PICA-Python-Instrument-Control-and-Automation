@@ -53,7 +53,7 @@ jobs:
           
           # --- PLUGIN CONFIGURATION ---
           # The tk-inter plugin is essential for GUI apps. Matplotlib is auto-detected.
-          # Removing the redundant 'matplotlib' plugin cleans up build warnings.
+          # Nuitka-Action auto-detects matplotlib, so we only need to specify tk-inter.
           enable-plugins: "tk-inter"
           
           script-name: PICA_Launcher_V5p1.py
