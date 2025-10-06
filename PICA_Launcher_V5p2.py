@@ -183,12 +183,12 @@ class PICALauncherApp:
         
         ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=15)
         util_frame = ttk.Frame(info_frame); util_frame.pack(fill='x', expand=False, pady=5)
-        util_frame.grid_columnconfigure((0, 1), weight=1) # Make columns equal width
+        util_frame.grid_columnconfigure(0, weight=1) # Make column fill width
         
-        ttk.Button(util_frame, text="Open README", style='App.TButton', command=self.open_readme).grid(row=0, column=0, sticky='ew', padx=(0, 5), pady=4)
-        ttk.Button(util_frame, text="Test GPIB", style='App.TButton', command=self.run_gpib_test).grid(row=0, column=1, sticky='ew', padx=(5, 0), pady=4)
-        ttk.Button(util_frame, text="GPIB Address Guide", style='App.TButton', command=lambda: self._show_file_in_window(self.SCRIPT_PATHS["GPIB Address Guide"], "GPIB Address Guide")).grid(row=1, column=0, sticky='ew', padx=(0, 5), pady=4)
-        ttk.Button(util_frame, text="Open Manuals", style='App.TButton', command=self.open_manual_folder).grid(row=1, column=1, sticky='ew', padx=(5, 0), pady=4)
+        # The GPIB Address Guide is now inside the GPIB Test window, so the main button is removed.
+        ttk.Button(util_frame, text="Test GPIB", style='App.TButton', command=self.run_gpib_test).grid(row=0, column=0, sticky='ew', pady=4)
+        ttk.Button(util_frame, text="Open README", style='App.TButton', command=self.open_readme).grid(row=1, column=0, sticky='ew', pady=4)
+        ttk.Button(util_frame, text="Open Manuals Folder", style='App.TButton', command=self.open_manual_folder).grid(row=2, column=0, sticky='ew', pady=4)
         
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', fill='x', pady=(15, 0))
@@ -532,23 +532,21 @@ class PICALauncherApp:
             log_to_scanner("Log cleared.")
 
         def show_address_guide():
-            guide_text = """
-Common PICA Instrument GPIB Addresses:
+            guide_text = """\n--- Common PICA Instrument GPIB Addresses ---\n
+Temperature Controllers
+  • Lakeshore 350/340:  12, 15
 
---- Temperature Controllers ---
-• Lakeshore 350/340:  12, 15
+Source-Measure Units (SMU) & Electrometers
+  • Keithley 2400:      24, 25
+  • Keithley 6221:      13
+  • Keithley 6517B:     27
 
---- Source-Measure Units (SMU) ---
-• Keithley 2400:  24, 25
-• Keithley 6221 (Current Source):  13
-• Keithley 6517B (Electrometer):  27
-
---- Meters ---
-• Keithley 2182/2182A (Nanovoltmeter):  7
-• Keysight E4980A (LCR Meter):  17
-• SRS SR830 (Lock-in Amplifier):  8
-"""
-            messagebox.showinfo("GPIB Address Guide", guide_text, parent=test_win)
+Nanovoltmeters & LCR Meters
+  • Keithley 2182/2182A: 7
+  • Keysight E4980A:    17
+  • SRS SR830 Lock-in:  8
+\n---------------------------------------------\n"""
+            log_to_scanner(guide_text, add_timestamp=False)
 
         scan_button = ttk.Button(controls_frame, text="Scan Instruments", command=start_scan, style='Scan.TButton')
         scan_button.grid(row=0, column=0, padx=(0, 5), sticky='ew')
