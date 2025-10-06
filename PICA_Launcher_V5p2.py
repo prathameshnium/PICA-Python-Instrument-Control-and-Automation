@@ -128,8 +128,8 @@ class PICALauncherApp:
         self.log(f"PyVISA (GPIB test): {'Available' if PYVISA_AVAILABLE else 'Not found'}")
         self.log("Welcome to PICA. Check connections and run a GPIB test before starting.")
         
-        # Auto-launch GPIB scanner after 0.5 seconds
-        self.root.after(500, self.run_gpib_test)
+        # Auto-launch GPIB scanner after 1 second
+        self.root.after(1000, self.run_gpib_test)
     def setup_styles(self):
         style = ttk.Style(self.root)
         style.theme_use('clam')
@@ -171,24 +171,26 @@ class PICALauncherApp:
             except Exception as e:
                 self.log(f"ERROR: Failed to load logo. {e}")
         
-        ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, justify='center', anchor='center').pack(pady=(0, 15))
-        
         ttk.Label(info_frame, text="UGC-DAE Consortium for Scientific Research, Mumbai Centre", font=self.FONT_SUBTITLE, justify='center', anchor='center').pack(pady=(0, 15))
+        
+        ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, foreground=self.CLR_ACCENT_GOLD, justify='center', anchor='center').pack(pady=(0, 15))
         
         desc_text = "A modular software suite for automating laboratory measurements in physics research."
         ttk.Label(info_frame, text=desc_text, font=self.FONT_INFO, wraplength=360, justify='center', anchor='center').pack(pady=(0, 10))
         
         ttk.Label(info_frame, text="Developed by Prathamesh Deshmukh", font=self.FONT_INFO, justify='center', anchor='center').pack(pady=(5, 0))
-        ttk.Label(info_frame, text="Vision & Guidance by Dr. Sudip Mukherjee", font=self.FONT_INFO, justify='center', anchor='center').pack(pady=(0, 20))
+        ttk.Label(info_frame, text="Vision & Guidance by Dr. Sudip Mukherjee", font=self.FONT_INFO, justify='center', anchor='center').pack(pady=(0, 15))
         
-        ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=15)
+        ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=10)
         util_frame = ttk.Frame(info_frame); util_frame.pack(fill='x', expand=False, pady=5)
-        util_frame.grid_columnconfigure(0, weight=1) # Make column fill width
+        # --- Make the utility buttons more compact by placing them in a grid ---
+        util_frame.grid_columnconfigure((0, 1, 2), weight=1)
         
-        # The GPIB Address Guide is now inside the GPIB Test window, so the main button is removed.
-        ttk.Button(util_frame, text="Test GPIB", style='App.TButton', command=self.run_gpib_test).grid(row=0, column=0, sticky='ew', pady=4)
-        ttk.Button(util_frame, text="Open README", style='App.TButton', command=self.open_readme).grid(row=1, column=0, sticky='ew', pady=4)
-        ttk.Button(util_frame, text="Open Manuals Folder", style='App.TButton', command=self.open_manual_folder).grid(row=2, column=0, sticky='ew', pady=4)
+        ttk.Button(util_frame, text="GPIB Utils", style='App.TButton', command=self.run_gpib_test).grid(row=0, column=0, sticky='ew', padx=(0, 4))
+        ttk.Button(util_frame, text="README", style='App.TButton', command=self.open_readme).grid(row=0, column=1, sticky='ew', padx=4)
+        ttk.Button(util_frame, text="Manuals", style='App.TButton', command=self.open_manual_folder).grid(row=0, column=2, sticky='ew', padx=(4, 0))
+        ttk.Button(util_frame, text="View Change Logs", style='App.TButton', command=self.open_updates).grid(row=1, column=0, columnspan=3, sticky='ew', pady=(4,0))
+
         
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', fill='x', pady=(15, 0))
@@ -297,8 +299,7 @@ class PICALauncherApp:
         
         updates_frame = ttk.LabelFrame(right_col, text='Project Information'); updates_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         updates_frame.columnconfigure(0, weight=1)
-        ttk.Button(updates_frame, text="View Change Logs", style='App.TButton', command=self.open_updates).grid(row=0, column=0, sticky='ew', padx=(0, 4))
-        
+        # The "View Change Logs" button has been moved to the left panel for better organization.
         canvas.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
         return main_container
@@ -557,7 +558,7 @@ Nanovoltmeters & LCR Meters
         ttk.Button(main_frame, text="Close", style='App.TButton', command=test_win.destroy).grid(row=2, column=0, sticky='ew', pady=(15, 0))
         log_to_scanner("Welcome to the GPIB/VISA Instrument Scanner.")
         log_to_scanner("Auto-scanning for instruments in 1 second...")
-        self.log("GPIB/VISA scanner window opened.")
+        self.log("GPIB/VISA scanner window opened. Auto-scan will begin shortly.")
         test_win.after(100, _process_gpib_queue)  # Start the queue processor
         test_win.after(1000, start_scan)          # Auto-start the scan after 1 second
 
