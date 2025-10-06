@@ -109,6 +109,9 @@ class RT_GUI_Passive:
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG)
         style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
         style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_ACCENT_BLUE)
+        # --- NEW: Style for Comboboxes to make them more visible ---
+        style.configure('TCombobox', fieldbackground=self.CLR_INPUT_BG, foreground=self.CLR_FG,
+                        arrowcolor=self.CLR_FG, selectbackground=self.CLR_ACCENT_BLUE, selectforeground=self.CLR_FG)
         style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_FG, font=self.FONT_TITLE)
         mpl.rcParams.update({'font.family': 'Segoe UI', 'font.size': 11, 'axes.titlesize': 15, 'axes.labelsize': 13})
 
@@ -154,17 +157,23 @@ class RT_GUI_Passive:
 
     def _create_params_panel(self, parent, grid_row):
         container = ttk.Frame(parent); container.grid(row=grid_row, column=0, sticky='new', pady=5)
-        container.grid_columnconfigure((0, 1), weight=1); self.entries = {}
-        iv_frame = ttk.LabelFrame(container, text='Measurement Settings'); iv_frame.grid(row=0, column=0, columnspan=2, sticky='nsew')
-        iv_frame.grid_columnconfigure(1, weight=1)
-        self._create_entry(iv_frame, "Source Current (mA)", "1", 0); self._create_entry(iv_frame, "Compliance (V)", "10", 1)
-        self._create_entry(iv_frame, "Logging Delay (s)", "1", 2)
-        self.ls_cb = self._create_combobox(iv_frame, "Lakeshore VISA", 3)
-        self.k2400_cb = self._create_combobox(iv_frame, "Keithley 2400 VISA", 4)
+        container.grid_columnconfigure(1, weight=1); self.entries = {}
+
+        # --- Measurement Settings ---
+        settings_frame = ttk.LabelFrame(container, text='Measurement Settings'); settings_frame.grid(row=0, column=0, columnspan=2, sticky='nsew', pady=(0, 5))
+        settings_frame.grid_columnconfigure(1, weight=1)
+        self._create_entry(settings_frame, "Source Current (mA)", "1", 0); self._create_entry(settings_frame, "Compliance (V)", "10", 1)
+        self._create_entry(settings_frame, "Logging Delay (s)", "1", 2)
+
+        # --- VISA Address Settings ---
+        visa_frame = ttk.LabelFrame(container, text='Instrument Addresses'); visa_frame.grid(row=1, column=0, columnspan=2, sticky='nsew')
+        visa_frame.grid_columnconfigure(1, weight=1)
+        self.ls_cb = self._create_combobox(visa_frame, "Lakeshore VISA", 0)
+        self.k2400_cb = self._create_combobox(visa_frame, "Keithley 2400 VISA", 1)
 
     def _create_control_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='File Control'); frame.grid(row=grid_row, column=0, sticky='new', pady=5)
-        frame.grid_columnconfigure(0, weight=1)
+        frame.grid_columnconfigure(1, weight=1)
         self._create_entry(frame, "Sample Name", "Sample_RT_Passive", 0)
         self._create_entry(frame, "Save Location", "", 1, browse=True)
         button_frame = ttk.Frame(frame); button_frame.grid(row=2, column=0, columnspan=4, sticky='ew', pady=5)
