@@ -225,31 +225,35 @@ class PICALauncherApp:
         
         GROUP_PAD_Y = 15
 
-        low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (Delta Mode: Keithley 6221/2182A)'); low_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        low_res_frame.columnconfigure(0, weight=1)
-        self._create_launch_button(low_res_frame, "I-V Sweep", "Delta Mode I-V Sweep").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
-        self._create_launch_button(low_res_frame, "R vs. T (Active)", "Delta Mode R-T (Active)").grid(row=1, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
-        self._create_launch_button(low_res_frame, "R vs. T (Passive)", "Delta Mode R-T (Passive)").grid(row=2, column=0, sticky='ew', pady=(2, 0), padx=(0, 4)); ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V Sweep")).grid(row=0, column=1, rowspan=3, sticky='ns')
+        # --- Low Resistance ---
+        low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (10⁻⁹ Ω to 10⁶ Ω)'); low_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        low_res_frame.columnconfigure(0, weight=1); ttk.Label(low_res_frame, text="Instruments: Keithley 6221/2182A, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
+        self._create_launch_button(low_res_frame, "I-V Sweep", "Delta Mode I-V Sweep").grid(row=1, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
+        self._create_launch_button(low_res_frame, "R vs. T (Active Temp. Control)", "Delta Mode R-T (Active)").grid(row=2, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
+        self._create_launch_button(low_res_frame, "R vs. T (Passive Temp. Sensing)", "Delta Mode R-T (Passive)").grid(row=3, column=0, sticky='ew', pady=(2, 0), padx=(0, 4)); ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V Sweep")).grid(row=1, column=1, rowspan=3, sticky='ns')
         
-        mid_res_frame1 = ttk.LabelFrame(left_col, text='Mid Resistance (Keithley 2400)'); mid_res_frame1.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        mid_res_frame1.columnconfigure(0, weight=1)
-        self._create_launch_button(mid_res_frame1, "I-V Measurement", "K2400 I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
-        self._create_launch_button(mid_res_frame1, "R vs. T (Active)", "K2400 R-T (Active)").grid(row=1, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
-        self._create_launch_button(mid_res_frame1, "R vs. T (Passive)", "K2400 R-T (Passive)").grid(row=2, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
-        ttk.Button(mid_res_frame1, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Keithley_2400")).grid(row=0, column=1, rowspan=3, sticky='ns')
+        # --- Mid Resistance (K2400) ---
+        mid_res_frame1 = ttk.LabelFrame(left_col, text='Mid Resistance (10⁻³ Ω to 10⁸ Ω)'); mid_res_frame1.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        mid_res_frame1.columnconfigure(0, weight=1); ttk.Label(mid_res_frame1, text="Instruments: Keithley 2400, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
+        self._create_launch_button(mid_res_frame1, "I-V Measurement", "K2400 I-V").grid(row=1, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
+        self._create_launch_button(mid_res_frame1, "R vs. T (Active Temp. Control)", "K2400 R-T (Active)").grid(row=2, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
+        self._create_launch_button(mid_res_frame1, "R vs. T (Passive Temp. Sensing)", "K2400 R-T (Passive)").grid(row=3, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
+        ttk.Button(mid_res_frame1, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400 I-V")).grid(row=1, column=1, rowspan=3, sticky='ns')
         
-        mid_res_frame2 = ttk.LabelFrame(left_col, text='Mid Resistance (Keithley 2400 / 2182)'); mid_res_frame2.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        mid_res_frame2.columnconfigure(0, weight=1)
-        self._create_launch_button(mid_res_frame2, "I-V Measurement", "K2400_2182 I-V").grid(row=0, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
-        self._create_launch_button(mid_res_frame2, "R vs. T (Active)", "K2400_2182 R-T (Active)").grid(row=1, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
-        self._create_launch_button(mid_res_frame2, "R vs. T (Passive)", "K2400_2182 R-T (Passive)").grid(row=2, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
-        ttk.Button(mid_res_frame2, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400_2182 I-V")).grid(row=0, column=1, rowspan=3, sticky='ns')
+        # --- Mid Resistance (K2400/2182) ---
+        mid_res_frame2 = ttk.LabelFrame(left_col, text='Mid Resistance, High Precision'); mid_res_frame2.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        mid_res_frame2.columnconfigure(0, weight=1); ttk.Label(mid_res_frame2, text="Instruments: Keithley 2400/2182, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
+        self._create_launch_button(mid_res_frame2, "I-V Measurement", "K2400_2182 I-V").grid(row=1, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
+        self._create_launch_button(mid_res_frame2, "R vs. T (Active Temp. Control)", "K2400_2182 R-T (Active)").grid(row=2, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
+        self._create_launch_button(mid_res_frame2, "R vs. T (Passive Temp. Sensing)", "K2400_2182 R-T (Passive)").grid(row=3, column=0, sticky='ew', pady=(2, 0), padx=(0, 4))
+        ttk.Button(mid_res_frame2, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400_2182 I-V")).grid(row=1, column=1, rowspan=3, sticky='ns')
         
-        high_res_frame = ttk.LabelFrame(left_col, text='High Resistance (Keithley 6517B)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        high_res_frame.columnconfigure(0, weight=1)
-        self._create_launch_button(high_res_frame, "I-V Measurement", "K6517B I-V").grid(row=0, column=0, sticky='ew', padx=(0, 4), pady=(0,2))
-        self._create_launch_button(high_res_frame, "R vs. T (Active)", "K6517B R-T (Active)").grid(row=1, column=0, sticky='ew', padx=(0, 4), pady=(2,2))
-        self._create_launch_button(high_res_frame, "R vs. T (Passive)", "K6517B R-T (Passive)").grid(row=2, column=0, sticky='ew', padx=(0, 4), pady=(2,0)); ttk.Button(high_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K6517B I-V")).grid(row=0, column=1, rowspan=3, sticky='ns')
+        # --- High Resistance ---
+        high_res_frame = ttk.LabelFrame(left_col, text='High Resistance (10⁶ Ω to 10¹⁶ Ω)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        high_res_frame.columnconfigure(0, weight=1); ttk.Label(high_res_frame, text="Instruments: Keithley 6517B, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
+        self._create_launch_button(high_res_frame, "I-V Measurement", "K6517B I-V").grid(row=1, column=0, sticky='ew', padx=(0, 4), pady=(0,2))
+        self._create_launch_button(high_res_frame, "R vs. T (Active Temp. Control)", "K6517B R-T (Active)").grid(row=2, column=0, sticky='ew', padx=(0, 4), pady=(2,2))
+        self._create_launch_button(high_res_frame, "R vs. T (Passive Temp. Sensing)", "K6517B R-T (Passive)").grid(row=3, column=0, sticky='ew', padx=(0, 4), pady=(2,0)); ttk.Button(high_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K6517B I-V")).grid(row=1, column=1, rowspan=3, sticky='ns')
         
         pyro_frame = ttk.LabelFrame(right_col, text='Pyroelectric Measurement (Keithley 6517B)'); pyro_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         pyro_frame.columnconfigure(0, weight=1)
@@ -277,6 +281,7 @@ class PICALauncherApp:
         return main_container
 
     def log(self, message):
+        """Logs a message to the console widget with a timestamp."""
         if self.console_widget:
             timestamp = datetime.now().strftime("%H:%M:%S")
             log_entry = f"[{timestamp}] {message}\n"
@@ -372,27 +377,21 @@ class PICALauncherApp:
         text_area.pack(expand=True, fill='both')
         text_area.config(state='disabled')
         ttk.Button(win, text="Close", style='App.TButton', command=win.destroy).pack(pady=10, padx=10, fill='x')
-    
-    def open_script_folder(self, script_key):
-        # Special case for folder names passed directly
-        if script_key == "Keithley_2400":
-            folder_path = os.path.abspath(resource_path(script_key))
-            self._open_path(folder_path)
-            return
 
+    def open_script_folder(self, script_key):
+        """Opens the directory containing the script associated with the given key."""
         script_path = self.SCRIPT_PATHS.get(script_key)
         if not script_path:
             self.log(f"ERROR: Script key '{script_key}' not found in SCRIPT_PATHS.")
             messagebox.showwarning("Key Not Found", f"The script key '{script_key}' is not defined.")
             return
-        
+
         folder_path = os.path.dirname(os.path.abspath(script_path))
         if os.path.exists(folder_path):
             self._open_path(folder_path)
         else:
             self.log(f"ERROR: Folder path does not exist: {folder_path}")
             messagebox.showwarning("Path Not Found", f"The folder for '{script_key}' could not be found.")
-
     def open_readme(self):
         self._show_file_in_window(self.README_FILE, "README")
 
