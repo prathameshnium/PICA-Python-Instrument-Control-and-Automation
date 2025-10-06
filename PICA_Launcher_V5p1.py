@@ -175,12 +175,13 @@ class PICALauncherApp:
         ttk.Label(info_frame, text=desc_text, font=self.FONT_INFO, wraplength=360, justify='center', anchor='center').pack(pady=(0, 20))
         
         ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=20)
-        util_frame = ttk.Frame(info_frame)
-        util_frame.pack(fill='x', expand=False, pady=10)
-        ttk.Button(util_frame, text="Open README", style='App.TButton', command=self.open_readme).pack(fill='x', pady=4)
-        ttk.Button(util_frame, text="View Updates", style='App.TButton', command=self.open_updates).pack(fill='x', pady=4)
-        ttk.Button(util_frame, text="Open Instrument Manuals", style='App.TButton', command=self.open_manual_folder).pack(fill='x', pady=4)
-        ttk.Button(util_frame, text="Test GPIB Connection", style='App.TButton', command=self.run_gpib_test).pack(fill='x', pady=4)
+        util_frame = ttk.Frame(info_frame); util_frame.pack(fill='x', expand=False, pady=5)
+        util_frame.grid_columnconfigure((0, 1), weight=1) # Make columns equal width
+        
+        ttk.Button(util_frame, text="Open README", style='App.TButton', command=self.open_readme).grid(row=0, column=0, sticky='ew', padx=(0, 5), pady=4)
+        ttk.Button(util_frame, text="View Updates", style='App.TButton', command=self.open_updates).grid(row=0, column=1, sticky='ew', padx=(5, 0), pady=4)
+        ttk.Button(util_frame, text="Open Manuals", style='App.TButton', command=self.open_manual_folder).grid(row=1, column=0, sticky='ew', padx=(0, 5), pady=4)
+        ttk.Button(util_frame, text="Test GPIB", style='App.TButton', command=self.run_gpib_test).grid(row=1, column=1, sticky='ew', padx=(5, 0), pady=4)
         
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', fill='x', pady=(15, 0))
@@ -218,22 +219,22 @@ class PICALauncherApp:
         scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        scrollable_frame.grid_columnconfigure(0, weight=1, uniform="group1")
-        scrollable_frame.grid_columnconfigure(1, weight=1, uniform="group1")
-        left_col = ttk.Frame(scrollable_frame); left_col.grid(row=0, column=0, sticky='new', padx=(15, 8), pady=10)
-        right_col = ttk.Frame(scrollable_frame); right_col.grid(row=0, column=1, sticky='new', padx=(8, 15), pady=10)
+        scrollable_frame.grid_columnconfigure(0, weight=1)
+        
+        # --- Single column for all launcher groups ---
+        launcher_col = ttk.Frame(scrollable_frame); launcher_col.grid(row=0, column=0, sticky='new', padx=15, pady=10)
         
         GROUP_PAD_Y = 15
 
         # --- Low Resistance ---
-        low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (10⁻⁹ Ω to 10⁶ Ω)'); low_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        low_res_frame = ttk.LabelFrame(launcher_col, text='Low Resistance (10⁻⁹ Ω to 10⁶ Ω)'); low_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         low_res_frame.columnconfigure(0, weight=1); ttk.Label(low_res_frame, text="Instruments: Keithley 6221/2182A, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
         self._create_launch_button(low_res_frame, "I-V Sweep", "Delta Mode I-V Sweep").grid(row=1, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
         self._create_launch_button(low_res_frame, "R vs. T (Active Temp. Control)", "Delta Mode R-T (Active)").grid(row=2, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
         self._create_launch_button(low_res_frame, "R vs. T (Passive Temp. Sensing)", "Delta Mode R-T (Passive)").grid(row=3, column=0, sticky='ew', pady=(2, 0), padx=(0, 4)); ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V Sweep")).grid(row=1, column=1, rowspan=3, sticky='ns')
         
         # --- Mid Resistance (K2400) ---
-        mid_res_frame1 = ttk.LabelFrame(left_col, text='Mid Resistance (10⁻³ Ω to 10⁸ Ω)'); mid_res_frame1.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        mid_res_frame1 = ttk.LabelFrame(launcher_col, text='Mid Resistance (10⁻³ Ω to 10⁸ Ω)'); mid_res_frame1.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         mid_res_frame1.columnconfigure(0, weight=1); ttk.Label(mid_res_frame1, text="Instruments: Keithley 2400, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
         self._create_launch_button(mid_res_frame1, "I-V Measurement", "K2400 I-V").grid(row=1, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
         self._create_launch_button(mid_res_frame1, "R vs. T (Active Temp. Control)", "K2400 R-T (Active)").grid(row=2, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
@@ -241,7 +242,7 @@ class PICALauncherApp:
         ttk.Button(mid_res_frame1, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400 I-V")).grid(row=1, column=1, rowspan=3, sticky='ns')
         
         # --- Mid Resistance (K2400/2182) ---
-        mid_res_frame2 = ttk.LabelFrame(left_col, text='Mid Resistance, High Precision'); mid_res_frame2.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        mid_res_frame2 = ttk.LabelFrame(launcher_col, text='Mid Resistance, High Precision'); mid_res_frame2.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         mid_res_frame2.columnconfigure(0, weight=1); ttk.Label(mid_res_frame2, text="Instruments: Keithley 2400/2182, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
         self._create_launch_button(mid_res_frame2, "I-V Measurement", "K2400_2182 I-V").grid(row=1, column=0, sticky='ew', pady=(0, 2), padx=(0, 4))
         self._create_launch_button(mid_res_frame2, "R vs. T (Active Temp. Control)", "K2400_2182 R-T (Active)").grid(row=2, column=0, sticky='ew', pady=(2, 2), padx=(0, 4))
@@ -249,29 +250,29 @@ class PICALauncherApp:
         ttk.Button(mid_res_frame2, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400_2182 I-V")).grid(row=1, column=1, rowspan=3, sticky='ns')
         
         # --- High Resistance ---
-        high_res_frame = ttk.LabelFrame(left_col, text='High Resistance (10⁶ Ω to 10¹⁶ Ω)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        high_res_frame = ttk.LabelFrame(launcher_col, text='High Resistance (10⁶ Ω to 10¹⁶ Ω)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         high_res_frame.columnconfigure(0, weight=1); ttk.Label(high_res_frame, text="Instruments: Keithley 6517B, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
         self._create_launch_button(high_res_frame, "I-V Measurement", "K6517B I-V").grid(row=1, column=0, sticky='ew', padx=(0, 4), pady=(0,2))
         self._create_launch_button(high_res_frame, "R vs. T (Active Temp. Control)", "K6517B R-T (Active)").grid(row=2, column=0, sticky='ew', padx=(0, 4), pady=(2,2))
         self._create_launch_button(high_res_frame, "R vs. T (Passive Temp. Sensing)", "K6517B R-T (Passive)").grid(row=3, column=0, sticky='ew', padx=(0, 4), pady=(2,0)); ttk.Button(high_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K6517B I-V")).grid(row=1, column=1, rowspan=3, sticky='ns')
         
-        pyro_frame = ttk.LabelFrame(right_col, text='Pyroelectric Measurement (Keithley 6517B)'); pyro_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        pyro_frame = ttk.LabelFrame(launcher_col, text='Pyroelectric Measurement (Keithley 6517B)'); pyro_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         pyro_frame.columnconfigure(0, weight=1)
         self._create_launch_button(pyro_frame, "Pyro Current vs. Temp", "Pyroelectric Current").grid(row=0, column=0, sticky='ew', padx=(0, 4))
         ttk.Button(pyro_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Pyroelectric Current")).grid(row=0, column=1, sticky='ns')
         
-        lakeshore_frame = ttk.LabelFrame(right_col, text='Temperature Control (Lakeshore 350)'); lakeshore_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        lakeshore_frame = ttk.LabelFrame(launcher_col, text='Temperature Control (Lakeshore 350)'); lakeshore_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         lakeshore_frame.columnconfigure(0, weight=1)
         self._create_launch_button(lakeshore_frame, "Temperature Ramp", "Lakeshore Temp Control").grid(row=0, column=0, sticky='ew', padx=(0, 4), pady=(0, 2))
         self._create_launch_button(lakeshore_frame, "Temperature Monitor", "Lakeshore Temp Monitor").grid(row=1, column=0, sticky='ew', padx=(0, 4), pady=(2, 0))
         ttk.Button(lakeshore_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Lakeshore Temp Control")).grid(row=0, column=1, rowspan=2, sticky='ns')
         
-        lcr_frame = ttk.LabelFrame(right_col, text='LCR Meter (Keysight E4980A)'); lcr_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        lcr_frame = ttk.LabelFrame(launcher_col, text='LCR Meter (Keysight E4980A)'); lcr_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         lcr_frame.columnconfigure(0, weight=1)
         self._create_launch_button(lcr_frame, "C-V Measurement", "LCR C-V Measurement").grid(row=0, column=0, sticky='ew', padx=(0, 4))
         ttk.Button(lcr_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("LCR C-V Measurement")).grid(row=0, column=1, sticky='ns')
         
-        lockin_frame = ttk.LabelFrame(right_col, text='Lock-in Amplifier'); lockin_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        lockin_frame = ttk.LabelFrame(launcher_col, text='Lock-in Amplifier'); lockin_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         lockin_frame.columnconfigure(0, weight=1)
         self._create_launch_button(lockin_frame, "AC Measurement", "Lock-in AC Measurement").grid(row=0, column=0, sticky='ew', padx=(0, 4))
         ttk.Button(lockin_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Lock-in AC Measurement")).grid(row=0, column=1, sticky='ns')
@@ -504,9 +505,10 @@ class PICALauncherApp:
         clear_button.grid(row=0, column=1, padx=(5, 0), sticky='ew')
         ttk.Button(main_frame, text="Close", style='App.TButton', command=test_win.destroy).grid(row=2, column=0, sticky='ew', pady=(15, 0))
         log_to_scanner("Welcome to the GPIB/VISA Instrument Scanner.")
-        log_to_scanner("Click 'Scan for Instruments' to begin.")
+        log_to_scanner("Auto-scanning for instruments in 1 second...")
         self.log("GPIB/VISA scanner window opened.")
-        test_win.after(100, _process_gpib_queue)
+        test_win.after(100, _process_gpib_queue)  # Start the queue processor
+        test_win.after(1000, start_scan)          # Auto-start the scan after 1 second
 
 def main():
     """Initializes and runs the main application."""
