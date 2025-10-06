@@ -69,7 +69,7 @@ def resource_path(relative_path):
 
 class PICALauncherApp:
     
-    PROGRAM_VERSION = "13.3"
+    PROGRAM_VERSION = "5.3"
     CLR_BG_DARK = '#2B3D4F'
     CLR_FRAME_BG = '#3A506B'
     CLR_ACCENT_GOLD = '#FFC107'
@@ -84,6 +84,7 @@ class PICALauncherApp:
     FONT_SUBTITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
     FONT_CONSOLE = ('Consolas', 10)
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
+    FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
     LOGO_FILE = resource_path("_assets/LOGO/UGC_DAE_CSR.jpeg")
     MANUAL_FILE = resource_path("_assets/Manuals")
     README_FILE = resource_path("README.md")
@@ -178,18 +179,20 @@ class PICALauncherApp:
         desc_text = "A modular software suite for automating laboratory measurements in physics research."
         ttk.Label(info_frame, text=desc_text, font=self.FONT_INFO, wraplength=360, justify='center', anchor='center').pack(pady=(0, 10))
         
-        ttk.Label(info_frame, text="Developed by Prathamesh Deshmukh", font=self.FONT_INFO, justify='center', anchor='center').pack(pady=(5, 0))
-        ttk.Label(info_frame, text="Vision & Guidance by Dr. Sudip Mukherjee", font=self.FONT_INFO, justify='center', anchor='center').pack(pady=(0, 15))
+        # --- Create a bold font for names ---
+        bold_font = font.Font(family='Segoe UI', size=self.FONT_SIZE_BASE, weight='bold')
+        
+        ttk.Label(info_frame, text="Developed by Prathamesh Deshmukh", font=bold_font, justify='center', anchor='center').pack(pady=(5, 0))
+        ttk.Label(info_frame, text="Vision & Guidance by Dr. Sudip Mukherjee", font=bold_font, justify='center', anchor='center').pack(pady=(0, 15))
         
         ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=10)
         util_frame = ttk.Frame(info_frame); util_frame.pack(fill='x', expand=False, pady=5)
-        # --- Make the utility buttons more compact by placing them in a grid ---
-        util_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        # --- Make the README button bigger by spanning two columns ---
+        util_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
         
         ttk.Button(util_frame, text="GPIB Utils", style='App.TButton', command=self.run_gpib_test).grid(row=0, column=0, sticky='ew', padx=(0, 4))
-        ttk.Button(util_frame, text="README", style='App.TButton', command=self.open_readme).grid(row=0, column=1, sticky='ew', padx=4)
-        ttk.Button(util_frame, text="Manuals", style='App.TButton', command=self.open_manual_folder).grid(row=0, column=2, sticky='ew', padx=(4, 0))
-        ttk.Button(util_frame, text="View Change Logs", style='App.TButton', command=self.open_updates).grid(row=1, column=0, columnspan=3, sticky='ew', pady=(4,0))
+        ttk.Button(util_frame, text="README", style='App.TButton', command=self.open_readme).grid(row=0, column=1, columnspan=2, sticky='ew', padx=4)
+        ttk.Button(util_frame, text="Manuals", style='App.TButton', command=self.open_manual_folder).grid(row=0, column=3, sticky='ew', padx=(4, 0))
 
         
         bottom_frame = ttk.Frame(info_frame)
