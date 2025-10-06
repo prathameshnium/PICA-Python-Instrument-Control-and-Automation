@@ -16,8 +16,8 @@
  AUTHOR:       Prathamesh Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
-
- VERSION:      2.3
+ 
+ VERSION:      3.0
  LAST EDITED:  04/10/2025
 ===============================================================================
 '''
@@ -134,7 +134,7 @@ class LakeshoreBackend:
 #===============================================================================
 class LakeshoreRampGUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "2.3"
+    PROGRAM_VERSION = "3.0"
     LOGO_SIZE = 110
     try:
         # Robust path finding for assets
@@ -144,16 +144,17 @@ class LakeshoreRampGUI:
         # Fallback for environments where __file__ is not defined
         LOGO_FILE_PATH = "../_assets/LOGO/UGC_DAE_CSR.jpeg"
 
-    CLR_BG_DARK = "#1E5658"
-    CLR_HEADER = "#184748"
+    # --- Modern Dark Theme ---
+    CLR_BG_DARK = '#2B3D4F'
+    CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
     CLR_TEXT_DARK = '#1A1A1A'
     CLR_ACCENT_GOLD = '#FFC107'
-    CLR_ACCENT_GREEN = '#A7C957'
-    CLR_ACCENT_RED = '#E74C3C'
-    CLR_CONSOLE_BG = '#1E2B38'
+    CLR_ACCENT_GREEN = '#28A745'
+    CLR_ACCENT_RED = '#DC3545'
+    CLR_CONSOLE_BG = '#FFFFFF'
     CLR_GRAPH_BG = '#FFFFFF'
-    FONT_SIZE_BASE = 12
+    FONT_SIZE_BASE = 11
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_SUB_LABEL = ('Segoe UI', FONT_SIZE_BASE - 2)
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
@@ -185,36 +186,33 @@ class LakeshoreRampGUI:
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
+        style.configure('TLabelframe', background=self.CLR_BG_DARK, bordercolor=self.CLR_HEADER, borderwidth=1)
+        style.configure('TLabelframe.Label', background=self.CLR_BG_DARK, foreground=self.CLR_ACCENT_GOLD, font=self.FONT_TITLE)
 
-        style.configure('TButton',
-                        font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD,
+        style.configure('TButton', font=self.FONT_BASE, padding=(10, 8), foreground=self.CLR_TEXT_DARK,
                         background=self.CLR_HEADER, borderwidth=0, focusthickness=0, focuscolor='none')
-        style.map('TButton',
-                  background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)],
+        style.map('TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)],
                   foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
 
-        style.configure('Start.TButton',
-                        font=self.FONT_BASE, padding=(10, 9), background=self.CLR_ACCENT_GREEN,
-                        foreground=self.CLR_TEXT_DARK)
-        style.map('Start.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
+        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_TEXT_DARK)
+        style.map('Start.TButton', background=[('active', '#218838')])
+        style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG_LIGHT)
+        style.map('Stop.TButton', background=[('active', '#C82333')])
 
-        style.configure('Stop.TButton',
-                        font=self.FONT_BASE, padding=(10, 9), background=self.CLR_ACCENT_RED,
-                        foreground=self.CLR_FG_LIGHT)
-        style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
-
+        # Matplotlib styling
         mpl.rcParams['font.family'] = 'Segoe UI'
         mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
-        mpl.rcParams['axes.titlesize'] = self.FONT_SIZE_BASE + 6
+        mpl.rcParams['axes.titlesize'] = self.FONT_SIZE_BASE + 4
         mpl.rcParams['axes.labelsize'] = self.FONT_SIZE_BASE + 2
+        mpl.rcParams['figure.facecolor'] = self.CLR_GRAPH_BG
 
     def create_widgets(self):
         self.create_header()
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
         left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=500)
-        main_pane.add(left_panel, weight=1)
-        right_panel = tk.Frame(main_pane, bg='white')
+        main_pane.add(left_panel, weight=0) # Give less weight to the control panel
+        right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
         main_pane.add(right_panel, weight=3)
         top_controls_frame = ttk.Frame(left_panel)
         left_panel.add(top_controls_frame, weight=0)
@@ -225,20 +223,17 @@ class LakeshoreRampGUI:
         self.create_graph_frame(right_panel)
 
     def create_header(self):
-        # --- NEW: Define an italic font for the program name ---
-        font_title_italic = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold italic')
-
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="Lakeshore 350 Temperature Ramp Control", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
-        Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
+        Label(header_frame, text="Lakeshore 350 Temperature Ramp Control", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
+        Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).pack(side='right', padx=20, pady=10)
 
     def create_info_frame(self, parent):
-        frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame = ttk.LabelFrame(parent, text='Information')
         frame.pack(pady=(10, 10), padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
 
-        logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
+        logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0, relief='flat')
         logo_canvas.grid(row=0, column=0, rowspan=3, padx=(15, 10), pady=10)
 
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
@@ -248,7 +243,7 @@ class LakeshoreRampGUI:
                 self.logo_image = ImageTk.PhotoImage(img)
                 logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
             except Exception as e:
-                self.log(f"ERROR: Failed to load logo. {e}")
+                self.log(f"ERROR: Failed to load logo: {e}")
                 logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nERROR", font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
         else:
             self.log(f"Warning: Logo not found at '{self.LOGO_FILE_PATH}'")
@@ -268,7 +263,7 @@ class LakeshoreRampGUI:
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def create_input_frame(self, parent):
-        frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame = ttk.LabelFrame(parent, text='Experiment Parameters')
         frame.pack(pady=10, padx=10, fill='x')
         for i in range(2): frame.grid_columnconfigure(i, weight=1)
         self.entries = {}
@@ -308,16 +303,15 @@ class LakeshoreRampGUI:
         return frame
 
     def create_graph_frame(self, parent):
-        graph_container = LabelFrame(parent, text='Live Graphs', relief='groove', bg='white', fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
+        graph_container = ttk.LabelFrame(parent, text='Live Graphs')
         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
         self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
         gs = gridspec.GridSpec(2, 1, figure=self.figure, height_ratios=[3, 1])
         self.ax_main = self.figure.add_subplot(gs[0, 0])
         self.ax_sub1 = self.figure.add_subplot(gs[1, 0], sharex=self.ax_main)
-        for ax in [self.ax_main, self.ax_sub1]:
-            ax.set_facecolor('#EAEAEA'); ax.grid(True, linestyle='--', alpha=0.7, color='white')
-        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
-        self.line_sub1, = self.ax_sub1.plot([], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=4, linestyle='-')
+        for ax in [self.ax_main, self.ax_sub1]: ax.grid(True, linestyle='--', alpha=0.7)
+        self.line_main, = self.ax_main.plot([], [], color='#C00000', marker='o', markersize=4, linestyle='-')
+        self.line_sub1, = self.ax_sub1.plot([], [], color='#0070C0', marker='.', markersize=4, linestyle='-')
         self.ax_main.set_title("Temperature vs. Time", fontweight='bold')
         self.ax_main.set_ylabel("Temperature (K)")
         self.ax_main.tick_params(axis='x', labelbottom=False)
