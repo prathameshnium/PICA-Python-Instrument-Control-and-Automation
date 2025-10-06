@@ -104,12 +104,14 @@ class PICALauncherApp:
         "K2400_2182 R-T (T_Sensing)": resource_path("Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_Frontend_v1.py"),
         "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/IV_K6517B_Frontend_v10.py"),
         "K6517B R-T": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V11p2_5Always.py"),
+        "K6517B R-T": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_Lakeshore_Frontend_V11p2_5Always.py"),
         "K6517B R-T (T_Sensing)": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_Frontend_v13.py"),
         "Pyroelectric Current": resource_path("Keithley_6517B/Pyroelectricity/Pyroelectric_K6517B_L350_Frontend_v3.py"),
         "Lakeshore Temp Control": resource_path("Lakeshore_350_340/lakeshore350_temp_ramp_Frontend_V6.py"),
         "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/T_Sensing_L350_Frontend_v3.py"),
         "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v2.py"),
         "Lock-in AC Measurement": resource_path("Lock_In_Amplifier/AC_Measurement_Frontend_V1.py"), # This file does not exist in the provided context, but the path is what the launcher expects.
+        "Lock-in AC Measurement": resource_path("Lock_In_Amplifier/AC_Measurement_Frontend_V1.py"),
         "PICA Help": resource_path("PICA_README.md"),
     }
 
