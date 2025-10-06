@@ -396,7 +396,7 @@ class MeasurementAppGUI:
         try:
             current = self.sweep_points[self.sweep_index]
             voltage = self.backend.measure_at_current(current, float(self.entries["Delay"].get()))
-            self.data_storage['current'].append(current); self.data_storage['voltage'].append(voltage)
+            self.data_storage['current'].append(float(current)); self.data_storage['voltage'].append(voltage)
             with open(self.data_filepath, 'a', newline='') as f: csv.writer(f, delimiter='\t').writerow([f"{current:.8e}", f"{voltage:.8e}"])
 
             self.line_main.set_data(self.data_storage['current'], self.data_storage['voltage'])
