@@ -4,13 +4,13 @@
 **PICA Launcher & K2400 / K2400-2182 Suites**
 
 -   **Enhancement:** Updated `PICA_Launcher_V5p1.py` to correctly point to the latest and most specific scripts for R-T measurements, distinguishing between "Active" (temperature ramp) and "Passive" (temperature logging) modes.
--   **New Launchers Added:**
-    -   `Keithley_2400_Lakeshore_350_V_vs_T_Active_V1.py`: For automated R-T sweeps with active temperature ramping using a Keithley 2400.
-    -   `Keithley_2400_Lakeshore_350_V_vs_T_Passive_V1.py`: For passive R-T data logging using a Keithley 2400.
-    -   `VT_Sweep_K2400_2182_Active_V1.py`: For automated R-T sweeps with active temperature ramping using the Keithley 2400/2182 pair.
+-   **New Scripts Integrated:**
+    -   `Frontend_Keithley_2400_Lakeshore_350_V_vs_T_V1.py`: For automated R-T sweeps with active temperature ramping using a Keithley 2400.
+    -   `Keithley_2400_Lakeshore_350_V_vs_T_Passive_V2.py`: For passive R-T data logging using a Keithley 2400.
+    -   `VT_Sweep_Keithley_2400_2182_Frontend_Active_V1.py`: For automated R-T sweeps with active temperature ramping using the Keithley 2400/2182 pair.
     -   `VT_Sweep_K2400_2182_Passive_V1.py`: For passive R-T data logging using the Keithley 2400/2182 pair.
 -   **Refinement:** The launcher now provides a clearer, more organized structure for selecting the correct measurement type.
--   **Files Modified:** `PICA_Launcher_V5p1.py`.
+-   **Files Modified:** `PICA_Launcher_V5p3.py`.
 
 ---
 
