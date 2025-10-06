@@ -16,7 +16,7 @@ A modular software suite for automating laboratory measurements in physics resea
 
 ### Available Measurement Modules
 
-#### Keithley 6221 / 2182A (Low-Resistance Delta Mode)
+#### Keithley 6221 / 2182 (Low-Resistance Delta Mode)
 
 This suite uses the noise-canceling Delta Mode for high-precision measurements.
 
@@ -34,7 +34,7 @@ For insulating materials, dielectrics, and high-impedance devices. This suite pr
 
 Standard four-probe measurements for materials like semiconductors.
 
-* **Four-Probe I-V Characterization:** Can be used standalone or with a Keithley 2182A for enhanced voltage resolution.
+* **Four-Probe I-V Characterization:** Can be used standalone or with a Keithley 2182 for enhanced voltage resolution.
 * **Four-Probe R-T Characterization:** Temperature-dependent resistance measurements.
 
 #### Other Systems

@@ -90,11 +90,11 @@ The PICA suite includes modules for a range of standard electrical and thermal t
 
 | Instrument Combination         | Measurement Type                     | Description                                                                 |
 | ------------------------------ | ------------------------------------ | --------------------------------------------------------------------------- |
-| **Keithley 6221 / 2182A** | I-V Characterization (AC Delta)      | High-precision I-V sweeps for low-resistance samples.                       |
+| **Keithley 6221 / 2182** | I-V Characterization (AC Delta)      | High-precision I-V sweeps for low-resistance samples.                       |
 |                                | Resistance vs. Temperature (R-T)     | Automated R-T data acquisition with **active or passive** temperature profiles. |
 | **Keithley 2400 SourceMeter** | Four-Probe I-V Characterization      | Standard I-V sweeps for materials like semiconductors.                      |
 |                                | Four-Probe R-T Characterization      | Temperature-dependent resistance measurements with **active or passive** modes. |
-| **Keithley 2400 / 2182A** | High-Precision I-V                   | Enhanced voltage resolution using a nanovoltmeter.                          |
+| **Keithley 2400 / 2182** | High-Precision I-V                   | Enhanced voltage resolution using a nanovoltmeter.                          |
 |                                | High-Precision R-T                   | Temperature-dependent measurements with enhanced voltage precision and **active or passive** modes. |
 | **Keithley 6517B Electrometer**| High-Resistance I-V Characterization | For insulating materials, dielectrics, and high-impedance devices.          |
 |                                | High-Resistance R-T                  | High-resistance measurements with active or passive temperature control.    |

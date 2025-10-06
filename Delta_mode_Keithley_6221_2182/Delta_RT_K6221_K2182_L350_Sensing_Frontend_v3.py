@@ -1,7 +1,7 @@
 # -------------------------------------------------------------------------------
 # Name:         Delta Lakeshore Passive Measurement GUI
 # Purpose:      Perform a temperature-dependent Delta mode measurement with a
-#               Keithley 6221/2182A while passively monitoring temperature
+#               Keithley 6221/2182 while passively monitoring temperature
 #               from a Lakeshore 350.
 #
 # Author:       Prathamesh Deshmukh
@@ -84,7 +84,7 @@ class Combined_Backend:
             self.keithley.write("SOUR:DELT:ARM")
             time.sleep(1)
             self.keithley.write("INIT:IMM")
-            print("  Keithley 6221/2182A Configured and Armed for Delta Mode.")
+            print("  Keithley 6221/2182 Configured and Armed for Delta Mode.")
 
             # --- Initialize Lakeshore 350 (Passive Mode) ---
             print("  Connecting to Lakeshore 350 for passive monitoring...")
@@ -250,7 +250,7 @@ class MeasurementAppGUI:
         info_text = ("Institute: UGC DAE CSR, Mumbai\n"
                      "Measurement: Delta Mode (4-Probe)\n"
                      "Instruments:\n"
-                     "  • Keithley 6221/2182A\n"
+                     "  • Keithley 6221/2182\n"
                      "  • Lakeshore 350 (Passive)")
         ttk.Label(frame, text=info_text, justify='left').grid(row=0, column=1, rowspan=2, padx=10, sticky='w')
 
