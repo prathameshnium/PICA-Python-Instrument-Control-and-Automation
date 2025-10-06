@@ -56,7 +56,7 @@ jobs:
           # Nuitka-Action auto-detects matplotlib, so we only need to specify tk-inter.
           enable-plugins: "tk-inter"
 
-          script-name: PICA_Launcher_V5p3.py
+          script-name: Setup/Picachu.py
 
           # The 'deployment' flag handles a one-file build.
           deployment: true
@@ -73,7 +73,7 @@ jobs:
             Keithley_6517B
             LCR_Keysight_E4980A
             Lakeshore_350_340
-            Lock_in_amplifier
+            Lock_In_Amplifier
             Utilities
 
           windows-icon-from-ico: _assets/LOGO/UGC_DAE_CSR.ico
@@ -84,7 +84,7 @@ jobs:
             _assets=_assets
           include-data-files: |
             LICENSE=LICENSE
-            README.md=README.md
+            PICA_README.md=PICA_README.md
             Updates.md=Updates.md
           
           # We explicitly tell Nuitka to put the output here.
@@ -95,8 +95,8 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           # --- CORRECTED FILE PATH BELOW ---
-          # The file is inside the 'build' directory we specified above.
-          file: build/PICA_Launcher_V5p3.exe
-          asset_name: PICA_Launcher-v${{ github.ref_name }}.exe
+          # The file is inside the 'build' directory we specified above. The name matches the script-name.
+          file: build/Picachu.exe
+          asset_name: Picachu-v${{ github.ref_name }}.exe
           tag: ${{ github.ref }}
           overwrite: true
