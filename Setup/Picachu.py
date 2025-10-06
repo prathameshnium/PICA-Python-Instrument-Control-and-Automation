@@ -115,7 +115,7 @@ class PICALauncherApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title(f"PICA Launcher v{self.PROGRAM_VERSION}")
+        self.root.title(f"Picachu v{self.PROGRAM_VERSION}")
         self.root.state('zoomed') # Launch in maximized/fullscreen state
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1200, 780)
@@ -123,7 +123,9 @@ class PICALauncherApp:
         self.console_widget = None
         self.setup_styles()
         self.create_widgets()
-        self.log(f"PICA Launcher v{self.PROGRAM_VERSION} initialized.")
+        self.log(f"PICA have evolved into Picachu.")
+
+        self.log(f"Picachu.exe v{self.PROGRAM_VERSION} initialized.")
         self.log(f"PIL/Pillow (logo): {'Available' if PIL_AVAILABLE else 'Not found'}")
         self.log(f"PyVISA (GPIB test): {'Available' if PYVISA_AVAILABLE else 'Not found'}")
         self.log("Welcome to PICA. Check connections and run a GPIB test before starting.")
@@ -175,7 +177,7 @@ class PICALauncherApp:
         
         ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, foreground=self.CLR_ACCENT_GOLD, justify='center', anchor='center').pack(pady=(0, 15))
         
-        desc_text = "A modular software suite for automating laboratory measurements in physics research."
+        desc_text = "A modular software suite for automating laboratory measurements in physics research.\n PICA have evolved into Picachu.exe"
         ttk.Label(info_frame, text=desc_text, font=self.FONT_INFO, wraplength=360, justify='center', anchor='center').pack(pady=(0, 10))
         
         # --- Create a bold font for names ---
