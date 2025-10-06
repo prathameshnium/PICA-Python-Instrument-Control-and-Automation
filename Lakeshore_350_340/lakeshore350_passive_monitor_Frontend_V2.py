@@ -5,7 +5,7 @@
 #                 control the temperature.
 # Author:         Prathamesh Deshmukh
 # Created:        28/09/2025
-# Version:        V: 1.1 (Style fix and passive heater logic)
+# Version:        V: 2.0 (Professional UI Refresh)
 # -------------------------------------------------------------------------------
 
 
@@ -79,7 +79,7 @@ class Lakeshore350_Backend:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class TempMonitorGUI:
-    PROGRAM_VERSION = "1.1"
+    PROGRAM_VERSION = "2.0"
     LOGO_SIZE = 110
 
     try:
@@ -87,9 +87,10 @@ class TempMonitorGUI:
         LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
     except NameError:
         LOGO_FILE_PATH = "../_assets/LOGO/UGC_DAE_CSR.jpeg"
-
-    CLR_BG_DARK = "#1E5658"
-    CLR_HEADER = "#184748"
+    
+    # --- Modern Dark Theme (PICA Standard) ---
+    CLR_BG_DARK = '#2B3D4F'
+    CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
     CLR_TEXT_DARK = '#1A1A1A'
     CLR_ACCENT_GOLD = '#FFC107'
@@ -101,7 +102,7 @@ class TempMonitorGUI:
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_SUB_LABEL = ('Segoe UI', FONT_SIZE_BASE - 2)
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
-    FONT_CONSOLE = ('Consolas', 11)
+    FONT_CONSOLE = ('Consolas', 10)
     FONT_STATUS = ('Segoe UI', 28, 'bold')
 
 
@@ -130,9 +131,8 @@ class TempMonitorGUI:
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
 
-        # FIX: Create a custom style for the status frame's background
-        style.configure('Status.TFrame', background=self.CLR_BG_DARK)
-        style.configure('Status.TLabel', background=self.CLR_HEADER, foreground=self.CLR_ACCENT_GOLD, font=self.FONT_STATUS)
+        # Custom style for the large status label
+        style.configure('Status.TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_ACCENT_GOLD, font=self.FONT_STATUS)
 
         style.configure('TButton',
                         font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD,
@@ -148,6 +148,10 @@ class TempMonitorGUI:
                         font=self.FONT_BASE, padding=(10, 9), background=self.CLR_ACCENT_RED,
                         foreground=self.CLR_FG_LIGHT)
         style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
+
+        # Style for LabelFrames
+        style.configure('TLabelframe', background=self.CLR_BG_DARK, bordercolor=self.CLR_HEADER, borderwidth=1)
+        style.configure('TLabelframe.Label', background=self.CLR_BG_DARK, foreground=self.CLR_ACCENT_GOLD, font=self.FONT_TITLE)
 
         mpl.rcParams['font.family'] = 'Segoe UI'
         mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
@@ -177,16 +181,13 @@ class TempMonitorGUI:
         self.create_graph_frame(right_panel)
 
     def create_header(self):
-        # --- NEW: Define an italic font for the program name ---
-        font_title_italic = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold italic')
-
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="Passive Temperature Monitor", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
-        Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
+        Label(header_frame, text="Passive Temperature Monitor", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
+        Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).pack(side='right', padx=20, pady=10)
 
     def create_info_frame(self, parent):
-        frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame = ttk.LabelFrame(parent, text='Information')
         frame.pack(pady=(5, 0), padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
 
@@ -220,7 +221,7 @@ class TempMonitorGUI:
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def create_input_frame(self, parent):
-        frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame = ttk.LabelFrame(parent, text='Experiment Parameters')
         frame.pack(pady=5, padx=10, fill='x')
         frame.columnconfigure(0, weight=1)
 
@@ -228,20 +229,20 @@ class TempMonitorGUI:
         pady_val = (5, 5)
 
         Label(frame, text="Log File Name:").grid(row=0, column=0, columnspan=2, padx=10, pady=pady_val, sticky='w')
-        self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE)
+        self.entries["Sample Name"] = ttk.Entry(frame, font=self.FONT_BASE)
         self.entries["Sample Name"].grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 10), sticky='ew')
 
         Label(frame, text="Logging Delay (s):").grid(row=2, column=0, padx=10, pady=pady_val, sticky='w')
-        self.entries["Delay"] = Entry(frame, font=self.FONT_BASE)
+        self.entries["Delay"] = ttk.Entry(frame, font=self.FONT_BASE)
         self.entries["Delay"].grid(row=3, column=0, padx=10, pady=(0,5), sticky='ew')
         self.entries["Delay"].insert(0, "1.0")
 
         Label(frame, text="Lakeshore VISA:").grid(row=4, column=0, padx=10, pady=pady_val, sticky='w')
         self.lakeshore_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
         self.lakeshore_cb.grid(row=5, column=0, padx=10, pady=(0,10), sticky='ew')
-
+        
         self.scan_button = ttk.Button(frame, text="Scan for Instruments", command=self._scan_for_visa_instruments)
-        self.scan_button.grid(row=6, column=0, padx=10, pady=4, sticky='ew')
+        self.scan_button.grid(row=6, column=0, padx=10, pady=4, sticky='ew') # Changed row
         self.file_button = ttk.Button(frame, text="Browse Save Location...", command=self._browse_file_location)
         self.file_button.grid(row=7, column=0, padx=10, pady=4, sticky='ew')
 
@@ -257,27 +258,27 @@ class TempMonitorGUI:
 
     def create_status_frame(self, parent):
         """Creates the frame for displaying live temperature."""
-        frame = LabelFrame(parent, text='Live Status', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame = ttk.LabelFrame(parent, text='Live Status')
         frame.pack(pady=5, padx=10, fill='x')
 
-        # FIX: Use the custom style 'Status.TFrame' instead of the direct background option
-        status_inner_frame = ttk.Frame(frame, style='TFrame')
+        status_inner_frame = ttk.Frame(frame, style='TFrame') # This frame inherits the dark background
         status_inner_frame.pack(fill='x', expand=True, padx=5, pady=5)
 
         self.temp_label_var = tk.StringVar(value="--.---- K")
-        status_label = ttk.Label(status_inner_frame, textvariable=self.temp_label_var, style='Status.TLabel', anchor='center')
+        # The label's style gives it the dark background and gold text
+        status_label = ttk.Label(status_inner_frame, textvariable=self.temp_label_var, style='Status.TLabel', anchor='center', padding=(0, 10))
         status_label.pack(pady=10, fill='x')
 
     def create_console_frame(self, parent):
-        frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0)
+        frame = ttk.LabelFrame(parent, text='Console Output')
+        self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0, relief='flat')
         self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
         self.log("Console initialized. Configure parameters and scan for instruments.")
         if not PYVISA_AVAILABLE: self.log("CRITICAL: PyVISA not found.")
         return frame
 
     def create_graph_frame(self, parent):
-        graph_container = LabelFrame(parent, text='Live Graph', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_TEXT_DARK, font=self.FONT_TITLE)
+        graph_container = ttk.LabelFrame(parent, text='Live Graph')
         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
 
         self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
