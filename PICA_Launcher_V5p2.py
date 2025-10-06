@@ -115,7 +115,7 @@ class PICALauncherApp:
     def __init__(self, root):
         self.root = root
         self.root.title(f"PICA Launcher v{self.PROGRAM_VERSION}")
-        self.root.geometry("1250x820")
+        self.root.state('zoomed') # Launch in maximized/fullscreen state
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1200, 780)
         self.logo_image = None
@@ -127,6 +127,8 @@ class PICALauncherApp:
         self.log(f"PyVISA (GPIB test): {'Available' if PYVISA_AVAILABLE else 'Not found'}")
         self.log("Welcome to PICA. Check connections and run a GPIB test before starting.")
         
+        # Auto-launch GPIB scanner after 0.5 seconds
+        self.root.after(500, self.run_gpib_test)
     def setup_styles(self):
         style = ttk.Style(self.root)
         style.theme_use('clam')
@@ -168,25 +170,26 @@ class PICALauncherApp:
             except Exception as e:
                 self.log(f"ERROR: Failed to load logo. {e}")
         
-        ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, justify='center', anchor='center').pack(pady=(0, 5))
-        ttk.Label(info_frame, text="Developed by Prathamesh Deshmukh", font=self.FONT_INFO, justify='center', anchor='center').pack(pady=(0, 15))
+        ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, justify='center', anchor='center').pack(pady=(0, 15))
         
-        desc_text = "A suite of Python scripts for automating laboratory instruments for materials science and physics research."
-        ttk.Label(info_frame, text=desc_text, font=self.FONT_INFO, wraplength=360, justify='center', anchor='center').pack(pady=(0, 20))
+        desc_text = "A modular software suite for automating laboratory measurements in physics research."
+        ttk.Label(info_frame, text=desc_text, font=self.FONT_INFO, wraplength=360, justify='center', anchor='center').pack(pady=(0, 10))
+        
+        ttk.Label(info_frame, text="Developed by Prathamesh Deshmukh", font=self.FONT_INFO, justify='center', anchor='center').pack(pady=(5, 0))
+        ttk.Label(info_frame, text="Vision & Guidance by Dr. Sudip Mukherjee", font=self.FONT_INFO, justify='center', anchor='center').pack(pady=(0, 20))
         
         ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=20)
         util_frame = ttk.Frame(info_frame); util_frame.pack(fill='x', expand=False, pady=5)
         util_frame.grid_columnconfigure((0, 1), weight=1) # Make columns equal width
         
         ttk.Button(util_frame, text="Open README", style='App.TButton', command=self.open_readme).grid(row=0, column=0, sticky='ew', padx=(0, 5), pady=4)
-        ttk.Button(util_frame, text="View Updates", style='App.TButton', command=self.open_updates).grid(row=0, column=1, sticky='ew', padx=(5, 0), pady=4)
+        ttk.Button(util_frame, text="View Change Logs", style='App.TButton', command=self.open_updates).grid(row=0, column=1, sticky='ew', padx=(5, 0), pady=4)
         ttk.Button(util_frame, text="Open Manuals", style='App.TButton', command=self.open_manual_folder).grid(row=1, column=0, sticky='ew', padx=(0, 5), pady=4)
         ttk.Button(util_frame, text="Test GPIB", style='App.TButton', command=self.run_gpib_test).grid(row=1, column=1, sticky='ew', padx=(5, 0), pady=4)
         
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', fill='x', pady=(15, 0))
-        author_text = ("Vision & Guidance by Dr. Sudip Mukherjee\n"
-                       "UGC-DAE Consortium for Scientific Research, Mumbai Centre")
+        author_text = ("UGC-DAE Consortium for Scientific Research, Mumbai Centre")
         ttk.Label(bottom_frame, text=author_text, font=('Segoe UI', 9), justify='center', anchor='center').pack(pady=(0,10))
         
         license_font = font.Font(family='Segoe UI', size=9, underline=True)
@@ -220,6 +223,17 @@ class PICALauncherApp:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         scrollable_frame.grid_columnconfigure(0, weight=1)
+
+        # --- Enable Mouse Wheel Scrolling ---
+        def _on_mousewheel(event):
+            # Determine scroll direction and magnitude
+            if platform.system() == "Windows":
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            else: # For macOS and Linux
+                canvas.yview_scroll(-1 if event.num == 4 else 1, "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel) # Windows
+        canvas.bind_all("<Button-4>", _on_mousewheel)   # Linux scroll up
+        canvas.bind_all("<Button-5>", _on_mousewheel)   # Linux scroll down
         
         # --- Single column for all launcher groups ---
         launcher_col = ttk.Frame(scrollable_frame); launcher_col.grid(row=0, column=0, sticky='new', padx=15, pady=10)
@@ -261,18 +275,18 @@ class PICALauncherApp:
         self._create_launch_button(pyro_frame, "Pyro Current vs. Temp", "Pyroelectric Current").grid(row=0, column=0, sticky='ew', padx=(0, 4))
         ttk.Button(pyro_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Pyroelectric Current")).grid(row=0, column=1, sticky='ns')
         
-        lakeshore_frame = ttk.LabelFrame(launcher_col, text='Temperature Control (Lakeshore 350)'); lakeshore_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        lakeshore_frame = ttk.LabelFrame(launcher_col, text='Temperature Utilities (Lakeshore 350)'); lakeshore_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         lakeshore_frame.columnconfigure(0, weight=1)
         self._create_launch_button(lakeshore_frame, "Temperature Ramp", "Lakeshore Temp Control").grid(row=0, column=0, sticky='ew', padx=(0, 4), pady=(0, 2))
         self._create_launch_button(lakeshore_frame, "Temperature Monitor", "Lakeshore Temp Monitor").grid(row=1, column=0, sticky='ew', padx=(0, 4), pady=(2, 0))
         ttk.Button(lakeshore_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Lakeshore Temp Control")).grid(row=0, column=1, rowspan=2, sticky='ns')
         
-        lcr_frame = ttk.LabelFrame(launcher_col, text='LCR Meter (Keysight E4980A)'); lcr_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        lcr_frame = ttk.LabelFrame(launcher_col, text='Capacitance Measurement (Keysight E4980A)'); lcr_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         lcr_frame.columnconfigure(0, weight=1)
         self._create_launch_button(lcr_frame, "C-V Measurement", "LCR C-V Measurement").grid(row=0, column=0, sticky='ew', padx=(0, 4))
         ttk.Button(lcr_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("LCR C-V Measurement")).grid(row=0, column=1, sticky='ns')
         
-        lockin_frame = ttk.LabelFrame(launcher_col, text='Lock-in Amplifier'); lockin_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        lockin_frame = ttk.LabelFrame(launcher_col, text='AC Transport (Lock-in Amplifier)'); lockin_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         lockin_frame.columnconfigure(0, weight=1)
         self._create_launch_button(lockin_frame, "AC Measurement", "Lock-in AC Measurement").grid(row=0, column=0, sticky='ew', padx=(0, 4))
         ttk.Button(lockin_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Lock-in AC Measurement")).grid(row=0, column=1, sticky='ns')
@@ -397,7 +411,7 @@ class PICALauncherApp:
         self._show_file_in_window(self.README_FILE, "README")
 
     def open_updates(self):
-        self._show_file_in_window(self.UPDATES_FILE, "Update Log")
+        self._show_file_in_window(self.UPDATES_FILE, "Change Log")
 
     def open_manual_folder(self):
         self._open_path(self.MANUAL_FILE)
@@ -427,11 +441,20 @@ class PICALauncherApp:
             return
         test_win = Toplevel(self.root)
         test_win.title("GPIB/VISA Instrument Scanner")
-        test_win.geometry("750x550")
+
+        # --- Position the window to the top-right of the screen ---
+        win_width = 600
+        win_height = 450
+        test_win.update_idletasks() # Ensure winfo methods work correctly
+        screen_width = test_win.winfo_screenwidth()
+        x_pos = screen_width - win_width - 50  # Position on the right with padding
+        y_pos = 100                            # Position from the top
+        test_win.geometry(f"{win_width}x{win_height}+{x_pos}+{y_pos}")
+
         test_win.configure(bg=self.CLR_BG_DARK)
-        test_win.minsize(600, 400)
+        test_win.minsize(500, 350)
         test_win.transient(self.root)
-        test_win.grab_set()
+        # test_win.grab_set() # Removed to allow interaction with the main window
         result_queue = queue.Queue()
         main_frame = ttk.Frame(test_win, padding=15)
         main_frame.pack(fill='both', expand=True)
