@@ -1,5 +1,25 @@
 ## Instrument & Software Update Log
-### Version 13.3 (05/10/2025)
+### Version 13.4 (Current)
+
+**PICA Launcher & Script Integration**
+
+-   **Enhancement:** Upgraded the PICA Launcher to `PICA_v6.py` (internally version 5.3), featuring a significant UI/UX overhaul for a more professional and organized layout.
+-   **Refinement:** Re-structured the launcher layout into two columns for better readability and grouping of related measurement suites (Low, Mid, High Resistance).
+-   **New Feature:** Added an integrated markdown parser to the documentation viewer (`README`, `Updates.md`) for improved readability with styled headers, lists, and bold text.
+-   **New Feature:** The GPIB/VISA scanner now automatically starts a scan upon opening and includes a quick-reference "Address Guide" for common instruments.
+-   **Script Update:** Updated script paths in the launcher to point to the latest, most stable versions across all modules, including:
+    -   `Delta_Mode_Frontend_Active_Temp_Control_V3.py`
+    -   `Delta_Lakeshore_Frontend_Passive_V2.py`
+    -   `Keithley_6517B_IV_Frontend_V9.py`
+    -   `6517B_high_resistance_lakeshore_RT_Frontend_V11p2_5Always.py`
+    -   `6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py`
+    -   `lakeshore350_temp_ramp_Frontend_V6.py`
+    -   `lakeshore350_passive_monitor_Frontend_V2.py`
+-   **Files Modified:** `PICA_v6.py`.
+
+---
+
+### Version 13.3 (10/05/2025)
 
 **PICA Launcher & K2400 / K2400-2182 Suites**
 
@@ -10,11 +30,11 @@
     -   `VT_Sweep_Keithley_2400_2182_Frontend_Active_V1.py`: For automated R-T sweeps with active temperature ramping using the Keithley 2400/2182 pair.
     -   `VT_Sweep_K2400_2182_Passive_V1.py`: For passive R-T data logging using the Keithley 2400/2182 pair.
 -   **Refinement:** The launcher now provides a clearer, more organized structure for selecting the correct measurement type.
--   **Files Modified:** `PICA_Launcher_V5p3.py`.
+-   **Files Modified:** `PICA_Launcher_V5.3.py`.
 
 ---
 
-### Version 13.2 (05/10/2025)
+### Version 13.2 (10/05/2025)
 
 **PICA Launcher & K2400/2182 Suite**
 
@@ -22,11 +42,11 @@
 -   **New Launchers Added:**
     -   `IV_Sweep_Keithley_2400_2182_Frontend_V1.py`: For high-precision I-V sweeps.
     -   `VT_Sweep_Keithley_2400_2182_Frontend_V1.py`: For automated V-T measurements.
--   **Files Modified:** `PICA_Launcher_V5.py`.
+-   **Files Modified:** `PICA_Launcher_V5.2.py`.
 
 ---
 
-### Version 13.1 (05/10/2025)
+### Version 13.1 (04/10/2025)
 
 *This version number is being retroactively assigned to the previous update for better version tracking.*
 
@@ -39,7 +59,7 @@
 -   **Enhancement:** Successfully tested and validated the latest Delta Mode scripts:
     -   `Delta_Mode_Active_Temp_Control_V2.py`: Active R-T measurements confirmed to be stable and accurate.
     -   `Delta_Mode_IV_Ambient.py`: I-V sweep functionality verified.
--   **Files Modified:** `PICA_Launcher_V5.py`, `Delta_Mode_Active_Temp_Control_V2.py`, `Delta_Mode_IV_Ambient.py`.
+-   **Files Modified:** `PICA_Launcher_V5.1.py`, `Delta_Mode_Active_Temp_Control_V2.py`, `Delta_Mode_IV_Ambient.py`.
 
 ---
 
