@@ -20,13 +20,19 @@ This document provides a quick reference for the default and ly used GPIB addres
     *    Address: `27`
 
 ### Nanovoltmeters
-*   **Keithley 2182/2182:**
-    *    Address: `7`
+*   **Keithley 2182:**
+    *    Address: ``
 
 ### LCR Meters
 *   **Keysight E4980A:**
-    *    Address: `17`
+    *    Address: ``
 
 ### Lock-in Amplifiers
 *   **SRS SR830:**
     *    Address: `8`
+
+
+### Stanford (PS 365)
+*   **High Voltage:**
+    *    Address: `14`
+    
