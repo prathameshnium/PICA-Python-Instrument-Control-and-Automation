@@ -67,7 +67,7 @@ jobs:
           # --- COMPILE SCRIPT DIRECTORIES AS PACKAGES ---
           # This is the correct way to include all .py files from your instrument modules.
           include-package: |
-            Delta_mode_Keithley_6221_2182A
+            Delta_mode_Keithley_6221_2182
             Keithley_2400
             Keithley_2400_Keithley_2182
             Keithley_6517B

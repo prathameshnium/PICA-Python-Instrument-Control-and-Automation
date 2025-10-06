@@ -1,7 +1,7 @@
 # -------------------------------------------------------------------------------
 # Name:         Advanced Delta Mode R-T Measurement
 # Purpose:      Perform a temperature-dependent Delta mode measurement with a
-#               Keithley 6221/2182A and Lakeshore 350, using an advanced GUI
+#               Keithley 6221/2182 and Lakeshore 350, using an advanced GUI
 #               and temperature control logic.
 #
 # Author:       Prathamesh Deshmukh
@@ -220,7 +220,7 @@ class Advanced_Delta_GUI:
                 self.logo_image = ImageTk.PhotoImage(img)
                 logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
             except Exception as e: self.log(f"ERROR: Failed to load logo. {e}")
-        info_text = "Instruments:\n  • Lakeshore 350 Controller\n  • Keithley 6221/2182A"
+        info_text = "Instruments:\n  • Lakeshore 350 Controller\n  • Keithley 6221/2182"
         ttk.Label(frame, text=info_text, justify='left').grid(row=0, column=1, rowspan=2, padx=10, sticky='w')
 
     def create_input_frame(self, parent):

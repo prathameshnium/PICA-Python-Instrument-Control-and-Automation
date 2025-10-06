@@ -45,7 +45,7 @@
 
 ### October 3, 2025
 
-**Delta Mode Measurement Suite (Keithley 6221/2182A)**
+**Delta Mode Measurement Suite (Keithley 6221/2182)**
 
 -   **New Program:** Developed `Delta_Mode_Active_Temp_Control.py` for automated measurements. The software now ramps to a user-defined temperature, waits for thermal stability, and then begins the Delta Mode measurement sequence. Includes critical safety logic to disable the heater on completion, error, or exit.
 -   **New Program:** Created `Delta_Mode_IV_Ambient.py` to perform high-precision I-V sweeps at ambient temperature using the Delta Mode for each data point.

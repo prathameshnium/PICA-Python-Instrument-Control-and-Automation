@@ -1,6 +1,6 @@
 #-------------------------------------------------------------------------------
 # Name:         GPIB Passthrough I-V Logger
-# Purpose:      Perform a software-timed I-V sweep by controlling a K2182A
+# Purpose:      Perform a software-timed I-V sweep by controlling a K2182
 #               through a K6221 acting as a GPIB-to-Serial bridge.
 #
 # Author:       Prathamesh Deshmukh
@@ -8,7 +8,7 @@
 #
 # Version:      1.6 (Switched to Free-Running Fetch Mode)
 #
-# Description:  Modified the backend to put the K2182A into continuous
+# Description:  Modified the backend to put the K2182 into continuous
 #               measurement mode and use 'FETC?' to retrieve data. This is a
 #               more robust communication protocol to prevent timing errors.
 #-------------------------------------------------------------------------------
@@ -51,7 +51,7 @@ def resource_path(relative_path):
 # --- BACKEND INSTRUMENT CONTROL ---
 # -------------------------------------------------------------------------------
 class Backend_Passthrough:
-    """ Manages K6221 and K2182A via GPIB passthrough communication. """
+    """ Manages K6221 and K2182 via GPIB passthrough communication. """
     def __init__(self):
         self.k6221 = None; self.rm = None
         if pyvisa:
@@ -67,13 +67,13 @@ class Backend_Passthrough:
         print("\n--- [Backend] Configuring Instruments via Passthrough ---")
         self.k6221.write("*RST"); self.k6221.write("SOUR:FUNC CURR"); self.k6221.write("SOUR:CURR:RANG:AUTO ON")
         self.k6221.write(f"SOUR:CURR:COMP {compliance}"); print("  K6221 configured for DC source.")
-        print("  Sending commands to K2182A via K6221 RS-232 Port...")
+        print("  Sending commands to K2182 via K6221 RS-232 Port...")
         self.k6221.write("SYST:COMM:SER:SEND '*RST'"); time.sleep(0.5)
         self.k6221.write("SYST:COMM:SER:SEND 'FUNC \"VOLT\"'"); time.sleep(0.5)
         self.k6221.write("SYST:COMM:SER:SEND 'SENS:VOLT:DC:RANG:AUTO ON'"); time.sleep(0.5)
-        # --- NEW: Put K2182A into continuous, free-running measurement mode ---
+        # --- NEW: Put K2182 into continuous, free-running measurement mode ---
         self.k6221.write("SYST:COMM:SER:SEND 'INIT:CONT ON'"); time.sleep(0.5)
-        print("  K2182A configured and set to free-running measurement mode.")
+        print("  K2182 configured and set to free-running measurement mode.")
 
     def set_current(self, current):
         """ Sets the current level on the K6221 and turns the output on. """
@@ -81,7 +81,7 @@ class Backend_Passthrough:
         self.k6221.write("OUTP:STAT ON"); time.sleep(0.5)
 
     def read_voltage(self):
-        """ Fetches the latest reading from the free-running K2182A. """
+        """ Fetches the latest reading from the free-running K2182. """
         # --- NEW: Use FETC? to get the latest reading instead of READ? ---
         self.k6221.write("SYST:COMM:SER:SEND 'FETC?'")
 
@@ -91,7 +91,7 @@ class Backend_Passthrough:
             if response: voltage_str = response; break
             time.sleep(0.1)
 
-        if not voltage_str: raise TimeoutError("No response from K2182A via passthrough.")
+        if not voltage_str: raise TimeoutError("No response from K2182 via passthrough.")
         last_line = voltage_str.strip().split('\n')[-1]
         return float(last_line)
 
@@ -103,7 +103,7 @@ class Backend_Passthrough:
 
     def close(self):
         if self.k6221:
-            # Also tell the 2182A to stop continuous measurement
+            # Also tell the 2182 to stop continuous measurement
             try: self.k6221.write("SYST:COMM:SER:SEND 'INIT:CONT OFF'")
             except: pass
             self.turn_off_output()
@@ -159,7 +159,7 @@ class Passthrough_IV_GUI:
         else:
             self.log(f"Warning: Logo not found at '{self.LOGO_FILE_PATH}'")
             logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="Logo not found.\nCreate _assets/LOGO/\nand add image file.", font=('Segoe UI', 9), fill=self.CLR_FG_LIGHT, justify='center')
-        info_text = "Instruments:\n  • K6221 (Source via GPIB)\n  • K2182A (Meter via 6221 RS232)"
+        info_text = "Instruments:\n  • K6221 (Source via GPIB)\n  • K2182 (Meter via 6221 RS232)"
         ttk.Label(frame, text=info_text, justify='left').grid(row=0, column=1, rowspan=2, padx=10, sticky='w')
 
     # ... The rest of the GUI is mostly unchanged ...

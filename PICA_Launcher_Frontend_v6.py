@@ -94,9 +94,9 @@ class PICALauncherApp:
 
     SCRIPT_PATHS = {
         # Based on Updates.md, using the latest versions of scripts.
-        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_IV_Ambient.py"),
-        "Delta Mode R-T": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_Frontend_Active_Temp_Control_V3.py"),
-        "Delta Mode R-T (Passive Log)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Lakeshore_Frontend_Passive_V2.py"),
+        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182/Delta_Mode_IV_Ambient.py"),
+        "Delta Mode R-T": resource_path("Delta_mode_Keithley_6221_2182/Delta_Mode_Frontend_Active_Temp_Control_V3.py"),
+        "Delta Mode R-T (Passive Log)": resource_path("Delta_mode_Keithley_6221_2182/Delta_Lakeshore_Frontend_Passive_V2.py"),
         "K2400 I-V": resource_path("Keithley_2400/Frontend_IV_2400_V4.py"),
         "K2400 R-T": resource_path("Keithley_2400/Frontend_Keithley_2400_Lakeshore_350_V_vs_T_V1.py"),
         "K2400 R-T (Passive Log)": resource_path("Keithley_2400/Keithley_2400_Lakeshore_350_V_vs_T_Passive_V2.py"),
@@ -233,7 +233,7 @@ class PICALauncherApp:
 
         # --- Low Resistance ---
         low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (10⁻⁹ Ω to 10⁸ Ω)'); low_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        low_res_frame.columnconfigure(0, weight=1); ttk.Label(low_res_frame, text="Instruments: Keithley 6221/2182A, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
+        low_res_frame.columnconfigure(0, weight=1); ttk.Label(low_res_frame, text="Instruments: Keithley 6221/2182, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
         self._create_launch_button(low_res_frame, "I-V Sweep", "Delta Mode I-V Sweep").grid(row=1, column=0, sticky='ew', pady=(0, 4), padx=(0, 4));
         self._create_launch_button(low_res_frame, "R vs. T", "Delta Mode R-T").grid(row=2, column=0, sticky='ew', pady=(0, 4), padx=(0, 4));
         self._create_launch_button(low_res_frame, "R vs. T (Passive Log)", "Delta Mode R-T (Passive Log)").grid(row=3, column=0, sticky='ew', pady=(0, 4), padx=(0, 4)); ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V Sweep")).grid(row=1, column=1, rowspan=3, sticky='ns')
@@ -524,7 +524,7 @@ Source-Measure Units (SMU) & Electrometers
   • Keithley 6517B:     27
 
 Nanovoltmeters & LCR Meters
-  • Keithley 2182/2182A: 7
+  • Keithley 2182/2182: 7
   • Keysight E4980A:    17
   • SRS SR830 Lock-in:  8
 \n---------------------------------------------\n"""
