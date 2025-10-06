@@ -196,6 +196,9 @@ class LCR_CV_GUI:
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG_LIGHT)
         style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
 
+        # Style for Progress Bar
+        style.configure('green.Horizontal.TProgressbar', background=self.CLR_ACCENT_GREEN)
+
         mpl.rcParams.update({'font.family': 'Segoe UI', 'font.size': self.FONT_SIZE_BASE, 'axes.titlesize': self.FONT_SIZE_BASE + 4, 'axes.labelsize': self.FONT_SIZE_BASE + 2, 'figure.facecolor': self.CLR_GRAPH_BG})
 
     def create_widgets(self):
@@ -206,21 +209,26 @@ class LCR_CV_GUI:
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
         
-        left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=500)
-        main_pane.add(left_panel, weight=0)
+        # --- Left Panel using Grid for better control ---
+        left_panel = ttk.Frame(main_pane, width=500)
+        left_panel.grid_rowconfigure(2, weight=1) # Allow console (row 2) to expand
+        left_panel.grid_columnconfigure(0, weight=1)
+        main_pane.add(left_panel, weight=1) # Give it some weight
         
         right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
         main_pane.add(right_panel, weight=3)
 
-        top_controls_frame = ttk.Frame(left_panel)
-        left_panel.add(top_controls_frame, weight=0)
-        
-        self.create_info_frame(top_controls_frame)
-        self.create_input_frame(top_controls_frame)
-        
-        console_pane = self.create_console_frame(left_panel)
-        left_panel.add(console_pane, weight=1)
-        
+        # --- Populate Left Panel ---
+        info_frame = self.create_info_frame(left_panel)
+        info_frame.grid(row=0, column=0, sticky='new', padx=10, pady=(10, 0))
+
+        input_frame = self.create_input_frame(left_panel)
+        input_frame.grid(row=1, column=0, sticky='new', padx=10, pady=10)
+
+        console_frame = self.create_console_frame(left_panel)
+        console_frame.grid(row=2, column=0, sticky='nsew', padx=10, pady=(0, 10))
+
+        # --- Populate Right Panel ---
         self.create_graph_frame(right_panel)
 
     def create_info_frame(self, parent):
@@ -245,10 +253,11 @@ class LCR_CV_GUI:
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
         details_text = "Program: C-V Sweep\nInstrument: Keysight E4980A LCR Meter"
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
+        return frame
 
     def create_input_frame(self, parent):
         frame = ttk.LabelFrame(parent, text='Experiment Parameters')
-        frame.pack(pady=10, padx=10, fill='x')
+        # frame.pack(pady=10, padx=10, fill='x') # No longer needed with grid
         for i in range(2): frame.grid_columnconfigure(i, weight=1)
         self.entries = {}
         pady = (5, 5); padx = 10
@@ -271,6 +280,10 @@ class LCR_CV_GUI:
         self.start_button.grid(row=12, column=0, padx=(padx,5), pady=15, sticky='ew')
         self.stop_button = ttk.Button(frame, text="Stop", command=self.stop_sweep, style='Stop.TButton', state='disabled')
         self.stop_button.grid(row=12, column=1, padx=(5,padx), pady=15, sticky='ew')
+
+        self.progress_bar = ttk.Progressbar(frame, orient='horizontal', mode='determinate', style='green.Horizontal.TProgressbar')
+        self.progress_bar.grid(row=13, column=0, columnspan=2, padx=padx, pady=(0, 10), sticky='ew')
+        return frame
 
     def create_console_frame(self, parent):
         frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
@@ -335,6 +348,9 @@ class LCR_CV_GUI:
             self.line_main.set_data([], [])
             self.ax_main.set_title(f"C-V Curve for: {params['sample_name']}", fontweight='bold')
             self.canvas.draw()
+            
+            self.progress_bar['value'] = 0
+            self.progress_bar['maximum'] = self._get_total_sweep_points(params)
 
             self.log("Starting C-V sweep...")
             self.root.after(100, self._sweep_loop)
@@ -352,6 +368,12 @@ class LCR_CV_GUI:
             self.backend.close_instrument()
             self.log("Instrument connection closed.")
             if not reason: messagebox.showinfo("Info", "Sweep stopped and instrument disconnected.")
+
+    def _get_total_sweep_points(self, params):
+        """Calculates the total number of points in a full sweep."""
+        v_max, v_step = params['v_max'], params['v_step']
+        points_per_segment = len(np.arange(0, v_max + v_step, v_step))
+        return (points_per_segment * 4 - 4) * params['loops']
 
     def _sweep_loop(self):
         """Generator-based loop to avoid freezing the GUI."""
@@ -395,6 +417,7 @@ class LCR_CV_GUI:
             self.ax_main.relim(); self.ax_main.autoscale_view()
             self.figure.tight_layout(pad=2.5)
             self.canvas.draw()
+            self.progress_bar.step()
 
             self.root.after(50, self._sweep_loop) # Short delay before next point
 
@@ -444,11 +467,13 @@ class LCR_CV_GUI:
         self.entries[text] = entry
 
 def main():
+    """Initializes and runs the main application."""
     if not PYMEASURE_AVAILABLE:
         root = tk.Tk()
         root.withdraw()
         messagebox.showerror("Dependency Error", "Pymeasure or PyVISA is not installed.\n\nPlease run:\npip install pymeasure")
         return
+
     root = tk.Tk()
     app = LCR_CV_GUI(root)
     root.mainloop()
