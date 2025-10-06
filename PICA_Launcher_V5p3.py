@@ -95,23 +95,23 @@ class PICALauncherApp:
     SCRIPT_PATHS = {
         # Based on Updates.md, using the latest versions of scripts.
         "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_IV_Ambient.py"),
-        "Delta Mode R-T (Active)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_Frontend_Active_Temp_Control_V3.py"),
-        "Delta Mode R-T (Passive)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Lakeshore_Frontend_Passive_V2.py"),
+        "Delta Mode R-T": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Mode_Active_Temp_Control_V2.py"),
+        "Delta Mode R-T (Passive Log)": resource_path("Delta_mode_Keithley_6221_2182A/Delta_Lakeshore_Frontend_Passive_V2.py"),
         "K2400 I-V": resource_path("Keithley_2400/Frontend_IV_2400_V4.py"),
-        "K2400 R-T (Active)": resource_path("Keithley_2400/Keithley_2400_Lakeshore_350_V_vs_T_Active_V1.py"),
-        "K2400 R-T (Passive)": resource_path("Keithley_2400/Keithley_2400_Lakeshore_350_V_vs_T_Passive_V2.py"),
+        "K2400 R-T": resource_path("Keithley_2400/Frontend_Keithley_2400_Lakeshore_350_V_vs_T_V1.py"),
+        "K2400 R-T (Passive Log)": resource_path("Keithley_2400/Keithley_2400_Lakeshore_350_V_vs_T_Passive_V2.py"),
         "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_Sweep_Keithley_2400_2182_Frontend_V1.py"),
-        "K2400_2182 R-T (Active)": resource_path("Keithley_2400_Keithley_2182/VT_Sweep_K2400_2182_Active_V1.py"),
-        "K2400_2182 R-T (Passive)": resource_path("Keithley_2400_Keithley_2182/VT_Sweep_K2400_2182_Passive_V1.py"),
+        "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/VT_Sweep_Keithley_2400_2182_Frontend_Active_V1.py"),
+        "K2400_2182 R-T (Passive Log)": resource_path("Keithley_2400_Keithley_2182/VT_Sweep_K2400_2182_Passive_V1.py"),
         "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/Keithley_6517B_IV_Frontend_V9.py"),
-        "K6517B R-T (Active)": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V11p2.py"),
-        "K6517B R-T (Passive)": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py"),
-        "Pyroelectric Current": resource_path("Keithley_6517B/Pyroelectricity/Pyroelectric_Measurement_GUI_V1.py"),
-        "Lakeshore Temp Control": resource_path("Lakeshore_350_340/lakeshore350_temp_ramp_Frontend_V4.py"),
+        "K6517B R-T": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V11p2_5Always.py"),
+        "K6517B R-T (Passive Log)": resource_path("Keithley_6517B/High_Resistance/6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py"),
+        "Pyroelectric Current": resource_path("Keithley_6517B/Pyroelectricity/Pyroelectric_Measurement_GUI_V2.py"),
+        "Lakeshore Temp Control": resource_path("Lakeshore_350_340/lakeshore350_temp_ramp_Frontend_V5.py"),
         "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/lakeshore350_passive_monitor_Frontend_V1.py"),
         "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/LCR_CV.py"),
-        "Lock-in AC Measurement": resource_path("Lock_in_amplifier/AC_Transport_GUI_V1.py"), # Corrected from AC_Transport_GUI.py
-        "GPIB Address Guide": resource_path("GPIB_Address_Guide.md"),
+        "Lock-in AC Measurement": resource_path("Lock_in_amplifier/AC_Transport_GUI.py"),
+        "PICA Help": resource_path("PICA_README.md"),
     }
 
     def __init__(self, root):
@@ -234,32 +234,32 @@ class PICALauncherApp:
         # --- Low Resistance ---
         low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (10⁻⁹ Ω to 10⁶ Ω)'); low_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         low_res_frame.columnconfigure(0, weight=1); ttk.Label(low_res_frame, text="Instruments: Keithley 6221/2182A, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
-        self._create_launch_button(low_res_frame, "I-V Sweep", "Delta Mode I-V Sweep").grid(row=1, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
-        self._create_launch_button(low_res_frame, "R vs. T (Active Temp. Control)", "Delta Mode R-T (Active)").grid(row=2, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
-        self._create_launch_button(low_res_frame, "R vs. T (Passive Temp. Sensing)", "Delta Mode R-T (Passive)").grid(row=3, column=0, sticky='ew', pady=(0, 4), padx=(0, 4)); ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V Sweep")).grid(row=1, column=1, rowspan=3, sticky='ns')
+        self._create_launch_button(low_res_frame, "I-V Sweep", "Delta Mode I-V Sweep").grid(row=1, column=0, sticky='ew', pady=(0, 4), padx=(0, 4));
+        self._create_launch_button(low_res_frame, "R vs. T", "Delta Mode R-T").grid(row=2, column=0, sticky='ew', pady=(0, 4), padx=(0, 4));
+        self._create_launch_button(low_res_frame, "R vs. T (Passive Log)", "Delta Mode R-T (Passive Log)").grid(row=3, column=0, sticky='ew', pady=(0, 4), padx=(0, 4)); ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V Sweep")).grid(row=1, column=1, rowspan=3, sticky='ns')
         
         # --- Mid Resistance (K2400) ---
         mid_res_frame1 = ttk.LabelFrame(left_col, text='Mid Resistance (10⁻³ Ω to 10⁸ Ω)'); mid_res_frame1.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         mid_res_frame1.columnconfigure(0, weight=1); ttk.Label(mid_res_frame1, text="Instruments: Keithley 2400, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
         self._create_launch_button(mid_res_frame1, "I-V Measurement", "K2400 I-V").grid(row=1, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
-        self._create_launch_button(mid_res_frame1, "R vs. T (Active Temp. Control)", "K2400 R-T (Active)").grid(row=2, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
-        self._create_launch_button(mid_res_frame1, "R vs. T (Passive Temp. Sensing)", "K2400 R-T (Passive)").grid(row=3, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
+        self._create_launch_button(mid_res_frame1, "R vs. T", "K2400 R-T").grid(row=2, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
+        self._create_launch_button(mid_res_frame1, "R vs. T (Passive Log)", "K2400 R-T (Passive Log)").grid(row=3, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
         ttk.Button(mid_res_frame1, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400 I-V")).grid(row=1, column=1, rowspan=3, sticky='ns')
         
         # --- Mid Resistance (K2400/2182) ---
         mid_res_frame2 = ttk.LabelFrame(left_col, text='Mid Resistance, High Precision'); mid_res_frame2.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         mid_res_frame2.columnconfigure(0, weight=1); ttk.Label(mid_res_frame2, text="Instruments: Keithley 2400/2182, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
         self._create_launch_button(mid_res_frame2, "I-V Measurement", "K2400_2182 I-V").grid(row=1, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
-        self._create_launch_button(mid_res_frame2, "R vs. T (Active Temp. Control)", "K2400_2182 R-T (Active)").grid(row=2, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
-        self._create_launch_button(mid_res_frame2, "R vs. T (Passive Temp. Sensing)", "K2400_2182 R-T (Passive)").grid(row=3, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
+        self._create_launch_button(mid_res_frame2, "R vs. T", "K2400_2182 R-T").grid(row=2, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
+        self._create_launch_button(mid_res_frame2, "R vs. T (Passive Log)", "K2400_2182 R-T (Passive Log)").grid(row=3, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
         ttk.Button(mid_res_frame2, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400_2182 I-V")).grid(row=1, column=1, rowspan=3, sticky='ns')
         
         # --- High Resistance (moved to right column) ---
         high_res_frame = ttk.LabelFrame(right_col, text='High Resistance (10⁶ Ω to 10¹⁶ Ω)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         high_res_frame.columnconfigure(0, weight=1); ttk.Label(high_res_frame, text="Instruments: Keithley 6517B, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
         self._create_launch_button(high_res_frame, "I-V Measurement", "K6517B I-V").grid(row=1, column=0, sticky='ew', padx=(0, 4), pady=(0,4))
-        self._create_launch_button(high_res_frame, "R vs. T (Active Temp. Control)", "K6517B R-T (Active)").grid(row=2, column=0, sticky='ew', padx=(0, 4), pady=(0,4))
-        self._create_launch_button(high_res_frame, "R vs. T (Passive Temp. Sensing)", "K6517B R-T (Passive)").grid(row=3, column=0, sticky='ew', padx=(0, 4), pady=(0,4)); ttk.Button(high_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K6517B I-V")).grid(row=1, column=1, rowspan=3, sticky='ns')
+        self._create_launch_button(high_res_frame, "R vs. T", "K6517B R-T").grid(row=2, column=0, sticky='ew', padx=(0, 4), pady=(0,4))
+        self._create_launch_button(high_res_frame, "R vs. T (Passive Log)", "K6517B R-T (Passive Log)").grid(row=3, column=0, sticky='ew', padx=(0, 4), pady=(0,4)); ttk.Button(high_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K6517B I-V")).grid(row=1, column=1, rowspan=3, sticky='ns')
         
         # --- Other Utilities (right column) ---
         pyro_frame = ttk.LabelFrame(right_col, text='Pyroelectric Measurement (Keithley 6517B)'); pyro_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
@@ -533,7 +533,7 @@ Nanovoltmeters & LCR Meters
         scan_button = ttk.Button(controls_frame, text="Scan Instruments", command=start_scan, style='Scan.TButton')
         scan_button.grid(row=0, column=0, padx=(0, 5), sticky='ew')
         guide_button = ttk.Button(controls_frame, text="Address Guide", command=show_address_guide, style='App.TButton')
-        guide_button.grid(row=0, column=1, padx=5, sticky='ew')
+        guide_button.grid(row=0, column=1, padx=5, sticky='ew') # This button shows a hardcoded guide
         clear_button = ttk.Button(controls_frame, text="Clear Log", command=clear_log, style='App.TButton')
         clear_button.grid(row=0, column=2, padx=(5, 0), sticky='ew')
         ttk.Button(main_frame, text="Close", style='App.TButton', command=test_win.destroy).grid(row=2, column=0, sticky='ew', pady=(15, 0))
