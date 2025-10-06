@@ -252,38 +252,48 @@ class Integrated_RT_GUI:
         self.create_graph_frame(right_panel)
 
     def create_header(self):
+        # --- NEW: Define an italic font for the program name ---
+        font_title_italic = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold italic')
+
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="Resistance vs. Temperature Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
+        Label(header_frame, text="Resistance vs. Temperature Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
     def create_info_frame(self, parent):
         frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         frame.pack(pady=(5, 0), padx=10, fill='x')
-        frame.grid_columnconfigure(1, weight=1)
+        # --- MODIFIED: Use grid layout with 2 columns ---
+        frame.grid_columnconfigure(1, weight=1) 
 
         logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
-        logo_canvas.grid(row=0, column=0, rowspan=2, padx=15, pady=10)
+        logo_canvas.grid(row=0, column=0, rowspan=3, padx=(15, 10), pady=10)
 
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
             try:
                 img = Image.open(self.LOGO_FILE_PATH)
                 img.thumbnail((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
-                # IMPORTANT: Keep a reference to the image to prevent it from being garbage collected
                 self.logo_image = ImageTk.PhotoImage(img)
                 logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
             except Exception as e:
                 self.log(f"ERROR: Failed to load logo. {e}")
                 logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nERROR", font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
         else:
-            self.log(f"Warning: Logo not found at '{self.LOGO_FILE_PATH}'")
             logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
 
-        info_text = ("Institute: UGC DAE CSR, Mumbai\n"
-                     "Instruments:\n"
-                     "  • Lakeshore 350 Controller\n"
-                     "  • Keithley 6517B Electrometer")
-        ttk.Label(frame, text=info_text, justify='left').grid(row=0, column=1, rowspan=2, padx=10, sticky='w')
+        # Institute Name (larger font)
+        institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 1, 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font).grid(row=1, column=1, padx=10, sticky='nw')
+
+        # --- MODIFIED: Use a separator instead of a new frame ---
+        ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
+
+        # Program details
+        details_text = ("Program Mode: R vs. T (Active Ramp)\n"
+                        "Instruments: Lakeshore 350, Keithley 6517B\n"
+                        "Measurement Range: 10³ Ω to 10¹⁶ Ω")
+        ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def create_input_frame(self, parent):
         frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
