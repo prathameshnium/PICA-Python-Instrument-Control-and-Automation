@@ -210,13 +210,15 @@ class HighResistanceIV_GUI:
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
-        style.configure('TButton', font=self.FONT_BASE, padding=(10, 8))
-        style.map('TButton', foreground=[('!active', self.CLR_TEXT_DARK), ('active', self.CLR_TEXT_DARK)],
-                  background=[('!active', self.CLR_ACCENT_BLUE), ('active', '#A9B4C4')])
+        style.configure('TButton', font=self.FONT_BASE, padding=(10, 8), foreground=self.CLR_ACCENT_BLUE,
+                        background=self.CLR_HEADER, borderwidth=0, focusthickness=0, focuscolor='none')
+        style.map('TButton',
+                  background=[('active', self.CLR_ACCENT_BLUE), ('hover', self.CLR_ACCENT_BLUE)],
+                  foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
         style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_TEXT_DARK)
         style.map('Start.TButton', background=[('active', '#8AB845')])
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG_LIGHT)
-        style.map('Stop.TButton', background=[('active', '#D63C2A')])
+        style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
         mpl.rcParams['font.family'] = 'Segoe UI'
         mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
         mpl.rcParams['axes.titlesize'] = self.FONT_SIZE_BASE + 4
@@ -357,8 +359,8 @@ class HighResistanceIV_GUI:
         self.ax_rv.set_ylabel("Resistance (Ω)")
 
         # --- COSMETIC CHANGE HERE ---
-        # The following line was commented out to change the y-axis to a linear scale.
-        # self.ax_rv.set_yscale('log')
+        # The y-axis is now logarithmic for better visualization of high resistance changes.
+        self.ax_rv.set_yscale('log')
 
         self.ax_rv.grid(True, which="both", linestyle='--', alpha=0.6)
 
