@@ -68,17 +68,17 @@ class Backend_Passthrough:
         self.k6221.write("*RST"); self.k6221.write("SOUR:FUNC CURR"); self.k6221.write("SOUR:CURR:RANG:AUTO ON")
         self.k6221.write(f"SOUR:CURR:COMP {compliance}"); print("  K6221 configured for DC source.")
         print("  Sending commands to K2182A via K6221 RS-232 Port...")
-        self.k6221.write("SYST:COMM:SER:SEND '*RST'"); time.sleep(1)
-        self.k6221.write("SYST:COMM:SER:SEND 'FUNC \"VOLT\"'")
-        self.k6221.write("SYST:COMM:SER:SEND 'SENS:VOLT:DC:RANG:AUTO ON'")
+        self.k6221.write("SYST:COMM:SER:SEND '*RST'"); time.sleep(0.5)
+        self.k6221.write("SYST:COMM:SER:SEND 'FUNC \"VOLT\"'"); time.sleep(0.5)
+        self.k6221.write("SYST:COMM:SER:SEND 'SENS:VOLT:DC:RANG:AUTO ON'"); time.sleep(0.5)
         # --- NEW: Put K2182A into continuous, free-running measurement mode ---
-        self.k6221.write("SYST:COMM:SER:SEND 'INIT:CONT ON'")
+        self.k6221.write("SYST:COMM:SER:SEND 'INIT:CONT ON'"); time.sleep(0.5)
         print("  K2182A configured and set to free-running measurement mode.")
 
     def set_current(self, current):
         """ Sets the current level on the K6221 and turns the output on. """
-        self.k6221.write(f"SOUR:CURR {current}")
-        self.k6221.write("OUTP:STAT ON")
+        self.k6221.write(f"SOUR:CURR {current}"); time.sleep(0.5)
+        self.k6221.write("OUTP:STAT ON"); time.sleep(0.5)
 
     def read_voltage(self):
         """ Fetches the latest reading from the free-running K2182A. """
