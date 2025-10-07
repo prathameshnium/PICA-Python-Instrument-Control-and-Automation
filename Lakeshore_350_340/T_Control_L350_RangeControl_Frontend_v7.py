@@ -258,7 +258,7 @@ class LakeshoreRampGUI:
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
  
         # Program details
-        details_text = ("Program Duty: Temperature Ramp\n"
+        details_text = ("Program Name: Temperature Ramp\n"
                         "Instrument: Lakeshore 350 Controller\n"
                         "Measurement Range: 1.4 K to 800 K (Sensor Dependent)")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')

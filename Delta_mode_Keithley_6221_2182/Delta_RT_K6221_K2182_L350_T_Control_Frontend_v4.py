@@ -225,7 +225,7 @@ class Advanced_Delta_GUI:
 
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
  
-        details_text = ("Program Duty: Delta Mode R vs. T (T-Control)\n"
+        details_text = ("Program Name: Delta Mode R vs. T (T-Control)\n"
                         "Instruments: Keithley 6221/2182, Lakeshore 350\n"
                         "Measurement Range: 10⁻⁹ Ω to 10⁸ Ω")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')

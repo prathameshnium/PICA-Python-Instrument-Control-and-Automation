@@ -256,7 +256,7 @@ class LCR_CV_GUI:
         ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8) 
         
-        details_text = ("Program Duty: C-V Measurement\n"
+        details_text = ("Program Name: C-V Measurement\n"
                         "Instrument: Keysight E4980A LCR Meter\n"
                         "Measurement Range: 20 Hz to 2 MHz")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')

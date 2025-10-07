@@ -293,7 +293,7 @@ class Integrated_RT_GUI:
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
 
         # Program details
-        details_text = ("Program Duty: R vs. T (T-Sensing)\n"
+        details_text = ("Program Name: R vs. T (T-Sensing)\n"
                         "Instruments: Lakeshore 350, Keithley 6517B\n"
                         "Measurement Range: 10³ Ω to 10¹⁶ Ω")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')

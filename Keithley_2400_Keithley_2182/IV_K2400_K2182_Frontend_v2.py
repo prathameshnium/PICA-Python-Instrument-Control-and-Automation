@@ -186,7 +186,7 @@ class IV_GUI:
         ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_FRAME_BG).grid(row=0, column=1, padx=10, pady=(15,0), sticky='sw')
         ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_FRAME_BG).grid(row=1, column=1, padx=10, pady=(0,5), sticky='nw')
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
-        details_text = ("Program Duty: I-V Sweep (4-Probe)\n"
+        details_text = ("Program Name: I-V Sweep (4-Probe)\n"
                         "Instruments: Keithley 2400, Keithley 2182\n"
                         "Measurement Range: 10⁻⁶ Ω to 10⁹ Ω")
         ttk.Label(frame, text=details_text, justify='left', background=self.CLR_FRAME_BG).grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')

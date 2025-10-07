@@ -260,7 +260,7 @@ class PyroelectricAppGUI:
 
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8) 
 
-        details_text = ("Program Duty: Pyroelectric Current vs. T\n"
+        details_text = ("Program Name: Pyroelectric Current vs. T\n"
                         "Instruments: Keithley 6517B, Lakeshore 350\n"
                         "Measurement Range: 1 fA to 20 mA")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')

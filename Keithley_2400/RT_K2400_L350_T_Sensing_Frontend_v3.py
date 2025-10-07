@@ -168,7 +168,7 @@ class RT_GUI_Passive:
         ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_HEADER).grid(row=0, column=1, padx=10, pady=(15,0), sticky='sw')
         ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_HEADER).grid(row=1, column=1, padx=10, pady=(0,5), sticky='nw')
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
-        details_text = ("Program Duty: R vs. T (T-Sensing)\n"
+        details_text = ("Program Name: R vs. T (T-Sensing)\n"
                         "Instruments: Keithley 2400, Lakeshore 350\n"
                         "Measurement Range: 10⁻³ Ω to 10⁹ Ω")
         ttk.Label(frame, text=details_text, justify='left', background=self.CLR_HEADER).grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
