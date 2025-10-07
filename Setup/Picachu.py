@@ -69,7 +69,7 @@ def resource_path(relative_path):
 class PICALauncherApp:
     
     PROGRAM_VERSION = "5.3"
-    CLR_BG_DARK = '#193549'
+    CLR_BG_DARK = '#2B3D4F'
     CLR_FRAME_BG = '#3A506B'
     CLR_ACCENT_GOLD = '#FFC107'
     CLR_ACCENT_GREEN = '#A7C957'
@@ -85,7 +85,7 @@ class PICALauncherApp:
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
     FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
     LOGO_FILE = resource_path("_assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
-    MANUAL_FILE = resource_path("_assets/Manuals")
+    MANUAL_FILE = resource_path("_assets/Manuals") # Corrected path
     README_FILE = resource_path("PICA_README.md")
     LICENSE_FILE = resource_path("LICENSE")
     UPDATES_FILE = resource_path("Updates.md")
@@ -97,7 +97,7 @@ class PICALauncherApp:
         "Delta Mode R-T": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v4.py"),
         "Delta Mode R-T (T_Sensing)": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_Frontend_v3.py"),
         "K2400 I-V": resource_path("Keithley_2400/IV_K2400_Frontend_v4.py"),
-        "K2400 R-T": resource_path("Keithley_2400/RT_K2400_L350_T_Control_Frontendv2.py"),
+        "K2400 R-T": resource_path("Keithley_2400/RT_K2400_L350_T_Control_Frontend_v2.py"),
         "K2400 R-T (T_Sensing)": resource_path("Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v3.py"), 
         "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v2.py"),
         "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_Frontend_v2.py"),
@@ -109,7 +109,8 @@ class PICALauncherApp:
         "Lakeshore Temp Control": resource_path("Lakeshore_350_340/T_Control_L350_RangeControl_Frontend_v7.py"),
         "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/T_Sensing_L350_Frontend_v3.py"),
         "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v2.py"),
-        "Lock-in AC Measurement": resource_path("Lock_in_amplifier/BasicTest_S830_Backend_v1.py"),
+        "Lock-in AC Measurement": resource_path("Lock_in_amplifier/BasicTest_S830_Backend_v1.py"), # Assuming this is correct, no frontend provided
+        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v2.py"),
         "PICA Help": resource_path("PICA_README.md"),
     }
 
@@ -121,11 +122,10 @@ class PICALauncherApp:
         self.root.minsize(1200, 780)
         self.logo_image = None
         self.console_widget = None
+        self._md_cache = {} # Cache for parsed markdown files
         self.setup_styles()
         self.create_widgets()
-        self.log(f"PICA have evolved into Picachu.")
-
-        self.log(f"Picachu.exe v{self.PROGRAM_VERSION} initialized.")
+        self.log(f"PICACHU v{self.PROGRAM_VERSION} initialized.")
         self.log(f"PIL/Pillow (logo): {'Available' if PIL_AVAILABLE else 'Not found'}")
         self.log(f"PyVISA (GPIB test): {'Available' if PYVISA_AVAILABLE else 'Not found'}")
         self.log("Welcome to PICA. Check connections and run a GPIB test before starting.")
@@ -159,25 +159,28 @@ class PICALauncherApp:
         launcher_container = self.create_launcher_panel(self.root)
         launcher_container.grid(row=0, column=1, sticky="nsew", padx=(10, 15), pady=15)
 
+        # --- Version Label (Clickable) - Placed on the main window ---
+        # Moved here to ensure it's drawn on top of other widgets
+        version_font = font.Font(family='Segoe UI', size=9, underline=True)
+        version_label = ttk.Label(self.root, text=f"v{self.PROGRAM_VERSION}",
+                                  font=version_font, foreground=self.CLR_LINK, cursor="hand2",
+                                  background=self.CLR_BG_DARK) # Match the main window background
+        version_label.place(x=10, y=10, anchor='nw') # Adjusted coordinates for better visibility
+        version_label.bind("<Button-1>", lambda e: self.open_updates())
+
     def create_resource_panel(self, parent):
         info_frame = ttk.Frame(parent)
         info_frame.configure(padding=20)
         logo_canvas = Canvas(info_frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
         logo_canvas.pack(pady=(0, 15))
-        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE):
-            try:
-                img = Image.open(self.LOGO_FILE)
-                img.thumbnail((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
-                self.logo_image = ImageTk.PhotoImage(img)
-                logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
-            except Exception as e:
-                self.log(f"ERROR: Failed to load logo. {e}")
+        # Defer image loading to make startup feel faster
+        self.root.after(10, lambda: self._load_logo(logo_canvas))
         
         ttk.Label(info_frame, text="UGC-DAE Consortium for Scientific Research, Mumbai Centre", font=self.FONT_SUBTITLE, justify='center', anchor='center').pack(pady=(0, 15))
         
-        ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, foreground=self.CLR_ACCENT_GOLD, justify='center', anchor='center').pack(pady=(0, 15))
+        ttk.Label(info_frame, text="PICACHU\nPICA Launcher", font=self.FONT_TITLE, foreground=self.CLR_ACCENT_GOLD, justify='center', anchor='center').pack(pady=(0, 15))
         
-        desc_text = "A modular software suite for automating laboratory measurements in physics research.\n PICA have evolved into Picachu.exe"
+        desc_text = "A modular software suite for automating laboratory measurements in physics research."
         ttk.Label(info_frame, text=desc_text, font=self.FONT_INFO, wraplength=360, justify='center', anchor='center').pack(pady=(0, 10))
         
         # --- Create a bold font for names ---
@@ -192,8 +195,9 @@ class PICALauncherApp:
         util_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
         
         ttk.Button(util_frame, text="GPIB Utils", style='App.TButton', command=self.run_gpib_test).grid(row=0, column=0, sticky='ew', padx=(0, 4))
-        ttk.Button(util_frame, text="README", style='App.TButton', command=self.open_readme).grid(row=0, column=1, columnspan=2, sticky='ew', padx=4)
-        ttk.Button(util_frame, text="Manuals", style='App.TButton', command=lambda: self._open_path(self.MANUAL_FILE)).grid(row=0, column=3, sticky='ew', padx=(4, 0))
+        ttk.Button(util_frame, text="Plotter", style='App.TButton', command=lambda: self.launch_script(self.SCRIPT_PATHS["Plotter Utility"])).grid(row=0, column=1, sticky='ew', padx=4)
+        ttk.Button(util_frame, text="README", style='App.TButton', command=self.open_readme).grid(row=0, column=2, sticky='ew', padx=4)
+        ttk.Button(util_frame, text="Manuals", style='App.TButton', command=self.open_manual_folder).grid(row=0, column=3, sticky='ew', padx=(4, 0))
         
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', fill='x', pady=(15, 0))
@@ -211,6 +215,21 @@ class PICALauncherApp:
                                                       wrap='word', bd=0, relief='flat', height=7)
         self.console_widget.pack(fill='both', expand=True)
         return info_frame
+
+    def _load_logo(self, canvas):
+        """Loads the logo image after the main window is drawn."""
+        if not (PIL_AVAILABLE and os.path.exists(self.LOGO_FILE)):
+            self.log("Logo not loaded: PIL not available or file not found.")
+            return
+
+        try:
+            img = Image.open(self.LOGO_FILE)
+            img.thumbnail((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
+            # Keep a reference to the image to prevent garbage collection
+            self.logo_image = ImageTk.PhotoImage(img)
+            canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
+        except Exception as e:
+            self.log(f"ERROR: Failed to load logo. {e}")
 
     def _create_launch_button(self, parent, text, script_key):
         return ttk.Button(parent, text=text, style='App.TButton',
@@ -231,6 +250,12 @@ class PICALauncherApp:
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
 
+        def _on_mousewheel(event):
+            if platform.system() == "Windows":
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            else: # For MacOS and Linux
+                canvas.yview_scroll(-1 if event.num == 4 else 1, "units")
+
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
 
@@ -244,53 +269,57 @@ class PICALauncherApp:
 
         GROUP_PAD_Y = 15
 
-        # --- Low Resistance ---
-        low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (10⁻⁹ Ω to 10⁸ Ω)'); low_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        low_res_frame.columnconfigure(0, weight=1); ttk.Label(low_res_frame, text="Instruments: Keithley 6221/2182, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
-        self._create_launch_button(low_res_frame, "I-V Sweep", "Delta Mode I-V Sweep").grid(row=1, column=0, columnspan=2, sticky='ew', pady=(0, 4), padx=(0, 4));
-        self._create_launch_button(low_res_frame, "R vs. T (T_Control)", "Delta Mode R-T").grid(row=2, column=0, columnspan=2, sticky='ew', pady=(0, 4), padx=(0, 4));
-        self._create_launch_button(low_res_frame, "R vs. T (T_Sensing)", "Delta Mode R-T (T_Sensing)").grid(row=3, column=0, columnspan=2, sticky='ew', pady=(0, 4), padx=(0, 4));
-        
-        # --- Mid Resistance (K2400) ---
-        mid_res_frame1 = ttk.LabelFrame(left_col, text='Mid Resistance (10⁻³ Ω to 10⁹ Ω)'); mid_res_frame1.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        mid_res_frame1.columnconfigure(0, weight=1); ttk.Label(mid_res_frame1, text="Instruments: Keithley 2400, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
-        self._create_launch_button(mid_res_frame1, "I-V Sweep", "K2400 I-V").grid(row=1, column=0, columnspan=2, sticky='ew', pady=(0, 4), padx=(0, 4))
-        self._create_launch_button(mid_res_frame1, "R vs. T (T_Control)", "K2400 R-T").grid(row=2, column=0, columnspan=2, sticky='ew', pady=(0, 4), padx=(0, 4))
-        self._create_launch_button(mid_res_frame1, "R vs. T (T_Sensing)", "K2400 R-T (T_Sensing)").grid(row=3, column=0, columnspan=2, sticky='ew', pady=(0, 4), padx=(0, 4))
-        
-        # --- Mid Resistance (K2400/2182) ---
-        mid_res_frame2 = ttk.LabelFrame(left_col, text='Mid Resistance, High Precision (10⁻⁶ Ω to 10⁹ Ω)'); mid_res_frame2.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        mid_res_frame2.columnconfigure(0, weight=1); ttk.Label(mid_res_frame2, text="Instruments: Keithley 2400/2182, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
-        self._create_launch_button(mid_res_frame2, "I-V Sweep", "K2400_2182 I-V").grid(row=1, column=0, columnspan=2, sticky='ew', pady=(0, 4), padx=(0, 4))
-        self._create_launch_button(mid_res_frame2, "R vs. T (T_Control)", "K2400_2182 R-T").grid(row=2, column=0, columnspan=2, sticky='ew', pady=(0, 4), padx=(0, 4))
-        self._create_launch_button(mid_res_frame2, "R vs. T (T_Sensing)", "K2400_2182 R-T (T_Sensing)").grid(row=3, column=0, columnspan=2, sticky='ew', pady=(0, 4), padx=(0, 4))
-        
-        # --- High Resistance (moved to right column) ---
-        high_res_frame = ttk.LabelFrame(right_col, text='High Resistance (10³ Ω to 10¹⁶ Ω)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        high_res_frame.columnconfigure(0, weight=1); ttk.Label(high_res_frame, text="Instruments: Keithley 6517B, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
-        self._create_launch_button(high_res_frame, "I-V Sweep", "K6517B I-V").grid(row=1, column=0, columnspan=2, sticky='ew', padx=(0, 4), pady=(0,4))
-        self._create_launch_button(high_res_frame, "R vs. T (T_Control)", "K6517B R-T").grid(row=2, column=0, columnspan=2, sticky='ew', padx=(0, 4), pady=(0,4))
-        self._create_launch_button(high_res_frame, "R vs. T (T_Sensing)", "K6517B R-T (T_Sensing)").grid(row=3, column=0, columnspan=2, sticky='ew', padx=(0, 4), pady=(0,4));
-        
-        # --- Other Utilities (right column) ---
-        pyro_frame = ttk.LabelFrame(right_col, text='Pyroelectric Measurement (Keithley 6517B)'); pyro_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        pyro_frame.columnconfigure(0, weight=1)
-        self._create_launch_button(pyro_frame, "PyroCurrent vs. T", "Pyroelectric Current").grid(row=0, column=0, columnspan=2, sticky='ew', padx=(0, 4))
-        
-        lakeshore_frame = ttk.LabelFrame(right_col, text='Temperature Utilities (Lakeshore 350)'); lakeshore_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        lakeshore_frame.columnconfigure(0, weight=1)
-        self._create_launch_button(lakeshore_frame, "Temperature Ramp", "Lakeshore Temp Control").grid(row=0, column=0, columnspan=2, sticky='ew', padx=(0, 4), pady=(0, 4))
-        self._create_launch_button(lakeshore_frame, "Temperature Monitor", "Lakeshore Temp Monitor").grid(row=1, column=0, columnspan=2, sticky='ew', padx=(0, 4), pady=(0, 4))
-        
-        lcr_frame = ttk.LabelFrame(right_col, text='Capacitance (Keysight E4980A)'); lcr_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        lcr_frame.columnconfigure(0, weight=1)
-        self._create_launch_button(lcr_frame, "C-V Measurement", "LCR C-V Measurement").grid(row=0, column=0, columnspan=2, sticky='ew', padx=(0, 4))
-        
-        lockin_frame = ttk.LabelFrame(right_col, text='AC Measurements (Lock-in)'); lockin_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        lockin_frame.columnconfigure(0, weight=1)
-        self._create_launch_button(lockin_frame, "AC Measurement", "Lock-in AC Measurement").grid(row=0, column=0, columnspan=2, sticky='ew', padx=(0, 4))
+        # --- Left Column Suites ---
+        self._create_suite_frame(left_col, 'Low Resistance (10⁻⁹ Ω to 10⁸ Ω)', "Instruments: Keithley 6221/2182, Lakeshore 350", [
+            ("Delta Mode I-V Sweep", "Delta Mode I-V Sweep"),
+            ("Delta Mode R vs. T (T_Control)", "Delta Mode R-T"),
+            ("Delta Mode R vs. T (T_Sensing)", "Delta Mode R-T (T_Sensing)"),
+        ])
+        self._create_suite_frame(left_col, 'Mid Resistance (10⁻³ Ω to 10⁹ Ω)', "Instruments: Keithley 2400, Lakeshore 350", [
+            ("I-V Sweep", "K2400 I-V"),
+            ("R vs. T (T_Control)", "K2400 R-T"),
+            ("R vs. T (T_Sensing)", "K2400 R-T (T_Sensing)"),
+        ])
+        self._create_suite_frame(left_col, 'Mid Resistance, High Precision (10⁻⁶ Ω to 10⁹ Ω)', "Instruments: Keithley 2400/2182, Lakeshore 350", [
+            ("I-V Sweep", "K2400_2182 I-V"),
+            ("R vs. T (T_Control)", "K2400_2182 R-T"),
+            ("R vs. T (T_Sensing)", "K2400_2182 R-T (T_Sensing)"),
+        ])
+
+        # --- Right Column Suites ---
+        self._create_suite_frame(right_col, 'High Resistance (10³ Ω to 10¹⁶ Ω)', "Instruments: Keithley 6517B, Lakeshore 350", [
+            ("I-V Sweep", "K6517B I-V"),
+            ("R vs. T (T_Control)", "K6517B R-T"),
+            ("R vs. T (T_Sensing)", "K6517B R-T (T_Sensing)"),
+        ])
+        self._create_suite_frame(right_col, 'Pyroelectric Measurement (Keithley 6517B)', None, [("PyroCurrent vs. T", "Pyroelectric Current")])
+        self._create_suite_frame(right_col, 'Temperature Utilities (Lakeshore 350)', None, [
+            ("Temperature Ramp", "Lakeshore Temp Control"),
+            ("Temperature Monitor", "Lakeshore Temp Monitor"),
+        ])
+        self._create_suite_frame(right_col, 'Capacitance (Keysight E4980A)', None, [("C-V Measurement", "LCR C-V Measurement")])
+        self._create_suite_frame(right_col, 'AC Measurements (Lock-in)', None, [("AC Measurement", "Lock-in AC Measurement")])
 
         return main_container
+
+    def _create_suite_frame(self, parent, title, instruments_text, buttons):
+        """Helper to create a measurement suite frame, reducing code duplication."""
+        frame = ttk.LabelFrame(parent, text=title)
+        frame.pack(fill='x', expand=True, pady=15)
+        frame.columnconfigure(0, weight=1)
+
+        row_idx = 0
+        if instruments_text:
+            ttk.Label(frame, text=instruments_text, font=self.FONT_INFO).grid(row=row_idx, column=0, columnspan=2, sticky='w', pady=(0, 8))
+            row_idx += 1
+
+        for i, (btn_text, script_key) in enumerate(buttons):
+            self._create_launch_button(frame, btn_text, script_key).grid(row=row_idx + i, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
+
+        # Add a single folder icon for the suite, linked to the first button's script key
+        if buttons:
+            first_script_key = buttons[0][1]
+            ttk.Button(frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder(first_script_key)).grid(row=row_idx, column=1, rowspan=len(buttons), sticky='ns')
 
     def log(self, message):
         """Logs a message to the console widget with a timestamp."""
@@ -321,6 +350,13 @@ class PICALauncherApp:
     # =========================================================================
     # === THIS FUNCTION IS NOW UPDATED WITH THE MARKDOWN PARSER ================
     # =========================================================================
+    def _parse_markdown(self, content):
+        """Parses markdown content into a list of (text, tags) for rendering."""
+        # This is a placeholder for a more sophisticated parser if needed.
+        # For now, we just split by lines as the original did.
+        # The key is that this runs only once per file.
+        return content.split('\n')
+
     def _show_file_in_window(self, file_path, title):
         abs_path = os.path.abspath(file_path)
         if not os.path.exists(abs_path):
@@ -328,8 +364,15 @@ class PICALauncherApp:
             messagebox.showerror("File Not Found", f"The specified file does not exist:\n\n{abs_path}")
             return
         try:
-            with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
+            # Use cache if available
+            if file_path in self._md_cache:
+                lines = self._md_cache[file_path]
+            else:
+                with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                lines = self._parse_markdown(content)
+                if file_path.lower().endswith('.md'):
+                    self._md_cache[file_path] = lines # Cache the parsed lines
         except Exception as e:
             messagebox.showerror("Error Reading File", f"Could not read the file:\n\n{e}")
             return
@@ -355,7 +398,7 @@ class PICALauncherApp:
         
         if is_markdown:
             # Simple parser to apply styles line by line
-            for line in content.split('\n'):
+            for line in lines:
                 stripped = line.strip()
                 if stripped.startswith('### '):
                     text_area.insert('end', f"{stripped[4:]}\n", "h3")
@@ -384,16 +427,39 @@ class PICALauncherApp:
                             text_area.insert('end', part, "p")
                     text_area.insert('end', '\n')
         else: # For non-markdown files like LICENSE
-            text_area.insert('1.0', content)
+            text_area.insert('1.0', "\n".join(lines))
             
         text_area.pack(expand=True, fill='both')
         text_area.config(state='disabled')
         ttk.Button(win, text="Close", style='App.TButton', command=win.destroy).pack(pady=10, padx=10, fill='x')
+
+    def open_script_folder(self, script_key):
+        """Opens the directory containing the script associated with the given key."""
+        script_path = self.SCRIPT_PATHS.get(script_key)
+        if not script_path:
+            self.log(f"ERROR: Script key '{script_key}' not found in SCRIPT_PATHS.")
+            messagebox.showwarning("Key Not Found", f"The script key '{script_key}' is not defined.")
+            return
+
+        # Special case for plotter utility which is in its own top-level folder
+        if script_key == "Plotter Utility":
+            self._open_path(os.path.dirname(os.path.abspath(script_path)))
+            return
+
+        folder_path = os.path.dirname(os.path.abspath(script_path))
+        if os.path.exists(folder_path):
+            self._open_path(folder_path)
+        else:
+            self.log(f"ERROR: Folder path does not exist: {folder_path}")
+            messagebox.showwarning("Path Not Found", f"The folder for '{script_key}' could not be found.")
     def open_readme(self):
         self._show_file_in_window(self.README_FILE, "README")
 
     def open_updates(self):
         self._show_file_in_window(self.UPDATES_FILE, "Change Log")
+
+    def open_manual_folder(self):
+        self._open_path(self.MANUAL_FILE)
 
     def open_license(self):
         self._show_file_in_window(self.LICENSE_FILE, "MIT License")
@@ -418,92 +484,82 @@ class PICALauncherApp:
             self.log("ERROR: GPIB test failed, PyVISA is not available.")
             messagebox.showerror("Dependency Missing", "The 'pyvisa' library is required.\n\nInstall via pip:\npip install pyvisa pyvisa-py")
             return
-        test_win = Toplevel(self.root)
-        test_win.title("GPIB/VISA Instrument Scanner")
+        # The GPIB scanner is now its own class
+        GPIBScannerWindow(self.root, self)
+
+class GPIBScannerWindow(Toplevel):
+    def __init__(self, parent, app_ref):
+        super().__init__(parent)
+        self.app = app_ref # Reference to the main app for styling and logging
+
+        self.title("GPIB/VISA Instrument Scanner")
+        self.configure(bg=self.app.CLR_BG_DARK)
+        self.transient(parent)
 
         # --- Position the window to the top-right of the screen ---
-        win_width = 500
-        win_height = 400
-        test_win.update_idletasks() # Ensure winfo methods work correctly
-        screen_width = test_win.winfo_screenwidth()
-        x_pos = screen_width - win_width - 50  # Position on the right with padding
-        y_pos = 50                             # Position from the top
-        test_win.geometry(f"{win_width}x{win_height}+{x_pos}+{y_pos}")
+        win_width, win_height = 500, 400
+        self.update_idletasks()
+        screen_width = self.winfo_screenwidth()
+        x_pos = screen_width - win_width - 50
+        y_pos = 50
+        self.geometry(f"{win_width}x{win_height}+{x_pos}+{y_pos}")
+        self.minsize(500, 350)
 
-        test_win.configure(bg=self.CLR_BG_DARK)
-        test_win.minsize(500, 350)
-        test_win.transient(self.root)
-        # test_win.grab_set() # Removed to allow interaction with the main window
-        result_queue = queue.Queue()
-        main_frame = ttk.Frame(test_win, padding=15)
+        self.result_queue = queue.Queue()
+        self.create_widgets()
+
+        self.app.log("GPIB/VISA scanner window opened. Auto-scan will begin shortly.")
+        self.after(100, self._process_gpib_queue)  # Start the queue processor
+        self.after(1000, self.start_scan)          # Auto-start the scan after 1 second
+
+    def create_widgets(self):
+        main_frame = ttk.Frame(self, padding=15)
         main_frame.pack(fill='both', expand=True)
         main_frame.rowconfigure(1, weight=1)
         main_frame.columnconfigure(0, weight=1)
+
         controls_frame = ttk.Frame(main_frame)
         controls_frame.grid(row=0, column=0, sticky='ew', pady=(0, 15))
-        controls_frame.columnconfigure((0, 1, 2), weight=1) # Updated for three columns
+        controls_frame.columnconfigure((0, 1, 2), weight=1)
 
-        console_area = scrolledtext.ScrolledText(main_frame, state='disabled', bg=self.CLR_CONSOLE_BG,
-                                               fg=self.CLR_TEXT, font=self.FONT_CONSOLE, wrap='word', bd=0)
-        console_area.grid(row=1, column=0, sticky='nsew')
-        def log_to_scanner(message, add_timestamp=True):
-            console_area.config(state='normal')
-            if add_timestamp:
-                timestamp = datetime.now().strftime("%H:%M:%S")
-                console_area.insert('end', f"[{timestamp}] {message}\n")
-            else:
-                console_area.insert('end', message)
-            console_area.see('end')
-            console_area.config(state='disabled')
-        def _gpib_scan_worker():
-            try:
-                rm = pyvisa.ResourceManager()
-                resources = rm.list_resources()
-                if not resources:
-                    result_queue.put("-> No instruments found. Check connections and retry.\n")
-                else:
-                    result_queue.put(f"-> Found {len(resources)} instrument(s). Querying...\n\n")
-                    for address in resources:
-                        try:
-                            with rm.open_resource(address) as instrument:
-                                instrument.timeout = 2000
-                                idn = instrument.query('*IDN?').strip()
-                                result = f"Address: {address}\n    ID: {idn}\n\n"
-                                result_queue.put(result)
-                        except Exception as e:
-                            result = f"Address: {address}\n    Error: Could not get ID. {e}\n\n"
-                            result_queue.put(result)
-            except Exception as e:
-                error_msg = (f"A critical VISA error occurred: {e}\n"
-                             "Please ensure a VISA backend (e.g., NI-VISA) is installed correctly.\n")
-                result_queue.put(error_msg)
-            finally:
-                result_queue.put("SCAN_COMPLETE")
-        def _process_gpib_queue():
-            try:
-                while True:
-                    message = result_queue.get_nowait()
-                    if message == "SCAN_COMPLETE":
-                        scan_button.config(state='normal')
-                        log_to_scanner("Scan complete.")
-                    else:
-                        log_to_scanner(message, add_timestamp=False)
-            except queue.Empty:
-                pass
-            finally:
-                test_win.after(100, _process_gpib_queue)
-        def start_scan():
-            scan_button.config(state='disabled')
-            log_to_scanner("Starting scan...")
-            threading.Thread(target=_gpib_scan_worker, daemon=True).start()
-        def clear_log():
-            console_area.config(state='normal')
-            console_area.delete(1.0, 'end')
-            console_area.config(state='disabled')
-            log_to_scanner("Log cleared.")
+        self.console_area = scrolledtext.ScrolledText(main_frame, state='disabled', bg=self.app.CLR_CONSOLE_BG,
+                                                      fg=self.app.CLR_TEXT, font=self.app.FONT_CONSOLE, wrap='word', bd=0)
+        self.console_area.grid(row=1, column=0, sticky='nsew')
 
-        def show_address_guide():
-            guide_text = """\n--- Common PICA Instrument GPIB Addresses ---\n
+        self.scan_button = ttk.Button(controls_frame, text="Scan Instruments", command=self.start_scan, style='Scan.TButton')
+        self.scan_button.grid(row=0, column=0, padx=(0, 5), sticky='ew')
+        guide_button = ttk.Button(controls_frame, text="Address Guide", command=self.show_address_guide, style='App.TButton')
+        guide_button.grid(row=0, column=1, padx=5, sticky='ew')
+        clear_button = ttk.Button(controls_frame, text="Clear Log", command=self.clear_log, style='App.TButton')
+        clear_button.grid(row=0, column=2, padx=(5, 0), sticky='ew')
+
+        ttk.Button(main_frame, text="Close", style='App.TButton', command=self.destroy).grid(row=2, column=0, sticky='ew', pady=(15, 0))
+        self.log_to_scanner("Welcome to the GPIB/VISA Instrument Scanner.")
+        self.log_to_scanner("Auto-scanning for instruments in 1 second...")
+
+    def log_to_scanner(self, message, add_timestamp=True):
+        self.console_area.config(state='normal')
+        if add_timestamp:
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            self.console_area.insert('end', f"[{timestamp}] {message}\n")
+        else:
+            self.console_area.insert('end', message)
+        self.console_area.see('end')
+        self.console_area.config(state='disabled')
+
+    def start_scan(self):
+        self.scan_button.config(state='disabled')
+        self.log_to_scanner("Starting scan...")
+        threading.Thread(target=self._gpib_scan_worker, daemon=True).start()
+
+    def clear_log(self):
+        self.console_area.config(state='normal')
+        self.console_area.delete(1.0, 'end')
+        self.console_area.config(state='disabled')
+        self.log_to_scanner("Log cleared.")
+
+    def show_address_guide(self):
+        guide_text = """\n--- Common PICA Instrument GPIB Addresses ---\n
 Temperature Controllers
   • Lakeshore 340:  12
   • Lakeshore 350: 15
@@ -520,20 +576,45 @@ Nanovoltmeters & LCR Meters
   • SRS PS365 HV:  14
 
 \n---------------------------------------------\n"""
-            log_to_scanner(guide_text, add_timestamp=False)
+        self.log_to_scanner(guide_text, add_timestamp=False)
 
-        scan_button = ttk.Button(controls_frame, text="Scan Instruments", command=start_scan, style='Scan.TButton')
-        scan_button.grid(row=0, column=0, padx=(0, 5), sticky='ew')
-        guide_button = ttk.Button(controls_frame, text="Address Guide", command=show_address_guide, style='App.TButton')
-        guide_button.grid(row=0, column=1, padx=5, sticky='ew') # This button shows a hardcoded guide
-        clear_button = ttk.Button(controls_frame, text="Clear Log", command=clear_log, style='App.TButton')
-        clear_button.grid(row=0, column=2, padx=(5, 0), sticky='ew')
-        ttk.Button(main_frame, text="Close", style='App.TButton', command=test_win.destroy).grid(row=2, column=0, sticky='ew', pady=(15, 0))
-        log_to_scanner("Welcome to the GPIB/VISA Instrument Scanner.")
-        log_to_scanner("Auto-scanning for instruments in 1 second...")
-        self.log("GPIB/VISA scanner window opened. Auto-scan will begin shortly.")
-        test_win.after(100, _process_gpib_queue)  # Start the queue processor
-        test_win.after(1000, start_scan)          # Auto-start the scan after 1 second
+    def _gpib_scan_worker(self):
+        try:
+            rm = pyvisa.ResourceManager()
+            resources = rm.list_resources()
+            if not resources:
+                self.result_queue.put("-> No instruments found. Check connections and retry.\n")
+            else:
+                self.result_queue.put(f"-> Found {len(resources)} instrument(s). Querying...\n\n")
+                for address in resources:
+                    try:
+                        with rm.open_resource(address) as instrument:
+                            instrument.timeout = 2000
+                            idn = instrument.query('*IDN?').strip()
+                            result = f"Address: {address}\n    ID: {idn}\n\n"
+                            self.result_queue.put(result)
+                    except Exception as e:
+                        result = f"Address: {address}\n    Error: Could not get ID. {e}\n\n"
+                        self.result_queue.put(result)
+        except Exception as e:
+            error_msg = (f"A critical VISA error occurred: {e}\n"
+                         "Please ensure a VISA backend (e.g., NI-VISA) is installed correctly.\n")
+            self.result_queue.put(error_msg)
+        finally:
+            self.result_queue.put("SCAN_COMPLETE")
+
+    def _process_gpib_queue(self):
+        try:
+            message = self.result_queue.get_nowait()
+            if message == "SCAN_COMPLETE":
+                self.scan_button.config(state='normal')
+                self.log_to_scanner("Scan complete.")
+            else:
+                self.log_to_scanner(message, add_timestamp=False)
+        except queue.Empty:
+            pass
+        finally:
+            self.after(100, self._process_gpib_queue)
 
 def main():
     """Initializes and runs the main application."""
