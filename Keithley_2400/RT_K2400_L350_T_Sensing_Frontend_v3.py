@@ -82,50 +82,58 @@ class RT_Backend_Passive:
 # -------------------------------------------------------------------------------
 class RT_GUI_Passive:
     PROGRAM_VERSION = "3.0"
-    CLR_BG = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG = '#EDF2F4'
-    CLR_FRAME_BG = '#3A506B'; CLR_INPUT_BG = '#4C566A'
-    CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE'
-    CLR_ACCENT_GOLD = '#FFC107'; CLR_CONSOLE_BG = '#1E2B38'
-    FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold')
+    CLR_BG_DARK = '#2B3D4F'
+    CLR_HEADER = '#3A506B'
+    CLR_FG_LIGHT = '#EDF2F4'
+    CLR_TEXT_DARK = '#1A1A1A'
+    CLR_ACCENT_GOLD = '#FFC107'
+    CLR_ACCENT_GREEN = '#A7C957'
+    CLR_ACCENT_RED = '#E74C3C'
+    CLR_CONSOLE_BG = '#1E2B38'
+    CLR_GRAPH_BG = '#FFFFFF'
+    FONT_SIZE_BASE = 11
+    FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
+    FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
+    FONT_CONSOLE = ('Consolas', 10)
 
     def __init__(self, root):
-        self.root = root; self.root.title(f"K2400 & L350: R-T  (T-Sensing)")
-        self.root.geometry("1600x950"); self.root.minsize(1400, 800); self.root.configure(bg=self.CLR_BG)
+        self.root = root; self.root.title(f"K2400 & L350: R-T (T-Sensing)")
+        self.root.geometry("1600x950"); self.root.minsize(1400, 800); self.root.configure(bg=self.CLR_BG_DARK)
         self.is_running = False; self.logo_image = None
         self.backend = RT_Backend_Passive(); self.data_storage = {'temperature': [], 'voltage': [], 'resistance': []}
         self.setup_styles(); self.create_widgets(); self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def setup_styles(self):
         style = ttk.Style(self.root); style.theme_use('clam')
-        style.configure('.', background=self.CLR_BG, foreground=self.CLR_FG, font=self.FONT_BASE)
-        style.configure('TFrame', background=self.CLR_BG); style.configure('TPanedWindow', background=self.CLR_BG)
-        style.configure('TLabel', background=self.CLR_FRAME_BG, foreground=self.CLR_FG)
+        style.configure('.', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
+        style.configure('TFrame', background=self.CLR_BG_DARK); style.configure('TPanedWindow', background=self.CLR_BG_DARK)
+        style.configure('TLabel', background=self.CLR_HEADER, foreground=self.CLR_FG_LIGHT)
         style.configure('Header.TLabel', background=self.CLR_HEADER)
-        style.configure('TEntry', fieldbackground=self.CLR_INPUT_BG, foreground=self.CLR_FG, insertcolor=self.CLR_FG)
+        style.configure('TEntry', fieldbackground='#4C566A', foreground=self.CLR_FG_LIGHT, insertcolor=self.CLR_FG_LIGHT)
         style.configure('TButton', font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_HEADER)
-        style.map('TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_BG), ('hover', self.CLR_BG)])
-        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_BG)
+        style.map('TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_BG_DARK), ('hover', self.CLR_BG_DARK)])
+        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_TEXT_DARK)
         style.map('Start.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
-        style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG)
+        style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG_LIGHT)
         style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
-        style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_ACCENT_BLUE)
+        style.configure('TLabelframe', background=self.CLR_HEADER, bordercolor='#8D99AE')
         # --- NEW: Style for Comboboxes to make them more visible ---
-        style.configure('TCombobox', fieldbackground=self.CLR_INPUT_BG, foreground=self.CLR_FG,
-                        arrowcolor=self.CLR_FG, selectbackground=self.CLR_ACCENT_BLUE, selectforeground=self.CLR_FG)
-        style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_FG, font=self.FONT_TITLE)
-        mpl.rcParams.update({'font.family': 'Segoe UI', 'font.size': 11, 'axes.titlesize': 15, 'axes.labelsize': 13})
+        style.configure('TCombobox', fieldbackground='#4C566A', foreground=self.CLR_FG_LIGHT,
+                        arrowcolor=self.CLR_FG_LIGHT, selectbackground='#8D99AE', selectforeground=self.CLR_FG_LIGHT)
+        style.configure('TLabelframe.Label', background=self.CLR_HEADER, foreground=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        mpl.rcParams.update({'font.family': 'Segoe UI', 'font.size': self.FONT_SIZE_BASE, 'axes.titlesize': self.FONT_SIZE_BASE + 4, 'axes.labelsize': self.FONT_SIZE_BASE + 2})
 
     def create_widgets(self):
-        font_title_italic = ('Segoe UI', 13, 'bold', 'italic')
+        font_title_main = ('Segoe UI', self.FONT_SIZE_BASE + 4, 'bold')
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
-        ttk.Label(header, text=f"K2400 & L350: R-T  (T-Sensing)", style='Header.TLabel', font=font_title_italic).pack(side='left', padx=20, pady=10)
+        ttk.Label(header, text=f"K2400 & L350: R-T (T-Sensing)", style='Header.TLabel', font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
         
         left_panel_container = ttk.Frame(main_pane)
         main_pane.add(left_panel_container, weight=2)
 
         # --- Make the left panel scrollable ---
-        canvas = Canvas(left_panel_container, bg=self.CLR_BG, highlightthickness=0)
+        canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)
         scrollbar = ttk.Scrollbar(left_panel_container, orient="vertical", command=canvas.yview)
         left_panel = ttk.Frame(canvas, padding=5) # This is now the scrollable_frame
         left_panel.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
@@ -145,7 +153,7 @@ class RT_GUI_Passive:
     def _create_info_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Information'); frame.grid(row=grid_row, column=0, sticky='new', pady=5)
         frame.grid_columnconfigure(1, weight=1); LOGO_SIZE = 110
-        logo_canvas = Canvas(frame, width=LOGO_SIZE, height=LOGO_SIZE, bg=self.CLR_FRAME_BG, highlightthickness=0)
+        logo_canvas = Canvas(frame, width=LOGO_SIZE, height=LOGO_SIZE, bg=self.CLR_HEADER, highlightthickness=0)
         logo_canvas.grid(row=0, column=0, rowspan=3, padx=10, pady=10)
         try: # Use a more robust relative path
             script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -157,17 +165,17 @@ class RT_GUI_Passive:
         except Exception as e: self.log(f"Warning: Could not load logo. {e}")
 
         institute_font = ('Segoe UI', self.FONT_BASE[1], 'bold')
-        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_FRAME_BG).grid(row=0, column=1, padx=10, pady=(15,0), sticky='sw')
-        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_FRAME_BG).grid(row=1, column=1, padx=10, pady=(0,5), sticky='nw')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_HEADER).grid(row=0, column=1, padx=10, pady=(15,0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_HEADER).grid(row=1, column=1, padx=10, pady=(0,5), sticky='nw')
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
         details_text = ("Program Duty: R vs. T (T-Sensing)\n"
                         "Instruments: Keithley 2400, Lakeshore 350\n"
                         "Measurement Range: 10⁻³ Ω to 10⁹ Ω")
-        ttk.Label(frame, text=details_text, justify='left', background=self.CLR_FRAME_BG).grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
+        ttk.Label(frame, text=details_text, justify='left', background=self.CLR_HEADER).grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def _create_right_panel(self, parent):
         panel = ttk.Frame(parent, padding=5)
-        container = ttk.LabelFrame(panel, text='Live R-T Curve'); container.pack(fill='both', expand=True)
+        container = ttk.LabelFrame(panel, text='Live R-T Curve', style='TLabelframe'); container.pack(fill='both', expand=True)
         self.figure = Figure(dpi=100, facecolor='white')
         self.ax_main = self.figure.add_subplot(111)
         self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
@@ -207,12 +215,12 @@ class RT_GUI_Passive:
 
     def _create_console_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Console'); frame.grid(row=grid_row, column=0, sticky='nsew', pady=5)
-        self.console = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG, font=('Consolas', 9), wrap='word', borderwidth=0)
+        self.console = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', borderwidth=0)
         self.console.pack(fill='both', expand=True, padx=5, pady=5)
 
     def log(self, message):
         ts = datetime.now().strftime("%H:%M:%S"); log_msg = f"[{ts}] {message}\n"
-        self.console.config(state='normal'); self.console.insert('end', log_msg); self.console.see('end'); self.console.config(state='disabled')
+        self.console.config(state='normal'); self.console.insert('end', log_msg); self.console.see('end'); self.console.config(state='disabled');
 
     def start_experiment(self):
         try:
