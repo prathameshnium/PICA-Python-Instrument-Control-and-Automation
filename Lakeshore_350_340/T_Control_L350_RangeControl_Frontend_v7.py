@@ -490,7 +490,7 @@ class LakeshoreRampGUI:
                 self.log(f"Found: {resources}")
                 self.lakeshore_combobox['values'] = resources
                 for res in resources:
-                    if "12" in res or "13" in res or "15" in res:
+                    if "GPIB1::15" in res:
                         self.lakeshore_combobox.set(res)
                         break
                 if not self.lakeshore_combobox.get(): self.lakeshore_combobox.set(resources[0])

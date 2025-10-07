@@ -563,23 +563,27 @@ class GPIBScannerWindow(Toplevel):
         self.log_to_scanner("Log cleared.")
 
     def show_address_guide(self):
-        guide_text = """\n--- Common PICA Instrument GPIB Addresses ---\n
+        guide_text = """
+--- PICA Instrument Address Guide ---
+Note: These are typical addresses. Use the scan results for exact values.
+
 Temperature Controllers
-  • Lakeshore 340:  12
-  • Lakeshore 350: 15
+  • Lakeshore 340:      GPIB0::12::INSTR
+  • Lakeshore 350:      GPIB1::15::INSTR
 
 Source-Measure Units (SMU) & Electrometers
-  • Keithley 2400:      4
-  • Keithley 6221:      13
-  • Keithley 6517B:     27
+  • Keithley 2400:      GPIB1::4::INSTR
+  • Keithley 6221:      GPIB0::13::INSTR
+  • Keithley 6517B:     GPIB1::27::INSTR
 
-Nanovoltmeters & LCR Meters
-  • Keithley 2182: 
-  • Keysight E4980A:    
-  • SRS SR830 Lock-in:  8
-  • SRS PS365 HV:  14
+Nanovoltmeters, LCR Meters & Amplifiers
+  • Keithley 2182:      GPIB0::7::INSTR
+  • Keysight E4980A:    GPIB0::17::INSTR
+  • SRS SR830 Lock-in:  GPIB0::8::INSTR
+  • Stanford PS365 HV:  GPIB0::14::INSTR
 
-\n---------------------------------------------\n"""
+\n---------------------------------------------
+"""
         self.log_to_scanner(guide_text, add_timestamp=False)
 
     def _gpib_scan_worker(self):

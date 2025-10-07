@@ -287,9 +287,9 @@ class VT_GUI_Passive:
         if resources:
             self.log(f"Found: {resources}"); self.ls_cb['values'] = resources; self.k2400_cb['values'] = resources; self.k2182_cb['values'] = resources
             for r in resources:
-                if '12' in r or '15' in r: self.ls_cb.set(r)
-                if '2400' in r or 'GPIB::4' in r: self.k2400_cb.set(r)
-                if '2182' in r or 'GPIB::7' in r: self.k2182_cb.set(r)
+                if 'GPIB1::15' in r: self.ls_cb.set(r)
+                if 'GPIB1::4' in r: self.k2400_cb.set(r)
+                if 'GPIB0::7' in r: self.k2182_cb.set(r)
         else: self.log("No VISA instruments found.")
 
     def _browse_file_location(self):
