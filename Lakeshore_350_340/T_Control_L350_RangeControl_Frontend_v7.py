@@ -173,6 +173,7 @@ class LakeshoreRampGUI:
         self.is_stabilizing = False
         self.start_time = None
         self.backend = LakeshoreBackend()
+        self.plot_backgrounds = None # For blitting
         self.file_location_path = ""
         self.data_storage = {'time': [], 'temperature': [], 'heater': []}
         self.current_heater_range = 'off'
@@ -317,8 +318,8 @@ class LakeshoreRampGUI:
         self.ax_main = self.figure.add_subplot(gs[0, 0])
         self.ax_sub1 = self.figure.add_subplot(gs[1, 0], sharex=self.ax_main)
         for ax in [self.ax_main, self.ax_sub1]: ax.grid(True, linestyle='--', alpha=0.7)
-        self.line_main, = self.ax_main.plot([], [], color='#C00000', marker='o', markersize=4, linestyle='-')
-        self.line_sub1, = self.ax_sub1.plot([], [], color='#0070C0', marker='.', markersize=4, linestyle='-')
+        self.line_main, = self.ax_main.plot([], [], color='#C00000', marker='o', markersize=4, linestyle='-', animated=True)
+        self.line_sub1, = self.ax_sub1.plot([], [], color='#0070C0', marker='.', markersize=4, linestyle='-', animated=True)
         self.ax_main.set_title("Temperature vs. Time", fontweight='bold')
         self.ax_main.set_ylabel("Temperature (K)")
         self.ax_main.tick_params(axis='x', labelbottom=False)
@@ -417,13 +418,21 @@ class LakeshoreRampGUI:
                     self.data_storage['temperature'].append(current_temp)
                     self.data_storage['heater'].append(heater_output)
 
-                    self.line_main.set_data(self.data_storage['time'], self.data_storage['temperature'])
-                    self.line_sub1.set_data(self.data_storage['time'], self.data_storage['heater'])
-                    for ax in [self.ax_main, self.ax_sub1]:
-                        ax.relim(); ax.autoscale_view()
-                    self.figure.tight_layout(pad=2.5)
-                    self.canvas.draw_idle()
-
+                    # --- Performance Improvement: Use blitting for fast graph updates ---
+                    if self.plot_backgrounds:
+                        self.canvas.restore_region(self.plot_backgrounds[0])
+                        self.canvas.restore_region(self.plot_backgrounds[1])
+                        
+                        self.line_main.set_data(self.data_storage['time'], self.data_storage['temperature'])
+                        self.line_sub1.set_data(self.data_storage['time'], self.data_storage['heater'])
+                        
+                        for ax in [self.ax_main, self.ax_sub1]: ax.relim(); ax.autoscale_view()
+                        
+                        self.ax_main.draw_artist(self.line_main)
+                        self.ax_sub1.draw_artist(self.line_sub1)
+                        self.canvas.blit(self.figure.bbox)
+                    else:
+                        self.canvas.draw_idle()
                 elif msg_type == "STOP":
                     self.stop_measurement(reason=data)
                     return # Stop processing
@@ -468,6 +477,12 @@ class LakeshoreRampGUI:
             self.backend.set_heater_range(1, self.current_heater_range)
             self.data_queue.put(("LOG", f"Hardware ramp started towards {params['end_temp']} K at {params['rate']} K/min."))
             self.data_queue.put(("LOG", f"Heater range permanently set to '{self.current_heater_range}' (Range 5)."))
+            
+            # --- Performance Improvement: Capture static background for blitting ---
+            self.canvas.draw()
+            self.plot_backgrounds = [self.canvas.copy_from_bbox(self.ax_main.bbox),
+                                     self.canvas.copy_from_bbox(self.ax_sub1.bbox)]
+
             self.start_time = time.time()
 
             # --- Main Data Acquisition Loop ---
@@ -490,48 +505,6 @@ class LakeshoreRampGUI:
             tb_str = traceback.format_exc()
             self.data_queue.put(("LOG", f"RUNTIME ERROR in worker thread: {tb_str}"))
             self.data_queue.put(("STOP", "A critical error occurred in the measurement thread."))
-
-    def _old_update_measurement_loop(self):
-        """Main loop for data acquisition during the hardware ramp."""
-        if not self.is_running: return
-        try:
-            current_temp, heater_output = self.backend.get_measurement()
-            params = self.backend.params
-            elapsed_time = time.time() - self.start_time
-
-            # --- Logging, Data Storage, and Plotting ---
-            self.log(f"Time: {elapsed_time:7.1f}s | Temp: {current_temp:8.4f}K | Heater: {heater_output:5.1f}% ({self.current_heater_range})")
-            with open(self.data_filepath, 'a', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                 f"{elapsed_time:.2f}", f"{current_temp:.4f}", f"{heater_output:.2f}"])
-
-
-            self.data_storage['time'].append(elapsed_time)
-            self.data_storage['temperature'].append(current_temp)
-            self.data_storage['heater'].append(heater_output)
-
-            self.line_main.set_data(self.data_storage['time'], self.data_storage['temperature'])
-            self.line_sub1.set_data(self.data_storage['time'], self.data_storage['heater'])
-            for ax in [self.ax_main, self.ax_sub1]:
-                ax.relim(); ax.autoscale_view()
-            self.figure.tight_layout(pad=2.5)
-            self.canvas.draw_idle()
-
-            # --- Check for end conditions ---
-            if current_temp >= params['safety_cutoff']:
-                self.stop_measurement(f"SAFETY CUTOFF REACHED at {current_temp:.4f} K!")
-                return
-            if current_temp >= params['end_temp']:
-                self.stop_measurement(f"Target temperature of {params['end_temp']} K reached.")
-                return
-
-            self.root.after(2000, self._old_update_measurement_loop) # Loop every 2 seconds
-
-        except Exception:
-            self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
-            self.stop_measurement("A critical error occurred.")
-            messagebox.showerror("Runtime Error", "An error occurred during measurement. Check console.")
 
     def _scan_for_visa_instruments(self):
         if pyvisa is None: self.log("ERROR: PyVISA not found. Run 'pip install pyvisa'."); return

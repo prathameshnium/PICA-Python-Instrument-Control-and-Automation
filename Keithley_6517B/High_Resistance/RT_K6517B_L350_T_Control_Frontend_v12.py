@@ -198,6 +198,7 @@ class Integrated_RT_GUI:
         self.is_running = False
         self.is_stabilizing = False
         self.start_time = None
+        self.plot_backgrounds = None # For blitting
         self.backend = Combined_Backend()
         self.file_location_path = ""
         self.data_storage = {'time': [], 'temperature': [], 'current': [], 'resistance': []}
@@ -365,17 +366,17 @@ class Integrated_RT_GUI:
         self.ax_main = self.figure.add_subplot(gs[0, :])
         self.ax_sub1 = self.figure.add_subplot(gs[1, 0])
         self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
-        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-')
+        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-', animated=True)
         self.ax_main.set_title("Resistance vs. Temperature", fontweight='bold')
         self.ax_main.set_ylabel("Resistance (Ω)")
         if self.log_scale_var.get(): self.ax_main.set_yscale('log')
         else: self.ax_main.set_yscale('linear')
         self.ax_main.grid(True, which="both", linestyle='--', alpha=0.6)
-        self.line_sub1, = self.ax_sub1.plot([], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=3, linestyle='-')
+        self.line_sub1, = self.ax_sub1.plot([], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=3, linestyle='-', animated=True)
         self.ax_sub1.set_xlabel("Temperature (K)")
         self.ax_sub1.set_ylabel("Current (A)")
         self.ax_sub1.grid(True, linestyle='--', alpha=0.6)
-        self.line_sub2, = self.ax_sub2.plot([], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=3, linestyle='-')
+        self.line_sub2, = self.ax_sub2.plot([], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=3, linestyle='-', animated=True)
         self.ax_sub2.set_xlabel("Time (s)")
         self.ax_sub2.set_ylabel("Temperature (K)")
         self.ax_sub2.grid(True, linestyle='--', alpha=0.6)
@@ -478,6 +479,13 @@ class Integrated_RT_GUI:
                 self.data_queue.put(f"LOG:Hardware ramp started towards {params['end_temp']} K at {params['rate']} K/min.")
                 self.start_time = time.time()
 
+                # --- Performance Improvement: Capture static background for blitting ---
+                # This is done here because the plot area is now stable.
+                self.canvas.draw()
+                self.plot_backgrounds = [self.canvas.copy_from_bbox(self.ax_main.bbox),
+                                         self.canvas.copy_from_bbox(self.ax_sub1.bbox),
+                                         self.canvas.copy_from_bbox(self.ax_sub2.bbox)]
+
             while self.is_running:
                 temp, htr, cur, res = self.backend.get_measurement()
                 elapsed = time.time() - self.start_time
@@ -508,10 +516,22 @@ class Integrated_RT_GUI:
                     self.data_storage['current'].append(cur); self.data_storage['resistance'].append(res)
 
                     self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
-                    self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['current'])
+                    self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['current']) # This was likely a bug, should be temp vs current
                     self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
-                    for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]: ax.relim(); ax.autoscale_view()
-                    self.figure.tight_layout(pad=3.0); self.canvas.draw_idle()
+
+                    # --- Performance Improvement: Use blitting for fast graph updates ---
+                    if self.plot_backgrounds:
+                        for bg in self.plot_backgrounds: self.canvas.restore_region(bg)
+                        for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]: ax.relim(); ax.autoscale_view()
+                        
+                        self.ax_main.draw_artist(self.line_main)
+                        self.ax_sub1.draw_artist(self.line_sub1)
+                        self.ax_sub2.draw_artist(self.line_sub2)
+                        
+                        self.canvas.blit(self.figure.bbox)
+                    else:
+                        for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]: ax.relim(); ax.autoscale_view()
+                        self.figure.tight_layout(pad=3.0); self.canvas.draw_idle()
         except queue.Empty:
             pass
 
