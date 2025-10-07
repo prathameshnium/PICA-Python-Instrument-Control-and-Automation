@@ -227,14 +227,14 @@ class Integrated_RT_GUI:
         self.create_header()
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
-        left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=500)
-        main_pane.add(left_panel, weight=1) # This is the container for the scrollable area
+        left_panel_container = ttk.Frame(main_pane, width=600)
+        main_pane.add(left_panel_container, weight=1) # This is the container for the scrollable area
         right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
-        main_pane.add(right_panel, weight=3)
+        main_pane.add(right_panel, weight=1)
 
         # --- Make the left panel scrollable ---
-        canvas = Canvas(left_panel, bg=self.CLR_BG_DARK, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(left_panel, orient="vertical", command=canvas.yview)
+        canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(left_panel_container, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
         scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")

@@ -159,7 +159,7 @@ class IV_GUI:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=3)
+        right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=2)
         self._populate_left_panel(left_panel)
 
     def _populate_left_panel(self, panel):
