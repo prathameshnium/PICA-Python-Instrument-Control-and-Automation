@@ -166,7 +166,7 @@ class Passthrough_IV_GUI:
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
  
         # Program details
-        details_text = ("Program Duty: Delta Mode I-V Sweep\n"
+        details_text = ("Program Name: Delta Mode I-V Sweep\n"
                         "Instruments: K6221 (Source), K2182 (Meter)\n"
                         "Measurement Range: 10⁻⁹ Ω to 10⁸ Ω")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')

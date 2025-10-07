@@ -278,7 +278,7 @@ class HighResistanceIV_GUI:
 
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
 
-        details_text = ("Program Duty: I-V Sweep\n"
+        details_text = ("Program Name: I-V Sweep\n"
                         "Instrument: Keithley 6517B Electrometer\n"
                         "Measurement Range: 10³ Ω to 10¹⁶ Ω")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
