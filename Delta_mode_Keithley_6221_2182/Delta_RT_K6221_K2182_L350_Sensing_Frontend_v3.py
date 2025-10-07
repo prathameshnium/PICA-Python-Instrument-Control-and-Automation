@@ -26,6 +26,8 @@ from datetime import datetime
 import csv
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import threading
+import queue
 import matplotlib.gridspec as gridspec
 import matplotlib as mpl
 
@@ -178,6 +180,8 @@ class MeasurementAppGUI:
         self.file_location_path = ""
         self.data_storage = {'time': [], 'voltage': [], 'resistance': [], 'temperature': []}
         self.logo_image = None # Attribute to hold the logo image reference
+        self.data_queue = queue.Queue()
+        self.measurement_thread = None
 
         self.setup_styles()
         self.create_widgets()
@@ -223,9 +227,10 @@ class MeasurementAppGUI:
         self.create_graph_frame(right_panel)
 
     def create_header(self):
+        font_title_italic = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold italic')
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="Delta Mode Measurement (Passive T-Sensing)", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
+        Label(header_frame, text="Delta Mode R-T (Passive Sensing)", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
     def create_info_frame(self, parent):
@@ -233,7 +238,7 @@ class MeasurementAppGUI:
         frame.pack(pady=(5, 0), padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
         logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
-        logo_canvas.grid(row=0, column=0, rowspan=2, padx=15, pady=10)
+        logo_canvas.grid(row=0, column=0, rowspan=3, padx=15, pady=10)
 
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
             try:
@@ -247,12 +252,18 @@ class MeasurementAppGUI:
         else:
             logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
 
-        info_text = ("Institute: UGC DAE CSR, Mumbai\n"
-                     "Measurement: Delta Mode (4-Probe)\n"
-                     "Instruments:\n"
-                     "  • Keithley 6221/2182\n"
-                     "  • Lakeshore 350 (Passive)")
-        ttk.Label(frame, text=info_text, justify='left').grid(row=0, column=1, rowspan=2, padx=10, sticky='w')
+        institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 1, 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font).grid(row=1, column=1, padx=10, sticky='nw')
+
+        ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
+
+        details_text = ("Program Mode: R vs. T (Passive Sensing)\n"
+                        "Instruments: Keithley 6221/2182, Lakeshore 350\n"
+                        "Measurement Range: 10⁻⁹ Ω to 10⁸ Ω")
+        ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
+
+
 
     def create_input_frame(self, parent):
         frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
@@ -374,7 +385,11 @@ class MeasurementAppGUI:
             self.ax_main.set_title(f"Sample: {params['sample_name']} | I = {params['apply_current']:.2e} A", fontweight='bold')
             self.canvas.draw()
             self.log("Measurement loop started.")
-            self.root.after(1000, self._update_measurement_loop)
+            
+            # Start the worker thread and the queue processor
+            self.measurement_thread = threading.Thread(target=self._measurement_worker, daemon=True)
+            self.measurement_thread.start()
+            self.root.after(100, self._process_data_queue)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
@@ -390,34 +405,44 @@ class MeasurementAppGUI:
             self.log("Instrument connections closed.")
             messagebox.showinfo("Info", "Measurement stopped and instruments disconnected.")
 
-    def _update_measurement_loop(self):
-        if not self.is_running: return
+    def _measurement_worker(self):
+        """Worker thread to perform measurements and put data into a queue."""
+        while self.is_running:
+            try:
+                res, volt, temp = self.backend.get_measurement()
+                elapsed = time.time() - self.start_time
+                # Put the acquired data into the queue for the main thread
+                self.data_queue.put((res, volt, temp, elapsed))
+                time.sleep(1) # Control the measurement frequency
+            except Exception as e:
+                # If an error occurs, put it in the queue to be handled by the main thread
+                self.data_queue.put(e)
+                break
+
+    def _process_data_queue(self):
+        """Processes data from the queue to update the GUI. Runs in the main thread."""
         try:
-            res, volt, temp = self.backend.get_measurement()
-            elapsed = time.time() - self.start_time
+            while not self.data_queue.empty():
+                data = self.data_queue.get_nowait()
+                if isinstance(data, Exception):
+                    raise data # Re-raise the exception in the main thread
 
-            self.log(f"T: {temp:.3f} K | R: {res:.4e} Ω | V: {volt:.4e} V")
-            with open(self.data_filepath, 'a', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}", f"{volt:.6e}", f"{res:.6e}"])
+                res, volt, temp, elapsed = data
+                self.log(f"T: {temp:.3f} K | R: {res:.4e} Ω | V: {volt:.4e} V")
+                with open(self.data_filepath, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}", f"{volt:.6e}", f"{res:.6e}"])
 
-            self.data_storage['time'].append(elapsed)
-            self.data_storage['temperature'].append(temp)
-            self.data_storage['voltage'].append(volt)
-            self.data_storage['resistance'].append(res)
+                self.data_storage['time'].append(elapsed); self.data_storage['temperature'].append(temp)
+                self.data_storage['voltage'].append(volt); self.data_storage['resistance'].append(res)
 
-            # --- Update Plots ---
-            self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
-            self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
-            self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
-            for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
-                ax.relim(); ax.autoscale_view()
-            self.figure.tight_layout(pad=3.0)
-            self.canvas.draw()
-
-            if self.is_running:
-                self.root.after(1000, self._update_measurement_loop)
-
+                self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
+                self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
+                self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
+                for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
+                    ax.relim(); ax.autoscale_view()
+                self.figure.tight_layout(pad=3.0)
+                self.canvas.draw()
         except Exception as e:
             self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
             self.stop_measurement()
@@ -425,7 +450,8 @@ class MeasurementAppGUI:
 
     def _scan_for_visa_instruments(self):
         if not pyvisa: self.log("ERROR: PyVISA is not installed."); return
-        if self.backend.rm is None: self.log("ERROR: VISA manager failed. Is NI-VISA (or equivalent) installed?"); return
+        if self.backend.rm is None:
+            self.log("ERROR: VISA manager failed. Is NI-VISA (or equivalent) installed?"); return
         try:
             self.log("Scanning for VISA instruments...")
             resources = self.backend.rm.list_resources()
