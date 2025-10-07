@@ -1,5 +1,17 @@
 ## Instrument & Software Update Log
-### Version 13.4 (Current)
+### Version 13.5 (Current)
+
+**Project-Wide Refactoring & Reorganization**
+
+-   **Major Refactoring:** Implemented a major project-wide restructuring to improve modularity and maintainability. All measurement scripts have been reorganized into instrument-specific folders (e.g., `Keithley_2400`, `Delta_mode_Keithley_6221_2182`).
+-   **New Structure:** Within each instrument directory, a `Backends` sub-folder has been created to house the instrument control logic, separating it from the `Frontend` GUI files. This promotes code reuse and simplifies development.
+-   **Path Updates:** The main PICA launcher (`PICA_v6.py`) has been updated to reflect all new script paths, ensuring that all measurement suites launch correctly from their new locations.
+-   **File Cleanup:** This reorganization standardizes the location of all measurement scripts, making the project easier to navigate and manage.
+-   **Files Modified:** `PICA_v6.py`, and all frontend/backend scripts moved to new locations.
+
+---
+
+### Version 13.4
 
 **PICA Launcher & Script Integration**
 
