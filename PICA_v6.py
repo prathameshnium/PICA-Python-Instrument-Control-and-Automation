@@ -247,9 +247,9 @@ class PICALauncherApp:
         # --- Low Resistance ---
         low_res_frame = ttk.LabelFrame(left_col, text='Low Resistance (10⁻⁹ Ω to 10⁸ Ω)'); low_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         low_res_frame.columnconfigure(0, weight=1); ttk.Label(low_res_frame, text="Instruments: Keithley 6221/2182, Lakeshore 350", font=self.FONT_INFO).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
-        self._create_launch_button(low_res_frame, "I-V Sweep", "Delta Mode I-V Sweep").grid(row=1, column=0, sticky='ew', pady=(0, 4), padx=(0, 4));
-        self._create_launch_button(low_res_frame, "R vs. T (T_Control)", "Delta Mode R-T").grid(row=2, column=0, sticky='ew', pady=(0, 4), padx=(0, 4));
-        self._create_launch_button(low_res_frame, "R vs. T (T_Sensing)", "Delta Mode R-T (T_Sensing)").grid(row=3, column=0, sticky='ew', pady=(0, 4), padx=(0, 4)); ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V Sweep")).grid(row=1, column=1, rowspan=3, sticky='ns')
+        self._create_launch_button(low_res_frame, "Delta Mode I-V Sweep", "Delta Mode I-V Sweep").grid(row=1, column=0, sticky='ew', pady=(0, 4), padx=(0, 4));
+        self._create_launch_button(low_res_frame, "Delta Mode R vs. T (T_Control)", "Delta Mode R-T").grid(row=2, column=0, sticky='ew', pady=(0, 4), padx=(0, 4));
+        self._create_launch_button(low_res_frame, "Delta Mode R vs. T (T_Sensing)", "Delta Mode R-T (T_Sensing)").grid(row=3, column=0, sticky='ew', pady=(0, 4), padx=(0, 4)); ttk.Button(low_res_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Delta Mode I-V Sweep")).grid(row=1, column=1, rowspan=3, sticky='ns')
         
         # --- Mid Resistance (K2400) ---
         mid_res_frame1 = ttk.LabelFrame(left_col, text='Mid Resistance (10⁻³ Ω to 10⁹ Ω)'); mid_res_frame1.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
