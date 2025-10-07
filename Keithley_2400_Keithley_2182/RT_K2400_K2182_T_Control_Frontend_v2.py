@@ -316,7 +316,7 @@ class VT_GUI_Active:
                 self.data_storage['temperature'].append(temp); self.data_storage['voltage'].append(voltage)
                 with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{temp:.4f}", f"{voltage:.6e}", f"{elapsed:.2f}"])
                 self.line_main.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
-                self.ax_main.relim(); self.ax_main.autoscale_view(); self.figure.tight_layout(); self.canvas.draw()
+                self.ax_main.relim(); self.ax_main.autoscale_view(); self.canvas.draw()
 
                 # Check end conditions
                 if temp >= self.params['cutoff']:
