@@ -36,6 +36,7 @@ class PlotterApp:
     CLR_CONSOLE_BG = '#1E2B38'
     FONT_BASE = ('Segoe UI', 11)
     FONT_TITLE = ('Segoe UI', 13, 'bold')
+    FONT_TITLE_ITALIC = ('Segoe UI', 13, 'bold italic')
 
     def __init__(self, root):
         self.root = root
@@ -69,10 +70,21 @@ class PlotterApp:
         style.map('TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_BG), ('hover', self.CLR_BG)])
         style.configure('Plot.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_BG)
         style.map('Plot.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
+
+        # Combobox styling
+        style.map('TCombobox',
+                  fieldbackground=[('readonly', self.CLR_INPUT_BG)],
+                  selectbackground=[('readonly', self.CLR_ACCENT_BLUE)],
+                  selectforeground=[('readonly', self.CLR_FG)],
+                  foreground=[('readonly', self.CLR_FG)])
+        style.configure('TCombobox', arrowcolor=self.CLR_FG)
+
         style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_ACCENT_BLUE)
         style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_FG, font=self.FONT_TITLE)
         style.configure('TCheckbutton', background=self.CLR_FRAME_BG, foreground=self.CLR_FG)
-        style.map('TCheckbutton', background=[('active', self.CLR_FRAME_BG)])
+        style.map('TCheckbutton',
+                  background=[('active', self.CLR_FRAME_BG)],
+                  indicatorcolor=[('selected', self.CLR_ACCENT_GREEN), ('!selected', self.CLR_FG)])
         mpl.rcParams.update({
             'font.family': 'Segoe UI', 'font.size': 11,
             'axes.titlesize': 15, 'axes.labelsize': 13,
@@ -84,8 +96,32 @@ class PlotterApp:
 
     def create_widgets(self):
         header = tk.Frame(self.root, bg=self.CLR_HEADER)
-        header.pack(side='top', fill='x')
-        ttk.Label(header, text=f"PICA General Purpose Plotter", style='Header.TLabel', font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
+        header.pack(side='top', fill='x', padx=1, pady=1)
+
+        # --- Left side of header (Logo and Institute Name) ---
+        left_header_frame = tk.Frame(header, bg=self.CLR_HEADER)
+        left_header_frame.pack(side='left', padx=20, pady=10)
+
+        # Logo Placeholder
+        try:
+            # Assumes a 'logo.png' file exists in the same directory.
+            # If not, it shows a placeholder text.
+            self.logo_image = ImageTk.PhotoImage(Image.open("logo.png").resize((50, 50), Image.Resampling.LANCZOS))
+            logo_label = ttk.Label(left_header_frame, image=self.logo_image, style='Header.TLabel')
+        except (FileNotFoundError, NameError):
+            logo_label = ttk.Label(left_header_frame, text="[Logo]", style='Header.TLabel', font=('Segoe UI', 10))
+        logo_label.pack(side='left', padx=(0, 15))
+
+        # Institute Name
+        institute_frame = tk.Frame(left_header_frame, bg=self.CLR_HEADER)
+        institute_frame.pack(side='left')
+        ttk.Label(institute_frame, text="UGC-DAE Consortium for Scientific Research", style='Header.TLabel', font=('Segoe UI', 14, 'bold')).pack(anchor='w')
+        ttk.Label(institute_frame, text="Mumbai Centre", style='Header.TLabel', font=('Segoe UI', 12)).pack(anchor='w')
+
+        # --- Right side of header (Program Name) ---
+        right_header_frame = tk.Frame(header, bg=self.CLR_HEADER)
+        right_header_frame.pack(side='right', padx=20, pady=10)
+        ttk.Label(right_header_frame, text=f"PICA General Purpose Plotter", style='Header.TLabel', font=self.FONT_TITLE_ITALIC).pack()
 
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
@@ -99,7 +135,7 @@ class PlotterApp:
     def _create_left_panel(self, parent):
         panel = ttk.Frame(parent, width=400)
         panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(2, weight=1)
+        panel.grid_rowconfigure(3, weight=1)
 
         # --- File & Column Selection ---
         file_frame = ttk.LabelFrame(panel, text="Data Source")
@@ -124,7 +160,7 @@ class PlotterApp:
         self.y_col_cb.grid(row=1, column=1, sticky='ew', padx=10, pady=5)
 
         # --- Plotting Options ---
-        options_frame = ttk.Frame(params_frame)
+        options_frame = ttk.Frame(params_frame, style='TFrame') # Explicitly use TFrame style
         options_frame.grid(row=2, column=0, columnspan=2, sticky='ew', pady=10)
         options_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
@@ -137,11 +173,21 @@ class PlotterApp:
         self.y_log_var = tk.BooleanVar()
         ttk.Checkbutton(options_frame, text="Y Log Scale", variable=self.y_log_var).grid(row=0, column=1, sticky='w', padx=10)
 
+        # Set the background of the options frame to match its parent
+        options_frame.configure(style='TLabelframe')
+
         ttk.Button(params_frame, text="Reload & Plot", style="Plot.TButton", command=self.load_file_data).grid(row=3, column=0, columnspan=2, sticky='ew', padx=10, pady=10)
+
+        # --- Information Box ---
+        info_frame = ttk.LabelFrame(panel, text="Information")
+        info_frame.grid(row=2, column=0, sticky='new', pady=5)
+        info_frame.grid_columnconfigure(0, weight=1)
+        ttk.Label(info_frame, text="Program duety", justify='left', style='TLabel').grid(row=0, column=0, sticky='ew', padx=10, pady=5)
+
 
         # --- Console ---
         console_frame = ttk.LabelFrame(panel, text="Console")
-        console_frame.grid(row=2, column=0, sticky='nsew', pady=5)
+        console_frame.grid(row=3, column=0, sticky='nsew', pady=5)
         self.console = scrolledtext.ScrolledText(console_frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG, font=('Consolas', 9), wrap='word', borderwidth=0)
         self.console.pack(fill='both', expand=True, padx=5, pady=5)
 
