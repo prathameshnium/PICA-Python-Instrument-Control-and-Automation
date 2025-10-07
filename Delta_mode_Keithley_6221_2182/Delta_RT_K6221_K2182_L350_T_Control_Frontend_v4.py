@@ -275,7 +275,8 @@ class Advanced_Delta_GUI:
 
     def create_graph_frame(self, parent):
         graph_container = LabelFrame(parent, text='Live Graphs', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_BG_DARK, font=self.FONT_TITLE); graph_container.pack(fill='both', expand=True, padx=5, pady=5)
-        top_bar = ttk.Frame(graph_container, style='TFrame'); top_bar.pack(side='top', fill='x', pady=(0, 5))
+        # Use a standard tk.Frame and set its background explicitly to match the graph
+        top_bar = tk.Frame(graph_container, bg=self.CLR_GRAPH_BG); top_bar.pack(side='top', fill='x', pady=(0, 5))
         ttk.Checkbutton(top_bar, text="Log Resistance Axis", variable=self.log_scale_var, command=self._update_y_scale).pack(side='right', padx=5)
         self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG); self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
         gs = gridspec.GridSpec(2, 2, figure=self.figure); self.ax_main = self.figure.add_subplot(gs[0, :]); self.ax_sub1 = self.figure.add_subplot(gs[1, 0]); self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
