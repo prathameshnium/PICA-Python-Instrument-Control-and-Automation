@@ -159,10 +159,10 @@ class HighResistanceIV_GUI:
         # Robust path finding for assets
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
         # Path is two directories up from the script location
-        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
+        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
     except NameError:
         # Fallback for environments where __file__ is not defined
-        LOGO_FILE_PATH = "../../_assets/LOGO/UGC_DAE_CSR.jpeg"
+        LOGO_FILE_PATH = "../../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
 
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
