@@ -279,7 +279,7 @@ class IV_GUI:
             self.data_storage['current'].append(current_setpoint); self.data_storage['voltage'].append(voltage)
             with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{current_setpoint:.6e}", f"{voltage:.6e}"])
             self.line_main.set_data(self.data_storage['voltage'], self.data_storage['current'])
-            self.ax_main.relim(); self.ax_main.autoscale_view(); self.canvas.draw()
+            self.ax_main.relim(); self.ax_main.autoscale_view(); self.figure.tight_layout(); self.canvas.draw()
 
             self.current_step_index += 1
             if self.current_step_index >= len(self.current_points):
