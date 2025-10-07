@@ -28,6 +28,8 @@ import csv
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.gridspec as gridspec
+import threading
+import queue
 import matplotlib as mpl
 
 try:
@@ -177,6 +179,7 @@ class Advanced_Delta_GUI:
         self.log_scale_var = tk.BooleanVar(value=True)
         self.current_heater_range = 'off'
         self.logo_image = None
+        self.visa_queue = queue.Queue()
 
         self.setup_styles()
         self.create_widgets()
@@ -220,7 +223,7 @@ class Advanced_Delta_GUI:
         frame.grid_columnconfigure(1, weight=1)
         logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0); logo_canvas.grid(row=0, column=0, rowspan=3, padx=15, pady=10)
         # Defer logo loading to improve startup time
-        self.root.after(50, lambda: self._load_logo(logo_canvas, frame))
+        self.root.after(50, lambda: self._load_logo(logo_canvas))
 
         institute_font = ('Segoe UI', self.FONT_SIZE_BASE, 'bold')
         ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
@@ -233,7 +236,7 @@ class Advanced_Delta_GUI:
                         "Measurement Range: 10⁻⁹ Ω to 10⁸ Ω")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
-    def _load_logo(self, canvas, frame):
+    def _load_logo(self, canvas):
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
             try:
                 img = Image.open(self.LOGO_FILE_PATH).resize((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
@@ -268,7 +271,9 @@ class Advanced_Delta_GUI:
         Label(frame, text="Keithley VISA:").grid(row=8, column=1, padx=padx_val, pady=pady_val, sticky='w')
         self.keithley_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly'); self.keithley_cb.grid(row=9, column=1, padx=(5,padx_val), pady=(0,10), sticky='ew')
         
-        ttk.Button(frame, text="Scan for Instruments", command=self._scan_for_visa_instruments).grid(row=10, column=0, columnspan=2, padx=padx_val, pady=4, sticky='ew')
+        self.scan_button = ttk.Button(frame, text="Scan for Instruments", command=self.start_visa_scan)
+        self.scan_button.grid(row=10, column=0, columnspan=2, padx=padx_val, pady=4, sticky='ew')
+
         ttk.Button(frame, text="Browse Save Location...", command=self._browse_file_location).grid(row=11, column=0, columnspan=2, padx=padx_val, pady=4, sticky='ew')
         self.start_button = ttk.Button(frame, text="Start Measurement", command=self.start_measurement, style='Start.TButton'); self.start_button.grid(row=13, column=0, padx=padx_val, pady=(10, 10), sticky='ew')
         self.stop_button = ttk.Button(frame, text="Stop", command=self.stop_measurement, style='Stop.TButton', state='disabled'); self.stop_button.grid(row=13, column=1, padx=padx_val, pady=(10, 10), sticky='ew')
@@ -442,18 +447,47 @@ class Advanced_Delta_GUI:
             elif temp >= self.params['end_temp']: self.log(f"Target temperature reached. Measurement complete."); self.stop_measurement()
             else: self.root.after(900, self._update_measurement_loop) # Slightly less than 1s to prevent drift
         except Exception as e: self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement()
+    
+    def start_visa_scan(self):
+        """Starts the VISA scan in a separate thread to keep the GUI responsive."""
+        self.scan_button.config(state='disabled')
+        self.log("Scanning for VISA instruments...")
+        threading.Thread(target=self._visa_scan_worker, daemon=True).start()
+        self.root.after(100, self._process_visa_queue)
 
-    def _scan_for_visa_instruments(self):
+    def _visa_scan_worker(self):
+        """Worker function that performs the slow VISA scan."""
         if not pyvisa: self.log("ERROR: PyVISA is not installed."); return
         try:
-            rm = pyvisa.ResourceManager(); self.log("Scanning for VISA instruments..."); resources = rm.list_resources()
-            if resources:
-                self.log(f"Found: {resources}"); self.lakeshore_cb['values'] = resources; self.keithley_cb['values'] = resources
-                for res in resources:
+            rm = pyvisa.ResourceManager()
+            resources = rm.list_resources()
+            self.visa_queue.put(resources)
+        except Exception as e:
+            self.visa_queue.put(e)
+
+    def _process_visa_queue(self):
+        """Checks the queue for results from the VISA scan worker."""
+        try:
+            result = self.visa_queue.get_nowait()
+            if isinstance(result, Exception):
+                self.log(f"ERROR during VISA scan: {result}")
+            elif result:
+                self.log(f"Found: {result}")
+                self.lakeshore_cb['values'] = result
+                self.keithley_cb['values'] = result
+                # Auto-select common addresses
+                for res in result:
                     if "GPIB1::15" in res: self.lakeshore_cb.set(res)
                     if "GPIB0::13" in res: self.keithley_cb.set(res)
-            else: self.log("No VISA instruments found.")
-        except Exception as e: self.log(f"ERROR during VISA scan: {e}")
+            else:
+                self.log("No VISA instruments found.")
+            
+            self.scan_button.config(state='normal')
+
+        except queue.Empty:
+            # If the queue is empty, it means the worker is still running.
+            # We schedule another check.
+            self.root.after(100, self._process_visa_queue)
 
     def _browse_file_location(self):
         path = filedialog.askdirectory()
