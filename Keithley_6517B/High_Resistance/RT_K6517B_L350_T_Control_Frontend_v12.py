@@ -4,13 +4,14 @@
 #                   using a hardware ramp with a fixed high-power heater setting.
 # Author:           Prathamesh Deshmukh
 # Created:          26/09/2025
-# Version:          V: 3.8 (Logo Added)
+# Version:          V: 3.9 (Performance & UI Update)
 # -------------------------------------------------------------------------------
 
 
 # --- Packages for Front end ---
 import tkinter as tk
 from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext, Canvas
+import threading, queue
 import os
 import time
 import traceback
@@ -161,7 +162,7 @@ class Combined_Backend:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class Integrated_RT_GUI:
-    PROGRAM_VERSION = "3.8"
+    PROGRAM_VERSION = "3.9"
     LOGO_SIZE = 110
     try:
         # Robust path finding for assets
@@ -203,6 +204,8 @@ class Integrated_RT_GUI:
         self.log_scale_var = tk.BooleanVar(value=True)
         self.current_heater_range = 'off'
         self.logo_image = None # Attribute to hold the logo image reference
+        self.data_queue = queue.Queue()
+        self.measurement_thread = None
 
         self.setup_styles()
         self.create_widgets()
@@ -215,7 +218,7 @@ class Integrated_RT_GUI:
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
         style.configure('TCheckbutton', background=self.CLR_GRAPH_BG, foreground=self.CLR_TEXT_DARK, font=self.FONT_BASE)
-        style.map('TCheckbutton', background=[('active', self.CLR_GRAPH_BG)])
+        style.map('TCheckbutton', background=[('active', self.CLR_GRAPH_BG)], indicatorcolor=[('selected', self.CLR_ACCENT_GREEN)])
         style.configure('TButton',
                         font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD,
                         background=self.CLR_HEADER, borderwidth=0, focusthickness=0, focuscolor='none')
@@ -429,108 +432,91 @@ class Integrated_RT_GUI:
             self.ax_main.set_title(f"R-T Curve: {params['sample_name']}", fontweight='bold')
             self.canvas.draw()
             self.log("Starting stabilization process...")
-            self.root.after(1000, self._stabilization_loop)
+            
+            self.measurement_thread = threading.Thread(target=self._measurement_worker, daemon=True)
+            self.measurement_thread.start()
+            self.root.after(100, self._process_data_queue)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
             messagebox.showerror("Initialization Error", f"Could not start measurement.\n{e}")
 
-    def stop_measurement(self):
+    def stop_measurement(self, from_user=True):
         if self.is_running or self.is_stabilizing:
             self.is_running, self.is_stabilizing = False, False
             self.log("Measurement stopped by user.")
             self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
             # This backend call will automatically turn the heater off.
             self.backend.close_instruments()
-            messagebox.showinfo("Info", "Measurement stopped and instruments disconnected.")
+            if from_user:
+                messagebox.showinfo("Info", "Measurement stopped and instruments disconnected.")
 
-    def _stabilization_loop(self):
-        if not self.is_stabilizing: return
-        try:
-            params = self.backend.params
-            current_temp = self.backend.lakeshore.get_temperature('A')
-
-            if current_temp > params['start_temp'] + 0.2:
-                self.log(f"Cooling... Current: {current_temp:.4f} K > Target: {params['start_temp']} K")
-                self.backend.lakeshore.set_heater_range(1, 'off')
-            else:
-                self.log(f"Heating... Current: {current_temp:.4f} K <= Target: {params['start_temp']} K")
-                self.backend.lakeshore.set_heater_range(1, 'medium')
-                self.backend.lakeshore.set_setpoint(1, params['start_temp'])
-
-            if abs(current_temp - params['start_temp']) < 0.1:
-                self.log(f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
-                self.is_stabilizing = False
-                self.root.after(5000, self._start_hardware_ramp)
-            else:
-                self.root.after(2000, self._stabilization_loop)
-        except Exception as e:
-            self.log(f"ERROR during stabilization: {e}"); self.stop_measurement()
-
-    def _start_hardware_ramp(self):
-        """Initializes the Lakeshore's internal hardware ramp."""
+    def _measurement_worker(self):
+        """Worker thread to handle stabilization and measurement loop."""
         params = self.backend.params
-
-        # 1. Set the final setpoint
-        self.backend.lakeshore.set_setpoint(1, params['end_temp'])
-
-        # 2. Configure the hardware ramp rate
-        self.backend.lakeshore.setup_ramp(1, params['rate'])
-
-        # 3. Set the heater range to High (5) for the entire ramp
-        self.current_heater_range = 'high'
-        self.backend.lakeshore.set_heater_range(1, self.current_heater_range)
-
-        self.log(f"Hardware ramp started towards {params['end_temp']} K at {params['rate']} K/min.")
-        self.log(f"Heater range set to '{self.current_heater_range}'.")
-
-        self.is_running = True
-        self.start_time = time.time()
-        self.root.after(1000, self._update_measurement_loop)
-
-    def _update_measurement_loop(self):
-        if not self.is_running: return
         try:
-            params = self.backend.params
-            temp, htr, cur, res = self.backend.get_measurement()
-            elapsed = time.time() - self.start_time
+            # --- Stabilization Phase ---
+            while self.is_stabilizing:
+                current_temp = self.backend.lakeshore.get_temperature('A')
+                self.data_queue.put(f"LOG:Stabilizing... Current: {current_temp:.4f} K (Target: {params['start_temp']} K)")
+                
+                if current_temp > params['start_temp'] + 0.2: self.backend.lakeshore.set_heater_range(1, 'off')
+                else: self.backend.lakeshore.set_heater_range(1, 'medium'); self.backend.lakeshore.set_setpoint(1, params['start_temp'])
+                
+                if abs(current_temp - params['start_temp']) < 0.1:
+                    self.data_queue.put(f"LOG:Stabilized at {current_temp:.4f} K. Waiting 5s before ramp...")
+                    time.sleep(5)
+                    self.is_stabilizing = False
+                    self.is_running = True
+                    break
+                time.sleep(2)
 
-            # --- HEATER LOGIC REMOVED ---
-            # Heater is now set to 'high' at the start of the ramp and remains there.
-            # No dynamic switching is needed in the loop.
+            # --- Ramp Phase ---
+            if self.is_running:
+                self.backend.lakeshore.set_setpoint(1, params['end_temp']); self.backend.lakeshore.setup_ramp(1, params['rate'])
+                self.current_heater_range = 'high'; self.backend.lakeshore.set_heater_range(1, self.current_heater_range)
+                self.data_queue.put(f"LOG:Hardware ramp started towards {params['end_temp']} K at {params['rate']} K/min.")
+                self.start_time = time.time()
 
-            # --- Logging and Data Storage ---
-            self.log(f"T:{temp:.3f}K | R:{res:.3e}Ω | Htr:{htr:.1f}% ({self.current_heater_range})")
-            with open(self.data_filepath, 'a', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}", f"{htr:.2f}", f"{params['source_voltage']:.4e}", f"{cur:.4e}", f"{res:.4e}"])
-
-            self.data_storage['time'].append(elapsed)
-            self.data_storage['temperature'].append(temp)
-            self.data_storage['current'].append(cur)
-            self.data_storage['resistance'].append(res)
-
-            # --- Update Plots ---
-            self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
-            self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['current'])
-            self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
-            for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
-                ax.relim(); ax.autoscale_view()
-            self.figure.tight_layout(pad=3.0)
-            self.canvas.draw()
-
-            # --- Check End Conditions ---
-            if temp >= params['cutoff']:
-                self.log(f"!!! SAFETY CUTOFF REACHED at {temp:.4f} K !!!")
-                self.stop_measurement()
-            elif temp >= params['end_temp']:
-                self.log(f"Target temperature reached. Measurement complete.")
-                self.stop_measurement()
-            else:
-                loop_delay_ms = max(1000, int(params['delay'] * 1000))
-                self.root.after(loop_delay_ms, self._update_measurement_loop)
+            while self.is_running:
+                temp, htr, cur, res = self.backend.get_measurement()
+                elapsed = time.time() - self.start_time
+                self.data_queue.put((temp, htr, cur, res, elapsed))
+                
+                if temp >= params['cutoff']: self.data_queue.put("CUTOFF"); break
+                elif temp >= params['end_temp']: self.data_queue.put("COMPLETE"); break
         except Exception as e:
-            self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement()
+            self.data_queue.put(e)
+
+    def _process_data_queue(self):
+        """Processes data from the queue to update the GUI."""
+        try:
+            while not self.data_queue.empty():
+                data = self.data_queue.get_nowait()
+                if isinstance(data, str) and data.startswith("LOG:"): self.log(data[4:])
+                elif isinstance(data, str) and data == "CUTOFF": self.log("!!! SAFETY CUTOFF REACHED !!!"); self.stop_measurement(False); messagebox.showwarning("Cutoff", "Safety cutoff temperature reached."); return
+                elif isinstance(data, str) and data == "COMPLETE": self.log("Target temperature reached."); self.stop_measurement(False); messagebox.showinfo("Finished", "Measurement complete."); return
+                elif isinstance(data, Exception): self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement(False); messagebox.showerror("Runtime Error", f"A critical error occurred: {data}"); return
+                else:
+                    temp, htr, cur, res, elapsed = data
+                    self.log(f"T:{temp:.3f}K | R:{res:.3e}Ω | Htr:{htr:.1f}% ({self.current_heater_range})")
+                    with open(self.data_filepath, 'a', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}", f"{htr:.2f}", f"{self.backend.params['source_voltage']:.4e}", f"{cur:.4e}", f"{res:.4e}"])
+
+                    self.data_storage['time'].append(elapsed); self.data_storage['temperature'].append(temp)
+                    self.data_storage['current'].append(cur); self.data_storage['resistance'].append(res)
+
+                    self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
+                    self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['current'])
+                    self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
+                    for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]: ax.relim(); ax.autoscale_view()
+                    self.figure.tight_layout(pad=3.0); self.canvas.draw_idle()
+        except queue.Empty:
+            pass
+
+        if self.is_running or self.is_stabilizing:
+            self.root.after(200, self._process_data_queue)
 
     def _scan_for_visa_instruments(self):
         if not pyvisa: self.log("ERROR: PyVISA is not installed."); return
@@ -557,7 +543,7 @@ class Integrated_RT_GUI:
     def _on_closing(self):
         if self.is_running or self.is_stabilizing:
             if messagebox.askyesno("Exit", "Measurement running. Stop and exit?"):
-                self.stop_measurement()
+                self.stop_measurement(from_user=False)
                 self.root.destroy()
         else:
             self.root.destroy()
