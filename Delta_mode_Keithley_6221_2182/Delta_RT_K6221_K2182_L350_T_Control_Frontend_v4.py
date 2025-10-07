@@ -168,6 +168,8 @@ class Advanced_Delta_GUI:
         self.is_running = False
         self.is_stabilizing = False
         self.start_time = None
+        self.data_file_handle = None
+        self.plot_backgrounds = None
         self.backend = Active_Delta_Backend()
         self.file_location_path = ""
         self.data_storage = {'time': [], 'temperature': [], 'voltage': [], 'resistance': []}
@@ -282,17 +284,27 @@ class Advanced_Delta_GUI:
         top_bar = tk.Frame(graph_container, bg=self.CLR_GRAPH_BG); top_bar.pack(side='top', fill='x', pady=(0, 5))
         ttk.Checkbutton(top_bar, text="Log Resistance Axis", variable=self.log_scale_var, command=self._update_y_scale).pack(side='right', padx=5)
         self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG); self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
-        gs = gridspec.GridSpec(2, 2, figure=self.figure); self.ax_main = self.figure.add_subplot(gs[0, :]); self.ax_sub1 = self.figure.add_subplot(gs[1, 0]); self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
-        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-'); self.ax_main.set_title("Resistance vs. Temperature", fontweight='bold'); self.ax_main.set_ylabel("Resistance (Ω)")
+        gs = gridspec.GridSpec(2, 2, figure=self.figure)
+        self.ax_main = self.figure.add_subplot(gs[0, :])
+        self.ax_sub1 = self.figure.add_subplot(gs[1, 0])
+        self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
+        
+        # Set animated=True for blitting
+        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-', animated=True)
+        self.ax_main.set_title("Resistance vs. Temperature", fontweight='bold'); self.ax_main.set_ylabel("Resistance (Ω)")
         self._update_y_scale(); self.ax_main.grid(True, which="both", linestyle='--', alpha=0.6)
-        self.line_sub1, = self.ax_sub1.plot([], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=3, linestyle='-'); self.ax_sub1.set_xlabel("Temperature (K)"); self.ax_sub1.set_ylabel("Voltage (V)"); self.ax_sub1.grid(True, linestyle='--', alpha=0.6)
-        self.line_sub2, = self.ax_sub2.plot([], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=3, linestyle='-'); self.ax_sub2.set_xlabel("Time (s)"); self.ax_sub2.set_ylabel("Temperature (K)"); self.ax_sub2.grid(True, linestyle='--', alpha=0.6)
+        
+        self.line_sub1, = self.ax_sub1.plot([], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=3, linestyle='-', animated=True)
+        self.ax_sub1.set_xlabel("Temperature (K)"); self.ax_sub1.set_ylabel("Voltage (V)"); self.ax_sub1.grid(True, linestyle='--', alpha=0.6)
+        self.line_sub2, = self.ax_sub2.plot([], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=3, linestyle='-', animated=True)
+        self.ax_sub2.set_xlabel("Time (s)"); self.ax_sub2.set_ylabel("Temperature (K)"); self.ax_sub2.grid(True, linestyle='--', alpha=0.6)
+        
         self.figure.tight_layout(pad=3.0)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
     def _update_y_scale(self):
         self.ax_main.set_yscale('log' if self.log_scale_var.get() else 'linear')
-        self.canvas.draw_idle()
+        # A full redraw will be triggered by other actions, so this is often redundant.
 
     def log(self, message):
         ts = datetime.now().strftime("%H:%M:%S"); self.console_widget.config(state='normal')
@@ -319,17 +331,21 @@ class Advanced_Delta_GUI:
             
             ts = datetime.now().strftime("%Y%m%d_%H%M%S"); file_name = f"{self.params['sample_name']}_{ts}_Delta_RT.dat"
             self.data_filepath = os.path.join(self.file_location_path, file_name)
-            with open(self.data_filepath, 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([f"# Sample: {self.params['sample_name']}", f"Applied Current: {self.params['current']}A"])
-                writer.writerow(["Timestamp", "Elapsed Time (s)", "Temperature (K)", "Heater Output (%)", "Measured Voltage (V)", "Resistance (Ohm)"])
+            self.data_file_handle = open(self.data_filepath, 'w', newline='')
+            writer = csv.writer(self.data_file_handle)
+            writer.writerow([f"# Sample: {self.params['sample_name']}", f"Applied Current: {self.params['current']}A"])
+            writer.writerow(["Timestamp", "Elapsed Time (s)", "Temperature (K)", "Heater Output (%)", "Measured Voltage (V)", "Resistance (Ohm)"])
             self.log(f"Output file created: {os.path.basename(self.data_filepath)}")
 
             self.is_stabilizing, self.is_running = True, False
             self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
             for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_data([], [])
-            self.ax_main.set_title(f"R-T Curve: {self.params['sample_name']}", fontweight='bold'); self.canvas.draw_idle()
+            self.ax_main.set_title(f"R-T Curve: {self.params['sample_name']}", fontweight='bold')
+            # Perform a single full redraw to clear plots and set the new title
+            for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]: ax.relim(); ax.autoscale_view()
+            self.canvas.draw()
+
             self.log("Starting stabilization process..."); self.root.after(1000, self._stabilization_loop)
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}"); messagebox.showerror("Initialization Error", f"{e}")
@@ -339,6 +355,9 @@ class Advanced_Delta_GUI:
             self.is_running, self.is_stabilizing = False, False
             self.log("Measurement stopped by user.")
             self.backend.close_instruments()
+            if self.data_file_handle:
+                self.data_file_handle.close()
+                self.data_file_handle = None
             self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
             messagebox.showinfo("Info", "Measurement stopped and instruments disconnected.")
 
@@ -347,15 +366,16 @@ class Advanced_Delta_GUI:
         try:
             current_temp = self.backend.get_temperature()
             if current_temp > self.params['start_temp'] + 0.2:
-                self.log(f"Cooling... Current: {current_temp:.4f} K > Target: {self.params['start_temp']} K")
+                self.log(f"Stabilizing (Cooling)... Current: {current_temp:.4f} K > Target: {self.params['start_temp']} K")
                 self.backend.set_heater_range(1, 'off')
             else:
-                self.log(f"Heating... Current: {current_temp:.4f} K <= Target: {self.params['start_temp']} K")
+                self.log(f"Stabilizing (Heating)... Current: {current_temp:.4f} K <= Target: {self.params['start_temp']} K")
                 self.backend.set_heater_range(1, 'medium')
                 self.backend.set_setpoint(1, self.params['start_temp'])
+
             if abs(current_temp - self.params['start_temp']) < 0.1:
                 self.log(f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
-                self.is_stabilizing = False; self.root.after(5000, self._start_hardware_ramp)
+                self.is_stabilizing = False; self.root.after(5000, self._start_hardware_ramp) # Move to next stage
             else:
                 self.root.after(2000, self._stabilization_loop)
         except Exception as e: self.log(f"ERROR during stabilization: {e}"); self.stop_measurement()
@@ -365,6 +385,13 @@ class Advanced_Delta_GUI:
         self.current_heater_range = 'high'; self.backend.set_heater_range(1, self.current_heater_range)
         self.log(f"Hardware ramp started towards {self.params['end_temp']} K at {self.params['rate']} K/min.")
         self.is_running = True; self.start_time = time.time(); self.root.after(1000, self._update_measurement_loop)
+        
+        # --- Performance Improvement: Capture static background for blitting ---
+        self.canvas.draw()
+        self.plot_backgrounds = [self.canvas.copy_from_bbox(self.ax_main.bbox),
+                                 self.canvas.copy_from_bbox(self.ax_sub1.bbox),
+                                 self.canvas.copy_from_bbox(self.ax_sub2.bbox)]
+        # -----------------------------------------------------------------------
 
     def _update_measurement_loop(self):
         if not self.is_running: return
@@ -376,16 +403,29 @@ class Advanced_Delta_GUI:
             elapsed = time.time() - self.start_time
 
             self.log(f"T:{temp:.3f}K | R:{res:.3e}Ω | Htr:{htr:.1f}% ({self.current_heater_range})")
-            with open(self.data_filepath, 'a', newline='') as f:
-                csv.writer(f).writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}", f"{htr:.2f}", f"{voltage:.4e}", f"{res:.4e}"])
+            if self.data_file_handle:
+                csv.writer(self.data_file_handle).writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}", f"{htr:.2f}", f"{voltage:.4e}", f"{res:.4e}"])
+            
             self.data_storage['time'].append(elapsed); self.data_storage['temperature'].append(temp); self.data_storage['voltage'].append(voltage); self.data_storage['resistance'].append(res)
             
+            # --- Performance Improvement: Use blitting for fast graph updates ---
+            # Restore the clean background
+            for bg in self.plot_backgrounds: self.canvas.restore_region(bg)
+            
+            # Update data and redraw only the artists
             self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
             self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
             self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
-            for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]: ax.relim(); ax.autoscale_view()
-            self.canvas.draw_idle()
-
+            
+            for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]: 
+                ax.relim()
+                ax.autoscale_view()
+            
+            for ax, line in [(self.ax_main, self.line_main), (self.ax_sub1, self.line_sub1), (self.ax_sub2, self.line_sub2)]:
+                ax.draw_artist(line)
+            self.canvas.blit(self.figure.bbox)
+            # --------------------------------------------------------------------
+            
             if temp >= self.params['cutoff']: self.log(f"!!! SAFETY CUTOFF REACHED at {temp:.4f} K !!!"); self.stop_measurement()
             elif temp >= self.params['end_temp']: self.log(f"Target temperature reached. Measurement complete."); self.stop_measurement()
             else: self.root.after(950, self._update_measurement_loop) # Slightly less than 1s to prevent drift
