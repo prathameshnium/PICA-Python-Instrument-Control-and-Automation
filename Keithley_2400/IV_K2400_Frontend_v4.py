@@ -198,11 +198,11 @@ class MeasurementAppGUI:
 
         # --- Left Panel ---
         left_panel_container = ttk.Frame(main_pane)
-        main_pane.add(left_panel_container, weight=1)
+        main_pane.add(left_panel_container, weight=0)
 
         # --- Right Panel ---
         right_panel_container = tk.Frame(main_pane, bg='white')
-        main_pane.add(right_panel_container, weight=3)
+        main_pane.add(right_panel_container, weight=1)
 
         # --- Make the left panel scrollable ---
         canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)

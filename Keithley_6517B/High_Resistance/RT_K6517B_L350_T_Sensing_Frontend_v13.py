@@ -230,7 +230,7 @@ class Integrated_RT_GUI:
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
         
         left_panel_container = ttk.Frame(main_pane, width=400)
-        main_pane.add(left_panel_container, weight=1) # Less weight for the control panel
+        main_pane.add(left_panel_container, weight=0) # Less weight for the control panel
 
         # --- Make the left panel scrollable ---
         canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)
@@ -247,7 +247,7 @@ class Integrated_RT_GUI:
         scrollbar.pack(side="right", fill="y")
 
         right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
-        main_pane.add(right_panel, weight=3) # More weight for the graph panel
+        main_pane.add(right_panel, weight=1) # More weight for the graph panel
 
         self.create_info_frame(scrollable_frame)
         self.create_input_frame(scrollable_frame)

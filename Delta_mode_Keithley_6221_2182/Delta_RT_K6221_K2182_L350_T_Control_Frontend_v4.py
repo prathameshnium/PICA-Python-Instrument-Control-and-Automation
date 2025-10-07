@@ -202,8 +202,8 @@ class Advanced_Delta_GUI:
     def create_widgets(self):
         self.create_header()
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
-        left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=500); main_pane.add(left_panel, weight=1)
-        right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG); main_pane.add(right_panel, weight=3)
+        left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=500); main_pane.add(left_panel, weight=0)
+        right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG); main_pane.add(right_panel, weight=1)
         top_controls_frame = ttk.Frame(left_panel); left_panel.add(top_controls_frame, weight=0)
         console_pane = self.create_console_frame(left_panel)
         self.create_info_frame(top_controls_frame)
