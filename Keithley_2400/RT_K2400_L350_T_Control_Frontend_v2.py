@@ -98,7 +98,7 @@ class RT_Backend_Active:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class RT_GUI_Active:
-    PROGRAM_VERSION = "2.0"
+    PROGRAM_VERSION = "2.1"
     CLR_BG = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG = '#EDF2F4'
     CLR_FRAME_BG = '#3A506B'; CLR_INPUT_BG = '#4C566A'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE'
@@ -106,7 +106,7 @@ class RT_GUI_Active:
     FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold')
 
     def __init__(self, root):
-        self.root = root; self.root.title(f"K2400 & L350: R-T Sweep (T-Control)")
+        self.root = root; self.root.title(f"K2400 & L350: R-T Sweep (T-Control) v{self.PROGRAM_VERSION}")
         self.root.geometry("1600x950"); self.root.minsize(1400, 800); self.root.configure(bg=self.CLR_BG)
         self.experiment_state = 'idle'; self.logo_image = None
         self.backend = RT_Backend_Active(); self.data_storage = {'temperature': [], 'voltage': [], 'resistance': []}
@@ -131,75 +131,85 @@ class RT_GUI_Active:
 
     def create_widgets(self):
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
-        ttk.Label(header, text=f"K2400 & L350: R-T Sweep (T-Control)", style='Header.TLabel', font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
+        font_title_italic = ('Segoe UI', 13, 'bold', 'italic')
+        ttk.Label(header, text=f"K2400 & L350: R-T Sweep (T-Control)", style='Header.TLabel', font=font_title_italic).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
-        # --- FIX: Create empty panels, add them to the PanedWindow, THEN populate them. ---
-        left_panel = ttk.Frame(main_pane)
-        right_panel = ttk.Frame(main_pane, padding=5)
-
-        main_pane.add(left_panel, weight=2)
+        left_panel_container = ttk.Frame(main_pane)
+        main_pane.add(left_panel_container, weight=2)
+        right_panel = ttk.Frame(main_pane, padding=5); 
         main_pane.add(right_panel, weight=3)
 
         # --- Make the left panel scrollable ---
-        canvas = Canvas(left_panel, bg=self.CLR_BG, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(left_panel, orient="vertical", command=canvas.yview)
+        canvas = Canvas(left_panel_container, bg=self.CLR_BG, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(left_panel_container, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas, padding=5)
         scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=500)
         canvas.configure(yscrollcommand=scrollbar.set)
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # Now that the PanedWindow is correctly structured, populate the panels.
         self._populate_left_panel(scrollable_frame)
         self._populate_right_panel(right_panel)
 
     def _populate_left_panel(self, panel):
-        panel.grid_columnconfigure(0, weight=1); panel.grid_rowconfigure(3, weight=1)
-        self._create_info_panel(panel, 0)
-        self._create_params_panel(panel, 1); self._create_control_panel(panel, 2); self._create_console_panel(panel, 3)
+        panel.grid_columnconfigure(0, weight=1)
+        self._create_info_panel(panel).pack(fill='x', expand=True, padx=10, pady=5)
+        self._create_params_panel(panel).pack(fill='x', expand=True, padx=10, pady=5)
+        self._create_control_panel(panel).pack(fill='x', expand=True, padx=10, pady=5)
+        self._create_console_panel(panel).pack(fill='both', expand=True, padx=10, pady=5)
 
-    def _create_info_panel(self, parent, grid_row):
-        frame = ttk.LabelFrame(parent, text='Information'); frame.grid(row=grid_row, column=0, sticky='new', pady=5)
+    def _create_info_panel(self, parent):
+        frame = ttk.LabelFrame(parent, text='Information');
         frame.grid_columnconfigure(1, weight=1)
-        logo_canvas = Canvas(frame, width=80, height=80, bg=self.CLR_FRAME_BG, highlightthickness=0)
-        logo_canvas.grid(row=0, column=0, rowspan=2, padx=10, pady=10)
+        LOGO_SIZE = 110
+        logo_canvas = Canvas(frame, width=LOGO_SIZE, height=LOGO_SIZE, bg=self.CLR_FRAME_BG, highlightthickness=0)
+        logo_canvas.grid(row=0, column=0, rowspan=3, padx=10, pady=10)
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            logo_path = os.path.join(script_dir, "..", "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
-            if PIL_AVAILABLE and os.path.exists(logo_path): # Corrected path
-                img = Image.open(logo_path).resize((80, 80), Image.Resampling.LANCZOS)
+            logo_path = os.path.join(script_dir, "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+            if PIL_AVAILABLE and os.path.exists(logo_path):
+                img = Image.open(logo_path).resize((LOGO_SIZE, LOGO_SIZE), Image.Resampling.LANCZOS)
                 self.logo_image = ImageTk.PhotoImage(img)
-                logo_canvas.create_image(40, 40, image=self.logo_image)
+                logo_canvas.create_image(LOGO_SIZE/2, LOGO_SIZE/2, image=self.logo_image)
         except Exception as e: self.log(f"Warning: Could not load logo. {e}")
-        info_text = ("Institute: UGC DAE CSR, Mumbai\nMeasurement: R vs. T Sweep (Active)\nInstruments: K2400, LS350")
-        ttk.Label(frame, text=info_text, justify='left').grid(row=0, column=1, rowspan=2, sticky='w', padx=5)
+        
+        institute_font = ('Segoe UI', self.FONT_BASE[1] + 1, 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_FRAME_BG).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_FRAME_BG).grid(row=1, column=1, padx=10, sticky='nw')
+        ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
+        details_text = ("Program Duty: R vs. T (Active Control)\n"
+                        "Instruments: Keithley 2400, Lakeshore 350\n"
+                        "Measurement Range: 10⁻³ Ω to 10⁹ Ω")
+        ttk.Label(frame, text=details_text, justify='left', background=self.CLR_FRAME_BG).grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
+        return frame
 
     def _populate_right_panel(self, panel):
         container = ttk.LabelFrame(panel, text='Live R-T Curve'); container.pack(fill='both', expand=True)
         self.figure = Figure(dpi=100, facecolor='white')
         self.ax_main = self.figure.add_subplot(111)
         self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
-        self.ax_main.set_title("Waiting for experiment...", fontweight='bold'); self.ax_main.set_xlabel("Temperature (K)"); self.ax_main.set_ylabel("Resistance (Ω)")
+        self.ax_main.set_title("Waiting for experiment...", fontweight='bold'); self.ax_main.set_xlabel("Temperature (K)"); self.ax_main.set_ylabel("Resistance (Ω)"); self.ax_main.set_yscale('log')
         self.ax_main.grid(True, linestyle='--', alpha=0.6); self.figure.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.figure, container); self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
-    def _create_params_panel(self, parent, grid_row):
-        container = ttk.Frame(parent); container.grid(row=grid_row, column=0, sticky='new', pady=5)
+    def _create_params_panel(self, parent):
+        container = ttk.Frame(parent)
         container.grid_columnconfigure((0, 1), weight=1); self.entries = {}
-        temp_frame = ttk.LabelFrame(container, text='Temperature'); temp_frame.grid(row=0, column=0, sticky='nsew', padx=(0,5))
+        temp_frame = ttk.LabelFrame(container, text='Temperature Control'); temp_frame.grid(row=0, column=0, sticky='nsew', padx=(0,5))
         temp_frame.grid_columnconfigure(1, weight=1)
         self._create_entry(temp_frame, "Start Temp (K)", "300", 0); self._create_entry(temp_frame, "End Temp (K)", "310", 1)
         self._create_entry(temp_frame, "Ramp Rate (K/min)", "2", 2); self._create_entry(temp_frame, "Safety Cutoff (K)", "320", 3)
         self.ls_cb = self._create_combobox(temp_frame, "Lakeshore VISA", 4)
-        iv_frame = ttk.LabelFrame(container, text='Measurement Settings'); iv_frame.grid(row=0, column=1, sticky='nsew', padx=(5,0))
+        iv_frame = ttk.LabelFrame(container, text='Measurement Settings'); iv_frame.grid(row=0, column=1, sticky='nsew', padx=(5,0), rowspan=2)
         iv_frame.grid_columnconfigure(1, weight=1)
         self._create_entry(iv_frame, "Source Current (mA)", "1", 0); self._create_entry(iv_frame, "Compliance (V)", "10", 1)
         self._create_entry(iv_frame, "Logging Delay (s)", "1", 2)
         self.k2400_cb = self._create_combobox(iv_frame, "Keithley 2400 VISA", 3)
+        return container
 
-    def _create_control_panel(self, parent, grid_row):
-        frame = ttk.LabelFrame(parent, text='Experiment Control'); frame.grid(row=grid_row, column=0, sticky='new', pady=5)
+    def _create_control_panel(self, parent):
+        frame = ttk.LabelFrame(parent, text='File & Control')
         frame.grid_columnconfigure(0, weight=1)
         self._create_entry(frame, "Sample Name", "Sample_RT_Active", 0)
         self._create_entry(frame, "Save Location", "", 1, browse=True)
@@ -210,11 +220,13 @@ class RT_GUI_Active:
         self.stop_button = ttk.Button(button_frame, text="Stop", style='Stop.TButton', state='disabled', command=self.stop_experiment)
         self.stop_button.grid(row=0, column=1, sticky='ew', padx=5)
         ttk.Button(button_frame, text="Scan", command=self._scan_for_visa).grid(row=0, column=2, sticky='ew', padx=5)
+        return frame
 
-    def _create_console_panel(self, parent, grid_row):
-        frame = ttk.LabelFrame(parent, text='Console'); frame.grid(row=grid_row, column=0, sticky='nsew', pady=5)
+    def _create_console_panel(self, parent):
+        frame = ttk.LabelFrame(parent, text='Console')
         self.console = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG, font=('Consolas', 9), wrap='word', borderwidth=0)
         self.console.pack(fill='both', expand=True, padx=5, pady=5)
+        return frame
 
     def log(self, message):
         ts = datetime.now().strftime("%H:%M:%S"); log_msg = f"[{ts}] {message}\n"
@@ -233,7 +245,7 @@ class RT_GUI_Active:
 
             self.set_ui_state(running=True); self.experiment_state = 'stabilizing'
             for key in self.data_storage: self.data_storage[key].clear()
-            self.line_main.set_data([], []); self.ax_main.set_title(f"R-T Curve: {self.params['name']}"); self.canvas.draw()
+            self.line_main.set_data([], []); self.ax_main.set_title(f"R-T Curve: {self.params['name']}"); self.ax_main.set_yscale('log'); self.canvas.draw()
             self.log(f"Starting stabilization at {self.params['start_temp']} K...")
             self.root.after(100, self._experiment_loop)
         except Exception as e:
@@ -292,7 +304,7 @@ class RT_GUI_Active:
 
                 self.data_storage['temperature'].append(temp); self.data_storage['voltage'].append(voltage); self.data_storage['resistance'].append(resistance)
                 with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{temp:.4f}", f"{voltage:.6e}", f"{resistance:.6e}", f"{elapsed:.2f}"])
-                self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
+                self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance']); self.ax_main.set_yscale('log')
                 self.ax_main.relim(); self.ax_main.autoscale_view(); self.figure.tight_layout(); self.canvas.draw()
 
                 # Check end conditions
@@ -351,7 +363,7 @@ class RT_GUI_Active:
         entry = ttk.Entry(parent, font=self.FONT_BASE)
         entry.grid(row=row, column=1, sticky='ew', padx=10, pady=3, columnspan=2 if browse else 1)
         entry.insert(0, default_value); self.entries[label_text] = entry
-        if browse:
+        if browse: # Special handling for the save location entry
             btn = ttk.Button(parent, text="...", width=3, command=self._browse_file_location)
             btn.grid(row=row, column=3, sticky='e', padx=(0,10))
             entry.config(state='disabled')
