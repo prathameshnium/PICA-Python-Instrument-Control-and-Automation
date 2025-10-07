@@ -134,7 +134,7 @@ class VT_GUI_Passive:
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         left_panel_container = ttk.Frame(main_pane)
-        main_pane.add(left_panel_container, weight=2)
+        main_pane.add(left_panel_container, weight=0)
 
         # --- Make the left panel scrollable ---
         canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)
@@ -146,7 +146,7 @@ class VT_GUI_Passive:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=4)
+        right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=1)
         self._populate_left_panel(left_panel)
 
     def _populate_left_panel(self, panel):
