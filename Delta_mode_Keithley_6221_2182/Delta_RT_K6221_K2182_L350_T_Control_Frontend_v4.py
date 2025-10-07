@@ -384,7 +384,7 @@ class Advanced_Delta_GUI:
             self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
             self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
             for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]: ax.relim(); ax.autoscale_view()
-            self.canvas.draw_idle() # Use draw_idle() for much better performance
+            self.canvas.draw_idle()
 
             if temp >= self.params['cutoff']: self.log(f"!!! SAFETY CUTOFF REACHED at {temp:.4f} K !!!"); self.stop_measurement()
             elif temp >= self.params['end_temp']: self.log(f"Target temperature reached. Measurement complete."); self.stop_measurement()

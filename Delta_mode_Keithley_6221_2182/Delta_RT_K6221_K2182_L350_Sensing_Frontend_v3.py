@@ -450,7 +450,7 @@ class MeasurementAppGUI:
                 for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
                     ax.relim(); ax.autoscale_view()
                 self.figure.tight_layout(pad=3.0)
-                self.canvas.draw()
+                self.canvas.draw_idle()
         except queue.Empty:
             pass # No data to process, which is normal
         except Exception as e: # Catches other exceptions, like the sentinel

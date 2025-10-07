@@ -44,7 +44,7 @@ def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
     except Exception:
-        base_path = os.path.abspath(".")
+        base_path = os.path.abspath(os.path.dirname(__file__))
     return os.path.join(base_path, relative_path)
 
 # -------------------------------------------------------------------------------
@@ -116,10 +116,11 @@ class Backend_Passthrough:
 class Passthrough_IV_GUI:
     PROGRAM_VERSION = "1.6"
     LOGO_SIZE = 110
-    LOGO_FILE_PATH = resource_path("../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
-    CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'; CLR_TEXT_DARK = '#1A1A1A'
-    CLR_ACCENT_GREEN = '#A7C957'; CLR_ACCENT_RED = '#E74C3C'; CLR_CONSOLE_BG = '#1E2B38'; CLR_GRAPH_BG = '#FFFFFF'
-    FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold'); FONT_CONSOLE = ('Consolas', 10)
+    LOGO_FILE_PATH = resource_path("../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg") # Path to your logo image
+    CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'; CLR_TEXT_DARK = '#1A1A1A' # Base colors
+    CLR_ACCENT_GOLD = '#FFC107'; CLR_ACCENT_GREEN = '#A7C957'; CLR_ACCENT_RED = '#E74C3C' # Accent colors
+    CLR_CONSOLE_BG = '#1E2B38'; CLR_GRAPH_BG = '#FFFFFF' # Specific component colors
+    FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold'); FONT_CONSOLE = ('Consolas', 10) # Fonts
 
     def __init__(self, root):
         self.root = root; self.root.title("K6221/2182 I-V Sweep")
@@ -244,8 +245,8 @@ class Passthrough_IV_GUI:
         self.data_storage['current'].append(current); self.data_storage['voltage'].append(voltage); self.data_storage['resistance'].append(resistance)
         with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{current:.6e}", f"{voltage:.6e}", f"{resistance:.6e}"])
         self.line_main.set_data(self.data_storage['current'], self.data_storage['voltage']); self.line_sub.set_data(self.data_storage['current'], self.data_storage['resistance'])
-        for ax in [self.ax_main, self.ax_sub]: ax.relim(); ax.autoscale_view()
-        self.figure.tight_layout(pad=3.0); self.canvas.draw()
+        for ax in [self.ax_main, self.ax_sub]: ax.relim(); ax.autoscale_view(True)
+        self.figure.tight_layout(pad=3.0); self.canvas.draw_idle()
     def _sweep_cleanup_ui(self):
         self.start_button.config(state='normal'); self.stop_button.config(state='disabled'); self.log("Ready for next sweep.")
     def _scan_for_visa(self):
