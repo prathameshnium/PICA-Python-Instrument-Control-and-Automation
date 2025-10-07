@@ -102,19 +102,19 @@ class IV_Backend:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class IV_GUI:
-    PROGRAM_VERSION = "2.0"
-    CLR_BG = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG = '#EDF2F4'
-    CLR_FRAME_BG = '#3A506B'; CLR_INPUT_BG = '#4C566A'
-    CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE'
-    CLR_ACCENT_GOLD = '#FFC107'; CLR_CONSOLE_BG = '#1E2B38'
-    FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold')
+    PROGRAM_VERSION = "2.1" # Performance and UI update
+    CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'
+    CLR_FRAME_BG = '#3A506B'; CLR_INPUT_BG = '#4C566A'; CLR_TEXT_DARK = '#1A1A1A'
+    CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE' 
+    CLR_ACCENT_GOLD = '#FFC107'; CLR_CONSOLE_BG = '#1E2B38'; CLR_GRAPH_BG = '#FFFFFF'
+    FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold'); FONT_CONSOLE = ('Consolas', 10)
     
     def __init__(self, root):
         self.root = root
         self.root.title(f"I-V Sweep (K2400 + K2182) v{self.PROGRAM_VERSION}")
         self.root.geometry("1650x950")
         self.root.minsize(1400, 800)
-        self.root.configure(bg=self.CLR_BG)
+        self.root.configure(bg=self.CLR_BG_DARK)
         self.is_running = False
         self.logo_image = None
         self.backend = IV_Backend()
@@ -125,19 +125,19 @@ class IV_GUI:
 
     def setup_styles(self):
         style = ttk.Style(self.root); style.theme_use('clam')
-        style.configure('.', background=self.CLR_BG, foreground=self.CLR_FG, font=self.FONT_BASE)
-        style.configure('TFrame', background=self.CLR_BG); style.configure('TPanedWindow', background=self.CLR_BG)
-        style.configure('TLabel', background=self.CLR_FRAME_BG, foreground=self.CLR_FG)
+        style.configure('.', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
+        style.configure('TFrame', background=self.CLR_BG_DARK); style.configure('TPanedWindow', background=self.CLR_BG_DARK)
+        style.configure('TLabel', background=self.CLR_FRAME_BG, foreground=self.CLR_FG_LIGHT)
         style.configure('Header.TLabel', background=self.CLR_HEADER)
-        style.configure('TEntry', fieldbackground=self.CLR_INPUT_BG, foreground=self.CLR_FG, insertcolor=self.CLR_FG)
+        style.configure('TEntry', fieldbackground=self.CLR_INPUT_BG, foreground=self.CLR_FG_LIGHT, insertcolor=self.CLR_FG_LIGHT)
         style.configure('TButton', font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_HEADER)
-        style.map('TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_BG), ('hover', self.CLR_BG)])
-        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_BG)
+        style.map('TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_BG_DARK), ('hover', self.CLR_BG_DARK)])
+        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_TEXT_DARK)
         style.map('Start.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
-        style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG)
+        style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG_LIGHT)
         style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
         style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_ACCENT_BLUE)
-        style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_FG, font=self.FONT_TITLE)
+        style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         mpl.rcParams.update({'font.family': 'Segoe UI', 'font.size': 11, 'axes.titlesize': 15, 'axes.labelsize': 13})
 
     def create_widgets(self):
@@ -150,7 +150,7 @@ class IV_GUI:
         main_pane.add(left_panel_container, weight=2) # Give more weight to controls
 
         # --- Make the left panel scrollable ---
-        canvas = Canvas(left_panel_container, bg=self.CLR_BG, highlightthickness=0)
+        canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)
         scrollbar = ttk.Scrollbar(left_panel_container, orient="vertical", command=canvas.yview)
         left_panel = ttk.Frame(canvas, padding=5) # This is now the scrollable_frame
         left_panel.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
@@ -194,7 +194,7 @@ class IV_GUI:
     def _create_right_panel(self, parent):
         panel = ttk.Frame(parent, padding=5)
         container = ttk.LabelFrame(panel, text='Live I-V Curve'); container.pack(fill='both', expand=True)
-        self.figure = Figure(dpi=100, facecolor='white')
+        self.figure = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
         self.ax_main = self.figure.add_subplot(111)
         self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
         self.ax_main.set_title("Waiting for experiment...", fontweight='bold'); self.ax_main.set_xlabel("Voltage (V)"); self.ax_main.set_ylabel("Current (A)")
@@ -203,15 +203,22 @@ class IV_GUI:
         return panel
 
     def _create_params_panel(self, parent, grid_row):
-        container = ttk.LabelFrame(parent, text='Sweep Parameters'); container.grid(row=grid_row, column=0, sticky='new', pady=5)
-        container.grid_columnconfigure(1, weight=1); self.entries = {}
-        self._create_entry(container, "Start Current (mA)", "-1", 0)
-        self._create_entry(container, "Stop Current (mA)", "1", 1)
-        self._create_entry(container, "Step Current (mA)", "0.1", 2)
-        self._create_entry(container, "Compliance (V)", "10", 3)
-        self._create_entry(container, "Dwell Time (s)", "0.5", 4)
-        self.k2400_cb = self._create_combobox(container, "Keithley 2400 VISA", 5)
-        self.k2182_cb = self._create_combobox(container, "Keithley 2182 VISA", 6)
+        container = ttk.Frame(parent); container.grid(row=grid_row, column=0, sticky='new', pady=5)
+        container.grid_columnconfigure(0, weight=1); self.entries = {}
+
+        sweep_frame = ttk.LabelFrame(container, text='Sweep Parameters'); sweep_frame.grid(row=0, column=0, sticky='nsew', pady=(0,5))
+        sweep_frame.grid_columnconfigure(1, weight=1)
+        self._create_entry(sweep_frame, "Start Current (mA)", "-1", 0)
+        self._create_entry(sweep_frame, "Stop Current (mA)", "1", 1)
+        self._create_entry(sweep_frame, "Step Current (mA)", "0.1", 2)
+        self._create_entry(sweep_frame, "Compliance (V)", "10", 3)
+        self._create_entry(sweep_frame, "Dwell Time (s)", "0.5", 4)
+
+        visa_frame = ttk.LabelFrame(container, text='Instrument Addresses'); visa_frame.grid(row=1, column=0, sticky='nsew')
+        visa_frame.grid_columnconfigure(1, weight=1)
+        self.k2400_cb = self._create_combobox(visa_frame, "Keithley 2400 VISA", 0)
+        self.k2182_cb = self._create_combobox(visa_frame, "Keithley 2182 VISA", 1)
+
 
     def _create_control_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Experiment Control'); frame.grid(row=grid_row, column=0, sticky='new', pady=5)
@@ -228,7 +235,7 @@ class IV_GUI:
 
     def _create_console_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Console'); frame.grid(row=grid_row, column=0, sticky='nsew', pady=5)
-        self.console = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG, font=('Consolas', 9), wrap='word', borderwidth=0)
+        self.console = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', borderwidth=0)
         self.console.pack(fill='both', expand=True, padx=5, pady=5)
 
     def log(self, message):
@@ -254,7 +261,7 @@ class IV_GUI:
             self.current_step_index = 0; self.set_ui_state(running=True)
             for key in self.data_storage: self.data_storage[key].clear()
             self.line_main.set_data([], []); self.ax_main.set_title(f"I-V Curve: {self.params['name']}"); self.canvas.draw()
-            self.log(f"Starting sweep: {len(self.current_points)} current points.")
+            self.log(f"Starting sweep: {len(self.current_points)} points from {start_i:.1e} A to {stop_i:.1e} A.")
             self.root.after(100, self._experiment_loop)
         except Exception as e:
             self.log(f"ERROR: {traceback.format_exc()}"); messagebox.showerror("Start Failed", f"{e}"); self.backend.shutdown()
@@ -263,7 +270,7 @@ class IV_GUI:
         if not self.is_running: return
         self.log(f"Stopping... {reason}" if reason else "Stopping by user request.")
         self.is_running = False; self.backend.shutdown(); self.set_ui_state(running=False)
-        self.ax_main.set_title("Experiment stopped."); self.canvas.draw()
+        self.ax_main.set_title("Experiment stopped."); self.canvas.draw_idle()
         if reason: messagebox.showinfo("Experiment Finished", f"Reason: {reason}")
 
     def _experiment_loop(self):
@@ -271,15 +278,15 @@ class IV_GUI:
         try:
             current_setpoint = self.current_points[self.current_step_index]
             self.log(f"--- Setting current to {current_setpoint:.3e} A ({self.current_step_index + 1}/{len(self.current_points)}) ---")
-            self.ax_main.set_title(f"Measuring at {current_setpoint:.3e} A..."); self.canvas.draw()
+            self.ax_main.set_title(f"Measuring at {current_setpoint:.3e} A..."); self.canvas.draw_idle()
 
             voltage = self.backend.measure_voltage_at_current(current_setpoint, self.params['delay_s'])
             self.log(f"  Read: V = {voltage:.6e} V")
 
             self.data_storage['current'].append(current_setpoint); self.data_storage['voltage'].append(voltage)
             with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{current_setpoint:.6e}", f"{voltage:.6e}"])
-            self.line_main.set_data(self.data_storage['voltage'], self.data_storage['current'])
-            self.ax_main.relim(); self.ax_main.autoscale_view(); self.figure.tight_layout(); self.canvas.draw()
+            self.line_main.set_data(self.data_storage['voltage'], self.data_storage['current']); self.ax_main.relim()
+            self.ax_main.autoscale_view(); self.canvas.draw_idle()
 
             self.current_step_index += 1
             if self.current_step_index >= len(self.current_points):
@@ -341,7 +348,7 @@ class IV_GUI:
 
     def _create_combobox(self, parent, label_text, row):
         ttk.Label(parent, text=f"{label_text}:").grid(row=row, column=0, sticky='w', padx=10, pady=3)
-        cb = ttk.Combobox(parent, font=self.FONT_BASE, state='readonly')
+        cb = ttk.Combobox(parent, font=self.FONT_BASE, state='readonly', style='TCombobox')
         cb.grid(row=row, column=1, sticky='ew', padx=10, pady=3, columnspan=3)
         return cb
 
