@@ -201,7 +201,7 @@ class VT_GUI_Active:
         panel = ttk.Frame(parent, padding=5)
         container = ttk.LabelFrame(panel, text='Live R-T Curve'); container.pack(fill='both', expand=True)
         self.figure = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
-        self.ax_main = self.figure.add_subplot(111)
+        self.ax_main = self.figure.add_subplot(111); self.plot_background = None
         self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-'); self.ax_main.set_yscale('log')
         self.ax_main.set_title("Waiting for experiment...", fontweight='bold'); self.ax_main.set_xlabel("Temperature (K)"); self.ax_main.set_ylabel("Voltage (V)")
         self.ax_main.grid(True, linestyle='--', alpha=0.6); self.figure.tight_layout()
@@ -258,7 +258,14 @@ class VT_GUI_Active:
 
             self.set_ui_state(running=True); self.experiment_state = 'stabilizing'
             for key in self.data_storage: self.data_storage[key].clear()
-            self.line_main.set_data([], []); self.ax_main.set_title(f"R-T Curve: {self.params['name']}"); self.ax_main.set_yscale('log'); self.canvas.draw()
+            self.line_main.set_data([], []); self.ax_main.set_title(f"R-T Curve: {self.params['name']}"); self.ax_main.set_yscale('log')
+            
+            # --- Performance Improvement: Full draw before starting loop ---
+            self.canvas.draw()
+            self.plot_background = self.canvas.copy_from_bbox(self.ax_main.bbox)
+            self.line_main.set_animated(True)
+            self.log("Blitting enabled for fast graph updates.")
+
             self.log(f"Starting stabilization at {self.params['start_temp']} K...")
             self.root.after(100, self._experiment_loop)
         except Exception as e:
@@ -267,7 +274,7 @@ class VT_GUI_Active:
     def stop_experiment(self, reason=""):
         if self.experiment_state == 'idle': return
         self.log(f"Stopping... {reason}" if reason else "Stopping by user request.")
-        self.experiment_state = 'idle'; self.backend.shutdown(); self.set_ui_state(running=False)
+        self.experiment_state = 'idle'; self.backend.shutdown(); self.set_ui_state(running=False); self.line_main.set_animated(False); self.plot_background = None
         self.ax_main.set_title("Experiment stopped."); self.canvas.draw_idle()
         if reason: messagebox.showinfo("Experiment Finished", f"Reason: {reason}")
 
@@ -316,8 +323,14 @@ class VT_GUI_Active:
 
                 self.data_storage['temperature'].append(temp); self.data_storage['voltage'].append(voltage)
                 with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{temp:.4f}", f"{voltage:.6e}", f"{elapsed:.2f}"])
-                self.line_main.set_data(self.data_storage['temperature'], self.data_storage['voltage']); self.ax_main.relim()
-                self.ax_main.autoscale_view(); self.canvas.draw_idle()
+                
+                # --- Performance Improvement: Use blitting for fast updates ---
+                if self.plot_background:
+                    self.canvas.restore_region(self.plot_background)
+                    self.line_main.set_data(self.data_storage['temperature'], self.data_storage['voltage']); self.ax_main.relim()
+                    self.ax_main.autoscale_view(); self.ax_main.draw_artist(self.line_main)
+                    self.canvas.blit(self.ax_main.bbox)
+                else: self.canvas.draw_idle()
 
                 # Check end conditions
                 if temp >= self.params['cutoff']:

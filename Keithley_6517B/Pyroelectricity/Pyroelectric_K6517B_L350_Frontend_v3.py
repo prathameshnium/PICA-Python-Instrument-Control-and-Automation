@@ -165,6 +165,7 @@ class PyroelectricAppGUI:
         self.data_storage = {'time': [], 'temperature': [], 'current': []}
         self.data_queue = queue.Queue()
         self.measurement_thread = None
+        self.plot_backgrounds = None # For blitting
 
         self.setup_styles()
         self.create_widgets()
@@ -342,7 +343,7 @@ class PyroelectricAppGUI:
         self.ax_main.set_title("Current vs. Temperature", fontweight='bold'); self.ax_main.set_xlabel("Temperature (K)"); self.ax_main.set_ylabel("Current (A)")
 
         self.line_sub1, = self.ax_sub1.plot([], [], color='#0077b6', marker='.', markersize=4, linestyle='-', linewidth=1)
-        self.ax_sub1.set_title("Temperature vs. Time"); self.ax_sub1.set_xlabel("Time (s)"); self.ax_sub1.set_ylabel("Temperature (K)")
+        self.ax_sub1.set_title("Temp vs. Time"); self.ax_sub1.set_xlabel("Time (s)"); self.ax_sub1.set_ylabel("Temperature (K)")
 
         self.line_sub2, = self.ax_sub2.plot([], [], color='#06d6a0', marker='.', markersize=4, linestyle='-', linewidth=1)
         self.ax_sub2.set_title("Current vs. Time"); self.ax_sub2.set_xlabel("Time (s)"); self.ax_sub2.set_ylabel("Current (A)")
@@ -391,7 +392,14 @@ class PyroelectricAppGUI:
             self.is_running = True; self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
             for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_data([], [])
-            self.ax_main.set_title(f"I vs T | Sample: {params['sample_name']}", fontweight='bold'); self.canvas.draw()
+            self.ax_main.set_title(f"I vs T | Sample: {params['sample_name']}", fontweight='bold')
+            
+            # --- Performance Improvement: Capture static background for blitting ---
+            for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_animated(True)
+            self.canvas.draw()
+            self.plot_backgrounds = [self.canvas.copy_from_bbox(ax.bbox) for ax in self.axes]
+            self.log("Blitting enabled for fast graph updates.")
+            # --- End of performance improvement ---
 
             self.log("Moving to start temperature for stabilization..."); self.experiment_state = 'stabilizing'; self.backend.start_stabilization()
             
@@ -406,7 +414,11 @@ class PyroelectricAppGUI:
     def stop_measurement(self, reason="stopped by user"):
         if self.is_running:
             self.is_running = False; self.experiment_state = 'idle'; self.log(f"Measurement loop {reason}.")
-            self.start_button.config(state='normal'); self.stop_button.config(state='disabled'); self.backend.close_instruments()
+            self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
+            # Turn off animation for any final redraws
+            for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_animated(False)
+            self.plot_backgrounds = None
+            self.backend.close_instruments()
             self.log("Instrument connections closed."); messagebox.showinfo("Info", f"Measurement stopped.\nReason: {reason}")
 
     def _measurement_worker(self):
@@ -448,10 +460,25 @@ class PyroelectricAppGUI:
 
                     with open(self.data_filepath, 'a', newline='') as f: f.write(f"{elapsed_time:.2f},{current_temp:.4f},{current_val}\n")
 
-                    self.data_storage['time'].append(elapsed_time); self.data_storage['temperature'].append(current_temp); self.data_storage['current'].append(current_val)
-                    self.line_main.set_data(self.data_storage['temperature'], self.data_storage['current']); self.line_sub1.set_data(self.data_storage['time'], self.data_storage['temperature']); self.line_sub2.set_data(self.data_storage['time'], self.data_storage['current'])
-                    for ax in self.axes: ax.relim(); ax.autoscale_view()
-                    self.figure.tight_layout(pad=3.0); self.canvas.draw_idle()
+                    self.data_storage['time'].append(elapsed_time)
+                    self.data_storage['temperature'].append(current_temp)
+                    self.data_storage['current'].append(current_val)
+
+                    # --- Performance Improvement: Use blitting for fast graph updates ---
+                    if self.plot_backgrounds:
+                        # Restore the clean backgrounds
+                        for bg in self.plot_backgrounds: self.canvas.restore_region(bg)
+                        # Update data and redraw only the artists
+                        self.line_main.set_data(self.data_storage['temperature'], self.data_storage['current'])
+                        self.line_sub1.set_data(self.data_storage['time'], self.data_storage['temperature'])
+                        self.line_sub2.set_data(self.data_storage['time'], self.data_storage['current'])
+                        for ax, line in zip(self.axes, [self.line_main, self.line_sub1, self.line_sub2]):
+                            ax.relim(); ax.autoscale_view()
+                            ax.draw_artist(line)
+                        self.canvas.blit(self.figure.bbox)
+                    else: # Fallback to a full redraw
+                        self.figure.tight_layout(pad=3.0); self.canvas.draw_idle()
+                    # --- End of performance improvement ---
 
                     if current_temp >= params['safety_cutoff']: self.stop_measurement(f"SAFETY CUTOFF REACHED at {current_temp:.4f} K!"); return
                     if current_temp >= params['end_temp']: self.stop_measurement(f"Target temperature of {params['end_temp']} K reached."); return

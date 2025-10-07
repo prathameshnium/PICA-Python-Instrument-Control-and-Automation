@@ -137,21 +137,27 @@ class GpibScannerGUI:
     def process_queue(self):
         """Checks the queue for messages from the worker thread and updates the GUI."""
         try:
+            messages_to_log = []
+            scan_complete = False
             # Process all available messages in the queue
             while True:
                 message = self.result_queue.get_nowait()
                 if message == "SCAN_COMPLETE":
-                    self.scan_button.config(state='normal')
-                    self.log("Scan complete.")
+                    scan_complete = True
                 else:
-                    # Messages from the thread are already formatted
-                    self.console_widget.config(state='normal')
-                    self.console_widget.insert('end', message)
-                    self.console_widget.see('end')
-                    self.console_widget.config(state='disabled')
+                    messages_to_log.append(message)
+
+            if messages_to_log:
+                self.console_widget.config(state='normal')
+                self.console_widget.insert('end', "".join(messages_to_log))
+                self.console_widget.see('end')
+                self.console_widget.config(state='disabled')
+
+            if scan_complete:
+                self.scan_button.config(state='normal')
+                self.log("Scan complete.")
 
         except queue.Empty:
-            # If the queue is empty, do nothing
             pass
         finally:
             # Schedule the next check

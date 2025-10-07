@@ -181,6 +181,7 @@ class MeasurementAppGUI:
         self.data_storage = {'time': [], 'voltage': [], 'resistance': [], 'temperature': []}
         self.logo_image = None # Attribute to hold the logo image reference
         self.data_queue = queue.Queue()
+        self.plot_backgrounds = None # For blitting
         self.measurement_thread = None
 
         self.setup_styles()
@@ -324,20 +325,20 @@ class MeasurementAppGUI:
         self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
 
         # Main Plot: Resistance vs Temperature
-        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-')
+        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-', animated=True)
         self.ax_main.set_title("Resistance vs. Temperature", fontweight='bold')
         self.ax_main.set_xlabel("Temperature (K)")
         self.ax_main.set_ylabel("Resistance (Ω)")
         self.ax_main.grid(True, which="both", linestyle='--', alpha=0.6)
 
         # Sub Plot 1: Voltage vs Temperature
-        self.line_sub1, = self.ax_sub1.plot([], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=4, linestyle='-')
+        self.line_sub1, = self.ax_sub1.plot([], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=4, linestyle='-', animated=True)
         self.ax_sub1.set_xlabel("Temperature (K)")
         self.ax_sub1.set_ylabel("Voltage (V)")
         self.ax_sub1.grid(True, linestyle='--', alpha=0.6)
 
         # Sub Plot 2: Temperature vs Time
-        self.line_sub2, = self.ax_sub2.plot([], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=4, linestyle='-')
+        self.line_sub2, = self.ax_sub2.plot([], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=4, linestyle='-', animated=True)
         self.ax_sub2.set_xlabel("Time (s)")
         self.ax_sub2.set_ylabel("Temperature (K)")
         self.ax_sub2.grid(True, linestyle='--', alpha=0.6)
@@ -383,7 +384,13 @@ class MeasurementAppGUI:
             for key in self.data_storage: self.data_storage[key].clear()
             for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_data([], [])
             self.ax_main.set_title(f"Sample: {params['sample_name']} | I = {params['apply_current']:.2e} A", fontweight='bold')
+            
+            # --- Performance Improvement: Full draw before starting loop ---
             self.canvas.draw()
+            # Capture the background for blitting
+            self.plot_backgrounds = [self.canvas.copy_from_bbox(ax.bbox) for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]]
+            self.log("Blitting enabled for fast graph updates.")
+
             self.log("Measurement loop started.")
             
             # Start the worker thread and the queue processor
@@ -400,6 +407,10 @@ class MeasurementAppGUI:
         if self.is_running:
             self.is_running = False
             self.log("Measurement loop stopped by user.")
+            # --- Performance Improvement: Disable blitting on stop ---
+            for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_animated(False)
+            self.plot_backgrounds = None
+            self.canvas.draw_idle()
             self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
             self.backend.close_instruments()
             self.log("Instrument connections closed.")
@@ -445,14 +456,26 @@ class MeasurementAppGUI:
                 self.data_storage['voltage'].append(volt); self.data_storage['resistance'].append(res)
 
                 self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
-                self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
-                self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
-                for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
-                    ax.relim(); ax.autoscale_view()
-                self.figure.tight_layout(pad=3.0)
-                self.canvas.draw_idle()
+
+                # --- Performance Improvement: Use blitting for fast updates ---
+                if self.plot_backgrounds:
+                    # Restore the clean backgrounds
+                    for bg in self.plot_backgrounds: self.canvas.restore_region(bg)
+                    
+                    # Update data for all plots
+                    self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
+                    self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
+                    
+                    # Redraw only the artists
+                    for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
+                        ax.relim(); ax.autoscale_view()
+                        self.canvas.blit(ax.bbox)
+                else: # Fallback to full redraw if blitting isn't ready
+                    self.figure.tight_layout(pad=3.0)
+                    self.canvas.draw_idle()
+
         except queue.Empty:
-            pass # No data to process, which is normal
+            pass # This is normal, no data to process
         except Exception as e: # Catches other exceptions, like the sentinel
             self.log(f"GUI processing error or thread stopped: {e}")
 

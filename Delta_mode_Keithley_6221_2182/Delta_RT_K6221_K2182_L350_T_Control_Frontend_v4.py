@@ -168,6 +168,7 @@ class Advanced_Delta_GUI:
         self.is_running = False
         self.is_stabilizing = False
         self.start_time = None
+        self.plot_backgrounds = None
         self.data_file_handle = None
         self.plot_backgrounds = None
         self.backend = Active_Delta_Backend()
@@ -304,7 +305,11 @@ class Advanced_Delta_GUI:
 
     def _update_y_scale(self):
         self.ax_main.set_yscale('log' if self.log_scale_var.get() else 'linear')
-        # A full redraw will be triggered by other actions, so this is often redundant.
+        # If the measurement is running, we need to redraw and recapture the background
+        if self.is_running and self.plot_backgrounds:
+            self.canvas.draw()
+            self.plot_backgrounds = [self.canvas.copy_from_bbox(ax.bbox) for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]]
+
 
     def log(self, message):
         ts = datetime.now().strftime("%H:%M:%S"); self.console_widget.config(state='normal')
@@ -344,13 +349,11 @@ class Advanced_Delta_GUI:
             self.ax_main.set_title(f"R-T Curve: {self.params['sample_name']}", fontweight='bold')
             # Perform a single full redraw to clear plots and set the new title
             for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]: ax.relim(); ax.autoscale_view()
+            self.canvas.draw() # A single full draw is needed before capturing the background
 
             self.log("Starting stabilization process..."); self.root.after(1000, self._stabilization_loop)
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}"); messagebox.showerror("Initialization Error", f"{e}")
-
-        # A single full draw is needed before capturing the background
-        self.canvas.draw()
 
     def stop_measurement(self):
         if self.is_running or self.is_stabilizing:
@@ -361,6 +364,10 @@ class Advanced_Delta_GUI:
                 self.data_file_handle.close()
                 self.data_file_handle = None
             self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
+            # Turn off animation for any final redraws
+            for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_animated(False)
+            self.plot_backgrounds = None
+            self.canvas.draw_idle()
             messagebox.showinfo("Info", "Measurement stopped and instruments disconnected.")
 
     def _stabilization_loop(self):
@@ -388,12 +395,11 @@ class Advanced_Delta_GUI:
         self.log(f"Hardware ramp started towards {self.params['end_temp']} K at {self.params['rate']} K/min.")
         self.is_running = True; self.start_time = time.time(); self.root.after(1000, self._update_measurement_loop)
         
-        # --- Performance Improvement: Capture static background for blitting after the initial draw ---
-        # This is done here because the plot area is now stable.
+        # --- Performance Improvement: Capture static background for blitting ---
         self.canvas.draw()
-        self.plot_backgrounds = [self.canvas.copy_from_bbox(self.ax_main.bbox),
-                                 self.canvas.copy_from_bbox(self.ax_sub1.bbox),
-                                 self.canvas.copy_from_bbox(self.ax_sub2.bbox)]
+        self.plot_backgrounds = [self.canvas.copy_from_bbox(ax.bbox) for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]]
+        self.log("Blitting enabled for fast graph updates.")
+
 
     def _update_measurement_loop(self):
         if not self.is_running: return
@@ -413,19 +419,20 @@ class Advanced_Delta_GUI:
             # --- Performance Improvement: Use blitting for fast graph updates if background is captured ---
             if self.plot_backgrounds:
                 # Restore the clean background
-                for bg in self.plot_backgrounds: self.canvas.restore_region(bg)
+                self.canvas.restore_region(self.plot_backgrounds[0])
+                self.canvas.restore_region(self.plot_backgrounds[1])
+                self.canvas.restore_region(self.plot_backgrounds[2])
                 
                 # Update data and redraw only the artists
                 self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
                 self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
                 self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
                 
-                for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]: 
-                    ax.relim()
-                    ax.autoscale_view()
-                
-                for ax, line in [(self.ax_main, self.line_main), (self.ax_sub1, self.line_sub1), (self.ax_sub2, self.line_sub2)]:
-                    ax.draw_artist(line)
+                # Redraw the artists and blit the changes
+                for i, ax in enumerate([self.ax_main, self.ax_sub1, self.ax_sub2]):
+                    ax.relim(); ax.autoscale_view()
+                    ax.draw_artist(ax.get_lines()[0])
+
                 self.canvas.blit(self.figure.bbox)
             else:
                 # Fallback to a full redraw if blitting isn't ready
@@ -433,7 +440,7 @@ class Advanced_Delta_GUI:
             
             if temp >= self.params['cutoff']: self.log(f"!!! SAFETY CUTOFF REACHED at {temp:.4f} K !!!"); self.stop_measurement()
             elif temp >= self.params['end_temp']: self.log(f"Target temperature reached. Measurement complete."); self.stop_measurement()
-            else: self.root.after(950, self._update_measurement_loop) # Slightly less than 1s to prevent drift
+            else: self.root.after(900, self._update_measurement_loop) # Slightly less than 1s to prevent drift
         except Exception as e: self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement()
 
     def _scan_for_visa_instruments(self):

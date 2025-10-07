@@ -262,11 +262,10 @@ class PICALauncherApp:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         # Bind scrolling only to relevant widgets for better performance
-        for widget in (canvas, scrollable_frame):
-            widget.bind("<MouseWheel>", _on_mousewheel_windows) # For Windows and some Linux
-            widget.bind("<Button-4>", _on_mousewheel_linux_macos) # For Linux and macOS
-            widget.bind("<Button-5>", _on_mousewheel_linux_macos) # For Linux and macOS
-        
+        canvas.bind("<MouseWheel>", _on_mousewheel_windows) # For Windows and some Linux
+        canvas.bind("<Button-4>", _on_mousewheel_linux_macos) # For Linux and macOS
+        canvas.bind("<Button-5>", _on_mousewheel_linux_macos) # For Linux and macOS
+
         canvas.grid(row=0, column=0, sticky='nsew', padx=(15, 0), pady=10)
         scrollbar.grid(row=0, column=1, sticky='ns', pady=10)
 
@@ -359,11 +358,41 @@ class PICALauncherApp:
     # === THIS FUNCTION IS NOW UPDATED WITH THE MARKDOWN PARSER ================
     # =========================================================================
     def _parse_markdown(self, content):
-        """Parses markdown content into a list of (text, tags) for rendering."""
-        # This is a placeholder for a more sophisticated parser if needed.
-        # For now, we just split by lines as the original did.
-        # The key is that this runs only once per file.
-        return content.split('\n')
+        """
+        Parses markdown content into a list of (text, tags) tuples for rendering.
+        This runs only once per file, and the result is cached.
+        """
+        parsed_lines = []
+        lines = content.split('\n')
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith('### '):
+                parsed_lines.append((f"{stripped[4:]}\n", "h3"))
+            elif stripped.startswith('# '):
+                parsed_lines.append((f"{stripped[2:]}\n", "h1"))
+            elif stripped.startswith('* '):
+                # Handle list items with potential bold text
+                line_content = stripped[2:]
+                parts = re.split(r'(\*\*.*?\*\*)', line_content)
+                parsed_lines.append(("• ", "list_l1"))
+                for part in parts:
+                    if part.startswith('**') and part.endswith('**'):
+                        parsed_lines.append((part[2:-2], ("list_l1", "bold")))
+                    else:
+                        parsed_lines.append((part, "list_l1"))
+                parsed_lines.append(('\n', "list_l1")) # Add newline at the end of the list item
+            elif stripped in ('---', '***', '___'):
+                parsed_lines.append((f"{'─'*120}\n", "hr"))
+            else:
+                # Handle paragraphs with potential bold text
+                parts = re.split(r'(\*\*.*?\*\*)', line)
+                for part in parts:
+                    if part.startswith('**') and part.endswith('**'):
+                        parsed_lines.append((part[2:-2], ("p", "bold")))
+                    else:
+                        parsed_lines.append((part, "p"))
+                parsed_lines.append(('\n', "p")) # Add newline at the end of the paragraph
+        return parsed_lines
 
     def _show_file_in_window(self, file_path, title):
         abs_path = os.path.abspath(file_path)
@@ -374,13 +403,13 @@ class PICALauncherApp:
         try:
             # Use cache if available
             if file_path in self._md_cache:
-                lines = self._md_cache[file_path]
+                parsed_content = self._md_cache[file_path]
             else:
                 with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
                     content = f.read()
-                lines = self._parse_markdown(content)
                 if file_path.lower().endswith('.md'):
-                    self._md_cache[file_path] = lines # Cache the parsed lines
+                    parsed_content = self._parse_markdown(content)
+                    self._md_cache[file_path] = parsed_content # Cache the parsed content
         except Exception as e:
             messagebox.showerror("Error Reading File", f"Could not read the file:\n\n{e}")
             return
@@ -405,37 +434,12 @@ class PICALauncherApp:
         is_markdown = file_path.lower().endswith('.md')
         
         if is_markdown:
-            # Simple parser to apply styles line by line
-            for line in lines:
-                stripped = line.strip()
-                if stripped.startswith('### '):
-                    text_area.insert('end', f"{stripped[4:]}\n", "h3")
-                elif stripped.startswith('# '):
-                    text_area.insert('end', f"{stripped[2:]}\n", "h1")
-                elif stripped.startswith('* '):
-                    # Apply bold tags within list items
-                    line_content = stripped[2:]
-                    parts = re.split(r'(\*\*.*?\*\*)', line_content)
-                    text_area.insert('end', "• ", "list_l1")
-                    for part in parts:
-                        if part.startswith('**') and part.endswith('**'):
-                            text_area.insert('end', part[2:-2], ("list_l1", "bold"))
-                        else:
-                            text_area.insert('end', part, "list_l1")
-                    text_area.insert('end', '\n')
-                elif stripped in ('---', '***', '___'):
-                    text_area.insert('end', f"{'─'*120}\n", "hr")
-                else:
-                    # Apply bold tags within paragraphs
-                    parts = re.split(r'(\*\*.*?\*\*)', line)
-                    for part in parts:
-                        if part.startswith('**') and part.endswith('**'):
-                            text_area.insert('end', part[2:-2], ("p", "bold"))
-                        else:
-                            text_area.insert('end', part, "p")
-                    text_area.insert('end', '\n')
+            # Insert the pre-parsed, pre-tagged content from the cache
+            for text, tags in parsed_content:
+                text_area.insert('end', text, tags)
         else: # For non-markdown files like LICENSE
-            text_area.insert('1.0', "\n".join(lines))
+            with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
+                text_area.insert('1.0', f.read())
             
         text_area.pack(expand=True, fill='both')
         text_area.config(state='disabled')
