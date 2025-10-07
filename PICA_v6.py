@@ -87,7 +87,7 @@ class PICALauncherApp:
     FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
     LOGO_FILE = resource_path("_assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
     MANUAL_FILE = resource_path("_assets/Manuals")
-    README_FILE = resource_path("PICA_README.md")
+    README_FILE = resource_path("README.md")
     LICENSE_FILE = resource_path("LICENSE") 
     UPDATES_FILE = resource_path("Change_Logs.md")
     LOGO_SIZE = 140
