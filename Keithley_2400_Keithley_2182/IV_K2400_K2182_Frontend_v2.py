@@ -16,6 +16,8 @@ import os
 import time
 import traceback
 import csv
+import threading
+import queue
 from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -120,6 +122,7 @@ class IV_GUI:
         self.backend = IV_Backend()
         self.data_storage = {'current': [], 'voltage': []}
         self.setup_styles()
+        self.result_queue = queue.Queue()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
@@ -273,27 +276,56 @@ class IV_GUI:
         self.ax_main.set_title("Experiment stopped."); self.canvas.draw_idle()
         if reason: messagebox.showinfo("Experiment Finished", f"Reason: {reason}")
 
-    def _experiment_loop(self):
-        if not self.is_running: return
+    def _measurement_worker(self):
+        """Worker thread function to perform the measurement."""
         try:
             current_setpoint = self.current_points[self.current_step_index]
-            self.log(f"--- Setting current to {current_setpoint:.3e} A ({self.current_step_index + 1}/{len(self.current_points)}) ---")
-            self.ax_main.set_title(f"Measuring at {current_setpoint:.3e} A..."); self.canvas.draw_idle()
+            self.root.after(0, lambda: self.log(f"--- Setting current to {current_setpoint:.3e} A ({self.current_step_index + 1}/{len(self.current_points)}) ---"))
+            self.root.after(0, lambda: self.ax_main.set_title(f"Measuring at {current_setpoint:.3e} A..."))
+            self.root.after(0, lambda: self.canvas.draw_idle())
 
             voltage = self.backend.measure_voltage_at_current(current_setpoint, self.params['delay_s'])
-            self.log(f"  Read: V = {voltage:.6e} V")
+            
+            if self.is_running: # Check if stop was called during measurement
+                self.result_queue.put((current_setpoint, voltage))
 
+        except Exception as e:
+            self.result_queue.put(e) # Put exception in queue to be handled by main thread
+
+    def _experiment_loop(self):
+        if not self.is_running: return
+        
+        # Start the measurement in a separate thread
+        measurement_thread = threading.Thread(target=self._measurement_worker, daemon=True)
+        measurement_thread.start()
+        
+        # Start processing the queue
+        self.root.after(100, self._process_queue)
+
+    def _process_queue(self):
+        """Process results from the measurement worker thread."""
+        try:
+            result = self.result_queue.get_nowait()
+            if isinstance(result, Exception):
+                raise result
+            
+            current_setpoint, voltage = result
+            self.log(f"  Read: V = {voltage:.6e} V")
             self.data_storage['current'].append(current_setpoint); self.data_storage['voltage'].append(voltage)
             with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{current_setpoint:.6e}", f"{voltage:.6e}"])
             self.line_main.set_data(self.data_storage['voltage'], self.data_storage['current']); self.ax_main.relim()
             self.ax_main.autoscale_view(); self.canvas.draw_idle()
 
             self.current_step_index += 1
-            if self.current_step_index >= len(self.current_points):
+            if self.is_running and self.current_step_index < len(self.current_points):
+                self.root.after(100, self._experiment_loop) # Schedule next point
+            elif self.is_running:
                 self.stop_experiment("All points measured.")
-            else:
-                self.root.after(100, self._experiment_loop)
-        except Exception as e:
+
+        except queue.Empty: # No new data yet
+            if self.is_running:
+                self.root.after(100, self._process_queue) # Keep checking
+        except Exception as e: # An error occurred in the worker thread
             self.log(f"CRITICAL ERROR: {traceback.format_exc()}"); messagebox.showerror("Runtime Error", f"{e}"); self.stop_experiment("Runtime Error")
 
     def _validate_and_get_params(self):

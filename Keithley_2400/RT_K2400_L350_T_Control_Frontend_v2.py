@@ -108,9 +108,15 @@ class RT_GUI_Active:
     def __init__(self, root):
         self.root = root; self.root.title(f"K2400 & L350: R-T Sweep (T-Control) v{self.PROGRAM_VERSION}")
         self.root.geometry("1600x950"); self.root.minsize(1400, 800); self.root.configure(bg=self.CLR_BG)
-        self.experiment_state = 'idle'; self.logo_image = None
+        self.experiment_state = 'idle'
+        self.logo_image = None
         self.backend = RT_Backend_Active(); self.data_storage = {'temperature': [], 'voltage': [], 'resistance': []}
+        # --- NEW: Blitting optimization ---
+        self.plot_bg = None
+        self.is_resizing = False
+        self.resize_timer = None
         self.setup_styles(); self.create_widgets(); self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+        self.root.bind('<Configure>', self._on_resize)
 
     def setup_styles(self):
         style = ttk.Style(self.root); style.theme_use('clam')
@@ -187,12 +193,16 @@ class RT_GUI_Active:
 
     def _populate_right_panel(self, panel):
         container = ttk.LabelFrame(panel, text='Live R-T Curve'); container.pack(fill='both', expand=True)
-        self.figure = Figure(dpi=100, facecolor='white')
+        # --- MODIFIED: Animated=True for blitting ---
+        self.figure = Figure(dpi=100, facecolor='white', constrained_layout=True)
         self.ax_main = self.figure.add_subplot(111)
-        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
+        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-', animated=True)
         self.ax_main.set_title("Waiting for experiment...", fontweight='bold'); self.ax_main.set_xlabel("Temperature (K)"); self.ax_main.set_ylabel("Resistance (Ω)"); self.ax_main.set_yscale('log')
-        self.ax_main.grid(True, linestyle='--', alpha=0.6); self.figure.tight_layout()
-        self.canvas = FigureCanvasTkAgg(self.figure, container); self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
+        self.ax_main.grid(True, linestyle='--', alpha=0.6)
+        self.canvas = FigureCanvasTkAgg(self.figure, container)
+        self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
+        # --- MODIFIED: Connect draw event for blitting ---
+        self.canvas.mpl_connect('draw_event', self._on_draw)
     def _create_params_panel(self, parent):
         container = ttk.Frame(parent)
         container.grid_columnconfigure((0, 1), weight=1); self.entries = {}
@@ -245,7 +255,9 @@ class RT_GUI_Active:
 
             self.set_ui_state(running=True); self.experiment_state = 'stabilizing'
             for key in self.data_storage: self.data_storage[key].clear()
-            self.line_main.set_data([], []); self.ax_main.set_title(f"R-T Curve: {self.params['name']}"); self.ax_main.set_yscale('log'); self.canvas.draw()
+            # --- MODIFIED: Plot setup for blitting ---
+            self.line_main.set_data([], []); self.ax_main.relim(); self.ax_main.autoscale_view()
+            self.ax_main.set_title(f"R-T Curve: {self.params['name']}"); self.ax_main.set_yscale('log'); self.canvas.draw_idle()
             self.log(f"Starting stabilization at {self.params['start_temp']} K...")
             self.root.after(100, self._experiment_loop)
         except Exception as e:
@@ -255,7 +267,7 @@ class RT_GUI_Active:
         if self.experiment_state == 'idle': return
         self.log(f"Stopping... {reason}" if reason else "Stopping by user request.")
         self.experiment_state = 'idle'; self.backend.shutdown(); self.set_ui_state(running=False)
-        self.ax_main.set_title("Experiment stopped."); self.canvas.draw()
+        self.ax_main.set_title("Experiment stopped."); self.canvas.draw_idle()
         if reason: messagebox.showinfo("Experiment Finished", f"Reason: {reason}")
 
     # --- NON-BLOCKING HEATER LOGIC (from 6517B scripts) ---
@@ -304,8 +316,18 @@ class RT_GUI_Active:
 
                 self.data_storage['temperature'].append(temp); self.data_storage['voltage'].append(voltage); self.data_storage['resistance'].append(resistance)
                 with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{temp:.4f}", f"{voltage:.6e}", f"{resistance:.6e}", f"{elapsed:.2f}"])
-                self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance']); self.ax_main.set_yscale('log')
-                self.ax_main.relim(); self.ax_main.autoscale_view(); self.figure.tight_layout(); self.canvas.draw()
+                
+                # --- MODIFIED: Efficient plotting with blitting ---
+                self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
+                self.ax_main.relim(); self.ax_main.autoscale_view()
+                self.ax_main.set_yscale('log') # Ensure log scale is maintained
+                self.canvas.draw_idle() # Full redraw is acceptable here as updates are slow (every ~1s)
+                # For faster updates, the same blitting logic from IV_K2400 can be used:
+                # if self.plot_bg:
+                #     self.canvas.restore_region(self.plot_bg)
+                #     self.ax_main.draw_artist(self.line_main)
+                #     self.canvas.blit(self.ax_main.bbox)
+                #     self.canvas.flush_events()
 
                 # Check end conditions
                 if temp >= self.params['cutoff']:
@@ -373,6 +395,27 @@ class RT_GUI_Active:
         cb = ttk.Combobox(parent, font=self.FONT_BASE, state='readonly')
         cb.grid(row=row, column=1, sticky='ew', padx=10, pady=3, columnspan=3)
         return cb
+
+    # --- NEW: Blitting and resize handling methods ---
+    def _on_draw(self, event):
+        """Callback for draw events to cache the plot background."""
+        if self.is_resizing: return
+        self.plot_bg = self.canvas.copy_from_bbox(self.ax_main.bbox)
+
+    def _on_resize(self, event):
+        """Handle window resize events to trigger a full redraw."""
+        self.is_resizing = True
+        self.plot_bg = None # Invalidate background
+        if self.resize_timer:
+            self.root.after_cancel(self.resize_timer)
+        self.resize_timer = self.root.after(300, self._finalize_resize)
+
+    def _finalize_resize(self):
+        """Finalize the resize by performing a full redraw."""
+        self.is_resizing = False
+        self.resize_timer = None
+        if self.canvas:
+            self.canvas.draw_idle()
 
     def _on_closing(self):
         if self.experiment_state != 'idle' and messagebox.askyesno("Exit", "Experiment is running. Stop and exit?"):

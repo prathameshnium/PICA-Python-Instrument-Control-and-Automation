@@ -160,6 +160,10 @@ class MeasurementAppGUI:
         self.file_location_path = ""
         self.data_storage = {'current': [], 'voltage': [], 'resistance': []}
         self.logo_image = None
+        # --- NEW: Blitting optimization ---
+        self.plot_bg = None
+        self.is_resizing = False
+        self.resize_timer = None
         self.pre_init_logs = []
 
         # --- NEW: Initialize custom UI widget variables ---
@@ -169,6 +173,7 @@ class MeasurementAppGUI:
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+        self.root.bind('<Configure>', self._on_resize)
         self._on_sweep_type_change() # Call once to set initial UI state
 
     def setup_styles(self):
@@ -338,23 +343,26 @@ class MeasurementAppGUI:
     def create_graph_frame(self, parent):
         graph_container = LabelFrame(parent, text='Live I-V Curve', relief='groove', bg='white', fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
-        self.figure = Figure(figsize=(8, 8), dpi=100)
+        # --- MODIFIED: Animated=True for blitting ---
+        self.figure = Figure(figsize=(8, 8), dpi=100, constrained_layout=True)
         self.ax_vi, self.ax_ri = self.figure.subplots(2, 1, sharex=True)
 
         # --- V-I Plot (Top) ---
         self.ax_vi.grid(True, linestyle='--', alpha=0.7)
         self.ax_vi.axhline(0, color='k', linestyle='--', linewidth=0.7, alpha=0.5)
-        self.line_main, = self.ax_vi.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
+        self.line_main, = self.ax_vi.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-', animated=True)
         self.ax_vi.set_title("Voltage vs. Current", fontweight='bold'); self.ax_vi.set_ylabel("Voltage (V)")
 
         # --- R-I Plot (Bottom) ---
         self.ax_ri.grid(True, linestyle='--', alpha=0.7)
-        self.line_resistance, = self.ax_ri.plot([], [], color=self.CLR_ACCENT_GREEN, marker='o', markersize=4, linestyle='-')
+        self.line_resistance, = self.ax_ri.plot([], [], color=self.CLR_ACCENT_GREEN, marker='o', markersize=4, linestyle='-', animated=True)
         self.ax_ri.set_title("Resistance vs. Current", fontweight='bold'); self.ax_ri.set_xlabel("Current (A)"); self.ax_ri.set_ylabel("Resistance (Ω)")
         self.ax_ri.set_yscale('log') # Resistance is often best viewed on a log scale
 
-        self.figure.tight_layout(pad=2.5)
-        self.canvas = FigureCanvasTkAgg(self.figure, graph_container); self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # --- MODIFIED: Connect draw event for blitting ---
+        self.canvas.mpl_connect('draw_event', self._on_draw)
 
 
     def log(self, message):
@@ -402,10 +410,14 @@ class MeasurementAppGUI:
             self.is_running = True; self.sweep_index = 0
             self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
+            
+            # --- MODIFIED: Plot setup for blitting ---
             self.line_main.set_data([], []); self.line_resistance.set_data([], [])
+            self.ax_vi.relim(); self.ax_vi.autoscale_view()
+            self.ax_ri.relim(); self.ax_ri.autoscale_view()
             self.progress_bar['value'] = 0; self.progress_bar['maximum'] = len(self.sweep_points)
             self.figure.suptitle(f"Sample: {params['sample_name']}", fontweight='bold')
-            self.canvas.draw()
+            self.canvas.draw_idle() # Use draw_idle to schedule a draw
             self.log("Measurement sweep started.")
             self.root.after(100, self._run_sweep_step)
         except Exception as e:
@@ -433,16 +445,53 @@ class MeasurementAppGUI:
             self.data_storage['current'].append(float(current)); self.data_storage['voltage'].append(voltage); self.data_storage['resistance'].append(resistance)
             with open(self.data_filepath, 'a', newline='') as f: csv.writer(f, delimiter='\t').writerow([f"{current:.8e}", f"{voltage:.8e}", f"{resistance:.8e}"])
 
-            self.line_main.set_data(self.data_storage['current'], self.data_storage['voltage']); self.ax_vi.relim(); self.ax_vi.autoscale_view()
-            self.line_resistance.set_data(self.data_storage['current'], self.data_storage['resistance']); self.ax_ri.relim(); self.ax_ri.autoscale_view()
-            
+            # --- MODIFIED: Efficient plotting with blitting ---
+            self.line_main.set_data(self.data_storage['current'], self.data_storage['voltage'])
+            self.line_resistance.set_data(self.data_storage['current'], self.data_storage['resistance'])
+
+            # --- Autoscale axes and redraw background if limits change ---
+            if self.ax_vi.get_xlim() != self.ax_ri.get_xlim() or self.ax_vi.get_ylim() != self.ax_vi.get_ylim():
+                self.ax_vi.relim(); self.ax_vi.autoscale_view()
+                self.ax_ri.relim(); self.ax_ri.autoscale_view()
+                self.canvas.draw_idle() # Full redraw if axes change
+            else:
+                # --- Efficient blitting update ---
+                if self.plot_bg:
+                    self.canvas.restore_region(self.plot_bg)
+                    self.ax_vi.draw_artist(self.line_main)
+                    self.ax_ri.draw_artist(self.line_resistance)
+                    self.canvas.blit(self.figure.bbox)
+                    self.canvas.flush_events()
+
             self.progress_bar['value'] = self.sweep_index + 1
-            self.canvas.draw()
 
             self.sweep_index += 1
             self.root.after(10, self._run_sweep_step)
         except Exception:
             self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); messagebox.showerror("Runtime Error", "An error occurred during the sweep. Check console."); self.stop_measurement()
+
+    # --- NEW: Blitting and resize handling methods ---
+    def _on_draw(self, event):
+        """Callback for draw events to cache the plot background."""
+        if self.is_resizing: return
+        self.plot_bg = self.canvas.copy_from_bbox(self.figure.bbox)
+
+    def _on_resize(self, event):
+        """Handle window resize events to trigger a full redraw."""
+        self.is_resizing = True
+        self.plot_bg = None # Invalidate background
+        if self.resize_timer:
+            self.root.after_cancel(self.resize_timer)
+        
+        # Redraw after a short delay to avoid excessive redraws during resizing
+        self.resize_timer = self.root.after(300, self._finalize_resize)
+
+    def _finalize_resize(self):
+        """Finalize the resize by performing a full redraw."""
+        self.is_resizing = False
+        self.resize_timer = None
+        if self.canvas:
+            self.canvas.draw_idle()
 
     def _scan_for_visa_instruments(self):
         if pyvisa is None or self.backend.rm is None: self.log("ERROR: PyVISA not found or NI-VISA backend is missing."); return

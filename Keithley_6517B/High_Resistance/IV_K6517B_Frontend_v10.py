@@ -200,6 +200,7 @@ class HighResistanceIV_GUI:
         self.voltage_list = []
         self.data_queue = queue.Queue()
         self.measurement_thread = None
+        self.plot_backgrounds = None # For blitting
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -348,13 +349,13 @@ class HighResistanceIV_GUI:
         self.ax_rv = self.figure.add_subplot(2, 1, 2) # Bottom plot
 
         # --- Configure Top Plot: I-V Curve ---
-        self.line_iv, = self.ax_iv.plot([], [], color=self.CLR_ACCENT_BLUE, marker='o', markersize=5, linestyle='-')
+        self.line_iv, = self.ax_iv.plot([], [], color=self.CLR_ACCENT_BLUE, marker='o', markersize=5, linestyle='-', animated=False)
         self.ax_iv.set_title("Current vs. Voltage", fontweight='bold')
         self.ax_iv.set_ylabel("Measured Current (A)")
         self.ax_iv.grid(True, linestyle='--', alpha=0.6)
 
         # --- Configure Bottom Plot: R-V Curve ---
-        self.line_rv, = self.ax_rv.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=5, linestyle='-')
+        self.line_rv, = self.ax_rv.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=5, linestyle='-', animated=False)
         self.ax_rv.set_title("Resistance vs. Voltage", fontweight='bold')
         self.ax_rv.set_xlabel("Applied Voltage (V)")
         self.ax_rv.set_ylabel("Resistance (Ω)")
@@ -419,10 +420,19 @@ class HighResistanceIV_GUI:
             self.line_iv.set_data([], [])
             self.line_rv.set_data([], [])
 
+            # Perform a full redraw to clear plots and set the new title
+            for ax in [self.ax_iv, self.ax_rv]: ax.relim(); ax.autoscale_view()
             self.ax_iv.set_title(f"I-V Curve: {params['sample_name']}", fontweight='bold')
+            self.figure.tight_layout(pad=3.0)
             self.canvas.draw()
             self.log("Measurement sweep started.")
             
+            # --- Performance Improvement: Capture static background for blitting ---
+            for line in [self.line_iv, self.line_rv]: line.set_animated(True)
+            self.canvas.draw()
+            self.plot_backgrounds = [self.canvas.copy_from_bbox(ax.bbox) for ax in [self.ax_iv, self.ax_rv]]
+            self.log("Blitting enabled for fast graph updates.")
+
             # Start the worker thread and the queue processor
             self.measurement_thread = threading.Thread(target=self._measurement_worker, args=(self.voltage_list, self.delay_ms), daemon=True)
             self.measurement_thread.start()
@@ -437,6 +447,9 @@ class HighResistanceIV_GUI:
             self.is_running = False
             self.log("Measurement loop stopped by user.")
             self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
+            # Turn off animation for any final redraws
+            for line in [self.line_iv, self.line_rv]: line.set_animated(False)
+            self.plot_backgrounds = None
             if self.backend:
                 self.backend.close_instruments()
             self.log("Instrument connection closed.")
@@ -487,10 +500,24 @@ class HighResistanceIV_GUI:
                     self.data_storage['time'].append(elapsed_time); self.data_storage['voltage_applied'].append(volt)
                     self.data_storage['current_measured'].append(cur); self.data_storage['resistance'].append(res)
 
-                    self.line_iv.set_data(self.data_storage['voltage_applied'], self.data_storage['current_measured'])
-                    self.line_rv.set_data(self.data_storage['voltage_applied'], self.data_storage['resistance'])
-                    for ax in [self.ax_iv, self.ax_rv]: ax.relim(); ax.autoscale_view()
-                    self.figure.tight_layout(pad=3.0); self.canvas.draw_idle()
+                    # --- Performance Improvement: Use blitting for fast graph updates ---
+                    if self.plot_backgrounds:
+                        # Restore the clean background
+                        self.canvas.restore_region(self.plot_backgrounds[0])
+                        self.canvas.restore_region(self.plot_backgrounds[1])
+
+                        # Update data and redraw only the artists
+                        self.line_iv.set_data(self.data_storage['voltage_applied'], self.data_storage['current_measured'])
+                        self.line_rv.set_data(self.data_storage['voltage_applied'], self.data_storage['resistance'])
+                        for ax in [self.ax_iv, self.ax_rv]: ax.relim(); ax.autoscale_view()
+
+                        self.ax_iv.draw_artist(self.line_iv)
+                        self.ax_rv.draw_artist(self.line_rv)
+                        self.canvas.blit(self.figure.bbox)
+                    else:
+                        # Fallback to a full redraw if blitting isn't ready
+                        self.canvas.draw_idle()
+
         except queue.Empty:
             pass # No data to process, which is normal
 
