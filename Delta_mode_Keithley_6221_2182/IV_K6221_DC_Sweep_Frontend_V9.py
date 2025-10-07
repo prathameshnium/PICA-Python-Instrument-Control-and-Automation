@@ -1,5 +1,5 @@
 #-------------------------------------------------------------------------------
-# Name:         GPIB Passthrough I-V Logger
+# Name:         GPIB Passthrough I-V 
 # Purpose:      Perform a software-timed I-V sweep by controlling a K2182
 #               through a K6221 acting as a GPIB-to-Serial bridge.
 #
