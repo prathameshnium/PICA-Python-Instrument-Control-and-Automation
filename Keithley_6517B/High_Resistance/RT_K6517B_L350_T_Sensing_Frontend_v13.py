@@ -50,17 +50,16 @@ class Lakeshore350_Backend:
     def __init__(self, visa_address):
         self.instrument = None
         rm = pyvisa.ResourceManager()
-        self.instrument = rm.open_resource(visa_address)
-        self.instrument.timeout = 10000
+        self.instrument = rm.open_resource(visa_address, timeout=10000)
         print(f"Lakeshore Connected: {self.instrument.query('*IDN?').strip()}")
 
     def reset_and_clear(self):
         self.instrument.write('*RST'); time.sleep(0.5)
         self.instrument.write('*CLS'); time.sleep(1)
 
-    def set_heater_range(self, output, heater_range):
-        range_map = {'off': 0, 'low': 2, 'medium': 4, 'high': 5}
-        range_code = range_map.get(heater_range.lower())
+    def set_heater_range_off(self, output):
+        range_map = {'off': 0}
+        range_code = range_map.get('off')
         if range_code is None: raise ValueError("Invalid heater range.")
         self.instrument.write(f'RANGE {output},{range_code}')
 
@@ -73,13 +72,11 @@ class Lakeshore350_Backend:
     def close(self):
         if self.instrument:
             try:
-                self.set_heater_range(1, 'off')
-                time.sleep(0.5)
+                # In passive mode, we don't want to change the heater state on close.
+                # The user might be monitoring an ongoing experiment.
                 self.instrument.close()
             except Exception as e:
                 print(f"Warning: Issue during Lakeshore shutdown: {e}")
-            finally:
-                self.instrument = None
 
 
 
@@ -96,7 +93,7 @@ class Combined_Backend:
         self.lakeshore = Lakeshore350_Backend(self.params['lakeshore_visa'])
         self.lakeshore.reset_and_clear()
         # --- ENSURE HEATER IS OFF ---
-        self.lakeshore.set_heater_range(1, 'off')
+        self.lakeshore.instrument.write('RANGE 1,0') # Explicitly set heater off for safety
         print("Lakeshore heater set to OFF.")
 
         self.keithley = Keithley6517B(self.params['keithley_visa'])
@@ -175,11 +172,12 @@ class Integrated_RT_GUI:
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_SUB_LABEL = ('Segoe UI', FONT_SIZE_BASE - 2)
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
+    FONT_INPUT = ('Segoe UI', FONT_SIZE_BASE - 1) # Smaller font for inputs
     FONT_CONSOLE = ('Consolas', 10)
 
     def __init__(self, root):
         self.root = root
-        self.root.title("K6517B & L350: R-T Passive ")
+        self.root.title("K6517B & L350: R-T (T-Sensing)")
         self.root.geometry("1550x950")
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1200, 850)
@@ -227,25 +225,26 @@ class Integrated_RT_GUI:
         self.create_header()
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
-        left_panel_container = ttk.Frame(main_pane, width=600)
-        main_pane.add(left_panel_container, weight=1) # This is the container for the scrollable area
-        right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
-        main_pane.add(right_panel, weight=1)
+        
+        left_panel_container = ttk.Frame(main_pane, width=450)
+        main_pane.add(left_panel_container, weight=1) # Less weight for the control panel
 
         # --- Make the left panel scrollable ---
         canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)
         scrollbar = ttk.Scrollbar(left_panel_container, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
+        scrollable_frame = ttk.Frame(canvas) # This is the frame that will be scrolled
         scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
+        right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
+        main_pane.add(right_panel, weight=3) # More weight for the graph panel
+
         self.create_info_frame(scrollable_frame)
         self.create_input_frame(scrollable_frame)
         self.create_console_frame(scrollable_frame)
-
         self.create_graph_frame(right_panel)
 
     def create_header(self):
@@ -254,7 +253,7 @@ class Integrated_RT_GUI:
 
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="K6517B & L350: R-T Measurement (Passive )", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
+        Label(header_frame, text="K6517B & L350: R-T Measurement (T-Sensing)", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
     def create_info_frame(self, parent):
@@ -287,7 +286,7 @@ class Integrated_RT_GUI:
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
 
         # Program details
-        details_text = ("Program Mode: R vs. T (Passive )\n"
+        details_text = ("Program Mode: R vs. T (T-Sensing)\n"
                         "Instruments: Lakeshore 350, Keithley 6517B\n"
                         "Measurement Range: 10³ Ω to 10¹⁶ Ω")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
@@ -306,21 +305,21 @@ class Integrated_RT_GUI:
         self.entries["Sample Name"].grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 10), sticky='ew')
 
         Label(frame, text="Source Voltage (V):").grid(row=2, column=0, padx=10, pady=pady_val, sticky='w')
-        self.entries["Source Voltage"] = Entry(frame, font=self.FONT_BASE)
-        self.entries["Source Voltage"].grid(row=3, column=0, padx=(10,5), pady=(0,5), sticky='ew')
+        self.entries["Source Voltage"] = Entry(frame, font=self.FONT_BASE, width=15)
+        self.entries["Source Voltage"].grid(row=3, column=0, padx=(10,10), pady=(0,5), sticky='ew')
 
         Label(frame, text="Logging Delay (s):").grid(row=2, column=1, padx=10, pady=pady_val, sticky='w')
-        self.entries["Delay"] = Entry(frame, font=self.FONT_BASE)
-        self.entries["Delay"].grid(row=3, column=1, padx=(5,10), pady=(0,5), sticky='ew')
+        self.entries["Delay"] = Entry(frame, font=self.FONT_BASE, width=15)
+        self.entries["Delay"].grid(row=3, column=1, padx=(10,10), pady=(0,5), sticky='ew')
         self.entries["Delay"].insert(0, "1.0") # Default to 1 second
 
         Label(frame, text="Lakeshore VISA:").grid(row=4, column=0, padx=10, pady=pady_val, sticky='w')
         self.lakeshore_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
-        self.lakeshore_cb.grid(row=5, column=0, padx=(10,5), pady=(0,10), sticky='ew')
+        self.lakeshore_cb.grid(row=5, column=0, padx=(10,10), pady=(0,10), sticky='ew')
 
         Label(frame, text="Keithley VISA:").grid(row=4, column=1, padx=10, pady=pady_val, sticky='w')
         self.keithley_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
-        self.keithley_cb.grid(row=5, column=1, padx=(5,10), pady=(0,10), sticky='ew')
+        self.keithley_cb.grid(row=5, column=1, padx=(10,10), pady=(0,10), sticky='ew')
 
         self.scan_button = ttk.Button(frame, text="Scan for Instruments", command=self._scan_for_visa_instruments)
         self.scan_button.grid(row=6, column=0, columnspan=2, padx=10, pady=4, sticky='ew')
