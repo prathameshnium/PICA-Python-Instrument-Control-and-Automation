@@ -64,7 +64,7 @@ def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
     except Exception:
-        base_path = os.path.abspath(".")
+        base_path = os.path.abspath(os.path.dirname(__file__))
     return os.path.join(base_path, relative_path)
 
 class PICALauncherApp:
@@ -89,7 +89,7 @@ class PICALauncherApp:
     MANUAL_FILE = resource_path("_assets/Manuals") # Corrected path
     README_FILE = resource_path("PICA_README.md")
     LICENSE_FILE = resource_path("LICENSE")
-    UPDATES_FILE = resource_path("Updates.md")
+    UPDATES_FILE = resource_path("Change_Logs.md")
     LOGO_SIZE = 140
 
     SCRIPT_PATHS = {
@@ -111,7 +111,7 @@ class PICALauncherApp:
         "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/T_Sensing_L350_Frontend_v3.py"),
         "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v2.py"),
         "Lock-in AC Measurement": resource_path("Lock_in_amplifier/BasicTest_S830_Backend_v1.py"), # Assuming this is correct, no frontend provided
-        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v2.py"),
+        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v2.py"), # Corrected path
         "PICA Help": resource_path("PICA_README.md"),
     }
 
@@ -133,6 +133,8 @@ class PICALauncherApp:
         
         # Auto-launch GPIB scanner after 1 second
         self.root.after(1000, self.run_gpib_test)
+        # Pre-cache markdown files in the background for faster window opening
+        self.root.after(1500, self._pre_cache_markdown_files)
     def setup_styles(self):
         style = ttk.Style(self.root)
         style.theme_use('clam')
@@ -260,11 +262,10 @@ class PICALauncherApp:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         # Bind scrolling only to relevant widgets for better performance and to enable it
-        for widget in (canvas, scrollable_frame):
-            widget.bind("<MouseWheel>", _on_mousewheel_windows) # For Windows and some Linux
-            widget.bind("<Button-4>", _on_mousewheel_linux_macos) # For Linux and macOS
-            widget.bind("<Button-5>", _on_mousewheel_linux_macos) # For Linux and macOS
-
+        canvas.bind("<MouseWheel>", _on_mousewheel_windows) # For Windows and some Linux
+        canvas.bind("<Button-4>", _on_mousewheel_linux_macos) # For Linux and macOS
+        canvas.bind("<Button-5>", _on_mousewheel_linux_macos) # For Linux and macOS
+ 
         canvas.grid(row=0, column=0, sticky='nsew', padx=(15, 0), pady=10)
         scrollbar.grid(row=0, column=1, sticky='ns', pady=10)
 
@@ -493,6 +494,26 @@ class PICALauncherApp:
         # The GPIB scanner is now its own class
         GPIBScannerWindow(self.root, self)
 
+    def _pre_cache_markdown_files(self):
+        """
+        Reads and parses key markdown/text files in the background to make
+        the documentation windows open instantly.
+        """
+        files_to_cache = [
+            (self.README_FILE, "README"),
+            (self.UPDATES_FILE, "Change Log"),
+            (self.LICENSE_FILE, "License")
+        ]
+        for file_path, name in files_to_cache:
+            if file_path not in self._md_cache and os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                    self._md_cache[file_path] = self._parse_markdown(content)
+                    self.log(f"Pre-cached '{name}' for faster access.")
+                except Exception as e:
+                    self.log(f"Warning: Could not pre-cache '{name}'. {e}")
+
 class GPIBScannerWindow(Toplevel):
     def __init__(self, parent, app_ref):
         super().__init__(parent)
@@ -634,5 +655,10 @@ def main():
 
 if __name__ == '__main__':
     # This is ESSENTIAL for multiprocessing to work in a bundled executable
+    # and ensures a consistent, stable process creation method across platforms.
+    # 'spawn' is the most robust method for GUI apps, though it is the default
+    # on Windows and macOS.
+    if sys.version_info >= (3, 8) and platform.system() != "Windows":
+        multiprocessing.set_start_method('spawn', force=True)
     multiprocessing.freeze_support()
     main()
