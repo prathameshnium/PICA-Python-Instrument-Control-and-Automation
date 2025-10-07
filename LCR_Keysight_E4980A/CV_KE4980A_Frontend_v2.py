@@ -211,33 +211,33 @@ class LCR_CV_GUI:
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
         
         # --- Left Panel using Grid for better control ---
-        left_panel_container = ttk.Frame(main_pane, width=500)
-        main_pane.add(left_panel_container, weight=2) # Give it more weight
+        left_panel_container = ttk.Frame(main_pane)
+        main_pane.add(left_panel_container, weight=2)
         
         right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
-        main_pane.add(right_panel, weight=1)
+        main_pane.add(right_panel, weight=3)
 
         # --- Make the left panel scrollable ---
         canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)
         scrollbar = ttk.Scrollbar(left_panel_container, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
         scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=500) # Set a width for the scrollable area
         canvas.configure(yscrollcommand=scrollbar.set)
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
         # --- Populate Left Panel ---
-        self.create_info_frame(scrollable_frame)
-        self.create_input_frame(scrollable_frame)
-        self.create_console_frame(scrollable_frame)
+        info_frame = self.create_info_frame(scrollable_frame); info_frame.pack(fill='x', expand=True, padx=10, pady=5)
+        input_frame = self.create_input_frame(scrollable_frame); input_frame.pack(fill='x', expand=True, padx=10, pady=5)
+        console_frame = self.create_console_frame(scrollable_frame); console_frame.pack(fill='both', expand=True, padx=10, pady=5)
 
         # --- Populate Right Panel ---
         self.create_graph_frame(right_panel)
 
     def create_info_frame(self, parent):
         frame = ttk.LabelFrame(parent, text='Information')
-        frame.pack(pady=(10, 10), padx=10, fill='x')
+        # frame.pack(pady=(10, 10), padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
 
         logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
@@ -264,7 +264,7 @@ class LCR_CV_GUI:
 
     def create_input_frame(self, parent):
         frame = ttk.LabelFrame(parent, text='Experiment Parameters')
-        frame.pack(pady=10, padx=10, fill='x')
+        # frame.pack(pady=10, padx=10, fill='x')
         for i in range(2): frame.grid_columnconfigure(i, weight=1)
         self.entries = {}
         pady = (5, 5); padx = 10
@@ -294,7 +294,7 @@ class LCR_CV_GUI:
 
     def create_console_frame(self, parent):
         frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        frame.pack(pady=10, padx=10, fill='x')
+        # frame.pack(pady=10, padx=10, fill='x')
         self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0)
         self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
         self.log("Console initialized. Configure parameters and scan for instruments.")
