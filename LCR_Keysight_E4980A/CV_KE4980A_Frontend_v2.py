@@ -212,10 +212,10 @@ class LCR_CV_GUI:
         
         # --- Left Panel using Grid for better control ---
         left_panel_container = ttk.Frame(main_pane, width=500)
-        main_pane.add(left_panel_container, weight=1) # Give it some weight
+        main_pane.add(left_panel_container, weight=2) # Give it more weight
         
         right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
-        main_pane.add(right_panel, weight=3)
+        main_pane.add(right_panel, weight=1)
 
         # --- Make the left panel scrollable ---
         canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)

@@ -164,9 +164,9 @@ class TempMonitorGUI:
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         left_panel_container = ttk.Frame(main_pane, width=500)
-        main_pane.add(left_panel_container, weight=1)
+        main_pane.add(left_panel_container, weight=2) # Give more weight to the left panel
         right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
-        main_pane.add(right_panel, weight=3)
+        main_pane.add(right_panel, weight=1) # Give less weight to the plot panel
 
         # --- Make the left panel scrollable ---
         canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)
