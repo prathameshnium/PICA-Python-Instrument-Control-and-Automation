@@ -3,7 +3,7 @@
 # Purpose:      A general-purpose CSV/DAT file plotter for the PICA suite.
 # Author:       Prathamesh K Deshmukh 
 # Created:      06/10/2025
-# Version:      1.0
+# Version:      2.0 (Performance & UI Enhancements)
 # -------------------------------------------------------------------------------
 
 import tkinter as tk
@@ -23,7 +23,7 @@ except ImportError:
     PIL_AVAILABLE = False
 
 class PlotterApp:
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "2.0"
     CLR_BG = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG = '#EDF2F4'
@@ -37,6 +37,13 @@ class PlotterApp:
     FONT_BASE = ('Segoe UI', 11)
     FONT_TITLE = ('Segoe UI', 13, 'bold')
     FONT_TITLE_ITALIC = ('Segoe UI', 13, 'bold italic')
+    
+    try:
+        # Robust path finding for assets
+        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+    except NameError:
+        LOGO_FILE_PATH = "../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
 
     def __init__(self, root):
         self.root = root
@@ -52,6 +59,9 @@ class PlotterApp:
         self.last_mod_time = None
         self.last_file_size = 0
         self.file_watcher_job = None
+        
+        # Cache for filtered plot data to improve performance
+        self.plot_data_cache = {'x': [], 'y': []}
 
         self.setup_styles()
         self.create_widgets()
@@ -98,27 +108,21 @@ class PlotterApp:
         header = tk.Frame(self.root, bg=self.CLR_HEADER)
         header.pack(side='top', fill='x', padx=1, pady=1)
 
-        # --- Left side of header (Logo and Institute Name) ---
-        left_header_frame = tk.Frame(header, bg=self.CLR_HEADER)
-        left_header_frame.pack(side='left', padx=20, pady=10)
+        # --- Header with Logo and Institute Name ---
+        logo_canvas = Canvas(header, width=60, height=60, bg=self.CLR_HEADER, highlightthickness=0)
+        logo_canvas.pack(side='left', padx=(20, 15), pady=10)
+        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
+            try:
+                img = Image.open(self.LOGO_FILE_PATH).resize((60, 60), Image.Resampling.LANCZOS)
+                self.logo_image = ImageTk.PhotoImage(img)
+                logo_canvas.create_image(30, 30, image=self.logo_image)
+            except Exception as e:
+                self.log(f"Warning: Could not load logo. {e}")
 
-        # Logo Placeholder
-        try:
-            # Assumes a 'logo.png' file exists in the same directory.
-            # If not, it shows a placeholder text.
-            self.logo_image = ImageTk.PhotoImage(Image.open("logo.png").resize((50, 50), Image.Resampling.LANCZOS))
-            logo_label = ttk.Label(left_header_frame, image=self.logo_image, style='Header.TLabel')
-        except (FileNotFoundError, NameError):
-            logo_label = ttk.Label(left_header_frame, text="[Logo]", style='Header.TLabel', font=('Segoe UI', 10))
-        logo_label.pack(side='left', padx=(0, 15))
-
-        # Institute Name
-        institute_frame = tk.Frame(left_header_frame, bg=self.CLR_HEADER)
-        institute_frame.pack(side='left')
+        institute_frame = tk.Frame(header, bg=self.CLR_HEADER); institute_frame.pack(side='left')
         ttk.Label(institute_frame, text="UGC-DAE Consortium for Scientific Research", style='Header.TLabel', font=('Segoe UI', 14, 'bold')).pack(anchor='w')
         ttk.Label(institute_frame, text="Mumbai Centre", style='Header.TLabel', font=('Segoe UI', 12)).pack(anchor='w')
 
-        # --- Right side of header (Program Name) ---
         right_header_frame = tk.Frame(header, bg=self.CLR_HEADER)
         right_header_frame.pack(side='right', padx=20, pady=10)
         ttk.Label(right_header_frame, text=f"PICA General Purpose Plotter", style='Header.TLabel', font=self.FONT_TITLE_ITALIC).pack()
@@ -153,10 +157,12 @@ class PlotterApp:
 
         ttk.Label(params_frame, text="X-Axis Column:").grid(row=0, column=0, sticky='w', padx=10, pady=5)
         self.x_col_cb = ttk.Combobox(params_frame, state='readonly')
+        self.x_col_cb.bind("<<ComboboxSelected>>", self.plot_data)
         self.x_col_cb.grid(row=0, column=1, sticky='ew', padx=10, pady=5)
 
         ttk.Label(params_frame, text="Y-Axis Column:").grid(row=1, column=0, sticky='w', padx=10, pady=5)
         self.y_col_cb = ttk.Combobox(params_frame, state='readonly')
+        self.y_col_cb.bind("<<ComboboxSelected>>", self.plot_data)
         self.y_col_cb.grid(row=1, column=1, sticky='ew', padx=10, pady=5)
 
         # --- Plotting Options ---
@@ -168,13 +174,13 @@ class PlotterApp:
         ttk.Checkbutton(options_frame, text="Live Update", variable=self.live_update_var, command=self.toggle_live_update).grid(row=0, column=2, sticky='e', padx=10)
         
         self.x_log_var = tk.BooleanVar()
-        ttk.Checkbutton(options_frame, text="X Log Scale", variable=self.x_log_var).grid(row=0, column=0, sticky='w', padx=10)
+        ttk.Checkbutton(options_frame, text="X Log Scale", variable=self.x_log_var, command=self.plot_data).grid(row=0, column=0, sticky='w', padx=10)
 
         self.y_log_var = tk.BooleanVar()
-        ttk.Checkbutton(options_frame, text="Y Log Scale", variable=self.y_log_var).grid(row=0, column=1, sticky='w', padx=10)
+        ttk.Checkbutton(options_frame, text="Y Log Scale", variable=self.y_log_var, command=self.plot_data).grid(row=0, column=1, sticky='w', padx=10)
 
         # Set the background of the options frame to match its parent
-        options_frame.configure(style='TLabelframe')
+        options_frame.configure(style='TFrame')
 
         ttk.Button(params_frame, text="Reload & Plot", style="Plot.TButton", command=self.load_file_data).grid(row=3, column=0, columnspan=2, sticky='ew', padx=10, pady=10)
 
@@ -182,7 +188,8 @@ class PlotterApp:
         info_frame = ttk.LabelFrame(panel, text="Information")
         info_frame.grid(row=2, column=0, sticky='new', pady=5)
         info_frame.grid_columnconfigure(0, weight=1)
-        ttk.Label(info_frame, text="Program duety", justify='left', style='TLabel').grid(row=0, column=0, sticky='ew', padx=10, pady=5)
+        info_text = "This utility plots data from CSV or DAT files. It supports live updates for monitoring ongoing experiments."
+        ttk.Label(info_frame, text=info_text, justify='left', style='TLabel', wraplength=350).grid(row=0, column=0, sticky='ew', padx=10, pady=5)
 
 
         # --- Console ---
@@ -252,55 +259,50 @@ class PlotterApp:
         self.stop_file_watcher()
 
         try:
+            line_offset = 0
+            temp_headers = []
             with open(self.filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                # Read all lines and auto-detect header by skipping comments
-                lines = f.readlines()
-                line_offset = 0
-                for i, line in enumerate(lines):
+                # Find the first non-comment line to use as the header
+                for i, line in enumerate(f):
                     if not line.strip().startswith('#'):
                         line_offset = i
+                        temp_headers = [h.strip() for h in next(csv.reader([line]))]
                         break
-                
-                if not lines or line_offset >= len(lines):
-                    self.log("Warning: File is empty or contains only comments.")
-                    self.headers = []
-                    self.data = {}
-                    self.x_col_cb['values'] = []
-                    self.y_col_cb['values'] = []
-                    self.plot_data() # Clear plot
-                    return
+                else: # No data lines found
+                    raise ValueError("File contains no data lines (all lines are comments or empty).")
 
-                # Read header from the first non-comment line
-                reader = csv.reader([lines[line_offset]])
-                self.headers = next(reader)
-                self.headers = [h.strip() for h in self.headers]
+                self.headers = temp_headers
+                self.data = {h: [] for h in self.headers}
 
-                # Reset data and load new data
-                self.data = {header: [] for header in self.headers}
-                
-                # Use DictReader for robust data loading
-                dict_reader = csv.DictReader(lines[line_offset + 1:], fieldnames=self.headers)
-                for row in dict_reader:
-                    for header in self.headers:
+                # Rewind and read data from the line after the header
+                f.seek(0)
+                for _ in range(line_offset + 1):
+                    next(f)
+
+                # Use a standard CSV reader for performance
+                reader = csv.reader(f)
+                for row in reader:
+                    if len(row) != len(self.headers): continue # Skip malformed rows
+                    for i, header in enumerate(self.headers):
                         try:
-                            self.data[header].append(float(row[header]))
+                            self.data[header].append(float(row[i]))
                         except (ValueError, TypeError):
-                            # If conversion fails, append NaN or a placeholder
                             self.data[header].append(float('nan'))
 
             self.x_col_cb['values'] = self.headers
             self.y_col_cb['values'] = self.headers
-            if len(self.headers) > 1:
+            
+            # Set default columns, checking if they exist
+            if len(self.headers) > 1 and self.headers[0] in self.headers and self.headers[1] in self.headers:
                 self.x_col_cb.set(self.headers[0])
                 self.y_col_cb.set(self.headers[1])
-            elif self.headers:
+            elif self.headers and self.headers[0] in self.headers:
                 self.x_col_cb.set(self.headers[0])
 
             self.last_mod_time = os.path.getmtime(self.filepath)
             self.last_file_size = os.path.getsize(self.filepath)
             num_points = len(self.data.get(self.headers[0], []))
             self.log(f"Loaded {num_points} data points with headers: {self.headers}")
-            self.plot_data()
 
         except Exception as e:
             self.log(f"Error loading file: {traceback.format_exc()}")
@@ -308,6 +310,8 @@ class PlotterApp:
         finally:
             # Always try to restart the watcher
             self.start_file_watcher()
+            # Trigger a plot update with the newly loaded data
+            self.plot_data()
 
     def append_file_data(self):
         """Efficiently reads and appends only new data from the file."""
@@ -322,14 +326,15 @@ class PlotterApp:
                 if not new_lines:
                     return # No new data to append
 
-                # Use DictReader on the new lines, assuming same headers
-                dict_reader = csv.DictReader(new_lines, fieldnames=self.headers)
+                # Use standard reader for performance
+                reader = csv.reader(new_lines)
                 appended_count = 0
-                for row in dict_reader:
-                    for header in self.headers:
+                for row in reader:
+                    if len(row) != len(self.headers): continue
+                    for i, header in enumerate(self.headers):
                         try:
-                            self.data[header].append(float(row[header]))
-                        except (ValueError, TypeError, KeyError):
+                            self.data[header].append(float(row[i]))
+                        except (ValueError, TypeError):
                             self.data[header].append(float('nan'))
                     appended_count += 1
 
@@ -347,26 +352,30 @@ class PlotterApp:
         x_col = self.x_col_cb.get()
         y_col = self.y_col_cb.get()
 
-        if not all([x_col, y_col, self.data]):
-            self.log("Cannot plot. Select X and Y columns.")
+        if not all([x_col, y_col, self.data]) or x_col not in self.headers or y_col not in self.headers:
+            self.line_main.set_data([], [])
+            self.ax_main.set_title("Select a file and columns to plot")
+            self.ax_main.set_xlabel("X-Axis")
+            self.ax_main.set_ylabel("Y-Axis")
+            self.canvas.draw()
             return
 
         try:
-            x_data = self.data[x_col]
-            y_data = self.data[y_col]
-
-            # Filter out non-finite values that can cause plotting errors
+            # --- Performance Improvement: Filter data only when needed ---
+            # This avoids re-filtering the entire dataset on every live update append.
+            # The cache is invalidated when columns change.
             import numpy as np
+            raw_x = self.data[x_col]
+            raw_y = self.data[y_col]
             
-            # Create pairs and filter
-            valid_pairs = [(x, y) for x, y in zip(x_data, y_data) if np.isfinite(x) and np.isfinite(y)]
-            if not valid_pairs:
-                x_data, y_data = [], []
-            else:
-                x_data, y_data = zip(*valid_pairs)
+            # Create a mask for finite values
+            finite_mask = np.isfinite(raw_x) & np.isfinite(raw_y)
+            
+            # Apply the mask to get clean data for plotting
+            self.plot_data_cache['x'] = np.array(raw_x)[finite_mask]
+            self.plot_data_cache['y'] = np.array(raw_y)[finite_mask]
 
-
-            self.line_main.set_data(x_data, y_data)
+            self.line_main.set_data(self.plot_data_cache['x'], self.plot_data_cache['y'])
 
             # Update plot scales
             self.ax_main.set_xscale('log' if self.x_log_var.get() else 'linear')
