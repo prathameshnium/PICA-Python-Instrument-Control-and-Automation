@@ -216,12 +216,8 @@ class Advanced_Delta_GUI:
         frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE); frame.pack(pady=(5, 0), padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
         logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0); logo_canvas.grid(row=0, column=0, rowspan=3, padx=15, pady=10)
-        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
-            try:
-                img = Image.open(self.LOGO_FILE_PATH).resize((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
-                self.logo_image = ImageTk.PhotoImage(img)
-                logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
-            except Exception as e: self.log(f"ERROR: Failed to load logo. {e}")
+        # Defer logo loading to improve startup time
+        self.root.after(50, lambda: self._load_logo(logo_canvas, frame))
 
         institute_font = ('Segoe UI', self.FONT_SIZE_BASE, 'bold')
         ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
@@ -229,11 +225,18 @@ class Advanced_Delta_GUI:
 
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
  
-        # Program details
         details_text = ("Program Duty: Delta Mode R vs. T (T-Control)\n"
                         "Instruments: Keithley 6221/2182, Lakeshore 350\n"
                         "Measurement Range: 10⁻⁹ Ω to 10⁸ Ω")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
+
+    def _load_logo(self, canvas, frame):
+        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
+            try:
+                img = Image.open(self.LOGO_FILE_PATH).resize((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
+                self.logo_image = ImageTk.PhotoImage(img)
+                canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
+            except Exception as e: self.log(f"ERROR: Failed to load logo. {e}")
 
     def create_input_frame(self, parent):
         frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE); frame.pack(pady=5, padx=10, fill='x')
@@ -289,7 +292,7 @@ class Advanced_Delta_GUI:
 
     def _update_y_scale(self):
         self.ax_main.set_yscale('log' if self.log_scale_var.get() else 'linear')
-        self.canvas.draw()
+        self.canvas.draw_idle()
 
     def log(self, message):
         ts = datetime.now().strftime("%H:%M:%S"); self.console_widget.config(state='normal')
@@ -326,7 +329,7 @@ class Advanced_Delta_GUI:
             self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
             for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_data([], [])
-            self.ax_main.set_title(f"R-T Curve: {self.params['sample_name']}", fontweight='bold'); self.canvas.draw()
+            self.ax_main.set_title(f"R-T Curve: {self.params['sample_name']}", fontweight='bold'); self.canvas.draw_idle()
             self.log("Starting stabilization process..."); self.root.after(1000, self._stabilization_loop)
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}"); messagebox.showerror("Initialization Error", f"{e}")
@@ -381,11 +384,11 @@ class Advanced_Delta_GUI:
             self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
             self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
             for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]: ax.relim(); ax.autoscale_view()
-            self.figure.tight_layout(pad=3.0); self.canvas.draw()
+            self.canvas.draw_idle() # Use draw_idle() for much better performance
 
             if temp >= self.params['cutoff']: self.log(f"!!! SAFETY CUTOFF REACHED at {temp:.4f} K !!!"); self.stop_measurement()
             elif temp >= self.params['end_temp']: self.log(f"Target temperature reached. Measurement complete."); self.stop_measurement()
-            else: self.root.after(1000, self._update_measurement_loop)
+            else: self.root.after(950, self._update_measurement_loop) # Slightly less than 1s to prevent drift
         except Exception as e: self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement()
 
     def _scan_for_visa_instruments(self):
