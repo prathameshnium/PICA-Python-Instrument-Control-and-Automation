@@ -30,7 +30,6 @@ import tkinter as tk
 from tkinter import ttk, messagebox, Toplevel, Text, Canvas, scrolledtext, font
 import os, sys, subprocess, platform, threading, queue, re
 from datetime import datetime
-from html import unescape
 import runpy
 import multiprocessing
 from multiprocessing import Process
@@ -252,14 +251,19 @@ class PICALauncherApp:
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
 
-        def _on_mousewheel(event):
-            if platform.system() == "Windows":
-                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-            else: # For MacOS and Linux
-                canvas.yview_scroll(-1 if event.num == 4 else 1, "units")
+        def _on_mousewheel_windows(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _on_mousewheel_linux_macos(event):
+            canvas.yview_scroll(-1 if event.num == 4 else 1, "units")
 
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
+        # Bind scrolling only to relevant widgets for better performance and to enable it
+        for widget in (canvas, scrollable_frame):
+            widget.bind("<MouseWheel>", _on_mousewheel_windows) # For Windows and some Linux
+            widget.bind("<Button-4>", _on_mousewheel_linux_macos) # For Linux and macOS
+            widget.bind("<Button-5>", _on_mousewheel_linux_macos) # For Linux and macOS
 
         canvas.grid(row=0, column=0, sticky='nsew', padx=(15, 0), pady=10)
         scrollbar.grid(row=0, column=1, sticky='ns', pady=10)
