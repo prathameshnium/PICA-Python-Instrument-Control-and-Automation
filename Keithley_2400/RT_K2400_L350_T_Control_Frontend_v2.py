@@ -135,14 +135,24 @@ class RT_GUI_Active:
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         # --- FIX: Create empty panels, add them to the PanedWindow, THEN populate them. ---
-        left_panel = ttk.Frame(main_pane, padding=5)
+        left_panel = ttk.Frame(main_pane)
         right_panel = ttk.Frame(main_pane, padding=5)
 
         main_pane.add(left_panel, weight=2)
         main_pane.add(right_panel, weight=3)
 
+        # --- Make the left panel scrollable ---
+        canvas = Canvas(left_panel, bg=self.CLR_BG, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(left_panel, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas, padding=5)
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
         # Now that the PanedWindow is correctly structured, populate the panels.
-        self._populate_left_panel(left_panel)
+        self._populate_left_panel(scrollable_frame)
         self._populate_right_panel(right_panel)
 
     def _populate_left_panel(self, panel):

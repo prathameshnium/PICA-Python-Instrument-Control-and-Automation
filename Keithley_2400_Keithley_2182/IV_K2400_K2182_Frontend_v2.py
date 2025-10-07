@@ -145,14 +145,27 @@ class IV_GUI:
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
         ttk.Label(header, text=f"I-V Sweep (K2400 + K2182)", style='Header.TLabel', font=font_title_italic).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
-        left_panel = self._create_left_panel(main_pane); main_pane.add(left_panel, weight=2)
-        right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=3)
 
-    def _create_left_panel(self, parent):
-        panel = ttk.Frame(parent, padding=5); panel.grid_columnconfigure(0, weight=1); panel.grid_rowconfigure(3, weight=1)
+        left_panel_container = ttk.Frame(main_pane)
+        main_pane.add(left_panel_container, weight=2)
+
+        # --- Make the left panel scrollable ---
+        canvas = Canvas(left_panel_container, bg=self.CLR_BG, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(left_panel_container, orient="vertical", command=canvas.yview)
+        left_panel = ttk.Frame(canvas, padding=5) # This is now the scrollable_frame
+        left_panel.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=left_panel, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=3)
+        self._populate_left_panel(left_panel)
+
+    def _populate_left_panel(self, panel):
+        panel.grid_columnconfigure(0, weight=1); panel.grid_rowconfigure(3, weight=1)
         self._create_info_panel(panel, 0)
         self._create_params_panel(panel, 1); self._create_control_panel(panel, 2); self._create_console_panel(panel, 3)
-        return panel
 
     def _create_info_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Information'); frame.grid(row=grid_row, column=0, sticky='new', pady=5)
