@@ -1,5 +1,27 @@
 ## Instrument & Software Update Log
-### Version 13.5 (Current)
+### Version 13.6 (Current)
+
+**New Measurement Frontends & UI Standardization**
+
+-   **New LCR C-V Frontend:** Integrated a new professional GUI for C-V measurements using the Keysight E4980A (`CV_KE4980A_Frontend_v2.py`). It features a modern, dark-themed UI, live plotting, and robust instrument control logic separated into a backend class.
+-   **New K2400/2182 I-V Frontend:** Added a new professional GUI for high-precision 4-probe I-V sweeps using the Keithley 2400 and 2182 (`IV_K2400_K2182_Frontend_v2.py`). This replaces older versions with a standardized, more reliable interface.
+-   **New K2400/2182 R-T Frontends:**
+    -   Integrated an **active** R-T sweep frontend (`RT_K2400_K2182_T_Control_Frontend_v2.py`) that automates temperature stabilization and ramping with the Lakeshore 350.
+    -   Integrated a **passive** R-T logging frontend (`RT_K2400_2182_L350_T_Sensing_Frontend_v1.py`) for monitoring resistance while temperature changes externally.
+-   **New K2400 R-T (Passive) Frontend:** Added a dedicated GUI for passive R-T logging using a single Keithley 2400 and a Lakeshore 350 (`RT_K2400_L350_T_Sensing_Frontend_v3.py`).
+-   **UI/UX Overhaul:** All new frontends share a consistent, modern, dark-themed design with scrollable control panels, live Matplotlib graphs, and integrated logging consoles, significantly improving usability and professional appearance.
+-   **PICA Launcher Update:** The main launcher (`PICA_v6.py`) has been updated to point to all these new, versioned frontend scripts, ensuring users always launch the latest and most stable versions.
+-   **Files Added/Modified:**
+    -   `PICA_v6.py`
+    -   `LCR_Keysight_E4980A/CV_KE4980A_Frontend_v2.py`
+    -   `Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v2.py`
+    -   `Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_Frontend_v2.py`
+    -   `Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_Frontend_v1.py`
+    -   `Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v3.py`
+
+---
+
+### Version 13.5
 
 **Project-Wide Refactoring & Reorganization**
 
