@@ -4,6 +4,7 @@
 # Author:       Prathamesh K Deshmukh 
 # Created:      06/10/2025
 # Version:      2.0 (Performance & UI Enhancements)
+#               2.1 (Added new instance button)
 # -------------------------------------------------------------------------------
 
 import tkinter as tk
@@ -17,6 +18,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import matplotlib as mpl
 import numpy as np
 import pandas as pd
+import subprocess, sys
 
 try:
     from PIL import Image, ImageTk
@@ -25,7 +27,7 @@ except ImportError:
     PIL_AVAILABLE = False
 
 class PlotterApp:
-    PROGRAM_VERSION = "2.0"
+    PROGRAM_VERSION = "2.1"
     CLR_BG = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG = '#EDF2F4'
@@ -121,6 +123,11 @@ class PlotterApp:
         right_header_frame.pack(side='right', padx=20, pady=10)
         font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
         ttk.Label(right_header_frame, text=f"PICA General Purpose Plotter", style='Header.TLabel', font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack()
+
+        # --- New Instance Button ---
+        new_instance_button = ttk.Button(header, text="➕", command=self.launch_new_instance, width=3)
+        new_instance_button.pack(side='right', padx=(0, 10), pady=5)
+
 
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
@@ -417,6 +424,16 @@ class PlotterApp:
             # File might have been deleted or is temporarily inaccessible
             return
         
+        self.file_watcher_job = self.root.after(1000, self.check_for_updates)
+
+    def launch_new_instance(self):
+        """Launches a new instance of the plotter utility."""
+        self.log("Launching new plotter instance...")
+        try:
+            subprocess.Popen([sys.executable, sys.argv[0]])
+        except Exception as e:
+            self.log(f"Error launching new instance: {e}")
+
         self.file_watcher_job = self.root.after(1000, self.check_for_updates)
 
 if __name__ == '__main__':

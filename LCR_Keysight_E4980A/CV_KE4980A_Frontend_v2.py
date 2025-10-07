@@ -46,6 +46,12 @@ except ImportError:
     pyvisa, AgilentE4980 = None, None
     PYMEASURE_AVAILABLE = False
 
+try:
+    # Import the plotter launch function from the main PICA launcher
+    from PICA_v6 import launch_plotter_utility
+except (ImportError, ModuleNotFoundError):
+    # Fallback if the script is run standalone
+    launch_plotter_utility = lambda: print("Plotter launch function not found.")
 #===============================================================================
 # BACKEND CLASS - Instrument Control Logic
 #===============================================================================
@@ -205,6 +211,11 @@ class LCR_CV_GUI:
         font_title_italic = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold', 'italic')
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
+
+        # --- Plotter Launch Button ---
+        plotter_button = ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3)
+        plotter_button.pack(side='right', padx=10, pady=5)
+
         Label(header_frame, text="Keysight E4980A: C-V Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
 
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')

@@ -40,6 +40,12 @@ try:
 except ImportError:
     pyvisa = None
 
+try:
+    # Import the plotter launch function from the main PICA launcher
+    from PICA_v6 import launch_plotter_utility
+except (ImportError, ModuleNotFoundError):
+    # Fallback if the script is run standalone
+    launch_plotter_utility = lambda: print("Plotter launch function not found.")
 class Keithley2400_IV_Backend:
     """A dedicated class to handle backend communication with the Keithley 2400 for I-V sweeps."""
     def __init__(self):
@@ -227,6 +233,11 @@ class MeasurementAppGUI:
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
         font_title_main = ('Segoe UI', self.FONT_SIZE_BASE + 4, 'bold')
+
+        # --- Plotter Launch Button ---
+        plotter_button = ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3)
+        plotter_button.pack(side='right', padx=10, pady=5)
+
         Label(header_frame, text="Keithley 2400: I-V Measurement", bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD, font=font_title_main).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).pack(side='right', padx=20, pady=10)
 
