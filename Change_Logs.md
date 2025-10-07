@@ -1,4 +1,28 @@
 ## Instrument & Software Update Log
+### Version 13.7 (Current)
+
+**GUI Standardization & Modernization**
+
+-   **Major UI/UX Overhaul:** Refactored and redesigned several key measurement frontends to align with the modern, dark-themed, and professional UI standard established in Version 13.6. This creates a consistent user experience across the entire PICA suite.
+-   **New Delta Mode R-T Frontend:** Integrated a new, robust GUI for Delta Mode R-T measurements (`Delta_RT_K6221_K2182_L350_T_Control_Frontend_v4.py`). This frontend now includes the advanced temperature stabilization and hardware ramp logic, along with the standardized live plotting and console layout.
+-   **New High-Resistance R-T Frontend:** Deployed a new GUI for High-Resistance R-T sweeps (`RT_K6517B_L350_T_Control_Frontend_v12.py`). It replaces the previous version with the standardized UI, featuring improved graph layouts and more reliable instrument control.
+-   **New Lakeshore Temp Control Frontend:** Released a modernized GUI for the standalone Lakeshore 350 temperature ramp utility (`T_Control_L350_RangeControl_Frontend_v7.py`), bringing its appearance and functionality in line with other modules.
+-   **New Delta Mode I-V Frontend:** Updated the Delta Mode I-V sweep GUI (`IV_K6221_DC_Sweep_Frontend_V9.py`) with the standardized modern theme, improving usability and visual consistency.
+-   **Backend Refinements:**
+    -   The backend for the High-Resistance R-T module (`IV_K6517B_L350_T_Control_Backend_v6.py`) was updated with a more robust active stabilization logic.
+    -   The Lakeshore 350 backend (`T_Control_L350_Simple_Backend_v10.py`) was improved for clarity and reliability.
+-   **PICA Launcher Update:** The main launcher (`PICA_v6.py`) has been updated to point to all the new and improved frontend scripts.
+-   **Files Added/Modified:**
+    -   `PICA_v6.py`
+    -   `Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v4.py`
+    -   `Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_Frontend_V9.py`
+    -   `Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_Frontend_v12.py`
+    -   `Keithley_6517B/High_Resistance/Backends/IV_K6517B_L350_T_Control_Backend_v6.py`
+    -   `Lakeshore_350_340/T_Control_L350_RangeControl_Frontend_v7.py`
+    -   `Lakeshore_350_340/Backends/T_Control_L350_Simple_Backend_v10.py`
+
+---
+
 ### Version 13.6 (Current)
 
 **New Measurement Frontends & UI Standardization**

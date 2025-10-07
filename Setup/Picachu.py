@@ -20,7 +20,9 @@
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
  
  VERSION HISTORY:
-Basics Picachu file: The exe file of PICA laucher
+   13.3 (05/10/2025): Added distinct launchers for Active and Passive R-T modes.
+   13.2 (05/10/2025): Integrated new K2400/2182 frontend GUIs.
+   13.1 (04/10/2025): Resolved duplicate script paths and validated Delta Mode scripts.
  
 ===============================================================================
 '''
