@@ -161,7 +161,7 @@ class Advanced_Delta_GUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("Advanced Delta R-T Measurement (K6221 + LS350)")
+        self.root.title("K6221/2182 & L350: Delta Mode R-T (T-Control)")
         self.root.geometry("1550x950"); self.root.minsize(1200, 850)
         self.root.configure(bg=self.CLR_BG_DARK)
 
@@ -209,7 +209,7 @@ class Advanced_Delta_GUI:
         font_title_italic = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold italic')
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="Delta R-T Measurement (K6221 + LS350)", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
+        Label(header_frame, text="K6221/2182 & L350: Delta Mode R-T (T-Control)", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
     def create_info_frame(self, parent):
