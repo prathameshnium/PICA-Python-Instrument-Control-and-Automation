@@ -111,7 +111,7 @@ class PICALauncherApp:
         "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/T_Sensing_L350_Frontend_v3.py"),
         "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v2.py"),
         "Lock-in AC Measurement": resource_path("Lock_in_amplifier/BasicTest_S830_Backend_v1.py"), # Assuming this is correct, no frontend provided
-        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend.py"),
+        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v2.py"),
         "PICA Help": resource_path("PICA_README.md"),
     }
 
@@ -278,6 +278,12 @@ class PICALauncherApp:
         self._create_launch_button(mid_res_frame2, "R vs. T (T_Control)", "K2400_2182 R-T").grid(row=2, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
         self._create_launch_button(mid_res_frame2, "R vs. T (T_Sensing)", "K2400_2182 R-T (T_Sensing)").grid(row=3, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
         ttk.Button(mid_res_frame2, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("K2400_2182 I-V")).grid(row=1, column=1, rowspan=3, sticky='ns')
+
+        # --- Plotter Utility (Moved to Left Column) ---
+        plotter_frame = ttk.LabelFrame(left_col, text='Data Visualization'); plotter_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        plotter_frame.columnconfigure(0, weight=1)
+        self._create_launch_button(plotter_frame, "Open Plotter", "Plotter Utility").grid(row=0, column=0, sticky='ew', padx=(0, 4))
+        ttk.Button(plotter_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Plotter Utility")).grid(row=0, column=1, sticky='ns')
         
         # --- High Resistance (moved to right column) ---
         high_res_frame = ttk.LabelFrame(right_col, text='High Resistance (10³ Ω to 10¹⁶ Ω)'); high_res_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
@@ -307,11 +313,6 @@ class PICALauncherApp:
         lockin_frame.columnconfigure(0, weight=1)
         self._create_launch_button(lockin_frame, "AC Measurement", "Lock-in AC Measurement").grid(row=0, column=0, sticky='ew', padx=(0, 4))
         ttk.Button(lockin_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Lock-in AC Measurement")).grid(row=0, column=1, sticky='ns')
-
-        # --- Plotter Utility ---
-        plotter_frame = ttk.LabelFrame(right_col, text='Data Visualization'); plotter_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
-        plotter_frame.columnconfigure(0, weight=1)
-        self._create_launch_button(plotter_frame, "Open Plotter", "Plotter Utility").grid(row=0, column=0, sticky='ew', padx=(0, 4))
 
         return main_container
 
@@ -419,6 +420,11 @@ class PICALauncherApp:
         if not script_path:
             self.log(f"ERROR: Script key '{script_key}' not found in SCRIPT_PATHS.")
             messagebox.showwarning("Key Not Found", f"The script key '{script_key}' is not defined.")
+            return
+
+        # Special case for plotter utility which is in its own top-level folder
+        if script_key == "Plotter Utility":
+            self._open_path(os.path.dirname(os.path.abspath(script_path)))
             return
 
         folder_path = os.path.dirname(os.path.abspath(script_path))
