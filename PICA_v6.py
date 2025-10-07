@@ -86,9 +86,9 @@ class PICALauncherApp:
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
     FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
     LOGO_FILE = resource_path("_assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
-    MANUAL_FILE = resource_path("_assets/Manuals")
-    README_FILE = resource_path("PICA_README.md")
-    LICENSE_FILE = resource_path("LICENSE") 
+    MANUAL_FILE = resource_path("_assets/Manuals") # This path is correct as it points to a directory
+    README_FILE = resource_path("README.md")
+    LICENSE_FILE = resource_path("LICENSE")
     UPDATES_FILE = resource_path("Change_Logs.md")
     LOGO_SIZE = 140
 
@@ -97,7 +97,7 @@ class PICALauncherApp:
         "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_Frontend_V9.py"),
         "Delta Mode R-T": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v4.py"),
         "Delta Mode R-T (T_Sensing)": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_Frontend_v3.py"),
-        "K2400 I-V": resource_path("Keithley_2400/IV_K2400_Frontend_v4.py"),
+        "K2400 I-V": resource_path("Keithley_2400/IV_K2400_Frontend_v4.py"), # Corrected path
         "K2400 R-T": resource_path("Keithley_2400/RT_K2400_L350_T_Control_Frontend_v2.py"),
         "K2400 R-T (T_Sensing)": resource_path("Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v3.py"),
         "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v2.py"),
@@ -111,8 +111,8 @@ class PICALauncherApp:
         "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/T_Sensing_L350_Frontend_v3.py"),
         "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v2.py"),
         "Lock-in AC Measurement": resource_path("Lock_in_amplifier/BasicTest_S830_Backend_v1.py"), # Assuming this is correct, no frontend provided
-        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v2.py"),
-        "PICA Help": resource_path("PICA_README.md"),
+        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v2.py"), # Corrected path
+        "PICA Help": resource_path("README.md"),
     }
 
     def __init__(self, root):
