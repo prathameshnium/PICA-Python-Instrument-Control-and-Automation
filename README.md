@@ -102,7 +102,7 @@ The PICA suite includes modules for a range of standard electrical and thermal t
 | **Keysight E4980A LCR Meter** | Capacitance-Voltage (C-V) Sweeps     | Automated C-V measurements for semiconductor and dielectric analysis.       |
 | **Lock-in Amplifier** | AC Resistance Measurement            | For measuring AC transport properties and contact impedance.                |
 | **Lakeshore 340/350 Controller** | Temperature Control Utility          | A standalone module for defining and executing temperature profiles.        |
-|                                | Temperature Monitoring Utility       | A passive data logger for monitoring environmental temperature.             |
+|                                | Temperature Monitoring Utility       | A passive data  for monitoring environmental temperature.             |
 
 ---
 

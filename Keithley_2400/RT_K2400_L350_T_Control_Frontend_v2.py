@@ -106,7 +106,7 @@ class RT_GUI_Active:
     FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold')
 
     def __init__(self, root):
-        self.root = root; self.root.title(f"Active R-T Sweep (K2400) v{self.PROGRAM_VERSION}")
+        self.root = root; self.root.title(f"K2400 & L350: R-T Sweep (T-Control)")
         self.root.geometry("1600x950"); self.root.minsize(1400, 800); self.root.configure(bg=self.CLR_BG)
         self.experiment_state = 'idle'; self.logo_image = None
         self.backend = RT_Backend_Active(); self.data_storage = {'temperature': [], 'voltage': [], 'resistance': []}
@@ -131,7 +131,7 @@ class RT_GUI_Active:
 
     def create_widgets(self):
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
-        ttk.Label(header, text=f"Active R-T Sweep (K2400) v{self.PROGRAM_VERSION}", style='Header.TLabel', font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
+        ttk.Label(header, text=f"K2400 & L350: R-T Sweep (T-Control)", style='Header.TLabel', font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         # --- FIX: Create empty panels, add them to the PanedWindow, THEN populate them. ---

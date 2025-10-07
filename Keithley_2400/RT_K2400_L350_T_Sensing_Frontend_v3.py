@@ -1,5 +1,5 @@
  # -------------------------------------------------------------------------------
-# Name:         Passive R-T Logger for Keithley 2400
+# Name:         Passive R-T  for Keithley 2400
 # Purpose:      Provide a GUI for passively logging R-T data using a K2400
 #               and LS350. This version does not control temperature.
 # Author:       Prathamesh Deshmukh (Adapted from 6517B & 2400 scripts)
@@ -89,7 +89,7 @@ class RT_GUI_Passive:
     FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold')
 
     def __init__(self, root):
-        self.root = root; self.root.title(f"Passive R-T Logger (K2400) v{self.PROGRAM_VERSION}")
+        self.root = root; self.root.title(f"K2400 & L350: R-T  (T-Sensing)")
         self.root.geometry("1600x950"); self.root.minsize(1400, 800); self.root.configure(bg=self.CLR_BG)
         self.is_running = False; self.logo_image = None
         self.backend = RT_Backend_Passive(); self.data_storage = {'temperature': [], 'voltage': [], 'resistance': []}
@@ -118,7 +118,7 @@ class RT_GUI_Passive:
     def create_widgets(self):
         font_title_italic = ('Segoe UI', 13, 'bold', 'italic')
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
-        ttk.Label(header, text=f"Passive R-T Logger (K2400) v{self.PROGRAM_VERSION}", style='Header.TLabel', font=font_title_italic).pack(side='left', padx=20, pady=10)
+        ttk.Label(header, text=f"K2400 & L350: R-T  (T-Sensing)", style='Header.TLabel', font=font_title_italic).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
         
         left_panel_container = ttk.Frame(main_pane)

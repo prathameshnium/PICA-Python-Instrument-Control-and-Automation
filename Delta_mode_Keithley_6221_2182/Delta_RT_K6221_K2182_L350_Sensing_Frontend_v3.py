@@ -147,7 +147,7 @@ class MeasurementAppGUI:
     try:
         # Robust path finding for assets
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+m        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
     except NameError:
         # Fallback for environments where __file__ is not defined
         LOGO_FILE_PATH = "../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg"

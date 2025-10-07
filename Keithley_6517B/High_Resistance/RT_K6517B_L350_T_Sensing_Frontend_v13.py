@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------
-# Name:             Integrated R-T Passive Data Logger
+# Name:             Integrated R-T Passive Data 
 # Purpose:          Provide a GUI to passively measure and record Resistance vs.
 #                   Temperature from a Lakeshore 350 and Keithley 6517B.
 #                   This version DOES NOT control the temperature.
@@ -179,7 +179,7 @@ class Integrated_RT_GUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("K6517B & L350: R-T Passive Logger")
+        self.root.title("K6517B & L350: R-T Passive ")
         self.root.geometry("1550x950")
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1200, 850)
@@ -254,7 +254,7 @@ class Integrated_RT_GUI:
 
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="K6517B & L350: R-T Measurement (Passive Logger)", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
+        Label(header_frame, text="K6517B & L350: R-T Measurement (Passive )", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
     def create_info_frame(self, parent):
@@ -287,7 +287,7 @@ class Integrated_RT_GUI:
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
 
         # Program details
-        details_text = ("Program Mode: R vs. T (Passive Logger)\n"
+        details_text = ("Program Mode: R vs. T (Passive )\n"
                         "Instruments: Lakeshore 350, Keithley 6517B\n"
                         "Measurement Range: 10³ Ω to 10¹⁶ Ω")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
