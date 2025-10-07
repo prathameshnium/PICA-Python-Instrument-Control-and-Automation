@@ -141,9 +141,9 @@ class IV_GUI:
         mpl.rcParams.update({'font.family': 'Segoe UI', 'font.size': 11, 'axes.titlesize': 15, 'axes.labelsize': 13})
 
     def create_widgets(self):
-        font_title_italic = ('Segoe UI', 13, 'bold', 'italic')
+        font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
-        ttk.Label(header, text=f"I-V Sweep (K2400 + K2182) v{self.PROGRAM_VERSION}", style='Header.TLabel', font=font_title_italic).pack(side='left', padx=20, pady=10)
+        ttk.Label(header, text=f"I-V Sweep (K2400 + K2182)", style='Header.TLabel', font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         left_panel_container = ttk.Frame(main_pane)
