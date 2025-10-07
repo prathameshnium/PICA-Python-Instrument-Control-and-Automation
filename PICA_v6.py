@@ -133,6 +133,9 @@ class PICALauncherApp:
         
         # Auto-launch GPIB scanner after 1 second
         self.root.after(1000, self.run_gpib_test)
+        # Pre-cache markdown files in the background for faster window opening
+        self.root.after(1500, self._pre_cache_markdown_files)
+
     def setup_styles(self):
         style = ttk.Style(self.root)
         style.theme_use('clam')
@@ -359,43 +362,19 @@ class PICALauncherApp:
     # =========================================================================
     def _parse_markdown(self, content):
         """
-        Parses markdown content into a list of (text, tags) tuples for rendering.
-        This runs only once per file, and the result is cached.
+        Parses markdown content into a list of (text, tags) for rendering.
+        This is a placeholder for a more sophisticated parser if needed.
+        For now, we just split by lines as the original did.
+        The key is that this runs only once per file.
         """
-        parsed_lines = []
-        lines = content.split('\n')
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith('### '):
-                parsed_lines.append((f"{stripped[4:]}\n", "h3"))
-            elif stripped.startswith('# '):
-                parsed_lines.append((f"{stripped[2:]}\n", "h1"))
-            elif stripped.startswith('* '):
-                # Handle list items with potential bold text
-                line_content = stripped[2:]
-                parts = re.split(r'(\*\*.*?\*\*)', line_content)
-                parsed_lines.append(("• ", "list_l1"))
-                for part in parts:
-                    if part.startswith('**') and part.endswith('**'):
-                        parsed_lines.append((part[2:-2], ("list_l1", "bold")))
-                    else:
-                        parsed_lines.append((part, "list_l1"))
-                parsed_lines.append(('\n', "list_l1")) # Add newline at the end of the list item
-            elif stripped in ('---', '***', '___'):
-                parsed_lines.append((f"{'─'*120}\n", "hr"))
-            else:
-                # Handle paragraphs with potential bold text
-                parts = re.split(r'(\*\*.*?\*\*)', line)
-                for part in parts:
-                    if part.startswith('**') and part.endswith('**'):
-                        parsed_lines.append((part[2:-2], ("p", "bold")))
-                    else:
-                        parsed_lines.append((part, "p"))
-                parsed_lines.append(('\n', "p")) # Add newline at the end of the paragraph
-        return parsed_lines
+        # This is a placeholder for a more sophisticated parser if needed.
+        # For now, we just split by lines as the original did.
+        # The key is that this runs only once per file.
+        return content.split('\n')
 
     def _show_file_in_window(self, file_path, title):
         abs_path = os.path.abspath(file_path)
+
         if not os.path.exists(abs_path):
             self.log(f"ERROR: File not found: {abs_path}")
             messagebox.showerror("File Not Found", f"The specified file does not exist:\n\n{abs_path}")
@@ -403,13 +382,13 @@ class PICALauncherApp:
         try:
             # Use cache if available
             if file_path in self._md_cache:
-                parsed_content = self._md_cache[file_path]
+                lines = self._md_cache[file_path]
             else:
                 with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
                     content = f.read()
+                lines = self._parse_markdown(content)
                 if file_path.lower().endswith('.md'):
-                    parsed_content = self._parse_markdown(content)
-                    self._md_cache[file_path] = parsed_content # Cache the parsed content
+                    self._md_cache[file_path] = lines # Cache the parsed lines
         except Exception as e:
             messagebox.showerror("Error Reading File", f"Could not read the file:\n\n{e}")
             return
@@ -434,12 +413,37 @@ class PICALauncherApp:
         is_markdown = file_path.lower().endswith('.md')
         
         if is_markdown:
-            # Insert the pre-parsed, pre-tagged content from the cache
-            for text, tags in parsed_content:
-                text_area.insert('end', text, tags)
-        else: # For non-markdown files like LICENSE
-            with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
-                text_area.insert('1.0', f.read())
+            # Simple parser to apply styles line by line
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith('### '):
+                    text_area.insert('end', f"{stripped[4:]}\n", "h3")
+                elif stripped.startswith('# '):
+                    text_area.insert('end', f"{stripped[2:]}\n", "h1")
+                elif stripped.startswith('* '):
+                    # Apply bold tags within list items
+                    line_content = stripped[2:]
+                    parts = re.split(r'(\*\*.*?\*\*)', line_content)
+                    text_area.insert('end', "• ", "list_l1")
+                    for part in parts:
+                        if part.startswith('**') and part.endswith('**'):
+                            text_area.insert('end', part[2:-2], ("list_l1", "bold"))
+                        else:
+                            text_area.insert('end', part, "list_l1")
+                    text_area.insert('end', '\n')
+                elif stripped in ('---', '***', '___'):
+                    text_area.insert('end', f"{'─'*120}\n", "hr")
+                else:
+                    # Apply bold tags within paragraphs
+                    parts = re.split(r'(\*\*.*?\*\*)', line)
+                    for part in parts:
+                        if part.startswith('**') and part.endswith('**'):
+                            text_area.insert('end', part[2:-2], ("p", "bold"))
+                        else:
+                            text_area.insert('end', part, "p")
+                    text_area.insert('end', '\n')
+        else: # For non-markdown files like LICENSE, insert the raw cached content
+            text_area.insert('1.0', "\n".join(lines))
             
         text_area.pack(expand=True, fill='both')
         text_area.config(state='disabled')
@@ -499,6 +503,28 @@ class PICALauncherApp:
         # The GPIB scanner is now its own class
         GPIBScannerWindow(self.root, self)
 
+    def _pre_cache_markdown_files(self):
+        """
+        Reads and parses key markdown/text files in the background to make
+        the documentation windows open instantly.
+        """
+        files_to_cache = [
+            (self.README_FILE, "README"),
+            (self.UPDATES_FILE, "Change Log"),
+            (self.LICENSE_FILE, "License")
+        ]
+        for file_path, name in files_to_cache:
+            if file_path not in self._md_cache and os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                    if file_path.lower().endswith('.md'):
+                        self._md_cache[file_path] = self._parse_markdown(content)
+                    else:
+                        self._md_cache[file_path] = content # Cache raw content for non-markdown
+                    self.log(f"Pre-cached '{name}' for faster access.")
+                except Exception as e:
+                    self.log(f"Warning: Could not pre-cache '{name}'. {e}")
 class GPIBScannerWindow(Toplevel):
     def __init__(self, parent, app_ref):
         super().__init__(parent)
@@ -640,5 +666,10 @@ def main():
 
 if __name__ == '__main__':
     # This is ESSENTIAL for multiprocessing to work in a bundled executable
+    # and ensures a consistent, stable process creation method across platforms.
+    # 'spawn' is the most robust method for GUI apps, though it is the default
+    # on Windows and macOS.
+    multiprocessing.set_start_method('spawn', force=True)
     multiprocessing.freeze_support()
+
     main()

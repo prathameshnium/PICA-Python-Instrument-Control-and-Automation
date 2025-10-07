@@ -16,6 +16,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib as mpl
 import numpy as np
+import pandas as pd
 
 try:
     from PIL import Image, ImageTk
@@ -60,6 +61,7 @@ class PlotterApp:
         self.last_mod_time = None
         self.last_file_size = 0
         self.file_watcher_job = None
+        self.plot_bg = None # For blitting
 
         self.setup_styles()
         self.create_widgets()
@@ -108,14 +110,8 @@ class PlotterApp:
 
         # --- Header with Logo and Institute Name ---
         logo_canvas = Canvas(header, width=60, height=60, bg=self.CLR_HEADER, highlightthickness=0)
-        logo_canvas.pack(side='left', padx=(20, 15), pady=10)
-        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
-            try:
-                img = Image.open(self.LOGO_FILE_PATH).resize((60, 60), Image.Resampling.LANCZOS)
-                self.logo_image = ImageTk.PhotoImage(img)
-                logo_canvas.create_image(30, 30, image=self.logo_image)
-            except Exception as e:
-                self.log(f"Warning: Could not load logo. {e}")
+        logo_canvas.pack(side='left', padx=(20, 15), pady=10)        
+        self.root.after(100, lambda: self._load_logo(logo_canvas))
 
         institute_frame = tk.Frame(header, bg=self.CLR_HEADER); institute_frame.pack(side='left')
         ttk.Label(institute_frame, text="UGC-DAE Consortium for Scientific Research", style='Header.TLabel', font=('Segoe UI', 14, 'bold')).pack(anchor='w')
@@ -134,6 +130,14 @@ class PlotterApp:
 
         right_panel = self._create_right_panel(main_pane)
         main_pane.add(right_panel, weight=3)
+
+    def _load_logo(self, canvas):
+        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
+            try:
+                img = Image.open(self.LOGO_FILE_PATH).resize((60, 60), Image.Resampling.LANCZOS)
+                self.logo_image = ImageTk.PhotoImage(img)
+                canvas.create_image(30, 30, image=self.logo_image)
+            except Exception as e: self.log(f"Warning: Could not load logo. {e}")
 
     def _create_left_panel(self, parent):
         panel = ttk.Frame(parent, width=400)
@@ -206,7 +210,7 @@ class PlotterApp:
 
         self.figure = Figure(dpi=100)
         self.ax_main = self.figure.add_subplot(111)
-        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
+        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-', animated=True)
         self.ax_main.set_title("Select a file and columns to plot", fontweight='bold')
         self.ax_main.set_xlabel("X-Axis")
         self.ax_main.set_ylabel("Y-Axis")
@@ -214,6 +218,7 @@ class PlotterApp:
         self.figure.tight_layout()
 
         self.canvas = FigureCanvasTkAgg(self.figure, container)
+        self.canvas.mpl_connect('draw_event', self._on_draw)
         self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
 
         # Add the Matplotlib navigation toolbar
@@ -258,54 +263,29 @@ class PlotterApp:
         self.stop_file_watcher()
 
         try:
-            line_offset = 0
-            temp_headers = []
+            # Use pandas for highly efficient CSV parsing
             with open(self.filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                # Find the first non-comment line to use as the header
+                # Find the first data line to determine the number of columns and header position
+                first_data_line_index = -1
                 for i, line in enumerate(f):
-                    if not line.strip().startswith('#'):
-                        line_offset = i
-                        temp_headers = [h.strip() for h in next(csv.reader([line]))]
+                    if line.strip() and not line.strip().startswith('#'):
+                        first_data_line_index = i
                         break
-                else: # No data lines found
-                    raise ValueError("File contains no data lines (all lines are comments or empty).")
-    
-                self.headers = temp_headers
-                self.data = {h: [] for h in self.headers}
+            if first_data_line_index == -1: raise ValueError("No data lines found in file.")
 
-                # Rewind and read data from the line after the header
-                f.seek(0)
-                for _ in range(line_offset + 1):
-                    next(f)
+            df = pd.read_csv(self.filepath, comment='#', header=0, sep=None, engine='python', skip_blank_lines=True)
+            self.data = df.to_dict('series')
+            self.headers = list(df.columns)
 
-                # Read all data into lists first
-                reader = csv.reader(f)
-                temp_data = {h: [] for h in self.headers}
-                for row in reader:
-                    if len(row) != len(self.headers): continue # Skip malformed rows
-                    for i, header in enumerate(self.headers):
-                        try:
-                            temp_data[header].append(float(row[i]))
-                        except (ValueError, TypeError):
-                            temp_data[header].append(np.nan)
-                
-                # Convert to numpy arrays for performance
-                for header in self.headers:
-                    self.data[header] = np.array(temp_data[header], dtype=float)
-    
             self.x_col_cb['values'] = self.headers
             self.y_col_cb['values'] = self.headers
             
-            # Set default columns if they exist
-            if len(self.headers) > 1 and self.headers[0] in self.headers and self.headers[1] in self.headers:
-                self.x_col_cb.set(self.headers[0])
-                self.y_col_cb.set(self.headers[1])
-            elif self.headers and self.headers[0] in self.headers:
-                self.x_col_cb.set(self.headers[0])
+            if len(self.headers) > 1: self.x_col_cb.set(self.headers[0]); self.y_col_cb.set(self.headers[1])
+            elif self.headers: self.x_col_cb.set(self.headers[0])
 
             self.last_mod_time = os.path.getmtime(self.filepath)
             self.last_file_size = os.path.getsize(self.filepath)
-            num_points = len(self.data.get(self.headers[0], np.array([])))
+            num_points = len(df)
             self.log(f"Loaded {num_points} data points with headers: {self.headers}")
 
         except Exception as e:
@@ -323,34 +303,23 @@ class PlotterApp:
             return
 
         try:
-            with open(self.filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                f.seek(self.last_file_size)
-                new_lines = f.readlines()
+            # Use pandas to read only the new data, assuming no new headers
+            new_df = pd.read_csv(self.filepath, comment='#', header=None, names=self.headers, sep=None, engine='python', skiprows=self.last_file_size)
+            
+            if new_df.empty:
+                return
 
-                if not new_lines:
-                    return # No new data to append
+            # Append new data
+            for header in self.headers:
+                self.data[header] = pd.concat([self.data[header], new_df[header]], ignore_index=True)
 
-                # Read new lines into temporary lists
-                reader = csv.reader(new_lines)
-                new_data = {h: [] for h in self.headers}
-                appended_count = 0
-                for row in reader:
-                    if len(row) != len(self.headers): continue
-                    for i, header in enumerate(self.headers):
-                        try:
-                            new_data[header].append(float(row[i]))
-                        except (ValueError, TypeError):
-                            new_data[header].append(np.nan)
-                    appended_count += 1
-                
-                # Append new data as numpy arrays
-                for header in self.headers:
-                    self.data[header] = np.concatenate((self.data[header], np.array(new_data[header], dtype=float)))
-                
+            appended_count = len(new_df)
             self.last_mod_time = os.path.getmtime(self.filepath)
             self.last_file_size = os.path.getsize(self.filepath)
             self.log(f"Appended {appended_count} new data points.")
             self.plot_data()
+
+
 
         except Exception as e:
             self.log(f"Error appending data: {traceback.format_exc()}")
@@ -370,13 +339,12 @@ class PlotterApp:
             return
 
         try:
-            raw_x = self.data[x_col]
-            raw_y = self.data[y_col]
+            # Pandas series are already like numpy arrays
+            raw_x = self.data[x_col].values
+            raw_y = self.data[y_col].values
             
             # Create a mask for finite values to avoid plotting errors
             finite_mask = np.isfinite(raw_x) & np.isfinite(raw_y)
-            
-            # Apply the mask to get clean data for plotting
             plot_x = raw_x[finite_mask]
             plot_y = raw_y[finite_mask]
 
@@ -390,15 +358,24 @@ class PlotterApp:
             self.ax_main.set_ylabel(y_col)
             self.ax_main.set_title(f"{y_col} vs. {x_col}")
 
-            self.ax_main.relim()
-            self.ax_main.autoscale_view()
-            self.figure.tight_layout()
-            self.canvas.draw()
+            # --- Blitting for performance ---
+            if self.plot_bg:
+                self.canvas.restore_region(self.plot_bg)
+                self.ax_main.draw_artist(self.line_main)
+                self.canvas.blit(self.ax_main.bbox)
+            else: # Fallback to full draw
+                self.ax_main.relim()
+                self.ax_main.autoscale_view()
+                self.figure.tight_layout()
+                self.canvas.draw()
+
             self.log(f"Plot updated: '{y_col}' vs. '{x_col}'")
 
         except Exception as e:
             self.log(f"Error plotting data: {traceback.format_exc()}")
             messagebox.showerror("Plotting Error", f"An error occurred while plotting.\n\n{e}")
+    def _on_draw(self, event):
+        self.plot_bg = self.canvas.copy_from_bbox(self.ax_main.bbox)
 
     def toggle_live_update(self):
         if self.live_update_var.get():
