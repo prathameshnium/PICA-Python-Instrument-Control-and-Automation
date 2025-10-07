@@ -15,6 +15,7 @@ from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib as mpl
+import numpy as np
 
 try:
     from PIL import Image, ImageTk
@@ -59,9 +60,6 @@ class PlotterApp:
         self.last_mod_time = None
         self.last_file_size = 0
         self.file_watcher_job = None
-        
-        # Cache for filtered plot data to improve performance
-        self.plot_data_cache = {'x': [], 'y': []}
 
         self.setup_styles()
         self.create_widgets()
@@ -270,7 +268,7 @@ class PlotterApp:
                         break
                 else: # No data lines found
                     raise ValueError("File contains no data lines (all lines are comments or empty).")
-
+    
                 self.headers = temp_headers
                 self.data = {h: [] for h in self.headers}
 
@@ -279,20 +277,25 @@ class PlotterApp:
                 for _ in range(line_offset + 1):
                     next(f)
 
-                # Use a standard CSV reader for performance
+                # Read all data into lists first
                 reader = csv.reader(f)
+                temp_data = {h: [] for h in self.headers}
                 for row in reader:
                     if len(row) != len(self.headers): continue # Skip malformed rows
                     for i, header in enumerate(self.headers):
                         try:
-                            self.data[header].append(float(row[i]))
+                            temp_data[header].append(float(row[i]))
                         except (ValueError, TypeError):
-                            self.data[header].append(float('nan'))
-
+                            temp_data[header].append(np.nan)
+                
+                # Convert to numpy arrays for performance
+                for header in self.headers:
+                    self.data[header] = np.array(temp_data[header], dtype=float)
+    
             self.x_col_cb['values'] = self.headers
             self.y_col_cb['values'] = self.headers
             
-            # Set default columns, checking if they exist
+            # Set default columns if they exist
             if len(self.headers) > 1 and self.headers[0] in self.headers and self.headers[1] in self.headers:
                 self.x_col_cb.set(self.headers[0])
                 self.y_col_cb.set(self.headers[1])
@@ -301,7 +304,7 @@ class PlotterApp:
 
             self.last_mod_time = os.path.getmtime(self.filepath)
             self.last_file_size = os.path.getsize(self.filepath)
-            num_points = len(self.data.get(self.headers[0], []))
+            num_points = len(self.data.get(self.headers[0], np.array([])))
             self.log(f"Loaded {num_points} data points with headers: {self.headers}")
 
         except Exception as e:
@@ -326,18 +329,23 @@ class PlotterApp:
                 if not new_lines:
                     return # No new data to append
 
-                # Use standard reader for performance
+                # Read new lines into temporary lists
                 reader = csv.reader(new_lines)
+                new_data = {h: [] for h in self.headers}
                 appended_count = 0
                 for row in reader:
                     if len(row) != len(self.headers): continue
                     for i, header in enumerate(self.headers):
                         try:
-                            self.data[header].append(float(row[i]))
+                            new_data[header].append(float(row[i]))
                         except (ValueError, TypeError):
-                            self.data[header].append(float('nan'))
+                            new_data[header].append(np.nan)
                     appended_count += 1
-
+                
+                # Append new data as numpy arrays
+                for header in self.headers:
+                    self.data[header] = np.concatenate((self.data[header], np.array(new_data[header], dtype=float)))
+                
             self.last_mod_time = os.path.getmtime(self.filepath)
             self.last_file_size = os.path.getsize(self.filepath)
             self.log(f"Appended {appended_count} new data points.")
@@ -348,7 +356,7 @@ class PlotterApp:
             # Fallback to a full reload in case of parsing error
             self.load_file_data()
 
-    def plot_data(self):
+    def plot_data(self, event=None):
         x_col = self.x_col_cb.get()
         y_col = self.y_col_cb.get()
 
@@ -361,22 +369,17 @@ class PlotterApp:
             return
 
         try:
-            # --- Performance Improvement: Filter data only when needed ---
-            # This avoids re-filtering the entire dataset on every live update append.
-            # The cache is invalidated when columns change.
-            import numpy as np
             raw_x = self.data[x_col]
             raw_y = self.data[y_col]
             
-            # Create a mask for finite values
+            # Create a mask for finite values to avoid plotting errors
             finite_mask = np.isfinite(raw_x) & np.isfinite(raw_y)
             
             # Apply the mask to get clean data for plotting
-            self.plot_data_cache['x'] = np.array(raw_x)[finite_mask]
-            self.plot_data_cache['y'] = np.array(raw_y)[finite_mask]
+            plot_x = raw_x[finite_mask]
+            plot_y = raw_y[finite_mask]
 
-            self.line_main.set_data(self.plot_data_cache['x'], self.plot_data_cache['y'])
-
+            self.line_main.set_data(plot_x, plot_y)
             # Update plot scales
             self.ax_main.set_xscale('log' if self.x_log_var.get() else 'linear')
             self.ax_main.set_yscale('log' if self.y_log_var.get() else 'linear')
