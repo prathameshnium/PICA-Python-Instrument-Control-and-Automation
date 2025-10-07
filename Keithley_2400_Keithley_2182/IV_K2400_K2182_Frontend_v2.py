@@ -172,9 +172,9 @@ class IV_GUI:
         frame.grid_columnconfigure(1, weight=1); LOGO_SIZE = 110
         logo_canvas = Canvas(frame, width=LOGO_SIZE, height=LOGO_SIZE, bg=self.CLR_FRAME_BG, highlightthickness=0)
         logo_canvas.grid(row=0, column=0, rowspan=3, padx=10, pady=10)
-        try:
+        try: # Use a more robust relative path
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            logo_path = os.path.join(script_dir, "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+            logo_path = os.path.join(script_dir, "..", "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
             if PIL_AVAILABLE and os.path.exists(logo_path):
                 img = Image.open(logo_path).resize((LOGO_SIZE, LOGO_SIZE), Image.Resampling.LANCZOS)
                 self.logo_image = ImageTk.PhotoImage(img)
@@ -182,9 +182,9 @@ class IV_GUI:
         except Exception as e:
             self.log(f"Warning: Could not load logo. {e}")
 
-        institute_font = ('Segoe UI', self.FONT_BASE[1] + 1, 'bold')
-        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_FRAME_BG).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
-        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_FRAME_BG).grid(row=1, column=1, padx=10, sticky='nw')
+        institute_font = ('Segoe UI', self.FONT_BASE[1], 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_FRAME_BG).grid(row=0, column=1, padx=10, pady=(15,0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_FRAME_BG).grid(row=1, column=1, padx=10, pady=(0,5), sticky='nw')
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
         details_text = ("Program Duty: I-V Sweep (4-Probe)\n"
                         "Instruments: Keithley 2400, Keithley 2182\n"

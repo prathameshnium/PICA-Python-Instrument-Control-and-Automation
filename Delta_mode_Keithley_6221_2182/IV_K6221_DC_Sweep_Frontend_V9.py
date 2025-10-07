@@ -158,14 +158,14 @@ class Passthrough_IV_GUI:
                 self.logo_image = ImageTk.PhotoImage(img); logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
             except Exception as e: self.log(f"ERROR: Failed to load logo. {e}")
 
-        institute_font = ('Segoe UI', self.FONT_BASE[1] + 1, 'bold')
-        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
-        ttk.Label(frame, text="Mumbai Centre", font=institute_font).grid(row=1, column=1, padx=10, sticky='nw')
+        institute_font = ('Segoe UI', self.FONT_BASE[1], 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
 
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
  
         # Program details
-        details_text = ("Program Duty: I-V Sweep (Passthrough)\n"
+        details_text = ("Program Duty: Delta Mode I-V Sweep\n"
                         "Instruments: K6221 (Source), K2182 (Meter)\n"
                         "Measurement Range: 10⁻⁹ Ω to 10⁸ Ω")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')

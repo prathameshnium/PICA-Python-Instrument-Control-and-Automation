@@ -213,32 +213,38 @@ class PyroelectricAppGUI:
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x', pady=(0, 5))
         Label(header_frame, text="Pyroelectric Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=15)
-        Label(header_frame, text=f"Version {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).pack(side='right', padx=20, pady=15)
+        Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).pack(side='right', padx=20, pady=15)
 
     def create_info_frame(self, parent):
         frame = ttk.LabelFrame(parent, text=' Information ')
         frame.pack(pady=(10, 10), padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
 
-        logo_canvas = Canvas(frame, width=100, height=100, bg=self.CLR_BG_DARK, highlightthickness=0)
+        LOGO_SIZE = 110
+        logo_canvas = Canvas(frame, width=LOGO_SIZE, height=LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
         logo_canvas.grid(row=0, column=0, rowspan=2, padx=15, pady=15)
         
         # Corrected logo path
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            logo_path = os.path.join(script_dir, "..", "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
+            logo_path = os.path.join(script_dir, "..", "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
         except NameError:
-            logo_path = "../../_assets/LOGO/UGC_DAE_CSR.jpeg"
-        self.logo_image = self._process_logo_image(logo_path)
-        if self.logo_image: logo_canvas.create_image(50, 50, image=self.logo_image) 
-        else: logo_canvas.create_text(50, 50, text="LOGO", font=self.FONT_TITLE, fill=self.CLR_FG_LIGHT)
+            logo_path = "../../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
+        self.logo_image = self._process_logo_image(logo_path, size=LOGO_SIZE)
+        if self.logo_image: logo_canvas.create_image(LOGO_SIZE/2, LOGO_SIZE/2, image=self.logo_image) 
+        else: logo_canvas.create_text(LOGO_SIZE/2, LOGO_SIZE/2, text="LOGO", font=self.FONT_TITLE, fill=self.CLR_FG_LIGHT)
 
         # --- UPDATED: Added Institute Name ---
         institute_text = "UGC-DAE Consortium For Scientific Research"
         ttk.Label(frame, text=institute_text, font=self.FONT_LABEL_BOLD, wraplength=300).grid(row=0, column=1, padx=10, pady=(15, 5), sticky='sw')
 
-        details_text = "Pyroelectric Current Measurement\n • Lakeshore 350 & Keithley 6517B"
-        ttk.Label(frame, text=details_text, justify='left').grid(row=1, column=1, padx=10, pady=(0, 15), sticky='nw')
+        ttk.Label(frame, text="Mumbai Centre", font=self.FONT_LABEL_BOLD).grid(row=1, column=1, padx=10, sticky='nw')
+        ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
+
+        details_text = ("Program Duty: Pyroelectric Current vs. T\n"
+                        "Instruments: Keithley 6517B, Lakeshore 350\n"
+                        "Measurement Range: 1 fA to 20 mA")
+        ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def create_input_frame(self, parent):
         frame = ttk.LabelFrame(parent, text=' Experiment Parameters ')

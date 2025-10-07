@@ -221,8 +221,9 @@ class MeasurementAppGUI:
     def create_header(self):
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="Keithley 2400: I-V Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
-        Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE).pack(side='right', padx=20, pady=10)
+        font_title_italic = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold', 'italic')
+        Label(header_frame, text="Keithley 2400: I-V Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
+        Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).pack(side='right', padx=20, pady=10)
 
     def create_info_frame(self, parent):
         frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
@@ -244,13 +245,16 @@ class MeasurementAppGUI:
             self.log(f"WARNING: Logo file '{self.LOGO_FILE}' not found or Pillow not installed.")
             logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill="white", justify='center')
 
-        info_text_frame = ttk.Frame(frame)
-        info_text_frame.grid(row=0, column=1, padx=10, sticky='ns')
-        info_text = ("Automated I-V sweep using a Keithley 2400.\n\n"
-                     "1. Set sweep parameters.\n"
-                     "2. Select instrument & save location.\n"
-                     "3. Press Start.")
-        ttk.Label(info_text_frame, text=info_text, justify='left').pack(pady=20, anchor='w')
+        institute_font = ('Segoe UI', self.FONT_SIZE_BASE, 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
+
+        ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
+ 
+        details_text = ("Program Duty: I-V Sweep (4-Probe)\n"
+                        "Instrument: Keithley 2400\n"
+                        "Measurement Range: 10⁻³ Ω to 10⁹ Ω")
+        ttk.Label(frame, text=details_text, justify='left', background=self.CLR_BG_DARK).grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def create_input_frame(self, parent):
         # --- MODIFIED: Updated UI layout for new sweep options ---
