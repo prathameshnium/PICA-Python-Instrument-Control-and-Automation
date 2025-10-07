@@ -158,7 +158,7 @@ class MeasurementAppGUI:
         self.is_running = False
         self.backend = Keithley2400_IV_Backend()
         self.file_location_path = ""
-        self.data_storage = {'current': [], 'voltage': []}
+        self.data_storage = {'current': [], 'voltage': [], 'resistance': []}
         self.logo_image = None
         self.pre_init_logs = []
 
@@ -191,33 +191,32 @@ class MeasurementAppGUI:
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
-        left_panel = ttk.Frame(main_pane)
-        main_pane.add(left_panel, weight=1)
+        # --- Left Panel ---
+        left_panel_container = ttk.Frame(main_pane)
+        main_pane.add(left_panel_container, weight=1)
 
-        right_panel = tk.Frame(main_pane, bg='white')
-        main_pane.add(right_panel, weight=3)
+        # --- Right Panel ---
+        right_panel_container = tk.Frame(main_pane, bg='white')
+        main_pane.add(right_panel_container, weight=3)
 
         # --- Make the left panel scrollable ---
-        canvas = Canvas(left_panel, bg=self.CLR_BG_DARK, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(left_panel, orient="vertical", command=canvas.yview)
+        canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(left_panel_container, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
 
         scrollable_frame.bind(
             "<Configure>",
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
-
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
         self.create_info_frame(scrollable_frame)
         self.create_input_frame(scrollable_frame)
         self.create_console_frame(scrollable_frame)
-
-        self.create_graph_frame(right_panel)
+        self.create_graph_frame(right_panel_container)
 
     def create_header(self):
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
@@ -262,14 +261,14 @@ class MeasurementAppGUI:
         grid.grid_columnconfigure((0, 1, 2), weight=1)
 
         ttk.Label(grid, text="Sample Name:").grid(row=0, column=0, columnspan=3, sticky='w')
-        self.entries["Sample Name"] = Entry(grid, font=self.FONT_BASE); self.entries["Sample Name"].grid(row=1, column=0, columnspan=3, sticky='ew', pady=(0, 10))
+        self.entries["Sample Name"] = Entry(grid, font=self.FONT_BASE, width=20); self.entries["Sample Name"].grid(row=1, column=0, columnspan=3, sticky='ew', pady=(0, 10))
 
-        ttk.Label(grid, text="Max Current (µA):").grid(row=2, column=0, sticky='w'); self.entries["Max Current"] = Entry(grid, font=self.FONT_BASE); self.entries["Max Current"].grid(row=3, column=0, sticky='ew', padx=(0, 5))
-        ttk.Label(grid, text="Step Current (µA):").grid(row=2, column=1, sticky='w'); self.entries["Step Current"] = Entry(grid, font=self.FONT_BASE); self.entries["Step Current"].grid(row=3, column=1, sticky='ew', padx=(0, 5))
-        ttk.Label(grid, text="Loops:").grid(row=2, column=2, sticky='w'); self.entries["Num Loops"] = Entry(grid, font=self.FONT_BASE); self.entries["Num Loops"].grid(row=3, column=2, sticky='ew'); self.entries["Num Loops"].insert(0, "1")
+        ttk.Label(grid, text="Max Current (µA):").grid(row=2, column=0, sticky='w'); self.entries["Max Current"] = Entry(grid, font=self.FONT_BASE, width=10); self.entries["Max Current"].grid(row=3, column=0, sticky='ew', padx=(0, 5))
+        ttk.Label(grid, text="Step Current (µA):").grid(row=2, column=1, sticky='w'); self.entries["Step Current"] = Entry(grid, font=self.FONT_BASE, width=10); self.entries["Step Current"].grid(row=3, column=1, sticky='ew', padx=(0, 5))
+        ttk.Label(grid, text="Loops:").grid(row=2, column=2, sticky='w'); self.entries["Num Loops"] = Entry(grid, font=self.FONT_BASE, width=5); self.entries["Num Loops"].grid(row=3, column=2, sticky='ew'); self.entries["Num Loops"].insert(0, "1")
 
-        ttk.Label(grid, text="Compliance (V):").grid(row=4, column=0, columnspan=2, sticky='w', pady=(10, 0)); self.entries["Compliance"] = Entry(grid, font=self.FONT_BASE); self.entries["Compliance"].grid(row=5, column=0, columnspan=2, sticky='ew', padx=(0, 5))
-        ttk.Label(grid, text="Delay (s):").grid(row=4, column=2, sticky='w', pady=(10, 0)); self.entries["Delay"] = Entry(grid, font=self.FONT_BASE); self.entries["Delay"].grid(row=5, column=2, sticky='ew'); self.entries["Delay"].insert(0, "0.1")
+        ttk.Label(grid, text="Compliance (V):").grid(row=4, column=0, columnspan=2, sticky='w', pady=(10, 0)); self.entries["Compliance"] = Entry(grid, font=self.FONT_BASE, width=10); self.entries["Compliance"].grid(row=5, column=0, columnspan=2, sticky='ew', padx=(0, 5))
+        ttk.Label(grid, text="Delay (s):").grid(row=4, column=2, sticky='w', pady=(10, 0)); self.entries["Delay"] = Entry(grid, font=self.FONT_BASE, width=5); self.entries["Delay"].grid(row=5, column=2, sticky='ew'); self.entries["Delay"].insert(0, "0.1")
 
         ttk.Label(grid, text="Sweep Type:").grid(row=6, column=0, columnspan=3, sticky='w', pady=(10, 0))
         self.sweep_type_var = tk.StringVar()
@@ -284,10 +283,11 @@ class MeasurementAppGUI:
         self.custom_list_text = scrolledtext.ScrolledText(grid, height=4, font=self.FONT_BASE, wrap='word')
         self.custom_list_text.grid(row=9, column=0, columnspan=3, sticky='ew')
 
-        ttk.Label(grid, text="Keithley 2400 VISA:").grid(row=10, column=0, columnspan=3, sticky='w'); self.keithley_combobox = ttk.Combobox(grid, font=self.FONT_BASE, state='readonly'); self.keithley_combobox.grid(row=11, column=0, columnspan=3, sticky='ew', pady=(0, 10))
+        ttk.Label(grid, text="Keithley 2400 VISA:").grid(row=10, column=0, columnspan=3, sticky='w'); self.keithley_combobox = ttk.Combobox(grid, font=self.FONT_BASE, state='readonly', width=20); self.keithley_combobox.grid(row=11, column=0, columnspan=3, sticky='ew', pady=(0, 10))
 
-        self.scan_button = ttk.Button(frame, text="Scan for Instruments", command=self._scan_for_visa_instruments); self.scan_button.pack(padx=10, pady=5, fill='x')
-        self.file_location_button = ttk.Button(frame, text="Browse Save Location...", command=self._browse_file_location); self.file_location_button.pack(padx=10, pady=5, fill='x')
+        button_grid = ttk.Frame(frame); button_grid.pack(padx=10, pady=5, fill='x'); button_grid.grid_columnconfigure((0,1), weight=1)
+        self.scan_button = ttk.Button(button_grid, text="Scan Instruments", command=self._scan_for_visa_instruments); self.scan_button.grid(row=0, column=0, sticky='ew', padx=(0,5))
+        self.file_location_button = ttk.Button(button_grid, text="Save Location...", command=self._browse_file_location); self.file_location_button.grid(row=0, column=1, sticky='ew')
 
         bf = ttk.Frame(frame); bf.pack(padx=10, pady=10, fill='x'); bf.grid_columnconfigure((0,1), weight=1)
         self.start_button = ttk.Button(bf, text="Start", command=self.start_measurement, style='Start.TButton'); self.start_button.grid(row=0, column=0, sticky='ew', padx=(0,5))
@@ -335,14 +335,23 @@ class MeasurementAppGUI:
         graph_container = LabelFrame(parent, text='Live I-V Curve', relief='groove', bg='white', fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
         self.figure = Figure(figsize=(8, 8), dpi=100)
-        self.ax_main = self.figure.add_subplot(111)
-        self.ax_main.grid(True, linestyle='--', alpha=0.7)
-        self.ax_main.axhline(0, color='k', linestyle='--', linewidth=0.7, alpha=0.5)
-        self.ax_main.axvline(0, color='k', linestyle='--', linewidth=0.7, alpha=0.5)
-        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
-        self.ax_main.set_title("Voltage vs. Current", fontweight='bold'); self.ax_main.set_xlabel("Current (A)"); self.ax_main.set_ylabel("Voltage (V)")
+        self.ax_vi, self.ax_ri = self.figure.subplots(2, 1, sharex=True)
+
+        # --- V-I Plot (Top) ---
+        self.ax_vi.grid(True, linestyle='--', alpha=0.7)
+        self.ax_vi.axhline(0, color='k', linestyle='--', linewidth=0.7, alpha=0.5)
+        self.line_main, = self.ax_vi.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
+        self.ax_vi.set_title("Voltage vs. Current", fontweight='bold'); self.ax_vi.set_ylabel("Voltage (V)")
+
+        # --- R-I Plot (Bottom) ---
+        self.ax_ri.grid(True, linestyle='--', alpha=0.7)
+        self.line_resistance, = self.ax_ri.plot([], [], color=self.CLR_ACCENT_GREEN, marker='o', markersize=4, linestyle='-')
+        self.ax_ri.set_title("Resistance vs. Current", fontweight='bold'); self.ax_ri.set_xlabel("Current (A)"); self.ax_ri.set_ylabel("Resistance (Ω)")
+        self.ax_ri.set_yscale('log') # Resistance is often best viewed on a log scale
+
         self.figure.tight_layout(pad=2.5)
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container); self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
 
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -383,15 +392,16 @@ class MeasurementAppGUI:
 
             ts = datetime.now().strftime("%Y%m%d_%H%M%S"); file_name = f"{params['sample_name']}_{ts}_IV.dat"; self.data_filepath = os.path.join(self.file_location_path, file_name)
             with open(self.data_filepath, 'w', newline='') as f:
-                writer = csv.writer(f, delimiter='\t'); writer.writerow([f"# Sample: {params['sample_name']}", f"Compliance: {params['compliance_v']} V"]); writer.writerow(["Current (A)", "Voltage (V)"])
+                writer = csv.writer(f, delimiter='\t'); writer.writerow([f"# Sample: {params['sample_name']}", f"Compliance: {params['compliance_v']} V"]); writer.writerow(["Current (A)", "Voltage (V)", "Resistance (Ohm)"])
             self.log(f"Output file created: {os.path.basename(self.data_filepath)}")
 
             self.is_running = True; self.sweep_index = 0
             self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
-            self.line_main.set_data([], []); self.canvas.draw()
+            self.line_main.set_data([], []); self.line_resistance.set_data([], [])
             self.progress_bar['value'] = 0; self.progress_bar['maximum'] = len(self.sweep_points)
-            self.ax_main.set_title(f"Sample: {params['sample_name']}", fontweight='bold'); self.canvas.draw()
+            self.figure.suptitle(f"Sample: {params['sample_name']}", fontweight='bold')
+            self.canvas.draw()
             self.log("Measurement sweep started.")
             self.root.after(100, self._run_sweep_step)
         except Exception as e:
@@ -409,12 +419,21 @@ class MeasurementAppGUI:
         try:
             current = self.sweep_points[self.sweep_index]
             voltage = self.backend.measure_at_current(current, float(self.entries["Delay"].get()))
-            self.data_storage['current'].append(float(current)); self.data_storage['voltage'].append(voltage)
-            with open(self.data_filepath, 'a', newline='') as f: csv.writer(f, delimiter='\t').writerow([f"{current:.8e}", f"{voltage:.8e}"])
+            
+            # Calculate resistance, handling division by zero
+            if current != 0:
+                resistance = voltage / current
+            else:
+                resistance = np.nan # Use Not-a-Number for plotting
 
-            self.line_main.set_data(self.data_storage['current'], self.data_storage['voltage'])
-            self.ax_main.relim(); self.ax_main.autoscale_view(); self.canvas.draw()
+            self.data_storage['current'].append(float(current)); self.data_storage['voltage'].append(voltage); self.data_storage['resistance'].append(resistance)
+            with open(self.data_filepath, 'a', newline='') as f: csv.writer(f, delimiter='\t').writerow([f"{current:.8e}", f"{voltage:.8e}", f"{resistance:.8e}"])
+
+            self.line_main.set_data(self.data_storage['current'], self.data_storage['voltage']); self.ax_vi.relim(); self.ax_vi.autoscale_view()
+            self.line_resistance.set_data(self.data_storage['current'], self.data_storage['resistance']); self.ax_ri.relim(); self.ax_ri.autoscale_view()
+            
             self.progress_bar['value'] = self.sweep_index + 1
+            self.canvas.draw()
 
             self.sweep_index += 1
             self.root.after(10, self._run_sweep_step)
