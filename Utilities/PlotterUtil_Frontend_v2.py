@@ -123,7 +123,8 @@ class PlotterApp:
 
         right_header_frame = tk.Frame(header, bg=self.CLR_HEADER)
         right_header_frame.pack(side='right', padx=20, pady=10)
-        ttk.Label(right_header_frame, text=f"PICA General Purpose Plotter", style='Header.TLabel', font=self.FONT_TITLE_ITALIC).pack()
+        font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
+        ttk.Label(right_header_frame, text=f"PICA General Purpose Plotter", style='Header.TLabel', font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack()
 
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)

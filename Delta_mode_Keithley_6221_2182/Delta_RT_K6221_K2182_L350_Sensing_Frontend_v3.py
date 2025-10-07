@@ -227,10 +227,10 @@ class MeasurementAppGUI:
         self.create_graph_frame(right_panel)
 
     def create_header(self):
-        font_title_italic = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold', 'italic')
+        font_title_main = ('Segoe UI', self.FONT_SIZE_BASE + 4, 'bold')
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="K6221/2182 & L350: Delta Mode R-T (Passive Sensing)", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
+        Label(header_frame, text="K6221/2182 & L350: Delta Mode R-T (Passive Sensing)", bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD, font=font_title_main).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
     def create_info_frame(self, parent):

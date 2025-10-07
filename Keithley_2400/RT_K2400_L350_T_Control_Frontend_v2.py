@@ -131,8 +131,8 @@ class RT_GUI_Active:
 
     def create_widgets(self):
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
-        font_title_italic = ('Segoe UI', 13, 'bold', 'italic')
-        ttk.Label(header, text=f"K2400 & L350: R-T Sweep (T-Control)", style='Header.TLabel', font=font_title_italic).pack(side='left', padx=20, pady=10)
+        font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
+        ttk.Label(header, text=f"K2400 & L350: R-T Sweep (T-Control)", style='Header.TLabel', font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         left_panel_container = ttk.Frame(main_pane)
