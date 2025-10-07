@@ -2,11 +2,11 @@
 # Name:         V-T Sweep Active Frontend for K2400/2182 & LS350
 # Purpose:      Provide a professional GUI for performing automated V vs T sweeps
 #               with active temperature control (stabilize then ramp).
-# Author:       Prathamesh Deshmukh (Adapted from VT_Sweep_..._V1.py)
+# Author:       Prathamesh Deshmukh
 # Created:      05/10/2025
-# Version:      1.0
+# Version:      2.0
 # -------------------------------------------------------------------------------
-
+ 
 # --- GUI and Plotting Packages ---
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext, Canvas
@@ -65,23 +65,19 @@ class VT_Backend:
         self.k2182.write("*rst; status:preset; *cls")
         time.sleep(1)
 
-    def stabilize_at_start(self, start_temp, stability_log_callback):
-        while True:
-            current_temp = float(self.lakeshore.query('KRDG? A').strip())
-            if current_temp > start_temp + 0.2:
-                stability_log_callback(f"Cooling... Current: {current_temp:.4f} K > Target: {start_temp} K")
-                self.lakeshore.write('RANGE 1,0') # Heater Off
-            else:
-                stability_log_callback(f"Heating... Current: {current_temp:.4f} K <= Target: {start_temp} K")
-                self.lakeshore.write('RANGE 1,4') # Heater Medium
-                self.lakeshore.write(f'SETP 1,{start_temp}')
+    def get_temperature(self):
+        if not self.lakeshore: return 0.0
+        return float(self.lakeshore.query('KRDG? A').strip())
 
-            if abs(current_temp - start_temp) < 0.1:
-                stability_log_callback(f"Stabilized at {current_temp:.4f} K. Waiting 5s before ramp.")
-                time.sleep(5)
-                return
-            time.sleep(2)
+    def set_heater_range(self, output, heater_range):
+        range_map = {'off': 0, 'low': 2, 'medium': 4, 'high': 5}
+        range_code = range_map.get(heater_range.lower())
+        if range_code is None: raise ValueError("Invalid heater range.")
+        self.lakeshore.write(f'RANGE {output},{range_code}')
 
+    def set_setpoint(self, output, temperature_k):
+        self.lakeshore.write(f'SETP {output},{temperature_k}')
+        
     def start_ramp(self, end_temp, rate_k_min):
         self.lakeshore.write(f'SETP 1,{end_temp}')
         self.lakeshore.write(f'RAMP 1,1,{rate_k_min}')
@@ -126,8 +122,8 @@ class VT_GUI_Active:
     FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold')
 
     def __init__(self, root):
-        self.root = root; self.root.title(f"Active V-T Sweep (K2400/2182) v{self.PROGRAM_VERSION}")
-        self.root.geometry("1600x950"); self.root.minsize(1400, 800); self.root.configure(bg=self.CLR_BG)
+        self.root = root; self.root.title(f"K2400/2182 & L350: R-T Sweep (T-Control) v{self.PROGRAM_VERSION}")
+        self.root.geometry("1650x950"); self.root.minsize(1400, 800); self.root.configure(bg=self.CLR_BG)
         self.experiment_state = 'idle'; self.logo_image = None
         self.backend = VT_Backend(); self.data_storage = {'temperature': [], 'voltage': []}
         self.setup_styles(); self.create_widgets(); self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -151,7 +147,8 @@ class VT_GUI_Active:
 
     def create_widgets(self):
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
-        ttk.Label(header, text=f"Active V-T Sweep (K2400/2182) v{self.PROGRAM_VERSION}", style='Header.TLabel', font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
+        font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
+        ttk.Label(header, text=f"K2400/2182 & L350: R-T Sweep (T-Control)", style='Header.TLabel', font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         left_panel_container = ttk.Frame(main_pane)
@@ -167,7 +164,7 @@ class VT_GUI_Active:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=3)
+        right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=4)
         self._populate_left_panel(left_panel)
 
     def _populate_left_panel(self, panel):
@@ -178,25 +175,33 @@ class VT_GUI_Active:
     def _create_info_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Information'); frame.grid(row=grid_row, column=0, sticky='new', pady=5)
         frame.grid_columnconfigure(1, weight=1)
-        logo_canvas = Canvas(frame, width=80, height=80, bg=self.CLR_FRAME_BG, highlightthickness=0)
-        logo_canvas.grid(row=0, column=0, rowspan=2, padx=10, pady=10)
+        LOGO_SIZE = 110
+        logo_canvas = Canvas(frame, width=LOGO_SIZE, height=LOGO_SIZE, bg=self.CLR_FRAME_BG, highlightthickness=0)
+        logo_canvas.grid(row=0, column=0, rowspan=3, padx=10, pady=10)
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            logo_path = os.path.join(script_dir, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
+            logo_path = os.path.join(script_dir, "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
             if PIL_AVAILABLE and os.path.exists(logo_path):
-                img = Image.open(logo_path).resize((80, 80), Image.Resampling.LANCZOS)
+                img = Image.open(logo_path).resize((LOGO_SIZE, LOGO_SIZE), Image.Resampling.LANCZOS)
                 self.logo_image = ImageTk.PhotoImage(img)
-                logo_canvas.create_image(40, 40, image=self.logo_image)
+                logo_canvas.create_image(LOGO_SIZE/2, LOGO_SIZE/2, image=self.logo_image)
         except Exception as e: self.log(f"Warning: Could not load logo. {e}")
-        info_text = ("Institute: UGC DAE CSR, Mumbai\nMeasurement: V vs. T Sweep (Active)\nInstruments: K2400, K2182, LS350")
-        ttk.Label(frame, text=info_text, justify='left').grid(row=0, column=1, rowspan=2, sticky='w', padx=5)
+        
+        institute_font = ('Segoe UI', self.FONT_BASE[1], 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_FRAME_BG).grid(row=0, column=1, padx=10, pady=(15,0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_FRAME_BG).grid(row=1, column=1, padx=10, pady=(0,5), sticky='nw')
+        ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
+        details_text = ("Program Duty: R vs. T (T-Control)\n"
+                        "Instruments: K2400, K2182, L350\n"
+                        "Measurement Range: 10⁻⁶ Ω to 10⁹ Ω")
+        ttk.Label(frame, text=details_text, justify='left', background=self.CLR_FRAME_BG).grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def _create_right_panel(self, parent):
         panel = ttk.Frame(parent, padding=5)
         container = ttk.LabelFrame(panel, text='Live V-T Curve'); container.pack(fill='both', expand=True)
         self.figure = Figure(dpi=100, facecolor='white')
         self.ax_main = self.figure.add_subplot(111)
-        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
+        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-'); self.ax_main.set_yscale('log')
         self.ax_main.set_title("Waiting for experiment...", fontweight='bold'); self.ax_main.set_xlabel("Temperature (K)"); self.ax_main.set_ylabel("Voltage (V)")
         self.ax_main.grid(True, linestyle='--', alpha=0.6); self.figure.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.figure, container); self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
@@ -252,7 +257,7 @@ class VT_GUI_Active:
 
             self.set_ui_state(running=True); self.experiment_state = 'stabilizing'
             for key in self.data_storage: self.data_storage[key].clear()
-            self.line_main.set_data([], []); self.ax_main.set_title(f"V-T Curve: {self.params['name']}"); self.canvas.draw()
+            self.line_main.set_data([], []); self.ax_main.set_title(f"R-T Curve: {self.params['name']}"); self.ax_main.set_yscale('log'); self.canvas.draw()
             self.log(f"Starting stabilization at {self.params['start_temp']} K...")
             self.root.after(100, self._experiment_loop)
         except Exception as e:
@@ -265,29 +270,59 @@ class VT_GUI_Active:
         self.ax_main.set_title("Experiment stopped."); self.canvas.draw()
         if reason: messagebox.showinfo("Experiment Finished", f"Reason: {reason}")
 
+    def _stabilization_loop(self):
+        if self.experiment_state != 'stabilizing': return
+        try:
+            current_temp = self.backend.get_temperature()
+            start_temp = self.params['start_temp']
+
+            if current_temp > start_temp + 0.2:
+                self.log(f"Cooling... Current: {current_temp:.4f} K > Target: {start_temp} K")
+                self.backend.set_heater_range(1, 'off')
+            else:
+                self.log(f"Heating... Current: {current_temp:.4f} K <= Target: {start_temp} K")
+                self.backend.set_heater_range(1, 'medium')
+                self.backend.set_setpoint(1, start_temp)
+
+            if abs(current_temp - start_temp) < 0.1:
+                self.log(f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
+                self.experiment_state = 'ramping_setup'
+                self.root.after(5000, self._experiment_loop) # Transition to next state
+            else:
+                self.root.after(2000, self._stabilization_loop) # Continue stabilizing
+        except Exception as e:
+            self.log(f"ERROR during stabilization: {e}"); self.stop_experiment("Stabilization Error")
+
     def _experiment_loop(self):
         if self.experiment_state == 'idle': return
         try:
             if self.experiment_state == 'stabilizing':
-                self.backend.stabilize_at_start(self.params['start_temp'], self.log)
+                self._stabilization_loop()
+                return
+            
+            elif self.experiment_state == 'ramping_setup':
                 self.backend.start_ramp(self.params['end_temp'], self.params['rate'])
                 self.log(f"Ramp started towards {self.params['end_temp']} K.")
                 self.experiment_state = 'ramping'; self.start_time = time.time()
                 self.root.after(100, self._experiment_loop)
+                return
             
             elif self.experiment_state == 'ramping':
                 temp, voltage = self.backend.get_measurement()
                 elapsed = time.time() - self.start_time
-                self.log(f"T: {temp:.3f} K | V: {voltage:.6e} V")
+                resistance = voltage / (self.params['current_ma'] * 1e-3) if self.params['current_ma'] != 0 else float('inf')
+                self.log(f"T: {temp:.3f} K | R: {resistance:.4e} Ω")
 
                 self.data_storage['temperature'].append(temp); self.data_storage['voltage'].append(voltage)
                 with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{temp:.4f}", f"{voltage:.6e}", f"{elapsed:.2f}"])
                 self.line_main.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
                 self.ax_main.relim(); self.ax_main.autoscale_view(); self.figure.tight_layout(); self.canvas.draw()
 
+                # Check end conditions
                 if temp >= self.params['cutoff']:
                     self.stop_experiment(f"Safety cutoff reached at {temp:.2f} K.")
-                elif temp >= self.params['end_temp']:
+                elif (self.params['rate'] > 0 and temp >= self.params['end_temp']) or \
+                     (self.params['rate'] < 0 and temp <= self.params['end_temp']):
                     self.stop_experiment("End temperature reached.")
                 else:
                     self.root.after(int(self.params['delay_s'] * 1000), self._experiment_loop)
@@ -304,7 +339,11 @@ class VT_GUI_Active:
                     'compliance_v': float(self.entries["Compliance (V)"].get()), 'delay_s': float(self.entries["Logging Delay (s)"].get()),
                     'k2400_visa': self.k2400_cb.get(), 'k2182_visa': self.k2182_cb.get()}
             if not all([p for k, p in params.items() if k not in ['rate', 'cutoff']]): raise ValueError("A required field is empty.")
-            if not (params['start_temp'] < params['end_temp'] < params['cutoff']): raise ValueError("Temperatures must be in order: start < end < cutoff.")
+            if params['rate'] == 0: raise ValueError("Ramp Rate cannot be zero for an active sweep.")
+            if params['rate'] > 0 and not (params['start_temp'] < params['end_temp'] < params['cutoff']):
+                raise ValueError("For heating, temperatures must be in order: start < end < cutoff.")
+            if params['rate'] < 0 and not (params['start_temp'] > params['end_temp'] > params['cutoff']):
+                raise ValueError("For cooling, temperatures must be in order: start > end > cutoff.")
             return params
         except Exception as e: raise ValueError(f"Invalid parameter input: {e}")
 

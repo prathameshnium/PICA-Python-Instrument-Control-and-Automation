@@ -1,10 +1,10 @@
 # -------------------------------------------------------------------------------
-# Name:         V-T Sweep Passive Frontend for K2400/2182 & LS350
-# Purpose:      Provide a professional GUI for passively logging V vs T data.
+# Name:         R-T Sweep Passive Frontend for K2400/2182 & LS350
+# Purpose:      Provide a professional GUI for passively logging R vs T data.
 #               This version does not control temperature.
-# Author:       Prathamesh Deshmukh (Adapted from VT_Sweep_..._V1.py)
+# Author:       Prathamesh Deshmukh
 # Created:      05/10/2025
-# Version:      1.0
+# Version:      1.1
 # -------------------------------------------------------------------------------
 
 # --- GUI and Plotting Packages ---
@@ -95,10 +95,10 @@ class VT_Backend_Passive:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class VT_GUI_Passive:
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "1.1"
     CLR_BG = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG = '#EDF2F4'
     CLR_FRAME_BG = '#3A506B'; CLR_INPUT_BG = '#4C566A'
-    CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE'
+    CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE' 
     CLR_ACCENT_GOLD = '#FFC107'; CLR_CONSOLE_BG = '#1E2B38'
     FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold')
 
@@ -106,7 +106,7 @@ class VT_GUI_Passive:
         self.root = root; self.root.title(f"K2400/2182 & L350: R-T (T-Sensing) v{self.PROGRAM_VERSION}")
         self.root.geometry("1600x950"); self.root.minsize(1400, 800); self.root.configure(bg=self.CLR_BG)
         self.is_running = False; self.logo_image = None
-        self.backend = VT_Backend_Passive(); self.data_storage = {'temperature': [], 'voltage': []}
+        self.backend = VT_Backend_Passive(); self.data_storage = {'temperature': [], 'voltage': [], 'resistance': []}
         self.setup_styles(); self.create_widgets(); self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def setup_styles(self):
@@ -145,7 +145,7 @@ class VT_GUI_Passive:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=3)
+        right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=4)
         self._populate_left_panel(left_panel)
 
     def _populate_left_panel(self, panel):
@@ -160,7 +160,7 @@ class VT_GUI_Passive:
         logo_canvas.grid(row=0, column=0, rowspan=3, padx=10, pady=10)
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            logo_path = os.path.join(script_dir, "..", "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+            logo_path = os.path.join(script_dir, "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
             if PIL_AVAILABLE and os.path.exists(logo_path):
                 img = Image.open(logo_path).resize((LOGO_SIZE, LOGO_SIZE), Image.Resampling.LANCZOS)
                 self.logo_image = ImageTk.PhotoImage(img)
@@ -182,7 +182,7 @@ class VT_GUI_Passive:
         self.figure = Figure(dpi=100, facecolor='white')
         self.ax_main = self.figure.add_subplot(111)
         self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
-        self.ax_main.set_title("Waiting for logging...", fontweight='bold'); self.ax_main.set_xlabel("Temperature (K)"); self.ax_main.set_ylabel("Voltage (V)")
+        self.ax_main.set_title("Waiting for logging...", fontweight='bold'); self.ax_main.set_xlabel("Temperature (K)"); self.ax_main.set_ylabel("Resistance (Ω)")
         self.ax_main.grid(True, linestyle='--', alpha=0.6); self.figure.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.figure, container); self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
         return panel
@@ -233,7 +233,7 @@ class VT_GUI_Passive:
 
             self.set_ui_state(running=True)
             for key in self.data_storage: self.data_storage[key].clear()
-            self.line_main.set_data([], []); self.ax_main.set_title(f"V-T Curve: {self.params['name']}"); self.canvas.draw()
+            self.line_main.set_data([], []); self.ax_main.set_title(f"R-T Curve: {self.params['name']}"); self.canvas.draw()
             self.log("Starting passive logging..."); self.start_time = time.time()
             self.root.after(100, self._experiment_loop)
         except Exception as e:
@@ -254,7 +254,7 @@ class VT_GUI_Passive:
             resistance = voltage / (self.params['current_ma'] * 1e-3) if self.params['current_ma'] != 0 else float('inf')
             self.log(f"T: {temp:.3f} K | R: {resistance:.4e} Ω")
 
-            self.data_storage['temperature'].append(temp); self.data_storage['voltage'].append(voltage)
+            self.data_storage['temperature'].append(temp); self.data_storage['voltage'].append(voltage); self.data_storage['resistance'].append(resistance)
             with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{temp:.4f}", f"{voltage:.6e}", f"{resistance:.6e}", f"{elapsed:.2f}"])
             self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
             self.ax_main.relim(); self.ax_main.autoscale_view(); self.figure.tight_layout(); self.canvas.draw()

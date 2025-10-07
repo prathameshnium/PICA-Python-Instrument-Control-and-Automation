@@ -112,7 +112,7 @@ class IV_GUI:
     def __init__(self, root):
         self.root = root
         self.root.title(f"I-V Sweep (K2400 + K2182) v{self.PROGRAM_VERSION}")
-        self.root.geometry("1600x950")
+        self.root.geometry("1650x950")
         self.root.minsize(1400, 800)
         self.root.configure(bg=self.CLR_BG)
         self.is_running = False
@@ -147,7 +147,7 @@ class IV_GUI:
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         left_panel_container = ttk.Frame(main_pane)
-        main_pane.add(left_panel_container, weight=2)
+        main_pane.add(left_panel_container, weight=2) # Give more weight to controls
 
         # --- Make the left panel scrollable ---
         canvas = Canvas(left_panel_container, bg=self.CLR_BG, highlightthickness=0)
@@ -159,7 +159,7 @@ class IV_GUI:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=2)
+        right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=4)
         self._populate_left_panel(left_panel)
 
     def _populate_left_panel(self, panel):
@@ -174,7 +174,7 @@ class IV_GUI:
         logo_canvas.grid(row=0, column=0, rowspan=3, padx=10, pady=10)
         try: # Use a more robust relative path
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            logo_path = os.path.join(script_dir, "..", "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+            logo_path = os.path.join(script_dir, "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
             if PIL_AVAILABLE and os.path.exists(logo_path):
                 img = Image.open(logo_path).resize((LOGO_SIZE, LOGO_SIZE), Image.Resampling.LANCZOS)
                 self.logo_image = ImageTk.PhotoImage(img)
