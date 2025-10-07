@@ -182,6 +182,7 @@ class MeasurementAppGUI:
         self.logo_image = None # Attribute to hold the logo image reference
         self.data_queue = queue.Queue()
         self.plot_backgrounds = None # For blitting
+        self.visa_queue = queue.Queue()
         self.measurement_thread = None
 
         self.setup_styles()
@@ -295,7 +296,7 @@ class MeasurementAppGUI:
         self.lakeshore_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
         self.lakeshore_cb.grid(row=5, column=1, padx=(5,10), pady=(0,10), sticky='ew')
 
-        self.scan_button = ttk.Button(frame, text="Scan for Instruments", command=self._scan_for_visa_instruments)
+        self.scan_button = ttk.Button(frame, text="Scan for Instruments", command=self.start_visa_scan)
         self.scan_button.grid(row=6, column=0, columnspan=2, padx=10, pady=4, sticky='ew')
         self.file_button = ttk.Button(frame, text="Browse Save Location...", command=self._browse_file_location)
         self.file_button.grid(row=7, column=0, columnspan=2, padx=10, pady=4, sticky='ew')
@@ -482,23 +483,46 @@ class MeasurementAppGUI:
         if self.is_running:
             self.root.after(200, self._process_data_queue)
 
-    def _scan_for_visa_instruments(self):
+    def start_visa_scan(self):
+        """Starts the VISA scan in a separate thread to keep the GUI responsive."""
+        self.scan_button.config(state='disabled')
+        self.log("Scanning for VISA instruments...")
+        threading.Thread(target=self._visa_scan_worker, daemon=True).start()
+        self.root.after(100, self._process_visa_queue)
+
+    def _visa_scan_worker(self):
+        """Worker function that performs the slow VISA scan."""
         if not pyvisa: self.log("ERROR: PyVISA is not installed."); return
-        if self.backend.rm is None:
-            self.log("ERROR: VISA manager failed. Is NI-VISA (or equivalent) installed?"); return
         try:
-            self.log("Scanning for VISA instruments...")
-            resources = self.backend.rm.list_resources()
-            if resources:
-                self.log(f"Found: {resources}")
-                self.keithley_cb['values'] = resources; self.lakeshore_cb['values'] = resources
-                for res in resources:
-                    if "GPIB0::13" in res: self.keithley_cb.set(res)
+            rm = pyvisa.ResourceManager()
+            resources = rm.list_resources()
+            self.visa_queue.put(resources)
+        except Exception as e:
+            self.visa_queue.put(e)
+
+    def _process_visa_queue(self):
+        """Checks the queue for results from the VISA scan worker."""
+        try:
+            result = self.visa_queue.get_nowait()
+            if isinstance(result, Exception):
+                self.log(f"ERROR during VISA scan: {result}")
+            elif result:
+                self.log(f"Found: {result}")
+                self.lakeshore_cb['values'] = result
+                self.keithley_cb['values'] = result
+                # Auto-select common addresses
+                for res in result:
                     if "GPIB1::15" in res: self.lakeshore_cb.set(res)
+                    if "GPIB0::13" in res: self.keithley_cb.set(res)
             else:
                 self.log("No VISA instruments found.")
-        except Exception as e:
-            self.log(f"ERROR during VISA scan: {e}")
+            
+            self.scan_button.config(state='normal')
+
+        except queue.Empty:
+            # If the queue is empty, it means the worker is still running.
+            # We schedule another check.
+            self.root.after(100, self._process_visa_queue)
 
     def _browse_file_location(self):
         path = filedialog.askdirectory()

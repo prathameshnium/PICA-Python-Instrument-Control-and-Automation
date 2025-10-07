@@ -264,7 +264,7 @@ class PICALauncherApp:
 
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        # Bind scrolling only to relevant widgets for better performance
+        # Bind scrolling only to relevant widgets for better performance and to enable it
         canvas.bind("<MouseWheel>", _on_mousewheel_windows) # For Windows and some Linux
         canvas.bind("<Button-4>", _on_mousewheel_linux_macos) # For Linux and macOS
         canvas.bind("<Button-5>", _on_mousewheel_linux_macos) # For Linux and macOS
@@ -442,7 +442,7 @@ class PICALauncherApp:
                         else:
                             text_area.insert('end', part, "p")
                     text_area.insert('end', '\n')
-        else: # For non-markdown files like LICENSE, insert the raw cached content
+        else: # For non-markdown files like LICENSE
             text_area.insert('1.0', "\n".join(lines))
             
         text_area.pack(expand=True, fill='both')
