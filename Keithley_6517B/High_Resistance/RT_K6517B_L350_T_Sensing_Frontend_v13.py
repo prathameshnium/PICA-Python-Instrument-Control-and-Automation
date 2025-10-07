@@ -226,14 +226,18 @@ class Integrated_RT_GUI:
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
         
-        left_panel_container = ttk.Frame(main_pane, width=450)
+        left_panel_container = ttk.Frame(main_pane, width=400)
         main_pane.add(left_panel_container, weight=1) # Less weight for the control panel
 
         # --- Make the left panel scrollable ---
         canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)
         scrollbar = ttk.Scrollbar(left_panel_container, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas) # This is the frame that will be scrolled
-        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        # Bind the frame's width to the canvas's width
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"), width=e.width))
+        canvas.bind('<Configure>', lambda e: scrollable_frame.config(width=e.width))
+
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         canvas.pack(side="left", fill="both", expand=True)
@@ -306,20 +310,20 @@ class Integrated_RT_GUI:
 
         Label(frame, text="Source Voltage (V):").grid(row=2, column=0, padx=10, pady=pady_val, sticky='w')
         self.entries["Source Voltage"] = Entry(frame, font=self.FONT_BASE, width=15)
-        self.entries["Source Voltage"].grid(row=3, column=0, padx=(10,10), pady=(0,5), sticky='ew')
+        self.entries["Source Voltage"].grid(row=3, column=0, padx=(10,5), pady=(0,5), sticky='ew')
 
         Label(frame, text="Logging Delay (s):").grid(row=2, column=1, padx=10, pady=pady_val, sticky='w')
         self.entries["Delay"] = Entry(frame, font=self.FONT_BASE, width=15)
-        self.entries["Delay"].grid(row=3, column=1, padx=(10,10), pady=(0,5), sticky='ew')
+        self.entries["Delay"].grid(row=3, column=1, padx=(5,10), pady=(0,5), sticky='ew')
         self.entries["Delay"].insert(0, "1.0") # Default to 1 second
 
         Label(frame, text="Lakeshore VISA:").grid(row=4, column=0, padx=10, pady=pady_val, sticky='w')
         self.lakeshore_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
-        self.lakeshore_cb.grid(row=5, column=0, padx=(10,10), pady=(0,10), sticky='ew')
+        self.lakeshore_cb.grid(row=5, column=0, padx=(10,5), pady=(0,10), sticky='ew')
 
         Label(frame, text="Keithley VISA:").grid(row=4, column=1, padx=10, pady=pady_val, sticky='w')
         self.keithley_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
-        self.keithley_cb.grid(row=5, column=1, padx=(10,10), pady=(0,10), sticky='ew')
+        self.keithley_cb.grid(row=5, column=1, padx=(5,10), pady=(0,10), sticky='ew')
 
         self.scan_button = ttk.Button(frame, text="Scan for Instruments", command=self._scan_for_visa_instruments)
         self.scan_button.grid(row=6, column=0, columnspan=2, padx=10, pady=4, sticky='ew')
