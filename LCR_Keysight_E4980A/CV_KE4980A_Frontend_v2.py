@@ -450,7 +450,7 @@ class LCR_CV_GUI:
                 self.log(f"Found: {resources}")
                 self.lcr_combobox['values'] = resources
                 for res in resources:
-                    if "17" in res: # Common GPIB for E4980A
+                    if "GPIB0::17" in res: # Common GPIB for E4980A
                         self.lcr_combobox.set(res)
                         break
                 if not self.lcr_combobox.get(): self.lcr_combobox.set(resources[0])

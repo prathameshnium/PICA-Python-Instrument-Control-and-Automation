@@ -482,8 +482,8 @@ class Integrated_RT_GUI:
                 self.lakeshore_cb['values'] = resources
                 self.keithley_cb['values'] = resources
                 for res in resources:
-                    if "15" in res or "12" in res: self.lakeshore_cb.set(res)
-                    if "27" in res or "26" in res: self.keithley_cb.set(res)
+                    if "GPIB1::15" in res: self.lakeshore_cb.set(res)
+                    if "GPIB1::27" in res: self.keithley_cb.set(res)
             else:
                 self.log("No VISA instruments found.")
         except Exception as e:
