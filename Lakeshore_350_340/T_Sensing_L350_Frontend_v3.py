@@ -15,6 +15,8 @@ from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebo
 import os
 import time
 import traceback
+import threading
+import queue
 from datetime import datetime
 import csv
 from matplotlib.figure import Figure
@@ -119,6 +121,7 @@ class TempMonitorGUI:
         self.file_location_path = ""
         self.data_storage = {'time': [], 'temperature': []}
         self.logo_image = None
+        self.data_queue = queue.Queue()
 
         self.setup_styles()
         self.create_widgets()
@@ -133,6 +136,9 @@ class TempMonitorGUI:
 
         # Custom style for the large status label
         style.configure('Status.TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_ACCENT_GOLD, font=self.FONT_STATUS)
+
+        style.configure('TEntry', fieldbackground='#4C566A', foreground=self.CLR_FG_LIGHT, insertcolor=self.CLR_FG_LIGHT, borderwidth=0)
+        style.configure('TCombobox', fieldbackground='#4C566A', foreground=self.CLR_FG_LIGHT, arrowcolor=self.CLR_FG_LIGHT, selectbackground=self.CLR_ACCENT_GOLD, selectforeground=self.CLR_TEXT_DARK)
 
         style.configure('TButton',
                         font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD,
@@ -164,9 +170,9 @@ class TempMonitorGUI:
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         left_panel_container = ttk.Frame(main_pane, width=500)
-        main_pane.add(left_panel_container, weight=2) # Give more weight to the left panel
+        main_pane.add(left_panel_container, weight=1)
         right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
-        main_pane.add(right_panel, weight=1) # Give less weight to the plot panel
+        main_pane.add(right_panel, weight=2)
 
         # --- Make the left panel scrollable ---
         canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)
@@ -238,12 +244,12 @@ class TempMonitorGUI:
         self.entries["Sample Name"] = ttk.Entry(frame, font=self.FONT_BASE)
         self.entries["Sample Name"].grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 10), sticky='ew')
 
-        Label(frame, text="Logging Delay (s):").grid(row=2, column=0, padx=10, pady=pady_val, sticky='w')
+        ttk.Label(frame, text="Logging Delay (s):").grid(row=2, column=0, padx=10, pady=pady_val, sticky='w')
         self.entries["Delay"] = ttk.Entry(frame, font=self.FONT_BASE)
         self.entries["Delay"].grid(row=3, column=0, padx=10, pady=(0,5), sticky='ew')
         self.entries["Delay"].insert(0, "1.0")
 
-        Label(frame, text="Lakeshore VISA:").grid(row=4, column=0, padx=10, pady=pady_val, sticky='w')
+        ttk.Label(frame, text="Lakeshore VISA:").grid(row=4, column=0, padx=10, pady=pady_val, sticky='w')
         self.lakeshore_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
         self.lakeshore_cb.grid(row=5, column=0, padx=10, pady=(0,10), sticky='ew')
         
@@ -341,11 +347,14 @@ class TempMonitorGUI:
 
             self.log("Starting passive data logging...")
             self.start_time = time.time()
-            self.root.after(1000, self._update_measurement_loop)
+            
+            self.measurement_thread = threading.Thread(target=self._measurement_worker, daemon=True)
+            self.measurement_thread.start()
+            self.root.after(100, self._process_data_queue)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
-            messagebox.showerror("Initialization Error", f"Could not start measurement.\n{e}")
+            messagebox.showerror("Initialization Error", f"Could not start logging.\n{e}")
             if self.backend:
                 self.backend.close()
 
@@ -356,38 +365,56 @@ class TempMonitorGUI:
             self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
             if self.backend:
                 self.backend.close()
-            messagebox.showinfo("Info", "Measurement stopped and instrument disconnected.")
+            messagebox.showinfo("Info", "Logging stopped and instrument disconnected.")
 
-    def _update_measurement_loop(self):
-        if not self.is_running: return
+    def _measurement_worker(self):
+        """Worker thread for handling blocking instrument calls."""
+        delay_s = float(self.entries["Delay"].get())
+        while self.is_running:
+            try:
+                temp = self.backend.get_temperature()
+                elapsed = time.time() - self.start_time
+                self.data_queue.put((elapsed, temp))
+                time.sleep(delay_s)
+            except Exception as e:
+                self.data_queue.put(e)
+                break
+
+    def _process_data_queue(self):
+        """Processes data from the worker thread to update the GUI."""
         try:
-            temp = self.backend.get_temperature()
-            elapsed = time.time() - self.start_time
+            while not self.data_queue.empty():
+                data = self.data_queue.get_nowait()
+                if isinstance(data, Exception):
+                    self.log(f"RUNTIME ERROR in worker thread: {traceback.format_exc()}")
+                    self.stop_measurement()
+                    messagebox.showerror("Runtime Error", "A critical error occurred. Check console.")
+                    return
 
-            self.temp_label_var.set(f"{temp:.4f} K")
-            self.log(f"T:{temp:.3f} K")
+                elapsed, temp = data
+                self.temp_label_var.set(f"{temp:.4f} K")
+                self.log(f"T:{temp:.3f} K")
 
-            with open(self.data_filepath, 'a', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}"])
+                with open(self.data_filepath, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}"])
 
-            self.data_storage['time'].append(elapsed)
-            self.data_storage['temperature'].append(temp)
+                self.data_storage['time'].append(elapsed)
+                self.data_storage['temperature'].append(temp)
 
-            self.line_main.set_data(self.data_storage['time'], self.data_storage['temperature'])
-            self.ax_main.relim(); self.ax_main.autoscale_view()
-            self.figure.tight_layout(pad=3.0)
-            self.canvas.draw()
+                self.line_main.set_data(self.data_storage['time'], self.data_storage['temperature'])
+                self.ax_main.relim(); self.ax_main.autoscale_view()
+                self.figure.tight_layout(pad=3.0)
+                self.canvas.draw_idle()
 
-            delay_ms = int(float(self.entries["Delay"].get()) * 1000)
-            loop_delay_ms = max(100, delay_ms)
-            self.root.after(loop_delay_ms, self._update_measurement_loop)
+        except queue.Empty:
+            pass # This is normal
 
-        except Exception as e:
-            self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement()
+        if self.is_running:
+            self.root.after(200, self._process_data_queue)
 
     def _scan_for_visa_instruments(self):
-        if not pyvisa: self.log("ERROR: PyVISA not installed."); return
+        if not PYVISA_AVAILABLE: self.log("ERROR: PyVISA not installed."); return
         try:
             rm = pyvisa.ResourceManager()
             self.log("Scanning for VISA instruments...")

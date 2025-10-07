@@ -30,6 +30,8 @@ import csv
 import os
 import time
 import traceback
+import threading
+import queue
 from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -176,6 +178,8 @@ class LakeshoreRampGUI:
         self.current_heater_range = 'off'
         self.logo_image = None # Attribute to hold the logo image reference
 
+        self.data_queue = queue.Queue()
+
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -188,6 +192,8 @@ class LakeshoreRampGUI:
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
         style.configure('TLabelframe', background=self.CLR_BG_DARK, bordercolor=self.CLR_HEADER, borderwidth=1)
         style.configure('TLabelframe.Label', background=self.CLR_BG_DARK, foreground=self.CLR_ACCENT_GOLD, font=self.FONT_TITLE)
+        style.configure('TEntry', fieldbackground='#4C566A', foreground=self.CLR_FG_LIGHT, insertcolor=self.CLR_FG_LIGHT, borderwidth=0)
+        style.configure('TCombobox', fieldbackground='#4C566A', foreground=self.CLR_FG_LIGHT, arrowcolor=self.CLR_FG_LIGHT, selectbackground=self.CLR_ACCENT_GOLD, selectforeground=self.CLR_TEXT_DARK)
 
         style.configure('TButton', font=self.FONT_BASE, padding=(10, 8), foreground=self.CLR_TEXT_DARK,
                         background=self.CLR_HEADER, borderwidth=0, focusthickness=0, focuscolor='none')
@@ -269,23 +275,23 @@ class LakeshoreRampGUI:
         for i in range(2): frame.grid_columnconfigure(i, weight=1)
         self.entries = {}
         pady_val = (5, 5)
-        Label(frame, text="Sample Name:", font=self.FONT_BASE).grid(row=0, column=0, columnspan=2, padx=10, pady=pady_val, sticky='w')
-        self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE)
+        ttk.Label(frame, text="Sample Name:").grid(row=0, column=0, columnspan=2, padx=10, pady=pady_val, sticky='w')
+        self.entries["Sample Name"] = ttk.Entry(frame, font=self.FONT_BASE)
         self.entries["Sample Name"].grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 10), sticky='ew')
-        Label(frame, text="Start Temperature (K):", font=self.FONT_BASE).grid(row=2, column=0, padx=10, pady=pady_val, sticky='w')
-        self.entries["Start Temp"] = Entry(frame, font=self.FONT_BASE)
+        ttk.Label(frame, text="Start Temperature (K):").grid(row=2, column=0, padx=10, pady=pady_val, sticky='w')
+        self.entries["Start Temp"] = ttk.Entry(frame, font=self.FONT_BASE)
         self.entries["Start Temp"].grid(row=3, column=0, padx=(10, 5), pady=(0, 10), sticky='ew')
-        Label(frame, text="End Temperature (K):", font=self.FONT_BASE).grid(row=2, column=1, padx=10, pady=pady_val, sticky='w')
-        self.entries["End Temp"] = Entry(frame, font=self.FONT_BASE)
+        ttk.Label(frame, text="End Temperature (K):").grid(row=2, column=1, padx=10, pady=pady_val, sticky='w')
+        self.entries["End Temp"] = ttk.Entry(frame, font=self.FONT_BASE)
         self.entries["End Temp"].grid(row=3, column=1, padx=(5, 10), pady=(0, 10), sticky='ew')
-        Label(frame, text="Ramp Rate (K/min):", font=self.FONT_BASE).grid(row=4, column=0, padx=10, pady=pady_val, sticky='w')
-        self.entries["Rate"] = Entry(frame, font=self.FONT_BASE)
+        ttk.Label(frame, text="Ramp Rate (K/min):").grid(row=4, column=0, padx=10, pady=pady_val, sticky='w')
+        self.entries["Rate"] = ttk.Entry(frame, font=self.FONT_BASE)
         self.entries["Rate"].grid(row=5, column=0, padx=(10, 5), pady=(0, 10), sticky='ew')
-        Label(frame, text="Safety Cutoff (K):", font=self.FONT_BASE).grid(row=4, column=1, padx=10, pady=pady_val, sticky='w')
-        self.entries["Safety Cutoff"] = Entry(frame, font=self.FONT_BASE)
+        ttk.Label(frame, text="Safety Cutoff (K):").grid(row=4, column=1, padx=10, pady=pady_val, sticky='w')
+        self.entries["Safety Cutoff"] = ttk.Entry(frame, font=self.FONT_BASE)
         self.entries["Safety Cutoff"].grid(row=5, column=1, padx=(5, 10), pady=(0, 10), sticky='ew')
-        Label(frame, text="Lakeshore 350 VISA:", font=self.FONT_BASE).grid(row=6, column=0, columnspan=2, padx=10, pady=pady_val, sticky='w')
-        self.lakeshore_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
+        ttk.Label(frame, text="Lakeshore 350 VISA:").grid(row=6, column=0, columnspan=2, padx=10, pady=pady_val, sticky='w')
+        self.lakeshore_combobox = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly', style='TCombobox')
         self.lakeshore_combobox.grid(row=7, column=0, columnspan=2, padx=10, pady=(0, 0), sticky='ew')
         self.scan_button = ttk.Button(frame, text="Scan for Instruments", command=self._scan_for_visa_instruments)
         self.scan_button.grid(row=8, column=0, columnspan=2, padx=10, pady=10, sticky='ew')
@@ -297,7 +303,7 @@ class LakeshoreRampGUI:
         self.stop_button.grid(row=10, column=1, padx=(5,10), pady=15, sticky='ew')
 
     def create_console_frame(self, parent):
-        frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame = ttk.LabelFrame(parent, text='Console Output')
         self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0)
         self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
         self.log("Console initialized. Configure parameters and scan for instruments.")
@@ -367,9 +373,12 @@ class LakeshoreRampGUI:
             self.ax_main.set_title(f"Ramp for Sample: {params['sample_name']}", fontweight='bold')
             self.canvas.draw()
 
-
             self.log("Starting stabilization process...")
-            self.root.after(1000, self._stabilization_loop)
+            # Start the worker thread for stabilization and measurement
+            self.measurement_thread = threading.Thread(target=self._measurement_worker, daemon=True)
+            self.measurement_thread.start()
+            # Start the GUI queue processor
+            self.root.after(100, self._process_data_queue)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
@@ -387,52 +396,102 @@ class LakeshoreRampGUI:
             if reason: messagebox.showinfo("Info", f"Measurement finished.\nReason: {reason}")
             else: messagebox.showinfo("Info", "Measurement stopped and instrument disconnected.")
 
-    def _stabilization_loop(self):
-        """Robustly stabilizes at the start temperature, cooling if necessary."""
-        if not self.is_stabilizing: return
+    def _process_data_queue(self):
+        """Processes data from the worker thread queue to update the GUI."""
+        try:
+            while not self.data_queue.empty():
+                msg_type, data = self.data_queue.get_nowait()
+
+                if msg_type == "LOG":
+                    self.log(data)
+                elif msg_type == "DATA":
+                    elapsed_time, current_temp, heater_output = data
+                    self.log(f"Time: {elapsed_time:7.1f}s | Temp: {current_temp:8.4f}K | Heater: {heater_output:5.1f}% ({self.current_heater_range})")
+                    
+                    with open(self.data_filepath, 'a', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                         f"{elapsed_time:.2f}", f"{current_temp:.4f}", f"{heater_output:.2f}"])
+
+                    self.data_storage['time'].append(elapsed_time)
+                    self.data_storage['temperature'].append(current_temp)
+                    self.data_storage['heater'].append(heater_output)
+
+                    self.line_main.set_data(self.data_storage['time'], self.data_storage['temperature'])
+                    self.line_sub1.set_data(self.data_storage['time'], self.data_storage['heater'])
+                    for ax in [self.ax_main, self.ax_sub1]:
+                        ax.relim(); ax.autoscale_view()
+                    self.figure.tight_layout(pad=2.5)
+                    self.canvas.draw_idle()
+
+                elif msg_type == "STOP":
+                    self.stop_measurement(reason=data)
+                    return # Stop processing
+
+        except queue.Empty:
+            pass # This is normal
+
+        if self.is_running or self.is_stabilizing:
+            self.root.after(200, self._process_data_queue)
+
+    def _measurement_worker(self):
+        """
+        Worker thread to handle all blocking operations: stabilization, ramping,
+        and data acquisition.
+        """
         try:
             params = self.backend.params
-            current_temp, _ = self.backend.get_measurement()
 
-            if current_temp > params['start_temp'] + 0.2:
-                self.log(f"Cooling... Current: {current_temp:.4f} K > Target: {params['start_temp']} K")
-                self.backend.set_heater_range(1, 'off')
-            else:
-                self.log(f"Heating... Current: {current_temp:.4f} K <= Target: {params['start_temp']} K")
-                self.backend.set_heater_range(1, 'medium')
-                self.backend.set_setpoint(1, params['start_temp'])
+            # --- Stabilization Loop ---
+            while self.is_stabilizing:
+                current_temp, _ = self.backend.get_measurement()
 
+                if current_temp > params['start_temp'] + 0.2:
+                    self.data_queue.put(("LOG", f"Cooling... Current: {current_temp:.4f} K > Target: {params['start_temp']} K"))
+                    self.backend.set_heater_range(1, 'off')
+                else:
+                    self.data_queue.put(("LOG", f"Heating... Current: {current_temp:.4f} K <= Target: {params['start_temp']} K"))
+                    self.backend.set_heater_range(1, 'medium')
+                    self.backend.set_setpoint(1, params['start_temp'])
 
-            if abs(current_temp - params['start_temp']) < 0.1:
-                self.log(f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
-                self.is_stabilizing = False
-                self.root.after(5000, self._start_hardware_ramp)
-            else:
-                self.root.after(2000, self._stabilization_loop)
+                if abs(current_temp - params['start_temp']) < 0.1:
+                    self.data_queue.put(("LOG", f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp..."))
+                    self.is_stabilizing = False
+                    time.sleep(5) # Wait before starting ramp
+                else:
+                    time.sleep(2) # Wait between stabilization checks
+
+            # --- Start Hardware Ramp ---
+            self.backend.set_setpoint(1, params['end_temp'])
+            self.backend.setup_ramp(1, params['rate'])
+            self.current_heater_range = 'high'
+            self.backend.set_heater_range(1, self.current_heater_range)
+            self.data_queue.put(("LOG", f"Hardware ramp started towards {params['end_temp']} K at {params['rate']} K/min."))
+            self.data_queue.put(("LOG", f"Heater range permanently set to '{self.current_heater_range}' (Range 5)."))
+            self.start_time = time.time()
+
+            # --- Main Data Acquisition Loop ---
+            while self.is_running:
+                current_temp, heater_output = self.backend.get_measurement()
+                elapsed_time = time.time() - self.start_time
+                self.data_queue.put(("DATA", (elapsed_time, current_temp, heater_output)))
+
+                # Check for end conditions
+                if current_temp >= params['safety_cutoff']:
+                    self.data_queue.put(("STOP", f"SAFETY CUTOFF REACHED at {current_temp:.4f} K!"))
+                    return
+                if current_temp >= params['end_temp']:
+                    self.data_queue.put(("STOP", f"Target temperature of {params['end_temp']} K reached."))
+                    return
+
+                time.sleep(2) # Loop every 2 seconds
+
         except Exception as e:
-            self.log(f"ERROR during stabilization: {e}"); self.stop_measurement("Error during stabilization")
+            tb_str = traceback.format_exc()
+            self.data_queue.put(("LOG", f"RUNTIME ERROR in worker thread: {tb_str}"))
+            self.data_queue.put(("STOP", "A critical error occurred in the measurement thread."))
 
-    def _start_hardware_ramp(self):
-        """Initializes the Lakeshore's internal hardware ramp."""
-        params = self.backend.params
-
-        # 1. Set the final setpoint
-        self.backend.set_setpoint(1, params['end_temp'])
-
-        # 2. Configure the hardware ramp rate
-        self.backend.setup_ramp(1, params['rate'])
-
-        # 3. Set the heater range to High (5) for the entire ramp
-        self.current_heater_range = 'high'
-        self.backend.set_heater_range(1, self.current_heater_range)
-
-        self.log(f"Hardware ramp started towards {params['end_temp']} K at {params['rate']} K/min.")
-        self.log(f"Heater range permanently set to '{self.current_heater_range}' (Range 5).")
-
-        self.start_time = time.time()
-        self.root.after(1000, self._update_measurement_loop)
-
-    def _update_measurement_loop(self):
+    def _old_update_measurement_loop(self):
         """Main loop for data acquisition during the hardware ramp."""
         if not self.is_running: return
         try:
@@ -440,14 +499,8 @@ class LakeshoreRampGUI:
             params = self.backend.params
             elapsed_time = time.time() - self.start_time
 
-            # --- HEATER LOGIC REMOVED ---
-            # Heater is now set to 'high' at the start of the ramp and remains there.
-            # No dynamic switching is needed in the loop.
-
             # --- Logging, Data Storage, and Plotting ---
             self.log(f"Time: {elapsed_time:7.1f}s | Temp: {current_temp:8.4f}K | Heater: {heater_output:5.1f}% ({self.current_heater_range})")
-
-
             with open(self.data_filepath, 'a', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -463,7 +516,7 @@ class LakeshoreRampGUI:
             for ax in [self.ax_main, self.ax_sub1]:
                 ax.relim(); ax.autoscale_view()
             self.figure.tight_layout(pad=2.5)
-            self.canvas.draw()
+            self.canvas.draw_idle()
 
             # --- Check for end conditions ---
             if current_temp >= params['safety_cutoff']:
@@ -473,7 +526,7 @@ class LakeshoreRampGUI:
                 self.stop_measurement(f"Target temperature of {params['end_temp']} K reached.")
                 return
 
-            self.root.after(2000, self._update_measurement_loop) # Loop every 2 seconds
+            self.root.after(2000, self._old_update_measurement_loop) # Loop every 2 seconds
 
         except Exception:
             self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
