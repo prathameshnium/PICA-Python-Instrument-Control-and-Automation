@@ -167,8 +167,8 @@ class RT_GUI_Active:
         logo_canvas.grid(row=0, column=0, rowspan=2, padx=10, pady=10)
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            logo_path = os.path.join(script_dir, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
-            if PIL_AVAILABLE and os.path.exists(logo_path):
+            logo_path = os.path.join(script_dir, "..", "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+            if PIL_AVAILABLE and os.path.exists(logo_path): # Corrected path
                 img = Image.open(logo_path).resize((80, 80), Image.Resampling.LANCZOS)
                 self.logo_image = ImageTk.PhotoImage(img)
                 logo_canvas.create_image(40, 40, image=self.logo_image)
