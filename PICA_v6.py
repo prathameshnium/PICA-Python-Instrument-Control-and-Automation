@@ -79,7 +79,7 @@ class PICALauncherApp:
     CLR_CONSOLE_BG = '#1E2B38'
     CLR_LINK = '#87CEEB' # Sky Blue, for better contrast
     FONT_SIZE_BASE = 12
-    FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
+    FONT_BASE = ('Segoe UI', FONT_SIZE_BASE) 
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 6, 'bold')
     FONT_SUBTITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
     FONT_CONSOLE = ('Consolas', 10)
@@ -88,8 +88,8 @@ class PICALauncherApp:
     LOGO_FILE = resource_path("_assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
     MANUAL_FILE = resource_path("_assets/Manuals")
     README_FILE = resource_path("PICA_README.md")
-    LICENSE_FILE = resource_path("LICENSE")
-    UPDATES_FILE = resource_path("Updates.md")
+    LICENSE_FILE = resource_path("LICENSE") 
+    UPDATES_FILE = resource_path("Change_Logs.md")
     LOGO_SIZE = 140
 
     SCRIPT_PATHS = {
@@ -153,14 +153,25 @@ class PICALauncherApp:
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=0, minsize=380)
         self.root.grid_columnconfigure(1, weight=1)
+
         info_panel = self.create_resource_panel(self.root)
         info_panel.grid(row=0, column=0, sticky="nsew", padx=(15, 10), pady=15)
         launcher_container = self.create_launcher_panel(self.root)
         launcher_container.grid(row=0, column=1, sticky="nsew", padx=(10, 15), pady=15)
 
+        # --- Version Label (Clickable) - Placed on the main window ---
+        # Moved here to ensure it's drawn on top of other widgets
+        version_font = font.Font(family='Segoe UI', size=9, underline=True)
+        version_label = ttk.Label(self.root, text=f"v{self.PROGRAM_VERSION}",
+                                  font=version_font, foreground=self.CLR_LINK, cursor="hand2",
+                                  background=self.CLR_BG_DARK) # Match the main window background
+        version_label.place(x=10, y=10, anchor='nw') # Adjusted coordinates for better visibility
+        version_label.bind("<Button-1>", lambda e: self.open_updates())
+
     def create_resource_panel(self, parent):
         info_frame = ttk.Frame(parent)
         info_frame.configure(padding=20)
+
         logo_canvas = Canvas(info_frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
         logo_canvas.pack(pady=(0, 15))
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE):
@@ -414,7 +425,7 @@ class PICALauncherApp:
         self._show_file_in_window(self.README_FILE, "README")
 
     def open_updates(self):
-        self._show_file_in_window(self.UPDATES_FILE, "Change Log")
+        self._show_file_in_window(self.UPDATES_FILE, "Change Log") 
 
     def open_manual_folder(self):
         self._open_path(self.MANUAL_FILE)
