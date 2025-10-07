@@ -312,7 +312,6 @@ class PICALauncherApp:
         plotter_frame = ttk.LabelFrame(right_col, text='Data Visualization'); plotter_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
         plotter_frame.columnconfigure(0, weight=1)
         self._create_launch_button(plotter_frame, "Open Plotter", "Plotter Utility").grid(row=0, column=0, sticky='ew', padx=(0, 4))
-        self._create_launch_button(plotter_frame, "Open Plotter", "Plotter Utility").grid(row=0, column=0, sticky='ew')
 
         return main_container
 
