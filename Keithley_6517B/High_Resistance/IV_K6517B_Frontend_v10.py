@@ -181,7 +181,7 @@ class HighResistanceIV_GUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("High Resistance I-V Measurement (Keithley 6517B)")
+        self.root.title("Keithley 6517B: High Resistance I-V Measurement")
         self.root.geometry("1550x900")
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1200, 800)
@@ -246,7 +246,7 @@ class HighResistanceIV_GUI:
 
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="High Resistance I-V Sweep", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
+        Label(header_frame, text="Keithley 6517B: High Resistance I-V Sweep", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
     def create_info_frame(self, parent):

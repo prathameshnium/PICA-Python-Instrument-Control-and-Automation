@@ -189,7 +189,7 @@ class Integrated_RT_GUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("Integrated R-T Measurement (Lakeshore 350 + Keithley 6517B)")
+        self.root.title("K6517B & L350: R-T Measurement (T-Control)")
         self.root.geometry("1550x950")
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1200, 850)
@@ -257,7 +257,7 @@ class Integrated_RT_GUI:
 
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="Resistance vs. Temperature Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
+        Label(header_frame, text="K6517B & L350: R-T Measurement (T-Control)", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
     def create_info_frame(self, parent):
@@ -349,7 +349,9 @@ class Integrated_RT_GUI:
     def create_graph_frame(self, parent):
         graph_container = LabelFrame(parent, text='Live Graphs', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
-        top_bar = ttk.Frame(graph_container, style='TFrame')
+        # Use a standard tk.Frame and set its background to match the graph
+        # to make the checkbox appear integrated with the graph area.
+        top_bar = tk.Frame(graph_container, bg=self.CLR_GRAPH_BG)
         top_bar.pack(side='top', fill='x', pady=(0, 5))
         self.log_scale_cb = ttk.Checkbutton(top_bar, text="Logarithmic Resistance Axis",
                                               variable=self.log_scale_var, command=self._update_y_scale)

@@ -160,7 +160,7 @@ class LCR_CV_GUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("Keysight E4980A C-V Measurement Control")
+        self.root.title("Keysight E4980A C-V Measurement")
         self.root.geometry("1600x950")
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1300, 850)
@@ -205,7 +205,7 @@ class LCR_CV_GUI:
         font_title_italic = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold', 'italic')
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="Keysight E4980A C-V Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
+        Label(header_frame, text="Keysight E4980A: C-V Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
 
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
