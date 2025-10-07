@@ -227,7 +227,7 @@ class MeasurementAppGUI:
         self.create_graph_frame(right_panel)
 
     def create_header(self):
-        font_title_italic = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold italic')
+        font_title_italic = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold', 'italic')
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
         Label(header_frame, text="Delta Mode R-T (Passive Sensing)", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
@@ -418,6 +418,9 @@ class MeasurementAppGUI:
                 # If an error occurs, put it in the queue to be handled by the main thread
                 self.data_queue.put(e)
                 break
+        if not self.is_running:
+            # Signal that the thread is done
+            self.data_queue.put(None)
 
     def _process_data_queue(self):
         """Processes data from the queue to update the GUI. Runs in the main thread."""
@@ -425,6 +428,11 @@ class MeasurementAppGUI:
             while not self.data_queue.empty():
                 data = self.data_queue.get_nowait()
                 if isinstance(data, Exception):
+                    self.log(f"RUNTIME ERROR in worker thread: {traceback.format_exc()}")
+                    self.stop_measurement()
+                    messagebox.showerror("Runtime Error", "A critical error occurred in the measurement thread. Check console.")
+                    return
+                if data is None: # Sentinel value indicating thread finished
                     raise data # Re-raise the exception in the main thread
 
                 res, volt, temp, elapsed = data
@@ -443,10 +451,13 @@ class MeasurementAppGUI:
                     ax.relim(); ax.autoscale_view()
                 self.figure.tight_layout(pad=3.0)
                 self.canvas.draw()
-        except Exception as e:
-            self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
-            self.stop_measurement()
-            messagebox.showerror("Runtime Error", "A critical error occurred. Measurement stopped. Check console for details.")
+        except queue.Empty:
+            pass # No data to process, which is normal
+        except Exception as e: # Catches other exceptions, like the sentinel
+            self.log(f"GUI processing error or thread stopped: {e}")
+
+        if self.is_running:
+            self.root.after(200, self._process_data_queue)
 
     def _scan_for_visa_instruments(self):
         if not pyvisa: self.log("ERROR: PyVISA is not installed."); return
