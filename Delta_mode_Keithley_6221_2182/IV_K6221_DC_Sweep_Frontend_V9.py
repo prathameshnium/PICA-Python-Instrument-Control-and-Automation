@@ -27,6 +27,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.gridspec as gridspec
 import matplotlib as mpl
 import threading
+import queue
 
 try:
     from PIL import Image, ImageTk
@@ -53,6 +54,7 @@ def resource_path(relative_path):
 class Backend_Passthrough:
     """ Manages K6221 and K2182 via GPIB passthrough communication. """
     def __init__(self):
+        self.visa_queue = queue.Queue()
         self.k6221 = None; self.rm = None
         if pyvisa:
             try: self.rm = pyvisa.ResourceManager()
@@ -153,12 +155,7 @@ class Passthrough_IV_GUI:
         frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE); frame.pack(pady=5, padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
         logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0); logo_canvas.grid(row=0, column=0, rowspan=3, padx=15, pady=10)
-        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
-            try:
-                img = Image.open(self.LOGO_FILE_PATH).resize((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
-                self.logo_image = ImageTk.PhotoImage(img); logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
-            except Exception as e: self.log(f"ERROR: Failed to load logo. {e}")
-
+        self.root.after(50, lambda: self._load_logo(logo_canvas))
         institute_font = ('Segoe UI', self.FONT_BASE[1], 'bold')
         ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
         ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
@@ -171,7 +168,15 @@ class Passthrough_IV_GUI:
                         "Measurement Range: 10⁻⁹ Ω to 10⁸ Ω")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
-    # ... The rest of the GUI is mostly unchanged ...
+    def _load_logo(self, canvas):
+        """Loads the logo image after the main window is drawn."""
+        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
+            try:
+                img = Image.open(self.LOGO_FILE_PATH).resize((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
+                self.logo_image = ImageTk.PhotoImage(img) # Keep a reference
+                canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
+            except Exception as e:
+                self.log(f"ERROR: Failed to load logo. {e}")
     def create_input_frame(self, parent):
         frame = LabelFrame(parent, text='Sweep Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE); frame.pack(pady=5, padx=10, fill='x')
         for i in range(2): frame.grid_columnconfigure(i, weight=1)
@@ -179,8 +184,8 @@ class Passthrough_IV_GUI:
         
         Label(frame, text="Sample Name:").grid(row=0, column=0, columnspan=2, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE); self.entries["Sample Name"].grid(row=1, column=0, columnspan=2, padx=padx_val, pady=(0, 10), sticky='ew')
         
-        Label(frame, text="Keithley 6221 (GPIB Address):").grid(row=2, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.k6221_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly'); self.k6221_cb.grid(row=3, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew')
-        ttk.Button(frame, text="Scan", command=self._scan_for_visa).grid(row=3, column=1, padx=(5, padx_val), pady=(0,5), sticky='ew')
+        Label(frame, text="Keithley 6221 (GPIB Address):").grid(row=2, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.k6221_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly'); self.k6221_cb.grid(row=3, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew');
+        self.scan_button = ttk.Button(frame, text="Scan", command=self.start_visa_scan); self.scan_button.grid(row=3, column=1, padx=(5, padx_val), pady=(0,5), sticky='ew')
 
         Label(frame, text="Start Current (A):").grid(row=4, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Start Current"] = Entry(frame, font=self.FONT_BASE); self.entries["Start Current"].grid(row=5, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Start Current"].insert(0, "-1E-5")
         Label(frame, text="Stop Current (A):").grid(row=4, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Stop Current"] = Entry(frame, font=self.FONT_BASE); self.entries["Stop Current"].grid(row=5, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Stop Current"].insert(0, "1E-5")
@@ -249,17 +254,38 @@ class Passthrough_IV_GUI:
         self.figure.tight_layout(pad=3.0); self.canvas.draw_idle()
     def _sweep_cleanup_ui(self):
         self.start_button.config(state='normal'); self.stop_button.config(state='disabled'); self.log("Ready for next sweep.")
-    def _scan_for_visa(self):
-        if self.backend.rm: self.log("Scanning..."); resources = self.backend.rm.list_resources()
-        else: self.log("VISA manager not found."); return
-        if resources:
-            self.log(f"Found: {resources}"); gpib_res = [r for r in resources if 'GPIB' in r]
-            self.k6221_cb['values'] = gpib_res
-            for res in gpib_res:
-                if "GPIB0::13" in res: self.k6221_cb.set(res); self.log("Preferred K6221 address found and selected."); break
-            else:
-                if gpib_res: self.k6221_cb.set(gpib_res[0])
-        else: self.log("No instruments found.")
+
+    def start_visa_scan(self):
+        """Starts the VISA scan in a separate thread to keep the GUI responsive."""
+        self.scan_button.config(state='disabled')
+        self.log("Scanning for VISA instruments...")
+        threading.Thread(target=self._visa_scan_worker, daemon=True).start()
+        self.root.after(100, self._process_visa_queue)
+
+    def _visa_scan_worker(self):
+        """Worker function that performs the slow VISA scan."""
+        if not pyvisa: self.log("ERROR: PyVISA is not installed."); return
+        try:
+            rm = pyvisa.ResourceManager()
+            resources = rm.list_resources()
+            self.backend.visa_queue.put(resources) # Use a queue on the backend object
+        except Exception as e:
+            self.backend.visa_queue.put(e)
+
+    def _process_visa_queue(self):
+        """Checks the queue for results from the VISA scan worker."""
+        try:
+            result = self.backend.visa_queue.get_nowait()
+            if isinstance(result, Exception): self.log(f"ERROR during VISA scan: {result}")
+            elif result:
+                self.log(f"Found: {result}"); self.k6221_cb['values'] = result
+                for res in result:
+                    if "GPIB0::13" in res: self.k6221_cb.set(res); break
+            else: self.log("No VISA instruments found.")
+            self.scan_button.config(state='normal')
+        except queue.Empty:
+            self.root.after(100, self._process_visa_queue)
+
     def _browse_save(self):
         path = filedialog.askdirectory();
         if path: self.save_path = path; self.log(f"Save location set to: {path}")
