@@ -198,9 +198,9 @@ class PICALauncherApp:
         util_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
         
         ttk.Button(util_frame, text="GPIB Utils", style='App.TButton', command=self.run_gpib_test).grid(row=0, column=0, sticky='ew', padx=(0, 4))
-        ttk.Button(util_frame, text="README", style='App.TButton', command=self.open_readme).grid(row=0, column=1, columnspan=2, sticky='ew', padx=4)
+        ttk.Button(util_frame, text="Plotter", style='App.TButton', command=lambda: self.launch_script(self.SCRIPT_PATHS["Plotter Utility"])).grid(row=0, column=1, sticky='ew', padx=4)
+        ttk.Button(util_frame, text="README", style='App.TButton', command=self.open_readme).grid(row=0, column=2, sticky='ew', padx=4)
         ttk.Button(util_frame, text="Manuals", style='App.TButton', command=self.open_manual_folder).grid(row=0, column=3, sticky='ew', padx=(4, 0))
-
         
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', fill='x', pady=(15, 0))
@@ -253,9 +253,16 @@ class PICALauncherApp:
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
 
+        def _on_mousewheel(event):
+            if platform.system() == "Windows":
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            else: # For MacOS and Linux
+                canvas.yview_scroll(-1 if event.num == 4 else 1, "units")
+
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-
+        canvas.bind_all("<MouseWheel>", _on_mousewheel) # Enable mouse wheel scrolling
+        
         canvas.grid(row=0, column=0, sticky='nsew', padx=(15, 0), pady=10)
         scrollbar.grid(row=0, column=1, sticky='ns', pady=10)
 
@@ -282,7 +289,6 @@ class PICALauncherApp:
             ("R vs. T (T_Control)", "K2400_2182 R-T"),
             ("R vs. T (T_Sensing)", "K2400_2182 R-T (T_Sensing)"),
         ])
-        self._create_suite_frame(left_col, 'Data Visualization', None, [("Open Plotter", "Plotter Utility")])
 
         # --- Right Column Suites ---
         self._create_suite_frame(right_col, 'High Resistance (10³ Ω to 10¹⁶ Ω)', "Instruments: Keithley 6517B, Lakeshore 350", [
