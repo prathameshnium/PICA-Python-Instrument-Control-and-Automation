@@ -189,21 +189,30 @@ class MeasurementAppGUI:
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         left_panel = ttk.Frame(main_pane)
-        left_panel.grid_rowconfigure(1, weight=1)
-        left_panel.grid_columnconfigure(0, weight=1)
         main_pane.add(left_panel, weight=1)
 
         right_panel = tk.Frame(main_pane, bg='white')
         main_pane.add(right_panel, weight=3)
 
-        top_controls_frame = ttk.Frame(left_panel)
-        self.create_info_frame(top_controls_frame)
-        self.create_input_frame(top_controls_frame)
+        # --- Make the left panel scrollable ---
+        canvas = Canvas(left_panel, bg=self.CLR_BG_DARK, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(left_panel, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
 
-        console_pane = self.create_console_frame(left_panel)
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
 
-        top_controls_frame.grid(row=0, column=0, sticky="ew")
-        console_pane.grid(row=1, column=0, sticky="nsew", pady=(10,0))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        self.create_info_frame(scrollable_frame)
+        self.create_input_frame(scrollable_frame)
+        self.create_console_frame(scrollable_frame)
 
         self.create_graph_frame(right_panel)
 
@@ -304,8 +313,9 @@ class MeasurementAppGUI:
 
     def create_console_frame(self, parent):
         frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame.pack(pady=10, padx=10, fill='x')
         self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=('Consolas', 10), wrap='word', bd=0)
-        self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
+        self.console_widget.pack(pady=5, padx=5, fill='both', expand=True, side='bottom')
 
         if self.pre_init_logs:
             self.console_widget.config(state='normal')

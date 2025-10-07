@@ -189,11 +189,11 @@ class PICALauncherApp:
         ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=10)
         util_frame = ttk.Frame(info_frame); util_frame.pack(fill='x', expand=False, pady=5)
         # --- Make the README button bigger by spanning two columns ---
-        util_frame.grid_columnconfigure((0, 1), weight=1)
+        util_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
         
-        ttk.Button(util_frame, text="GPIB Utils", style='App.TButton', command=self.run_gpib_test).grid(row=0, column=0, sticky='ew', padx=(0, 5))
-        ttk.Button(util_frame, text="README", style='App.TButton', command=self.open_readme).grid(row=0, column=1, sticky='ew', padx=(5, 0))
-
+        ttk.Button(util_frame, text="GPIB Utils", style='App.TButton', command=self.run_gpib_test).grid(row=0, column=0, sticky='ew', padx=(0, 4))
+        ttk.Button(util_frame, text="README", style='App.TButton', command=self.open_readme).grid(row=0, column=1, columnspan=2, sticky='ew', padx=4)
+        ttk.Button(util_frame, text="Manuals", style='App.TButton', command=lambda: self._open_path(self.MANUAL_FILE)).grid(row=0, column=3, sticky='ew', padx=(4, 0))
         
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', fill='x', pady=(15, 0))

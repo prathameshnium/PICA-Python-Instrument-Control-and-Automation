@@ -228,15 +228,24 @@ class Integrated_RT_GUI:
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
         left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=500)
-        main_pane.add(left_panel, weight=1)
+        main_pane.add(left_panel, weight=1) # This is the container for the scrollable area
         right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
         main_pane.add(right_panel, weight=3)
-        top_controls_frame = ttk.Frame(left_panel)
-        left_panel.add(top_controls_frame, weight=0)
-        console_pane = self.create_console_frame(left_panel)
-        self.create_info_frame(top_controls_frame)
-        self.create_input_frame(top_controls_frame)
-        left_panel.add(console_pane, weight=1)
+
+        # --- Make the left panel scrollable ---
+        canvas = Canvas(left_panel, bg=self.CLR_BG_DARK, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(left_panel, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        self.create_info_frame(scrollable_frame)
+        self.create_input_frame(scrollable_frame)
+        self.create_console_frame(scrollable_frame)
+
         self.create_graph_frame(right_panel)
 
     def create_header(self):
@@ -324,6 +333,7 @@ class Integrated_RT_GUI:
 
     def create_console_frame(self, parent):
         frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame.pack(pady=5, padx=10, fill='x')
         self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0)
         self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
         self.log("Console initialized. Configure parameters and scan for instruments.")
