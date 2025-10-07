@@ -111,6 +111,7 @@ class PICALauncherApp:
         "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/T_Sensing_L350_Frontend_v3.py"),
         "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v2.py"),
         "Lock-in AC Measurement": resource_path("Lock_in_amplifier/BasicTest_S830_Backend_v1.py"), # Assuming this is correct, no frontend provided
+        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend.py"),
         "PICA Help": resource_path("PICA_README.md"),
     }
 
@@ -306,6 +307,12 @@ class PICALauncherApp:
         lockin_frame.columnconfigure(0, weight=1)
         self._create_launch_button(lockin_frame, "AC Measurement", "Lock-in AC Measurement").grid(row=0, column=0, sticky='ew', padx=(0, 4))
         ttk.Button(lockin_frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder("Lock-in AC Measurement")).grid(row=0, column=1, sticky='ns')
+
+        # --- Plotter Utility ---
+        plotter_frame = ttk.LabelFrame(right_col, text='Data Visualization'); plotter_frame.pack(fill='x', expand=True, pady=GROUP_PAD_Y)
+        plotter_frame.columnconfigure(0, weight=1)
+        self._create_launch_button(plotter_frame, "Open Plotter", "Plotter Utility").grid(row=0, column=0, sticky='ew', padx=(0, 4))
+        self._create_launch_button(plotter_frame, "Open Plotter", "Plotter Utility").grid(row=0, column=0, sticky='ew')
 
         return main_container
 
