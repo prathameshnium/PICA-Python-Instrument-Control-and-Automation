@@ -1,38 +1,38 @@
 # PICA Instrument GPIB Address Guide
 
-This document provides a quick reference for the default and ly used GPIB addresses for instruments within the PICA suite. Use the **Test GPIB** utility in the launcher to confirm the exact addresses for your setup.
+This document provides a quick reference for the default and commonly used GPIB addresses for instruments within the PICA suite. Use the **Test GPIB** utility in the launcher to confirm the exact addresses for your setup.
 
 ---
 
 ### Temperature Controllers
-*   **Lakeshore 350/340:**
-    *   Address: `12`
+*   **Lakeshore 340:**
+    *   Typical Address: `GPIB0::12::INSTR`
 
 *   **Lakeshore 350:**
-    *   Address: `15`
+    *   Typical Address: `GPIB1::15::INSTR`
 
 ### Source-Measure Units (SMU) & Electrometers
 *   **Keithley 2400:**
-    *   Address: `4`
+    *   Typical Address: `GPIB1::4::INSTR`
 *   **Keithley 6221 (Current Source):**
-    *    Address: `13`
+    *    Typical Address: `GPIB0::13::INSTR`
 *   **Keithley 6517B (Electrometer):**
-    *    Address: `27`
+    *    Typical Address: `GPIB1::27::INSTR`
 
 ### Nanovoltmeters
 *   **Keithley 2182:**
-    *    Address: ``
+    *    Typical Address: `GPIB0::7::INSTR`
 
 ### LCR Meters
 *   **Keysight E4980A:**
-    *    Address: ``
+    *    Typical Address: `GPIB0::17::INSTR`
 
 ### Lock-in Amplifiers
 *   **SRS SR830:**
-    *    Address: `8`
+    *    Typical Address: `GPIB0::8::INSTR`
 
 
 ### Stanford (PS 365)
 *   **High Voltage:**
-    *    Address: `14`
+    *    Typical Address: `GPIB0::14::INSTR`
     
