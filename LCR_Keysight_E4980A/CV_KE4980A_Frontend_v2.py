@@ -252,11 +252,11 @@ class LCR_CV_GUI:
                 self.log(f"ERROR: Failed to load logo: {e}")
 
         institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 1, 'bold')
-        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
-        ttk.Label(frame, text="Mumbai Centre", font=institute_font).grid(row=1, column=1, padx=10, sticky='nw')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8) 
         
-        details_text = ("Program Duty: C-V Sweep\n"
+        details_text = ("Program Duty: C-V Measurement\n"
                         "Instrument: Keysight E4980A LCR Meter\n"
                         "Measurement Range: 20 Hz to 2 MHz")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')

@@ -215,13 +215,13 @@ class TempMonitorGUI:
 
         # Institute Name (larger font)
         institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 1, 'bold')
-        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
-        ttk.Label(frame, text="Mumbai Centre", font=institute_font).grid(row=1, column=1, padx=10, sticky='nw')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
 
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
  
         # Program details
-        details_text = ("Program Duty: Passive Temperature Logging\n"
+        details_text = ("Program Duty: Temperature Monitor\n"
                         "Instrument: Lakeshore 350 Controller\n"
                         "Measurement Range: 1.4 K to 800 K (Sensor Dependent)")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')

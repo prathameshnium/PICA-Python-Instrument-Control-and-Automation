@@ -103,7 +103,7 @@ class VT_GUI_Passive:
     FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold')
 
     def __init__(self, root):
-        self.root = root; self.root.title(f"Passive V-T  (K2400/2182) v{self.PROGRAM_VERSION}")
+        self.root = root; self.root.title(f"K2400/2182 & L350: R-T (T-Sensing) v{self.PROGRAM_VERSION}")
         self.root.geometry("1600x950"); self.root.minsize(1400, 800); self.root.configure(bg=self.CLR_BG)
         self.is_running = False; self.logo_image = None
         self.backend = VT_Backend_Passive(); self.data_storage = {'temperature': [], 'voltage': []}
@@ -129,7 +129,7 @@ class VT_GUI_Passive:
     def create_widgets(self):
         font_title_italic = ('Segoe UI', 13, 'bold', 'italic')
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
-        ttk.Label(header, text=f"Passive V-T  (K2400/2182) v{self.PROGRAM_VERSION}", style='Header.TLabel', font=font_title_italic).pack(side='left', padx=20, pady=10)
+        ttk.Label(header, text=f"K2400/2182 & L350: R-T (T-Sensing)", style='Header.TLabel', font=font_title_italic).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         left_panel_container = ttk.Frame(main_pane)
@@ -167,18 +167,18 @@ class VT_GUI_Passive:
                 logo_canvas.create_image(LOGO_SIZE/2, LOGO_SIZE/2, image=self.logo_image)
         except Exception as e: self.log(f"Warning: Could not load logo. {e}")
 
-        institute_font = ('Segoe UI', self.FONT_BASE[1] + 1, 'bold')
-        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_FRAME_BG).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
-        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_FRAME_BG).grid(row=1, column=1, padx=10, sticky='nw')
+        institute_font = ('Segoe UI', self.FONT_BASE[1], 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_FRAME_BG).grid(row=0, column=1, padx=10, pady=(15,0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_FRAME_BG).grid(row=1, column=1, padx=10, pady=(0,5), sticky='nw')
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
-        details_text = ("Program Duty: V vs. T (Passive)\n"
-                        "Instruments: K2400, K2182, LS350\n"
+        details_text = ("Program Duty: R vs. T (T-Sensing)\n"
+                        "Instruments: K2400, K2182, L350\n"
                         "Measurement Range: 10⁻⁶ Ω to 10⁹ Ω")
         ttk.Label(frame, text=details_text, justify='left', background=self.CLR_FRAME_BG).grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def _create_right_panel(self, parent):
         panel = ttk.Frame(parent, padding=5)
-        container = ttk.LabelFrame(panel, text='Live V-T Curve'); container.pack(fill='both', expand=True)
+        container = ttk.LabelFrame(panel, text='Live R-T Curve'); container.pack(fill='both', expand=True)
         self.figure = Figure(dpi=100, facecolor='white')
         self.ax_main = self.figure.add_subplot(111)
         self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
@@ -226,10 +226,10 @@ class VT_GUI_Passive:
             self.log("Connecting to instruments..."); self.backend.connect(self.params['k2400_visa'], self.params['k2182_visa'], self.params['ls_visa'])
             self.backend.configure_instruments(self.params['current_ma'], self.params['compliance_v']); self.log("All instruments connected and configured for passive logging.")
             
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S"); filename = f"{self.params['name']}_{ts}_VT_Passive.csv"
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S"); filename = f"{self.params['name']}_{ts}_RT_Passive.csv"
             self.data_filepath = os.path.join(self.params['save_path'], filename)
             with open(self.data_filepath, 'w', newline='') as f:
-                writer = csv.writer(f); writer.writerow(["Temperature (K)", "Voltage (V)", "Elapsed Time (s)"])
+                writer = csv.writer(f); writer.writerow(["Temperature (K)", "Voltage (V)", "Resistance (Ohm)", "Elapsed Time (s)"])
 
             self.set_ui_state(running=True)
             for key in self.data_storage: self.data_storage[key].clear()
@@ -251,11 +251,12 @@ class VT_GUI_Passive:
         try:
             temp, voltage = self.backend.get_measurement()
             elapsed = time.time() - self.start_time
-            self.log(f"T: {temp:.3f} K | V: {voltage:.6e} V")
+            resistance = voltage / (self.params['current_ma'] * 1e-3) if self.params['current_ma'] != 0 else float('inf')
+            self.log(f"T: {temp:.3f} K | R: {resistance:.4e} Ω")
 
             self.data_storage['temperature'].append(temp); self.data_storage['voltage'].append(voltage)
-            with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{temp:.4f}", f"{voltage:.6e}", f"{elapsed:.2f}"])
-            self.line_main.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
+            with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{temp:.4f}", f"{voltage:.6e}", f"{resistance:.6e}", f"{elapsed:.2f}"])
+            self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
             self.ax_main.relim(); self.ax_main.autoscale_view(); self.figure.tight_layout(); self.canvas.draw()
 
             self.root.after(int(self.params['delay_s'] * 1000), self._experiment_loop)
