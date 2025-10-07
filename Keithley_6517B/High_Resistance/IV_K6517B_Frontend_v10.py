@@ -242,7 +242,7 @@ class HighResistanceIV_GUI:
         self.create_graph_frame(right_panel)
 
     def create_header(self):
-        font_title_italic = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold italic')
+        font_title_italic = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold', 'italic')
 
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')

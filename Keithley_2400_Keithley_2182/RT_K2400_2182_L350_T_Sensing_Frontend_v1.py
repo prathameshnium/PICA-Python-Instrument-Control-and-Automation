@@ -127,8 +127,9 @@ class VT_GUI_Passive:
         mpl.rcParams.update({'font.family': 'Segoe UI', 'font.size': 11, 'axes.titlesize': 15, 'axes.labelsize': 13})
 
     def create_widgets(self):
+        font_title_italic = ('Segoe UI', 13, 'bold', 'italic')
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
-        ttk.Label(header, text=f"Passive V-T Logger (K2400/2182) v{self.PROGRAM_VERSION}", style='Header.TLabel', font=self.FONT_TITLE).pack(side='left', padx=20, pady=10)
+        ttk.Label(header, text=f"Passive V-T Logger (K2400/2182)", style='Header.TLabel', font=font_title_italic).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
         left_panel = self._create_left_panel(main_pane); main_pane.add(left_panel, weight=2)
         right_panel = self._create_right_panel(main_pane); main_pane.add(right_panel, weight=3)
@@ -141,19 +142,26 @@ class VT_GUI_Passive:
 
     def _create_info_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Information'); frame.grid(row=grid_row, column=0, sticky='new', pady=5)
-        frame.grid_columnconfigure(1, weight=1)
-        logo_canvas = Canvas(frame, width=80, height=80, bg=self.CLR_FRAME_BG, highlightthickness=0)
-        logo_canvas.grid(row=0, column=0, rowspan=2, padx=10, pady=10)
+        frame.grid_columnconfigure(1, weight=1); LOGO_SIZE = 110
+        logo_canvas = Canvas(frame, width=LOGO_SIZE, height=LOGO_SIZE, bg=self.CLR_FRAME_BG, highlightthickness=0)
+        logo_canvas.grid(row=0, column=0, rowspan=3, padx=10, pady=10)
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
             logo_path = os.path.join(script_dir, "..", "_assets", "LOGO", "UGC_DAE_CSR.jpeg")
             if PIL_AVAILABLE and os.path.exists(logo_path):
-                img = Image.open(logo_path).resize((80, 80), Image.Resampling.LANCZOS)
+                img = Image.open(logo_path).resize((LOGO_SIZE, LOGO_SIZE), Image.Resampling.LANCZOS)
                 self.logo_image = ImageTk.PhotoImage(img)
-                logo_canvas.create_image(40, 40, image=self.logo_image)
+                logo_canvas.create_image(LOGO_SIZE/2, LOGO_SIZE/2, image=self.logo_image)
         except Exception as e: self.log(f"Warning: Could not load logo. {e}")
-        info_text = ("Institute: UGC DAE CSR, Mumbai\nMeasurement: V vs. T (Passive)\nInstruments: K2400, K2182, LS350")
-        ttk.Label(frame, text=info_text, justify='left').grid(row=0, column=1, rowspan=2, sticky='w', padx=5)
+
+        institute_font = ('Segoe UI', self.FONT_BASE[1] + 1, 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_FRAME_BG).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_FRAME_BG).grid(row=1, column=1, padx=10, sticky='nw')
+        ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
+        details_text = ("Program Duty: V vs. T (Passive)\n"
+                        "Instruments: K2400, K2182, LS350\n"
+                        "Measurement Range: 10⁻⁶ Ω to 10⁹ Ω")
+        ttk.Label(frame, text=details_text, justify='left', background=self.CLR_FRAME_BG).grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def _create_right_panel(self, parent):
         panel = ttk.Frame(parent, padding=5)
