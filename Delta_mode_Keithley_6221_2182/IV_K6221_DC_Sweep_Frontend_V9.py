@@ -116,13 +116,13 @@ class Backend_Passthrough:
 class Passthrough_IV_GUI:
     PROGRAM_VERSION = "1.6"
     LOGO_SIZE = 110
-    LOGO_FILE_PATH = resource_path("../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
+    LOGO_FILE_PATH = resource_path("_assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
     CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'; CLR_TEXT_DARK = '#1A1A1A'
     CLR_ACCENT_GREEN = '#A7C957'; CLR_ACCENT_RED = '#E74C3C'; CLR_CONSOLE_BG = '#1E2B38'; CLR_GRAPH_BG = '#FFFFFF'
     FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold'); FONT_CONSOLE = ('Consolas', 10)
 
     def __init__(self, root):
-        self.root = root; self.root.title("GPIB Passthrough I-V Logger")
+        self.root = root; self.root.title("K6221/2182 I-V Sweep")
         self.root.geometry("1600x950"); self.root.minsize(1300, 850); self.root.configure(bg=self.CLR_BG_DARK)
         self.is_running = False; self.sweep_thread = None; self.logo_image = None
         self.backend = Backend_Passthrough(); self.data_storage = {'current': [], 'voltage': [], 'resistance': []}
@@ -139,7 +139,7 @@ class Passthrough_IV_GUI:
     def create_widgets(self):
         font_title_italic = ('Segoe UI', 13, 'bold', 'italic')
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
-        Label(header, text=f"GPIB Passthrough I-V Logger", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
+        Label(header, text=f"K6221/2182 I-V Sweep", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
         left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=500); main_pane.add(left_panel, weight=1)
         right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG); main_pane.add(right_panel, weight=3)
@@ -175,19 +175,30 @@ class Passthrough_IV_GUI:
         frame = LabelFrame(parent, text='Sweep Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE); frame.pack(pady=5, padx=10, fill='x')
         for i in range(2): frame.grid_columnconfigure(i, weight=1)
         self.entries = {}; pady_val, padx_val = (5, 5), 10
-        Label(frame, text="Keithley 6221 (GPIB Address):").grid(row=0, column=0, columnspan=2, padx=padx_val, pady=pady_val, sticky='w'); self.k6221_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly'); self.k6221_cb.grid(row=1, column=0, columnspan=2, padx=padx_val, pady=(0, 5), sticky='ew')
-        ttk.Button(frame, text="Scan for Instruments", command=self._scan_for_visa).grid(row=2, column=0, columnspan=2, padx=padx_val, pady=4, sticky='ew')
-        Label(frame, text="Sample Name:").grid(row=3, column=0, columnspan=2, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE); self.entries["Sample Name"].grid(row=4, column=0, columnspan=2, padx=padx_val, pady=(0, 10), sticky='ew')
-        Label(frame, text="Start Current (A):").grid(row=5, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Start Current"] = Entry(frame, font=self.FONT_BASE); self.entries["Start Current"].grid(row=6, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Start Current"].insert(0, "-1E-5")
-        Label(frame, text="Stop Current (A):").grid(row=5, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Stop Current"] = Entry(frame, font=self.FONT_BASE); self.entries["Stop Current"].grid(row=6, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Stop Current"].insert(0, "1E-5")
-        Label(frame, text="Number of Points:").grid(row=7, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Num Points"] = Entry(frame, font=self.FONT_BASE); self.entries["Num Points"].grid(row=8, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Num Points"].insert(0, "51")
-        Label(frame, text="Step Delay (s):").grid(row=7, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Delay"] = Entry(frame, font=self.FONT_BASE); self.entries["Delay"].grid(row=8, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Delay"].insert(0, "0.2")
-        Label(frame, text="Initial Settle Delay (s):").grid(row=9, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Initial Delay"] = Entry(frame, font=self.FONT_BASE); self.entries["Initial Delay"].grid(row=10, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Initial Delay"].insert(0, "2.0")
-        Label(frame, text="Compliance (V):").grid(row=9, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Compliance"] = Entry(frame, font=self.FONT_BASE); self.entries["Compliance"].grid(row=10, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Compliance"].insert(0, "10")
-        self.sweep_scale_var = tk.StringVar(value="Linear"); Label(frame, text="Sweep Scale:").grid(row=11, column=0, padx=padx_val, pady=pady_val, sticky='w'); ttk.Radiobutton(frame, text="Linear", variable=self.sweep_scale_var, value="Linear").grid(row=12, column=0, padx=padx_val, sticky='w'); ttk.Radiobutton(frame, text="Logarithmic", variable=self.sweep_scale_var, value="Logarithmic").grid(row=12, column=1, padx=padx_val, sticky='w')
-        ttk.Button(frame, text="Browse Save Location...", command=self._browse_save).grid(row=13, column=0, columnspan=2, padx=padx_val, pady=4, sticky='ew')
-        self.start_button = ttk.Button(frame, text="Start Sweep", command=self.start_sweep, style='Start.TButton'); self.start_button.grid(row=14, column=0, padx=(padx_val, 5), pady=(15, 10), sticky='ew')
-        self.stop_button = ttk.Button(frame, text="Stop Sweep", command=self.stop_sweep, style='Stop.TButton', state='disabled'); self.stop_button.grid(row=14, column=1, padx=(5, padx_val), pady=(15, 10), sticky='ew')
+        
+        Label(frame, text="Sample Name:").grid(row=0, column=0, columnspan=2, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE); self.entries["Sample Name"].grid(row=1, column=0, columnspan=2, padx=padx_val, pady=(0, 10), sticky='ew')
+        
+        Label(frame, text="Keithley 6221 (GPIB Address):").grid(row=2, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.k6221_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly'); self.k6221_cb.grid(row=3, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew')
+        ttk.Button(frame, text="Scan", command=self._scan_for_visa).grid(row=3, column=1, padx=(5, padx_val), pady=(0,5), sticky='ew')
+
+        Label(frame, text="Start Current (A):").grid(row=4, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Start Current"] = Entry(frame, font=self.FONT_BASE); self.entries["Start Current"].grid(row=5, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Start Current"].insert(0, "-1E-5")
+        Label(frame, text="Stop Current (A):").grid(row=4, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Stop Current"] = Entry(frame, font=self.FONT_BASE); self.entries["Stop Current"].grid(row=5, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Stop Current"].insert(0, "1E-5")
+        
+        Label(frame, text="Number of Points:").grid(row=6, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Num Points"] = Entry(frame, font=self.FONT_BASE); self.entries["Num Points"].grid(row=7, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Num Points"].insert(0, "51")
+        Label(frame, text="Step Delay (s):").grid(row=6, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Delay"] = Entry(frame, font=self.FONT_BASE); self.entries["Delay"].grid(row=7, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Delay"].insert(0, "0.2")
+        
+        Label(frame, text="Initial Settle Delay (s):").grid(row=8, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Initial Delay"] = Entry(frame, font=self.FONT_BASE); self.entries["Initial Delay"].grid(row=9, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Initial Delay"].insert(0, "2.0")
+        Label(frame, text="Compliance (V):").grid(row=8, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Compliance"] = Entry(frame, font=self.FONT_BASE); self.entries["Compliance"].grid(row=9, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Compliance"].insert(0, "10")
+        
+        self.sweep_scale_var = tk.StringVar(value="Linear")
+        scale_frame = ttk.Frame(frame); scale_frame.grid(row=10, column=0, columnspan=2, padx=padx_val, pady=(5,0), sticky='w')
+        Label(scale_frame, text="Sweep Scale:").pack(side='left', anchor='w')
+        ttk.Radiobutton(scale_frame, text="Linear", variable=self.sweep_scale_var, value="Linear").pack(side='left', padx=(10,5))
+        ttk.Radiobutton(scale_frame, text="Logarithmic", variable=self.sweep_scale_var, value="Logarithmic").pack(side='left')
+        
+        ttk.Button(frame, text="Browse Save Location...", command=self._browse_save).grid(row=11, column=0, columnspan=2, padx=padx_val, pady=4, sticky='ew')
+        self.start_button = ttk.Button(frame, text="Start Sweep", command=self.start_sweep, style='Start.TButton'); self.start_button.grid(row=12, column=0, padx=(padx_val, 5), pady=(10, 10), sticky='ew')
+        self.stop_button = ttk.Button(frame, text="Stop Sweep", command=self.stop_sweep, style='Stop.TButton', state='disabled'); self.stop_button.grid(row=12, column=1, padx=(5, padx_val), pady=(10, 10), sticky='ew')
     def create_console_frame(self, parent): frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE); self.console = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0); self.console.pack(pady=5, padx=5, fill='both', expand=True); return frame
     def create_graph_frame(self, parent): container = LabelFrame(parent, text='I-V Curve', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_TEXT_DARK, font=self.FONT_TITLE); container.pack(fill='both', expand=True, padx=5, pady=5); self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG); self.canvas = FigureCanvasTkAgg(self.figure, container); gs = gridspec.GridSpec(2, 1, figure=self.figure); self.ax_main = self.figure.add_subplot(gs[0]); self.ax_sub = self.figure.add_subplot(gs[1]); self.line_main, = self.ax_main.plot([], [], 'o-', c=self.CLR_ACCENT_RED, markersize=4); self.ax_main.set_title("I-V Curve", fontweight='bold'); self.ax_main.set_xlabel("Current (A)"); self.ax_main.set_ylabel("Voltage (V)"); self.line_sub, = self.ax_sub.plot([], [], 's:', c=self.CLR_ACCENT_GREEN, markersize=4); self.ax_sub.set_xlabel("Current (A)"); self.ax_sub.set_ylabel("Resistance (Ω)"); [ax.grid(True, ls='--', alpha=0.6) for ax in [self.ax_main, self.ax_sub]]; self.figure.tight_layout(pad=3.0); self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
     def log(self, message): ts = datetime.now().strftime("%H:%M:%S"); self.console.config(state='normal'); self.console.insert('end', f"[{ts}] {message}\n"); self.console.see('end'); self.console.config(state='disabled')
