@@ -118,7 +118,7 @@ class VT_Backend:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class VT_GUI_Active:
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "2.0"
     CLR_BG = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG = '#EDF2F4'
     CLR_FRAME_BG = '#3A506B'; CLR_INPUT_BG = '#4C566A'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE'
@@ -126,7 +126,7 @@ class VT_GUI_Active:
     FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold')
 
     def __init__(self, root):
-        self.root = root; self.root.title("Active V-T Sweep (K2400/2182 + LS350)")
+        self.root = root; self.root.title(f"Active V-T Sweep (K2400/2182) v{self.PROGRAM_VERSION}")
         self.root.geometry("1600x950"); self.root.minsize(1400, 800); self.root.configure(bg=self.CLR_BG)
         self.experiment_state = 'idle'; self.logo_image = None
         self.backend = VT_Backend(); self.data_storage = {'temperature': [], 'voltage': []}

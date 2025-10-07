@@ -81,7 +81,7 @@ class RT_Backend_Passive:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class RT_GUI_Passive:
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "3.0"
     CLR_BG = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG = '#EDF2F4'
     CLR_FRAME_BG = '#3A506B'; CLR_INPUT_BG = '#4C566A'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE'
@@ -89,7 +89,7 @@ class RT_GUI_Passive:
     FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold')
 
     def __init__(self, root):
-        self.root = root; self.root.title("Passive R-T Logger (K2400 + LS350)")
+        self.root = root; self.root.title(f"Passive R-T Logger (K2400) v{self.PROGRAM_VERSION}")
         self.root.geometry("1600x950"); self.root.minsize(1400, 800); self.root.configure(bg=self.CLR_BG)
         self.is_running = False; self.logo_image = None
         self.backend = RT_Backend_Passive(); self.data_storage = {'temperature': [], 'voltage': [], 'resistance': []}
@@ -118,7 +118,7 @@ class RT_GUI_Passive:
     def create_widgets(self):
         font_title_italic = ('Segoe UI', 13, 'bold', 'italic')
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
-        ttk.Label(header, text=f"Passive R-T Logger (K2400)", style='Header.TLabel', font=font_title_italic).pack(side='left', padx=20, pady=10)
+        ttk.Label(header, text=f"Passive R-T Logger (K2400) v{self.PROGRAM_VERSION}", style='Header.TLabel', font=font_title_italic).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
         
         left_panel_container = ttk.Frame(main_pane)

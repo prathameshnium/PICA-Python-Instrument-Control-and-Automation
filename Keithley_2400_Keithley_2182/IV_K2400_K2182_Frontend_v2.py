@@ -102,7 +102,7 @@ class IV_Backend:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class IV_GUI:
-    PROGRAM_VERSION = "1.1"
+    PROGRAM_VERSION = "2.0"
     CLR_BG = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG = '#EDF2F4'
     CLR_FRAME_BG = '#3A506B'; CLR_INPUT_BG = '#4C566A'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE'
@@ -111,7 +111,7 @@ class IV_GUI:
     
     def __init__(self, root):
         self.root = root
-        self.root.title("I-V Sweep (K2400 + K2182)")
+        self.root.title(f"I-V Sweep (K2400 + K2182) v{self.PROGRAM_VERSION}")
         self.root.geometry("1600x950")
         self.root.minsize(1400, 800)
         self.root.configure(bg=self.CLR_BG)
@@ -143,7 +143,7 @@ class IV_GUI:
     def create_widgets(self):
         font_title_italic = ('Segoe UI', 13, 'bold', 'italic')
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
-        ttk.Label(header, text=f"I-V Sweep (K2400 + K2182)", style='Header.TLabel', font=font_title_italic).pack(side='left', padx=20, pady=10)
+        ttk.Label(header, text=f"I-V Sweep (K2400 + K2182) v{self.PROGRAM_VERSION}", style='Header.TLabel', font=font_title_italic).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         left_panel_container = ttk.Frame(main_pane)
