@@ -4,13 +4,14 @@
 #                   Keithley 6517B Electrometer with a real instrument backend.
 # Author:           Prathamesh Deshmukh
 # Created:          17/09/2025
-# Version:          V: 4.3 (Logo Added)
+# Version:          V: 4.4 (Performance & UI Update)
 # -------------------------------------------------------------------------------
 
 
 # --- Packages for Front end ---
 import tkinter as tk
 from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext, Canvas
+import threading, queue
 import numpy as np
 import csv
 import os
@@ -153,7 +154,7 @@ class Keithley6517B_Backend:
 # -------------------------------------------------------------------------------
 class HighResistanceIV_GUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "4.3" # Updated version number
+    PROGRAM_VERSION = "4.4" # Performance and UI update
     LOGO_SIZE = 110
     try:
         # Robust path finding for assets
@@ -166,7 +167,7 @@ class HighResistanceIV_GUI:
 
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
-    CLR_FG_LIGHT = '#EDF2F4'
+    CLR_FG_LIGHT = '#EDF2F4'; CLR_ACCENT_GOLD = '#FFC107'
     CLR_TEXT_DARK = '#1A1A1A'
     CLR_ACCENT_BLUE = '#8D99AE'
     CLR_ACCENT_GREEN = '#A7C957'
@@ -197,8 +198,8 @@ class HighResistanceIV_GUI:
         self.file_location_path = ""
         self.data_storage = {'time': [], 'voltage_applied': [], 'current_measured': [], 'resistance': []}
         self.voltage_list = []
-        self.current_step_index = 0
-
+        self.data_queue = queue.Queue()
+        self.measurement_thread = None
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -209,14 +210,14 @@ class HighResistanceIV_GUI:
         style.theme_use('clam')
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
-        style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
-        style.configure('TButton', font=self.FONT_BASE, padding=(10, 8), foreground=self.CLR_ACCENT_BLUE,
+        style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE) 
+        style.configure('TButton', font=self.FONT_BASE, padding=(10, 8), foreground=self.CLR_ACCENT_GOLD,
                         background=self.CLR_HEADER, borderwidth=0, focusthickness=0, focuscolor='none')
         style.map('TButton',
-                  background=[('active', self.CLR_ACCENT_BLUE), ('hover', self.CLR_ACCENT_BLUE)],
+                  background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)],
                   foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
         style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_TEXT_DARK)
-        style.map('Start.TButton', background=[('active', '#8AB845')])
+        style.map('Start.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG_LIGHT)
         style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
         mpl.rcParams['font.family'] = 'Segoe UI'
@@ -421,14 +422,17 @@ class HighResistanceIV_GUI:
             self.ax_iv.set_title(f"I-V Curve: {params['sample_name']}", fontweight='bold')
             self.canvas.draw()
             self.log("Measurement sweep started.")
-            self.current_step_index = 0
-            self.root.after(100, self._update_measurement_loop)
+            
+            # Start the worker thread and the queue processor
+            self.measurement_thread = threading.Thread(target=self._measurement_worker, args=(self.voltage_list, self.delay_ms), daemon=True)
+            self.measurement_thread.start()
+            self.root.after(100, self._process_data_queue)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
             messagebox.showerror("Initialization Error", f"Could not start measurement.\n{e}")
 
-    def stop_measurement(self):
+    def stop_measurement(self, from_user=True):
         if self.is_running:
             self.is_running = False
             self.log("Measurement loop stopped by user.")
@@ -436,54 +440,62 @@ class HighResistanceIV_GUI:
             if self.backend:
                 self.backend.close_instruments()
             self.log("Instrument connection closed.")
-            messagebox.showinfo("Info", "Measurement stopped and instrument disconnected.")
+            if from_user:
+                messagebox.showinfo("Info", "Measurement stopped and instrument disconnected.")
 
-    def _update_measurement_loop(self):
-        if not self.is_running or self.current_step_index >= len(self.voltage_list):
-            if self.is_running: self.log("Sweep finished."); self.stop_measurement()
-            return
+    def _measurement_worker(self, voltage_list, delay_ms):
+        """Worker thread to perform measurements and put data into a queue."""
+        for i, voltage in enumerate(voltage_list):
+            if not self.is_running: break
+            try:
+                self.backend.set_voltage(voltage)
+                self.data_queue.put(f"LOG:Step {i + 1}/{len(voltage_list)}: Set V = {voltage:.3f} V. Waiting {delay_ms}ms...")
+                time.sleep(delay_ms / 1000.0)
+                
+                res, cur, volt = self.backend.get_measurement()
+                elapsed_time = time.time() - self.start_time
+                self.data_queue.put((res, cur, volt, elapsed_time))
+            except Exception as e:
+                self.data_queue.put(e)
+                break
+        self.data_queue.put("SWEEP_COMPLETE")
+
+    def _process_data_queue(self):
+        """Processes data from the queue to update the GUI. Runs in the main thread."""
         try:
-            voltage = self.voltage_list[self.current_step_index]
-            self.backend.set_voltage(voltage)
-            self.log(f"Step {self.current_step_index + 1}/{len(self.voltage_list)}: Set V = {voltage:.3f} V. Waiting {self.delay_ms}ms...")
-            self.root.after(self.delay_ms, self._perform_actual_read)
-        except Exception as e:
-            self.log(f"SWEEP ERROR: {traceback.format_exc()}"); self.stop_measurement()
-            messagebox.showerror("Runtime Error", f"An error occurred during the sweep. Check console.\n{e}")
+            while not self.data_queue.empty():
+                data = self.data_queue.get_nowait()
 
-    def _perform_actual_read(self):
-        if not self.is_running: return
-        try:
-            res, cur, volt = self.backend.get_measurement()
-            elapsed_time = time.time() - self.start_time
+                if isinstance(data, str) and data.startswith("LOG:"):
+                    self.log(data[4:])
+                elif isinstance(data, str) and data == "SWEEP_COMPLETE":
+                    self.log("Sweep finished.")
+                    self.stop_measurement(from_user=False)
+                    messagebox.showinfo("Finished", "I-V sweep complete.")
+                    return
+                elif isinstance(data, Exception):
+                    self.log(f"RUNTIME ERROR in worker thread: {traceback.format_exc()}")
+                    self.stop_measurement(from_user=False)
+                    messagebox.showerror("Runtime Error", "A critical error occurred. Check console.")
+                    return
+                else:
+                    res, cur, volt, elapsed_time = data
+                    self.log(f"  Read -> V: {volt:.3e} V, I: {cur:.3e} A, R: {res:.3e} Ω")
+                    with open(self.data_filepath, 'a', newline='') as f:
+                        csv.writer(f).writerow([f"{elapsed_time:.3f}", f"{volt:.4e}", f"{cur:.4e}", f"{res:.4e}"])
 
-            # Log the detailed reading to the console
-            self.log(f"  Read -> V: {volt:.3e} V, I: {cur:.3e} A, R: {res:.3e} Ω, t: {elapsed_time:.2f} s")
+                    self.data_storage['time'].append(elapsed_time); self.data_storage['voltage_applied'].append(volt)
+                    self.data_storage['current_measured'].append(cur); self.data_storage['resistance'].append(res)
 
-            with open(self.data_filepath, 'a', newline='') as f:
-                csv.writer(f).writerow([f"{elapsed_time:.3f}", f"{volt:.4e}", f"{cur:.4e}", f"{res:.4e}"])
+                    self.line_iv.set_data(self.data_storage['voltage_applied'], self.data_storage['current_measured'])
+                    self.line_rv.set_data(self.data_storage['voltage_applied'], self.data_storage['resistance'])
+                    for ax in [self.ax_iv, self.ax_rv]: ax.relim(); ax.autoscale_view()
+                    self.figure.tight_layout(pad=3.0); self.canvas.draw_idle()
+        except queue.Empty:
+            pass # No data to process, which is normal
 
-            self.data_storage['time'].append(elapsed_time)
-            self.data_storage['voltage_applied'].append(volt)
-            self.data_storage['current_measured'].append(cur)
-            self.data_storage['resistance'].append(res)
-
-            # Update I-V plot
-            self.line_iv.set_data(self.data_storage['voltage_applied'], self.data_storage['current_measured'])
-            self.ax_iv.relim(); self.ax_iv.autoscale_view()
-
-            # Update R-V plot
-            self.line_rv.set_data(self.data_storage['voltage_applied'], self.data_storage['resistance'])
-            self.ax_rv.relim(); self.ax_rv.autoscale_view()
-
-            self.figure.tight_layout(pad=3.0)
-            self.canvas.draw()
-
-            self.current_step_index += 1
-            if self.is_running: self.root.after(10, self._update_measurement_loop)
-        except Exception as e:
-            self.log(f"READ ERROR: {traceback.format_exc()}"); self.stop_measurement()
-            messagebox.showerror("Runtime Error", f"An error occurred while reading data. Check console.\n{e}")
+        if self.is_running:
+            self.root.after(200, self._process_data_queue)
 
     def _scan_for_visa_instruments(self):
         if not pyvisa:
@@ -514,7 +526,7 @@ class HighResistanceIV_GUI:
     def _on_closing(self):
         if self.is_running:
             if messagebox.askyesno("Exit", "Measurement sweep is running. Stop and exit?"):
-                self.stop_measurement(); self.root.destroy()
+                self.stop_measurement(from_user=False); self.root.destroy()
         else:
             if self.backend and self.backend.is_connected:
                 self.backend.close_instruments()

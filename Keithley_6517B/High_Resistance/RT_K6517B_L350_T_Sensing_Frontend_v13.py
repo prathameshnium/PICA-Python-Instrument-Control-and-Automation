@@ -5,13 +5,14 @@
 #                   This version DOES NOT control the temperature.
 # Author:           Prathamesh Deshmukh
 # Created:          26/09/2025
-# Version:          V: 4.1 (Logo Fix)
+# Version:          V: 4.2 (Performance & UI Update)
 # -------------------------------------------------------------------------------
 
 
 # --- Packages for Front end ---
 import tkinter as tk
 from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext, Canvas
+import threading, queue
 import os
 import time
 import traceback
@@ -147,7 +148,7 @@ class Combined_Backend:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class Integrated_RT_GUI:
-    PROGRAM_VERSION = "4.1"
+    PROGRAM_VERSION = "4.2"
     LOGO_SIZE = 110
 
     try:
@@ -189,6 +190,8 @@ class Integrated_RT_GUI:
         self.data_storage = {'time': [], 'temperature': [], 'current': [], 'resistance': []}
         self.log_scale_var = tk.BooleanVar(value=True)
         self.logo_image = None # Attribute to hold the logo image reference
+        self.data_queue = queue.Queue()
+        self.measurement_thread = None
 
         self.setup_styles()
         self.create_widgets()
@@ -201,7 +204,7 @@ class Integrated_RT_GUI:
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
         style.configure('TCheckbutton', background=self.CLR_GRAPH_BG, foreground=self.CLR_TEXT_DARK, font=self.FONT_BASE)
-        style.map('TCheckbutton', background=[('active', self.CLR_GRAPH_BG)])
+        style.map('TCheckbutton', background=[('active', self.CLR_GRAPH_BG)], indicatorcolor=[('selected', self.CLR_ACCENT_GREEN)])
         style.configure('TButton',
                         font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD,
                         background=self.CLR_HEADER, borderwidth=0, focusthickness=0, focuscolor='none')
@@ -424,52 +427,63 @@ class Integrated_RT_GUI:
 
             self.log("Starting passive data logging...")
             self.start_time = time.time()
-            self.root.after(1000, self._update_measurement_loop)
+            
+            self.measurement_thread = threading.Thread(target=self._measurement_worker, daemon=True)
+            self.measurement_thread.start()
+            self.root.after(100, self._process_data_queue)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
             messagebox.showerror("Initialization Error", f"Could not start measurement.\n{e}")
 
-    def stop_measurement(self):
+    def stop_measurement(self, from_user=True):
         if self.is_running:
             self.is_running = False
             self.log("Measurement stopped by user.")
             self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
             self.backend.close_instruments()
-            messagebox.showinfo("Info", "Measurement stopped and instruments disconnected.")
+            if from_user:
+                messagebox.showinfo("Info", "Measurement stopped and instruments disconnected.")
 
-    def _update_measurement_loop(self):
-        if not self.is_running: return
+    def _measurement_worker(self):
+        """Worker thread to perform measurements and put data into a queue."""
+        while self.is_running:
+            try:
+                temp, htr, cur, res = self.backend.get_measurement()
+                elapsed = time.time() - self.start_time
+                self.data_queue.put((temp, htr, cur, res, elapsed))
+            except Exception as e:
+                self.data_queue.put(e)
+                break
+
+    def _process_data_queue(self):
+        """Processes data from the queue to update the GUI."""
         try:
-            temp, htr, cur, res = self.backend.get_measurement()
-            elapsed = time.time() - self.start_time
+            while not self.data_queue.empty():
+                data = self.data_queue.get_nowait()
+                if isinstance(data, Exception):
+                    self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement(False)
+                    messagebox.showerror("Runtime Error", f"A critical error occurred: {data}"); return
+                
+                temp, htr, cur, res, elapsed = data
+                self.log(f"T:{temp:.3f}K | R:{res:.3e}Ω | I:{cur:.3e}A")
+                with open(self.data_filepath, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}", f"{htr:.2f}", f"{self.backend.params['source_voltage']:.4e}", f"{cur:.4e}", f"{res:.4e}"])
 
-            # --- Logging and Data Storage ---
-            self.log(f"T:{temp:.3f}K | R:{res:.3e}Ω | I:{cur:.3e}A")
-            with open(self.data_filepath, 'a', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}", f"{htr:.2f}", f"{self.backend.params['source_voltage']:.4e}", f"{cur:.4e}", f"{res:.4e}"])
+                self.data_storage['time'].append(elapsed); self.data_storage['temperature'].append(temp)
+                self.data_storage['current'].append(cur); self.data_storage['resistance'].append(res)
 
-            self.data_storage['time'].append(elapsed)
-            self.data_storage['temperature'].append(temp)
-            self.data_storage['current'].append(cur)
-            self.data_storage['resistance'].append(res)
+                self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
+                self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['current'])
+                self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
+                for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]: ax.relim(); ax.autoscale_view()
+                self.figure.tight_layout(pad=3.0); self.canvas.draw_idle()
+        except queue.Empty:
+            pass
 
-            # --- Update Plots ---
-            self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
-            self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['current'])
-            self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
-            for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
-                ax.relim(); ax.autoscale_view()
-            self.figure.tight_layout(pad=3.0)
-            self.canvas.draw()
-
-            # --- Continuous Loop until Stopped ---
-            loop_delay_ms = max(1000, int(self.backend.params['delay'] * 1000))
-            self.root.after(loop_delay_ms, self._update_measurement_loop)
-
-        except Exception as e:
-            self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); self.stop_measurement()
+        if self.is_running:
+            self.root.after(200, self._process_data_queue)
 
     def _scan_for_visa_instruments(self):
         if not pyvisa: self.log("ERROR: PyVISA is not installed."); return
@@ -496,7 +510,7 @@ class Integrated_RT_GUI:
     def _on_closing(self):
         if self.is_running:
             if messagebox.askyesno("Exit", "Measurement running. Stop and exit?"):
-                self.stop_measurement()
+                self.stop_measurement(from_user=False)
                 self.root.destroy()
         else:
             self.root.destroy()
