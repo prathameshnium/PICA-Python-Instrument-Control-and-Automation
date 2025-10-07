@@ -58,6 +58,19 @@ def run_script_process(script_path):
         print(e)
         print("-------------------------")
 
+def launch_plotter_utility():
+    """
+    Finds and launches the plotter utility script in a new process.
+    This function is designed to be imported and used by other frontends.
+    """
+    try:
+        # Assuming the plotter is in a standard location relative to other scripts
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        plotter_path = os.path.join(script_dir, "Utilities", "PlotterUtil_Frontend_v2.py")
+        Process(target=run_script_process, args=(plotter_path,)).start()
+    except Exception as e:
+        print(f"Failed to launch plotter: {e}")
+
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     try:

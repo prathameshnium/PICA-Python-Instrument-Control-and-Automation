@@ -39,6 +39,12 @@ except ImportError:
     pyvisa, Keithley2400 = None, None
     PYMEASURE_AVAILABLE = False
 
+try:
+    # Import the plotter launch function from the main PICA launcher
+    from PICA_v6 import launch_plotter_utility
+except (ImportError, ModuleNotFoundError):
+    # Fallback if the script is run standalone
+    launch_plotter_utility = lambda: print("Plotter launch function not found.")
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
 # -------------------------------------------------------------------------------
@@ -146,6 +152,11 @@ class IV_GUI:
     def create_widgets(self):
         font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
+
+        # --- Plotter Launch Button ---
+        plotter_button = ttk.Button(header, text="📈", command=launch_plotter_utility, width=3)
+        plotter_button.pack(side='right', padx=10, pady=5)
+
         ttk.Label(header, text=f"I-V Sweep (K2400 + K2182)", style='Header.TLabel', font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack(side='left', padx=20, pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
