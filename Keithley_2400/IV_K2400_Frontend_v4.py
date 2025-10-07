@@ -119,7 +119,10 @@ class Keithley2400_IV_Backend:
     def measure_at_current(self, current_setpoint, delay):
         self.keithley.ramp_to_current(current_setpoint, steps=5, pause=0.01)
         time.sleep(delay)
-        return self.keithley.voltage
+        # The .voltage property can return a list. We need to ensure we get a single float.
+        voltage_reading = self.keithley.voltage
+        # If it's a list, take the first element. Otherwise, use the value as is.
+        return voltage_reading[0] if isinstance(voltage_reading, list) else voltage_reading
 
     def shutdown(self):
         if self.keithley:
