@@ -220,15 +220,28 @@ class PICALauncherApp:
         main_container = ttk.Frame(parent)
         main_container.grid_rowconfigure(0, weight=1)
         main_container.grid_columnconfigure(0, weight=1)
-        
-        # --- Container for the two columns, no scrolling needed ---
-        button_container = ttk.Frame(main_container)
-        button_container.grid(row=0, column=0, sticky="nsew", padx=15, pady=10)
-        button_container.grid_columnconfigure((0, 1), weight=1)
-        
-        left_col = ttk.Frame(button_container); left_col.grid(row=0, column=0, sticky='new', padx=(0, 10))
-        right_col = ttk.Frame(button_container); right_col.grid(row=0, column=1, sticky='new', padx=(10, 0))
-        
+
+        # --- Create a scrollable area ---
+        canvas = Canvas(main_container, bg=self.CLR_BG_DARK, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(main_container, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.grid(row=0, column=0, sticky='nsew', padx=(15, 0), pady=10)
+        scrollbar.grid(row=0, column=1, sticky='ns', pady=10)
+
+        # --- Container for the two columns inside the scrollable frame ---
+        scrollable_frame.grid_columnconfigure((0, 1), weight=1, uniform="group1")
+        left_col = ttk.Frame(scrollable_frame); left_col.grid(row=0, column=0, sticky='new', padx=(0, 10), pady=(0,15))
+        right_col = ttk.Frame(scrollable_frame); right_col.grid(row=0, column=1, sticky='new', padx=(10, 15), pady=(0,15))
+
         GROUP_PAD_Y = 15
 
         # --- Low Resistance ---
