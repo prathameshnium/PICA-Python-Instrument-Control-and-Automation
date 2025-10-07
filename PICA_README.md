@@ -1,6 +1,8 @@
-# PICA: Python Instrument Control & Automation
-![alt text](_assets/LOGO/PICA_LOGO_NBG.png)
-Developed by **Prathamesh Deshmukh**
+<div align="center">
+  <img src="_assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
+  <h1>PICA: Python Instrument Control & Automation</h1>
+  <p>Developed by <strong>Prathamesh Deshmukh</strong></p>
+</div>
 
 A modular software suite for automating laboratory measurements in physics research, featuring a central dashboard for launching experiments in isolated, stable processes.
 
