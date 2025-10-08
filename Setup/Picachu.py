@@ -738,5 +738,6 @@ def main():
     app = PICALauncherApp(root)
     root.mainloop()
 
-if __name__ == '__main__': 
+if __name__ == '__main__':
+    # This script is now a pure GUI application. The main function starts it.
     main()
