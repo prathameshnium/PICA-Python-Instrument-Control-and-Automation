@@ -328,7 +328,7 @@ class TempMonitorGUI:
         status_label.pack(pady=10, fill='x')
 
     def create_console_frame(self, parent):
-        frame = ttk.LabelFrame(parent, text='Console Output')
+        frame = ttk.LabelFrame(parent, text='Console Output', style='TLabelframe')
         frame.pack(pady=5, padx=10, fill='x', expand=True)
         self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0, relief='flat')
         self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
