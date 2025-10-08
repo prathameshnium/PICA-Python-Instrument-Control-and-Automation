@@ -80,6 +80,20 @@ def launch_gpib_scanner():
         Process(target=run_script_process, args=(scanner_path,)).start()
     except Exception as e:
         messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
+
+def launch_gpib_scanner():
+    """Finds and launches the GPIB scanner utility in a new process."""
+    try:
+        # Assumes the scanner is in a standard location relative to this script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        scanner_path = os.path.join(script_dir, "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
+        if not os.path.exists(scanner_path):
+            messagebox.showerror("File Not Found", f"GPIB Scanner not found at expected path:\n{scanner_path}")
+            return
+        Process(target=run_script_process, args=(scanner_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
+
 #===============================================================================
 # BACKEND CLASS - Instrument Control Logic
 #===============================================================================
@@ -244,14 +258,14 @@ class LCR_CV_GUI:
         plotter_button = ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3)
         plotter_button.pack(side='right', padx=10, pady=5)
 
-        # --- GPIB Scanner Launch Button ---
-        gpib_button = ttk.Button(header_frame, text="📟", command=launch_gpib_scanner, width=3)
-        gpib_button.pack(side='right', padx=(0, 5), pady=5)
-
         Label(header_frame, text="Keysight E4980A: C-V Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
 
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
+
+        # --- GPIB Scanner Launch Button ---
+        gpib_button = ttk.Button(header_frame, text="📟", command=launch_gpib_scanner, width=3)
+        gpib_button.pack(side='right', padx=(0, 5), pady=5)
         
         # --- Left Panel using Grid for better control ---
         left_panel_container = ttk.Frame(main_pane)
