@@ -60,11 +60,23 @@ def run_script_process(script_path):
         print("-------------------------")
 
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
+    """
+    Get absolute path to resource, works for dev and for PyInstaller/Nuitka.
+    This function is crucial for ensuring that file paths to scripts and assets
+    work correctly both when running from source and when running as a bundled
+    executable.
+    """
     try:
+        # When bundled by PyInstaller/Nuitka, a temporary folder is created
+        # and its path is stored in `sys._MEIPASS`. This is the base path
+        # for all bundled resources.
         base_path = sys._MEIPASS
     except Exception:
-        base_path = os.path.abspath(os.path.dirname(__file__))
+        # When running in development mode (as a .py script), `__file__`
+        # points to `Setup/Picachu.py`. The resources (like `Keithley_2400/`)
+        # are in the parent directory (the project root). Therefore, we must
+        # navigate one level up ('..') to establish the correct base path.
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     return os.path.join(base_path, relative_path)
 
 class PICALauncherApp:
@@ -89,7 +101,7 @@ class PICALauncherApp:
     MANUAL_URL = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tree/main/_assets/Manuals"
     README_FILE = resource_path("PICA_README.md")
     LICENSE_FILE = resource_path("LICENSE")
-    UPDATES_FILE = resource_path("Updates.md")
+    UPDATES_FILE = resource_path("Change_Logs.md")
     LOGO_SIZE = 140
 
     SCRIPT_PATHS = {
@@ -97,7 +109,7 @@ class PICALauncherApp:
         "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_Frontend_V10.py"),
         "Delta Mode R-T": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.py"),
         "Delta Mode R-T (T_Sensing)": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.py"),
-        "K2400 I-V": resource_path("Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py"),
+        "K2400 I-V": resource_path("Keithley_2400/IV_K2400_Frontend_v3.py"),
         "K2400 R-T": resource_path("Keithley_2400/RT_K2400_L350_T_Control_Frontend_v3.py"),
         "K2400 R-T (T_Sensing)": resource_path("Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v4.py"),
         "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py"),
@@ -110,7 +122,7 @@ class PICALauncherApp:
         "Lakeshore Temp Control": resource_path("Lakeshore_350_340/T_Control_L350_RangeControl_Frontend_v8.py"),
         "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/T_Sensing_L350_Frontend_v4.py"),
         "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v3.py"),
-        "Lock-in AC Measurement": resource_path("Lock_in_amplifier/BasicTest_S830_Backend_v1.py"),
+        "Lock-in AC Measurement": resource_path("Lock_in_amplifier/AC_Measurement_S830_Frontend_v1.py"),
         "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v3.py"),
         "PICA Help": resource_path("PICA_README.md"),
     }

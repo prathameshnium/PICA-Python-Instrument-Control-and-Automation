@@ -85,7 +85,7 @@ jobs:
           include-data-files: |
             LICENSE=LICENSE
             PICA_README.md=PICA_README.md
-            Updates.md=Updates.md
+            Change_Logs.md=Change_Logs.md
           
           # We explicitly tell Nuitka to put the output here.
           output-dir: build
