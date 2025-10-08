@@ -28,7 +28,7 @@
 '''
 import tkinter as tk
 from tkinter import ttk, messagebox, Toplevel, Text, Canvas, scrolledtext, font
-import os, sys, subprocess, platform, threading, queue, re
+import os, sys, subprocess, platform, threading, queue, re, webbrowser
 from datetime import datetime
 import runpy
 import multiprocessing
@@ -85,8 +85,8 @@ class PICALauncherApp:
     FONT_CONSOLE = ('Consolas', 10)
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
     FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
-    LOGO_FILE = resource_path("_assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
-    MANUAL_FILE = resource_path("_assets/Manuals") # Corrected path
+    LOGO_FILE = resource_path("../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
+    MANUAL_URL = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tree/main/_assets/Manuals"
     README_FILE = resource_path("PICA_README.md")
     LICENSE_FILE = resource_path("LICENSE")
     UPDATES_FILE = resource_path("Change_Logs.md")
@@ -94,24 +94,24 @@ class PICALauncherApp:
 
     SCRIPT_PATHS = {
         # Based on Updates.md, using the latest versions of scripts.
-        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_Frontend_V9.py"), # Correct from context
-        "Delta Mode R-T": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v4.py"),
-        "Delta Mode R-T (T_Sensing)": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_Frontend_v3.py"),        
-        "K2400 I-V": resource_path("Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v2.py"), # Corrected path to the available K2400 I-V script
-        "K2400 R-T": resource_path("Keithley_2400/RT_K2400_L350_T_Control_Frontend_v2.py"),
-        "K2400 R-T (T_Sensing)": resource_path("Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v3.py"), 
-        "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v2.py"),
-        "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_Frontend_v2.py"),
+        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_Frontend_V10.py"),
+        "Delta Mode R-T": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.py"),
+        "Delta Mode R-T (T_Sensing)": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_Frontend_v4.py"),
+        "K2400 I-V": resource_path("Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py"),
+        "K2400 R-T": resource_path("Keithley_2400/RT_K2400_L350_T_Control_Frontend_v3.py"),
+        "K2400 R-T (T_Sensing)": resource_path("Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v4.py"),
+        "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py"),
+        "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_Frontend_v3.py"),
         "K2400_2182 R-T (T_Sensing)": resource_path("Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_Frontend_v1.py"),
-        "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/IV_K6517B_Frontend_v10.py"), 
-        "K6517B R-T": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_Frontend_v12.py"),
-        "K6517B R-T (T_Sensing)": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_Frontend_v13.py"),
-        "Pyroelectric Current": resource_path("Keithley_6517B/Pyroelectricity/Pyroelectric_K6517B_L350_Frontend_v3.py"),
-        "Lakeshore Temp Control": resource_path("Lakeshore_350_340/T_Control_L350_RangeControl_Frontend_v7.py"),
-        "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/T_Sensing_L350_Frontend_v3.py"),
-        "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v2.py"),
-        "Lock-in AC Measurement": resource_path("Lock_in_amplifier/BasicTest_S830_Backend_v1.py"), # Assuming this is correct, no frontend provided
-        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v2.py"), # Corrected path
+        "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/IV_K6517B_Frontend_v11.py"),
+        "K6517B R-T": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_Frontend_v13.py"),
+        "K6517B R-T (T_Sensing)": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_Frontend_v14.py"),
+        "Pyroelectric Current": resource_path("Keithley_6517B/Pyroelectricity/Pyroelectric_K6517B_L350_Frontend_v4.py"),
+        "Lakeshore Temp Control": resource_path("Lakeshore_350_340/T_Control_L350_RangeControl_Frontend_v8.py"),
+        "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/T_Sensing_L350_Frontend_v4.py"),
+        "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v3.py"),
+        "Lock-in AC Measurement": resource_path("Lock_in_amplifier/BasicTest_S830_Backend_v1.py"),
+        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v2.py"),
         "PICA Help": resource_path("PICA_README.md"),
     }
 
@@ -200,7 +200,7 @@ class PICALauncherApp:
         ttk.Button(util_frame, text="GPIB Utils", style='App.TButton', command=self.run_gpib_test).grid(row=0, column=0, sticky='ew', padx=(0, 4))
         ttk.Button(util_frame, text="Plotter", style='App.TButton', command=lambda: self.launch_script(self.SCRIPT_PATHS["Plotter Utility"])).grid(row=0, column=1, sticky='ew', padx=4)
         ttk.Button(util_frame, text="README", style='App.TButton', command=self.open_readme).grid(row=0, column=2, sticky='ew', padx=4)
-        ttk.Button(util_frame, text="Manuals", style='App.TButton', command=self.open_manual_folder).grid(row=0, column=3, sticky='ew', padx=(4, 0))
+        ttk.Button(util_frame, text="Manuals", style='App.TButton', command=self.open_manuals_url).grid(row=0, column=3, sticky='ew', padx=(4, 0))
         
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', fill='x', pady=(15, 0))
@@ -465,8 +465,8 @@ class PICALauncherApp:
     def open_updates(self):
         self._show_file_in_window(self.UPDATES_FILE, "Change Log")
 
-    def open_manual_folder(self):
-        self._open_path(self.MANUAL_FILE)
+    def open_manuals_url(self):
+        webbrowser.open_new_tab(self.MANUAL_URL)
 
     def open_license(self):
         self._show_file_in_window(self.LICENSE_FILE, "MIT License")
