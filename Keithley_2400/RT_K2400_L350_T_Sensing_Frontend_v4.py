@@ -175,12 +175,12 @@ class RT_GUI_Passive:
         plotter_button = ttk.Button(header, text="📈", command=launch_plotter_utility, width=3)
         plotter_button.pack(side='right', padx=10, pady=5)
 
+        main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
+        
         # --- GPIB Scanner Launch Button ---
         gpib_button = ttk.Button(header, text="📟", command=launch_gpib_scanner, width=3)
         gpib_button.pack(side='right', padx=(0, 5), pady=5)
 
-        main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
-        
         left_panel_container = ttk.Frame(main_pane)
         main_pane.add(left_panel_container, weight=0)
 
