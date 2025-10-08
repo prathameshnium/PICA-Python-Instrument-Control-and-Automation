@@ -95,13 +95,7 @@ class PlotterApp:
         # --- Checkbox UI Change ---
         self.file_data_cache = {}
         self.file_ui_elements = {} # Stores {filepath: {'var': tk.BooleanVar, 'chk': ttk.Checkbutton, 'lbl': ttk.Label}}
-
         self.logo_image = None
-        # --- Blitting optimization ---
-        self.plot_lines = []
-        self.plot_bg = None
-        self.is_resizing = False
-        self.resize_timer = None
 
         self.file_watcher_job = None
 
@@ -146,20 +140,30 @@ class PlotterApp:
             'xtick.color': self.CLR_FG, 'ytick.color': self.CLR_FG,
             'text.color': self.CLR_FG,
         })
-        # Connect window resize event for blitting
-        self.root.bind('<Configure>', self._on_resize)
 
     def create_widgets(self):
         header = tk.Frame(self.root, bg=self.CLR_HEADER)
         header.pack(side='top', fill='x', padx=1, pady=1)
+        header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x', padx=1, pady=1)
+        header.grid_columnconfigure(1, weight=1) # Allow center column to expand
 
         # --- New Instance Button ---
         new_instance_button = ttk.Button(header, text="+", command=launch_new_instance, width=3)
         new_instance_button.pack(side='right', padx=(0, 10), pady=10)
+        # --- Left Section: Program Name ---
+        left_header_frame = tk.Frame(header, bg=self.CLR_HEADER)
+        left_header_frame.grid(row=0, column=0, sticky='w')
+        font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
+        ttk.Label(left_header_frame, text=f"PICA General Purpose Plotter", style='Header.TLabel', font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack(side='left', padx=20, pady=10)
 
         # --- Header with Logo and Institute Name ---
         logo_canvas = Canvas(header, width=60, height=60, bg=self.CLR_HEADER, highlightthickness=0)
         logo_canvas.pack(side='left', padx=(20, 15), pady=10)
+        # --- Center Section: Logo and Institute Name ---
+        center_header_frame = tk.Frame(header, bg=self.CLR_HEADER)
+        center_header_frame.grid(row=0, column=1, sticky='ew')
+        logo_canvas = Canvas(center_header_frame, width=60, height=60, bg=self.CLR_HEADER, highlightthickness=0)
+        logo_canvas.pack(side='left', pady=10)
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
             try:
                 img = Image.open(self.LOGO_FILE_PATH).resize((60, 60), Image.Resampling.LANCZOS)
@@ -169,6 +173,7 @@ class PlotterApp:
                 self.log(f"Warning: Could not load logo. {e}")
 
         institute_frame = tk.Frame(header, bg=self.CLR_HEADER); institute_frame.pack(side='left')
+        institute_frame = tk.Frame(center_header_frame, bg=self.CLR_HEADER); institute_frame.pack(side='left', padx=15)
         ttk.Label(institute_frame, text="UGC-DAE Consortium for Scientific Research", style='Header.TLabel', font=('Segoe UI', 14, 'bold')).pack(anchor='w')
         ttk.Label(institute_frame, text="Mumbai Centre", style='Header.TLabel', font=('Segoe UI', 12)).pack(anchor='w')
 
@@ -176,6 +181,10 @@ class PlotterApp:
         right_header_frame.pack(side='right', padx=20, pady=10)
         font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
         ttk.Label(right_header_frame, text=f"PICA General Purpose Plotter", style='Header.TLabel', font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack()
+        # --- Right Section: New Instance Button ---
+        right_header_frame = tk.Frame(header, bg=self.CLR_HEADER); right_header_frame.grid(row=0, column=2, sticky='e')
+        new_instance_button = ttk.Button(right_header_frame, text="+", command=launch_new_instance, width=3)
+        new_instance_button.pack(side='right', padx=(0, 10), pady=10)
 
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
@@ -290,11 +299,6 @@ class PlotterApp:
 
         self.canvas = FigureCanvasTkAgg(self.figure, container)
         self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
-
-        # Connect draw event for blitting
-        self.canvas.mpl_connect('draw_event', self._on_draw)
-        # --- FIX: Connect motion notify to prevent plot disappearing ---
-        self.canvas.mpl_connect('motion_notify_event', self._on_motion)
 
         # Add the Matplotlib navigation toolbar
         toolbar_frame = tk.Frame(container, bg=self.CLR_FRAME_BG)
@@ -559,16 +563,12 @@ class PlotterApp:
         selected_filepaths = [fp for fp, ui in self.file_ui_elements.items() if ui['var'].get()]
         
         self.ax_main.clear() # Clear axes for fresh plot
-        self.plot_lines.clear() # Clear old line artists
         self.ax_main.grid(True, linestyle='--', alpha=0.6)
 
         if not selected_filepaths or not all([x_col, y_col]):
-            # --- Blitting: Invalidate background and disable animation on clear ---
-            self.plot_bg = None
-            self.canvas.draw()
             self.ax_main.set_title("Click 'Add File(s)...' to begin")
             self.ax_main.set_xlabel("X-Axis"); self.ax_main.set_ylabel("Y-Axis")
-            self.canvas.draw(); return
+            self.canvas.draw_idle(); return
 
         plotted_something = False
         try:
@@ -592,9 +592,8 @@ class PlotterApp:
                 plot_y = raw_y[finite_mask]
 
                 if plot_x.size > 0:
-                    # --- Blitting: Set animated=True for performance ---
-                    line, = self.ax_main.plot(plot_x, plot_y, marker='o', markersize=4, linestyle='-', label=filename, animated=True)
-                    self.plot_lines.append(line)
+                    # --- SIMPLIFIED PLOTTING ---
+                    self.ax_main.plot(plot_x, plot_y, marker='o', markersize=4, linestyle='-', label=filename)
                     plotted_something = True
 
             # --- Finalize Plot ---
@@ -610,21 +609,12 @@ class PlotterApp:
             self.ax_main.set_title(f"{y_col} vs. {x_col}")
             self.figure.tight_layout()
 
-            # --- Blitting: Perform a full draw to establish the background ---
-            self.canvas.draw()
-
-            # --- Blitting: If live updating, immediately update plot with blit ---
-            if self.live_update_var.get() and self.plot_bg:
-                self.canvas.restore_region(self.plot_bg)
-                for line in self.plot_lines:
-                    self.ax_main.draw_artist(line)
-                self.canvas.blit(self.ax_main.bbox)
-                self.canvas.flush_events()
-
-
         except Exception as e:
             self.log(f"Error plotting data: {traceback.format_exc()}")
             messagebox.showerror("Plotting Error", f"An error occurred while plotting.\n\n{e}")
+        finally:
+            # --- RELIABLE DRAW METHOD ---
+            self.canvas.draw_idle()
 
     def toggle_live_update(self):
         if self.live_update_var.get():
@@ -670,38 +660,6 @@ class PlotterApp:
             # File might have been deleted or is temporarily inaccessible
             self.log("File watcher stopped: file is inaccessible or has been deleted.")
             self.stop_file_watcher()
-    
-    # --- Blitting and resize handling methods ---
-    def _on_draw(self, event):
-        """Callback for draw events to cache the plot background."""
-        if self.is_resizing or not self.plot_lines: return
-        # Invalidate background and capture the new one
-        self.plot_bg = None
-        self.plot_bg = self.canvas.copy_from_bbox(self.ax_main.bbox)
-
-    def _on_motion(self, event):
-        """Callback for mouse motion to redraw artists and prevent disappearing plots."""
-        # This is the fix for the disappearing plot lines on mouse hover.
-        if self.plot_bg is None or not self.plot_lines: return
-        self.canvas.restore_region(self.plot_bg)
-        for line in self.plot_lines:
-            self.ax_main.draw_artist(line)
-        self.canvas.blit(self.ax_main.bbox)
-
-    def _on_resize(self, event):
-        """Handle window resize events to trigger a full redraw."""
-        self.is_resizing = True
-        self.plot_bg = None # Invalidate background
-        if self.resize_timer:
-            self.root.after_cancel(self.resize_timer)
-        self.resize_timer = self.root.after(300, self._finalize_resize)
-
-    def _finalize_resize(self):
-        """Finalize the resize by performing a full redraw."""
-        self.is_resizing = False
-        self.resize_timer = None
-        if self.canvas:
-            self.canvas.draw_idle()
 
 if __name__ == '__main__':
     # This is ESSENTIAL for multiprocessing to work in a bundled executable
