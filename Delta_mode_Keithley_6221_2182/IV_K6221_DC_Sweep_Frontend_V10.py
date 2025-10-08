@@ -77,7 +77,7 @@ def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_Frontend_v2.py")
+        plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_Frontend_v3.py")
         if not os.path.exists(plotter_path):
             messagebox.showerror("File Not Found", f"Plotter utility not found at expected path:\n{plotter_path}")
             return

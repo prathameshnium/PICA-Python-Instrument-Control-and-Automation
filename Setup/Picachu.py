@@ -111,7 +111,7 @@ class PICALauncherApp:
         "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/T_Sensing_L350_Frontend_v4.py"),
         "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v3.py"),
         "Lock-in AC Measurement": resource_path("Lock_in_amplifier/BasicTest_S830_Backend_v1.py"),
-        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v2.py"),
+        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v3.py"),
         "PICA Help": resource_path("PICA_README.md"),
     }
 
