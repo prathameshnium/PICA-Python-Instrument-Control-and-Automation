@@ -322,6 +322,8 @@ class PlotterApp:
         if not self.filepath or not os.path.exists(self.filepath):
             return
 
+        self.stop_file_watcher()
+
         try:
             with open(self.filepath, 'r', encoding='utf-8', errors='ignore') as f:
                 f.seek(self.last_file_size)
@@ -351,11 +353,13 @@ class PlotterApp:
             self.last_file_size = os.path.getsize(self.filepath)
             self.log(f"Appended {appended_count} new data points.")
             self.plot_data()
-
         except Exception as e:
             self.log(f"Error appending data: {traceback.format_exc()}")
             # Fallback to a full reload in case of parsing error
             self.load_file_data()
+        finally:
+            # Always restart the watcher after an append operation
+            self.start_file_watcher()
 
     def plot_data(self, event=None):
         x_col = self.x_col_cb.get()
@@ -435,12 +439,14 @@ class PlotterApp:
                     # File was overwritten or shrunk, do a full reload
                     self.log("File has been overwritten. Performing full reload...")
                     self.load_file_data()
-                return # The load/append functions will handle the next check
+            else:
+                # If no changes, schedule the next check
+                self.file_watcher_job = self.root.after(1000, self.check_for_updates)
+
         except OSError:
             # File might have been deleted or is temporarily inaccessible
-            return
-        
-        self.file_watcher_job = self.root.after(1000, self.check_for_updates)
+            self.log("File watcher stopped: file is inaccessible or has been deleted.")
+            self.stop_file_watcher()
 
 if __name__ == '__main__':
     root = tk.Tk()
