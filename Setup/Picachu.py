@@ -29,10 +29,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, Toplevel, Text, Canvas, scrolledtext, font
 import os, sys, subprocess, platform, threading, queue, re, webbrowser
-from datetime import datetime
-import runpy
-import multiprocessing
-from multiprocessing import Process
+from datetime import datetime 
 
 try:
     from PIL import Image, ImageTk
@@ -46,41 +43,51 @@ try:
 except ImportError:
     PYVISA_AVAILABLE = False
 
-def run_script_process(script_path):
-    """
-    Wrapper function to execute a script using runpy in its own directory.
-    This becomes the target for the new, isolated process.
-    """
-    try:
-        os.chdir(os.path.dirname(script_path))
-        runpy.run_path(script_path, run_name="__main__")
-    except Exception as e:
-        print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
-        print(e)
-        print("-------------------------")
+# --- Configuration for Sub-Executable Architecture ---
+# This is the folder where the compiled sub-program executables will be stored.
+# When building the main Picachu.exe, this folder must be included as a data asset.
+SUB_PROGRAMS_DIR = "programs"
 
 def resource_path(relative_path):
     """
     Get absolute path to resource, works for dev and for PyInstaller/Nuitka.
     This function is crucial for ensuring that file paths to scripts and assets
     work correctly both when running from source and when running as a bundled
-    executable.
+    executable. It now also handles the sub-program executable directory.
     """
     try:
         # When bundled by PyInstaller/Nuitka, a temporary folder is created
         # and its path is stored in `sys._MEIPASS`. This is the base path
         # for all bundled resources.
         base_path = sys._MEIPASS
+        
+        # For sub-programs, we check if the relative_path points to our programs dir
+        if relative_path.startswith(SUB_PROGRAMS_DIR):
+            # The path is already structured correctly for the bundled app
+            return os.path.join(base_path, relative_path)
+
     except Exception:
         # When running in development mode (as a .py script), `__file__`
         # points to `Setup/Picachu.py`. The resources (like `Keithley_2400/`)
         # are in the parent directory (the project root). Therefore, we must
         # navigate one level up ('..') to establish the correct base path.
         base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+        # In dev mode, we must construct the path to the original .py script
+        # from the executable name for it to run.
+        if relative_path.startswith(SUB_PROGRAMS_DIR):
+            exe_name = os.path.basename(relative_path)
+            py_script_name = os.path.splitext(exe_name)[0] + ".py"
+            
+            # This is a simplified lookup. A more robust solution might search
+            # through the project structure if script locations are complex.
+            # For now, we assume a flat search can find it based on SCRIPT_PATHS_DEV.
+            return PICALauncherApp.SCRIPT_PATHS_DEV.get(py_script_name, "")
+
     return os.path.join(base_path, relative_path)
 
 class PICALauncherApp:
-    
+
     PROGRAM_VERSION = "5.3"
     CLR_BG_DARK = '#2B3D4F'
     CLR_FRAME_BG = '#3A506B'
@@ -104,27 +111,54 @@ class PICALauncherApp:
     UPDATES_FILE = resource_path("Change_Logs.md")
     LOGO_SIZE = 140
 
+    # --- SCRIPT PATHS FOR THE EXECUTABLE BUILD ---
+    # These paths point to the final executable names inside the SUB_PROGRAMS_DIR.
+    # The build system is responsible for creating these EXEs and putting them there.
     SCRIPT_PATHS = {
-        # Based on Updates.md, using the latest versions of scripts.
-        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_Frontend_V10.py"),
-        "Delta Mode R-T": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.py"),
-        "Delta Mode R-T (T_Sensing)": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.py"),
-        "K2400 I-V": resource_path("Keithley_2400/IV_K2400_Frontend_v3.py"),
-        "K2400 R-T": resource_path("Keithley_2400/RT_K2400_L350_T_Control_Frontend_v3.py"),
-        "K2400 R-T (T_Sensing)": resource_path("Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v4.py"),
-        "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py"),
-        "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_Frontend_v3.py"),
-        "K2400_2182 R-T (T_Sensing)": resource_path("Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_Frontend_v2.py"),
-        "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/IV_K6517B_Frontend_v11.py"),
-        "K6517B R-T": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_Frontend_v13.py"),
-        "K6517B R-T (T_Sensing)": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_Frontend_v14.py"),
-        "Pyroelectric Current": resource_path("Keithley_6517B/Pyroelectricity/Pyroelectric_K6517B_L350_Frontend_v4.py"),
-        "Lakeshore Temp Control": resource_path("Lakeshore_350_340/T_Control_L350_RangeControl_Frontend_v8.py"),
-        "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/T_Sensing_L350_Frontend_v4.py"),
-        "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v3.py"),
-        "Lock-in AC Measurement": resource_path("Lock_in_amplifier/AC_Measurement_S830_Frontend_v1.py"),
-        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v3.py"),
-        "PICA Help": resource_path("PICA_README.md"),
+        "Delta Mode I-V Sweep": os.path.join(SUB_PROGRAMS_DIR, "IV_K6221_DC_Sweep_Frontend_V10.exe"),
+        "Delta Mode R-T": os.path.join(SUB_PROGRAMS_DIR, "Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.exe"),
+        "Delta Mode R-T (T_Sensing)": os.path.join(SUB_PROGRAMS_DIR, "Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.exe"),
+        "K2400 I-V": os.path.join(SUB_PROGRAMS_DIR, "IV_K2400_Frontend_v3.exe"),
+        "K2400 R-T": os.path.join(SUB_PROGRAMS_DIR, "RT_K2400_L350_T_Control_Frontend_v3.exe"),
+        "K2400 R-T (T_Sensing)": os.path.join(SUB_PROGRAMS_DIR, "RT_K2400_L350_T_Sensing_Frontend_v4.exe"),
+        "K2400_2182 I-V": os.path.join(SUB_PROGRAMS_DIR, "IV_K2400_K2182_Frontend_v3.exe"),
+        "K2400_2182 R-T": os.path.join(SUB_PROGRAMS_DIR, "RT_K2400_K2182_T_Control_Frontend_v3.exe"),
+        "K2400_2182 R-T (T_Sensing)": os.path.join(SUB_PROGRAMS_DIR, "RT_K2400_2182_L350_T_Sensing_Frontend_v2.exe"),
+        "K6517B I-V": os.path.join(SUB_PROGRAMS_DIR, "IV_K6517B_Frontend_v11.exe"),
+        "K6517B R-T": os.path.join(SUB_PROGRAMS_DIR, "RT_K6517B_L350_T_Control_Frontend_v13.exe"),
+        "K6517B R-T (T_Sensing)": os.path.join(SUB_PROGRAMS_DIR, "RT_K6517B_L350_T_Sensing_Frontend_v14.exe"),
+        "Pyroelectric Current": os.path.join(SUB_PROGRAMS_DIR, "Pyroelectric_K6517B_L350_Frontend_v4.exe"),
+        "Lakeshore Temp Control": os.path.join(SUB_PROGRAMS_DIR, "T_Control_L350_RangeControl_Frontend_v8.exe"),
+        "Lakeshore Temp Monitor": os.path.join(SUB_PROGRAMS_DIR, "T_Sensing_L350_Frontend_v4.exe"),
+        "LCR C-V Measurement": os.path.join(SUB_PROGRAMS_DIR, "CV_KE4980A_Frontend_v3.exe"),
+        "Lock-in AC Measurement": os.path.join(SUB_PROGRAMS_DIR, "AC_Measurement_S830_Frontend_v1.exe"),
+        "Plotter Utility": os.path.join(SUB_PROGRAMS_DIR, "PlotterUtil_Frontend_v3.exe"),
+        "PICA Help": "PICA_README.md", # This remains a file, not an exe
+    }
+
+    # --- SCRIPT PATHS FOR DEVELOPMENT RUN ---
+    # This is a helper dict to allow Picachu.py to run from source. It maps the
+    # .py script name to its original location in the project structure.
+    # The `resource_path` function will use this in development mode.
+    SCRIPT_PATHS_DEV = {
+        "IV_K6221_DC_Sweep_Frontend_V10.py": "Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_Frontend_V10.py",
+        "Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.py": "Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.py",
+        "Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.py": "Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.py",
+        "IV_K2400_Frontend_v3.py": "Keithley_2400/IV_K2400_Frontend_v3.py",
+        "RT_K2400_L350_T_Control_Frontend_v3.py": "Keithley_2400/RT_K2400_L350_T_Control_Frontend_v3.py",
+        "RT_K2400_L350_T_Sensing_Frontend_v4.py": "Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v4.py",
+        "IV_K2400_K2182_Frontend_v3.py": "Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py",
+        "RT_K2400_K2182_T_Control_Frontend_v3.py": "Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_Frontend_v3.py",
+        "RT_K2400_2182_L350_T_Sensing_Frontend_v2.py": "Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_Frontend_v2.py",
+        "IV_K6517B_Frontend_v11.py": "Keithley_6517B/High_Resistance/IV_K6517B_Frontend_v11.py",
+        "RT_K6517B_L350_T_Control_Frontend_v13.py": "Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_Frontend_v13.py",
+        "RT_K6517B_L350_T_Sensing_Frontend_v14.py": "Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_Frontend_v14.py",
+        "Pyroelectric_K6517B_L350_Frontend_v4.py": "Keithley_6517B/Pyroelectricity/Pyroelectric_K6517B_L350_Frontend_v4.py",
+        "T_Control_L350_RangeControl_Frontend_v8.py": "Lakeshore_350_340/T_Control_L350_RangeControl_Frontend_v8.py",
+        "T_Sensing_L350_Frontend_v4.py": "Lakeshore_350_340/T_Sensing_L350_Frontend_v4.py",
+        "CV_KE4980A_Frontend_v3.py": "LCR_Keysight_E4980A/CV_KE4980A_Frontend_v3.py",
+        "AC_Measurement_S830_Frontend_v1.py": "Lock_in_amplifier/AC_Measurement_S830_Frontend_v1.py",
+        "PlotterUtil_Frontend_v3.py": "Utilities/PlotterUtil_Frontend_v3.py",
     }
 
     def __init__(self, root):
@@ -201,7 +235,7 @@ class PICALauncherApp:
         util_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
         
         ttk.Button(util_frame, text="GPIB Utils", style='App.TButton', command=self.run_gpib_test).grid(row=0, column=0, sticky='ew', padx=(0, 4))
-        ttk.Button(util_frame, text="Plotter", style='App.TButton', command=lambda: self.launch_script(self.SCRIPT_PATHS["Plotter Utility"])).grid(row=0, column=1, sticky='ew', padx=4)
+        ttk.Button(util_frame, text="Plotter", style='App.TButton', command=lambda: self.launch_program("Plotter Utility")).grid(row=0, column=1, sticky='ew', padx=4)
         ttk.Button(util_frame, text="README", style='App.TButton', command=self.open_readme).grid(row=0, column=2, sticky='ew', padx=4)
         ttk.Button(util_frame, text="Manuals", style='App.TButton', command=self.open_manuals_url).grid(row=0, column=3, sticky='ew', padx=(4, 0))
         
@@ -244,9 +278,9 @@ class PICALauncherApp:
         except Exception as e:
             self.log(f"ERROR: Failed to load logo. {e}")
 
-    def _create_launch_button(self, parent, text, script_key):
+    def _create_launch_button(self, parent, text, program_key):
         return ttk.Button(parent, text=text, style='App.TButton',
-                          command=lambda: self.launch_script(self.SCRIPT_PATHS[script_key]))
+                          command=lambda: self.launch_program(program_key))
 
     def create_launcher_panel(self, parent):
         main_container = ttk.Frame(parent)
@@ -349,8 +383,8 @@ class PICALauncherApp:
         # --- Folder Icon Button (moved to the top right) ---
         if buttons:
             first_script_key = buttons[0][1]
-            folder_button = ttk.Button(header_container, text="📁", style='Icon.TButton', width=3,
-                                       command=lambda: self.open_script_folder(first_script_key))
+            # This button now opens the folder containing the original .py scripts for dev reference
+            folder_button = ttk.Button(header_container, text="📁", style='Icon.TButton', width=3, command=lambda: self.open_script_folder(first_script_key))
             folder_button.grid(row=0, column=1, sticky='e')
 
         # --- Launch Buttons ---
@@ -472,49 +506,70 @@ class PICALauncherApp:
 
     def open_script_folder(self, script_key):
         """Opens the directory containing the script associated with the given key."""
-        script_path = self.SCRIPT_PATHS.get(script_key)
-        if not script_path:
+        # This function is now primarily for development convenience, pointing to the source .py files.
+        exe_name = os.path.basename(self.SCRIPT_PATHS.get(script_key, ""))
+        py_name = os.path.splitext(exe_name)[0] + ".py"
+        
+        dev_path = self.SCRIPT_PATHS_DEV.get(py_name)
+        if not dev_path:
             self.log(f"ERROR: Script key '{script_key}' not found in SCRIPT_PATHS.")
             messagebox.showwarning("Key Not Found", f"The script key '{script_key}' is not defined.")
             return
 
-        # Special case for plotter utility which is in its own top-level folder
-        if script_key == "Plotter Utility":
-            self._open_path(os.path.dirname(os.path.abspath(script_path)))
-            return
+        # We need to construct the full path from the project root
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        full_path = os.path.join(project_root, dev_path)
+        folder_path = os.path.dirname(full_path)
 
-        folder_path = os.path.dirname(os.path.abspath(script_path))
         if os.path.exists(folder_path):
             self._open_path(folder_path)
         else:
             self.log(f"ERROR: Folder path does not exist: {folder_path}")
             messagebox.showwarning("Path Not Found", f"The folder for '{script_key}' could not be found.")
+
     def open_readme(self):
-        self._show_file_in_window(self.README_FILE, "README")
+        # PICA Help button points to the same file
+        self._show_file_in_window(resource_path(self.README_FILE), "README")
 
     def open_updates(self):
-        self._show_file_in_window(self.UPDATES_FILE, "Change Log")
+        self._show_file_in_window(resource_path(self.UPDATES_FILE), "Change Log")
 
     def open_manuals_url(self):
         webbrowser.open_new_tab(self.MANUAL_URL)
 
     def open_license(self):
-        self._show_file_in_window(self.LICENSE_FILE, "MIT License")
+        self._show_file_in_window(resource_path(self.LICENSE_FILE), "MIT License")
 
-    def launch_script(self, script_path):
-        self.log(f"Launching: {os.path.basename(script_path)}")
-        abs_path = os.path.abspath(script_path)
-        if not os.path.exists(abs_path):
-            self.log(f"ERROR: Script not found at {abs_path}")
-            messagebox.showerror("File Not Found", f"Script not found:\n\n{abs_path}")
+    def launch_program(self, program_key):
+        """Launches a sub-program executable in a new process."""
+        program_rel_path = self.SCRIPT_PATHS.get(program_key)
+        if not program_rel_path:
+            self.log(f"ERROR: Program key '{program_key}' not found.")
+            messagebox.showerror("Launch Error", f"Program key '{program_key}' is not defined.")
             return
+
+        # Use resource_path to get the correct, absolute path for both dev and bundled mode
+        abs_path = resource_path(program_rel_path)
+        self.log(f"Attempting to launch: {os.path.basename(abs_path)}")
+
+        if not os.path.exists(abs_path):
+            self.log(f"ERROR: Program not found at {abs_path}")
+            messagebox.showerror("File Not Found", f"The required program was not found:\n\n{abs_path}")
+            return
+
         try:
-            proc = Process(target=run_script_process, args=(abs_path,))
-            proc.start()
-            self.log(f"Successfully launched '{os.path.basename(script_path)}' in a new process.")
+            # For development, we run the .py script using the Python executable
+            if abs_path.endswith('.py'):
+                # Ensure we use the same python interpreter that is running Picachu
+                python_exe = sys.executable
+                subprocess.Popen([python_exe, abs_path])
+            else: # For bundled app, we run the .exe directly
+                subprocess.Popen([abs_path])
+
+            self.log(f"Successfully launched '{os.path.basename(abs_path)}' in a new process.")
         except Exception as e:
-            self.log(f"ERROR: Failed to launch script. Reason: {e}")
-            messagebox.showerror("Launch Error", f"An error occurred while launching the script:\n\n{e}")
+            self.log(f"ERROR: Failed to launch program. Reason: {e}")
+            messagebox.showerror("Launch Error", f"An error occurred while launching the program:\n\n{e}")
 
     def run_gpib_test(self):
         if not PYVISA_AVAILABLE:
@@ -683,12 +738,5 @@ def main():
     app = PICALauncherApp(root)
     root.mainloop()
 
-if __name__ == '__main__':
-    # This is ESSENTIAL for multiprocessing to work in a bundled executable
-    # and ensures a consistent, stable process creation method across platforms.
-    # 'spawn' is the most robust method for GUI apps, though it is the default
-    # on Windows and macOS.
-    if sys.version_info >= (3, 8) and platform.system() != "Windows":
-        multiprocessing.set_start_method('spawn', force=True)
-    multiprocessing.freeze_support()
+if __name__ == '__main__': 
     main()
