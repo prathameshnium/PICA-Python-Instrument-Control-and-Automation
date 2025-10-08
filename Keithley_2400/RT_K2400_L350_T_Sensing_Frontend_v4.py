@@ -127,7 +127,7 @@ def launch_gpib_scanner():
     except Exception as e:
         messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
 class RT_GUI_Passive:
-    PROGRAM_VERSION = "3.0"
+    PROGRAM_VERSION = "3.1"
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -162,6 +162,9 @@ class RT_GUI_Passive:
         style.map('Start.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG_LIGHT)
         style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
+        # --- NEW: Style for the Browse button ---
+        style.configure('Browse.TButton', foreground=self.CLR_TEXT_DARK, background='#8D99AE')
+        style.map('Browse.TButton', background=[('active', '#7C899E'), ('hover', '#7C899E')])
         style.configure('TLabelframe', background=self.CLR_HEADER, bordercolor='#8D99AE')
         # --- NEW: Style for Comboboxes to make them more visible ---
         style.configure('TCombobox', fieldbackground='#4C566A', foreground=self.CLR_FG_LIGHT,
@@ -357,12 +360,12 @@ class RT_GUI_Passive:
 
     def _create_entry(self, parent, label_text, default_value, row, browse=False):
         ttk.Label(parent, text=f"{label_text}:").grid(row=row, column=0, sticky='w', padx=10, pady=3)
-        entry = ttk.Entry(parent, font=self.FONT_BASE)
-        entry.grid(row=row, column=1, sticky='ew', padx=10, pady=3, columnspan=2 if browse else 1)
+        entry = ttk.Entry(parent, font=self.FONT_BASE, width=30)
+        entry.grid(row=row, column=1, sticky='ew', padx=10, pady=3, columnspan=2)
         entry.insert(0, default_value); self.entries[label_text] = entry
         if browse:
-            btn = ttk.Button(parent, text="...", width=3, command=self._browse_file_location)
-            btn.grid(row=row, column=3, sticky='e', padx=(0,10))
+            btn = ttk.Button(parent, text="Browse...", style='Browse.TButton', command=self._browse_file_location)
+            btn.grid(row=row, column=3, sticky='e', padx=(0, 10))
             entry.config(state='disabled')
 
     def _create_combobox(self, parent, label_text, row):

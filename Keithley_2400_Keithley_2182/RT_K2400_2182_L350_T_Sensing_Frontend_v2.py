@@ -140,7 +140,7 @@ class VT_Backend_Passive:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class VT_GUI_Passive:
-    PROGRAM_VERSION = "1.2" # Performance and UI update
+    PROGRAM_VERSION = "1.3" # Performance and UI update
     CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'
     CLR_FRAME_BG = '#3A506B'; CLR_INPUT_BG = '#4C566A'; CLR_TEXT_DARK = '#1A1A1A'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE'
@@ -167,6 +167,9 @@ class VT_GUI_Passive:
         style.map('Start.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG_LIGHT)
         style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
+        # --- NEW: Style for the Browse button ---
+        style.configure('Browse.TButton', foreground=self.CLR_TEXT_DARK, background=self.CLR_ACCENT_BLUE)
+        style.map('Browse.TButton', background=[('active', '#7C899E'), ('hover', '#7C899E')])
         style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_ACCENT_BLUE)
         style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         style.configure('TCombobox', fieldbackground=self.CLR_INPUT_BG, foreground=self.CLR_FG_LIGHT, arrowcolor=self.CLR_FG_LIGHT, selectbackground=self.CLR_ACCENT_BLUE, selectforeground=self.CLR_FG_LIGHT)
@@ -360,12 +363,12 @@ class VT_GUI_Passive:
 
     def _create_entry(self, parent, label_text, default_value, row, browse=False):
         ttk.Label(parent, text=f"{label_text}:").grid(row=row, column=0, sticky='w', padx=10, pady=3)
-        entry = ttk.Entry(parent, font=self.FONT_BASE)
-        entry.grid(row=row, column=1, sticky='ew', padx=10, pady=3, columnspan=2 if browse else 1)
+        entry = ttk.Entry(parent, font=self.FONT_BASE, width=30)
+        entry.grid(row=row, column=1, sticky='ew', padx=10, pady=3, columnspan=2)
         entry.insert(0, default_value); self.entries[label_text] = entry
         if browse:
-            btn = ttk.Button(parent, text="...", width=3, command=self._browse_file_location)
-            btn.grid(row=row, column=3, sticky='e', padx=(0,10))
+            btn = ttk.Button(parent, text="Browse...", style='Browse.TButton', command=self._browse_file_location)
+            btn.grid(row=row, column=3, sticky='e', padx=(0, 10))
             entry.config(state='disabled')
 
     def _create_combobox(self, parent, label_text, row):
