@@ -190,7 +190,7 @@ class PlotterApp:
         ttk.Button(file_buttons_frame, text="Add File(s)...", command=self.browse_files).grid(row=0, column=0, sticky='ew', padx=(0,5))
         ttk.Button(file_buttons_frame, text="Remove Selected", command=self.remove_selected_file).grid(row=0, column=1, sticky='ew', padx=(5,0))
 
-        self.file_listbox = tk.Listbox(file_frame, bg=self.CLR_INPUT_BG, fg=self.CLR_FG, selectbackground=self.CLR_ACCENT_BLUE, height=5, borderwidth=0, highlightthickness=0)
+        self.file_listbox = tk.Listbox(file_frame, bg=self.CLR_INPUT_BG, fg=self.CLR_FG, selectbackground=self.CLR_ACCENT_BLUE, height=5, borderwidth=0, highlightthickness=0, selectmode=tk.EXTENDED)
         self.file_listbox.grid(row=1, column=0, sticky='ew', padx=10, pady=(0,10))
         self.file_listbox.bind('<<ListboxSelect>>', self.on_file_select)
 
@@ -252,7 +252,6 @@ class PlotterApp:
 
         self.figure = Figure(dpi=100)
         self.ax_main = self.figure.add_subplot(111)
-        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
         self.ax_main.set_title("Select a file and columns to plot", fontweight='bold')
         self.ax_main.set_xlabel("X-Axis")
         self.ax_main.set_ylabel("Y-Axis")
@@ -333,20 +332,27 @@ class PlotterApp:
     def on_file_select(self, event=None):
         selected_indices = self.file_listbox.curselection()
         if not selected_indices:
+            self.active_filepath = None
+            self.plot_data() # Clear plot if nothing is selected
             return
 
-        filename = self.file_listbox.get(selected_indices[0])
+        # The "active" file for populating column selectors is the first one selected.
+        first_selected_filename = self.file_listbox.get(selected_indices[0])
         
-        # Find the full path from the cache
+        # Find the full path from the cache for the first selected file
         path_to_load = None
         for path, data in self.file_data_cache.items():
-            if os.path.basename(path) == filename:
+            if os.path.basename(path) == first_selected_filename:
                 path_to_load = path
                 break
         
         if path_to_load:
-            self.active_filepath = path_to_load
-            self.load_file_data(path_to_load)
+            # Only reload and update columns if the primary active file has changed
+            if self.active_filepath != path_to_load:
+                self.active_filepath = path_to_load
+                self.load_file_data(path_to_load) # This will trigger a plot_data call in its 'finally' block
+            else:
+                self.plot_data() # If primary file is the same, just replot with new selection
 
     def load_file_data(self, filepath):
         if not filepath:
@@ -376,18 +382,22 @@ class PlotterApp:
             data_array = np.genfromtxt(filepath, delimiter=',', names=True, comments='#', autostrip=True,
                                        invalid_raise=False, skip_header=header_line_index)
             
-            # Check for catastrophic failure where genfromtxt returns a scalar or has no shape.
-            if not hasattr(data_array, 'dtype') or data_array.dtype.names is None:
-                raise ValueError("Could not automatically determine headers. Ensure the file has a header row not starting with '#'.")
-
+            # --- ROBUSTNESS CHECK ---
+            # If genfromtxt fails completely, it can return a scalar (e.g., nan) which is "unsized".
+            # We must ensure it's an array before proceeding.
+            if not isinstance(data_array, np.ndarray) or data_array.dtype is None or data_array.dtype.names is None:
+                raise ValueError("Could not parse data. The file may be empty, have an invalid format, or contain only comments.")
+                
             # Check if any data was actually loaded
             if data_array.size == 0:
                 self.log(f"Warning: File '{os.path.basename(filepath)}' was loaded, but contains no valid data rows.")
                 # Set up empty structure to prevent future errors
-                file_info = self.file_data_cache[filepath]
-                file_info['headers'] = [name.strip() for name in data_array.dtype.names] if data_array.dtype.names else []
-                file_info['data'] = {h: np.array([]) for h in file_info['headers']}
+                if filepath in self.file_data_cache:
+                    file_info = self.file_data_cache[filepath]
+                    file_info['headers'] = [name.strip() for name in data_array.dtype.names] if data_array.dtype.names else []
+                    file_info['data'] = {h: np.array([]) for h in file_info['headers']}
                 # Fall through to the rest of the logic, which will handle the empty state
+                data_array = np.array([]) # Ensure data_array is a sized object
 
             # Sanitize headers to remove extra spaces or quotes that genfromtxt might add
             headers = [name.strip() for name in data_array.dtype.names]
@@ -418,16 +428,25 @@ class PlotterApp:
                 # Create an empty but valid cache entry.
                 self.file_data_cache[filepath] = {"path": filepath, "headers": [], "data": {}}
             
+            # --- FIX: Explicitly clear the active file path and plot on error ---
+            self.active_filepath = None # This is the key change to reset the state
+            self.plot_data() # Call plot_data to clear the plot area immediately
+            
             # Clear UI elements
             self.x_col_cb.set('')
             self.y_col_cb.set('')
             self.x_col_cb['values'] = []
             self.y_col_cb['values'] = []
 
+            # --- Prevent error loop ---
+            # If loading fails, disable live update to stop retrying on a bad file.
+            self.live_update_var.set(False)
+            self.toggle_live_update()
+
             self.log(f"Error loading file: {traceback.format_exc()}")
             # Show a single, clear error message.
             messagebox.showerror("File Load Error", f"Could not read the data file. It may be empty, malformed, or in use.\n\nDetails: {e}")
-            self.plot_data() # Call plot_data to clear the plot area
+            # Do not plot here; let the finally block handle it to ensure the plot always reflects the current state.
         finally:
             # Only start the watcher if the file is still the active one (load might have failed)
             if self.active_filepath == filepath:
@@ -488,52 +507,57 @@ class PlotterApp:
     def plot_data(self, event=None):
         x_col = self.x_col_cb.get()
         y_col = self.y_col_cb.get()
+        selected_indices = self.file_listbox.curselection()
 
-        if not self.active_filepath or not all([x_col, y_col]):
-            self.ax_main.clear()
-            self.ax_main.grid(True, linestyle='--', alpha=0.6)
-            self.ax_main.set_title("Select a file and columns to plot")
-            self.line_main.set_data([], [])
-            self.ax_main.set_title("Select a file and columns to plot")
-            self.ax_main.set_xlabel("X-Axis")
-            self.ax_main.set_ylabel("Y-Axis")
-            self.canvas.draw()
-            return
+        self.ax_main.clear() # Clear axes for fresh plot
+        self.ax_main.grid(True, linestyle='--', alpha=0.6)
 
+        if not selected_indices or not all([x_col, y_col]):
+            self.ax_main.set_title("Select file(s) and columns to plot")
+            self.ax_main.set_xlabel("X-Axis"); self.ax_main.set_ylabel("Y-Axis")
+            self.canvas.draw(); return
+
+        plotted_something = False
         try:
-            file_info = self.file_data_cache.get(self.active_filepath)
-            if not file_info or 'headers' not in file_info or not file_info['headers']:
-                self.log("Cannot plot: File data is missing or invalid.")
-                return # Abort plotting if data structure is incomplete
-
-            if x_col not in file_info['headers'] or y_col not in file_info['headers']:
-                return # Columns not valid for this file
-
-            raw_x = file_info['data'][x_col]
-            raw_y = file_info['data'][y_col]
+            selected_filenames = [self.file_listbox.get(i) for i in selected_indices]
             
-            # Create a mask for finite values to avoid plotting errors
-            finite_mask = np.isfinite(raw_x) & np.isfinite(raw_y)
-            
-            # Apply the mask to get clean data for plotting
-            plot_x = raw_x[finite_mask]
-            plot_y = raw_y[finite_mask]
+            for filename in selected_filenames:
+                # Find the full path for the current filename in the loop
+                filepath = next((path for path, data in self.file_data_cache.items() if os.path.basename(path) == filename), None)
+                if not filepath: continue
 
-            self.line_main.set_data(plot_x, plot_y)
-            # Update plot scales
+                file_info = self.file_data_cache.get(filepath)
+                if not file_info or 'headers' not in file_info or not file_info['headers']:
+                    self.log(f"Skipping '{filename}': Data is missing or invalid.")
+                    continue
+
+                if x_col not in file_info['headers'] or y_col not in file_info['headers']:
+                    self.log(f"Skipping '{filename}': Does not contain '{x_col}' or '{y_col}'.")
+                    continue
+
+                raw_x = file_info['data'][x_col]
+                raw_y = file_info['data'][y_col]
+                
+                finite_mask = np.isfinite(raw_x) & np.isfinite(raw_y)
+                plot_x = raw_x[finite_mask]
+                plot_y = raw_y[finite_mask]
+
+                if plot_x.size > 0:
+                    self.ax_main.plot(plot_x, plot_y, marker='o', markersize=4, linestyle='-', label=filename)
+                    plotted_something = True
+
+            # --- Finalize Plot ---
+            if plotted_something:
+                self.ax_main.legend()
+                self.log(f"Plot updated for {len(selected_filenames)} selected file(s).")
+            else:
+                self.log("No valid data to plot for the selected files and columns.")
+
             self.ax_main.set_xscale('log' if self.x_log_var.get() else 'linear')
             self.ax_main.set_yscale('log' if self.y_log_var.get() else 'linear')
-
-            # Update labels and title
-            self.ax_main.set_xlabel(x_col)
-            self.ax_main.set_ylabel(y_col)
+            self.ax_main.set_xlabel(x_col); self.ax_main.set_ylabel(y_col)
             self.ax_main.set_title(f"{y_col} vs. {x_col}")
-
-            self.ax_main.relim()
-            self.ax_main.autoscale_view()
-            self.figure.tight_layout()
-            self.canvas.draw()
-            self.log(f"Plot updated: '{y_col}' vs. '{x_col}'")
+            self.figure.tight_layout(); self.canvas.draw()
 
         except Exception as e:
             self.log(f"Error plotting data: {traceback.format_exc()}")
