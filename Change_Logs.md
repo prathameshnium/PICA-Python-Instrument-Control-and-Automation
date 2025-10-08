@@ -1,4 +1,55 @@
 ## Instrument & Software Update Log
+### Version 14.0 (Current)
+
+**Frontend Enhancements & New Measurement Modes**
+
+-   **Major Frontend Version Bumps:** Updated numerous frontend scripts to their latest, most stable versions. This includes significant improvements in reliability, UI consistency, and backend logic across all major measurement suites.
+-   **New Passive "Sensing" Modes:** Introduced new "T-Sensing" (passive) measurement modes for several instrument combinations. These modules allow for resistance logging while the temperature changes externally (e.g., during natural cooling), complementing the existing "T-Control" (active) modes.
+    -   New `Delta Mode R-T (T_Sensing)` module.
+    -   New `K2400 R-T (T_Sensing)` module.
+    -   New `K2400_2182 R-T (T_Sensing)` module.
+    -   New `K6517B R-T (T_Sensing)` module.
+-   **Launcher Script Synchronization:** Updated the main launcher (`PICA_v6.py`) and the executable build script (`Setup/Picachu.py`) to point to all the new and updated frontend versions, ensuring users always access the latest features.
+-   **Plotter Utility Upgrade:** The standalone plotter (`PlotterUtil_Frontend_v3.py`) has been enhanced to support plotting multiple files simultaneously, improving comparative data analysis workflows.
+-   **Documentation Refresh:** Updated `README.md` and `PICA_README.md` to reflect the current feature set, expanded measurement capabilities, and latest UI.
+-   **Files Added/Modified:**
+    -   `PICA_v6.py`
+    -   `Setup/Picachu.py`
+    -   `README.md`
+    -   `PICA_README.md`
+    -   `Change_Logs.md`
+    -   `Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_Frontend_V10.py`
+    -   `Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.py`
+    -   `Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.py` (New)
+    -   `Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py`
+    -   `Keithley_2400/RT_K2400_L350_T_Control_Frontend_v3.py`
+    -   `Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v4.py`
+    -   `Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_Frontend_v3.py`
+    -   `Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_Frontend_v2.py`
+    -   `Keithley_6517B/High_Resistance/IV_K6517B_Frontend_v11.py`
+    -   `Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_Frontend_v13.py`
+    -   `Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_Frontend_v14.py`
+    -   `LCR_Keysight_E4980A/CV_KE4980A_Frontend_v3.py`
+    -   `Utilities/PlotterUtil_Frontend_v3.py`
+
+---
+
+### Version 13.9 (Current)
+
+**Documentation & Launcher Synchronization**
+
+-   **Documentation Overhaul:** Updated and synchronized key documentation files (`README.md`, `Change_Logs.md`) to accurately reflect the latest project structure, features, and build process.
+-   **Executable-Specific README:** Created `PICA_README.md`, a version of the main README tailored for inclusion in the Nuitka-built executable. This ensures users of the standalone application have access to relevant project information.
+-   **Launcher Script Update:** Updated the main launcher script (`PICA_v6.py`) to reflect the latest versioning and ensure consistency with the project's documentation.
+-   **Files Added/Modified:**
+    -   `PICA_v6.py`
+    -   `README.md`
+    -   `PICA_README.md` (New File)
+    -   `Change_Logs.md`
+
+---
+
+## Instrument & Software Update Log
 ### Version 13.8 (Current)
 
 **Build System & Documentation Overhaul**
@@ -14,7 +65,7 @@
     -   `Setup/Picachu.py`
     -   `.github/workflows/build-exe.yml`
     -   `README.md`
-
+ 
 ---
 
 ## Instrument & Software Update Log
