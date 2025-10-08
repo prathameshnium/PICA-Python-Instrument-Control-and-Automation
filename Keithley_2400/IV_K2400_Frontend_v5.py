@@ -40,12 +40,27 @@ try:
 except ImportError:
     pyvisa = None
 
-try:
-    # Import the plotter launch function from the main PICA launcher
-    from PICA_v6 import launch_plotter_utility
-except (ImportError, ModuleNotFoundError):
-    # Fallback if the script is run standalone
-    launch_plotter_utility = lambda: print("Plotter launch function not found.")
+import runpy
+from multiprocessing import Process
+
+def run_script_process(script_path):
+    """
+    Wrapper function to execute a script using runpy in its own directory.
+    This becomes the target for the new, isolated process.
+    """
+    try:
+        os.chdir(os.path.dirname(script_path))
+        runpy.run_path(script_path, run_name="__main__")
+    except Exception as e:
+        print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
+        print(e)
+        print("-------------------------")
+
+def launch_plotter_utility():
+    """Finds and launches the plotter utility script in a new process."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_Frontend_v2.py")
+    Process(target=run_script_process, args=(plotter_path,)).start()
 class Keithley2400_IV_Backend:
     """A dedicated class to handle backend communication with the Keithley 2400 for I-V sweeps."""
     def __init__(self):

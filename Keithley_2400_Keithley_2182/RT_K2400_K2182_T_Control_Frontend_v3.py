@@ -40,13 +40,8 @@ try:
     project_root = os.path.abspath(os.path.join(script_dir, os.pardir))
     if project_root not in sys.path:
         sys.path.append(project_root)
-
-    # Import the plotter launch function from the main PICA launcher
-    from PICA_v6 import launch_plotter_utility
-
-except (ImportError, ModuleNotFoundError):
-    # Fallback if the script is run standalone
-    launch_plotter_utility = lambda: print("Plotter launch function not found.")
+except Exception:
+    pass # Path manipulation can fail in some environments (e.g., frozen executables)
 
 import runpy
 from multiprocessing import Process
@@ -63,6 +58,19 @@ def run_script_process(script_path):
         print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
         print(e)
         print("-------------------------")
+
+def launch_plotter_utility():
+    """Finds and launches the plotter utility script in a new process."""
+    try:
+        # Assumes the plotter is in a standard location relative to this script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_Frontend_v2.py")
+        if not os.path.exists(plotter_path):
+            messagebox.showerror("File Not Found", f"Plotter utility not found at expected path:\n{plotter_path}")
+            return
+        Process(target=run_script_process, args=(plotter_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
 
 def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
