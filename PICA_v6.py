@@ -156,9 +156,9 @@ class PICALauncherApp:
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_TEXT, font=self.FONT_BASE)
         style.configure('TSeparator', background=self.CLR_FRAME_BG)
-        style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_BG_DARK, borderwidth=2, padding=12)
+        style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_BG_DARK, borderwidth=2, padding=6)
         style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_TEXT, font=self.FONT_SUBTITLE)
-        style.configure('App.TButton', font=self.FONT_BASE, padding=(10, 8), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_FRAME_BG, borderwidth=0, focusthickness=0, focuscolor='none')
+        style.configure('App.TButton', font=self.FONT_BASE, padding=(10, 5), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_FRAME_BG, borderwidth=0, focusthickness=0, focuscolor='none')
         style.map('App.TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
         style.configure('Scan.TButton', font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_TEXT_DARK, background=self.CLR_ACCENT_GREEN)
         style.map('Scan.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
@@ -176,15 +176,6 @@ class PICALauncherApp:
         info_panel.grid(row=0, column=0, sticky="nsew", padx=(15, 10), pady=15)
         launcher_container = self.create_launcher_panel(self.root)
         launcher_container.grid(row=0, column=1, sticky="nsew", padx=(10, 15), pady=15)
-
-        # --- Version Label (Clickable) - Placed on the main window ---
-        # Moved here to ensure it's drawn on top of other widgets
-        version_font = font.Font(family='Segoe UI', size=9, underline=True)
-        version_label = ttk.Label(self.root, text=f"v{self.PROGRAM_VERSION}",
-                                  font=version_font, foreground=self.CLR_LINK, cursor="hand2",
-                                  background=self.CLR_BG_DARK) # Match the main window background
-        version_label.place(x=10, y=10, anchor='nw') # Adjusted coordinates for better visibility
-        version_label.bind("<Button-1>", lambda e: self.open_updates())
 
     def create_resource_panel(self, parent):
         info_frame = ttk.Frame(parent)
@@ -221,12 +212,20 @@ class PICALauncherApp:
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', fill='x', pady=(15, 0))
         
+        # --- Version Label (Clickable) ---
+        version_font = font.Font(family='Segoe UI', size=9, underline=True)
+        version_label = ttk.Label(bottom_frame, text=f"PICA Launcher Version: {self.PROGRAM_VERSION}",
+                                  font=version_font, foreground=self.CLR_LINK, cursor="hand2")
+        version_label.pack(pady=(0, 5))
+        version_label.bind("<Button-1>", lambda e: self.open_updates())
+
+        # --- License Label (Clickable) ---
         license_font = font.Font(family='Segoe UI', size=9, underline=True)
         license_label = ttk.Label(bottom_frame, text="This project is licensed under the MIT License.",
                                   font=license_font, foreground=self.CLR_LINK, cursor="hand2")
         license_label.pack()
         license_label.bind("<Button-1>", lambda e: self.open_license())
-        
+
         console_container = ttk.LabelFrame(info_frame, text="Console", padding=(5,10))
         console_container.pack(side='bottom', fill='x', pady=(20, 0))
         self.console_widget = scrolledtext.ScrolledText(console_container, state='disabled', bg=self.CLR_CONSOLE_BG,
@@ -282,67 +281,94 @@ class PICALauncherApp:
         canvas.bind("<Button-4>", _on_mousewheel_linux_macos) # For Linux and macOS
         canvas.bind("<Button-5>", _on_mousewheel_linux_macos) # For Linux and macOS
 
-        canvas.grid(row=0, column=0, sticky='nsew', padx=(15, 0), pady=10)
+        canvas.grid(row=0, column=0, sticky='nsew', pady=10)
         scrollbar.grid(row=0, column=1, sticky='ns', pady=10)
+
+        # --- Make the scrollable frame expand to the width of the canvas ---
+        def _configure_scrollable_frame(event):
+            canvas.itemconfig('frame', width=event.width)
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", tags="frame")
+        canvas.bind("<Configure>", _configure_scrollable_frame)
 
         # --- Container for the two columns inside the scrollable frame ---
         scrollable_frame.grid_columnconfigure((0, 1), weight=1, uniform="group1")
-        left_col = ttk.Frame(scrollable_frame); left_col.grid(row=0, column=0, sticky='new', padx=(0, 10), pady=(0,15))
-        right_col = ttk.Frame(scrollable_frame); right_col.grid(row=0, column=1, sticky='new', padx=(10, 15), pady=(0,15))
+        left_col = ttk.Frame(scrollable_frame); left_col.grid(row=0, column=0, sticky='new', padx=(0, 5), pady=(0,15))
+        right_col = ttk.Frame(scrollable_frame); right_col.grid(row=0, column=1, sticky='new', padx=(5, 10), pady=(0,15))
 
         GROUP_PAD_Y = 15
 
         # --- Left Column Suites ---
-        self._create_suite_frame(left_col, 'Low Resistance (10⁻⁹ Ω to 10⁸ Ω)', "Instruments: Keithley 6221/2182, Lakeshore 350", [
+        self._create_suite_frame(left_col, 'Low Resistance (10⁻⁹ Ω to 10⁸ Ω)', "Current Driven", "Instruments: Keithley 6221/2182, Lakeshore 350", [
             ("Delta Mode I-V Sweep", "Delta Mode I-V Sweep"),
             ("Delta Mode R vs. T (T_Control)", "Delta Mode R-T"),
             ("Delta Mode R vs. T (T_Sensing)", "Delta Mode R-T (T_Sensing)"),
         ])
-        self._create_suite_frame(left_col, 'Mid Resistance (10⁻³ Ω to 10⁹ Ω)', "Instruments: Keithley 2400, Lakeshore 350", [
+        self._create_suite_frame(left_col, 'Mid Resistance (10⁻³ Ω to 10⁹ Ω)', "Current Driven", "Instruments: Keithley 2400, Lakeshore 350", [
             ("I-V Sweep", "K2400 I-V"),
             ("R vs. T (T_Control)", "K2400 R-T"),
             ("R vs. T (T_Sensing)", "K2400 R-T (T_Sensing)"),
         ])
-        self._create_suite_frame(left_col, 'Mid Resistance, High Precision (10⁻⁶ Ω to 10⁹ Ω)', "Instruments: Keithley 2400/2182, Lakeshore 350", [
+        self._create_suite_frame(left_col, 'Mid Resistance, High Precision (10⁻⁶ Ω to 10⁹ Ω)', "Current Driven", "Instruments: Keithley 2400/2182, Lakeshore 350", [
             ("I-V Sweep", "K2400_2182 I-V"),
             ("R vs. T (T_Control)", "K2400_2182 R-T"),
             ("R vs. T (T_Sensing)", "K2400_2182 R-T (T_Sensing)"),
         ])
 
         # --- Right Column Suites ---
-        self._create_suite_frame(right_col, 'High Resistance (10³ Ω to 10¹⁶ Ω)', "Instruments: Keithley 6517B, Lakeshore 350", [
+        self._create_suite_frame(right_col, 'High Resistance (10³ Ω to 10¹⁶ Ω)', "Voltage Driven", "Instruments: Keithley 6517B, Lakeshore 350", [
             ("I-V Sweep", "K6517B I-V"),
             ("R vs. T (T_Control)", "K6517B R-T"),
             ("R vs. T (T_Sensing)", "K6517B R-T (T_Sensing)"),
         ])
-        self._create_suite_frame(right_col, 'Pyroelectric Measurement (Keithley 6517B)', None, [("PyroCurrent vs. T", "Pyroelectric Current")])
-        self._create_suite_frame(right_col, 'Temperature Utilities (Lakeshore 350)', None, [
+        self._create_suite_frame(right_col, 'Pyroelectric Measurement (Keithley 6517B)', "Current Sensing", None, [("PyroCurrent vs. T", "Pyroelectric Current")])
+        self._create_suite_frame(right_col, 'Temperature Utilities (Lakeshore 350)', "Control Utility", None, [
             ("Temperature Ramp", "Lakeshore Temp Control"),
-            ("Temperature Monitor", "Lakeshore Temp Monitor"),
+            ("Temperature Monitor", "Lakeshore Temp Monitor")
         ])
-        self._create_suite_frame(right_col, 'Capacitance (Keysight E4980A)', None, [("C-V Measurement", "LCR C-V Measurement")])
-        self._create_suite_frame(right_col, 'AC Measurements (Lock-in)', None, [("AC Measurement", "Lock-in AC Measurement")])
+        self._create_suite_frame(right_col, 'Capacitance (Keysight E4980A)', "Voltage Driven", None, [("C-V Measurement", "LCR C-V Measurement")])
+        self._create_suite_frame(right_col, 'AC Measurements (Lock-in)', "AC Measurement", None, [("AC Measurement", "Lock-in AC Measurement")])
 
         return main_container
 
-    def _create_suite_frame(self, parent, title, instruments_text, buttons):
+    def _create_suite_frame(self, parent, title, measurement_type, instruments_text, buttons):
         """Helper to create a measurement suite frame, reducing code duplication."""
-        frame = ttk.LabelFrame(parent, text=title)
-        frame.pack(fill='x', expand=True, pady=15)
+        # Reduce vertical padding to make the card smaller
+        frame = ttk.LabelFrame(parent, text=title, style='TLabelframe')
+        frame.pack(fill='x', expand=True, pady=5)
         frame.columnconfigure(0, weight=1)
 
-        row_idx = 0
+        # --- Header area for badge, text, and folder icon ---
+        header_container = ttk.Frame(frame, style='TFrame')
+        header_container.grid(row=0, column=0, sticky='ew', pady=(0, 5))
+        header_container.columnconfigure(0, weight=1) # Allow text area to expand
+
+        # Left part of the header (badge and instrument text)
+        left_header = ttk.Frame(header_container, style='TFrame')
+        left_header.grid(row=0, column=0, sticky='w')
+
+        if measurement_type:
+            badge_font = font.Font(family='Segoe UI', size=8, weight='bold')
+            badge = tk.Label(left_header, text=measurement_type.upper(), bg=self.CLR_ACCENT_GOLD, fg=self.CLR_TEXT_DARK, font=badge_font, padx=6, pady=2)
+            badge.pack(side='left', anchor='w')
+
         if instruments_text:
-            ttk.Label(frame, text=instruments_text, font=self.FONT_INFO).grid(row=row_idx, column=0, columnspan=2, sticky='w', pady=(0, 8))
-            row_idx += 1
+            # Use a Label that can wrap text to prevent truncation.
+            # The wraplength is an estimate; it will wrap if the text exceeds this width.
+            instrument_label = ttk.Label(left_header, text=instruments_text, font=self.FONT_INFO, wraplength=250, justify='left')
+            instrument_label.pack(side='left', anchor='w', padx=(8, 0), fill='x', expand=True)
 
-        for i, (btn_text, script_key) in enumerate(buttons):
-            self._create_launch_button(frame, btn_text, script_key).grid(row=row_idx + i, column=0, sticky='ew', pady=(0, 4), padx=(0, 4))
-
-        # Add a single folder icon for the suite, linked to the first button's script key
+        # --- Folder Icon Button (moved to the top right) ---
         if buttons:
             first_script_key = buttons[0][1]
-            ttk.Button(frame, text="📁", style='Icon.TButton', command=lambda: self.open_script_folder(first_script_key)).grid(row=row_idx, column=1, rowspan=len(buttons), sticky='ns')
+            folder_button = ttk.Button(header_container, text="📁", style='Icon.TButton', width=3,
+                                       command=lambda: self.open_script_folder(first_script_key))
+            folder_button.grid(row=0, column=1, sticky='e')
+
+        # --- Launch Buttons ---
+        row_idx = 1
+        for i, (btn_text, script_key) in enumerate(buttons):
+            self._create_launch_button(frame, btn_text, script_key).grid(row=row_idx + i, column=0, sticky='ew', pady=(0, 2))
 
     def log(self, message):
         """Logs a message to the console widget with a timestamp."""
@@ -455,7 +481,7 @@ class PICALauncherApp:
                         else:
                             text_area.insert('end', part, "p")
                     text_area.insert('end', '\n')
-        else: # For non-markdown files like LICENSE
+        else:  # For non-markdown files like LICENSE
             text_area.insert('1.0', "\n".join(lines))
             
         text_area.pack(expand=True, fill='both')
@@ -532,9 +558,9 @@ class PICALauncherApp:
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                         content = f.read()
                     if file_path.lower().endswith('.md'):
-                        self._md_cache[file_path] = self._parse_markdown(content)
+                        self._md_cache[file_path] = content.split('\n')
                     else:
-                        self._md_cache[file_path] = content # Cache raw content for non-markdown
+                        self._md_cache[file_path] = content.split('\n') # Cache as list of lines
                     self.log(f"Pre-cached '{name}' for faster access.")
                 except Exception as e:
                     self.log(f"Warning: Could not pre-cache '{name}'. {e}")
