@@ -71,7 +71,8 @@ def launch_plotter_utility():
         messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
 
 def launch_gpib_scanner():
-    scanner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Utilities", "GPIB_Scanner_v1.py")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    scanner_path = os.path.join(script_dir, "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
     Process(target=run_script_process, args=(scanner_path,)).start()
 
 # -------------------------------------------------------------------------------
