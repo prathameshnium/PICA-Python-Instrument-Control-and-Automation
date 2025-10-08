@@ -1,6 +1,6 @@
  # -------------------------------------------------------------------------------
 # Name:         Passive R-T  for Keithley 2400
-# Purpose:      Provide a GUI for passively logging R-T data using a K2400
+# Purpose:      Provide a GUI for passively logging R-T data using a K2400 
 #               and LS350. This version does not control temperature.
 # Author:       Prathamesh Deshmukh (Adapted from 6517B & 2400 scripts)
 # Created:      05/10/2025
@@ -13,6 +13,8 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext, Canvas
 import os, sys
 import time
 import traceback
+import runpy
+from multiprocessing import Process
 from datetime import datetime; import csv
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -40,40 +42,6 @@ try:
         sys.path.append(project_root)
 except Exception:
     pass # Path manipulation can fail in some environments (e.g., frozen executables)
-
-import runpy
-from multiprocessing import Process
-
-def run_script_process(script_path):
-    """
-    Wrapper function to execute a script using runpy in its own directory.
-    This becomes the target for the new, isolated process.
-    """
-    try:
-        os.chdir(os.path.dirname(script_path))
-        runpy.run_path(script_path, run_name="__main__")
-    except Exception as e:
-        print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
-        print(e)
-        print("-------------------------")
-
-def launch_plotter_utility():
-    """Finds and launches the plotter utility script in a new process."""
-    try:
-        # Assumes the plotter is in a standard location relative to this script
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_Frontend_v2.py")
-        if not os.path.exists(plotter_path):
-            messagebox.showerror("File Not Found", f"Plotter utility not found at expected path:\n{plotter_path}")
-            return
-        Process(target=run_script_process, args=(plotter_path,)).start()
-    except Exception as e:
-        messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
-
-def launch_gpib_scanner():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    scanner_path = os.path.join(script_dir, "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
-    Process(target=run_script_process, args=(scanner_path,)).start()
 
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
@@ -123,6 +91,41 @@ class RT_Backend_Passive:
 # -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
+
+def run_script_process(script_path):
+    """
+    Wrapper function to execute a script using runpy in its own directory.
+    This becomes the target for the new, isolated process.
+    """
+    try:
+        os.chdir(os.path.dirname(script_path))
+        runpy.run_path(script_path, run_name="__main__")
+    except Exception as e:
+        print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
+        print(e)
+        print("-------------------------")
+
+def launch_plotter_utility():
+    """Finds and launches the plotter utility script in a new process."""
+    try:
+        # Assumes the plotter is in a standard location relative to this script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_Frontend_v2.py")
+        if not os.path.exists(plotter_path):
+            messagebox.showerror("File Not Found", f"Plotter utility not found at expected path:\n{plotter_path}")
+            return
+        Process(target=run_script_process, args=(plotter_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
+
+def launch_gpib_scanner():
+    """Finds and launches the GPIB scanner utility in a new process."""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        scanner_path = os.path.join(script_dir, "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
+        Process(target=run_script_process, args=(scanner_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
 class RT_GUI_Passive:
     PROGRAM_VERSION = "3.0"
     CLR_BG_DARK = '#2B3D4F'
@@ -169,17 +172,17 @@ class RT_GUI_Passive:
     def create_widgets(self):
         font_title_main = ('Segoe UI', self.FONT_SIZE_BASE + 4, 'bold')
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x')
-        ttk.Label(header, text=f"K2400 & L350: R-T (T-Sensing)", style='Header.TLabel', font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack(side='left', padx=20, pady=10)
-        
+        ttk.Label(header, text="K2400 & L350: R-T (T-Sensing)", style='Header.TLabel', font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack(side='left', padx=20, pady=10)
+
         # --- Plotter Launch Button ---
         plotter_button = ttk.Button(header, text="📈", command=launch_plotter_utility, width=3)
         plotter_button.pack(side='right', padx=10, pady=5)
-
-        main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
         
         # --- GPIB Scanner Launch Button ---
         gpib_button = ttk.Button(header, text="📟", command=launch_gpib_scanner, width=3)
         gpib_button.pack(side='right', padx=(0, 5), pady=5)
+        
+        main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         left_panel_container = ttk.Frame(main_pane)
         main_pane.add(left_panel_container, weight=0)
