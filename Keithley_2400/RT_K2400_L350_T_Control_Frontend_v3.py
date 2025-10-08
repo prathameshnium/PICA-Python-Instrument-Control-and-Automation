@@ -141,7 +141,7 @@ class RT_Backend_Active:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class RT_GUI_Active:
-    PROGRAM_VERSION = "3.0" # UI/UX Update
+    PROGRAM_VERSION = "3.1" # UI/UX Update
     CLR_BG = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG = '#EDF2F4'
     CLR_FRAME_BG = '#3A506B'; CLR_INPUT_BG = '#4C566A'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE'
@@ -174,6 +174,9 @@ class RT_GUI_Active:
         style.map('Start.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG)
         style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
+        # --- NEW: Style for the Browse button ---
+        style.configure('Browse.TButton', foreground=self.CLR_TEXT_DARK, background=self.CLR_ACCENT_BLUE)
+        style.map('Browse.TButton', background=[('active', '#7C899E'), ('hover', '#7C899E')])
         style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_ACCENT_BLUE)
         style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_FG, font=self.FONT_TITLE)
         # --- NEW: Style for Comboboxes to make them more visible ---
@@ -446,12 +449,12 @@ class RT_GUI_Active:
 
     def _create_entry(self, parent, label_text, default_value, row, browse=False):
         ttk.Label(parent, text=f"{label_text}:").grid(row=row, column=0, sticky='w', padx=10, pady=3)
-        entry = ttk.Entry(parent, font=self.FONT_BASE)
-        entry.grid(row=row, column=1, sticky='ew', padx=10, pady=3, columnspan=2 if browse else 1)
+        entry = ttk.Entry(parent, font=self.FONT_BASE, width=30)
+        entry.grid(row=row, column=1, sticky='ew', padx=10, pady=3, columnspan=3 if browse else 1)
         entry.insert(0, default_value); self.entries[label_text] = entry
         if browse: # Special handling for the save location entry
-            btn = ttk.Button(parent, text="...", width=3, command=self._browse_file_location)
-            btn.grid(row=row, column=3, sticky='e', padx=(0,10))
+            btn = ttk.Button(parent, text="Browse...", style='Browse.TButton', command=self._browse_file_location)
+            btn.grid(row=row, column=4, sticky='e', padx=(0,10))
             entry.config(state='disabled')
 
     def _create_combobox(self, parent, label_text, row):
