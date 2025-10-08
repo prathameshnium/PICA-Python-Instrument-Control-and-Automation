@@ -15,6 +15,7 @@ from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
 
 # --- Multi-instance support ---
@@ -142,23 +143,15 @@ class PlotterApp:
         })
 
     def create_widgets(self):
-        header = tk.Frame(self.root, bg=self.CLR_HEADER)
-        header.pack(side='top', fill='x', padx=1, pady=1)
         header = tk.Frame(self.root, bg=self.CLR_HEADER); header.pack(side='top', fill='x', padx=1, pady=1)
         header.grid_columnconfigure(1, weight=1) # Allow center column to expand
 
-        # --- New Instance Button ---
-        new_instance_button = ttk.Button(header, text="+", command=launch_new_instance, width=3)
-        new_instance_button.pack(side='right', padx=(0, 10), pady=10)
         # --- Left Section: Program Name ---
         left_header_frame = tk.Frame(header, bg=self.CLR_HEADER)
         left_header_frame.grid(row=0, column=0, sticky='w')
         font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
         ttk.Label(left_header_frame, text=f"PICA General Purpose Plotter", style='Header.TLabel', font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack(side='left', padx=20, pady=10)
 
-        # --- Header with Logo and Institute Name ---
-        logo_canvas = Canvas(header, width=60, height=60, bg=self.CLR_HEADER, highlightthickness=0)
-        logo_canvas.pack(side='left', padx=(20, 15), pady=10)
         # --- Center Section: Logo and Institute Name ---
         center_header_frame = tk.Frame(header, bg=self.CLR_HEADER)
         center_header_frame.grid(row=0, column=1, sticky='ew')
@@ -171,16 +164,10 @@ class PlotterApp:
                 logo_canvas.create_image(30, 30, image=self.logo_image)
             except Exception as e:
                 self.log(f"Warning: Could not load logo. {e}")
-
-        institute_frame = tk.Frame(header, bg=self.CLR_HEADER); institute_frame.pack(side='left')
         institute_frame = tk.Frame(center_header_frame, bg=self.CLR_HEADER); institute_frame.pack(side='left', padx=15)
         ttk.Label(institute_frame, text="UGC-DAE Consortium for Scientific Research", style='Header.TLabel', font=('Segoe UI', 14, 'bold')).pack(anchor='w')
         ttk.Label(institute_frame, text="Mumbai Centre", style='Header.TLabel', font=('Segoe UI', 12)).pack(anchor='w')
 
-        right_header_frame = tk.Frame(header, bg=self.CLR_HEADER)
-        right_header_frame.pack(side='right', padx=20, pady=10)
-        font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
-        ttk.Label(right_header_frame, text=f"PICA General Purpose Plotter", style='Header.TLabel', font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack()
         # --- Right Section: New Instance Button ---
         right_header_frame = tk.Frame(header, bg=self.CLR_HEADER); right_header_frame.grid(row=0, column=2, sticky='e')
         new_instance_button = ttk.Button(right_header_frame, text="+", command=launch_new_instance, width=3)
@@ -328,16 +315,23 @@ class PlotterApp:
         if not filepaths:
             return
 
+        new_files_added = False
         for fp in filepaths:
             if fp not in self.file_data_cache:
+                new_files_added = True
                 self.file_data_cache[fp] = {"path": fp} # Add placeholder
                 self._add_file_to_ui(fp)
                 self.log(f"Added file: {os.path.basename(fp)}")
+                # Load data for the new file without making it active
+                self._load_file_data_into_cache(fp)
 
         # If this is the first file added, make it active
         if filepaths and self.active_filepath is None:
             self._set_active_file(filepaths[0])
-
+        elif new_files_added:
+            # If new files were added to an existing list, just replot
+            self.plot_data()
+            
     def _add_file_to_ui(self, filepath):
         """Creates and adds a checkbox and label for a new file to the UI."""
         var = tk.BooleanVar(value=True)
@@ -404,6 +398,57 @@ class PlotterApp:
         if self.active_filepath != filepath:
             self.active_filepath = filepath
             self.load_file_data(filepath)
+
+    def _load_file_data_into_cache(self, filepath):
+        """Loads file data into the cache without affecting the UI state (e.g., active file)."""
+        if not filepath or not os.path.exists(filepath):
+            return False
+
+        try:
+            # Find the header row
+            header_line_index = -1
+            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                for i, line in enumerate(f):
+                    line = line.strip()
+                    if line and not line.startswith('#') and (',' in line or '\t' in line):
+                        header_line_index = i
+                        break
+            
+            if header_line_index == -1:
+                raise ValueError("No valid data header row found.")
+
+            # Use genfromtxt to parse the data
+            data_array = np.genfromtxt(filepath, delimiter=',', names=True, comments='#', autostrip=True,
+                                       invalid_raise=False, skip_header=header_line_index)
+            
+            if not isinstance(data_array, np.ndarray) or data_array.dtype is None or data_array.dtype.names is None:
+                raise ValueError("Could not parse data from file.")
+                
+            if data_array.size == 0:
+                self.log(f"Warning: File '{os.path.basename(filepath)}' contains no valid data rows.")
+
+            headers = [name.strip() for name in data_array.dtype.names]
+            
+            # Store data in our cache
+            file_info = self.file_data_cache[filepath]
+            file_info['headers'] = headers
+            file_info['data'] = {name: data_array[name] for name in headers}
+            file_info['mod_time'] = os.path.getmtime(filepath)
+            file_info['size'] = os.path.getsize(filepath)
+            
+            self.log(f"Cached {len(data_array)} data points from '{os.path.basename(filepath)}'.")
+            return True
+
+        except Exception as e:
+            # If loading fails, create an empty but valid cache entry to prevent errors.
+            if filepath in self.file_data_cache:
+                self.file_data_cache[filepath].update({"headers": [], "data": {}})
+            
+            self.log(f"Error caching file '{os.path.basename(filepath)}': {e}")
+            # We don't show a messagebox here to avoid spamming the user if they select multiple bad files.
+            # The log message is sufficient.
+            return False
+
 
     def load_file_data(self, filepath):
         if not filepath:
@@ -592,13 +637,21 @@ class PlotterApp:
                 plot_y = raw_y[finite_mask]
 
                 if plot_x.size > 0:
-                    # --- SIMPLIFIED PLOTTING ---
-                    self.ax_main.plot(plot_x, plot_y, marker='o', markersize=4, linestyle='-', label=filename)
+                    # --- Set the label for the legend ---
+                    if len(selected_filepaths) > 1:
+                        label_text = f"{y_col} vs {x_col} ({filename})"
+                    else:
+                        label_text = f"{y_col} vs {x_col}"
+                    self.ax_main.plot(plot_x, plot_y, marker='o', markersize=4, linestyle='-', label=label_text)
                     plotted_something = True
 
             # --- Finalize Plot ---
             if plotted_something:
-                self.ax_main.legend()
+                legend_title = f"File: {os.path.basename(selected_filepaths[0])}" if len(selected_filepaths) == 1 else "Multiple Files"
+                # Set legend text and title color to be visible against the white background
+                leg = self.ax_main.legend(title=legend_title, labelcolor=self.CLR_CONSOLE_BG)
+                if leg:
+                    leg.get_title().set_color(self.CLR_CONSOLE_BG)
                 self.log(f"Plot updated for {len(selected_filepaths)} selected file(s).")
             else:
                 self.log("No valid data to plot for the selected files and columns.")
@@ -606,7 +659,11 @@ class PlotterApp:
             self.ax_main.set_xscale('log' if self.x_log_var.get() else 'linear')
             self.ax_main.set_yscale('log' if self.y_log_var.get() else 'linear')
             self.ax_main.set_xlabel(x_col); self.ax_main.set_ylabel(y_col)
-            self.ax_main.set_title(f"{y_col} vs. {x_col}")
+            # Set title to filename if one file is selected, otherwise a generic title
+            if len(selected_filepaths) == 1:
+                self.ax_main.set_title(os.path.basename(selected_filepaths[0]), fontweight='bold')
+            else:
+                self.ax_main.set_title(f"{y_col} vs. {x_col}", fontweight='bold')
             self.figure.tight_layout()
 
         except Exception as e:
