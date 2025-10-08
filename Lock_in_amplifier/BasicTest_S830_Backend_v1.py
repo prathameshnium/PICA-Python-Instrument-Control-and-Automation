@@ -18,8 +18,9 @@ def main():
     try:
         # 1. Initialize the VISA Resource Manager
         # This is the main object that finds and manages instruments.
-        resource_manager = pyvisa.ResourceManager()
-        print(f"VISA library version: {resource_manager.version}")
+        # Explicitly specify the pyvisa-py backend to avoid dependency issues.
+        resource_manager = pyvisa.ResourceManager('@py')
+        # print(f"VISA library version: {resource_manager.version}") # .version attribute is deprecated/removed
         print(f"Available resources: {resource_manager.list_resources()}")
 
         # 2. Open a connection to the instrument
