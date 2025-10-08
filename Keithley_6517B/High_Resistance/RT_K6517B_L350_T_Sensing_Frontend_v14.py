@@ -44,12 +44,6 @@ except ImportError:
     VisaIOError = None
     PYMEASURE_AVAILABLE = False
 
-try:
-    # Import the plotter launch function from the main PICA launcher
-    from PICA_v6 import launch_plotter_utility
-except (ImportError, ModuleNotFoundError):
-    # Fallback if the script is run standalone
-    launch_plotter_utility = lambda: print("Plotter launch function not found.")
 
 def run_script_process(script_path):
     """
@@ -64,12 +58,25 @@ def run_script_process(script_path):
         print(e)
         print("-------------------------")
 
+def launch_plotter_utility():
+    """Finds and launches the plotter utility script in a new process."""
+    try:
+        # Assumes the plotter is in a standard location relative to this script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        plotter_path = os.path.join(script_dir, "..", "..", "..", "Utilities", "PlotterUtil_Frontend_v2.py")
+        if not os.path.exists(plotter_path):
+            messagebox.showerror("File Not Found", f"Plotter utility not found at expected path:\n{plotter_path}")
+            return
+        Process(target=run_script_process, args=(plotter_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
+
 def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
     try:
         # Assumes the scanner is in a standard location relative to this script
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        scanner_path = os.path.join(script_dir, "..", "..", "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
+        scanner_path = os.path.join(script_dir, "..", "..", "..", "Utilities", "GPIB_Scanner_v1.py")
         if not os.path.exists(scanner_path):
             messagebox.showerror("File Not Found", f"GPIB Scanner not found at expected path:\n{scanner_path}")
             return

@@ -38,12 +38,8 @@ try:
     project_root = os.path.abspath(os.path.join(script_dir, os.pardir))
     if project_root not in sys.path:
         sys.path.append(project_root)
-
-    # Import the plotter launch function from the main PICA launcher
-    from PICA_v6 import launch_plotter_utility
-except (ImportError, ModuleNotFoundError):
-    # Fallback if the script is run standalone
-    launch_plotter_utility = lambda: print("Plotter launch function not found.")
+except Exception:
+    pass # Path manipulation can fail in some environments (e.g., frozen executables)
 
 import runpy
 from multiprocessing import Process
@@ -61,8 +57,21 @@ def run_script_process(script_path):
         print(e)
         print("-------------------------")
 
+def launch_plotter_utility():
+    """Finds and launches the plotter utility script in a new process."""
+    try:
+        # Assumes the plotter is in a standard location relative to this script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_Frontend_v2.py")
+        if not os.path.exists(plotter_path):
+            messagebox.showerror("File Not Found", f"Plotter utility not found at expected path:\n{plotter_path}")
+            return
+        Process(target=run_script_process, args=(plotter_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
+
 def launch_gpib_scanner():
-    scanner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
+    scanner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Utilities", "GPIB_Scanner_v1.py")
     Process(target=run_script_process, args=(scanner_path,)).start()
 
 # -------------------------------------------------------------------------------
@@ -216,7 +225,7 @@ class RT_GUI_Active:
         logo_canvas.grid(row=0, column=0, rowspan=3, padx=10, pady=10)
         try: # Use a more robust relative path
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            logo_path = os.path.join(script_dir, "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+            logo_path = os.path.join(script_dir, "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg") # This path is correct
             if PIL_AVAILABLE and os.path.exists(logo_path):
                 img = Image.open(logo_path).resize((LOGO_SIZE, LOGO_SIZE), Image.Resampling.LANCZOS)
                 self.logo_image = ImageTk.PhotoImage(img)
