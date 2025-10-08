@@ -255,15 +255,24 @@ class RT_GUI_Active:
 
     def _populate_right_panel(self, panel):
         container = ttk.LabelFrame(panel, text='Live R-T Curve'); container.pack(fill='both', expand=True)
-        # --- MODIFIED: Animated=True for blitting ---
         self.figure = Figure(dpi=100, facecolor='white', constrained_layout=True)
-        self.ax_main = self.figure.add_subplot(111)
+        
+        # --- MODIFIED: Create two subplots sharing the x-axis ---
+        self.ax_main, self.ax_sub = self.figure.subplots(2, 1, sharex=True)
+
+        # Top plot: Resistance vs. Temperature
         self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-', animated=True)
-        self.ax_main.set_title("Waiting for experiment...", fontweight='bold'); self.ax_main.set_xlabel("Temperature (K)"); self.ax_main.set_ylabel("Resistance (Ω)"); self.ax_main.set_yscale('log')
+        self.ax_main.set_title("Live R-T and V-T Curves", fontweight='bold')
+        self.ax_main.set_ylabel("Resistance (Ω)"); self.ax_main.set_yscale('log')
         self.ax_main.grid(True, linestyle='--', alpha=0.6)
+
+        # Bottom plot: Voltage vs. Temperature
+        self.line_sub, = self.ax_sub.plot([], [], color=self.CLR_ACCENT_BLUE, marker='o', markersize=4, linestyle='-', animated=True)
+        self.ax_sub.set_xlabel("Temperature (K)"); self.ax_sub.set_ylabel("Voltage (V)")
+        self.ax_sub.grid(True, linestyle='--', alpha=0.6)
+
         self.canvas = FigureCanvasTkAgg(self.figure, container)
         self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
-        # --- MODIFIED: Connect draw event for blitting ---
         self.canvas.mpl_connect('draw_event', self._on_draw)
     def _create_params_panel(self, parent):
         container = ttk.Frame(parent)
@@ -323,10 +332,18 @@ class RT_GUI_Active:
             self.set_ui_state(running=True); self.experiment_state = 'stabilizing'
             for key in self.data_storage: self.data_storage[key].clear()
             # --- MODIFIED: Plot setup for blitting ---
-            self.line_main.set_data([], []); self.ax_main.relim(); self.ax_main.autoscale_view()
-            self.ax_main.set_title(f"R-T Curve: {self.params['name']}"); self.ax_main.set_yscale('log'); self.canvas.draw_idle()
+            self.line_main.set_data([], [])
+            self.ax_main.set_title(f"R-T Curve: {self.params['name']}")
+            self.ax_main.set_yscale('log')
+            self.ax_main.relim()
+            self.ax_main.autoscale_view()
+            self.canvas.draw() # Full draw to prepare background
+            self.plot_bg = self.canvas.copy_from_bbox(self.ax_main.bbox) # Cache background
+            self.line_main.set_animated(True) # Set line to animated for blitting
+
             self.log(f"Starting stabilization at {self.params['start_temp']} K...")
             self.root.after(100, self._experiment_loop)
+
         except Exception as e:
             self.log(f"ERROR: {traceback.format_exc()}"); messagebox.showerror("Start Failed", f"{e}"); self.backend.shutdown()
 
@@ -334,7 +351,10 @@ class RT_GUI_Active:
         if self.experiment_state == 'idle': return
         self.log(f"Stopping... {reason}" if reason else "Stopping by user request.")
         self.experiment_state = 'idle'; self.backend.shutdown(); self.set_ui_state(running=False)
-        self.ax_main.set_title("Experiment stopped."); self.canvas.draw_idle()
+        # --- MODIFIED: Disable animation for final draw (both plots) ---
+        self.line_main.set_animated(False); self.line_sub.set_animated(False)
+        self.plot_bg = None
+        self.ax_main.set_title("Experiment stopped."); self.canvas.draw()
         if reason: messagebox.showinfo("Experiment Finished", f"Reason: {reason}")
 
     # --- NON-BLOCKING HEATER LOGIC (from 6517B scripts) ---
@@ -384,17 +404,23 @@ class RT_GUI_Active:
                 self.data_storage['temperature'].append(temp); self.data_storage['voltage'].append(voltage); self.data_storage['resistance'].append(resistance)
                 with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{temp:.4f}", f"{voltage:.6e}", f"{resistance:.6e}", f"{elapsed:.2f}"])
                 
-                # --- MODIFIED: Efficient plotting with blitting ---
-                self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
-                self.ax_main.relim(); self.ax_main.autoscale_view()
-                self.ax_main.set_yscale('log') # Ensure log scale is maintained
-                self.canvas.draw_idle() # Full redraw is acceptable here as updates are slow (every ~1s)
-                # For faster updates, the same blitting logic from IV_K2400 can be used:
-                # if self.plot_bg:
-                #     self.canvas.restore_region(self.plot_bg)
-                #     self.ax_main.draw_artist(self.line_main)
-                #     self.canvas.blit(self.ax_main.bbox)
-                #     self.canvas.flush_events()
+                # --- MODIFIED: Use blitting for efficient plotting ---
+                if self.plot_bg:
+                    self.canvas.restore_region(self.plot_bg) # Restore entire figure background
+                    # Update data for both lines
+                    self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
+                    self.line_sub.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
+                    # Autoscale and draw artists
+                    self.ax_main.relim(); self.ax_main.autoscale_view()
+                    self.ax_sub.relim(); self.ax_sub.autoscale_view()
+                    self.ax_main.draw_artist(self.line_main)
+                    self.ax_sub.draw_artist(self.line_sub)
+                    self.canvas.blit(self.figure.bbox) # Blit the entire figure
+                    self.canvas.flush_events()
+                else: # Fallback to full redraw if blitting isn't ready
+                    self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
+                    self.line_sub.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
+                    self.canvas.draw_idle()
 
                 # Check end conditions
                 if temp >= self.params['cutoff']:
@@ -467,7 +493,7 @@ class RT_GUI_Active:
     def _on_draw(self, event):
         """Callback for draw events to cache the plot background."""
         if self.is_resizing: return
-        self.plot_bg = self.canvas.copy_from_bbox(self.ax_main.bbox)
+        self.plot_bg = self.canvas.copy_from_bbox(self.figure.bbox)
 
     def _on_resize(self, event):
         """Handle window resize events to trigger a full redraw."""
