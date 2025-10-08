@@ -92,8 +92,17 @@ class PlotterApp:
         self.active_filepath = None
         # New data structure to hold data for multiple files
         # Format: { "filepath": {"headers": [...], "data": {...}, "mod_time": ..., "size": ...} }
+        # --- Checkbox UI Change ---
         self.file_data_cache = {}
+        self.file_ui_elements = {} # Stores {filepath: {'var': tk.BooleanVar, 'chk': ttk.Checkbutton, 'lbl': ttk.Label}}
+
         self.logo_image = None
+        # --- Blitting optimization ---
+        self.plot_lines = []
+        self.plot_bg = None
+        self.is_resizing = False
+        self.resize_timer = None
+
         self.file_watcher_job = None
 
         self.setup_styles()
@@ -101,31 +110,32 @@ class PlotterApp:
         self.log("Welcome to the PICA Plotter Utility. Please select a file to begin.")
 
     def setup_styles(self):
-        style = ttk.Style(self.root)
-        style.theme_use('clam')
-        style.configure('.', background=self.CLR_BG, foreground=self.CLR_FG, font=self.FONT_BASE)
-        style.configure('TFrame', background=self.CLR_BG)
-        style.configure('TPanedWindow', background=self.CLR_BG)
-        style.configure('TLabel', background=self.CLR_FRAME_BG, foreground=self.CLR_FG)
-        style.configure('Header.TLabel', background=self.CLR_HEADER)
-        style.configure('TEntry', fieldbackground=self.CLR_INPUT_BG, foreground=self.CLR_FG, insertcolor=self.CLR_FG)
-        style.configure('TButton', font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_HEADER)
-        style.map('TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_BG), ('hover', self.CLR_BG)])
-        style.configure('Plot.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_BG)
-        style.map('Plot.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
+        # ... (style configuration remains the same)
+        self.style = ttk.Style(self.root)
+        self.style.theme_use('clam')
+        self.style.configure('.', background=self.CLR_BG, foreground=self.CLR_FG, font=self.FONT_BASE)
+        self.style.configure('TFrame', background=self.CLR_BG)
+        self.style.configure('TPanedWindow', background=self.CLR_BG)
+        self.style.configure('TLabel', background=self.CLR_FRAME_BG, foreground=self.CLR_FG)
+        self.style.configure('Header.TLabel', background=self.CLR_HEADER)
+        self.style.configure('TEntry', fieldbackground=self.CLR_INPUT_BG, foreground=self.CLR_FG, insertcolor=self.CLR_FG)
+        self.style.configure('TButton', font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_HEADER)
+        self.style.map('TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_BG), ('hover', self.CLR_BG)])
+        self.style.configure('Plot.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_BG)
+        self.style.map('Plot.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
 
         # Combobox styling
-        style.map('TCombobox',
+        self.style.map('TCombobox',
                   fieldbackground=[('readonly', self.CLR_INPUT_BG)],
                   selectbackground=[('readonly', self.CLR_ACCENT_BLUE)],
                   selectforeground=[('readonly', self.CLR_FG)],
                   foreground=[('readonly', self.CLR_FG)])
-        style.configure('TCombobox', arrowcolor=self.CLR_FG)
+        self.style.configure('TCombobox', arrowcolor=self.CLR_FG)
 
-        style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_ACCENT_BLUE)
-        style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_FG, font=self.FONT_TITLE)
-        style.configure('TCheckbutton', background=self.CLR_FRAME_BG, foreground=self.CLR_FG)
-        style.map('TCheckbutton',
+        self.style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_ACCENT_BLUE)
+        self.style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_FG, font=self.FONT_TITLE)
+        self.style.configure('TCheckbutton', background=self.CLR_FRAME_BG, foreground=self.CLR_FG)
+        self.style.map('TCheckbutton',
                   background=[('active', self.CLR_FRAME_BG)],
                   indicatorcolor=[('selected', self.CLR_ACCENT_GREEN), ('!selected', self.CLR_FG)])
         mpl.rcParams.update({
@@ -136,6 +146,8 @@ class PlotterApp:
             'xtick.color': self.CLR_FG, 'ytick.color': self.CLR_FG,
             'text.color': self.CLR_FG,
         })
+        # Connect window resize event for blitting
+        self.root.bind('<Configure>', self._on_resize)
 
     def create_widgets(self):
         header = tk.Frame(self.root, bg=self.CLR_HEADER)
@@ -190,9 +202,26 @@ class PlotterApp:
         ttk.Button(file_buttons_frame, text="Add File(s)...", command=self.browse_files).grid(row=0, column=0, sticky='ew', padx=(0,5))
         ttk.Button(file_buttons_frame, text="Remove Selected", command=self.remove_selected_file).grid(row=0, column=1, sticky='ew', padx=(5,0))
 
-        self.file_listbox = tk.Listbox(file_frame, bg=self.CLR_INPUT_BG, fg=self.CLR_FG, selectbackground=self.CLR_ACCENT_BLUE, height=5, borderwidth=0, highlightthickness=0, selectmode=tk.EXTENDED)
-        self.file_listbox.grid(row=1, column=0, sticky='ew', padx=10, pady=(0,10))
-        self.file_listbox.bind('<<ListboxSelect>>', self.on_file_select)
+        # --- Checkbox UI: Create a scrollable frame for file checkboxes ---
+        list_container = ttk.Frame(file_frame, style='TFrame')
+        list_container.grid(row=1, column=0, sticky='nsew', padx=10, pady=(0,10))
+        list_container.rowconfigure(0, weight=1)
+        list_container.columnconfigure(0, weight=1)
+        
+        file_canvas = tk.Canvas(list_container, bg=self.CLR_INPUT_BG, highlightthickness=0, height=100)
+        scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=file_canvas.yview)
+        self.file_list_frame = ttk.Frame(file_canvas, style='TFrame') # This frame will hold the checkboxes
+        self.file_list_frame.configure(style='Input.TFrame') # Style to match input background
+
+        file_canvas.create_window((0, 0), window=self.file_list_frame, anchor="nw")
+        file_canvas.configure(yscrollcommand=scrollbar.set)
+        file_canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        self.file_list_frame.bind("<Configure>", lambda e: file_canvas.configure(scrollregion=file_canvas.bbox("all")))
+
+        self.column_source_var = tk.StringVar(value="Columns from: (no file selected)")
+        column_source_label = ttk.Label(file_frame, textvariable=self.column_source_var, style='TLabel', font=('Segoe UI', 9, 'italic'), wraplength=350)
+        column_source_label.grid(row=2, column=0, sticky='w', padx=10, pady=(0, 10))
 
 
         # --- Plotting Parameters ---
@@ -227,6 +256,7 @@ class PlotterApp:
         # Set the background of the options frame to match its parent
         options_frame.configure(style='TFrame')
 
+        self.style.configure('Input.TFrame', background=self.CLR_INPUT_BG)
         ttk.Button(params_frame, text="Reload & Plot", style="Plot.TButton", command=lambda: self.load_file_data(self.active_filepath)).grid(row=3, column=0, columnspan=2, sticky='ew', padx=10, pady=10)
 
         # --- Information Box ---
@@ -261,6 +291,11 @@ class PlotterApp:
         self.canvas = FigureCanvasTkAgg(self.figure, container)
         self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
 
+        # Connect draw event for blitting
+        self.canvas.mpl_connect('draw_event', self._on_draw)
+        # --- FIX: Connect motion notify to prevent plot disappearing ---
+        self.canvas.mpl_connect('motion_notify_event', self._on_motion)
+
         # Add the Matplotlib navigation toolbar
         toolbar_frame = tk.Frame(container, bg=self.CLR_FRAME_BG)
         toolbar_frame.pack(fill='x', side='bottom', pady=(0,5))
@@ -291,68 +326,80 @@ class PlotterApp:
 
         for fp in filepaths:
             if fp not in self.file_data_cache:
-                self.file_listbox.insert('end', os.path.basename(fp))
                 self.file_data_cache[fp] = {"path": fp} # Add placeholder
+                self._add_file_to_ui(fp)
                 self.log(f"Added file: {os.path.basename(fp)}")
 
-        # If this is the first file, select and load it
-        if self.file_listbox.size() > 0 and self.active_filepath is None:
-            self.file_listbox.selection_set(0)
-            self.on_file_select()
+        # If this is the first file added, make it active
+        if filepaths and self.active_filepath is None:
+            self._set_active_file(filepaths[0])
+
+    def _add_file_to_ui(self, filepath):
+        """Creates and adds a checkbox and label for a new file to the UI."""
+        var = tk.BooleanVar(value=True)
+        
+        # Create a frame for each file entry
+        entry_frame = ttk.Frame(self.file_list_frame, style='Input.TFrame')
+        entry_frame.pack(fill='x', expand=True)
+
+        chk = ttk.Checkbutton(entry_frame, variable=var, command=self.plot_data)
+        chk.pack(side='left', padx=(5,0))
+
+        filename = os.path.basename(filepath)
+        lbl = ttk.Label(entry_frame, text=filename, style='TLabel', anchor='w', background=self.CLR_INPUT_BG)
+        lbl.pack(side='left', fill='x', expand=True, padx=5)
+        lbl.bind("<Button-1>", lambda e, fp=filepath: self._set_active_file(fp))
+
+        self.file_ui_elements[filepath] = {'var': var, 'chk': chk, 'lbl': lbl, 'frame': entry_frame}
 
     def remove_selected_file(self):
-        selected_indices = self.file_listbox.curselection()
-        if not selected_indices:
+        # Remove files that are currently checked
+        paths_to_remove = [fp for fp, ui in self.file_ui_elements.items() if ui['var'].get()]
+        if not paths_to_remove:
+            messagebox.showinfo("Remove Files", "No files are selected (checked) to be removed.")
             return
 
-        selected_index = selected_indices[0]
-        filename_to_remove = self.file_listbox.get(selected_index)
-        
-        # Find the full path from the cache
-        path_to_remove = None
-        for path, data in self.file_data_cache.items():
-            if os.path.basename(path) == filename_to_remove:
-                path_to_remove = path
-                break
+        for path in paths_to_remove:
+            if path in self.file_ui_elements:
+                self.file_ui_elements[path]['frame'].destroy()
+                del self.file_ui_elements[path]
+            if path in self.file_data_cache:
+                del self.file_data_cache[path]
+            self.log(f"Removed file: {os.path.basename(path)}")
 
-        if path_to_remove:
-            del self.file_data_cache[path_to_remove]
-            self.file_listbox.delete(selected_index)
-            self.log(f"Removed file: {filename_to_remove}")
-
-            # If the removed file was the active one, clear the plot
-            if self.active_filepath == path_to_remove:
+            # If the active file was removed, find a new one or reset
+            if self.active_filepath == path:
                 self.active_filepath = None
-                self.x_col_cb.set('')
-                self.y_col_cb.set('')
-                self.x_col_cb['values'] = []
-                self.y_col_cb['values'] = []
-                self.plot_data()
+                # Try to set a new active file
+                remaining_files = list(self.file_ui_elements.keys())
+                if remaining_files:
+                    self._set_active_file(remaining_files[0])
+                else:
+                    self._set_active_file(None) # No files left, so reset
+        
+        self.plot_data() # Re-plot with remaining files
 
-    def on_file_select(self, event=None):
-        selected_indices = self.file_listbox.curselection()
-        if not selected_indices:
+    def _set_active_file(self, filepath):
+        """Sets a file as 'active' for populating column dropdowns."""
+        # Reset background color for all labels
+        for ui in self.file_ui_elements.values():
+            ui['lbl'].configure(background=self.CLR_INPUT_BG)
+
+        if filepath is None:
             self.active_filepath = None
-            self.plot_data() # Clear plot if nothing is selected
+            self.column_source_var.set("Columns from: (no file selected)")
+            self.x_col_cb.set(''); self.y_col_cb.set('')
+            self.x_col_cb['values'] = []; self.y_col_cb['values'] = []
             return
 
-        # The "active" file for populating column selectors is the first one selected.
-        first_selected_filename = self.file_listbox.get(selected_indices[0])
-        
-        # Find the full path from the cache for the first selected file
-        path_to_load = None
-        for path, data in self.file_data_cache.items():
-            if os.path.basename(path) == first_selected_filename:
-                path_to_load = path
-                break
-        
-        if path_to_load:
-            # Only reload and update columns if the primary active file has changed
-            if self.active_filepath != path_to_load:
-                self.active_filepath = path_to_load
-                self.load_file_data(path_to_load) # This will trigger a plot_data call in its 'finally' block
-            else:
-                self.plot_data() # If primary file is the same, just replot with new selection
+        # Highlight the new active file's label
+        if filepath in self.file_ui_elements:
+            self.file_ui_elements[filepath]['lbl'].configure(background=self.CLR_ACCENT_BLUE)
+
+        self.column_source_var.set(f"Columns from: {os.path.basename(filepath)}")
+        if self.active_filepath != filepath:
+            self.active_filepath = filepath
+            self.load_file_data(filepath)
 
     def load_file_data(self, filepath):
         if not filepath:
@@ -427,6 +474,7 @@ class PlotterApp:
             if filepath in self.file_data_cache:
                 # Create an empty but valid cache entry.
                 self.file_data_cache[filepath] = {"path": filepath, "headers": [], "data": {}}
+            self.column_source_var.set("Columns from: (no file selected)")
             
             # --- FIX: Explicitly clear the active file path and plot on error ---
             self.active_filepath = None # This is the key change to reset the state
@@ -507,31 +555,32 @@ class PlotterApp:
     def plot_data(self, event=None):
         x_col = self.x_col_cb.get()
         y_col = self.y_col_cb.get()
-        selected_indices = self.file_listbox.curselection()
-
+        # --- Checkbox UI: Get selected files from checkboxes ---
+        selected_filepaths = [fp for fp, ui in self.file_ui_elements.items() if ui['var'].get()]
+        
         self.ax_main.clear() # Clear axes for fresh plot
+        self.plot_lines.clear() # Clear old line artists
         self.ax_main.grid(True, linestyle='--', alpha=0.6)
 
-        if not selected_indices or not all([x_col, y_col]):
-            self.ax_main.set_title("Select file(s) and columns to plot")
+        if not selected_filepaths or not all([x_col, y_col]):
+            # --- Blitting: Invalidate background and disable animation on clear ---
+            self.plot_bg = None
+            self.canvas.draw()
+            self.ax_main.set_title("Click 'Add File(s)...' to begin")
             self.ax_main.set_xlabel("X-Axis"); self.ax_main.set_ylabel("Y-Axis")
             self.canvas.draw(); return
 
         plotted_something = False
         try:
-            selected_filenames = [self.file_listbox.get(i) for i in selected_indices]
-            
-            for filename in selected_filenames:
-                # Find the full path for the current filename in the loop
-                filepath = next((path for path, data in self.file_data_cache.items() if os.path.basename(path) == filename), None)
-                if not filepath: continue
-
+            for filepath in selected_filepaths:
                 file_info = self.file_data_cache.get(filepath)
+                filename = os.path.basename(filepath)
+
                 if not file_info or 'headers' not in file_info or not file_info['headers']:
                     self.log(f"Skipping '{filename}': Data is missing or invalid.")
                     continue
 
-                if x_col not in file_info['headers'] or y_col not in file_info['headers']:
+                if x_col not in file_info.get('headers', []) or y_col not in file_info.get('headers', []):
                     self.log(f"Skipping '{filename}': Does not contain '{x_col}' or '{y_col}'.")
                     continue
 
@@ -543,13 +592,15 @@ class PlotterApp:
                 plot_y = raw_y[finite_mask]
 
                 if plot_x.size > 0:
-                    self.ax_main.plot(plot_x, plot_y, marker='o', markersize=4, linestyle='-', label=filename)
+                    # --- Blitting: Set animated=True for performance ---
+                    line, = self.ax_main.plot(plot_x, plot_y, marker='o', markersize=4, linestyle='-', label=filename, animated=True)
+                    self.plot_lines.append(line)
                     plotted_something = True
 
             # --- Finalize Plot ---
             if plotted_something:
                 self.ax_main.legend()
-                self.log(f"Plot updated for {len(selected_filenames)} selected file(s).")
+                self.log(f"Plot updated for {len(selected_filepaths)} selected file(s).")
             else:
                 self.log("No valid data to plot for the selected files and columns.")
 
@@ -557,7 +608,19 @@ class PlotterApp:
             self.ax_main.set_yscale('log' if self.y_log_var.get() else 'linear')
             self.ax_main.set_xlabel(x_col); self.ax_main.set_ylabel(y_col)
             self.ax_main.set_title(f"{y_col} vs. {x_col}")
-            self.figure.tight_layout(); self.canvas.draw()
+            self.figure.tight_layout()
+
+            # --- Blitting: Perform a full draw to establish the background ---
+            self.canvas.draw()
+
+            # --- Blitting: If live updating, immediately update plot with blit ---
+            if self.live_update_var.get() and self.plot_bg:
+                self.canvas.restore_region(self.plot_bg)
+                for line in self.plot_lines:
+                    self.ax_main.draw_artist(line)
+                self.canvas.blit(self.ax_main.bbox)
+                self.canvas.flush_events()
+
 
         except Exception as e:
             self.log(f"Error plotting data: {traceback.format_exc()}")
@@ -607,6 +670,38 @@ class PlotterApp:
             # File might have been deleted or is temporarily inaccessible
             self.log("File watcher stopped: file is inaccessible or has been deleted.")
             self.stop_file_watcher()
+    
+    # --- Blitting and resize handling methods ---
+    def _on_draw(self, event):
+        """Callback for draw events to cache the plot background."""
+        if self.is_resizing or not self.plot_lines: return
+        # Invalidate background and capture the new one
+        self.plot_bg = None
+        self.plot_bg = self.canvas.copy_from_bbox(self.ax_main.bbox)
+
+    def _on_motion(self, event):
+        """Callback for mouse motion to redraw artists and prevent disappearing plots."""
+        # This is the fix for the disappearing plot lines on mouse hover.
+        if self.plot_bg is None or not self.plot_lines: return
+        self.canvas.restore_region(self.plot_bg)
+        for line in self.plot_lines:
+            self.ax_main.draw_artist(line)
+        self.canvas.blit(self.ax_main.bbox)
+
+    def _on_resize(self, event):
+        """Handle window resize events to trigger a full redraw."""
+        self.is_resizing = True
+        self.plot_bg = None # Invalidate background
+        if self.resize_timer:
+            self.root.after_cancel(self.resize_timer)
+        self.resize_timer = self.root.after(300, self._finalize_resize)
+
+    def _finalize_resize(self):
+        """Finalize the resize by performing a full redraw."""
+        self.is_resizing = False
+        self.resize_timer = None
+        if self.canvas:
+            self.canvas.draw_idle()
 
 if __name__ == '__main__':
     # This is ESSENTIAL for multiprocessing to work in a bundled executable
