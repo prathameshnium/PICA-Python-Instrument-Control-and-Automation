@@ -77,7 +77,7 @@ def launch_gpib_scanner():
     try:
         # Assumes the scanner is in a standard location relative to this script
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        scanner_path = os.path.join(script_dir, "..", "..", "..", "Utilities", "GPIB_Scanner_v1.py")
+        scanner_path = os.path.join(script_dir, "..", "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
         if not os.path.exists(scanner_path):
             messagebox.showerror("File Not Found", f"GPIB Scanner not found at expected path:\n{scanner_path}")
             return
