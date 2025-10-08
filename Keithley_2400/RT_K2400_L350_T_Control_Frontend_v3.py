@@ -141,11 +141,11 @@ class RT_Backend_Active:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class RT_GUI_Active:
-    PROGRAM_VERSION = "2.1"
+    PROGRAM_VERSION = "3.0" # UI/UX Update
     CLR_BG = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG = '#EDF2F4'
     CLR_FRAME_BG = '#3A506B'; CLR_INPUT_BG = '#4C566A'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE'
-    CLR_ACCENT_GOLD = '#FFC107'; CLR_CONSOLE_BG = '#1E2B38'
+    CLR_ACCENT_GOLD = '#FFC107'; CLR_CONSOLE_BG = '#1E2B38'; CLR_TEXT_DARK = '#1A1A1A'
     FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold')
 
     def __init__(self, root):
@@ -168,14 +168,21 @@ class RT_GUI_Active:
         style.configure('TLabel', background=self.CLR_FRAME_BG, foreground=self.CLR_FG)
         style.configure('Header.TLabel', background=self.CLR_HEADER)
         style.configure('TEntry', fieldbackground=self.CLR_INPUT_BG, foreground=self.CLR_FG, insertcolor=self.CLR_FG)
-        style.configure('TButton', font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_HEADER)
-        style.map('TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_BG), ('hover', self.CLR_BG)])
-        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_BG)
+        style.configure('TButton', font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_HEADER, borderwidth=0, focusthickness=0, focuscolor='none')
+        style.map('TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
+        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_TEXT_DARK)
         style.map('Start.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG)
         style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
         style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_ACCENT_BLUE)
         style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_FG, font=self.FONT_TITLE)
+        # --- NEW: Style for Comboboxes to make them more visible ---
+        style.configure('TCombobox',
+                        fieldbackground=self.CLR_INPUT_BG,
+                        foreground=self.CLR_FG,
+                        arrowcolor=self.CLR_FG,
+                        selectbackground=self.CLR_ACCENT_BLUE,
+                        selectforeground=self.CLR_FG)
         mpl.rcParams.update({'font.family': 'Segoe UI', 'font.size': 11, 'axes.titlesize': 15, 'axes.labelsize': 13})
 
     def create_widgets(self):
@@ -201,7 +208,7 @@ class RT_GUI_Active:
         # --- Make the left panel scrollable ---
         canvas = Canvas(left_panel_container, bg=self.CLR_BG, highlightthickness=0)
         scrollbar = ttk.Scrollbar(left_panel_container, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas, padding=5)
+        scrollable_frame = ttk.Frame(canvas, padding=10)
         scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=500)
         canvas.configure(yscrollcommand=scrollbar.set)
@@ -213,10 +220,10 @@ class RT_GUI_Active:
 
     def _populate_left_panel(self, panel):
         panel.grid_columnconfigure(0, weight=1)
-        self._create_info_panel(panel).pack(fill='x', expand=True, padx=10, pady=5)
-        self._create_params_panel(panel).pack(fill='x', expand=True, padx=10, pady=5)
-        self._create_control_panel(panel).pack(fill='x', expand=True, padx=10, pady=5)
-        self._create_console_panel(panel).pack(fill='both', expand=True, padx=10, pady=5)
+        self._create_info_panel(panel).pack(fill='x', expand=True, pady=(0, 10))
+        self._create_params_panel(panel).pack(fill='x', expand=True, pady=10)
+        self._create_control_panel(panel).pack(fill='x', expand=True, pady=10)
+        self._create_console_panel(panel).pack(fill='both', expand=True, pady=(10, 0))
 
     def _create_info_panel(self, parent):
         frame = ttk.LabelFrame(parent, text='Information');
@@ -257,17 +264,22 @@ class RT_GUI_Active:
         self.canvas.mpl_connect('draw_event', self._on_draw)
     def _create_params_panel(self, parent):
         container = ttk.Frame(parent)
-        container.grid_columnconfigure((0, 1), weight=1); self.entries = {}
-        temp_frame = ttk.LabelFrame(container, text='Temperature Control'); temp_frame.grid(row=0, column=0, sticky='nsew', padx=(0,5))
+        container.grid_columnconfigure(0, weight=1); self.entries = {}
+
+        temp_frame = ttk.LabelFrame(container, text='Temperature Control'); temp_frame.pack(fill='x', expand=True, pady=(0, 10))
         temp_frame.grid_columnconfigure(1, weight=1)
         self._create_entry(temp_frame, "Start Temp (K)", "300", 0); self._create_entry(temp_frame, "End Temp (K)", "310", 1)
         self._create_entry(temp_frame, "Ramp Rate (K/min)", "2", 2); self._create_entry(temp_frame, "Safety Cutoff (K)", "320", 3)
-        self.ls_cb = self._create_combobox(temp_frame, "Lakeshore VISA", 4)
-        iv_frame = ttk.LabelFrame(container, text='Measurement Settings'); iv_frame.grid(row=0, column=1, sticky='nsew', padx=(5,0), rowspan=2)
+
+        iv_frame = ttk.LabelFrame(container, text='Measurement Settings'); iv_frame.pack(fill='x', expand=True, pady=(0, 10))
         iv_frame.grid_columnconfigure(1, weight=1)
         self._create_entry(iv_frame, "Source Current (mA)", "1", 0); self._create_entry(iv_frame, "Compliance (V)", "10", 1)
         self._create_entry(iv_frame, "Logging Delay (s)", "1", 2)
-        self.k2400_cb = self._create_combobox(iv_frame, "Keithley 2400 VISA", 3)
+
+        visa_frame = ttk.LabelFrame(container, text='Instrument Addresses'); visa_frame.pack(fill='x', expand=True)
+        visa_frame.grid_columnconfigure(1, weight=1)
+        self.ls_cb = self._create_combobox(visa_frame, "Lakeshore VISA", 0)
+        self.k2400_cb = self._create_combobox(visa_frame, "Keithley 2400 VISA", 1)
         return container
 
     def _create_control_panel(self, parent):
@@ -286,7 +298,7 @@ class RT_GUI_Active:
 
     def _create_console_panel(self, parent):
         frame = ttk.LabelFrame(parent, text='Console')
-        self.console = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG, font=('Consolas', 9), wrap='word', borderwidth=0)
+        self.console = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG, font=('Consolas', 10), wrap='word', borderwidth=0)
         self.console.pack(fill='both', expand=True, padx=5, pady=5)
         return frame
 
@@ -444,7 +456,7 @@ class RT_GUI_Active:
 
     def _create_combobox(self, parent, label_text, row):
         ttk.Label(parent, text=f"{label_text}:").grid(row=row, column=0, sticky='w', padx=10, pady=3)
-        cb = ttk.Combobox(parent, font=self.FONT_BASE, state='readonly')
+        cb = ttk.Combobox(parent, font=self.FONT_BASE, state='readonly', style='TCombobox', height=5)
         cb.grid(row=row, column=1, sticky='ew', padx=10, pady=3, columnspan=3)
         return cb
 
