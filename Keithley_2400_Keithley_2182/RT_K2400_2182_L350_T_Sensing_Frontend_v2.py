@@ -47,6 +47,28 @@ except (ImportError, ModuleNotFoundError):
     # Fallback if the script is run standalone
     launch_plotter_utility = lambda: print("Plotter launch function not found.")
 
+import runpy
+from multiprocessing import Process
+
+def run_script_process(script_path):
+    """
+    Wrapper function to execute a script using runpy in its own directory.
+    This becomes the target for the new, isolated process.
+    """
+    try:
+        os.chdir(os.path.dirname(script_path))
+        runpy.run_path(script_path, run_name="__main__")
+    except Exception as e:
+        print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
+        print(e)
+        print("-------------------------")
+
+def launch_gpib_scanner():
+    """Finds and launches the GPIB scanner utility in a new process."""
+    scanner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
+    Process(target=run_script_process, args=(scanner_path,)).start()
+
+
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
 # -------------------------------------------------------------------------------
@@ -150,6 +172,10 @@ class VT_GUI_Passive:
         # --- Plotter Launch Button ---
         plotter_button = ttk.Button(header, text="📈", command=launch_plotter_utility, width=3)
         plotter_button.pack(side='right', padx=10, pady=5)
+
+        # --- GPIB Scanner Launch Button ---
+        gpib_button = ttk.Button(header, text="📟", command=launch_gpib_scanner, width=3)
+        gpib_button.pack(side='right', padx=(0, 5), pady=5)
 
         main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
