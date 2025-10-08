@@ -31,6 +31,8 @@ import matplotlib.gridspec as gridspec
 import threading
 import queue
 import matplotlib as mpl
+import runpy
+from multiprocessing import Process
 
 try:
     from PIL import Image, ImageTk
@@ -49,6 +51,32 @@ try:
 except (ImportError, ModuleNotFoundError):
     # Fallback if the script is run standalone
     launch_plotter_utility = lambda: print("Plotter launch function not found.")
+
+def run_script_process(script_path):
+    """
+    Wrapper function to execute a script using runpy in its own directory.
+    This becomes the target for the new, isolated process.
+    """
+    try:
+        os.chdir(os.path.dirname(script_path))
+        runpy.run_path(script_path, run_name="__main__")
+    except Exception as e:
+        print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
+        print(e)
+        print("-------------------------")
+
+def launch_gpib_scanner():
+    """Finds and launches the GPIB scanner utility in a new process."""
+    try:
+        # Assumes the scanner is in a standard location relative to this script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        scanner_path = os.path.join(script_dir, "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
+        if not os.path.exists(scanner_path):
+            messagebox.showerror("File Not Found", f"GPIB Scanner not found at expected path:\n{scanner_path}")
+            return
+        Process(target=run_script_process, args=(scanner_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -226,6 +254,10 @@ class Advanced_Delta_GUI:
         # --- Plotter Launch Button ---
         plotter_button = ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3)
         plotter_button.pack(side='right', padx=10, pady=5)
+
+        # --- GPIB Scanner Launch Button ---
+        gpib_button = ttk.Button(header_frame, text="📟", command=launch_gpib_scanner, width=3)
+        gpib_button.pack(side='right', padx=(0, 5), pady=5)
 
         Label(header_frame, text="K6221/2182 & L350: Delta Mode R-T (T-Control)", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
