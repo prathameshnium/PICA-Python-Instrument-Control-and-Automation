@@ -70,7 +70,7 @@ def launch_gpib_scanner():
     try:
         # Assumes the scanner is in a standard location relative to this script
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        scanner_path = os.path.join(script_dir, "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
+        scanner_path = os.path.join(script_dir, "..", "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
         if not os.path.exists(scanner_path):
             messagebox.showerror("File Not Found", f"GPIB Scanner not found at expected path:\n{scanner_path}")
             return
@@ -255,12 +255,12 @@ class Advanced_Delta_GUI:
         plotter_button = ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3)
         plotter_button.pack(side='right', padx=10, pady=5)
 
-        Label(header_frame, text="K6221/2182 & L350: Delta Mode R-T (T-Control)", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
+        Label(header_frame, text="K6221/2182 & L350: Delta Mode R-T (T-Control)", bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD, font=font_title_italic).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
         # --- GPIB Scanner Launch Button ---
-        gpib_button = ttk.Button(header_frame, text="📟", command=launch_gpib_scanner, width=3)
-        gpib_button.pack(side='right', padx=(0, 5), pady=5)
+        gpib_button = ttk.Button(header_frame, text="📟", command=launch_gpib_scanner, width=3, style="TButton")
+        gpib_button.pack(side='right', padx=(0,5), pady=5)
 
     def create_info_frame(self, parent):
         frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE); frame.pack(pady=(5, 0), padx=10, fill='x')
