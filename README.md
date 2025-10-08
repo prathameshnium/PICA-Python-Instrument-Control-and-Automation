@@ -28,7 +28,7 @@
 A key architectural feature is the use of isolated process execution for each measurement module via Python's `multiprocessing` library, ensuring high stability and preventing inter-script conflicts. This platform is built to streamline data acquisition, enhance experimental reproducibility, and accelerate research workflows.
 
 <div align="center">
-    <img src="https://raw.githubusercontent.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/main/_assets/Images/PICA_Laucher_V4.png" alt="PICA Launcher Screenshot" width="800"/>
+    <img src="https://raw.githubusercontent.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/main/_assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800"/>
 </div>
 
 ---
@@ -91,13 +91,13 @@ The PICA suite includes modules for a range of standard electrical and thermal t
 | Instrument Combination         | Measurement Type                     | Description                                                                 |
 | ------------------------------ | ------------------------------------ | --------------------------------------------------------------------------- |
 | **Keithley 6221 / 2182** | I-V Characterization (AC Delta)      | High-precision I-V sweeps for low-resistance samples.                       |
-|                                | Resistance vs. Temperature (R-T)     | Automated R-T data acquisition with **active or passive** temperature profiles. |
+|                                | Resistance vs. Temperature (R-T)     | Automated R-T data acquisition with **active** (ramp/stabilize) or **passive** (sensing/logging) temperature profiles. |
 | **Keithley 2400 SourceMeter** | Four-Probe I-V Characterization      | Standard I-V sweeps for materials like semiconductors.                      |
-|                                | Four-Probe R-T Characterization      | Temperature-dependent resistance measurements with **active or passive** modes. |
+|                                | Four-Probe R-T Characterization      | Temperature-dependent resistance measurements with **active** or **passive** modes. |
 | **Keithley 2400 / 2182** | High-Precision I-V                   | Enhanced voltage resolution using a nanovoltmeter.                          |
-|                                | High-Precision R-T                   | Temperature-dependent measurements with enhanced voltage precision and **active or passive** modes. |
+|                                | High-Precision R-T                   | Temperature-dependent measurements with enhanced voltage precision and **active** or **passive** modes. |
 | **Keithley 6517B Electrometer**| High-Resistance I-V Characterization | For insulating materials, dielectrics, and high-impedance devices.          |
-|                                | High-Resistance R-T                  | High-resistance measurements with active or passive temperature control.    |
+|                                | High-Resistance R-T                  | High-resistance measurements with **active** or **passive** temperature control.    |
 |                                | Pyroelectric Current vs. Temperature | Quantifies pyroelectric current during a controlled temperature ramp.       |
 | **Keysight E4980A LCR Meter** | Capacitance-Voltage (C-V) Sweeps     | Automated C-V measurements for semiconductor and dielectric analysis.       |
 | **Lock-in Amplifier** | AC Resistance Measurement            | For measuring AC transport properties and contact impedance.                |
@@ -143,7 +143,7 @@ The PICA suite includes modules for a range of standard electrical and thermal t
 4.  **Launch the Application**
     Execute the main launcher script from the project's root directory.
     ```bash
-    python PICA_Launcher_V5.py
+    python PICA_v6.py
     ```
 
 ---
