@@ -59,7 +59,7 @@ def run_script_process(script_path):
 def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_Frontend_v2.py")
+    plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_Frontend_v3.py")
     Process(target=run_script_process, args=(plotter_path,)).start()
 class Keithley2400_IV_Backend:
     """A dedicated class to handle backend communication with the Keithley 2400 for I-V sweeps."""

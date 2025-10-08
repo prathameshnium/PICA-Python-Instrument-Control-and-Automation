@@ -66,7 +66,7 @@ def launch_plotter_utility():
     try:
         # Assuming the plotter is in a standard location relative to other scripts
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        plotter_path = os.path.join(script_dir, "Utilities", "PlotterUtil_Frontend_v2.py")
+        plotter_path = os.path.join(script_dir, "Utilities", "PlotterUtil_Frontend_v3.py")
         Process(target=run_script_process, args=(plotter_path,)).start()
     except Exception as e:
         print(f"Failed to launch plotter: {e}")
@@ -124,7 +124,7 @@ class PICALauncherApp:
         "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/T_Sensing_L350_Frontend_v4.py"),
         "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v3.py"),
         "Lock-in AC Measurement": resource_path("Lock_in_amplifier/BasicTest_S830_Backend_v1.py"),
-        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v2.py"),
+        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v3.py"),
         "PICA Help": resource_path("README.md"),
     }
 
