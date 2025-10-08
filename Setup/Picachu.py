@@ -102,7 +102,7 @@ class PICALauncherApp:
         "K2400 R-T (T_Sensing)": resource_path("Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v4.py"),
         "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py"),
         "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_Frontend_v3.py"),
-        "K2400_2182 R-T (T_Sensing)": resource_path("Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_Frontend_v1.py"), # This was correct
+        "K2400_2182 R-T (T_Sensing)": resource_path("Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_Frontend_v2.py"),
         "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/IV_K6517B_Frontend_v11.py"),
         "K6517B R-T": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_Frontend_v13.py"),
         "K6517B R-T (T_Sensing)": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_Frontend_v14.py"),

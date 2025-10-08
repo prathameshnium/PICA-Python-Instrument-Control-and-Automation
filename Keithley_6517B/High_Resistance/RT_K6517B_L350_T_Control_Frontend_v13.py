@@ -63,13 +63,27 @@ def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        plotter_path = os.path.join(script_dir, "..", "..", "..", "Utilities", "PlotterUtil_Frontend_v2.py")
+        # Path is two directories up from the script location to reach project root
+        plotter_path = os.path.join(script_dir, "..", "..", "Utilities", "PlotterUtil_Frontend_v2.py")
         if not os.path.exists(plotter_path):
             messagebox.showerror("File Not Found", f"Plotter utility not found at expected path:\n{plotter_path}")
             return
         Process(target=run_script_process, args=(plotter_path,)).start()
     except Exception as e:
         messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
+
+def launch_gpib_scanner():
+    """Finds and launches the GPIB scanner utility in a new process."""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Path is two directories up from the script location to reach project root
+        scanner_path = os.path.join(script_dir, "..", "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
+        if not os.path.exists(scanner_path):
+            messagebox.showerror("File Not Found", f"GPIB Scanner not found at expected path:\n{scanner_path}")
+            return
+        Process(target=run_script_process, args=(scanner_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
 
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
@@ -195,7 +209,7 @@ class Integrated_RT_GUI:
     try:
         # Robust path finding for assets
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-        # Path is two directories up from the script location
+        # Path is two directories up from the script location to reach project root
         LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
     except NameError:
         # Fallback for environments where __file__ is not defined
@@ -294,6 +308,10 @@ class Integrated_RT_GUI:
         # --- Plotter Launch Button ---
         plotter_button = ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3)
         plotter_button.pack(side='right', padx=10, pady=5)
+
+        # --- GPIB Scanner Launch Button ---
+        gpib_button = ttk.Button(header_frame, text="📟", command=launch_gpib_scanner, width=3)
+        gpib_button.pack(side='right', padx=(0, 5), pady=5)
 
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 

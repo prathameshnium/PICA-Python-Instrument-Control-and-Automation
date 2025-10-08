@@ -21,6 +21,7 @@ import threading
 import queue
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
+from multiprocessing import Process
 
 # --- Pillow for Logo Image ---
 try:
@@ -37,12 +38,36 @@ try:
 except ImportError:
     PYVISA_AVAILABLE = False
 
-try:
-    # Import the plotter launch function from the main PICA launcher
-    from PICA_v6 import launch_plotter_utility
-except (ImportError, ModuleNotFoundError):
-    # Fallback if the script is run standalone
-    launch_plotter_utility = lambda: print("Plotter launch function not found.")
+import runpy
+
+def run_script_process(script_path):
+    """
+    Wrapper function to execute a script using runpy in its own directory.
+    This becomes the target for the new, isolated process.
+    """
+    try:
+        os.chdir(os.path.dirname(script_path))
+        runpy.run_path(script_path, run_name="__main__")
+    except Exception as e:
+        print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
+        print(e)
+        print("-------------------------")
+
+def launch_plotter_utility():
+    """Finds and launches the plotter utility script in a new process."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Path is three directories up from the script location to reach project root
+    plotter_path = os.path.join(script_dir, "..", "..", "Utilities", "PlotterUtil_Frontend_v2.py")
+    Process(target=run_script_process, args=(plotter_path,)).start()
+
+def launch_gpib_scanner():
+    """Finds and launches the GPIB scanner utility in a new process."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Path is three directories up from the script location to reach project root
+    scanner_path = os.path.join(script_dir, "..", "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
+    Process(target=run_script_process, args=(scanner_path,)).start()
+
+
 
 class PyroelectricBackend:
     """
@@ -243,6 +268,10 @@ class PyroelectricAppGUI:
         # --- Plotter Launch Button ---
         plotter_button = ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3)
         plotter_button.pack(side='right', padx=10, pady=5)
+
+        # --- GPIB Scanner Launch Button ---
+        gpib_button = ttk.Button(header_frame, text="📟", command=launch_gpib_scanner, width=3)
+        gpib_button.pack(side='right', padx=(0, 5), pady=5)
 
         Label(header_frame, text="Pyroelectric Measurement", bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD, font=font_title_main).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
