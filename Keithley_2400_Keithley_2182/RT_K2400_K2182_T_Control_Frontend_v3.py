@@ -11,6 +11,7 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext, Canvas
 import numpy as np
+import sys
 import os
 import time
 import traceback
@@ -34,8 +35,15 @@ except ImportError:
     PYMEASURE_AVAILABLE = False
 
 try:
+    # Dynamically find the project root and add it to the path
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(script_dir, os.pardir))
+    if project_root not in sys.path:
+        sys.path.append(project_root)
+
     # Import the plotter launch function from the main PICA launcher
     from PICA_v6 import launch_plotter_utility
+
 except (ImportError, ModuleNotFoundError):
     # Fallback if the script is run standalone
     launch_plotter_utility = lambda: print("Plotter launch function not found.")
