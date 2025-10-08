@@ -1,19 +1,19 @@
 # -------------------------------------------------------------------------------
-# Name:         Delta Lakeshore Passive Measurement GUI
-# Purpose:      Perform a temperature-dependent Delta mode measurement with a
-#               Keithley 6221/2182 while passively monitoring temperature
-#               from a Lakeshore 350.
+# Name:          Delta Lakeshore Passive Measurement GUI
+# Purpose:       Perform a temperature-dependent Delta mode measurement with a
+#                Keithley 6221/2182 while passively monitoring temperature
+#                from a Lakeshore 350.
 #
-# Author:       Prathamesh Deshmukh
+# Author:        Prathamesh Deshmukh
 #
-# Created:      03/10/2025
+# Created:       03/10/2025
 #
-# Version:      8.0 (Passive Monitoring Merge)
+# Version:       8.0 (Passive Monitoring Merge)
 #
-# Description:  This version combines the core delta measurement logic from
-#               Delta_Lakeshore_Front_end_V7.py with the modern GUI, passive
-#               temperature sensing, and improved plotting/saving from
-#               6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py.
+# Description:   This version combines the core delta measurement logic from
+#                Delta_Lakeshore_Front_end_V7.py with the modern GUI, passive
+#                temperature sensing, and improved plotting/saving from
+#                6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py.
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -456,51 +456,79 @@ class MeasurementAppGUI:
     def _process_data_queue(self):
         """Processes data from the queue to update the GUI. Runs in the main thread."""
         try:
+            # Process all pending data in the queue in one go
             while not self.data_queue.empty():
                 data = self.data_queue.get_nowait()
+
                 if isinstance(data, Exception):
                     self.log(f"RUNTIME ERROR in worker thread: {traceback.format_exc()}")
                     self.stop_measurement()
                     messagebox.showerror("Runtime Error", "A critical error occurred in the measurement thread. Check console.")
-                    return
+                    return # Stop processing
                 if data is None: # Sentinel value indicating thread finished
-                    raise data # Re-raise the exception in the main thread
+                    return # Stop processing
 
+                # Unpack and save data
                 res, volt, temp, elapsed = data
                 self.log(f"T: {temp:.3f} K | R: {res:.4e} Ω | V: {volt:.4e} V")
                 with open(self.data_filepath, 'a', newline='') as f:
                     writer = csv.writer(f)
                     writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}", f"{volt:.6e}", f"{res:.6e}"])
 
-                self.data_storage['time'].append(elapsed); self.data_storage['temperature'].append(temp)
-                self.data_storage['voltage'].append(volt); self.data_storage['resistance'].append(res)
+                self.data_storage['time'].append(elapsed)
+                self.data_storage['temperature'].append(temp)
+                self.data_storage['voltage'].append(volt)
+                self.data_storage['resistance'].append(res)
 
-                self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
+            # Check if there is data to plot
+            if not self.data_storage['time']:
+                if self.is_running:
+                    self.root.after(100, self._process_data_queue)
+                return
 
-                # --- Performance Improvement: Use blitting for fast updates ---
-                if self.plot_backgrounds:
-                    # Restore the clean backgrounds
-                    for bg in self.plot_backgrounds: self.canvas.restore_region(bg)
-                    
-                    # Update data for all plots
-                    self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
-                    self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
-                    
-                    # Redraw only the artists
-                    for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
-                        ax.relim(); ax.autoscale_view()
-                        self.canvas.blit(ax.bbox)
-                else: # Fallback to full redraw if blitting isn't ready
-                    self.figure.tight_layout(pad=3.0)
-                    self.canvas.draw_idle()
+            # --- PLOTTING LOGIC (CORRECTED) ---
+            # Set data for ALL plot lines first
+            self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
+            self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
+            self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
+
+            # Use blitting for fast updates if it's enabled
+            if self.plot_backgrounds:
+                # Restore the clean backgrounds
+                for bg in self.plot_backgrounds:
+                    self.canvas.restore_region(bg)
+
+                # Define the axes and lines to update
+                artists_to_update = [
+                    (self.ax_main, self.line_main),
+                    (self.ax_sub1, self.line_sub1),
+                    (self.ax_sub2, self.line_sub2)
+                ]
+
+                # Process each axis: rescale, draw the artist, and then blit
+                for ax, line in artists_to_update:
+                    ax.relim()
+                    ax.autoscale_view()
+                    ax.draw_artist(line)  # <-- THE CRUCIAL MISSING STEP
+                    self.canvas.blit(ax.bbox)
+
+                self.canvas.flush_events() # Ensure the update is processed immediately
+
+            else: # Fallback to full redraw if blitting isn't ready
+                # This fallback is generally not needed if blitting is set up correctly,
+                # but it's good to have.
+                for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
+                    ax.relim()
+                    ax.autoscale_view()
+                self.figure.tight_layout(pad=3.0)
+                self.canvas.draw_idle()
 
         except queue.Empty:
-            pass # This is normal, no data to process
-        except Exception as e: # Catches other exceptions, like the sentinel
-            self.log(f"GUI processing error or thread stopped: {e}")
+            pass # This is normal, no data to process this cycle
 
+        # Schedule the next check if the measurement is still running
         if self.is_running:
-            self.root.after(200, self._process_data_queue)
+            self.root.after(100, self._process_data_queue)
 
     def start_visa_scan(self):
         """Starts the VISA scan in a separate thread to keep the GUI responsive."""
