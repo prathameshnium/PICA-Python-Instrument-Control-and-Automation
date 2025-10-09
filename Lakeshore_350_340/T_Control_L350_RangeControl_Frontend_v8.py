@@ -166,7 +166,7 @@ class TempControlGUI:
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_FRAME_BG, foreground=self.CLR_FG_LIGHT)
         style.configure('Header.TLabel', background=self.CLR_HEADER)
-        style.configure('TButton', font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_HEADER)
+        style.configure('TButton', font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_HEADER, borderwidth=0, focusthickness=0, focuscolor='none')
         style.map('TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
         style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_TEXT_DARK)
         style.map('Start.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
@@ -175,6 +175,13 @@ class TempControlGUI:
         style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor='#8D99AE')
         style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         mpl.rcParams.update({'font.family': 'Segoe UI', 'font.size': 11, 'axes.titlesize': 15, 'axes.labelsize': 13})
+
+        # The user is using ttk.Entry, but the styling for TEntry was missing.
+        # Let's add it to ensure the text is visible.
+        style.configure('TEntry',
+                        fieldbackground=self.CLR_GRAPH_BG, # Light background
+                        foreground=self.CLR_TEXT_DARK,      # Dark text
+                        insertcolor=self.CLR_TEXT_DARK)     # Dark cursor
 
     def create_widgets(self):
         header = tk.Frame(self.root, bg=self.CLR_HEADER)
