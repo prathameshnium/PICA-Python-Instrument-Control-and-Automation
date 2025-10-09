@@ -347,9 +347,11 @@ class RT_GUI_Passive:
         self.log("Scanning for VISA instruments..."); resources = self.backend.rm.list_resources()
         if resources:
             self.log(f"Found: {resources}"); self.ls_cb['values'] = resources; self.k2400_cb['values'] = resources
+            default_k2400_addr = 'GPIB1::4::INSTR'
             for r in resources:
                 if 'GPIB1::15' in r: self.ls_cb.set(r)
-                if 'GPIB1::4' in r: self.k2400_cb.set(r)
+            if default_k2400_addr in resources:
+                self.k2400_cb.set(default_k2400_addr)
         else: self.log("No VISA instruments found.")
 
     def _browse_file_location(self):
