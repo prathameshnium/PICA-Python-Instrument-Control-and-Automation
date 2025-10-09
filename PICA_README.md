@@ -18,17 +18,31 @@
 
 A key architectural feature is the use of isolated process execution for each measurement module via Python's `multiprocessing` library, ensuring high stability and preventing inter-script conflicts. This platform is built to streamline data acquisition, enhance experimental reproducibility, and accelerate research workflows.
 
+PICA is designed with a clear separation between the user interface (frontend) and the instrument control logic (backend). This modular approach makes the system easy to maintain, extend, and debug.
+
 <div align="center">
-    <img src="_assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800"/>
+    <img src="_assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800" />
 </div>
 
 ---
+
+## Architecture
+
+The core design philosophy of PICA is the separation of concerns, implemented through a distinct **Frontend-Backend** architecture for each measurement module.
+
+-   **Frontend:** Each measurement has a dedicated GUI script (e.g., `IV_K2400_Frontend_v5.py`) built with `Tkinter`. It is responsible for all user interaction, parameter input, and data visualization (live plotting). It runs in the main process.
+
+-   **Backend:** The instrument control logic is encapsulated in a separate class (e.g., `Keithley2400_Backend`). This class handles all `PyVISA` communication, instrument configuration, and data acquisition commands.
+
+-   **Process Isolation:** When a measurement is started, the frontend launches its corresponding backend logic in a separate, isolated process using Python's `multiprocessing` library. This is the key to PICA's stability: a crash or error in one measurement script will not affect the main launcher or any other running experiments.
+
+-   **Communication:** The frontend and backend communicate via `multiprocessing.Queue` for thread-safe data exchange. The backend performs a measurement and places the data into a queue, which the frontend then reads to update plots and save to a file.
 
 ## Table of Contents
 
 - Core Features
 - Tech Stack & Dependencies
-- Available Measurement Modules
+- Available Scripts & Modules
 - Getting Started
 - Resources & Documentation
 - Contributing
@@ -37,50 +51,57 @@ A key architectural feature is the use of isolated process execution for each me
 
 ---
 
-## Core Features
+## Available Scripts & Modules
 
-- **Centralized Control Dashboard:** A comprehensive GUI for launching all measurement modules.
-- **Isolated Process Execution:** Each script operates in a discrete process, guaranteeing application stability and preventing resource conflicts.
-- **Integrated VISA Instrument Scanner:** An embedded utility for discovering, identifying, and troubleshooting GPIB/VISA instrument connections.
-- **Modular Architecture:** Each experimental setup is encapsulated in a self-contained module with direct access to its scripts and data directories.
-- **Embedded Documentation:** In-application viewer for essential project documentation, such as this README and the software license.
-- **System Console Log:** A real-time log provides status updates, confirmations, and error diagnostics for all operations.
+The PICA suite is organized into modules, each containing a frontend GUI application and its corresponding backend logic for instrument control.
 
 ---
 
-## Tech Stack & Dependencies
+#### Low Resistance (Keithley 6221 / 2182)
+*   **Delta Mode I-V Sweep**
+    *   **Frontend:** `IV_K6221_DC_Sweep_Frontend_V10.exe`
+*   **Delta Mode R vs. T (Active Control)**
+    *   **Frontend:** `Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.exe`
+*   **Delta Mode R vs. T (Passive Sensing)**
+    *   **Frontend:** `Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.exe`
 
-The core of PICA is built with a stack of robust and widely-used Python libraries.
+#### Mid Resistance (Keithley 2400)
+*   **I-V Sweep**
+    *   **Frontend:** `IV_K2400_Frontend_v5.exe`
+*   **R vs. T (Active Control)**
+    *   **Frontend:** `RT_K2400_L350_T_Control_Frontend_v3.exe`
+*   **R vs. T (Passive Sensing)**
+    *   **Frontend:** `RT_K2400_L350_T_Sensing_Frontend_v4.exe`
 
-- **Primary Language:** **Python 3.9+**
-- **Graphical User Interface:** **Tkinter**
-- **Instrument Communication:** **PyVISA** (a Python wrapper for the NI-VISA library)
-- **Numerical Operations:** **NumPy**
-- **Data Structuring:** **Pandas**
-- **Data Visualization:** **Matplotlib**
-- **Concurrency:** **Multiprocessing** (a native Python library for process isolation)
+#### Mid Resistance, High Precision (Keithley 2400 / 2182)
+*   **I-V Sweep**
+    *   **Frontend:** `IV_K2400_K2182_Frontend_v3.exe`
+*   **R vs. T (Active Control)**
+    *   **Frontend:** `RT_K2400_K2182_T_Control_Frontend_v3.exe`
+*   **R vs. T (Passive Sensing)**
+    *   **Frontend:** `RT_K2400_2182_L350_T_Sensing_Frontend_v2.exe`
 
----
+#### High Resistance (Keithley 6517B)
+*   **I-V Sweep**
+    *   **Frontend:** `IV_K6517B_Frontend_v11.exe`
+*   **R vs. T (Active Control)**
+    *   **Frontend:** `RT_K6517B_L350_T_Control_Frontend_v13.exe`
+*   **R vs. T (Passive Sensing)**
+    *   **Frontend:** `RT_K6517B_L350_T_Sensing_Frontend_v14.exe`
 
-## Available Measurement Modules
+#### Pyroelectric Measurement (Keithley 6517B)
+*   **PyroCurrent vs. T**
+    *   **Frontend:** `Pyroelectric_K6517B_L350_Frontend_v4.exe`
 
-The PICA suite includes modules for a range of standard electrical and thermal transport measurements.
+#### Capacitance (Keysight E4980A)
+*   **C-V Measurement**
+    *   **Frontend:** `CV_KE4980A_Frontend_v3.exe`
 
-| Instrument Combination         | Measurement Type                     | Description                                                                 |
-| ------------------------------ | ------------------------------------ | --------------------------------------------------------------------------- |
-| **Keithley 6221 / 2182** | I-V Characterization (AC Delta)      | High-precision I-V sweeps for low-resistance samples.                       |
-|                                | Resistance vs. Temperature (R-T)     | Automated R-T data acquisition with **active** (ramp/stabilize) or **passive** (sensing/logging) temperature profiles. |
-| **Keithley 2400 SourceMeter** | Four-Probe I-V Characterization      | Standard I-V sweeps for materials like semiconductors.                      |
-|                                | Four-Probe R-T Characterization      | Temperature-dependent resistance measurements with **active** or **passive** modes. |
-| **Keithley 2400 / 2182** | High-Precision I-V                   | Enhanced voltage resolution using a nanovoltmeter.                          |
-|                                | High-Precision R-T                   | Temperature-dependent measurements with enhanced voltage precision and **active** or **passive** modes. |
-| **Keithley 6517B Electrometer**| High-Resistance I-V Characterization | For insulating materials, dielectrics, and high-impedance devices.          |
-|                                | High-Resistance R-T                  | High-resistance measurements with **active** or **passive** temperature control.    |
-|                                | Pyroelectric Current vs. Temperature | Quantifies pyroelectric current during a controlled temperature ramp.       |
-| **Keysight E4980A LCR Meter** | Capacitance-Voltage (C-V) Sweeps     | Automated C-V measurements for semiconductor and dielectric analysis.       |
-| **Lock-in Amplifier** | AC Resistance Measurement            | For measuring AC transport properties and contact impedance.                |
-| **Lakeshore 340/350 Controller** | Temperature Control Utility          | A standalone module for defining and executing temperature profiles.        |
-|                                | Temperature Monitoring Utility       | A passive data  for monitoring environmental temperature.             |
+#### Temperature Utilities (Lakeshore 350)
+*   **Temperature Ramp**
+    *   **Frontend:** `T_Control_L350_RangeControl_Frontend_v8.exe`
+*   **Temperature Monitor**
+    *   **Frontend:** `T_Sensing_L350_Frontend_v4.exe`
 
 ---
 

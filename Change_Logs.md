@@ -1,4 +1,20 @@
 ## Instrument & Software Update Log
+### Version 14.1 (Current)
+
+**Documentation & Code Examples**
+
+-   **Enhanced Documentation:** Overhauled the main project `README.md` to provide a more comprehensive overview, including a new "Architecture" section that details the frontend-backend separation and the role of `multiprocessing`.
+-   **Code Snippets for Extensibility:** Added illustrative code snippets to `README.md` demonstrating the structure of a backend instrument class and how a frontend GUI class interacts with it. This serves as a practical guide for developers looking to add new instrument modules.
+-   **Improved "Getting Started" Guide:** The installation and launch instructions in `README.md` have been clarified and expanded for a smoother onboarding experience.
+-   **Synchronized Executable README:** Updated `PICA_README.md` to align with the core documentation, ensuring users of the standalone executable have access to the latest information.
+-   **Files Added/Modified:**
+    -   `README.md`
+    -   `PICA_README.md`
+    -   `Change_Logs.md`
+
+---
+
+## Instrument & Software Update Log
 ### Version 14.0 (Current)
 
 **Frontend Enhancements & New Measurement Modes**

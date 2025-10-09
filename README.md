@@ -27,11 +27,25 @@
 
 A key architectural feature is the use of isolated process execution for each measurement module via Python's `multiprocessing` library, ensuring high stability and preventing inter-script conflicts. This platform is built to streamline data acquisition, enhance experimental reproducibility, and accelerate research workflows.
 
+PICA is designed with a clear separation between the user interface (frontend) and the instrument control logic (backend). This modular approach makes the system easy to maintain, extend, and debug.
+
 <div align="center">
     <img src="https://raw.githubusercontent.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/main/_assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800"/>
 </div>
 
 ---
+
+## Architecture
+
+The core design philosophy of PICA is the separation of concerns, implemented through a distinct **Frontend-Backend** architecture for each measurement module.
+
+-   **Frontend:** Each measurement has a dedicated GUI script (e.g., `IV_K2400_Frontend_v5.py`) built with `Tkinter` and the `CustomTkinter` library. It is responsible for all user interaction, parameter input, and data visualization (live plotting). It runs in the main process.
+
+-   **Backend:** The instrument control logic is encapsulated in a separate class (e.g., `Keithley2400_Backend`). This class handles all `PyVISA` communication, instrument configuration, and data acquisition commands.
+
+-   **Process Isolation:** When a measurement is started, the frontend launches its corresponding backend logic in a separate, isolated process using Python's `multiprocessing` library. This is the key to PICA's stability: a crash or error in one measurement script will not affect the main launcher or any other running experiments.
+
+-   **Communication:** The frontend and backend communicate via `multiprocessing.Queue` for thread-safe data exchange. The backend performs a measurement and places the data into a queue, which the frontend then reads to update plots and save to a file.
 
 ## Table of Contents
 
@@ -84,25 +98,71 @@ All required packages are listed in the `requirements.txt` file for easy one-ste
 
 ---
 
-## Available Measurement Modules
+## Available Scripts & Modules
 
-The PICA suite includes modules for a range of standard electrical and thermal transport measurements.
+The PICA suite is organized into modules, each containing a frontend GUI application and its corresponding backend logic for instrument control.
 
-| Instrument Combination         | Measurement Type                     | Description                                                                 |
-| ------------------------------ | ------------------------------------ | --------------------------------------------------------------------------- |
-| **Keithley 6221 / 2182** | I-V Characterization (AC Delta)      | High-precision I-V sweeps for low-resistance samples.                       |
-|                                | Resistance vs. Temperature (R-T)     | Automated R-T data acquisition with **active** (ramp/stabilize) or **passive** (sensing/logging) temperature profiles. |
-| **Keithley 2400 SourceMeter** | Four-Probe I-V Characterization      | Standard I-V sweeps for materials like semiconductors.                      |
-|                                | Four-Probe R-T Characterization      | Temperature-dependent resistance measurements with **active** or **passive** modes. |
-| **Keithley 2400 / 2182** | High-Precision I-V                   | Enhanced voltage resolution using a nanovoltmeter.                          |
-|                                | High-Precision R-T                   | Temperature-dependent measurements with enhanced voltage precision and **active** or **passive** modes. |
-| **Keithley 6517B Electrometer**| High-Resistance I-V Characterization | For insulating materials, dielectrics, and high-impedance devices.          |
-|                                | High-Resistance R-T                  | High-resistance measurements with **active** or **passive** temperature control.    |
-|                                | Pyroelectric Current vs. Temperature | Quantifies pyroelectric current during a controlled temperature ramp.       |
-| **Keysight E4980A LCR Meter** | Capacitance-Voltage (C-V) Sweeps     | Automated C-V measurements for semiconductor and dielectric analysis.       |
-| **Lock-in Amplifier** | AC Resistance Measurement            | For measuring AC transport properties and contact impedance.                |
-| **Lakeshore 340/350 Controller** | Temperature Control Utility          | A standalone module for defining and executing temperature profiles.        |
-|                                | Temperature Monitoring Utility       | A passive data  for monitoring environmental temperature.             |
+#### Low Resistance (Keithley 6221 / 2182)
+*   **Delta Mode I-V Sweep**
+    *   **Frontend:** `Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_Frontend_V10.py`
+    *   **Backend:** `Delta_mode_Keithley_6221_2182/Backends/Delta_K6221_K2182_Simple_v7.py`
+*   **Delta Mode R vs. T (Active Control)**
+    *   **Frontend:** `Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.py`
+    *   **Backend:** `Delta_mode_Keithley_6221_2182/Backends/Delta_K6221_K2182_Simple_v7.py`
+*   **Delta Mode R vs. T (Passive Sensing)**
+    *   **Frontend:** `Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.py`
+    *   **Backend:** (Internal to Frontend)
+
+#### Mid Resistance (Keithley 2400)
+*   **I-V Sweep**
+    *   **Frontend:** `Keithley_2400/IV_K2400_Frontend_v5.py`
+    *   **Backend:** `Keithley_2400/Backends/IV_K2400_Loop_Backend_v10.py`
+*   **R vs. T (Active Control)**
+    *   **Frontend:** `Keithley_2400/RT_K2400_L350_T_Control_Frontend_v3.py`
+    *   **Backend:** (Internal to Frontend)
+*   **R vs. T (Passive Sensing)**
+    *   **Frontend:** `Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v4.py`
+    *   **Backend:** (Internal to Frontend)
+
+#### Mid Resistance, High Precision (Keithley 2400 / 2182)
+*   **I-V Sweep**
+    *   **Frontend:** `Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py`
+    *   **Backend:** `Keithley_2400_Keithley_2182/Backends/IV_K2400_K2182_Backend_v1.py`
+*   **R vs. T (Active Control)**
+    *   **Frontend:** `Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_Frontend_v3.py`
+    *   **Backend:** (Internal to Frontend)
+*   **R vs. T (Passive Sensing)**
+    *   **Frontend:** `Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_Frontend_v2.py`
+    *   **Backend:** (Internal to Frontend)
+
+#### High Resistance (Keithley 6517B)
+*   **I-V Sweep**
+    *   **Frontend:** `Keithley_6517B/High_Resistance/IV_K6517B_Frontend_v11.py`
+    *   **Backend:** `Keithley_6517B/High_Resistance/Backends/IV_K6517B_Simple_Backend_v10.py`
+*   **R vs. T (Active Control)**
+    *   **Frontend:** `Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_Frontend_v13.py`
+    *   **Backend:** `Keithley_6517B/High_Resistance/Backends/IV_K6517B_L350_T_Control_Backend_v6.py`
+*   **R vs. T (Passive Sensing)**
+    *   **Frontend:** `Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_Frontend_v14.py`
+    *   **Backend:** (Internal to Frontend)
+
+#### Pyroelectric Measurement (Keithley 6517B)
+*   **PyroCurrent vs. T**
+    *   **Frontend:** `Keithley_6517B/Pyroelectricity/Pyroelectric_K6517B_L350_Frontend_v4.py`
+    *   **Backend:** `Keithley_6517B/Pyroelectricity/Backends/Pyroelectric_K6517B_Working_Backend_v10.py`
+
+#### Capacitance (Keysight E4980A)
+*   **C-V Measurement**
+    *   **Frontend:** `LCR_Keysight_E4980A/CV_KE4980A_Frontend_v3.py`
+    *   **Backend:** `LCR_Keysight_E4980A/Backends/CV_KE4980A_Simple_Backend_v10.py`
+
+#### Temperature Utilities (Lakeshore 350)
+*   **Temperature Ramp**
+    *   **Frontend:** `Lakeshore_350_340/T_Control_L350_RangeControl_Frontend_v8.py`
+    *   **Backend:** `Lakeshore_350_340/Backends/T_Control_L350_Simple_Backend_v10.py`
+*   **Temperature Monitor**
+    *   **Frontend:** `Lakeshore_350_340/T_Sensing_L350_Frontend_v4.py`
+    *   **Backend:** (Internal to Frontend)
 
 ---
 
@@ -145,6 +205,75 @@ The PICA suite includes modules for a range of standard electrical and thermal t
     ```bash
     python PICA_v6.py
     ```
+
+---
+
+## Extending PICA: Adding a New Module
+
+The modular architecture makes it straightforward to add support for new instruments or measurement types. Here is a simplified example of the required structure.
+
+#### 1. Create a Backend Class
+
+The backend class handles all direct communication with the instrument.
+
+```python
+# In a file like "MyInstrument/Backend.py"
+import pyvisa
+import time
+
+class MyInstrument_Backend:
+    def __init__(self):
+        self.instrument = None
+        self.rm = pyvisa.ResourceManager()
+
+    def connect(self, visa_address):
+        self.instrument = self.rm.open_resource(visa_address)
+        print(f"Connected to: {self.instrument.query('*IDN?')}")
+
+    def configure(self, voltage):
+        self.instrument.write(f":SOURCE:VOLTAGE {voltage}")
+        self.instrument.write(":OUTPUT ON")
+
+    def measure(self):
+        current = self.instrument.query(":READ?")
+        return float(current)
+
+    def disconnect(self):
+        if self.instrument:
+            self.instrument.write(":OUTPUT OFF")
+            self.instrument.close()
+```
+
+#### 2. Create a Frontend GUI
+
+The frontend provides the user interface and manages the measurement loop in a separate thread.
+
+```python
+# In a file like "MyInstrument/Frontend.py"
+import tkinter as tk
+from threading import Thread
+from MyInstrument.Backend import MyInstrument_Backend
+
+class MyInstrument_GUI(tk.Frame):
+    def __init__(self, master=None):
+        super().__init__(master)
+        self.backend = MyInstrument_Backend()
+        # ... (GUI widget setup: entries, buttons, plots) ...
+
+    def start_measurement(self):
+        # This method runs in a new thread to keep the GUI responsive
+        self.backend.connect("GPIB0::1::INSTR")
+        self.backend.configure(voltage=1.5)
+        for _ in range(100):
+            current = self.backend.measure()
+            # Use a queue to send data back to the GUI for plotting
+            # ...
+        self.backend.disconnect()
+```
+
+#### 3. Integrate with the PICA Launcher
+
+Finally, add the path to your new frontend script in `PICA_v6.py` and `Setup/Picachu.py` to make it accessible from the main dashboard.
 
 ---
 
