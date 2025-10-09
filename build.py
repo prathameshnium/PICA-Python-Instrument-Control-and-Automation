@@ -44,7 +44,7 @@ ICON_FILE = os.path.join(PROJECT_ROOT, "_assets", "LOGO", "PICA_LOGO.ico")
 setup_dir = os.path.join(PROJECT_ROOT, "Setup")
 if setup_dir not in sys.path:
     sys.path.insert(0, setup_dir)
-from Picachu import PICALauncherApp
+from Picachu import PICALauncherApp, resource_path
 APP_VERSION = PICALauncherApp.PROGRAM_VERSION
 
 # List of all frontend scripts to compile into sub-EXEs.
@@ -73,6 +73,21 @@ SUB_PROGRAMS = [
 
 PICACHU_SCRIPT = "Setup/Picachu.py"
 
+# --- NEW: Hook for fixing Tcl/Tk bundling issue ---
+def get_tcl_tk_add_data_args():
+    """
+    Generates the --add-data arguments needed for PyInstaller to correctly
+    bundle the Tcl/Tk libraries, preventing runtime FileNotFoundError.
+    """
+    try:
+        from pyi_tcl_hook import get_tcl_tk_paths
+        tcl_path, tk_path = get_tcl_tk_paths()
+        # The destination folder name inside the bundle must match what the hook expects.
+        return [f"--add-data={tcl_path};tcl", f"--add-data={tk_path};tk"]
+    except Exception as e:
+        print(f"--- WARNING: Could not find Tcl/Tk paths. Build might fail. Error: {e} ---")
+        return []
+
 def run_command(command):
     """Executes a command and prints it, raising an error if it fails."""
     print(f"--- Running: {' '.join(command)} ---")
@@ -90,6 +105,9 @@ def build():
     if os.path.exists(BUILD_DIR): shutil.rmtree(BUILD_DIR)
     os.makedirs(SUB_PROGRAMS_TEMP_DIR, exist_ok=True)
 
+    # Get the necessary arguments for bundling Tcl/Tk
+    tcl_tk_args = get_tcl_tk_add_data_args()
+
     print("\n>>> STAGE 1: Compiling sub-program executables...")
     for script_path, exe_name in SUB_PROGRAMS:
         full_script_path = os.path.join(PROJECT_ROOT, script_path)
@@ -101,19 +119,23 @@ def build():
         # Compile each sub-program.
         # The --distpath is set to our temporary directory for sub-programs.
         # The --workpath is set to a unique directory per-exe to avoid conflicts.
-        run_command([
+        cmd = [
             PYINSTALLER_PATH, "--noconfirm", "--clean",
             f"--distpath={SUB_PROGRAMS_TEMP_DIR}",
             f"--workpath={os.path.join(BUILD_DIR, os.path.splitext(exe_name)[0] + '_work')}",
-            spec_path
-        ])
+        ]
+        cmd.extend(tcl_tk_args) # Add Tcl/Tk data paths
+        cmd.append(spec_path)
+        run_command(cmd)
 
     print("\n>>> STAGE 2: Compiling the main Picachu launcher...")
     picachu_spec_path = os.path.join(SPECS_DIR, "Picachu.spec")
-    run_command([
+    main_cmd = [
         PYINSTALLER_PATH, "--noconfirm", "--clean",
-        picachu_spec_path
-    ])
+    ]
+    main_cmd.extend(tcl_tk_args) # Add Tcl/Tk data paths
+    main_cmd.append(picachu_spec_path)
+    run_command(main_cmd)
 
     print("\n>>> STAGE 3: Creating distributable ZIP file...")
     final_app_dir = os.path.join(DIST_DIR, "Picachu")
