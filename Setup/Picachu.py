@@ -26,6 +26,7 @@
  
 ===============================================================================
 '''
+import multiprocessing
 import tkinter as tk
 from tkinter import ttk, messagebox, Toplevel, Text, Canvas, scrolledtext, font
 import os, sys, subprocess, platform, threading, queue, re, webbrowser
@@ -42,6 +43,21 @@ try:
     PYVISA_AVAILABLE = True
 except ImportError:
     PYVISA_AVAILABLE = False
+
+def run_program_process(program_path):
+    """
+    Wrapper function to execute a program (EXE or .py script) in a new process.
+    This becomes the target for the new, isolated process.
+    """
+    try:
+        if program_path.endswith('.py'):
+            subprocess.run([sys.executable, program_path], check=True)
+        else:
+            subprocess.run([program_path], check=True)
+    except Exception as e:
+        print(f"--- Sub-process Error in {os.path.basename(program_path)} ---")
+        print(e)
+        print("-------------------------")
 
 # --- Configuration for Sub-Executable Architecture ---
 # This is the folder where the compiled sub-program executables will be stored.
@@ -82,7 +98,8 @@ def resource_path(relative_path):
             # This is a simplified lookup. A more robust solution might search
             # through the project structure if script locations are complex.
             # For now, we assume a flat search can find it based on SCRIPT_PATHS_DEV.
-            return PICALauncherApp.SCRIPT_PATHS_DEV.get(py_script_name, "")
+            script_rel_path = PICALauncherApp.SCRIPT_PATHS_DEV.get(py_script_name, "")
+            return os.path.join(base_path, script_rel_path) if script_rel_path else ""
 
     return os.path.join(base_path, relative_path)
 
@@ -555,14 +572,9 @@ class PICALauncherApp:
             return
 
         try:
-            # For development, we run the .py script using the Python executable
-            if abs_path.endswith('.py'):
-                # Ensure we use the same python interpreter that is running Picachu
-                python_exe = sys.executable
-                subprocess.Popen([python_exe, abs_path])
-            else: # For bundled app, we run the .exe directly
-                subprocess.Popen([abs_path])
-
+            # Use multiprocessing.Process for robust, isolated execution
+            proc = multiprocessing.Process(target=run_program_process, args=(abs_path,))
+            proc.start()
             self.log(f"Successfully launched '{os.path.basename(abs_path)}' in a new process.")
         except Exception as e:
             self.log(f"ERROR: Failed to launch program. Reason: {e}")
@@ -737,4 +749,10 @@ def main():
 
 if __name__ == '__main__':
     # This script is now a pure GUI application. The main function starts it.
+    # This is ESSENTIAL for multiprocessing to work in a bundled executable
+    # and ensures a consistent, stable process creation method across platforms.
+    # 'spawn' is the most robust method for GUI apps, though it is the default
+    # on Windows and macOS.
+    multiprocessing.set_start_method('spawn', force=True)
+    multiprocessing.freeze_support()
     main()
