@@ -44,17 +44,19 @@ try:
 except ImportError:
     PYVISA_AVAILABLE = False
 
-def run_program_process(program_path):
+def run_program_process(program_args):
     """
     Wrapper function to execute a program in a new process.
     This becomes the target for the new, isolated process.
+    `program_args` can be a list (e.g., ['python', 'script.py']) or a string.
     """
     try:
-        # This command works for both .py files (with shebang or file association)
-        # and .exe files.
-        subprocess.run([program_path], check=True)
+        # This command works for both .py files (e.g., ['python', 'script.py'])
+        # and .exe files (e.g., ['path/to/program.exe']).
+        subprocess.run(program_args, check=True)
     except Exception as e:
-        print(f"--- Sub-process Error in {os.path.basename(program_path)} ---")
+        # Use the last element of program_args for the error message, as it's the script/exe.
+        print(f"--- Sub-process Error in {os.path.basename(program_args[-1])} ---")
         print(e)
         print("-------------------------")
 
@@ -564,9 +566,9 @@ class PICALauncherApp:
             # In dev mode, we need to launch with the python executable.
             # In bundled mode, the path is to an exe, so it runs directly.
             if abs_path.endswith('.py'):
-                proc = multiprocessing.Process(target=run_program_process, args=([sys.executable, abs_path],))
+                proc = multiprocessing.Process(target=run_program_process, args=(([sys.executable, abs_path],),))
             else:
-                proc = multiprocessing.Process(target=run_program_process, args=([abs_path],))
+                proc = multiprocessing.Process(target=run_program_process, args=(([abs_path],),))
             proc.start()
             self.log(f"Successfully launched '{os.path.basename(abs_path)}' in a new process.")
         except Exception as e:
