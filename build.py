@@ -98,10 +98,13 @@ def build():
         spec_filename = f"{os.path.splitext(exe_name)[0]}.spec"
         spec_path = os.path.join(SPECS_DIR, spec_filename)
 
-        # Compile each sub-program. Using a temporary distpath for each prevents conflicts.
+        # Compile each sub-program.
+        # The --distpath is set to our temporary directory for sub-programs.
+        # The --workpath is set to a unique directory per-exe to avoid conflicts.
         run_command([
             PYINSTALLER_PATH, "--noconfirm", "--clean",
             f"--distpath={SUB_PROGRAMS_TEMP_DIR}",
+            f"--workpath={os.path.join(BUILD_DIR, os.path.splitext(exe_name)[0] + '_work')}",
             spec_path
         ])
 

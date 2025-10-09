@@ -46,60 +46,33 @@ except ImportError:
 
 def run_program_process(program_path):
     """
-    Wrapper function to execute a program (EXE or .py script) in a new process.
+    Wrapper function to execute a program in a new process.
     This becomes the target for the new, isolated process.
     """
     try:
-        if program_path.endswith('.py'):
-            subprocess.run([sys.executable, program_path], check=True)
-        else:
-            subprocess.run([program_path], check=True)
+        # This command works for both .py files (with shebang or file association)
+        # and .exe files.
+        subprocess.run([program_path], check=True)
     except Exception as e:
         print(f"--- Sub-process Error in {os.path.basename(program_path)} ---")
         print(e)
         print("-------------------------")
 
-# --- Configuration for Sub-Executable Architecture ---
-# This is the folder where the compiled sub-program executables will be stored.
-# When building the main Picachu.exe, this folder must be included as a data asset.
-SUB_PROGRAMS_DIR = "programs"
-
 def resource_path(relative_path):
     """
     Get absolute path to resource, works for dev and for PyInstaller/Nuitka.
-    This function is crucial for ensuring that file paths to scripts and assets
-    work correctly both when running from source and when running as a bundled
-    executable. It now also handles the sub-program executable directory.
     """
     try:
         # When bundled by PyInstaller/Nuitka, a temporary folder is created
         # and its path is stored in `sys._MEIPASS`. This is the base path
-        # for all bundled resources.
+        # for all bundled resources, which are inside the `_internal` dir.
         base_path = sys._MEIPASS
-        
-        # For sub-programs, we check if the relative_path points to our programs dir
-        if relative_path.startswith(SUB_PROGRAMS_DIR):
-            # The path is already structured correctly for the bundled app
-            return os.path.join(base_path, relative_path)
-
     except Exception:
         # When running in development mode (as a .py script), `__file__`
         # points to `Setup/Picachu.py`. The resources (like `Keithley_2400/`)
         # are in the parent directory (the project root). Therefore, we must
         # navigate one level up ('..') to establish the correct base path.
         base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-
-        # In dev mode, we must construct the path to the original .py script
-        # from the executable name for it to run.
-        if relative_path.startswith(SUB_PROGRAMS_DIR):
-            exe_name = os.path.basename(relative_path)
-            py_script_name = os.path.splitext(exe_name)[0] + ".py"
-            
-            # This is a simplified lookup. A more robust solution might search
-            # through the project structure if script locations are complex.
-            # For now, we assume a flat search can find it based on SCRIPT_PATHS_DEV.
-            script_rel_path = PICALauncherApp.SCRIPT_PATHS_DEV.get(py_script_name, "")
-            return os.path.join(base_path, script_rel_path) if script_rel_path else ""
 
     return os.path.join(base_path, relative_path)
 
@@ -127,6 +100,9 @@ class PICALauncherApp:
     LICENSE_FILE = resource_path("LICENSE")
     UPDATES_FILE = resource_path("Change_Logs.md")
     LOGO_SIZE = 140
+
+    # This is the folder where the compiled sub-program executables will be stored.
+    SUB_PROGRAMS_DIR = "programs"
 
     # --- SCRIPT PATHS FOR THE EXECUTABLE BUILD ---
     # These paths point to the final executable names inside the SUB_PROGRAMS_DIR.
@@ -206,7 +182,7 @@ class PICALauncherApp:
         style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_BG_DARK, borderwidth=2, padding=12)
         style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_ACCENT_GOLD, font=self.FONT_SUBTITLE)
         style.configure('App.TButton', font=self.FONT_BASE, padding=(10, 8), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_FRAME_BG, borderwidth=0, focusthickness=0, focuscolor='none')
-        style.map('App.TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
+        style.map('App.TButton', background=[('active', self.CLR_ACCENT_GOLD), ('!disabled', 'hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_TEXT_DARK), ('!disabled', 'hover', self.CLR_TEXT_DARK)])
         style.configure('Scan.TButton', font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_TEXT_DARK, background=self.CLR_ACCENT_GREEN)
         style.map('Scan.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
         style.configure('Icon.TButton', font=('Segoe UI', 12), padding=(5, 9), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_FRAME_BG, borderwidth=0)
@@ -561,19 +537,36 @@ class PICALauncherApp:
             self.log(f"ERROR: Program key '{program_key}' not found.")
             messagebox.showerror("Launch Error", f"Program key '{program_key}' is not defined.")
             return
+        
+        abs_path = ""
+        # Determine if running in bundled mode or development mode
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            # Bundled mode: Path is relative to the _MEIPASS directory
+            base_path = sys._MEIPASS
+            abs_path = os.path.join(base_path, program_rel_path)
+        else:
+            # Development mode: Convert .exe path to .py path
+            exe_name = os.path.basename(program_rel_path)
+            py_name = os.path.splitext(exe_name)[0] + ".py"
+            dev_rel_path = self.SCRIPT_PATHS_DEV.get(py_name)
+            if dev_rel_path:
+                project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+                abs_path = os.path.join(project_root, dev_rel_path)
 
-        # Use resource_path to get the correct, absolute path for both dev and bundled mode
-        abs_path = resource_path(program_rel_path)
         self.log(f"Attempting to launch: {os.path.basename(abs_path)}")
 
-        if not os.path.exists(abs_path):
+        if not abs_path or not os.path.exists(abs_path):
             self.log(f"ERROR: Program not found at {abs_path}")
             messagebox.showerror("File Not Found", f"The required program was not found:\n\n{abs_path}")
             return
 
         try:
-            # Use multiprocessing.Process for robust, isolated execution
-            proc = multiprocessing.Process(target=run_program_process, args=(abs_path,))
+            # In dev mode, we need to launch with the python executable.
+            # In bundled mode, the path is to an exe, so it runs directly.
+            if abs_path.endswith('.py'):
+                proc = multiprocessing.Process(target=run_program_process, args=([sys.executable, abs_path],))
+            else:
+                proc = multiprocessing.Process(target=run_program_process, args=([abs_path],))
             proc.start()
             self.log(f"Successfully launched '{os.path.basename(abs_path)}' in a new process.")
         except Exception as e:
