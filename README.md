@@ -302,7 +302,7 @@ Please open an issue first to discuss any major changes you would like to make.
 ## 🧑‍🔬 Authors & Acknowledgments
 
 <div align="center">
-  <img src="_assets/LOGO/UGC_DAE_CSR.jpeg" alt="UGC DAE CSR Logo" width="150">
+  <img src="_assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </div>
 
 - **Lead Developer:** **[Prathamesh Deshmukh](https://prathameshdeshmukh.site/)**
