@@ -9,7 +9,7 @@ project_root = os.path.abspath(os.path.join(spec_dir, '..', '..'))
 icon_file = os.path.join(project_root, '_assets', 'LOGO', 'PICA_LOGO.ico')
 
 a = Analysis(
-    [os.path.join(project_root, 'Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py')],
+    [os.path.join(project_root, 'Keithley_2400/IV_K2400_Frontend_v5.py')],
     pathex=[],
     binaries=[],
     datas=[],
@@ -28,7 +28,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='IV_K2400_K2182_Frontend_v3',
+    name='IV_K2400_Frontend_v5',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -49,5 +49,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='IV_K2400_K2182_Frontend_v3'
+    name='IV_K2400_Frontend_v5'
 )
