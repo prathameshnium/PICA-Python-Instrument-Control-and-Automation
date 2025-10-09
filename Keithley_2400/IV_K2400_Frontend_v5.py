@@ -2,9 +2,9 @@
 # Name:           Keithley 2400 I-V Measurement GUI
 # Purpose:        Perform an automated I-V sweep using a Keithley 2400.
 #                 (Grid-based layout for stability)
-# Author:         Prathamesh (Modified by Gemini)
+# Author:         Prathamesh Deshmukh
 # Created:        10/09/2025
-# Version:        12.0 (User-Requested Sweep Protocols)
+# Version:        12.1 (Plotting and Stability Fix)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -61,6 +61,7 @@ def launch_plotter_utility():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_Frontend_v3.py")
     Process(target=run_script_process, args=(plotter_path,)).start()
+
 class Keithley2400_IV_Backend:
     """A dedicated class to handle backend communication with the Keithley 2400 for I-V sweeps."""
     def __init__(self):
@@ -84,7 +85,6 @@ class Keithley2400_IV_Backend:
         self.keithley.apply_current()
         self.keithley.source_current = 0
 
-        # --- MODIFIED: Determine max current range based on sweep type ---
         max_abs_current = 0
         if params['sweep_type'] == 'Custom List':
             try:
@@ -92,23 +92,25 @@ class Keithley2400_IV_Backend:
                 if points:
                     max_abs_current = max(abs(p) for p in points)
             except:
-                 max_abs_current = 1.0 # Default to 1A range if parsing fails
+                max_abs_current = 1.0 # Default to 1A range if parsing fails
         else:
             max_abs_current = abs(params['max_current'])
 
         self.keithley.source_current_range = max_abs_current * 1.05 if max_abs_current > 0 else 1e-5
         self.keithley.compliance_voltage = params['compliance_v']
-        self.keithley.enable_source()
 
+        # --- FIXED: Improve measurement stability by setting NPLC ---
+        self.keithley.measure_voltage_nplc = 1 # Integrate over 1 power line cycle for noise reduction
+
+        self.keithley.enable_source()
+        
     def generate_sweep_points(self, params):
-        # --- MODIFIED: New sweep generation logic ---
         sweep_type = params['sweep_type']
         base_sweep = np.array([])
 
         if sweep_type == "Custom List":
             try:
                 custom_list_str = params['custom_list_str']
-                # Convert comma-separated string of µA values to a numpy array of A values
                 points = [float(p.strip()) * 1e-6 for p in custom_list_str.split(',') if p.strip()]
                 if not points:
                     raise ValueError("Custom list is empty or invalid.")
@@ -125,10 +127,10 @@ class Keithley2400_IV_Backend:
                 base_sweep = np.arange(0, imax + istep, istep)
 
             elif sweep_type == "Loop (0 → Max → 0 → -Max → 0)":
-                s1 = np.arange(0, imax + istep, istep)           # 0 -> Max
-                s2 = np.arange(imax, 0 - istep, -istep)          # Max -> 0
-                s3 = np.arange(0, -imax - istep, -istep)         # 0 -> -Max
-                s4 = np.arange(-imax, 0 + istep, istep)          # -Max -> 0
+                s1 = np.arange(0, imax + istep, istep)       # 0 -> Max
+                s2 = np.arange(imax, 0 - istep, -istep)     # Max -> 0
+                s3 = np.arange(0, -imax - istep, -istep)    # 0 -> -Max
+                s4 = np.arange(-imax, 0 + istep, istep)     # -Max -> 0
                 base_sweep = np.concatenate([s1, s2[1:], s3[1:], s4[1:]])
 
         if base_sweep.size == 0 and sweep_type != "Custom List":
@@ -136,13 +138,10 @@ class Keithley2400_IV_Backend:
 
         return np.tile(base_sweep, params['num_loops'])
 
-
     def measure_at_current(self, current_setpoint, delay):
         self.keithley.ramp_to_current(current_setpoint, steps=5, pause=0.01)
         time.sleep(delay)
-        # The .voltage property can return a list. We need to ensure we get a single float.
         voltage_reading = self.keithley.voltage
-        # If it's a list, take the first element. Otherwise, use the value as is.
         return voltage_reading[0] if isinstance(voltage_reading, list) else voltage_reading
 
     def shutdown(self):
@@ -153,7 +152,7 @@ class Keithley2400_IV_Backend:
                 self.keithley = None
 
 class MeasurementAppGUI:
-    PROGRAM_VERSION = "12.0" # Updated Version
+    PROGRAM_VERSION = "12.1" # Updated Version
     CLR_BG_DARK, CLR_HEADER, CLR_FG_LIGHT = '#2B3D4F', '#3A506B', '#EDF2F4'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_GOLD = '#A7C957', '#EF233C', '#FFC107'
     CLR_CONSOLE_BG = '#1E2B38'
@@ -161,11 +160,9 @@ class MeasurementAppGUI:
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
     try:
-        # Robust path finding for assets
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
         LOGO_FILE = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
     except NameError:
-        # Fallback for environments where __file__ is not defined
         LOGO_FILE = "../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
     LOGO_SIZE = 120
 
@@ -181,21 +178,15 @@ class MeasurementAppGUI:
         self.file_location_path = ""
         self.data_storage = {'current': [], 'voltage': [], 'resistance': []}
         self.logo_image = None
-        # --- NEW: Blitting optimization ---
-        self.plot_bg = None
-        self.is_resizing = False
-        self.resize_timer = None
         self.pre_init_logs = []
 
-        # --- NEW: Initialize custom UI widget variables ---
         self.custom_list_label = None
         self.custom_list_text = None
 
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
-        self.root.bind('<Configure>', self._on_resize)
-        self._on_sweep_type_change() # Call once to set initial UI state
+        self._on_sweep_type_change()
 
     def setup_styles(self):
         style = ttk.Style(self.root)
@@ -217,15 +208,12 @@ class MeasurementAppGUI:
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
-        # --- Left Panel ---
         left_panel_container = ttk.Frame(main_pane)
         main_pane.add(left_panel_container, weight=0)
-
-        # --- Right Panel ---
+        
         right_panel_container = tk.Frame(main_pane, bg='white')
         main_pane.add(right_panel_container, weight=1)
 
-        # --- Make the left panel scrollable ---
         canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)
         scrollbar = ttk.Scrollbar(left_panel_container, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
@@ -249,7 +237,6 @@ class MeasurementAppGUI:
         header_frame.pack(side='top', fill='x')
         font_title_main = ('Segoe UI', self.FONT_SIZE_BASE + 4, 'bold')
 
-        # --- Plotter Launch Button ---
         plotter_button = ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3)
         plotter_button.pack(side='right', padx=10, pady=5)
 
@@ -262,7 +249,7 @@ class MeasurementAppGUI:
         frame.grid_columnconfigure(1, weight=1)
 
         logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
-        logo_canvas.grid(row=0, column=0, padx=15, pady=15, sticky='ns')
+        logo_canvas.grid(row=0, column=0, rowspan=4, padx=15, pady=15, sticky='ns')
 
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE):
             try:
@@ -279,16 +266,13 @@ class MeasurementAppGUI:
         institute_font = ('Segoe UI', self.FONT_SIZE_BASE, 'bold')
         ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
         ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
-
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
- 
         details_text = ("Program Name: I-V Sweep (4-Probe)\n"
                         "Instrument: Keithley 2400\n"
                         "Measurement Range: 10⁻³ Ω to 10⁹ Ω")
-        ttk.Label(frame, text=details_text, justify='left', background=self.CLR_BG_DARK).grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
+        ttk.Label(frame, text=details_text, justify='left', background=self.CLR_BG_DARK).grid(row=3, column=1, padx=10, pady=(0, 10), sticky='w')
 
     def create_input_frame(self, parent):
-        # --- MODIFIED: Updated UI layout for new sweep options ---
         frame = LabelFrame(parent, text='Sweep Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         frame.pack(pady=10, padx=10, fill='x')
         self.entries = {}
@@ -312,7 +296,6 @@ class MeasurementAppGUI:
         self.sweep_type_cb.set("0 to Max")
         self.sweep_type_cb.bind("<<ComboboxSelected>>", self._on_sweep_type_change)
 
-        # --- NEW: Custom list widgets ---
         self.custom_list_label = ttk.Label(grid, text="Custom Current List (µA, comma-separated):")
         self.custom_list_label.grid(row=8, column=0, columnspan=3, sticky='w', pady=(10, 0))
         self.custom_list_text = scrolledtext.ScrolledText(grid, height=4, font=self.FONT_BASE, wrap='word')
@@ -330,10 +313,8 @@ class MeasurementAppGUI:
 
         self.progress_bar = ttk.Progressbar(frame, orient='horizontal', mode='determinate'); self.progress_bar.pack(padx=10, pady=(5,10), fill='x')
 
-    # --- NEW: Method to handle UI changes based on sweep type ---
     def _on_sweep_type_change(self, event=None):
-        """Shows/hides UI elements based on the selected sweep type."""
-        if not hasattr(self, 'sweep_type_var'): return # Avoid error during initialization
+        if not hasattr(self, 'sweep_type_var'): return
 
         selection = self.sweep_type_var.get()
         standard_sweep_entries = [self.entries["Max Current"], self.entries["Step Current"]]
@@ -369,27 +350,22 @@ class MeasurementAppGUI:
     def create_graph_frame(self, parent):
         graph_container = LabelFrame(parent, text='Live I-V Curve', relief='groove', bg='white', fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
-        # --- MODIFIED: Animated=True for blitting ---
+        
         self.figure = Figure(figsize=(8, 8), dpi=100, constrained_layout=True)
         self.ax_vi, self.ax_ri = self.figure.subplots(2, 1, sharex=True)
 
-        # --- V-I Plot (Top) ---
         self.ax_vi.grid(True, linestyle='--', alpha=0.7)
         self.ax_vi.axhline(0, color='k', linestyle='--', linewidth=0.7, alpha=0.5)
-        self.line_main, = self.ax_vi.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-', animated=True)
+        self.line_main, = self.ax_vi.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
         self.ax_vi.set_title("Voltage vs. Current", fontweight='bold'); self.ax_vi.set_ylabel("Voltage (V)")
 
-        # --- R-I Plot (Bottom) ---
         self.ax_ri.grid(True, linestyle='--', alpha=0.7)
-        self.line_resistance, = self.ax_ri.plot([], [], color=self.CLR_ACCENT_GREEN, marker='o', markersize=4, linestyle='-', animated=True)
+        self.line_resistance, = self.ax_ri.plot([], [], color=self.CLR_ACCENT_GREEN, marker='o', markersize=4, linestyle='-')
         self.ax_ri.set_title("Resistance vs. Current", fontweight='bold'); self.ax_ri.set_xlabel("Current (A)"); self.ax_ri.set_ylabel("Resistance (Ω)")
-        self.ax_ri.set_yscale('log') # Resistance is often best viewed on a log scale
+        self.ax_ri.set_yscale('log')
 
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        # --- MODIFIED: Connect draw event for blitting ---
-        self.canvas.mpl_connect('draw_event', self._on_draw)
-
 
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -401,7 +377,6 @@ class MeasurementAppGUI:
 
     def start_measurement(self):
         try:
-            # --- MODIFIED: New parameter collection logic ---
             sweep_type = self.sweep_type_var.get()
             params = {
                 'sample_name': self.entries["Sample Name"].get(),
@@ -437,13 +412,11 @@ class MeasurementAppGUI:
             self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
             
-            # --- MODIFIED: Plot setup for blitting ---
+            # Reset plot for new measurement
             self.line_main.set_data([], []); self.line_resistance.set_data([], [])
-            self.ax_vi.relim(); self.ax_vi.autoscale_view()
-            self.ax_ri.relim(); self.ax_ri.autoscale_view()
             self.progress_bar['value'] = 0; self.progress_bar['maximum'] = len(self.sweep_points)
             self.figure.suptitle(f"Sample: {params['sample_name']}", fontweight='bold')
-            self.canvas.draw_idle() # Use draw_idle to schedule a draw
+            self.canvas.draw()
             self.log("Measurement sweep started.")
             self.root.after(100, self._run_sweep_step)
         except Exception as e:
@@ -462,62 +435,33 @@ class MeasurementAppGUI:
             current = self.sweep_points[self.sweep_index]
             voltage = self.backend.measure_at_current(current, float(self.entries["Delay"].get()))
             
-            # Calculate resistance, handling division by zero
-            if current != 0:
-                resistance = voltage / current
-            else:
-                resistance = np.nan # Use Not-a-Number for plotting
+            # --- FIXED: Add a warning if compliance is hit ---
+            if abs(voltage) >= 9.9e37:
+                self.log("WARNING: Voltage compliance reached! Check sample connections.")
+
+            resistance = voltage / current if current != 0 else np.nan
 
             self.data_storage['current'].append(float(current)); self.data_storage['voltage'].append(voltage); self.data_storage['resistance'].append(resistance)
             with open(self.data_filepath, 'a', newline='') as f: csv.writer(f, delimiter='\t').writerow([f"{current:.8e}", f"{voltage:.8e}", f"{resistance:.8e}"])
 
-            # --- MODIFIED: Efficient plotting with blitting ---
+            # --- FIXED: Simplified and robust plotting logic ---
+            # Update plot data
             self.line_main.set_data(self.data_storage['current'], self.data_storage['voltage'])
             self.line_resistance.set_data(self.data_storage['current'], self.data_storage['resistance'])
-
-            # --- Autoscale axes and redraw background if limits change ---
-            if self.ax_vi.get_xlim() != self.ax_ri.get_xlim() or self.ax_vi.get_ylim() != self.ax_vi.get_ylim():
-                self.ax_vi.relim(); self.ax_vi.autoscale_view()
-                self.ax_ri.relim(); self.ax_ri.autoscale_view()
-                self.canvas.draw_idle() # Full redraw if axes change
-            else:
-                # --- Efficient blitting update ---
-                if self.plot_bg:
-                    self.canvas.restore_region(self.plot_bg)
-                    self.ax_vi.draw_artist(self.line_main)
-                    self.ax_ri.draw_artist(self.line_resistance)
-                    self.canvas.blit(self.figure.bbox)
-                    self.canvas.flush_events()
+            
+            # Rescale and redraw both plots
+            self.ax_vi.relim()
+            self.ax_vi.autoscale_view()
+            self.ax_ri.relim()
+            self.ax_ri.autoscale_view()
+            self.canvas.draw_idle() # Use draw_idle for smoother updates
+            # --- End of fix ---
 
             self.progress_bar['value'] = self.sweep_index + 1
-
             self.sweep_index += 1
-            self.root.after(10, self._run_sweep_step)
+            self.root.after(10, self._run_sweep_step) # Schedule the next step
         except Exception:
             self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); messagebox.showerror("Runtime Error", "An error occurred during the sweep. Check console."); self.stop_measurement()
-
-    # --- NEW: Blitting and resize handling methods ---
-    def _on_draw(self, event):
-        """Callback for draw events to cache the plot background."""
-        if self.is_resizing: return
-        self.plot_bg = self.canvas.copy_from_bbox(self.figure.bbox)
-
-    def _on_resize(self, event):
-        """Handle window resize events to trigger a full redraw."""
-        self.is_resizing = True
-        self.plot_bg = None # Invalidate background
-        if self.resize_timer:
-            self.root.after_cancel(self.resize_timer)
-        
-        # Redraw after a short delay to avoid excessive redraws during resizing
-        self.resize_timer = self.root.after(300, self._finalize_resize)
-
-    def _finalize_resize(self):
-        """Finalize the resize by performing a full redraw."""
-        self.is_resizing = False
-        self.resize_timer = None
-        if self.canvas:
-            self.canvas.draw_idle()
 
     def _scan_for_visa_instruments(self):
         if pyvisa is None or self.backend.rm is None: self.log("ERROR: PyVISA not found or NI-VISA backend is missing."); return
