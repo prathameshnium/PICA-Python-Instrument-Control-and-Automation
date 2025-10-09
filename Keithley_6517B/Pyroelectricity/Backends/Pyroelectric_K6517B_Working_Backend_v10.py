@@ -2,7 +2,7 @@
 # Name:       Pyroelectricity measurement  #interfacing Lakeshore350_Temprature_Controller and Keithley 6517B electrometer
 # Purpose:
 #
-# Author:      Ketan
+# Author:      Prathamesh K Deshmukh
 #
 # Created:    3/3/24
 # Changes_done:   V3
