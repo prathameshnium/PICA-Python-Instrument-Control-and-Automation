@@ -2,10 +2,9 @@
 # Name:        Keithley 6517B electrometer
 # Purpose:
 #
-# Author:      ketan
+# Author:     Prathamesh K Deshmukh
 #
 # Created:     03-03-2024
-# Copyright:   (c) ketan 2024
 # updates: V1.3
 #-------------------------------------------------------------------------------
 
