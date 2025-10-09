@@ -299,7 +299,7 @@ class PICALauncherApp:
 
         # --- Left Column Suites ---
         self._create_suite_frame(left_col, 'Low Resistance (10⁻⁹ Ω to 10⁸ Ω)', "Current Driven", "Instruments: Keithley 6221/2182, Lakeshore 350", [
-            ("Delta Mode I-V Sweep", "Delta Mode I-V Sweep"),
+            ("Sweep Mode I-V ", "Delta Mode I-V Sweep"),
             ("Delta Mode R vs. T (T_Control)", "Delta Mode R-T"),
             ("Delta Mode R vs. T (T_Sensing)", "Delta Mode R-T (T_Sensing)"),
         ])

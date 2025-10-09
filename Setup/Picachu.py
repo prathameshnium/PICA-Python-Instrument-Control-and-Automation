@@ -108,7 +108,7 @@ class PICALauncherApp:
     # These paths point to the final executable names inside the SUB_PROGRAMS_DIR.
     # The build system is responsible for creating these EXEs and putting them there.
     SCRIPT_PATHS = {
-        "Delta Mode I-V Sweep": os.path.join(SUB_PROGRAMS_DIR, "IV_K6221_DC_Sweep_Frontend_V10.exe"),
+        "Sweep Mode I-V": os.path.join(SUB_PROGRAMS_DIR, "IV_K6221_DC_Sweep_Frontend_V10.exe"),
         "Delta Mode R-T": os.path.join(SUB_PROGRAMS_DIR, "Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.exe"),
         "Delta Mode R-T (T_Sensing)": os.path.join(SUB_PROGRAMS_DIR, "Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.exe"),
         "K2400 I-V": os.path.join(SUB_PROGRAMS_DIR, "IV_K2400_Frontend_v5.exe"),
