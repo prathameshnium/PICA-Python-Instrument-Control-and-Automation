@@ -281,7 +281,7 @@ class TempMonitorGUI:
         # Program details
         details_text = ("Program Name: Temperature Monitor\n"
                         "Instrument: Lakeshore 350 Controller\n"
-                        "Measurement Range: 1.4 K to 800 K (Sensor Dependent)")
+                        "Measurement Range: 1.4 K to 873 K (Sensor Dependent)")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def create_input_frame(self, parent):

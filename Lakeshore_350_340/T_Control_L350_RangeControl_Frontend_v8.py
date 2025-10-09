@@ -231,7 +231,9 @@ class TempControlGUI:
 
         institute_font = ('Segoe UI', self.FONT_BASE[1] + 6, 'bold')
         ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_FRAME_BG).grid(row=0, column=1, padx=10, pady=(25,0), sticky='sw')
-        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_FRAME_BG).grid(row=1, column=1, padx=10, pady=(0,10), sticky='nw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_FRAME_BG).grid(row=1, column=1, padx=10, pady=(0,5), sticky='nw')
+        details_text = "Control Range: 1.4 K to 873 K (Sensor Dependent)"
+        ttk.Label(frame, text=details_text, justify='left', background=self.CLR_FRAME_BG).grid(row=2, column=1, padx=10, pady=(0, 10), sticky='w')
 
     def _create_control_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Ramp Control')
