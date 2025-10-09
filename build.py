@@ -56,6 +56,7 @@ SUB_PROGRAMS = [
     ("Keithley_2400/IV_K2400_Frontend_v5.py", "IV_K2400_Frontend_v5.exe"),
     ("Keithley_2400/RT_K2400_L350_T_Control_Frontend_v3.py", "RT_K2400_L350_T_Control_Frontend_v3.exe"),
     ("Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v4.py", "RT_K2400_L350_T_Sensing_Frontend_v4.exe"),
+    ("Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py", "IV_K2400_K2182_Frontend_v3.exe"),
     ("Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_Frontend_v3.py", "RT_K2400_K2182_T_Control_Frontend_v3.exe"),
     ("Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_Frontend_v2.py", "RT_K2400_2182_L350_T_Sensing_Frontend_v2.exe"),
     ("Keithley_6517B/High_Resistance/IV_K6517B_Frontend_v11.py", "IV_K6517B_Frontend_v11.exe"),

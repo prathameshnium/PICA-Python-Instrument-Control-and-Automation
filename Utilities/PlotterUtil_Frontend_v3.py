@@ -21,7 +21,7 @@ import numpy as np
 # --- Multi-instance support ---
 import sys
 from multiprocessing import Process
-import multiprocessing
+import multiprocessing, subprocess
 
 try:
     from PIL import Image, ImageTk
@@ -38,23 +38,20 @@ def launch_new_instance():
     Launches a new instance of the plotter application in a separate process.
     This is necessary for creating independent windows.
     """
-    try:
-        # We execute the script file itself in a new process
-        proc = Process(target=run_script_process, args=(__file__,))
-        proc.start()
-    except Exception as e:
-        messagebox.showerror("Launch Error", f"Could not open a new plotter instance.\n\nError: {e}")
+    # This function is no longer needed, as the logic is handled directly
+    # in the button command for clarity and robustness.
+    pass
 
 def run_script_process(script_path):
-    """Wrapper function to execute a script in its own directory."""
+    """
+    Wrapper function to execute a script in a new process.
+    This becomes the target for the new, isolated process.
+    `script_path` can be a list (e.g., ['python', 'script.py']) or a string (path to .exe).
+    """
     try:
-        # This is a generic helper that can be used to run any script.
-        # For our purpose, it runs a copy of this same plotter script.
-        os.chdir(os.path.dirname(script_path))
-        # Using exec avoids issues with runpy in frozen applications
-        with open(script_path, 'r') as f:
-            code = compile(f.read(), script_path, 'exec')
-            exec(code, {'__name__': '__main__'})
+        # This command works for both .py files (e.g., ['python', 'script.py'])
+        # and .exe files (e.g., ['path/to/program.exe']).
+        subprocess.run(script_path, check=True)
     except Exception as e:
         print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
         print(e)
@@ -196,6 +193,16 @@ class PlotterApp:
         file_buttons_frame.grid_columnconfigure((0,1), weight=1)
         ttk.Button(file_buttons_frame, text="Add File(s)...", command=self.browse_files).grid(row=0, column=0, sticky='ew', padx=(0,5))
         ttk.Button(file_buttons_frame, text="Remove Selected", command=self.remove_selected_file).grid(row=0, column=1, sticky='ew', padx=(5,0))
+        
+        # --- New Instance Button ---
+        # This button is placed here for easy access to open another plotter.
+        new_instance_button = ttk.Button(file_frame, text="Open New Plotter Window", command=self.launch_new_instance_handler)
+        new_instance_button.grid(row=3, column=0, sticky='ew', padx=10, pady=(10, 5))
+
+        # --- Checkbox UI: Create a scrollable frame for file checkboxes ---
+        list_container = ttk.Frame(file_frame, style='TFrame')
+        list_container.grid(row=1, column=0, sticky='nsew', padx=10, pady=(0,10))
+        list_container.rowconfigure(0, weight=1)
 
         # --- Checkbox UI: Create a scrollable frame for file checkboxes ---
         list_container = ttk.Frame(file_frame, style='TFrame')
@@ -305,6 +312,23 @@ class PlotterApp:
         self.console.insert('end', log_msg)
         self.console.see('end')
         self.console.config(state='disabled')
+
+    def launch_new_instance_handler(self):
+        """
+        Handles launching a new instance of the plotter. This logic correctly
+        differentiates between running from a .py script and a bundled .exe.
+        """
+        try:
+            if getattr(sys, 'frozen', False):
+                # We are running in a bundle (as an .exe).
+                # sys.executable is the path to the .exe itself.
+                args = [sys.executable]
+            else:
+                # We are running in a normal Python environment.
+                args = [sys.executable, __file__]
+            Process(target=run_script_process, args=(args,)).start()
+        except Exception as e:
+            messagebox.showerror("Launch Error", f"Could not open a new plotter instance.\n\nError: {e}")
 
     def browse_files(self):
         filepaths = filedialog.askopenfilenames(
