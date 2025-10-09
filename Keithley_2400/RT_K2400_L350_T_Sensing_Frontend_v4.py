@@ -228,7 +228,7 @@ class RT_GUI_Passive:
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
         details_text = ("Program Name: R vs. T (T-Sensing)\n"
                         "Instruments: Keithley 2400, Lakeshore 350\n"
-                        "Measurement Range: 10⁻³ Ω to 10⁹ Ω")
+                        "Measurement Range: <0.2 Ω to >200 MΩ")
         ttk.Label(frame, text=details_text, justify='left', background=self.CLR_HEADER).grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def _create_right_panel(self, parent):

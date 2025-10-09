@@ -93,7 +93,7 @@ class PICALauncherApp:
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 10, 'bold')
     FONT_SUBTITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
-    FONT_INSTITUTE = ('Segoe UI', FONT_SIZE_BASE + 4, 'bold') # New font for institute
+    FONT_INSTITUTE = ('Segoe UI', FONT_SIZE_BASE + 6, 'bold') # New font for institute
     FONT_CONSOLE = ('Consolas', 10)
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
     FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
@@ -182,7 +182,7 @@ class PICALauncherApp:
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_TEXT, font=self.FONT_BASE)
         style.configure('TSeparator', background=self.CLR_FRAME_BG)
-        style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_BG_DARK, borderwidth=2, padding=12)
+        style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_BG_DARK, borderwidth=2, padding=6)
         style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_ACCENT_GOLD, font=self.FONT_SUBTITLE)
         style.configure('App.TButton', font=self.FONT_BASE, padding=(10, 8), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_FRAME_BG, borderwidth=0, focusthickness=0, focuscolor='none')
         style.map('App.TButton', background=[('active', self.CLR_ACCENT_GOLD), ('!disabled', 'hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_TEXT_DARK), ('!disabled', 'hover', self.CLR_TEXT_DARK)])
@@ -315,24 +315,24 @@ class PICALauncherApp:
         GROUP_PAD_Y = 15
 
         # --- Left Column Suites ---
-        self._create_suite_frame(left_col, 'Low Resistance (10⁻⁹ Ω to 10⁸ Ω)', "Current Driven", "Instruments: Keithley 6221/2182, Lakeshore 350", [
+        self._create_suite_frame(left_col, 'Low Resistance (~10 nΩ to 1 GΩ)', "Current Driven", "Instruments: Keithley 6221/2182, Lakeshore 350", [
             ("Delta Mode I-V Sweep", "Delta Mode I-V Sweep"),
             ("Delta Mode R vs. T (T_Control)", "Delta Mode R-T"),
             ("Delta Mode R vs. T (T_Sensing)", "Delta Mode R-T (T_Sensing)"),
         ])
-        self._create_suite_frame(left_col, 'Mid Resistance (10⁻³ Ω to 10⁹ Ω)', "Current Driven", "Instruments: Keithley 2400, Lakeshore 350", [
+        self._create_suite_frame(left_col, 'Mid Resistance (<0.2 Ω to >200 MΩ)', "Current Driven", "Instruments: Keithley 2400, Lakeshore 350", [
             ("I-V Sweep", "K2400 I-V"),
             ("R vs. T (T_Control)", "K2400 R-T"),
             ("R vs. T (T_Sensing)", "K2400 R-T (T_Sensing)"),
         ])
-        self._create_suite_frame(left_col, 'Mid Resistance, High Precision (10⁻⁶ Ω to 10⁹ Ω)', "Current Driven", "Instruments: Keithley 2400/2182, Lakeshore 350", [
+        self._create_suite_frame(left_col, 'Mid Resistance, High Precision', "Current Driven", "Instruments: Keithley 2400/2182, Lakeshore 350", [
             ("I-V Sweep", "K2400_2182 I-V"),
             ("R vs. T (T_Control)", "K2400_2182 R-T"),
             ("R vs. T (T_Sensing)", "K2400_2182 R-T (T_Sensing)"),
         ])
 
         # --- Right Column Suites ---
-        self._create_suite_frame(right_col, 'High Resistance (10³ Ω to 10¹⁶ Ω)', "Voltage Driven", "Instruments: Keithley 6517B, Lakeshore 350", [
+        self._create_suite_frame(right_col, 'High Resistance (<10 Ω to >10 PΩ)', "Voltage Driven", "Instruments: Keithley 6517B, Lakeshore 350", [
             ("I-V Sweep", "K6517B I-V"),
             ("R vs. T (T_Control)", "K6517B R-T"),
             ("R vs. T (T_Sensing)", "K6517B R-T (T_Sensing)"),
@@ -342,7 +342,7 @@ class PICALauncherApp:
             ("Temperature Ramp", "Lakeshore Temp Control"),
             ("Temperature Monitor", "Lakeshore Temp Monitor")
         ])
-        self._create_suite_frame(right_col, 'Capacitance (Keysight E4980A)', "Voltage Driven", None, [("C-V Measurement", "LCR C-V Measurement")])
+        self._create_suite_frame(right_col, 'Capacitance & Impedance (20 Hz - 2 MHz)', "Voltage Driven", "Instrument: Keysight E4980A", [("C-V Measurement", "LCR C-V Measurement")])
 
         return main_container
 

@@ -347,7 +347,7 @@ class Integrated_RT_GUI:
         # Program details
         details_text = ("Program Name: R vs. T (T-Control)\n"
                         "Instruments: Lakeshore 350, Keithley 6517B\n"
-                        "Measurement Range: 10³ Ω to 10¹⁶ Ω")
+                        "Measurement Range: <10 Ω to >10 PΩ")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def create_input_frame(self, parent):
