@@ -2,9 +2,9 @@
 # Name:           Keithley 2400 I-V Measurement GUI
 # Purpose:        Perform an automated I-V sweep using a Keithley 2400.
 #                 (Grid-based layout for stability)
-# Author:         Prathamesh Deshmukh
+# Author:         Prathamesh (Modified by Gemini)
 # Created:        10/09/2025
-# Version:        12.1 (Plotting and Stability Fix)
+# Version:        12.2 (Added GPIB Scanner Utility)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
@@ -60,7 +60,22 @@ def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_Frontend_v3.py")
+    if not os.path.exists(plotter_path):
+        messagebox.showerror("File Not Found", f"Plotter Utility not found at:\n{plotter_path}")
+        return
     Process(target=run_script_process, args=(plotter_path,)).start()
+
+# --- NEW: Function to launch the GPIB Scanner ---
+def launch_gpib_scanner():
+    """Finds and launches the GPIB scanner utility in a new process."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Assuming the standard PICA project structure
+    scanner_path = os.path.join(script_dir, "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
+    if not os.path.exists(scanner_path):
+         messagebox.showerror("File Not Found", f"GPIB Scanner not found at:\n{scanner_path}")
+         return
+    Process(target=run_script_process, args=(scanner_path,)).start()
+# --- End of new function ---
 
 class Keithley2400_IV_Backend:
     """A dedicated class to handle backend communication with the Keithley 2400 for I-V sweeps."""
@@ -92,15 +107,13 @@ class Keithley2400_IV_Backend:
                 if points:
                     max_abs_current = max(abs(p) for p in points)
             except:
-                max_abs_current = 1.0 # Default to 1A range if parsing fails
+                max_abs_current = 1.0
         else:
             max_abs_current = abs(params['max_current'])
 
         self.keithley.source_current_range = max_abs_current * 1.05 if max_abs_current > 0 else 1e-5
         self.keithley.compliance_voltage = params['compliance_v']
-
-        # --- FIXED: Improve measurement stability by setting NPLC ---
-        self.keithley.measure_voltage_nplc = 1 # Integrate over 1 power line cycle for noise reduction
+        self.keithley.measure_voltage_nplc = 1
 
         self.keithley.enable_source()
         
@@ -118,7 +131,7 @@ class Keithley2400_IV_Backend:
             except ValueError as e:
                 raise ValueError(f"Invalid format in custom list. Please use comma-separated numbers. Error: {e}")
 
-        else: # Handle the other sweep types
+        else:
             imax, istep = params['max_current'], params['step_current']
             if istep <= 0:
                 raise ValueError("Step Current must be positive.")
@@ -127,10 +140,10 @@ class Keithley2400_IV_Backend:
                 base_sweep = np.arange(0, imax + istep, istep)
 
             elif sweep_type == "Loop (0 → Max → 0 → -Max → 0)":
-                s1 = np.arange(0, imax + istep, istep)       # 0 -> Max
-                s2 = np.arange(imax, 0 - istep, -istep)     # Max -> 0
-                s3 = np.arange(0, -imax - istep, -istep)    # 0 -> -Max
-                s4 = np.arange(-imax, 0 + istep, istep)     # -Max -> 0
+                s1 = np.arange(0, imax + istep, istep)
+                s2 = np.arange(imax, 0 - istep, -istep)
+                s3 = np.arange(0, -imax - istep, -istep)
+                s4 = np.arange(-imax, 0 + istep, istep)
                 base_sweep = np.concatenate([s1, s2[1:], s3[1:], s4[1:]])
 
         if base_sweep.size == 0 and sweep_type != "Custom List":
@@ -152,7 +165,7 @@ class Keithley2400_IV_Backend:
                 self.keithley = None
 
 class MeasurementAppGUI:
-    PROGRAM_VERSION = "12.1" # Updated Version
+    PROGRAM_VERSION = "12.2" # Updated Version
     CLR_BG_DARK, CLR_HEADER, CLR_FG_LIGHT = '#2B3D4F', '#3A506B', '#EDF2F4'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_GOLD = '#A7C957', '#EF233C', '#FFC107'
     CLR_CONSOLE_BG = '#1E2B38'
@@ -237,8 +250,14 @@ class MeasurementAppGUI:
         header_frame.pack(side='top', fill='x')
         font_title_main = ('Segoe UI', self.FONT_SIZE_BASE + 4, 'bold')
 
+        # --- Plotter Launch Button (packed first to be on the far right) ---
         plotter_button = ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3)
         plotter_button.pack(side='right', padx=10, pady=5)
+
+        # --- NEW: GPIB Scanner Button (packed second to be to the left of the plotter) ---
+        gpib_button = ttk.Button(header_frame, text="📟", command=launch_gpib_scanner, width=3)
+        gpib_button.pack(side='right', padx=(0, 5), pady=5)
+        # --- End of new code ---
 
         Label(header_frame, text="Keithley 2400: I-V Measurement", bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD, font=font_title_main).pack(side='left', padx=20, pady=10)
         Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).pack(side='right', padx=20, pady=10)
@@ -412,7 +431,6 @@ class MeasurementAppGUI:
             self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
             for key in self.data_storage: self.data_storage[key].clear()
             
-            # Reset plot for new measurement
             self.line_main.set_data([], []); self.line_resistance.set_data([], [])
             self.progress_bar['value'] = 0; self.progress_bar['maximum'] = len(self.sweep_points)
             self.figure.suptitle(f"Sample: {params['sample_name']}", fontweight='bold')
@@ -435,7 +453,6 @@ class MeasurementAppGUI:
             current = self.sweep_points[self.sweep_index]
             voltage = self.backend.measure_at_current(current, float(self.entries["Delay"].get()))
             
-            # --- FIXED: Add a warning if compliance is hit ---
             if abs(voltage) >= 9.9e37:
                 self.log("WARNING: Voltage compliance reached! Check sample connections.")
 
@@ -444,22 +461,18 @@ class MeasurementAppGUI:
             self.data_storage['current'].append(float(current)); self.data_storage['voltage'].append(voltage); self.data_storage['resistance'].append(resistance)
             with open(self.data_filepath, 'a', newline='') as f: csv.writer(f, delimiter='\t').writerow([f"{current:.8e}", f"{voltage:.8e}", f"{resistance:.8e}"])
 
-            # --- FIXED: Simplified and robust plotting logic ---
-            # Update plot data
             self.line_main.set_data(self.data_storage['current'], self.data_storage['voltage'])
             self.line_resistance.set_data(self.data_storage['current'], self.data_storage['resistance'])
             
-            # Rescale and redraw both plots
             self.ax_vi.relim()
             self.ax_vi.autoscale_view()
             self.ax_ri.relim()
             self.ax_ri.autoscale_view()
-            self.canvas.draw_idle() # Use draw_idle for smoother updates
-            # --- End of fix ---
+            self.canvas.draw_idle()
 
             self.progress_bar['value'] = self.sweep_index + 1
             self.sweep_index += 1
-            self.root.after(10, self._run_sweep_step) # Schedule the next step
+            self.root.after(10, self._run_sweep_step)
         except Exception:
             self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); messagebox.showerror("Runtime Error", "An error occurred during the sweep. Check console."); self.stop_measurement()
 
