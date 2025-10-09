@@ -140,7 +140,7 @@ Here is a meticulously verified summary of the key measurement specifications fo
 | **Resistance**                 | **1 Ω**                                   | **&gt; 10 PΩ** ($10^{16}$ Ω)        | **Derived** (from I-measure)                   |
 | **Current (Pyroelectric)**     | **10 aA** ($10 \times 10^{-18}$ A)         | **20 mA**                       | **10 aA**                                      |
 | **Voltage**                    | **1 µV**                                  | **200 V**                       | **1 µV**                                       |
-| **Charge**                     | **10 fC**                                 | **2 µC**                        | **10 fC**                                      |
+| **Charge**                     | **1 fC**                                  | **2 µC**                        | **10 fC**                                      |
 
 ---
 

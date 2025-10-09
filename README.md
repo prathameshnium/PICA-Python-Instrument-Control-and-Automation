@@ -176,7 +176,7 @@ Here is a meticulously verified summary of the key measurement specifications fo
 
 | Parameter                 | Lower Limit                                       | Higher Limit    | Best Resolution                             |
 | :------------------------ | :------------------------------------------------ | :-------------- | :------------------------------------------ |
-| **Resistance**            | **~10 nΩ** (Practical limit set by system noise)  | **1 GΩ**        | **1 nV** (Voltage Resolution on 2182A)      |
+| **Resistance**            | **~10 nΩ** (Practical limit set by system noise)  | **200 MΩ**      | **Derived** (from V/I in Delta Mode)        |
 | **Current Source (6221)**   | **100 fA**                                        | **105 mA**      | **100 fA** (on the 2 nA range)              |
 | **Voltage Measure (2182A)** | **1 nV**                                          | **100 V**       | **1 nV** (on the 10 mV range)               |
 ---
@@ -197,7 +197,7 @@ Here is a meticulously verified summary of the key measurement specifications fo
 | **Resistance**                 | **1 Ω**                                   | **&gt; 10 PΩ** ($10^{16}$ Ω)        | **Derived** (from I-measure)                   |
 | **Current (Pyroelectric)**     | **10 aA** ($10 \times 10^{-18}$ A)         | **20 mA**                       | **10 aA**                                      |
 | **Voltage**                    | **1 µV**                                  | **200 V**                       | **1 µV**                                       |
-| **Charge**                     | **10 fC**                                 | **2 µC**                        | **10 fC**                                      |
+| **Charge**                     | **1 fC**                                  | **2 µC**                        | **10 fC**                                      |
 
 ---
 #### Keysight E4980A Precision LCR Meter (C-V Measurements)
