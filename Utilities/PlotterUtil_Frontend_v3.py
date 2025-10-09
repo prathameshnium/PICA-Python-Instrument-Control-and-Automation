@@ -163,11 +163,11 @@ class PlotterApp:
                 img = Image.open(self.LOGO_FILE_PATH).resize((60, 60), Image.Resampling.LANCZOS)
                 self.logo_image = ImageTk.PhotoImage(img)
                 logo_canvas.create_image(30, 30, image=self.logo_image)
-            except Exception as e:
+            except Exception as e: 
                 self.log(f"Warning: Could not load logo. {e}")
         institute_frame = tk.Frame(center_header_frame, bg=self.CLR_HEADER); institute_frame.pack(side='left', padx=15)
-        ttk.Label(institute_frame, text="UGC-DAE Consortium for Scientific Research", style='Header.TLabel', font=('Segoe UI', 14, 'bold')).pack(anchor='w')
-        ttk.Label(institute_frame, text="Mumbai Centre", style='Header.TLabel', font=('Segoe UI', 12)).pack(anchor='w')
+        ttk.Label(institute_frame, text="UGC-DAE Consortium for Scientific Research", style='Header.TLabel', font=('Segoe UI', 16, 'bold')).pack(anchor='w')
+        ttk.Label(institute_frame, text="Mumbai Centre", style='Header.TLabel', font=('Segoe UI', 14)).pack(anchor='w')
 
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)

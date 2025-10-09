@@ -93,7 +93,7 @@ class PICALauncherApp:
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 10, 'bold')
     FONT_SUBTITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
-    FONT_INSTITUTE = ('Segoe UI', FONT_SIZE_BASE + 4, 'bold') # New font for institute
+    FONT_INSTITUTE = ('Segoe UI', FONT_SIZE_BASE + 6, 'bold') # New font for institute
     FONT_CONSOLE = ('Consolas', 10)
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
     FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
