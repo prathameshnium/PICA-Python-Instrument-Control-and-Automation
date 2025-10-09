@@ -91,8 +91,9 @@ class PICALauncherApp:
     CLR_LINK = '#87CEEB' # Sky Blue, for better contrast
     FONT_SIZE_BASE = 12
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
-    FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 6, 'bold')
+    FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 10, 'bold')
     FONT_SUBTITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
+    FONT_INSTITUTE = ('Segoe UI', FONT_SIZE_BASE + 6, 'bold') # New font for institute
     FONT_CONSOLE = ('Consolas', 10)
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
     FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
@@ -209,7 +210,7 @@ class PICALauncherApp:
         # Defer image loading to make startup feel faster
         self.root.after(10, lambda: self._load_logo(logo_canvas))
         
-        ttk.Label(info_frame, text="UGC-DAE Consortium for Scientific Research, Mumbai Centre", font=self.FONT_SUBTITLE, justify='center', anchor='center').pack(pady=(0, 15))
+        ttk.Label(info_frame, text="UGC-DAE Consortium for Scientific Research, Mumbai Centre", font=self.FONT_INSTITUTE, justify='center', anchor='center').pack(pady=(0, 15))
         
         ttk.Label(info_frame, text="PICA: Python Instrument\nControl & Automation", font=self.FONT_TITLE, foreground=self.CLR_ACCENT_GOLD, justify='center', anchor='center').pack(pady=(0, 15))
         

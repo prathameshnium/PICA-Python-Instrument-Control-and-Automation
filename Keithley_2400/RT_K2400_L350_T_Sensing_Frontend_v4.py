@@ -221,8 +221,8 @@ class RT_GUI_Passive:
                 self.logo_image = ImageTk.PhotoImage(img)
                 logo_canvas.create_image(LOGO_SIZE/2, LOGO_SIZE/2, image=self.logo_image)
         except Exception as e: self.log(f"Warning: Could not load logo. {e}")
-
-        institute_font = ('Segoe UI', self.FONT_BASE[1], 'bold')
+        
+        institute_font = ('Segoe UI', self.FONT_BASE[1] + 1, 'bold')
         ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_HEADER).grid(row=0, column=1, padx=10, pady=(15,0), sticky='sw')
         ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_HEADER).grid(row=1, column=1, padx=10, pady=(0,5), sticky='nw')
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)

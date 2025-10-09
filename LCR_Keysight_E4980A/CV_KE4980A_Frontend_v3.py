@@ -302,7 +302,7 @@ class LCR_CV_GUI:
             except Exception as e:
                 self.log(f"ERROR: Failed to load logo: {e}")
 
-        institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 1, 'bold')
+        institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold')
         ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
         ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8) 
