@@ -337,7 +337,7 @@ class Integrated_RT_GUI:
             logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
 
         # Institute Name (larger font)
-        institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 1, 'bold')
+        institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 6, 'bold')
         ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
         ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
 

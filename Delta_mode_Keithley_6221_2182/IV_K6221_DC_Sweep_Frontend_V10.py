@@ -214,7 +214,7 @@ class Passthrough_IV_GUI:
         frame.grid_columnconfigure(1, weight=1)
         logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0); logo_canvas.grid(row=0, column=0, rowspan=3, padx=15, pady=10)
         self.root.after(50, lambda: self._load_logo(logo_canvas))
-        institute_font = ('Segoe UI', self.FONT_BASE[1], 'bold')
+        institute_font = ('Segoe UI', self.FONT_BASE[1] + 6, 'bold')
         ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
         ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
 
