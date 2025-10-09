@@ -68,6 +68,7 @@ SUB_PROGRAMS = [
     ("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v3.py", "CV_KE4980A_Frontend_v3.exe"),
     # Note: The Plotter and GPIB Scanner are now launched from within other frontends,
     # but we still compile them here so they exist as executables.
+    # but we still compile the plotter here so it exists as an executable.
     ("Utilities/PlotterUtil_Frontend_v3.py", "PlotterUtil_Frontend_v3.exe"),
     ("Utilities/GPIB_Instrument_Scanner_Frontend_v4.py", "GPIB_Instrument_Scanner_Frontend_v4.exe"),
 ]
