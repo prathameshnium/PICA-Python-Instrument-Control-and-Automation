@@ -155,7 +155,7 @@ class PlotterApp:
         left_header_frame.grid(row=0, column=0, sticky='w')
         font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
         ttk.Label(left_header_frame, text=f"PICA General Purpose Plotter", style='Header.TLabel', font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack(side='left', padx=20, pady=10)
-
+ 
         # --- Center Section: Logo and Institute Name ---
         center_header_frame = tk.Frame(header, bg=self.CLR_HEADER)
         center_header_frame.grid(row=0, column=1, sticky='ew')
@@ -171,11 +171,6 @@ class PlotterApp:
         institute_frame = tk.Frame(center_header_frame, bg=self.CLR_HEADER); institute_frame.pack(side='left', padx=15)
         ttk.Label(institute_frame, text="UGC-DAE Consortium for Scientific Research", style='Header.TLabel', font=('Segoe UI', 14, 'bold')).pack(anchor='w')
         ttk.Label(institute_frame, text="Mumbai Centre", style='Header.TLabel', font=('Segoe UI', 12)).pack(anchor='w')
-
-        # --- Right Section: New Instance Button ---
-        right_header_frame = tk.Frame(header, bg=self.CLR_HEADER); right_header_frame.grid(row=0, column=2, sticky='e')
-        new_instance_button = ttk.Button(right_header_frame, text="+", command=launch_new_instance, width=3)
-        new_instance_button.pack(side='right', padx=(0, 10), pady=10)
 
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
