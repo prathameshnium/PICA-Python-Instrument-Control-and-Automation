@@ -282,7 +282,7 @@ class MeasurementAppGUI:
             self.log(f"WARNING: Logo file '{self.LOGO_FILE}' not found or Pillow not installed.")
             logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill="white", justify='center')
 
-        institute_font = ('Segoe UI', self.FONT_SIZE_BASE, 'bold')
+        institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 1, 'bold')
         ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
         ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
