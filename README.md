@@ -30,7 +30,7 @@ A key architectural feature is the use of isolated process execution for each me
 PICA is designed with a clear separation between the user interface (frontend) and the instrument control logic (backend). This modular approach makes the system easy to maintain, extend, and debug.
 
 <div align="center">
-    <img src="https://raw.githubusercontent.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/main/_assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800"/>
+    <img src="_assets/Images/PICA_Laucher_V6.png" alt="PICA Launcher Screenshot" width="800"/>
 </div>
 
 ---
