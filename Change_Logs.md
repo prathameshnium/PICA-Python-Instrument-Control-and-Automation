@@ -1,6 +1,6 @@
 ## Instrument & Software Update Log
 ### Version 14.1 (Current)
-
+Tested and working perfectley , its fast doesnt lag and all communiaction with instruments are good. only some cosmatic changes required now i have decided not to change the file names for while now , for these small change.
 **Documentation & Code Examples**
 
 -   **Enhanced Documentation:** Overhauled the main project `README.md` to provide a more comprehensive overview, including a new "Architecture" section that details the frontend-backend separation and the role of `multiprocessing`.
