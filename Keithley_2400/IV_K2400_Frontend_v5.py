@@ -482,10 +482,18 @@ class MeasurementAppGUI:
         try:
             resources = self.backend.rm.list_resources()
             if resources:
-                self.log(f"Found: {resources}"); self.keithley_combobox['values'] = resources
-                for res in resources:
-                    if "24" in res: self.keithley_combobox.set(res)
-                if not self.keithley_combobox.get() and resources: self.keithley_combobox.set(resources[0])
+                self.log(f"Found: {resources}")
+                self.keithley_combobox['values'] = resources
+                default_k2400_addr = 'GPIB1::4::INSTR'
+                if default_k2400_addr in resources:
+                    self.keithley_combobox.set(default_k2400_addr)
+                else:
+                    for res in resources:
+                        if "24" in res:
+                            self.keithley_combobox.set(res)
+                            break
+                    if not self.keithley_combobox.get() and resources:
+                        self.keithley_combobox.set(resources[0])
             else: self.log("No VISA instruments found.")
         except Exception as e: self.log(f"ERROR during scan: {e}")
 
