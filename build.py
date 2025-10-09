@@ -34,9 +34,18 @@ BUILD_DIR = os.path.join(PROJECT_ROOT, "build")
 
 # This is a temporary directory to store the compiled sub-programs before they are bundled.
 SUB_PROGRAMS_TEMP_DIR = os.path.join(BUILD_DIR, "programs")
+SPECS_DIR = os.path.join(PROJECT_ROOT, "Setup", "specs")
 
 # --- NEW: Path to the application icon ---
 ICON_FILE = os.path.join(PROJECT_ROOT, "_assets", "LOGO", "PICA_LOGO.ico")
+
+# --- NEW: Get version from Picachu.py for the zip file name ---
+# Add Setup directory to path for the import below. This also helps linters like Pylance.
+setup_dir = os.path.join(PROJECT_ROOT, "Setup")
+if setup_dir not in sys.path:
+    sys.path.insert(0, setup_dir)
+from Picachu import PICALauncherApp
+APP_VERSION = PICALauncherApp.PROGRAM_VERSION
 
 # List of all frontend scripts to compile into sub-EXEs.
 # Format: ("path/to/script.py", "FinalExeName.exe")
@@ -47,6 +56,7 @@ SUB_PROGRAMS = [
     ("Keithley_2400/IV_K2400_Frontend_v3.py", "IV_K2400_Frontend_v3.exe"),
     ("Keithley_2400/RT_K2400_L350_T_Control_Frontend_v3.py", "RT_K2400_L350_T_Control_Frontend_v3.exe"),
     ("Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v4.py", "RT_K2400_L350_T_Sensing_Frontend_v4.exe"),
+    ("Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py", "IV_K2400_K2182_Frontend_v3.exe"),
     ("Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_Frontend_v3.py", "RT_K2400_K2182_T_Control_Frontend_v3.exe"),
     ("Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_Frontend_v2.py", "RT_K2400_2182_L350_T_Sensing_Frontend_v2.exe"),
     ("Keithley_6517B/High_Resistance/IV_K6517B_Frontend_v11.py", "IV_K6517B_Frontend_v11.exe"),
@@ -57,6 +67,8 @@ SUB_PROGRAMS = [
     ("Lakeshore_350_340/T_Sensing_L350_Frontend_v4.py", "T_Sensing_L350_Frontend_v4.exe"),
     ("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v3.py", "CV_KE4980A_Frontend_v3.exe"),
     ("Lock_in_amplifier/AC_Measurement_S830_Frontend_v1.py", "AC_Measurement_S830_Frontend_v1.exe"),
+    # Note: The Plotter and GPIB Scanner are now launched from within other frontends,
+    # but we still compile them here so they exist as executables.
     ("Utilities/PlotterUtil_Frontend_v3.py", "PlotterUtil_Frontend_v3.exe"),
     ("Utilities/GPIB_Instrument_Scanner_Frontend_v4.py", "GPIB_Instrument_Scanner_Frontend_v4.exe"),
 ]
@@ -84,31 +96,34 @@ def build():
     for script_path, exe_name in SUB_PROGRAMS:
         full_script_path = os.path.join(PROJECT_ROOT, script_path)
         print(f"\nCompiling {exe_name}...")
-        
+
+        spec_filename = f"{os.path.splitext(exe_name)[0]}.spec"
+        spec_path = os.path.join(SPECS_DIR, spec_filename)
+
         # Compile each sub-program. Using a temporary distpath for each prevents conflicts.
         run_command([
-            PYINSTALLER_PATH, "--noconfirm", "--windowed", "--clean",
+            PYINSTALLER_PATH, "--noconfirm", "--clean",
             f"--distpath={SUB_PROGRAMS_TEMP_DIR}",
-            f"--name={os.path.splitext(exe_name)[0]}",
-            f"--icon={ICON_FILE}",
-            full_script_path
+            spec_path
         ])
 
     print("\n>>> STAGE 2: Compiling the main Picachu launcher...")
+    picachu_spec_path = os.path.join(SPECS_DIR, "Picachu.spec")
     run_command([
-        PYINSTALLER_PATH, "--noconfirm", "--windowed", "--name=Picachu", "--clean",
-        # Add assets and the entire 'programs' folder
-        f"--icon={ICON_FILE}",
-        f"--add-data={os.path.join(PROJECT_ROOT, '_assets')}{os.pathsep}_assets",
-        f"--add-data={os.path.join(PROJECT_ROOT, 'PICA_README.md')}{os.pathsep}.",
-        f"--add-data={os.path.join(PROJECT_ROOT, 'LICENSE')}{os.pathsep}.",
-        f"--add-data={os.path.join(PROJECT_ROOT, 'Change_Logs.md')}{os.pathsep}.",
-        f"--add-data={SUB_PROGRAMS_TEMP_DIR}{os.pathsep}programs", # This is the crucial step
-        os.path.join(PROJECT_ROOT, PICACHU_SCRIPT)
+        PYINSTALLER_PATH, "--noconfirm", "--clean",
+        picachu_spec_path
     ])
 
+    print("\n>>> STAGE 3: Creating distributable ZIP file...")
+    final_app_dir = os.path.join(DIST_DIR, "Picachu")
+    zip_filename = f"PICA_v{APP_VERSION}_Windows"
+    shutil.make_archive(os.path.join(DIST_DIR, zip_filename), 'zip', final_app_dir)
+
     print("\n--- Build Complete! ---")
-    print(f"Find the final application in: {os.path.join(DIST_DIR, 'Picachu.exe')}")
+    print(f"The final application folder is located at:")
+    print(f"  {final_app_dir}")
+    print(f"\nA distributable ZIP file has been created at:")
+    print(f"  {os.path.join(DIST_DIR, zip_filename + '.zip')}")
 
 if __name__ == "__main__":
     build()
