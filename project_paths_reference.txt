@@ -1,0 +1,136 @@
+===============================================================================
+ PICA Project Path Reference
+===============================================================================
+
+This document consolidates all hardcoded and dynamically generated paths
+used throughout the PICA project for build, development, and runtime operations.
+
+
+-------------------------------------------------------------------------------
+ 1. Main Executable Launcher (`Setup/Picachu.py`)
+-------------------------------------------------------------------------------
+
+This file is the entry point for the compiled executable. It uses a `resource_path`
+function to resolve paths differently for development vs. bundled modes.
+
+**Asset & Documentation Paths:**
+- LOGO_FILE: _assets/LOGO/UGC_DAE_CSR_NBG.jpeg
+- MANUAL_URL: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tree/main/_assets/Manuals
+- README_FILE: PICA_README.md
+- LICENSE_FILE: LICENSE
+- UPDATES_FILE: Change_Logs.md
+
+**Sub-Program Directory (Bundled):**
+- SUB_PROGRAMS_DIR: "programs"
+
+**Script Paths for Bundled Executable (`SCRIPT_PATHS`):**
+- Delta Mode I-V Sweep: programs/IV_K6221_DC_Sweep_Frontend_V10.exe
+- Delta Mode R-T: programs/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.exe
+- Delta Mode R-T (T_Sensing): programs/Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.exe
+- K2400 I-V: programs/IV_K2400_Frontend_v5.exe
+- K2400 R-T: programs/RT_K2400_L350_T_Control_Frontend_v3.exe
+- K2400 R-T (T_Sensing): programs/RT_K2400_L350_T_Sensing_Frontend_v4.exe
+- K2400_2182 I-V: programs/IV_K2400_K2182_Frontend_v3.exe
+- K2400_2182 R-T: programs/RT_K2400_K2182_T_Control_Frontend_v3.exe
+- K2400_2182 R-T (T_Sensing): programs/RT_K2400_2182_L350_T_Sensing_Frontend_v2.exe
+- K6517B I-V: programs/IV_K6517B_Frontend_v11.exe
+- K6517B R-T: programs/RT_K6517B_L350_T_Control_Frontend_v13.exe
+- K6517B R-T (T_Sensing): programs/RT_K6517B_L350_T_Sensing_Frontend_v14.exe
+- Pyroelectric Current: programs/Pyroelectric_K6517B_L350_Frontend_v4.exe
+- Lakeshore Temp Control: programs/T_Control_L350_RangeControl_Frontend_v8.exe
+- Lakeshore Temp Monitor: programs/T_Sensing_L350_Frontend_v4.exe
+- LCR C-V Measurement: programs/CV_KE4980A_Frontend_v3.exe
+- Plotter Utility: programs/PlotterUtil_Frontend_v3.exe
+
+**Script Paths for Development Mode (`SCRIPT_PATHS_DEV`):**
+- IV_K6221_DC_Sweep_Frontend_V10.py: Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_Frontend_V10.py
+- Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.py: Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.py
+- Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.py: Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.py
+- IV_K2400_Frontend_v5.py: Keithley_2400/IV_K2400_Frontend_v5.py
+- RT_K2400_L350_T_Control_Frontend_v3.py: Keithley_2400/RT_K2400_L350_T_Control_Frontend_v3.py
+- RT_K2400_L350_T_Sensing_Frontend_v4.py: Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v4.py
+- IV_K2400_K2182_Frontend_v3.py: Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py
+- RT_K2400_K2182_T_Control_Frontend_v3.py: Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_Frontend_v3.py
+- RT_K2400_2182_L350_T_Sensing_Frontend_v2.py: Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_Frontend_v2.py
+- IV_K6517B_Frontend_v11.py: Keithley_6517B/High_Resistance/IV_K6517B_Frontend_v11.py
+- RT_K6517B_L350_T_Control_Frontend_v13.py: Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_Frontend_v13.py
+- RT_K6517B_L350_T_Sensing_Frontend_v14.py: Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_Frontend_v14.py
+- Pyroelectric_K6517B_L350_Frontend_v4.py: Keithley_6517B/Pyroelectricity/Pyroelectric_K6517B_L350_Frontend_v4.py
+- T_Control_L350_RangeControl_Frontend_v8.py: Lakeshore_350_340/T_Control_L350_RangeControl_Frontend_v8.py
+- T_Sensing_L350_Frontend_v4.py: Lakeshore_350_340/T_Sensing_L350_Frontend_v4.py
+- CV_KE4980A_Frontend_v3.py: LCR_Keysight_E4980A/CV_KE4980A_Frontend_v3.py
+- PlotterUtil_Frontend_v3.py: Utilities/PlotterUtil_Frontend_v3.py
+
+
+-------------------------------------------------------------------------------
+ 2. Development Launcher (`PICA_v6.py`)
+-------------------------------------------------------------------------------
+
+This file is the entry point for running the suite from source code.
+
+**Asset & Documentation Paths:**
+- LOGO_FILE: _assets/LOGO/UGC_DAE_CSR_NBG.jpeg
+- MANUAL_FILE: _assets/Manuals
+- README_FILE: README.md
+- LICENSE_FILE: LICENSE
+- UPDATES_FILE: Change_Logs.md
+
+**Script Paths for Development (`SCRIPT_PATHS`):**
+- All paths are identical to `SCRIPT_PATHS_DEV` in `Picachu.py` but are resolved
+  relative to the project root.
+
+
+-------------------------------------------------------------------------------
+ 3. Build Script (`build.py`)
+-------------------------------------------------------------------------------
+
+This script orchestrates the PyInstaller build process.
+
+**Build Directories:**
+- PROJECT_ROOT: (Dynamically determined) f:\GitHub\PICA-Python-Instrument-Control-and-Automation
+- DIST_DIR: dist/
+- BUILD_DIR: build/
+- SUB_PROGRAMS_TEMP_DIR: build/programs/
+- SPECS_DIR: Setup/specs/
+
+**Build Assets:**
+- ICON_FILE: _assets/LOGO/PICA_LOGO.ico
+- PICACHU_SCRIPT: Setup/Picachu.py
+
+**Sub-Programs to Compile (`SUB_PROGRAMS`):**
+- This list mirrors the keys in `Picachu.py`'s `SCRIPT_PATHS`, mapping the
+  source .py file to its final .exe name.
+
+
+-------------------------------------------------------------------------------
+ 4. Individual Frontend Scripts (General Pattern)
+-------------------------------------------------------------------------------
+
+Most frontend scripts define paths to their assets and utilities relative to
+their own file location.
+
+**Asset Paths (Example from `IV_K2400_Frontend_v5.py`):**
+- LOGO_FILE: ../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg
+
+**Utility Launch Paths (Example from `IV_K2400_Frontend_v5.py`):**
+- Plotter Utility: ../Utilities/PlotterUtil_Frontend_v3.py
+- GPIB Scanner: ../Utilities/GPIB_Instrument_Scanner_Frontend_v4.py
+  (Note: Path depth `..` varies depending on the script's location)
+
+
+-------------------------------------------------------------------------------
+ 5. GitHub Actions Workflow (`.github/workflows/build-exe.yml`)
+-------------------------------------------------------------------------------
+
+This file automates the Nuitka build on GitHub's servers.
+
+**Nuitka Build Paths:**
+- script-name: Setup/Picachu.py
+- output-dir: build
+- windows-icon-from-ico: _assets/LOGO/UGC_DAE_CSR.ico
+- include-data-dir: _assets=_assets
+- include-data-files: LICENSE=LICENSE, PICA_README.md=PICA_README.md, Change_Logs.md=Change_Logs.md
+- include-package: (Lists all top-level script directories like `Keithley_2400`, `Utilities`, etc.)
+
+**Release Asset Path:**
+- file: build/Picachu.exe
