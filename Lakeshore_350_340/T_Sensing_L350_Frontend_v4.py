@@ -174,8 +174,14 @@ class TempMonitorGUI:
         # Custom style for the large status label
         style.configure('Status.TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_ACCENT_GOLD, font=self.FONT_STATUS)
 
-        style.configure('TEntry', fieldbackground='#4C566A', foreground=self.CLR_FG_LIGHT, insertcolor=self.CLR_FG_LIGHT, borderwidth=0)
-        style.configure('TCombobox', fieldbackground='#4C566A', foreground=self.CLR_FG_LIGHT, arrowcolor=self.CLR_FG_LIGHT, selectbackground=self.CLR_ACCENT_GOLD, selectforeground=self.CLR_TEXT_DARK)
+        # --- Style for Entry and Combobox widgets for better visibility ---
+        # Use a light background with dark text for high contrast.
+        style.configure('TEntry',
+                        fieldbackground=self.CLR_GRAPH_BG, # White background
+                        foreground=self.CLR_TEXT_DARK,      # Dark text
+                        insertcolor=self.CLR_TEXT_DARK,     # Dark cursor
+                        borderwidth=0)
+        style.configure('TCombobox', fieldbackground=self.CLR_GRAPH_BG, foreground=self.CLR_TEXT_DARK, arrowcolor=self.CLR_TEXT_DARK, selectbackground=self.CLR_ACCENT_GOLD, selectforeground=self.CLR_TEXT_DARK)
 
         style.configure('TButton',
                         font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_ACCENT_GOLD,
