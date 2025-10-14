@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pica"
+version = "14.1.0"
+authors = [
+    { name = "Prathamesh Deshmukh", email = "prathameshium@duck.com" },
+]
+description = "A modular software suite for automating laboratory measurements in physics research."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: System :: Hardware :: Hardware Drivers",
+]
+dependencies = [
+    "pyvisa",
+    "pyvisa-py",
+    "numpy",
+    "matplotlib",
+    "pandas",
+    "pymeasure",
+    "Pillow",
+    "gpib-ctypes",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
+"Bug Tracker" = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues"
+
+[project.gui-scripts]
+pica-launcher = "PICA_v6:main"
