@@ -40,6 +40,7 @@ PICA is designed with a clear separation between the user interface (frontend) a
 The core design philosophy of PICA is the separation of concerns, implemented through a distinct **Frontend-Backend** architecture for each measurement module.
 
 -   **Frontend:** Each measurement has a dedicated GUI script (e.g., `IV_K2400_Frontend_v5.py`) built with `Tkinter` and the `CustomTkinter` library. It is responsible for all user interaction, parameter input, and data visualization (live plotting). It runs in the main process.
+-   **Frontend:** Each measurement has a dedicated GUI script (e.g., `IV_K2400_Frontend_v5.py`) built with Python's standard `Tkinter` library. It is responsible for all user interaction, parameter input, and data visualization (live plotting). It runs in the main process.
 
 -   **Backend:** The instrument control logic is encapsulated in a separate class (e.g., `Keithley2400_Backend`). This class handles all `PyVISA` communication, instrument configuration, and data acquisition commands.
 
@@ -79,8 +80,7 @@ The core design philosophy of PICA is the separation of concerns, implemented th
 The core of PICA is built with a stack of robust and widely-used Python libraries.
 
 <p align="center">
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.9+-blue.svg?logo=python&logoColor=white" alt="Python"></a>
-  <a href="https://github.com/TomSchimansky/CustomTkinter"><img src="https://img.shields.io/badge/CustomTkinter-GUI-orange.svg" alt="CustomTkinter"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.9+-blue.svg?logo=python&logoColor=white" alt="Python"></a>  <a href="https://docs.python.org/3/library/tkinter.html"><img src="https://img.shields.io/badge/Tkinter-GUI-orange.svg" alt="Tkinter"></a>
   <a href="https://pyvisa.readthedocs.io/en/latest/"><img src="https://img.shields.io/badge/PyVISA-Instrument%20Control-yellow.svg" alt="PyVISA"></a>
   <a href="https://numpy.org/"><img src="https://img.shields.io/badge/NumPy-Data%20Handling-blueviolet.svg?logo=numpy&logoColor=white" alt="NumPy"></a>
   <a href="https://pandas.pydata.org/"><img src="https://img.shields.io/badge/Pandas-Data%20Manipulation-purple.svg?logo=pandas&logoColor=white" alt="Pandas"></a>
@@ -88,7 +88,7 @@ The core of PICA is built with a stack of robust and widely-used Python librarie
 </p>
 
 - **Primary Language:** **Python 3.9+**
-- **Graphical User Interface:** **Tkinter** (via the **CustomTkinter** library for a modern look and feel)
+- **Graphical User Interface:** **Tkinter** (Python's standard GUI library)
 - **Instrument Communication:** **PyVISA** (a Python wrapper for the NI-VISA library)
 - **Numerical Operations:** **NumPy**
 - **Data Structuring:** **Pandas**
