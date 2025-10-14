@@ -18,7 +18,9 @@
 
 A key architectural feature is the use of isolated process execution for each measurement module via Python's `multiprocessing` library, ensuring high stability and preventing inter-script conflicts. This platform is built to streamline data acquisition, enhance experimental reproducibility, and accelerate research workflows.
 
-PICA is designed with a clear separation between the user interface (frontend) and the instrument control logic (backend). This modular approach makes the system easy to maintain, extend, and debug.
+PICA is designed with a clear separation of its components. The applications are complete, GUI-based programs with self-contained front-ends, back-ends, and instrument control logic.
+
+I started by first creating the measurements program as a CLI (Command-Line Interface), which the front-end programs are based on. Sometimes, the back-ends are not updated with the final logic from the front-end programs because I don't want to interfere with the working CLI prototypes. The GUI-based programs also include safety checks in case any instrument communication goes wrong.
 
 <div align="center">
     <img src="_assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800" />
@@ -28,11 +30,11 @@ PICA is designed with a clear separation between the user interface (frontend) a
 
 ## Architecture
 
-The core design philosophy of PICA is the separation of concerns, implemented through a distinct **Frontend-Backend** architecture for each measurement module.
+The core design philosophy of PICA is the separation of concerns, implemented through a distinct **Frontend-Backend** architecture for each measurement module. This is a key feature for the executable version of the software.
 
--   **Frontend:** Each measurement has a dedicated GUI script (e.g., `IV_K2400_Frontend_v5.py`) built with `Tkinter`. It is responsible for all user interaction, parameter input, and data visualization (live plotting). It runs in the main process.
+-   **Frontend (complete application):** Each measurement has a dedicated GUI script (e.g., `IV_K2400_Frontend_v5.py`) built with `Tkinter`. It is responsible for all user interaction, parameter input, and data visualization (live plotting). It runs in the main process.
 
--   **Backend:** The instrument control logic is encapsulated in a separate class (e.g., `Keithley2400_Backend`). This class handles all `PyVISA` communication, instrument configuration, and data acquisition commands.
+-   **Backend (CLI):** The instrument control logic is encapsulated in a separate class (e.g., `Keithley2400_Backend`). This class handles all `PyVISA` communication, instrument configuration, and data acquisition commands.
 
 -   **Process Isolation:** When a measurement is started, the frontend launches its corresponding backend logic in a separate, isolated process using Python's `multiprocessing` library. This is the key to PICA's stability: a crash or error in one measurement script will not affect the main launcher or any other running experiments.
 
