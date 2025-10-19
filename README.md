@@ -31,6 +31,7 @@ PICA is designed with a clear separation between the user interface (frontend) a
 
 <div align="center">
     <img src="_assets/Images/PICA_Laucher_V6.png" alt="PICA Launcher Screenshot" width="800"/>
+    <img src="_assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800"/>
 </div>
 
 ---
@@ -89,6 +90,7 @@ The core of PICA is built with a stack of robust and widely-used Python librarie
 
 - **Primary Language:** **Python 3.9+**
 - **Graphical User Interface:** **Tkinter** (with the **CustomTkinter** library for a modern look and feel)
+- **Graphical User Interface:** **Tkinter**
 - **Instrument Communication:** **PyVISA** (a Python wrapper for the NI-VISA library)
 - **Numerical Operations:** **NumPy**
 - **Data Structuring:** **Pandas**
@@ -170,9 +172,14 @@ The PICA suite is organized into modules, each containing a frontend GUI applica
 ## Instrument Specifications
 
 Here is a meticulously verified summary of the key measurement specifications for the instruments used in the PICA project. All values have been cross-referenced with the provided instrument manuals to ensure accuracy.
+PICA supports a range of common laboratory instruments. For a detailed summary of their measurement specifications, please see the Instrument Specifications Guide.
 
 #### Keithley 6221 Current Source + 2182A Nanovoltmeter System (Low Resistance)
 **Primary Use:** High-precision, low-resistance I-V and R-T measurements via **Delta Mode**.
+- **Source-Measure Units:** Keithley 2400, Keithley 6221, Keithley 6517B
+- **Nanovoltmeters:** Keithley 2182A
+- **LCR Meters:** Keysight E4980A
+- **Temperature Controllers:** Lakeshore 340, Lakeshore 350
 
 | Parameter                 | Lower Limit                                       | Higher Limit    | Best Resolution                             |
 | :------------------------ | :------------------------------------------------ | :-------------- | :------------------------------------------ |
@@ -183,6 +190,7 @@ Here is a meticulously verified summary of the key measurement specifications fo
 
 #### Keithley 2400 SourceMeter (Mid-Range Resistance)
 **Primary Use:** Versatile four-probe I-V and R-T measurements for a broad range of materials.
+## 🚀 Getting Started
 
 | Parameter                      | Lower Limit (Source / Measure) | Higher Limit (Source / Measure) | Best Resolution (Source / Measure)   |
 | :----------------------------- | :----------------------------- | :------------------------------ | :----------------------------------- |
@@ -227,6 +235,7 @@ Here is a meticulously verified summary of the key measurement specifications fo
 
 ### Installation Steps
 h
+
 1.  **Clone the Repository**
     git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
     cd PICA-Python-Instrument-Control-and-Automation
@@ -260,10 +269,14 @@ h
 ---
 
 ## Extending PICA: Adding a New Module
+## 🛠️ Extending PICA: Adding a New Module
 
 The modular architecture makes it straightforward to add support for new instruments or measurement types. Here is a simplified example of the required structure.
 
 #### 1. Create a Backend Class
+1.  **Create a Backend Class:** Encapsulate all direct instrument communication (`PyVISA` commands) in a dedicated class.
+2.  **Create a Frontend GUI:** Build a `Tkinter` GUI to gather user parameters and display live data. This GUI will instantiate and control the backend.
+3.  **Integrate with the Launcher:** Add a button and the script path to `PICA_v6.py` to make your new module accessible from the main dashboard.
 
 The backend class handles all direct communication with the instrument.
 
@@ -339,6 +352,7 @@ For a quick reference on instrument addresses, see the `GPIB_Address_Guide.md` f
 ---
 
 ## 🤝 Contributing
+## 🤝 How to Contribute
 Contributions are welcome! If you have suggestions for improvements or want to add a new instrument module, please feel free to:
 1.  Fork the repository.
 2.  Create a new branch (`git checkout -b feature/YourFeature`).
@@ -361,24 +375,4 @@ Please open an issue first to discuss any major changes you would like to make.
 - **Affiliation:** *[UGC-DAE Consortium for Scientific Research, Mumbai Centre](https://www.csr.res.in/Mumbai_Centre)*
 
 #### Funding
-Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science & Technology (DST), Government of India.<div align="center">
-  <img src="_assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
-  <h1>PICA: Python-based Instrument Control and Automation</h1>
-  <p>A modular software suite for automating laboratory measurements in physics research.</p>
-  
-  <p>
-    <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
-    <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.9+-brightgreen.svg" alt="Python 3.9+"></a>
-    <a href="#"><img src="https://img.shields.io/badge/Status-Active-success.svg" alt="Project Status: Active"></a>
-  </p>
-  <p>
-    <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"><img src="https://img.shields.io/github/last-commit/prathameshnium/PICA-Python-Instrument-Control-and-Automation" alt="Last Commit"></a>
-    <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"><img src="https://img.shields.io/github/repo-size/prathameshnium/PICA-Python-Instrument-Control-and-Automation" alt="Repo Size"></a>
-    <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/stargazers"><img src="https://img.shields.io/github/stars/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=social" alt="GitHub Stars"></a>
-    <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/network/members"><img src="https://img.shields.io/github/forks/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=social" alt="GitHub Forks"></a>
-  </p>
-  <p>
-    <img src="https://komarev.com/ghpvc/?username=prathameshnium&repo=PICA-Python-Instrument-Control-and-Automation&color=brightgreen&style=flat" alt="Profile views">
-  </p>
-</div>
-
+Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science & Technology (DST), Government of India.
