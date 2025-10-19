@@ -12,11 +12,11 @@ You can use the following BibTeX entry for your reference manager (e.g., Zotero,
 
 .. code-block:: bibtex
 
-    @software{Deshmukh_PICA_2024,
+    @software{Deshmukh_PICA_2023,
       author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
-      title        = {{PICA: Python-based Instrument Control and Automation}},
-      month        = may,
-      year         = 2024,
+      title        = {{PICA: Python-based Instrument Control and Automation Software Suite}},
+      month        = sep,
+      year         = 2023,
       publisher    = {GitHub},
       version      = {14.1.0},
       url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}

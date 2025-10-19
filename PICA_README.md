@@ -180,6 +180,30 @@ This executable (`Picachu.exe`) is a standalone application. Simply run it to op
 
 ---
 
+## How to Cite
+
+If you use this software in your research, please cite it. This helps to credit the work involved in creating and maintaining this resource.
+
+#### BibTeX Entry
+
+You can use the following BibTeX entry for your reference manager (e.g., Zotero, Mendeley, JabRef).
+
+```bibtex
+@software{Deshmukh_PICA_2023,
+  author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
+  title        = {{PICA: Python-based Instrument Control and Automation Software Suite}},
+  month        = sep,
+  year         = 2023,
+  publisher    = {GitHub},
+  version      = {14.1.0},
+  url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
+}
+```
+
+Alternatively, you can use the `CITATION.cff` file in the root of the repository for automatic parsing by modern reference managers.
+
+---
+
 ## 📚 Resources & Documentation
 
 #### Included Manuals

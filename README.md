@@ -420,6 +420,7 @@ The core design philosophy of PICA is the separation of concerns, implemented th
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Installation Steps](#installation-steps)
+- [How to Cite](#how-to-cite)
 - [Resources & Documentation](#resources--documentation)
 - [Contributing](#contributing)
 - [Authors & Acknowledgments](#authors--acknowledgments)
@@ -688,6 +689,30 @@ class MyInstrument_GUI(tk.Frame):
 #### 3. Integrate with the PICA Launcher
 
 Finally, add the path to your new frontend script in `PICA_v6.py` and `Setup/Picachu.py` to make it accessible from the main dashboard.
+
+---
+
+## How to Cite
+
+If you use this software in your research, please cite it. This helps to credit the work involved in creating and maintaining this resource.
+
+#### BibTeX Entry
+
+You can use the following BibTeX entry for your reference manager (e.g., Zotero, Mendeley, JabRef).
+
+```bibtex
+@software{Deshmukh_PICA_2023,
+  author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
+  title        = {{PICA: Python-based Instrument Control and Automation Software Suite}},
+  month        = sep,
+  year         = 2023,
+  publisher    = {GitHub},
+  version      = {14.1.0},
+  url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
+}
+```
+
+Alternatively, you can use the `CITATION.cff` file in the root of the repository for automatic parsing by modern reference managers.
 
 ---
 
