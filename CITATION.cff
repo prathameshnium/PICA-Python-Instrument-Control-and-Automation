@@ -1,0 +1,24 @@
+# This is a CITATION.cff file. See https://citation-file-format.github.io/
+cff-version: 1.2.0
+message: "If you use this software in your work, please cite it as below."
+authors:
+  - family-names: "Deshmukh"
+    given-names: "Prathamesh Keshao"
+    orcid: "https://orcid.org/0009-0008-3278-0837"
+  - family-names: "Mukherjee"
+    given-names: "Sudip"
+    affiliation: "UGC-DAE Consortium for Scientific Research, Mumbai Centre"
+title: "PICA: Python-based Instrument Control and Automation"
+version: 14.1.0
+date-released: 2024-05-22
+url: "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
+repository-code: "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
+license: MIT
+keywords:
+  - "instrument control"
+  - "lab automation"
+  - "scientific programming"
+  - "condensed matter physics"
+  - "materials science"
+  - "pyvisa"
+  - "python"
