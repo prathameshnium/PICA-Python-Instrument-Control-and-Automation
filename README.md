@@ -46,6 +46,7 @@ The core design philosophy of PICA is the separation of concerns, implemented th
 - [Available Measurement Modules](#available-measurement-modules)
 - [Instrument Specifications](#instrument-specifications)
 - [Getting Started](#getting-started)
+- [How to Cite](#how-to-cite)
   - [Prerequisites](#prerequisites)
   - [Installation Steps](#installation-steps)
 - [Resources & Documentation](#resources--documentation)
@@ -124,6 +125,30 @@ PICA supports a range of common laboratory instruments. For a detailed summary o
 - **Nanovoltmeters:** Keithley 2182A
 - **LCR Meters:** Keysight E4980A
 - **Temperature Controllers:** Lakeshore 340, Lakeshore 350
+
+---
+
+## How to Cite
+
+If you use this software in your research, please cite it. This helps to credit the work involved in creating and maintaining this resource.
+
+#### BibTeX Entry
+
+You can use the following BibTeX entry for your reference manager (e.g., Zotero, Mendeley, JabRef).
+
+```bibtex
+@software{Deshmukh_PICA_2023,
+  author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
+  title        = {{PICA: Python-based Instrument Control and Automation Software Suite}},
+  month        = sep,
+  year         = 2023,
+  publisher    = {GitHub},
+  version      = {14.1.0},
+  url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
+}
+```
+
+Alternatively, you can use the `CITATION.cff` file in the root of the repository for automatic parsing by modern reference managers.
 
 ---
 
