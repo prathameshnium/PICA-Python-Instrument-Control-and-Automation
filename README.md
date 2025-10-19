@@ -41,12 +41,11 @@ The core design philosophy of PICA is the separation of concerns, implemented th
 
 -   **Frontend:** Each measurement has a dedicated GUI script (e.g., `IV_K2400_Frontend_v5.py`) built with `Tkinter` and the `CustomTkinter` library. It is responsible for all user interaction, parameter input, and data visualization (live plotting). It runs in the main process.
 -   **Frontend:** Each measurement has a dedicated GUI script (e.g., `IV_K2400_Frontend_v5.py`) built with Python's standard `Tkinter` library. It is responsible for all user interaction, parameter input, and data visualization (live plotting). It runs in the main process.
-
 -   **Backend:** The instrument control logic is encapsulated in a separate class (e.g., `Keithley2400_Backend`). This class handles all `PyVISA` communication, instrument configuration, and data acquisition commands.
-
 -   **Process Isolation:** When a measurement is started, the frontend launches its corresponding backend logic in a separate, isolated process using Python's `multiprocessing` library. This is the key to PICA's stability: a crash or error in one measurement script will not affect the main launcher or any other running experiments.
-
 -   **Communication:** The frontend and backend communicate via `multiprocessing.Queue` for thread-safe data exchange. The backend performs a measurement and places the data into a queue, which the frontend then reads to update plots and save to a file.
+
+---
 
 ## Table of Contents
 
@@ -81,6 +80,7 @@ The core of PICA is built with a stack of robust and widely-used Python librarie
 
 <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.9+-blue.svg?logo=python&logoColor=white" alt="Python"></a>  <a href="https://docs.python.org/3/library/tkinter.html"><img src="https://img.shields.io/badge/Tkinter-GUI-orange.svg" alt="Tkinter"></a>
+  <a href="https://github.com/TomSchimansky/CustomTkinter"><img src="https://img.shields.io/badge/CustomTkinter-Modern%20GUI-orange.svg" alt="CustomTkinter"></a>
   <a href="https://pyvisa.readthedocs.io/en/latest/"><img src="https://img.shields.io/badge/PyVISA-Instrument%20Control-yellow.svg" alt="PyVISA"></a>
   <a href="https://numpy.org/"><img src="https://img.shields.io/badge/NumPy-Data%20Handling-blueviolet.svg?logo=numpy&logoColor=white" alt="NumPy"></a>
   <a href="https://pandas.pydata.org/"><img src="https://img.shields.io/badge/Pandas-Data%20Manipulation-purple.svg?logo=pandas&logoColor=white" alt="Pandas"></a>
@@ -88,7 +88,7 @@ The core of PICA is built with a stack of robust and widely-used Python librarie
 </p>
 
 - **Primary Language:** **Python 3.9+**
-- **Graphical User Interface:** **Tkinter** (Python's standard GUI library)
+- **Graphical User Interface:** **Tkinter** (with the **CustomTkinter** library for a modern look and feel)
 - **Instrument Communication:** **PyVISA** (a Python wrapper for the NI-VISA library)
 - **Numerical Operations:** **NumPy**
 - **Data Structuring:** **Pandas**
@@ -98,7 +98,7 @@ The core of PICA is built with a stack of robust and widely-used Python librarie
 All required packages are listed in the `requirements.txt` file for easy one-step installation.
 
 ---
-
+## Available Measurement Modules
 ## Available Scripts & Modules
 
 The PICA suite is organized into modules, each containing a frontend GUI application and its corresponding backend logic for instrument control.
@@ -227,6 +227,7 @@ Here is a meticulously verified summary of the key measurement specifications fo
 
 ### Installation Steps
 h
+1.  **Clone the Repository**
     git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
     cd PICA-Python-Instrument-Control-and-Automation
     ```
@@ -327,13 +328,13 @@ Finally, add the path to your new frontend script in `PICA_v6.py` and `Setup/Pic
 
 ---
 
-## 📚 Resources & Documentation
+## Resources & Documentation
 
 #### Included Manuals
 A collection of official instrument manuals and software library documentation is provided within the `/_assets/Manuals/` directory. These documents serve as valuable technical references.
 
 #### Instrument Interfacing Guide
-For a detailed guide on hardware setup, instrument configuration, and connection testing, please consult the **Python Instrument Interfacing Guide**.
+For a quick reference on instrument addresses, see the `GPIB_Address_Guide.md` file.
 
 ---
 
@@ -349,7 +350,7 @@ Please open an issue first to discuss any major changes you would like to make.
 
 ---
 
-## 🧑‍🔬 Authors & Acknowledgments
+## Authors & Acknowledgments
 
 <div align="center">
   <img src="_assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
@@ -750,13 +751,6 @@ Please open an issue first to discuss any major changes you would like to make.
 
 #### Funding
 Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science & Technology (DST), Government of India.
-
----
-
-## License
-
-This project is licensed under the terms of the MIT License. See the `LICENSE` file for full details.
-
 
 ---
 
