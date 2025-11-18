@@ -135,16 +135,16 @@ This facility provides users with a dedicated setup for **In-situ and ex-situ el
 This facility provides users with a comprehensive, modular system for characterizing the full spectrum of electronic transport properties in cryogenic environments. The setup integrates multiple high-precision instruments to cover the entire resistance scale, from superconductors to perfect insulators.
 
 * **Temperature Range:** 80 K to 320 K.
-* **Complete Resistance Range:** $10~n\Omega$ to $10~P\Omega$, i.e., covering 24-orders-of-magnitude.
+* **Complete Resistance Range:** $10 n\Omega$ to $10 P\Omega$, i.e., covering 24-orders-of-magnitude.
 
 **Measurement Modules**
 
 | Module | Configuration / Instrument | Use Case | Resistance Range |
 | :--- | :--- | :--- | :--- |
-| **1. Low-Resistance (Delta Mode)** | **Keithley 6221** (Current Source) + **K2182** (Nanovoltmeter) | For superconductors & metallic films; actively cancels thermal offsets. | $10~n\Omega$ to $100~M\Omega$ |
-| **2. Mid-Resistance (Standard)** | **Keithley 2400** Source Meter | For semiconductors, oxides. | $100~\mu\Omega$ to $200~M\Omega$ |
-| **3. Mid-Resistance (High-Precision)** | **Keithley 2400** (Source) + **K2182** (Nanovoltmeter) | Detects subtle phase transitions in semiconductors, oxides. | $1~\mu\Omega$ to $100~M\Omega$ |
-| **4. High-Resistance** | **Keithley 6517B** Electrometer | Measures dielectrics, polymers, & ceramics. | $1~\Omega$ to $10~P\Omega$ ($10^{16}\Omega$) |
+| **1. Low-Resistance (Delta Mode)** | **Keithley 6221** (Current Source) + **K2182** (Nanovoltmeter) | For superconductors & metallic films; actively cancels thermal offsets. | $10 n\Omega$ to $100 M\Omega$ |
+| **2. Mid-Resistance (Standard)** | **Keithley 2400** Source Meter | For semiconductors, oxides. | $100 \mu\Omega$ to $200 M\Omega$ |
+| **3. Mid-Resistance (High-Precision)** | **Keithley 2400** (Source) + **K2182** (Nanovoltmeter) | Detects subtle phase transitions in semiconductors, oxides. | $1 \mu\Omega$ to $100 M\Omega$ |
+| **4. High-Resistance** | **Keithley 6517B** Electrometer | Measures dielectrics, polymers, & ceramics. | $1 \Omega$ to $10 P\Omega$ ($10^{16}\Omega$) |
 
 ---
 
