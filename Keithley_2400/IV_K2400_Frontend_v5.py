@@ -288,7 +288,7 @@ class MeasurementAppGUI:
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
         details_text = ("Program Name: I-V Sweep (4-Probe)\n"
                         "Instrument: Keithley 2400\n"
-                        "Measurement Range: 10⁻³ Ω to 10⁹ Ω")
+                        "Measurement Range: 100 µΩ to 200 MΩ")
         ttk.Label(frame, text=details_text, justify='left', background=self.CLR_BG_DARK).grid(row=3, column=1, padx=10, pady=(0, 10), sticky='w')
 
     def create_input_frame(self, parent):

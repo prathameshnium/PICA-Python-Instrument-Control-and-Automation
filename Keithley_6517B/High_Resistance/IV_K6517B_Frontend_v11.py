@@ -332,7 +332,7 @@ class HighResistanceIV_GUI:
 
         details_text = ("Program Name: I-V Sweep\n"
                         "Instrument: Keithley 6517B Electrometer\n"
-                        "Measurement Range: 10³ Ω to 10¹⁶ Ω")
+                        "Measurement Range: 1 Ω to 10 PΩ (10¹⁶ Ω)")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
 

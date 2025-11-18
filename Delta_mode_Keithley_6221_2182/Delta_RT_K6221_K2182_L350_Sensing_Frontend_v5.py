@@ -309,7 +309,7 @@ class MeasurementAppGUI:
 
         details_text = ("Program Mode: R vs. T (Passive Sensing)\n"
                         "Instruments: Keithley 6221/2182, Lakeshore 350\n"
-                        "Measurement Range: ~10 nΩ to 200 MΩ")
+                        "Measurement Range: 10 nΩ to 100 MΩ")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def _load_logo(self, canvas):

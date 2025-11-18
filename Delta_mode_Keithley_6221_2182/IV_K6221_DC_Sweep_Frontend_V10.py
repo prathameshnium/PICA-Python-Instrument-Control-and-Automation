@@ -223,7 +223,7 @@ class Passthrough_IV_GUI:
         # Program details
         details_text = ("Program Name: Delta Mode I-V Sweep\n"
                         "Instruments: K6221 (Source), K2182 (Meter)\n"
-                        "Measurement Range: ~10 nΩ to 1 GΩ")
+                        "Measurement Range: 10 nΩ to 100 MΩ")
         ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def _load_logo(self, canvas):

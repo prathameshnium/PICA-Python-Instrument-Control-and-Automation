@@ -238,7 +238,7 @@ class IV_GUI:
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
         details_text = ("Program Name: I-V Sweep (4-Probe)\n"
                         "Instruments: Keithley 2400, Keithley 2182\n"
-                        "Measurement Range: 10⁻⁶ Ω to 10⁹ Ω")
+                        "Measurement Range: 1 µΩ to 100 MΩ")
         ttk.Label(frame, text=details_text, justify='left', background=self.CLR_FRAME_BG).grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
 
     def _create_right_panel(self, parent):
