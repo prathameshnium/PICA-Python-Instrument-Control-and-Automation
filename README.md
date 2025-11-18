@@ -119,12 +119,41 @@ The PICA suite is organized into modules, each containing a frontend GUI applica
 
 ## Instrument Specifications
 
-PICA supports a range of common laboratory instruments. For a detailed summary of their measurement specifications, please see the Instrument Specifications Guide.
+### 1. Facilities: High Voltage Poling
 
-- **Source-Measure Units:** Keithley 2400, Keithley 6221, Keithley 6517B
-- **Nanovoltmeters:** Keithley 2182A
-- **LCR Meters:** Keysight E4980A
-- **Temperature Controllers:** Lakeshore 340, Lakeshore 350
+**Overview**
+This facility provides users with a dedicated setup for **In-situ and ex-situ electrical poling** of materials in a controlled vacuum environment. It is designed to establish a uniform (ferroelectric) polarization state in samples before characterization.
+
+* **Core Instrument:** Stanford Research Systems PS365 High Voltage Power Supply.
+
+**User Applications & Capabilities**
+* Prepare samples for pyroelectric current measurements and converse magnetoelectric studies.
+* Enable ex-situ neutron diffraction studies on poled materials.
+
+**Key Specifications**
+* **Maximum Voltage:** +100 V to +10 kV.
+* **Maximum Current:** 1 mA.
+* **Precision Control:** Features 1 V setting and display resolution.
+* **High Stability:** 0.01% per hour drift for reliable, long-duration poling.
+
+---
+
+### 2. Facilities: Advanced Cryogenic Transport Measurement System
+
+**Overview**
+This facility provides users with a comprehensive, modular system for characterizing the full spectrum of electronic transport properties in cryogenic environments. The setup integrates multiple high-precision instruments to cover the entire resistance scale, from superconductors to perfect insulators.
+
+* **Temperature Range:** 80 K to 320 K.
+* **Complete Resistance Range:** $10~n\Omega$ to $10~P\Omega$, i.e., covering 24-orders-of-magnitude.
+
+**Measurement Modules**
+
+| Module | Configuration / Instrument | Use Case | Resistance Range |
+| :--- | :--- | :--- | :--- |
+| **1. Low-Resistance (Delta Mode)** | **Keithley 6221** (Current Source) + **K2182** (Nanovoltmeter) | For superconductors & metallic films; actively cancels thermal offsets. | $10~n\Omega$ to $100~M\Omega$ |
+| **2. Mid-Resistance (Standard)** | **Keithley 2400** Source Meter | For semiconductors, oxides. | $100~\mu\Omega$ to $200~M\Omega$ |
+| **3. Mid-Resistance (High-Precision)** | **Keithley 2400** (Source) + **K2182** (Nanovoltmeter) | Detects subtle phase transitions in semiconductors, oxides. | $1~\mu\Omega$ to $100~M\Omega$ |
+| **4. High-Resistance** | **Keithley 6517B** Electrometer | Measures dielectrics, polymers, & ceramics. | $1~\Omega$ to $10~P\Omega$ ($10^{16}\Omega$) |
 
 ---
 

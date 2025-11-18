@@ -299,24 +299,24 @@ class PICALauncherApp:
         GROUP_PAD_Y = 15
 
         # --- Left Column Suites ---
-        self._create_suite_frame(left_col, 'Low Resistance (~10 nΩ to 200 MΩ)', "Current Driven", "Instruments: Keithley 6221/2182, Lakeshore 350", [
+        self._create_suite_frame(left_col, 'Low Resistance (10 nΩ to 100 MΩ)', "Current Driven", "Instruments: Keithley 6221/2182, Lakeshore 350", [
             ("Sweep Mode I-V ", "Delta Mode I-V Sweep"),
             ("Delta Mode R vs. T (T_Control)", "Delta Mode R-T"),
             ("Delta Mode R vs. T (T_Sensing)", "Delta Mode R-T (T_Sensing)"),
         ])
-        self._create_suite_frame(left_col, 'Mid Resistance (<0.2 Ω to >200 MΩ)', "Current Driven", "Instruments: Keithley 2400, Lakeshore 350", [
+        self._create_suite_frame(left_col, 'Mid Resistance (100 µΩ to 200 MΩ)', "Current Driven", "Instruments: Keithley 2400, Lakeshore 350", [
             ("I-V Sweep", "K2400 I-V"),
             ("R vs. T (T_Control)", "K2400 R-T"),
             ("R vs. T (T_Sensing)", "K2400 R-T (T_Sensing)"),
         ])
-        self._create_suite_frame(left_col, 'Mid Resistance, High Precision', "Current Driven", "Instruments: Keithley 2400/2182, Lakeshore 350", [
+        self._create_suite_frame(left_col, 'Mid Resistance, High Precision (1 µΩ to 100 MΩ)', "Current Driven", "Instruments: Keithley 2400/2182, Lakeshore 350", [
             ("I-V Sweep", "K2400_2182 I-V"),
             ("R vs. T (T_Control)", "K2400_2182 R-T"),
             ("R vs. T (T_Sensing)", "K2400_2182 R-T (T_Sensing)"),
         ])
 
         # --- Right Column Suites ---
-        self._create_suite_frame(right_col, 'High Resistance (1 Ω to >10 PΩ)', "Voltage Driven", "Instruments: Keithley 6517B, Lakeshore 350", [
+        self._create_suite_frame(right_col, 'High Resistance (1 Ω to 10 PΩ)', "Voltage Driven", "Instruments: Keithley 6517B, Lakeshore 350", [
             ("I-V Sweep", "K6517B I-V"),
             ("R vs. T (T_Control)", "K6517B R-T"),
             ("R vs. T (T_Sensing)", "K6517B R-T (T_Sensing)"),
