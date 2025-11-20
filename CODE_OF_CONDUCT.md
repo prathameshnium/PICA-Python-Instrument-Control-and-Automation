@@ -8,15 +8,15 @@ We pledge to act and interact in ways that contribute to an open, welcoming, div
 
 ## Our Standards
 
-Examples of behavior that contributes to a positive environment for our community include:
+Examples of behaviour that contribute to a positive environment for our community include:
 
 * Demonstrating empathy and kindness toward other people
 * Being respectful of differing opinions, viewpoints, and experiences
 * Giving and gracefully accepting constructive feedback
-* Accepting responsibility and apologizing to those affected by our mistakes
+* Accepting responsibility and apologising to those affected by our mistakes
 * Focusing on what is best not just for us as individuals, but for the overall community
 
-Examples of unacceptable behavior include:
+Examples of unacceptable behaviour include:
 
 * The use of sexualized language or imagery, and sexual attention or advances of any kind
 * Trolling, insulting or derogatory comments, and personal or political attacks
@@ -26,11 +26,11 @@ Examples of unacceptable behavior include:
 
 ## Enforcement Responsibilities
 
-Community leaders are responsible for clarifying and enforcing our standards of acceptable behavior and will take appropriate and fair corrective action in response to any behavior that they deem inappropriate, threatening, offensive, or harmful.
+Community leaders are responsible for clarifying and enforcing our standards of acceptable behaviour and will take appropriate and fair corrective action in response to any behaviour that they deem inappropriate, threatening, offensive, or harmful.
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement at **[INSERT YOUR EMAIL ADDRESS HERE]**. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behaviour may be reported to the community leaders responsible for enforcement at prathameshnium@duck.com. All complaints will be reviewed and investigated promptly and fairly.
 
 ## Attribution
 
