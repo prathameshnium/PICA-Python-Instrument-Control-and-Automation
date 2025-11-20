@@ -31,7 +31,6 @@ class TestDeepSimulation(unittest.TestCase):
         print("\n[SIMULATION] Testing Keithley 2400 I-V Protocol...")
 
         # A. Mock the PyMeasure Keithley object
-        # We use 'spec' to ensure we only call methods that actually exist on the real object
         with patch('pymeasure.instruments.keithley.Keithley2400') as MockK2400:
             
             # Create the 'Spy' instrument
@@ -47,7 +46,6 @@ class TestDeepSimulation(unittest.TestCase):
                  patch('pandas.DataFrame.to_csv') as mock_save:
 
                 # D. Run the Backend Script
-                # We use importlib machinery or just __import__ to run the script
                 module_name = "Keithley_2400.Backends.IV_K2400_Loop_Backend_v10"
                 if module_name in sys.modules: del sys.modules[module_name]
                 try:
@@ -62,22 +60,12 @@ class TestDeepSimulation(unittest.TestCase):
                 # 1. Did we turn the output ON?
                 spy_inst.enable_source.assert_called()
                 print("   -> Verified: Source Output Enabled")
-
-                # 2. Did we set the compliance voltage to 210V (as per your code)?
-                # Note: We check if the property was set
-                # (In mocks, setting a property often appears in property_mock calls, 
-                # but here we check if the code ran the setup lines)
                 
-                # 3. Did we ramp current?
-                # Your script loops and calls `ramp_to_current`. Let's verify that.
+                # 2. Did we ramp current?
                 self.assertTrue(spy_inst.ramp_to_current.called, "Failed to ramp current")
                 print("   -> Verified: Current Ramping Active")
 
-                # 4. Did we measure voltage?
-                # Accessing the .voltage property should have happened
-                # (Mock verification of property access can be tricky, but the script running implies it)
-                
-                # 5. Did we turn it OFF safely at the end?
+                # 3. Did we turn it OFF safely at the end?
                 spy_inst.shutdown.assert_called()
                 print("   -> Verified: Safety Shutdown Triggered")
 
@@ -98,11 +86,11 @@ class TestDeepSimulation(unittest.TestCase):
             spy_instr.query.return_value = "LSCI,MODEL350,123456,1.0"
 
             # B. Run the Lakeshore Module
-            # Note: Adjust this path if your actual backend file name is different
             module_name = "Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10"
             
-            # Fake inputs: Setpoint=300K, Ramp=10K/min, etc.
-            fake_inputs = ['300', '10', '1', '50'] 
+            # --- FIX IS HERE: Valid inputs (Start < End < Cutoff) ---
+            # Inputs: Start=10, End=300, Rate=10, Safety=350
+            fake_inputs = ['10', '300', '10', '350'] 
             
             with patch('builtins.input', side_effect=fake_inputs), \
                  patch('pandas.DataFrame.to_csv'):
@@ -119,18 +107,16 @@ class TestDeepSimulation(unittest.TestCase):
             
             # 1. Verify Connection Query
             # Did it ask "Who are you?" (*IDN?)
+            # Note: We accept ANY call that contains *IDN?
             spy_instr.query.assert_any_call('*IDN?')
             print("   -> Verified: *IDN? Query Sent")
 
             # 2. Verify Heater Logic (Advanced)
-            # We check if ANY write command was sent. 
-            # In a real scenario, we'd check for specific strings like "RAMP 1,1,10"
             if spy_instr.write.called:
                 args, _ = spy_instr.write.call_args
                 print(f"   -> Verified: Command sent to instrument: '{args[0]}'")
             else:
-                # Depending on how your script is structured, it might use .query for everything
-                pass
+                print("   [Note] No write commands detected (Check mock setup if this persists)")
 
     # =========================================================================
     # TEST 3: GPIB SCANNER UTILITY
@@ -150,16 +136,11 @@ class TestDeepSimulation(unittest.TestCase):
             rm.open_resource.return_value.__enter__.return_value = spy_inst
             
             # 3. Run the Scanner Frontend (Logic part)
-            # We import the module
             try:
                 import Utilities.GPIB_Instrument_Scanner_Frontend_v4 as scanner
                 
-                # We assume the scanner has a function or class we can trigger.
-                # If it's a GUI, we instantiate the worker thread function if accessible.
-                # For now, we test that the resource manager list_resources was CALLED by the import/init
                 if hasattr(scanner, 'GPIBScannerWindow'):
                     # Initialize the window (which triggers the scan)
-                    # We mock the parent window required by Toplevel
                     scanner.GPIBScannerWindow(MagicMock(), MagicMock())
                     
                     # ASSERTION: Did it ask for the list of resources?
@@ -167,7 +148,6 @@ class TestDeepSimulation(unittest.TestCase):
                     print("   -> Verified: Scanner requested resource list")
                     
                     # ASSERTION: Did it try to open the found resources?
-                    # It should have tried to open GPIB0::24 and GPIB0::12
                     rm.open_resource.assert_any_call('GPIB0::24::INSTR')
                     print("   -> Verified: Scanner attempted connection to GPIB::24")
 
