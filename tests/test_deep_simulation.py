@@ -114,15 +114,27 @@ class TestDeepSimulation(unittest.TestCase):
     # SECTION 2: COMPLEX & COMBINED MODULES
     # =========================================================================
 
-    def test_05_delta_simple(self):
-        print("\n[SIMULATION] 5. Delta Mode (Simple)...")
+    def test_05_delta_mode_backend(self):
+        print("\n[SIMULATION] 5. Delta Mode (K6221 + K2182)...")
         with patch('pyvisa.ResourceManager') as MockRM:
-            k6221 = MockRM.return_value.open_resource.return_value
-            with patch('builtins.input', side_effect=['0', '1e-5', '1e-6', 'test']), \
-                 patch('pandas.DataFrame.to_csv'), patch('time.sleep'):
+            k6221 = MagicMock()
+            MockRM.return_value.open_resource.return_value = k6221
+            
+            # Inputs: Start=0, Stop=1e-5, Step=1e-6, File=test
+            fake_inputs = ['0', '0.00001', '0.000001', 'delta_test']
+            
+            # Circuit breaker for sleep to prevent infinite loops
+            breaker = MagicMock(side_effect=[None]*10 + [Exception("Force Test Exit")])
+
+            with patch('builtins.input', side_effect=fake_inputs), \
+                 patch('pandas.DataFrame.to_csv'), \
+                 patch('time.sleep', breaker):
+                
                 self.run_module_safely("Delta_mode_Keithley_6221_2182.Backends.Delta_K6221_K2182_Simple_v7")
+                
+                # Verify at least one write command was sent
                 self.assertTrue(k6221.write.called)
-                print("   -> Verified: K6221 Commands Sent")
+                print("   -> Verified: Commands sent to K6221")
 
     def test_06_delta_sensing(self):
         print("\n[SIMULATION] 6. Delta Mode (T-Sensing)...")

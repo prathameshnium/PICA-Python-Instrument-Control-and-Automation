@@ -258,7 +258,8 @@ class Passthrough_IV_GUI:
             self.data_filepath = "temp_data.csv"
             
             for i, curr in enumerate(points):
-                if not self.is_running: break
+                if not self.is_running:
+                    break
                 self.backend.set_current(curr)
                 time.sleep(params['delay'])
                 volt = self.backend.read_voltage()
