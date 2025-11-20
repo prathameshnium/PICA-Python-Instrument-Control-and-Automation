@@ -11,7 +11,7 @@
     <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/network/members"><img src="https://img.shields.io/github/forks/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=social" alt="GitHub Forks"></a>
   </p>
 </div>
-
+[![Run PICA JOSS Tests](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/joss_tests.yml/badge.svg)](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/joss_tests.yml)
 ---
 
 ## Overview
