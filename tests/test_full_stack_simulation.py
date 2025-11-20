@@ -10,9 +10,15 @@ sys.modules['tkinter'] = MagicMock()
 sys.modules['tkinter.ttk'] = MagicMock()
 sys.modules['tkinter.messagebox'] = MagicMock()
 sys.modules['tkinter.filedialog'] = MagicMock()
+
+# Matplotlib Mocks (Fixed the missing modules here)
 sys.modules['matplotlib'] = MagicMock()
 sys.modules['matplotlib.pyplot'] = MagicMock()
+sys.modules['matplotlib.figure'] = MagicMock()  # <--- ADDED THIS
+sys.modules['matplotlib.gridspec'] = MagicMock() # <--- ADDED THIS (Just in case)
+sys.modules['matplotlib.backends'] = MagicMock()
 sys.modules['matplotlib.backends.backend_tkagg'] = MagicMock()
+
 sys.modules['pyvisa'] = MagicMock()
 sys.modules['pymeasure'] = MagicMock()
 sys.modules['PIL'] = MagicMock()
@@ -52,6 +58,9 @@ class TestFullStack(unittest.TestCase):
                 app.launch_script(target_script)
                 
                 # ASSERTION 1: Did we try to spawn a process?
+                if not MockProcess.called:
+                    print("   [Error] Process not spawned. Script might have crashed during import.")
+                
                 MockProcess.assert_called()
                 
                 # ASSERTION 2: Did we pass the correct script?
