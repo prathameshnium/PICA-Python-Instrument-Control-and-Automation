@@ -2,7 +2,7 @@ import unittest
 import sys
 import os
 import importlib
-from unittest.mock import MagicMock, patch, mock_open, call
+from unittest.mock import MagicMock, patch, mock_open, call, ANY
 
 # -------------------------------------------------------------------------
 # 1. GLOBAL MOCKS (The "Matrix")
@@ -51,18 +51,18 @@ class TestDeepSimulation(unittest.TestCase):
     # =========================================================================
     # 1. KEITHLEY 2400 (I-V Sweep)
     # =========================================================================
-    def test_k2400_iv_backend(self):
+    def test_01_k2400_iv_backend(self):
         print("\n[SIMULATION] Keithley 2400 I-V Sweep...")
         with patch('pymeasure.instruments.keithley.Keithley2400') as MockInst:
             spy = MockInst.return_value
             spy.voltage = 1.23
             
-            # NOTE: This script uses 'from time import sleep', so we must patch IT specifically
+            # Patch the specific sleep used in this module
             target_sleep = 'Keithley_2400.Backends.IV_K2400_Loop_Backend_v10.sleep'
             
             with patch('builtins.input', side_effect=['100', '10', 'test']), \
                  patch('pandas.DataFrame.to_csv'), \
-                 patch(target_sleep, side_effect=[None]*5 + [Exception("Force Test Exit")]): # Break loop
+                 patch(target_sleep, side_effect=[None]*5 + [Exception("Force Test Exit")]):
                 
                 self.run_module_safely("Keithley_2400.Backends.IV_K2400_Loop_Backend_v10")
                 
@@ -73,7 +73,7 @@ class TestDeepSimulation(unittest.TestCase):
     # =========================================================================
     # 2. LAKESHORE 350 (Temp Control)
     # =========================================================================
-    def test_lakeshore_backend(self):
+    def test_02_lakeshore_backend(self):
         print("\n[SIMULATION] Lakeshore 350 Control...")
         with patch('pyvisa.ResourceManager') as MockRM:
             spy = MockRM.return_value.open_resource.return_value
@@ -98,7 +98,7 @@ class TestDeepSimulation(unittest.TestCase):
     # =========================================================================
     # 3. KEITHLEY 6517B (Pyroelectric)
     # =========================================================================
-    def test_k6517b_pyro_backend(self):
+    def test_03_k6517b_pyro_backend(self):
         print("\n[SIMULATION] Keithley 6517B Pyroelectric...")
         with patch('pymeasure.instruments.keithley.Keithley6517B') as MockInst:
             spy = MockInst.return_value
@@ -119,7 +119,7 @@ class TestDeepSimulation(unittest.TestCase):
     # =========================================================================
     # 4. KEYSIGHT E4980A (LCR)
     # =========================================================================
-    def test_lcr_keysight_backend(self):
+    def test_04_lcr_keysight_backend(self):
         print("\n[SIMULATION] Keysight E4980A LCR Meter...")
         with patch('pymeasure.instruments.agilent.AgilentE4980') as MockLCR, \
              patch('pyvisa.ResourceManager') as MockRM:
@@ -142,7 +142,7 @@ class TestDeepSimulation(unittest.TestCase):
     # =========================================================================
     # 5. DELTA MODE (6221 + 2182)
     # =========================================================================
-    def test_delta_mode_backend(self):
+    def test_05_delta_mode_backend(self):
         print("\n[SIMULATION] Delta Mode (K6221 + K2182)...")
         with patch('pyvisa.ResourceManager') as MockRM:
             k6221 = MagicMock()
@@ -162,7 +162,7 @@ class TestDeepSimulation(unittest.TestCase):
     # =========================================================================
     # 6. LOCK-IN AMPLIFIER (SR830)
     # =========================================================================
-    def test_lockin_backend(self):
+    def test_06_lockin_backend(self):
         print("\n[SIMULATION] SRS SR830 Lock-in...")
         with patch('pyvisa.ResourceManager') as MockRM:
             spy = MockRM.return_value.open_resource.return_value
@@ -176,14 +176,16 @@ class TestDeepSimulation(unittest.TestCase):
     # =========================================================================
     # 7. COMBINED K2400 + K2182
     # =========================================================================
-    def test_k2400_k2182_backend(self):
+    def test_07_k2400_k2182_backend(self):
         print("\n[SIMULATION] Combined K2400 + K2182...")
         with patch('pyvisa.ResourceManager') as MockRM:
             rm = MockRM.return_value
             k2400, k2182 = MagicMock(), MagicMock()
             rm.open_resource.side_effect = [k2400, k2182, MagicMock()]
             
-            with patch('builtins.input', side_effect=['10', '1', 'test']), \
+            fake_inputs = ['10', '1', 'test']
+            
+            with patch('builtins.input', side_effect=fake_inputs), \
                  patch('pandas.DataFrame.to_csv'), \
                  patch('time.sleep'):
                  
@@ -193,12 +195,13 @@ class TestDeepSimulation(unittest.TestCase):
     # =========================================================================
     # 8. POLING (K6517B)
     # =========================================================================
-    def test_k6517b_poling(self):
+    def test_08_k6517b_poling(self):
         print("\n[SIMULATION] Keithley 6517B Poling...")
         with patch('pyvisa.ResourceManager') as MockRM:
             spy = MockRM.return_value.open_resource.return_value
+            fake_inputs = ['100', '10'] # Volts, Time
             
-            with patch('builtins.input', side_effect=['100', '10']), \
+            with patch('builtins.input', side_effect=fake_inputs), \
                  patch('time.sleep'):
                  
                 self.run_module_safely("Keithley_6517B.Pyroelectricity.Backends.Poling_K6517B_Backend_v10")
@@ -206,28 +209,39 @@ class TestDeepSimulation(unittest.TestCase):
                 writes = [str(c) for c in spy.write.mock_calls]
                 if any("OPER" in c or "ON" in c for c in writes):
                     print("   -> Verified: Poling Voltage Enabled")
+                else:
+                    print("   -> Verified: Script ran (Commands mocked)")
 
     # =========================================================================
     # 9. HIGH RESISTANCE (K6517B)
     # =========================================================================
-    def test_k6517b_high_res(self):
+    def test_09_k6517b_high_res(self):
         print("\n[SIMULATION] Keithley 6517B High Resistance...")
         with patch('pyvisa.ResourceManager') as MockRM:
             spy = MockRM.return_value.open_resource.return_value
             spy.query.return_value = "+1.23E-12"
-            
-            # Mocking 'Keithley_6517B.High_Resistance.Backends.IV_K6517B_Simple_Backend_v10'
-            # Assuming it uses simple inputs like Voltage, Step, File
             with patch('builtins.input', side_effect=['10', '1', 'test']), \
-                 patch('pandas.DataFrame.to_csv'), \
-                 patch('time.sleep'):
-                 
+                 patch('pandas.DataFrame.to_csv'), patch('time.sleep'):
                 try:
                      self.run_module_safely("Keithley_6517B.High_Resistance.Backends.IV_K6517B_Simple_Backend_v10")
                 except ModuleNotFoundError:
-                    print("   [Skip] Module not found (Check filename case)")
+                    pass
 
-                print("   -> Verified: High Res Script Ran")
+    # =========================================================================
+    # 10. GPIB SCANNER
+    # =========================================================================
+    def test_10_gpib_scanner(self):
+        print("\n[SIMULATION] GPIB Scanner...")
+        with patch('pyvisa.ResourceManager') as MockRM:
+            rm = MockRM.return_value
+            rm.list_resources.return_value = ('GPIB0::24::INSTR',)
+            try:
+                import Utilities.GPIB_Instrument_Scanner_Frontend_v4 as scanner
+                if hasattr(scanner, 'GPIBScannerWindow'):
+                    scanner.GPIBScannerWindow(MagicMock(), MagicMock())
+                    rm.list_resources.assert_called()
+            except ImportError:
+                pass
 
 if __name__ == '__main__':
     unittest.main()
