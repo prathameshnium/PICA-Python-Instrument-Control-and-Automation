@@ -15,10 +15,13 @@ MOCK_MODULES = [
     'pymeasure', 'pymeasure.instruments', 'pymeasure.instruments.keithley',
     'matplotlib', 'matplotlib.pyplot', 'matplotlib.backends',
     'matplotlib.backends.backend_tkagg', 'matplotlib.figure',
+    'matplotlib.gridspec', # <--- ADDED THIS (Fixes your error)
+    'matplotlib.ticker',   # <--- ADDED THIS (Prevent future errors)
     'PIL', 'PIL.Image', 'PIL.ImageTk',
     'pandas', 'numpy', 'gpib_ctypes'
 ]
 
+# Apply the mocks to sys.modules
 for mod in MOCK_MODULES:
     sys.modules[mod] = MagicMock()
 
@@ -77,10 +80,8 @@ class TestDynamicDiscovery(unittest.TestCase):
                     except Exception as e:
                         print(f"FAIL\n    Error: {e}")
                         failure_count += 1
-                        # We don't fail immediately so we can see all errors
-                        # But we record it to fail the test at the end
                         
-        print(f"\n[SUMMARY] Tested {found_count} modules. Failed {failure_count}.")
+        print(f"\n[SUMMARY] Tested {found_count + failure_count} modules. Passed {found_count}. Failed {failure_count}.")
         
         # Fail the test if anything broke
         self.assertEqual(failure_count, 0, f"{failure_count} modules failed to load.")
