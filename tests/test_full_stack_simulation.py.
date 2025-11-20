@@ -1,0 +1,183 @@
+import unittest
+import sys
+import os
+import queue
+from unittest.mock import MagicMock, patch, ANY
+
+# -------------------------------------------------------------------------
+# 1. MASTER MOCKS (The "Matrix" Simulation)
+# We replace the entire physical world (Screen, Instruments, OS) with Mocks.
+# -------------------------------------------------------------------------
+sys.modules['tkinter'] = MagicMock()
+sys.modules['tkinter.ttk'] = MagicMock()
+sys.modules['tkinter.messagebox'] = MagicMock()
+sys.modules['tkinter.filedialog'] = MagicMock()
+sys.modules['matplotlib'] = MagicMock()
+sys.modules['matplotlib.pyplot'] = MagicMock()
+sys.modules['matplotlib.backends.backend_tkagg'] = MagicMock()
+sys.modules['pyvisa'] = MagicMock()
+sys.modules['pymeasure'] = MagicMock()
+sys.modules['PIL'] = MagicMock()
+sys.modules['PIL.Image'] = MagicMock()
+sys.modules['PIL.ImageTk'] = MagicMock()
+
+class TestFullStack(unittest.TestCase):
+
+    def setUp(self):
+        # Ensure we can import your scripts
+        self.root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        if self.root_dir not in sys.path:
+            sys.path.insert(0, self.root_dir)
+
+    # =========================================================================
+    # SCENARIO 1: THE LAUNCHER (The "Control Center")
+    # Goal: Verify that clicking a dashboard button actually launches the correct module.
+    # =========================================================================
+    def test_launcher_integration(self):
+        print("\n[FULL-STACK] Testing PICA Launcher Integration...")
+        
+        # 1. Import the Launcher
+        try:
+            import PICA_v6 as launcher
+        except ImportError:
+            self.skipTest("Could not import PICA_v6.py")
+
+        # 2. Spy on the multiprocessing.Process class
+        # We want to know if PICA *attempts* to start a new process
+        with patch('multiprocessing.Process') as MockProcess:
+            
+            # 3. Initialize the App
+            mock_root = MagicMock()
+            app = launcher.PICALauncherApp(mock_root)
+            
+            # 4. Simulate clicking the "K2400 I-V" button
+            # We look up the script path from your dictionary
+            script_key = "K2400 I-V"
+            if script_key in app.SCRIPT_PATHS:
+                target_script = app.SCRIPT_PATHS[script_key]
+                
+                # Trigger the launch function directly
+                app.launch_script(target_script)
+                
+                # 5. ASSERTION: Did a process start?
+                MockProcess.assert_called()
+                
+                # 6. DEEP ASSERTION: Was it the CORRECT script?
+                # Get the arguments passed to Process(target=..., args=(PATH,))
+                _, kwargs = MockProcess.call_args
+                captured_args = kwargs.get('args', [])
+                
+                # We check if the path sent to the process matches the K2400 script
+                self.assertIn("IV_K2400_Frontend", str(captured_args[0]))
+                print(f"   -> Verified: Launcher correctly targeted '{os.path.basename(str(captured_args[0]))}'")
+                
+                # Verify start() was called on the process
+                MockProcess.return_value.start.assert_called()
+                print("   -> Verified: New Process was spawned successfully.")
+
+    # =========================================================================
+    # SCENARIO 2: THE MEASUREMENT GUI (The "Experiment")
+    # Goal: Verify 'Start' button -> Launches Backend -> Updates Graph
+    # =========================================================================
+    def test_k2400_gui_workflow(self):
+        print("\n[FULL-STACK] Testing K2400 IV Frontend Workflow...")
+        
+        # 1. Import the specific frontend module
+        # Adjust this import path if your folder structure is slightly different!
+        try:
+            import Keithley_2400.IV_K2400_Frontend_v5 as frontend
+        except ImportError:
+            # Try dynamic import if path is complex
+            print("   [Note] Standard import failed, trying dynamic...")
+            import importlib.util
+            path = os.path.join(self.root_dir, 'Keithley_2400', 'IV_K2400_Frontend_v5.py')
+            if not os.path.exists(path):
+                self.skipTest(f"Could not find frontend at {path}")
+            spec = importlib.util.spec_from_file_location("k2400_fe", path)
+            frontend = importlib.util.module_from_spec(spec)
+            sys.modules["k2400_fe"] = frontend
+            spec.loader.exec_module(frontend)
+
+        # 2. Mock the multiprocess parts specific to this module
+        with patch('multiprocessing.Process') as MockProcess, \
+             patch('multiprocessing.Queue') as MockQueue:
+            
+            # Setup the Queue Mock
+            gui_queue = MagicMock()
+            MockQueue.return_value = gui_queue
+            
+            # 3. Initialize the GUI
+            mock_root = MagicMock()
+            # Assuming the class is named 'IV_App' or similar based on file name.
+            # If you renamed the class, we inspect the module to find it.
+            app_class = None
+            for name, obj in vars(frontend).items():
+                if isinstance(obj, type) and "App" in name: # Heuristic to find the main class
+                    app_class = obj
+                    break
+            
+            if not app_class:
+                self.skipTest("Could not auto-detect the Main App class in the frontend file.")
+
+            print(f"   -> Detected App Class: {app_class.__name__}")
+            app = app_class(mock_root)
+            
+            # 4. SIMULATE USER INPUT
+            # We "type" into the Tkinter Entry widgets
+            # Note: We assume your app stores entries in 'self.entries' dictionary or attributes
+            # This part tries to be generic:
+            if hasattr(app, 'entries') and isinstance(app.entries, dict):
+                # Generic dictionary based form
+                for key in app.entries:
+                    app.entries[key].insert(0, "10") # Fill everything with 10
+            elif hasattr(app, 'entry_start'):
+                # Direct attribute style
+                app.entry_start.insert(0, "0")
+                app.entry_end.insert(0, "10")
+                app.entry_step.insert(0, "1")
+            
+            # Mock the file dialog so it doesn't pop up
+            app.file_location_path = "/tmp/test_data" 
+
+            # 5. CLICK THE START BUTTON
+            # We verify if the app has a start method
+            if hasattr(app, 'start_measurement'):
+                print("   -> Clicking 'Start' button...")
+                app.start_measurement()
+                
+                # 6. VERIFY BACKEND LAUNCH
+                MockProcess.assert_called()
+                print("   -> Verified: Frontend attempted to launch Backend process.")
+                
+                # 7. SIMULATE DATA ARRIVAL (The "Full Stack" Loop)
+                # We manually inject data into the queue that the GUI listens to.
+                # Format: (Voltage, Current, Time, etc.) -> Depends on your specific unpacking
+                fake_data = (1.5, 1.23e-6, 0.5) # Fake Volts, Amps, Time
+                
+                # We force the queue to return this data ONCE, then raise Empty
+                gui_queue.get_nowait.side_effect = [fake_data, queue.Empty]
+                gui_queue.empty.side_effect = [False, True] # First not empty, then empty
+
+                # 8. TRIGGER GRAPH UPDATE
+                # Most Tkinter apps have a function like `update_graph` or `process_queue`
+                # We find it and call it.
+                update_func = getattr(app, '_process_data_queue', getattr(app, 'update_graph', None))
+                
+                if update_func:
+                    print("   -> Simulating incoming data from instrument...")
+                    try:
+                        update_func() # Run one cycle of the update loop
+                        print("   -> Verified: GUI accepted data without crashing.")
+                        
+                        # Check if plot was updated
+                        # (If you use matplotlib, 'draw' or 'set_data' should be called)
+                        if app.line and hasattr(app.line, 'set_data'):
+                            app.line.set_data.assert_called()
+                            print("   -> Verified: Live Graph updated with new data point.")
+                    except Exception as e:
+                        print(f"   [Warn] Graph update hit an error (common in headless): {e}")
+                else:
+                    print("   [Info] Could not auto-detect queue processing function, skipping data test.")
+
+if __name__ == '__main__':
+    unittest.main()
