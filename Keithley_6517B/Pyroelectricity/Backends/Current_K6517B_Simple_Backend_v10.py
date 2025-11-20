@@ -3,7 +3,7 @@
 # Purpose:     Current Measurement Backend
 # Author:      Prathamesh K Deshmukh
 # Created:     03-03-2024
-# Updates:     V1.3 (Fixed DataFrame saving bug)
+# Updates:     V1.4 (Fixed DataFrame saving bug)
 #-------------------------------------------------------------------------------
 
 import time
@@ -42,15 +42,21 @@ except KeyboardInterrupt:
     # Graceful Exit on Ctrl+C
     print("\nMeasurement stopped by User.")
     
-    # --- FIX IS HERE: Define data_df before using it ---
-    data_df = pd.DataFrame({"Timestamp": t, "Current (A)": I})
-    data_df.to_csv("demo_data.dat", index=False)
-    print(f"Data saved to file: demo_data.dat")
+    # --- FIX: Create the DataFrame before saving ---
+    if t and I:
+        data_df = pd.DataFrame({"Timestamp": t, "Current (A)": I})
+        data_df.to_csv("demo_data.dat", index=False)
+        print(f"Data saved to file: demo_data.dat")
+    else:
+        print("No data collected to save.")
 
     # Shutdown Sequence
-    time.sleep(0.5)
-    keithley.shutdown()  # Ramps current to 0 and disables output
-    print("Keithley closed.")
+    try:
+        time.sleep(0.5)
+        keithley.shutdown()  # Ramps current to 0 and disables output
+        print("Keithley closed.")
+    except Exception as e:
+        print(f"Error closing instrument: {e}")
 
 except Exception as e:
     print(f"Error with Keithley: {e}")
