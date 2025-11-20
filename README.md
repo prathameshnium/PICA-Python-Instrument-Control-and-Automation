@@ -119,26 +119,8 @@ The PICA suite is organized into modules, each containing a frontend GUI applica
 
 ## Instrument Specifications
 
-### 1. Facilities: High Voltage Poling
 
-**Overview**
-This facility provides users with a dedicated setup for **In-situ and ex-situ electrical poling** of materials in a controlled vacuum environment. It is designed to establish a uniform (ferroelectric) polarization state in samples before characterization.
-
-* **Core Instrument:** Stanford Research Systems PS365 High Voltage Power Supply.
-
-**User Applications & Capabilities**
-* Prepare samples for pyroelectric current measurements and converse magnetoelectric studies.
-* Enable ex-situ neutron diffraction studies on poled materials.
-
-**Key Specifications**
-* **Maximum Voltage:** +100 V to +10 kV.
-* **Maximum Current:** 1 mA.
-* **Precision Control:** Features 1 V setting and display resolution.
-* **High Stability:** 0.01% per hour drift for reliable, long-duration poling.
-
----
-
-### 2. Facilities: Advanced Cryogenic Transport Measurement System
+### Advanced Cryogenic Transport Measurement System
 
 **Overview**
 This facility provides users with a comprehensive, modular system for characterizing the full spectrum of electronic transport properties in cryogenic environments. The setup integrates multiple high-precision instruments to cover the entire resistance scale, from superconductors to perfect insulators.
