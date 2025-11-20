@@ -42,7 +42,7 @@ except KeyboardInterrupt:
     # Graceful Exit on Ctrl+C
     print("\nMeasurement stopped by User.")
     
-    # --- FIX: Define data_df before using it ---
+    # --- FIX IS HERE: Define data_df before using it ---
     data_df = pd.DataFrame({"Timestamp": t, "Current (A)": I})
     data_df.to_csv("demo_data.dat", index=False)
     print(f"Data saved to file: demo_data.dat")
