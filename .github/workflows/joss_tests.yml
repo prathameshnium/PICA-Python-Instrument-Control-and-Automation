@@ -43,3 +43,8 @@ jobs:
         echo "RUNNING TEST 2: Deep Simulation (Behavior Test)"
         echo "--------------------------------------"
         python -m unittest tests/test_deep_simulation.py
+        echo ""
+        echo "--------------------------------------"
+        echo "RUNNING TEST 3: Full Stack Simulation"
+        echo "--------------------------------------"
+        python -m unittest tests/test_full_stack_simulation.py
