@@ -11,30 +11,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Download your code to the test server
+    # 1. Checkout the code
     - name: Checkout repository
       uses: actions/checkout@v3
 
-    # 2. Install Python 3.10 (Stable version for scientific libraries)
+    # 2. Install Python 3.10 (Standard for scientific packages)
     - name: Set up Python 3.10
       uses: actions/setup-python@v4
       with:
         python-version: "3.10"
 
-    # 3. Install your project
+    # 3. Install your project and dependencies
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        # This command reads your pyproject.toml and installs PICA
-        # The '-e' flag is critical: it installs in 'editable' mode
-        # so the tests can find your 'Keithley_2400' folders.
+        # Install the package in editable mode so tests can find folders like 'Keithley_2400'
         pip install -e .
-        
-        # Install test utilities
+        # Install testing tools
         pip install pytest
 
-    # 4. Run the "Smart" Test Script
-    - name: Run Dynamic GUI Tests
+    # 4. Run the Test Suite
+    - name: Run All Tests
       run: |
-        # This runs the auto-discovery script that finds and tests all your GUIs
+        echo "--------------------------------------"
+        echo "RUNNING TEST 1: Auto-Discovery (Smoke Test)"
+        echo "--------------------------------------"
         python -m unittest tests/test_auto_discovery.py
+        
+        echo ""
+        echo "--------------------------------------"
+        echo "RUNNING TEST 2: Deep Simulation (Behavior Test)"
+        echo "--------------------------------------"
+        python -m unittest tests/test_deep_simulation.py
