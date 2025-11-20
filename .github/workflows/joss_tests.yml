@@ -11,40 +11,65 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Checkout the code
+    # ------------------------------------------------------------------------
+    # PHASE 1: SETUP
+    # ------------------------------------------------------------------------
     - name: Checkout repository
       uses: actions/checkout@v3
 
-    # 2. Install Python 3.10 (Standard for scientific packages)
     - name: Set up Python 3.10
       uses: actions/setup-python@v4
       with:
         python-version: "3.10"
 
-    # 3. Install your project and dependencies
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        # Install the package in editable mode so tests can find folders like 'Keithley_2400'
+        # Install PICA in editable mode so tests can find your source code
         pip install -e .
-        # Install testing tools
-        pip install pytest
+        # Install Testing & Linting tools
+        pip install pytest flake8
 
-    # 4. Run the Test Suite
-    - name: Run All Tests
+    # ------------------------------------------------------------------------
+    # PHASE 2: READYMADE TESTS (Standard Industry Checks)
+    # ------------------------------------------------------------------------
+    - name: Run Style & Syntax Check (Flake8)
+      run: |
+        echo "STEP 1: Checking for critical syntax errors..."
+        # This stops the build if there are actual Python syntax errors (E9, F63, etc.)
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        
+        echo "STEP 2: Checking for code style warnings..."
+        # This just warns you about messy code (long lines, unused imports) but won't fail the build
+        # 'exit-zero' ensures your test passes even if your style isn't perfect
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    # ------------------------------------------------------------------------
+    # PHASE 3: YOUR CUSTOM TESTS (The "Three Pillars")
+    # ------------------------------------------------------------------------
+    
+    # Test 1: Does the code exist and import correctly?
+    - name: Run Test 1 - Auto-Discovery (Smoke Test)
       run: |
         echo "--------------------------------------"
-        echo "RUNNING TEST 1: Auto-Discovery (Smoke Test)"
+        echo "GOAL: Verify all GUI modules load without crashing."
         echo "--------------------------------------"
         python -m unittest tests/test_auto_discovery.py
-        
+
+    # Test 2: Does the physics logic work?
+    - name: Run Test 2 - Deep Simulation (Behavior Test)
+      run: |
         echo ""
         echo "--------------------------------------"
-        echo "RUNNING TEST 2: Deep Simulation (Behavior Test)"
+        echo "GOAL: Verify SCPI commands and hardware protocols."
         echo "--------------------------------------"
         python -m unittest tests/test_deep_simulation.py
+
+    # Test 3: Do the buttons connect to the scripts?
+    - name: Run Test 3 - Full Stack Simulation (Integration Test)
+      run: |
         echo ""
         echo "--------------------------------------"
-        echo "RUNNING TEST 3: Full Stack Simulation"
+        echo "GOAL: Verify Launcher buttons and GUI-Backend handoff."
         echo "--------------------------------------"
         python -m unittest tests/test_full_stack_simulation.py
