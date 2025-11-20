@@ -29,47 +29,53 @@ C_list = []
 loop_list = []
 
 #---------------------------------
-rm = pyvisa.ResourceManager()
-# Note: using pyvisa directly for setup commands
-my_instrument = rm.open_resource("GPIB::17") 
-LCR = AgilentE4980("GPIB::17")
+# Initialize Instrument
+try:
+    rm = pyvisa.ResourceManager()
+    my_instrument = rm.open_resource("GPIB::17")
+    LCR = AgilentE4980("GPIB::17")
 
-my_instrument.timeout = 100000
-my_instrument.read_termination = '\n'
-my_instrument.write_termination = '\n'
+    my_instrument.timeout = 100000
+    my_instrument.read_termination = '\n'
+    my_instrument.write_termination = '\n'
 
-my_instrument.write('*RST; *CLS')
-my_instrument.write(':DISP:ENAB')
-time.sleep(2)
+    my_instrument.write('*RST; *CLS')
+    my_instrument.write(':DISP:ENAB')
+    time.sleep(2)
 
-my_instrument.write(':INIT:CONT')
-my_instrument.write(':TRIG:SOUR EXT')
-time.sleep(2)
+    my_instrument.write(':INIT:CONT')
+    my_instrument.write(':TRIG:SOUR EXT')
+    time.sleep(2)
 
-my_instrument.write(':APER MED')
-my_instrument.write(':FUNC:IMP:RANGE:AUTO ON')
-time.sleep(2)
+    my_instrument.write(':APER MED')
+    my_instrument.write(':FUNC:IMP:RANGE:AUTO ON')
+    time.sleep(2)
 
-my_instrument.write(':MMEM EXT')
-time.sleep(2)
+    my_instrument.write(':MMEM EXT')
+    time.sleep(2)
 
-my_instrument.write(':MEM:DIM DBUF, ' + str(100))
-time.sleep(1)
+    my_instrument.write(':MEM:DIM DBUF, ' + str(100))
+    time.sleep(1)
 
-my_instrument.write(':MEM:FILL DBUF')
-time.sleep(2)
-my_instrument.write(':MEM:CLE DBUF')
-time.sleep(3)
-print(my_instrument.write(':BIAS:STATe ON'))
-time.sleep(2)
-my_instrument.write(':VOLT:LEVEL ' + str(V_ac))
-time.sleep(2)
+    my_instrument.write(':MEM:FILL DBUF')
+    time.sleep(2)
+    my_instrument.write(':MEM:CLE DBUF')
+    time.sleep(3)
+    print(my_instrument.write(':BIAS:STATe ON'))
+    time.sleep(2)
+    my_instrument.write(':VOLT:LEVEL ' + str(V_ac))
+    time.sleep(2)
+
+except Exception as e:
+    print(f"Instrument initialization failed: {e}")
+    # In a real scenario, you might want to exit here
+    pass
+
 #---------------------------------
-
 
 # LCR_fcn for the actual measurements
 def LCR_fcn(volt_ind):
-    # --- FIX: Removed unnecessary global declarations here ---
+    # Removed unused globals that caused linting errors
     global v1
     global output1
 
@@ -83,7 +89,7 @@ def LCR_fcn(volt_ind):
     output1 = LCR.values(":FETCh:IMPedance:FORMatted?")
     time.sleep(2)
 
-    C_list.append(output1[0]) # Fixed append logic
+    C_list.append(output1[0])
     v1 = my_instrument.query(':BIAS:VOLTage:LEVel?')
     V_list.append(v1)
     time.sleep(4)
@@ -94,7 +100,7 @@ def LCR_fcn(volt_ind):
 # Proto_fcn for the measurements protocol
 def Proto_fcn():
     global loop_ind_new
-    # --- FIX: Removed 'global protocol_list' (unnecessary for append) ---
+    # Removed unused global protocol_list
     
     loop_ind_new += 1
 
@@ -142,7 +148,6 @@ if __name__ == "__main__":
         data_dict = {'Volt': V_list, 'Cp': C_list, 'Loop': loop_list, 'Protocol': protocol_list}
         df = pd.DataFrame(data_dict)
         
-        # Ensure directory exists or save to local for safety if path fails
         try:
             df.to_csv(filename, sep=',', index=False, encoding='utf-8')
             print(f"Data saved to {filename}")
@@ -152,11 +157,12 @@ if __name__ == "__main__":
             print(f"Could not save to specified path. Saved to {fallback_name} instead.")
 
         # Plotting
-        plt.scatter(V_list, C_list)
-        plt.title("Cp vs V , Loops:" + str(loop) + "   V_max:" + str(V) + "   step size : " + str(V_step))
-        plt.xlabel("V")
-        plt.ylabel("Cp")
-        plt.show()
+        if V_list and C_list:
+            plt.scatter(V_list, C_list)
+            plt.title("Cp vs V , Loops:" + str(loop) + "   V_max:" + str(V) + "   step size : " + str(V_step))
+            plt.xlabel("V")
+            plt.ylabel("Cp")
+            plt.show()
 
     except Exception as e:
         print(f"An error occurred: {e}")
