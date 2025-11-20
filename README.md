@@ -9,9 +9,9 @@
     <a href="#"><img src="https://img.shields.io/badge/Status-Active-success.svg" alt="Project Status: Active"></a>
     <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/stargazers"><img src="https://img.shields.io/github/stars/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=social" alt="GitHub Stars"></a>
     <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/network/members"><img src="https://img.shields.io/github/forks/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=social" alt="GitHub Forks"></a>
+    <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/joss_tests.yml"><img src="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/joss_tests.yml/badge.svg" alt="Run PICA JOSS Tests"></a>
   </p>
 </div>
-[![Run PICA JOSS Tests](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/joss_tests.yml/badge.svg)](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/joss_tests.yml)
 ---
 
 ## Overview
