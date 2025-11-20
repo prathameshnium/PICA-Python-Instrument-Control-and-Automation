@@ -8,17 +8,12 @@
 #
 # Created:       03/10/2025
 #
-# Version:       8.0 (Passive Monitoring Merge)
-#
-# Description:   This version combines the core delta measurement logic from
-#                Delta_Lakeshore_Front_end_V7.py with the modern GUI, passive
-#                temperature sensing, and improved plotting/saving from
-#                6517B_high_resistance_lakeshore_RT_Frontend_V12_Passive.py.
+# Version:       8.1 (JOSS Cleaned)
 # -------------------------------------------------------------------------------
 
 # --- Packages for Front end ---
 import tkinter as tk
-from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext, Canvas
+from tkinter import ttk, Label, Entry, LabelFrame, messagebox, scrolledtext, Canvas, filedialog
 import sys
 import os
 import time
@@ -54,7 +49,8 @@ try:
     if project_root not in sys.path:
         sys.path.append(project_root)
 except Exception:
-    pass # Path manipulation can fail in some environments (e.g., frozen executables)
+    pass  # Path manipulation can fail in some environments (e.g., frozen executables)
+
 
 def run_script_process(script_path):
     """
@@ -69,6 +65,7 @@ def run_script_process(script_path):
         print(e)
         print("-------------------------")
 
+
 def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
     try:
@@ -82,6 +79,7 @@ def launch_plotter_utility():
     except Exception as e:
         messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
 
+
 def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
     try:
@@ -94,6 +92,7 @@ def launch_gpib_scanner():
         Process(target=run_script_process, args=(scanner_path,)).start()
     except Exception as e:
         messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
+
 
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
@@ -132,7 +131,7 @@ class Combined_Backend:
             print(f"    Connected to: {self.keithley.query('*IDN?').strip()}")
             self.keithley.write("*rst; status:preset; *cls")
             self.keithley.write(f"SOUR:DELT:HIGH {self.params['apply_current']}")
-            self.keithley.write(f"SOUR:DELT:PROT {self.params['compliance_v']}") # Set compliance voltage
+            self.keithley.write(f"SOUR:DELT:PROT {self.params['compliance_v']}")  # Set compliance voltage
             self.keithley.write("SOUR:DELT:ARM")
             time.sleep(1)
             self.keithley.write("INIT:IMM")
@@ -176,23 +175,30 @@ class Combined_Backend:
         print("--- [Backend] Closing instrument connections. ---")
         if self.keithley:
             try:
-                self.keithley.write("SOUR:CLE"); self.keithley.write("*RST"); self.keithley.close()
+                self.keithley.write("SOUR:CLE")
+                self.keithley.write("*RST")
+                self.keithley.close()
                 print("  Keithley 6221 connection closed.")
-            except pyvisa.errors.VisaIOError: pass
-            finally: self.keithley = None
+            except pyvisa.errors.VisaIOError:
+                pass
+            finally:
+                self.keithley = None
         if self.lakeshore:
             try:
                 self.lakeshore.close()
                 print("  Lakeshore 350 connection closed (was in passive mode).")
-            except pyvisa.errors.VisaIOError: pass
-            finally: self.lakeshore = None
+            except pyvisa.errors.VisaIOError:
+                pass
+            finally:
+                self.lakeshore = None
+
 
 # -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class MeasurementAppGUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "8.0"
+    PROGRAM_VERSION = "8.1"
     LOGO_SIZE = 110
     try:
         # Robust path finding for assets
@@ -202,7 +208,7 @@ class MeasurementAppGUI:
         # Fallback for environments where __file__ is not defined
         LOGO_FILE_PATH = "../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
 
-    # --- Theming and Styling (from 6517B...V12) ---
+    # --- Theming and Styling ---
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
@@ -225,13 +231,14 @@ class MeasurementAppGUI:
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1300, 850)
 
-        self.is_running, self.start_time = False, None
+        self.is_running = False
+        self.start_time = None
         self.backend = Combined_Backend()
         self.file_location_path = ""
         self.data_storage = {'time': [], 'voltage': [], 'resistance': [], 'temperature': []}
-        self.logo_image = None # Attribute to hold the logo image reference
+        self.logo_image = None  # Attribute to hold the logo image reference
         self.data_queue = queue.Queue()
-        self.plot_backgrounds = None # For blitting
+        self.plot_backgrounds = None  # For blitting
         self.visa_queue = queue.Queue()
         self.measurement_thread = None
 
@@ -282,8 +289,9 @@ class MeasurementAppGUI:
         font_title_main = ('Segoe UI', self.FONT_SIZE_BASE + 4, 'bold')
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="K6221/2182 & L350: Delta Mode R-T (Passive Sensing)", bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD, font=font_title_main).pack(side='left', padx=20, pady=10)
-        
+        Label(header_frame, text="K6221/2182 & L350: Delta Mode R-T (Passive Sensing)",
+              bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD, font=font_title_main).pack(side='left', padx=20, pady=10)
+
         # --- Plotter Launch Button ---
         plotter_button = ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3)
         plotter_button.pack(side='right', padx=10, pady=5)
@@ -291,18 +299,21 @@ class MeasurementAppGUI:
         gpib_button = ttk.Button(header_frame, text="📟", command=launch_gpib_scanner, width=3)
         gpib_button.pack(side='right', padx=(0, 5), pady=5)
 
-        Label(header_frame, text=f"v{self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
-
+        Label(header_frame, text=f"v{self.PROGRAM_VERSION}",
+              bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
     def create_info_frame(self, parent):
-        frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK,
+                           fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         frame.pack(pady=(5, 0), padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
-        logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
+        logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE,
+                             bg=self.CLR_BG_DARK, highlightthickness=0)
         logo_canvas.grid(row=0, column=0, rowspan=3, padx=15, pady=10)
         self.root.after(50, lambda: self._load_logo(logo_canvas))
         institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 1, 'bold')
-        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research",
+                  font=institute_font).grid(row=0, column=1, padx=10, pady=(10, 0), sticky='sw')
         ttk.Label(frame, text="Mumbai Centre", font=institute_font).grid(row=1, column=1, padx=10, sticky='nw')
 
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
@@ -310,7 +321,8 @@ class MeasurementAppGUI:
         details_text = ("Program Mode: R vs. T (Passive Sensing)\n"
                         "Instruments: Keithley 6221/2182, Lakeshore 350\n"
                         "Measurement Range: 10 nΩ to 100 MΩ")
-        ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
+        ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2,
+                                                                 padx=15, pady=(0, 10), sticky='w')
 
     def _load_logo(self, canvas):
         """Loads the logo image after the main window is drawn."""
@@ -318,18 +330,22 @@ class MeasurementAppGUI:
             try:
                 img = Image.open(self.LOGO_FILE_PATH)
                 img.thumbnail((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
-                self.logo_image = ImageTk.PhotoImage(img) # Keep a reference
+                self.logo_image = ImageTk.PhotoImage(img)  # Keep a reference
                 canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
             except Exception as e:
                 self.log(f"ERROR: Failed to load logo. {e}")
-                canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nERROR", font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
+                canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nERROR",
+                                   font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
         else:
-            canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
+            canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING",
+                               font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
 
     def create_input_frame(self, parent):
-        frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame = LabelFrame(parent, text='Experiment Parameters', relief='groove', bg=self.CLR_BG_DARK,
+                           fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         frame.pack(pady=5, padx=10, fill='x')
-        for i in range(2): frame.grid_columnconfigure(i, weight=1)
+        for i in range(2):
+            frame.grid_columnconfigure(i, weight=1)
         self.entries = {}
         pady_val = (5, 5)
 
@@ -339,43 +355,52 @@ class MeasurementAppGUI:
 
         Label(frame, text="Apply Current (A):").grid(row=2, column=0, padx=10, pady=pady_val, sticky='w')
         self.entries["Apply Current"] = Entry(frame, font=self.FONT_BASE)
-        self.entries["Apply Current"].grid(row=3, column=0, padx=(10,5), pady=(0,5), sticky='ew')
-        self.entries["Apply Current"].insert(0, "1E-6") # Default value
+        self.entries["Apply Current"].grid(row=3, column=0, padx=(10, 5), pady=(0, 5), sticky='ew')
+        self.entries["Apply Current"].insert(0, "1E-6")  # Default value
 
         Label(frame, text="Compliance Voltage (V):").grid(row=2, column=1, padx=10, pady=pady_val, sticky='w')
         self.entries["Compliance Voltage"] = Entry(frame, font=self.FONT_BASE)
-        self.entries["Compliance Voltage"].grid(row=3, column=1, padx=(5,10), pady=(0,5), sticky='ew')
-        self.entries["Compliance Voltage"].insert(0, "10") # Default value
+        self.entries["Compliance Voltage"].grid(row=3, column=1, padx=(5, 10), pady=(0, 5), sticky='ew')
+        self.entries["Compliance Voltage"].insert(0, "10")  # Default value
 
         Label(frame, text="Keithley 6221 VISA:").grid(row=4, column=0, padx=10, pady=pady_val, sticky='w')
         self.keithley_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
-        self.keithley_cb.grid(row=5, column=0, padx=(10,5), pady=(0,10), sticky='ew')
+        self.keithley_cb.grid(row=5, column=0, padx=(10, 5), pady=(0, 10), sticky='ew')
 
         Label(frame, text="Lakeshore 350 VISA:").grid(row=4, column=1, padx=10, pady=pady_val, sticky='w')
         self.lakeshore_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
-        self.lakeshore_cb.grid(row=5, column=1, padx=(5,10), pady=(0,10), sticky='ew')
+        self.lakeshore_cb.grid(row=5, column=1, padx=(5, 10), pady=(0, 10), sticky='ew')
 
         self.scan_button = ttk.Button(frame, text="Scan for Instruments", command=self.start_visa_scan)
         self.scan_button.grid(row=6, column=0, columnspan=2, padx=10, pady=4, sticky='ew')
         self.file_button = ttk.Button(frame, text="Browse Save Location...", command=self._browse_file_location)
         self.file_button.grid(row=7, column=0, columnspan=2, padx=10, pady=4, sticky='ew')
-        self.start_button = ttk.Button(frame, text="Start Measurement", command=self.start_measurement, style='Start.TButton')
-        self.start_button.grid(row=8, column=0, padx=(10,5), pady=(10, 10), sticky='ew')
-        self.stop_button = ttk.Button(frame, text="Stop", command=self.stop_measurement, style='Stop.TButton', state='disabled')
-        self.stop_button.grid(row=8, column=1, padx=(5,10), pady=(10, 10), sticky='ew')
+        self.start_button = ttk.Button(frame, text="Start Measurement", command=self.start_measurement,
+                                       style='Start.TButton')
+        self.start_button.grid(row=8, column=0, padx=(10, 5), pady=(10, 10), sticky='ew')
+        self.stop_button = ttk.Button(frame, text="Stop", command=self.stop_measurement,
+                                      style='Stop.TButton', state='disabled')
+        self.stop_button.grid(row=8, column=1, padx=(5, 10), pady=(10, 10), sticky='ew')
 
     def create_console_frame(self, parent):
-        frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0)
+        frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK,
+                           fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG,
+                                                        fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE,
+                                                        wrap='word', bd=0)
         self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
         self.log("Console initialized. Configure parameters and scan for instruments.")
-        if not pyvisa: self.log("CRITICAL: PyVISA not found. Please run 'pip install pyvisa'.")
-        if not PIL_AVAILABLE: self.log("WARNING: Pillow not found. Logo will not display. Run 'pip install Pillow'.")
-        if not os.path.exists(self.LOGO_FILE_PATH): self.log(f"WARNING: '{self.LOGO_FILE_PATH}' not found. Logo cannot be displayed.")
+        if not pyvisa:
+            self.log("CRITICAL: PyVISA not found. Please run 'pip install pyvisa'.")
+        if not PIL_AVAILABLE:
+            self.log("WARNING: Pillow not found. Logo will not display. Run 'pip install Pillow'.")
+        if not os.path.exists(self.LOGO_FILE_PATH):
+            self.log(f"WARNING: '{self.LOGO_FILE_PATH}' not found. Logo cannot be displayed.")
         return frame
 
     def create_graph_frame(self, parent):
-        graph_container = LabelFrame(parent, text='Live Graphs', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
+        graph_container = LabelFrame(parent, text='Live Graphs', relief='groove', bg=self.CLR_GRAPH_BG,
+                                     fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
         self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
@@ -385,20 +410,23 @@ class MeasurementAppGUI:
         self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
 
         # Main Plot: Resistance vs Temperature
-        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-', animated=True)
+        self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o',
+                                             markersize=3, linestyle='-', animated=True)
         self.ax_main.set_title("Resistance vs. Temperature", fontweight='bold')
         self.ax_main.set_xlabel("Temperature (K)")
         self.ax_main.set_ylabel("Resistance (Ω)")
         self.ax_main.grid(True, which="both", linestyle='--', alpha=0.6)
 
         # Sub Plot 1: Voltage vs Temperature
-        self.line_sub1, = self.ax_sub1.plot([], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=4, linestyle='-', animated=True)
+        self.line_sub1, = self.ax_sub1.plot([], [], color=self.CLR_ACCENT_GOLD, marker='.',
+                                              markersize=4, linestyle='-', animated=True)
         self.ax_sub1.set_xlabel("Temperature (K)")
         self.ax_sub1.set_ylabel("Voltage (V)")
         self.ax_sub1.grid(True, linestyle='--', alpha=0.6)
 
         # Sub Plot 2: Temperature vs Time
-        self.line_sub2, = self.ax_sub2.plot([], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=4, linestyle='-', animated=True)
+        self.line_sub2, = self.ax_sub2.plot([], [], color=self.CLR_ACCENT_GREEN, marker='.',
+                                              markersize=4, linestyle='-', animated=True)
         self.ax_sub2.set_xlabel("Time (s)")
         self.ax_sub2.set_ylabel("Temperature (K)")
         self.ax_sub2.grid(True, linestyle='--', alpha=0.6)
@@ -434,25 +462,32 @@ class MeasurementAppGUI:
 
             with open(self.data_filepath, 'w', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow([f"# Sample: {params['sample_name']}", f"Applied Current: {params['apply_current']:.4e} A"])
-                writer.writerow(["Timestamp", "Elapsed Time (s)", "Temperature (K)", "Voltage (V)", "Resistance (Ohm)"])
+                writer.writerow([f"# Sample: {params['sample_name']}",
+                                 f"Applied Current: {params['apply_current']:.4e} A"])
+                writer.writerow(["Timestamp", "Elapsed Time (s)", "Temperature (K)",
+                                 "Voltage (V)", "Resistance (Ohm)"])
 
             self.log(f"Output file created: {os.path.basename(self.data_filepath)}")
             self.is_running = True
             self.start_time = time.time()
-            self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
-            for key in self.data_storage: self.data_storage[key].clear()
-            for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_data([], [])
-            self.ax_main.set_title(f"Sample: {params['sample_name']} | I = {params['apply_current']:.2e} A", fontweight='bold')
-            
+            self.start_button.config(state='disabled')
+            self.stop_button.config(state='normal')
+            for key in self.data_storage:
+                self.data_storage[key].clear()
+            for line in [self.line_main, self.line_sub1, self.line_sub2]:
+                line.set_data([], [])
+            self.ax_main.set_title(f"Sample: {params['sample_name']} | I = {params['apply_current']:.2e} A",
+                                   fontweight='bold')
+
             # --- Performance Improvement: Full draw before starting loop ---
             self.canvas.draw()
             # Capture the background for blitting
-            self.plot_backgrounds = [self.canvas.copy_from_bbox(ax.bbox) for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]]
+            self.plot_backgrounds = [self.canvas.copy_from_bbox(ax.bbox)
+                                     for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]]
             self.log("Blitting enabled for fast graph updates.")
 
             self.log("Measurement loop started.")
-            
+
             # Start the worker thread and the queue processor
             self.measurement_thread = threading.Thread(target=self._measurement_worker, daemon=True)
             self.measurement_thread.start()
@@ -461,17 +496,20 @@ class MeasurementAppGUI:
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
             messagebox.showerror("Initialization Error", f"Could not start measurement.\n{e}")
-            if self.backend: self.backend.close_instruments()
+            if self.backend:
+                self.backend.close_instruments()
 
     def stop_measurement(self):
         if self.is_running:
             self.is_running = False
             self.log("Measurement loop stopped by user.")
             # --- Performance Improvement: Disable blitting on stop ---
-            for line in [self.line_main, self.line_sub1, self.line_sub2]: line.set_animated(False)
+            for line in [self.line_main, self.line_sub1, self.line_sub2]:
+                line.set_animated(False)
             self.plot_backgrounds = None
             self.canvas.draw_idle()
-            self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
+            self.start_button.config(state='normal')
+            self.stop_button.config(state='disabled')
             self.backend.close_instruments()
             self.log("Instrument connections closed.")
             messagebox.showinfo("Info", "Measurement stopped and instruments disconnected.")
@@ -484,7 +522,7 @@ class MeasurementAppGUI:
                 elapsed = time.time() - self.start_time
                 # Put the acquired data into the queue for the main thread
                 self.data_queue.put((res, volt, temp, elapsed))
-                time.sleep(1) # Control the measurement frequency
+                time.sleep(1)  # Control the measurement frequency
             except Exception as e:
                 # If an error occurs, put it in the queue to be handled by the main thread
                 self.data_queue.put(e)
@@ -494,31 +532,21 @@ class MeasurementAppGUI:
             self.data_queue.put(None)
 
     def _process_data_queue(self):
-        """Processes data from the queue to update the GUI. Runs in the main thread."""
+        """Processes data from the queue. Refactored to reduce complexity."""
         try:
-            # Process all pending data in the queue in one go
             while not self.data_queue.empty():
                 data = self.data_queue.get_nowait()
-
                 if isinstance(data, Exception):
                     self.log(f"RUNTIME ERROR in worker thread: {traceback.format_exc()}")
                     self.stop_measurement()
-                    messagebox.showerror("Runtime Error", "A critical error occurred in the measurement thread. Check console.")
-                    return # Stop processing
-                if data is None: # Sentinel value indicating thread finished
-                    return # Stop processing
+                    messagebox.showerror("Runtime Error",
+                                         "A critical error occurred in the measurement thread.")
+                    return  # Stop processing
+                if data is None:  # Sentinel value
+                    return  # Stop processing
 
                 # Unpack and save data
-                res, volt, temp, elapsed = data
-                self.log(f"T: {temp:.3f} K | R: {res:.4e} Ω | V: {volt:.4e} V")
-                with open(self.data_filepath, 'a', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elapsed:.2f}", f"{temp:.4f}", f"{volt:.6e}", f"{res:.6e}"])
-
-                self.data_storage['time'].append(elapsed)
-                self.data_storage['temperature'].append(temp)
-                self.data_storage['voltage'].append(volt)
-                self.data_storage['resistance'].append(res)
+                self._handle_new_data_point(data)
 
             # Check if there is data to plot
             if not self.data_storage['time']:
@@ -526,49 +554,61 @@ class MeasurementAppGUI:
                     self.root.after(100, self._process_data_queue)
                 return
 
-            # --- PLOTTING LOGIC (CORRECTED) ---
-            # Set data for ALL plot lines first
-            self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
-            self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
-            self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
-
-            # Use blitting for fast updates if it's enabled
-            if self.plot_backgrounds:
-                # Restore the clean backgrounds
-                for bg in self.plot_backgrounds:
-                    self.canvas.restore_region(bg)
-
-                # Define the axes and lines to update
-                artists_to_update = [
-                    (self.ax_main, self.line_main),
-                    (self.ax_sub1, self.line_sub1),
-                    (self.ax_sub2, self.line_sub2)
-                ]
-
-                # Process each axis: rescale, draw the artist, and then blit
-                for ax, line in artists_to_update:
-                    ax.relim()
-                    ax.autoscale_view()
-                    ax.draw_artist(line)  # <-- THE CRUCIAL MISSING STEP
-                    self.canvas.blit(ax.bbox)
-
-                self.canvas.flush_events() # Ensure the update is processed immediately
-
-            else: # Fallback to full redraw if blitting isn't ready
-                # This fallback is generally not needed if blitting is set up correctly,
-                # but it's good to have.
-                for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
-                    ax.relim()
-                    ax.autoscale_view()
-                self.figure.tight_layout(pad=3.0)
-                self.canvas.draw_idle()
+            self._update_plots()
 
         except queue.Empty:
-            pass # This is normal, no data to process this cycle
+            pass
 
         # Schedule the next check if the measurement is still running
         if self.is_running:
             self.root.after(100, self._process_data_queue)
+
+    def _handle_new_data_point(self, data):
+        """Helper: Unpacks, logs, and saves a single data point."""
+        res, volt, temp, elapsed = data
+        self.log(f"T: {temp:.3f} K | R: {res:.4e} Ω | V: {volt:.4e} V")
+        with open(self.data_filepath, 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                             f"{elapsed:.2f}", f"{temp:.4f}", f"{volt:.6e}", f"{res:.6e}"])
+
+        self.data_storage['time'].append(elapsed)
+        self.data_storage['temperature'].append(temp)
+        self.data_storage['voltage'].append(volt)
+        self.data_storage['resistance'].append(res)
+
+    def _update_plots(self):
+        """Helper: Updates the Matplotlib charts."""
+        # Set data for ALL plot lines
+        self.line_main.set_data(self.data_storage['temperature'], self.data_storage['resistance'])
+        self.line_sub1.set_data(self.data_storage['temperature'], self.data_storage['voltage'])
+        self.line_sub2.set_data(self.data_storage['time'], self.data_storage['temperature'])
+
+        if self.plot_backgrounds:
+            # Blitting optimization
+            for bg in self.plot_backgrounds:
+                self.canvas.restore_region(bg)
+
+            artists_to_update = [
+                (self.ax_main, self.line_main),
+                (self.ax_sub1, self.line_sub1),
+                (self.ax_sub2, self.line_sub2)
+            ]
+
+            for ax, line in artists_to_update:
+                ax.relim()
+                ax.autoscale_view()
+                ax.draw_artist(line)
+                self.canvas.blit(ax.bbox)
+
+            self.canvas.flush_events()
+        else:
+            # Full redraw fallback
+            for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
+                ax.relim()
+                ax.autoscale_view()
+            self.figure.tight_layout(pad=3.0)
+            self.canvas.draw_idle()
 
     def start_visa_scan(self):
         """Starts the VISA scan in a separate thread to keep the GUI responsive."""
@@ -579,7 +619,9 @@ class MeasurementAppGUI:
 
     def _visa_scan_worker(self):
         """Worker function that performs the slow VISA scan."""
-        if not pyvisa: self.log("ERROR: PyVISA is not installed."); return
+        if not pyvisa:
+            self.log("ERROR: PyVISA is not installed.")
+            return
         try:
             rm = pyvisa.ResourceManager()
             resources = rm.list_resources()
@@ -599,21 +641,24 @@ class MeasurementAppGUI:
                 self.keithley_cb['values'] = result
                 # Auto-select common addresses
                 for res in result:
-                    if "GPIB1::15" in res: self.lakeshore_cb.set(res)
-                    if "GPIB0::13" in res: self.keithley_cb.set(res)
+                    if "GPIB1::15" in res:
+                        self.lakeshore_cb.set(res)
+                    if "GPIB0::13" in res:
+                        self.keithley_cb.set(res)
             else:
                 self.log("No VISA instruments found.")
-            
+
             self.scan_button.config(state='normal')
 
         except queue.Empty:
             # If the queue is empty, it means the worker is still running.
-            # We schedule another check.
             self.root.after(100, self._process_visa_queue)
 
     def _browse_file_location(self):
         path = filedialog.askdirectory()
-        if path: self.file_location_path = path; self.log(f"Save location set to: {path}")
+        if path:
+            self.file_location_path = path
+            self.log(f"Save location set to: {path}")
 
     def _on_closing(self):
         if self.is_running:
@@ -623,10 +668,12 @@ class MeasurementAppGUI:
         else:
             self.root.destroy()
 
+
 def main():
     root = tk.Tk()
     app = MeasurementAppGUI(root)
     root.mainloop()
+
 
 if __name__ == '__main__':
     main()
