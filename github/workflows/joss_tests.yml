@@ -1,0 +1,40 @@
+name: Run PICA JOSS Tests
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Download your code to the test server
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    # 2. Install Python 3.10 (Stable version for scientific libraries)
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+
+    # 3. Install your project
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # This command reads your pyproject.toml and installs PICA
+        # The '-e' flag is critical: it installs in 'editable' mode
+        # so the tests can find your 'Keithley_2400' folders.
+        pip install -e .
+        
+        # Install test utilities
+        pip install pytest
+
+    # 4. Run the "Smart" Test Script
+    - name: Run Dynamic GUI Tests
+      run: |
+        # This runs the auto-discovery script that finds and tests all your GUIs
+        python -m unittest tests/test_auto_discovery.py
