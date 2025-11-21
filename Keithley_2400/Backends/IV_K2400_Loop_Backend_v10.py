@@ -8,37 +8,13 @@ back, collecting I-V data points. Finally, it saves the collected data to a
 tab-separated .txt file and generates a plot of the I-V curve.
 """
 # -------------------------------------------------------------------------------
-
 # Name:         #interfacing only Keithley2400(current source) for  IV
-
-
 # Last Update :27/09/2024
-
 # Purpose: IV Measurement
-
 #
-
 # Author:       Instrument-DSL
-
 #
-
 # Created:      30/09/2024
-
-
-# Changes_done:Working
-
-# ------------------------------------------------------------------------
-
-# -------------------------------------------------------------------------------
-# Name:        #interfacing only Keithley2400(current source) for  IV
-
-# Last Update :27/09/2024
-# Purpose: IV Measurement
-#
-# Author:      Instrument-DSL
-#
-# Created:     30/09/2024
-
 # Changes_done:Working
 # ------------------------------------------------------------------------
 
@@ -90,7 +66,8 @@ def main():
         i += 1
 
     print("In loop 1")
-    for i1 in np.arange(0, I_range + I_step, I_step):
+    num_steps = int(I_range / I_step)
+    for i1 in np.linspace(0, I_range, num_steps + 1):
         IV_Measure(i1)
     
     df = pd.DataFrame({'I': current_values, 'V': Volt})

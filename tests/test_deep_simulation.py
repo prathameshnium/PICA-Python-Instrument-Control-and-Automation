@@ -55,8 +55,9 @@ class TestDeepSimulation(unittest.TestCase):
     def run_module_safely(self, module_name):
         """Imports and runs a module with a strict 30-second timeout."""
         # Set an alarm for 30 seconds (Works on Linux/GitHub Actions)
-        signal.signal(signal.SIGALRM, self._timeout_handler)
-        signal.alarm(30)
+        if hasattr(signal, 'SIGALRM'):
+            signal.signal(signal.SIGALRM, self._timeout_handler)
+            signal.alarm(30)
 
         if module_name in sys.modules:
             del sys.modules[module_name]
@@ -80,7 +81,8 @@ class TestDeepSimulation(unittest.TestCase):
             else:
                 print(f"   -> [INFO] Script stopped with: {e}", flush=True)
         finally:
-            signal.alarm(0)  # Disable the alarm
+            if hasattr(signal, 'SIGALRM'):
+                signal.alarm(0)  # Disable the alarm
 
     def get_circuit_breaker(self, limit=10):
         """A mock sleep that counts down and raises an error to break infinite loops."""

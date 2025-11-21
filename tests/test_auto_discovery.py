@@ -11,14 +11,12 @@ from unittest.mock import MagicMock
 MOCK_MODULES = [
     'tkinter', 'tkinter.ttk', 'tkinter.messagebox', 'tkinter.filedialog',
     'tkinter.scrolledtext', 'tkinter.font', 'tkinter.Canvas',
-    'pyvisa', 'pyvisa.errors', 'pyvisa.resources',
-    'pymeasure', 'pymeasure.instruments', 'pymeasure.instruments.keithley',
     'matplotlib', 'matplotlib.pyplot', 'matplotlib.backends',
     'matplotlib.backends.backend_tkagg', 'matplotlib.figure',
     'matplotlib.gridspec',  # <--- ADDED THIS (Fixes your error)
     'matplotlib.ticker',   # <--- ADDED THIS (Prevent future errors)
     'PIL', 'PIL.Image', 'PIL.ImageTk',
-    'pandas', 'numpy', 'gpib_ctypes'
+    'gpib_ctypes'
 ]
 
 # Apply the mocks to sys.modules
