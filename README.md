@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="_assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
+  <img src="assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
   <h1>PICA: Python-based Instrument Control and Automation</h1>
   <p>A modular software suite for automating laboratory measurements in physics research.</p>
   
@@ -25,7 +25,7 @@ A key architectural feature is the use of isolated process execution for each me
 PICA is designed with a clear separation between the user interface (frontend) and the instrument control logic (backend). This modular approach makes the system easy to maintain, extend, and debug.
 
 <div align="center">
-    <img src="_assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800"/>
+    <img src="assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800"/>
 </div>
 
 ---
@@ -219,7 +219,7 @@ The modular architecture makes it straightforward to add support for new instrum
 ## Resources & Documentation
 
 #### Included Manuals
-A collection of official instrument manuals and software library documentation is provided within the `/_assets/Manuals/` directory. These documents serve as valuable technical references.
+A collection of official instrument manuals and software library documentation is provided within the `/assets/Manuals/` directory. These documents serve as valuable technical references.
 
 #### Instrument Interfacing Guide
 For a quick reference on instrument addresses, see the `GPIB_Address_Guide.md` file.
@@ -241,7 +241,7 @@ Please open an issue first to discuss any major changes you would like to make.
 ## Authors & Acknowledgments
 
 <div align="center">
-  <img src="_assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
+  <img src="assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </div>
 
 - **Lead Developer:** **[Prathamesh Deshmukh](https://prathameshdeshmukh.site/)**

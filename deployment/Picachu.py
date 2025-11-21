@@ -97,8 +97,8 @@ class PICALauncherApp:
     FONT_CONSOLE = ('Consolas', 10)
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
     FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
-    LOGO_FILE = resource_path("_assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
-    MANUAL_URL = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tree/main/_assets/Manuals"
+    LOGO_FILE = resource_path("assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
+    MANUAL_URL = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tree/main/assets/Manuals"
     README_FILE = resource_path("PICA_README.md")
     LICENSE_FILE = resource_path("LICENSE")
     UPDATES_FILE = resource_path("Change_Logs.md")

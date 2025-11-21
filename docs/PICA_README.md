@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="_assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
+  <img src="assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
   <h1>PICA: Python-based Instrument Control and Automation</h1>
   <p>A modular software suite for automating laboratory measurements in physics research.</p>
   
@@ -23,7 +23,7 @@ PICA is designed with a clear separation of its components. The applications are
 I started by first creating the measurements program as a CLI (Command-Line Interface), which the front-end programs are based on. Sometimes, the back-ends are not updated with the final logic from the front-end programs because I don't want to interfere with the working CLI prototypes. The GUI-based programs also include safety checks in case any instrument communication goes wrong.
 
 <div align="center">
-    <img src="_assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800" />
+    <img src="assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800" />
 </div>
 
 ---
@@ -188,7 +188,7 @@ Alternatively, you can use the `CITATION.cff` file in the root of the repository
 ## 📚 Resources & Documentation
 
 #### Included Manuals
-A collection of official instrument manuals and software library documentation is provided within the `/_assets/Manuals/` directory (if included in the distribution) or can be accessed via the "Manuals" button in the launcher.
+A collection of official instrument manuals and software library documentation is provided within the `/assets/Manuals/` directory (if included in the distribution) or can be accessed via the "Manuals" button in the launcher.
 
 ---
 
