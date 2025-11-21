@@ -25,10 +25,10 @@ jobs:
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        # Install PICA in editable mode so tests can find your source code
+        # Install PICA in editable mode
         pip install -e .
-        # Install Testing & Linting tools
-        pip install pytest flake8
+        # Install Testing, Linting, and Coverage tools
+        pip install pytest flake8 pytest-cov
 
     # ------------------------------------------------------------------------
     # PHASE 2: READYMADE TESTS (Standard Industry Checks)
@@ -36,40 +36,48 @@ jobs:
     - name: Run Style & Syntax Check (Flake8)
       run: |
         echo "STEP 1: Checking for critical syntax errors..."
-        # This stops the build if there are actual Python syntax errors (E9, F63, etc.)
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
         
         echo "STEP 2: Checking for code style warnings..."
-        # This just warns you about messy code (long lines, unused imports) but won't fail the build
-        # 'exit-zero' ensures your test passes even if your style isn't perfect
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
     # ------------------------------------------------------------------------
-    # PHASE 3: YOUR CUSTOM TESTS (The "Three Pillars")
+    # PHASE 3: CUSTOM TESTS (The "Three Pillars")
     # ------------------------------------------------------------------------
+    # We keep these separate so the logs are easy for humans to read
     
-    # Test 1: Does the code exist and import correctly?
     - name: Run Test 1 - Auto-Discovery (Smoke Test)
       run: |
         echo "--------------------------------------"
         echo "GOAL: Verify all GUI modules load without crashing."
-        echo "--------------------------------------"
         python -m unittest tests/test_auto_discovery.py
 
-    # Test 2: Does the physics logic work?
     - name: Run Test 2 - Deep Simulation (Behavior Test)
       run: |
-        echo ""
         echo "--------------------------------------"
         echo "GOAL: Verify SCPI commands and hardware protocols."
-        echo "--------------------------------------"
         python -m unittest tests/test_deep_simulation.py
 
-    # Test 3: Do the buttons connect to the scripts?
     - name: Run Test 3 - Full Stack Simulation (Integration Test)
       run: |
-        echo ""
         echo "--------------------------------------"
         echo "GOAL: Verify Launcher buttons and GUI-Backend handoff."
-        echo "--------------------------------------"
         python -m unittest tests/test_full_stack_simulation.py
+
+    # ------------------------------------------------------------------------
+    # PHASE 4: COVERAGE & PROOF (For JOSS Reviewers)
+    # ------------------------------------------------------------------------
+    - name: Generate Coverage Report
+      run: |
+        echo "--------------------------------------"
+        echo "GOAL: Calculate Test Coverage %"
+        # We run pytest to generate the XML report needed by Codecov
+        # This re-runs the tests, but captures which lines were hit.
+        pytest --cov=. --cov-report=xml tests/
+
+    - name: Upload Coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }} # Optional for public repos, but good to have
+        files: ./coverage.xml
+        fail_ci_if_error: false
