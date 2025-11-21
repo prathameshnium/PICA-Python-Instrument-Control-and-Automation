@@ -75,13 +75,13 @@ jobs:
             Lakeshore_350_340
             Lock_In_Amplifier
             Utilities
-          # The icon path must be relative to the project root.
-          windows-icon-from-ico: _assets/LOGO/UGC_DAE_CSR.ico
+
+          windows-icon-from-ico: assets/LOGO/UGC_DAE_CSR.ico
           
           # --- COPY NON-PYTHON ASSETS ---
           # These directories contain assets like images, manuals, etc.
           include-data-dir: |
-            _assets=_assets
+            assets=assets
           include-data-files: |
             LICENSE=LICENSE
             PICA_README.md=PICA_README.md

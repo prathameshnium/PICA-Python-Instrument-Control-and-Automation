@@ -85,7 +85,7 @@ class PlotterApp:
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
         LOGO_FILE_PATH = os.path.join(
             SCRIPT_DIR,
-            "..", # type: ignore
+            "..",
             "assets",
             "LOGO",
             "UGC_DAE_CSR_NBG.jpeg")
@@ -958,7 +958,7 @@ class PlotterApp:
         if leg:
             leg.get_title().set_color(self.CLR_CONSOLE_BG)
 
-        self.ax_main.set_xscale('log' if self.x_log_var.get() else 'linear') # type: ignore
+        self.ax_main.set_xscale('log' if self.x_log_var.get() else 'linear')
         self.ax_main.set_yscale('log' if self.y_log_var.get() else 'linear')
         self.ax_main.set_xlabel(x_col)
         self.ax_main.set_ylabel(y_col)
