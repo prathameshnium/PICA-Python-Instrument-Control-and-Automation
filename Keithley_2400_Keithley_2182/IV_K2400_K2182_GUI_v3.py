@@ -154,7 +154,7 @@ class IV_Backend:
         if self.k2400:
             try:
                 self.k2400.shutdown()
-            except BaseException:
+            except Exception:
                 pass
         if self.k2182:
             try:
@@ -162,7 +162,7 @@ class IV_Backend:
                 self.k2182.close()
             except BaseException:
                 pass
-        print("  Instruments shut down and disconnected.")
+        print("  Instruments shut down and disconnected.") # type: ignore
 
 # -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---

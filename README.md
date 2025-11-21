@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
+  <img src="_assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
 </p>
 <h1 align="center">PICA: Python-based Instrument Control and Automation</h1>
 <p align="center">
   A modular software suite for automating laboratory measurements in physics research.
 </p>
-  
+
 <p align="center">
     <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
     <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.9+-brightgreen.svg" alt="Python 3.9+"></a>
@@ -25,7 +25,7 @@ A key architectural feature is the use of isolated process execution for each me
 PICA is designed with a clear separation between the user interface (GUI) and the instrument control logic (backend). This modular approach makes the system easy to maintain, extend, and debug.
 
 <p align="center">
-    <img src="assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800"/>
+    <img src="_assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800"/>
 </p>
 
 ---
@@ -187,7 +187,7 @@ This facility provides users with a comprehensive, modular system for characteri
 For detailed setup instructions, hardware interfacing guides, and troubleshooting, please refer to the **[PICA User Manual](docs/User_Manual.md)** located in the `docs/` directory.
 
 **Instrument Manuals:**
-A collection of official instrument manuals is provided within the `assets/Manuals/` directory for technical reference.
+A collection of official instrument manuals is provided within the `_assets/Manuals/` directory for technical reference.
 
 ---
 
@@ -230,7 +230,7 @@ Please open an issue first to discuss any major changes you would like to make.
 ## Authors & Acknowledgments
 
 <p align="center">
-  <img src="assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
+  <img src="_assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
 
 - **Lead Developer:** **[Prathamesh Deshmukh](https://prathameshdeshmukh.site/)**
