@@ -71,5 +71,8 @@ Disallow: /
 # The _assets directory is disallowed to prevent indexing of style, script, and image files.
 # The Setup directory is also disallowed as it contains build-related files.
 User-agent: *
-Disallow: /_assets/ # Disallow crawling of the assets directory
-Disallow: /Setup/   # Disallow crawling of the setup/build directory
+# Disallow crawling of the assets directory
+Disallow: /_assets/
+
+# Disallow crawling of the setup/build directory
+Disallow: /deployment/
