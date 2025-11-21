@@ -75,7 +75,7 @@ def main():
 
     except pyvisa.errors.VisaIOError as e:
         # Handle VISA-specific errors, like instrument not found or timeout.
-        print(f"VISA Error: Could not connect or communicate with the instrument.")
+        print("VISA Error: Could not connect or communicate with the instrument.")
         print(f"   Details: {e}")
         print("   Troubleshooting tips:")
         print("   - Is the instrument powered on and connected?")

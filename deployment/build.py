@@ -115,7 +115,7 @@ def run_command(command):
     try:
         subprocess.run(command, check=True, text=True, capture_output=True)
     except subprocess.CalledProcessError as e:
-        print(f"--- ERROR ---", file=sys.stderr)
+        print("--- ERROR ---", file=sys.stderr)
         print(e.stdout, file=sys.stderr)
         print(e.stderr, file=sys.stderr)
         raise
@@ -175,9 +175,9 @@ def build():
         final_app_dir)
 
     print("\n--- Build Complete! ---")
-    print(f"The final application folder is located at:")
+    print("The final application folder is located at:")
     print(f"  {final_app_dir}")
-    print(f"\nA distributable ZIP file has been created at:")
+    print("\nA distributable ZIP file has been created at:")
     print(f"  {os.path.join(DIST_DIR, zip_filename + '.zip')}")
 
 

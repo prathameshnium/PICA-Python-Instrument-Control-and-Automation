@@ -944,7 +944,7 @@ class Advanced_Delta_GUI:
             else:
                 # Slightly less than 1s to prevent drift
                 self.root.after(900, self._update_measurement_loop)
-        except Exception as e:
+        except Exception:
             self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
             self.stop_measurement()
 

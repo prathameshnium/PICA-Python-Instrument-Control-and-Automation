@@ -69,7 +69,7 @@ class TestDeepSimulation(unittest.TestCase):
                 print(f"   -> Running {module_name}.main()...", flush=True)
                 mod.main()
             else:
-                print(f"   -> Module loaded (no main function).", flush=True)
+                print("   -> Module loaded (no main function).", flush=True)
         except Exception as e:
             if "Force Test Exit" in str(e) or isinstance(e, SystemExit):
                 print(
@@ -196,7 +196,7 @@ class TestDeepSimulation(unittest.TestCase):
         # THIS WAS THE TEST CAUSING THE HANG
         # We suspect input mismatch or resource opening hang.
         with patch('pyvisa.ResourceManager') as MockRM, \
-                patch('pymeasure.instruments.keithley.Keithley2400') as MockK2400, \
+                patch('pymeasure.instruments.keithley.Keithley2400'), \
                 patch('time.sleep', side_effect=self.get_circuit_breaker(10)):
 
             rm = MockRM.return_value
