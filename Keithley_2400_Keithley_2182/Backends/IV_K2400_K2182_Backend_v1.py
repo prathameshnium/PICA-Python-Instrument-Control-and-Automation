@@ -47,6 +47,7 @@ class IV_Combined_Backend:
         """Configures the K2400 source parameters."""
         if not self.k2400:
             return
+        self.k2400.reset()
         self.k2400.apply_current()
         self.k2400.source_current_range = current_range
         time.sleep(0.5)
