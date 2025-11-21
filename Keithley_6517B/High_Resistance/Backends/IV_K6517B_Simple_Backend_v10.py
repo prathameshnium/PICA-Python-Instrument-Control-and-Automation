@@ -77,97 +77,101 @@ def plot_results(data):
     plt.show()
 
 
-# --- Main Execution ---
-keithley = None
-results = []
+def main():
+    """Main function to run the I-V experiment."""
+    keithley = None
+    results = []
 
-try:
-    # Get sweep parameters from the user
-    start_v, stop_v, steps, delay, filename = get_sweep_parameters()
-    voltage_sweep = np.linspace(start_v, stop_v, steps)
+    try:
+        # Get sweep parameters from the user
+        start_v, stop_v, steps, delay, filename = get_user_parameters()
+        voltage_sweep = np.linspace(start_v, stop_v, steps)
 
-    # --- 2. CONNECT TO INSTRUMENT (V5 Logic) ---
-    print(f"\nAttempting to connect to instrument at: {VISA_ADDRESS}")
-    keithley = Keithley6517B(VISA_ADDRESS)
-    print(f"Successfully connected to: {keithley.id}")
+        # --- 2. CONNECT TO INSTRUMENT (V5 Logic) ---
+        print(f"\nAttempting to connect to instrument at: {VISA_ADDRESS}")
+        keithley = Keithley6517B(VISA_ADDRESS)
+        print(f"Successfully connected to: {keithley.id}")
 
-    # --- 3. CONFIGURE MEASUREMENT (V5 Logic) ---
-    print("\nConfiguring instrument for measurement...")
-    keithley.reset()
-    # Set the function to resistance to ensure the ammeter is configured for
-    # zero correction.
-    keithley.measure_resistance()
+        # --- 3. CONFIGURE MEASUREMENT (V5 Logic) ---
+        print("\nConfiguring instrument for measurement...")
+        keithley.reset()
+        # Set the function to resistance to ensure the ammeter is configured for
+        # zero correction.
+        keithley.measure_resistance()
 
-    # --- 4. PERFORM ZERO CHECK & CORRECTION (Exact V5 Logic) ---
-    print("\nStarting zero correction procedure...")
-    time.sleep(5)
-    print("Step 1: Enabling Zero Check mode...")
-    keithley.write(':SYSTem:ZCHeck ON')  # type: ignore
-    time.sleep(5)
-    print("Step 2: Acquiring zero correction value...")
-    # keithley.write(':SYSTem:ZCORrect:ACQuire')
-    time.sleep(5)
-    print("Step 3: Disabling Zero Check mode...")
-    keithley.write(':SYSTem:ZCHeck OFF')
-    time.sleep(5)
-    print("Step 4: Enabling Zero Correction...")
-    keithley.write(':SYSTem:ZCORrect ON')
-    time.sleep(5)
-    print("Zero Correction Complete.")
+        # --- 4. PERFORM ZERO CHECK & CORRECTION (Exact V5 Logic) ---
+        print("\nStarting zero correction procedure...")
+        time.sleep(5)
+        print("Step 1: Enabling Zero Check mode...")
+        keithley.write(':SYSTem:ZCHeck ON')  # type: ignore
+        time.sleep(5)
+        print("Step 2: Acquiring zero correction value...")
+        # keithley.write(':SYSTem:ZCORrect:ACQuire')
+        time.sleep(5)
+        print("Step 3: Disabling Zero Check mode...")
+        keithley.write(':SYSTem:ZCHeck OFF')
+        time.sleep(5)
+        print("Step 4: Enabling Zero Correction...")
+        keithley.write(':SYSTem:ZCORrect ON')
+        time.sleep(5)
+        print("Zero Correction Complete.")
 
-    # --- 5. SETUP AND PERFORM I-V SWEEP ---
-    print(f"\nStarting I-V sweep from {start_v}V to {stop_v}V...")
-    keithley.current_nplc = 1  # Set integration rate for noise reduction
+        # --- 5. SETUP AND PERFORM I-V SWEEP ---
+        print(f"\nStarting I-V sweep from {start_v}V to {stop_v}V...")
+        keithley.current_nplc = 1  # Set integration rate for noise reduction
 
-    keithley.enable_source()
+        keithley.enable_source()
 
-    with open(filename, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(
-            [f"# Measurement Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
-        writer.writerow(
-            [f"# Sweep Parameters: Start={start_v}V, Stop={stop_v}V, Steps={steps}, Delay={delay}s"])
-        writer.writerow(["Timestamp (s)", "Applied Voltage (V)",
-                        "Measured Current (A)", "Resistance (Ohm)"])
+        with open(filename, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(
+                [f"# Measurement Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
+            writer.writerow(
+                [f"# Sweep Parameters: Start={start_v}V, Stop={stop_v}V, Steps={steps}, Delay={delay}s"])
+            writer.writerow(["Timestamp (s)", "Applied Voltage (V)",
+                            "Measured Current (A)", "Resistance (Ohm)"])
 
-        start_time = time.time()
-        for i, voltage in enumerate(voltage_sweep):
-            keithley.source_voltage = voltage
-            time.sleep(delay)
-            resistance = keithley.resistance
-            timestamp = time.time() - start_time
-            # resistance = keithley.resistance
-            current = voltage / resistance if resistance != 0 else float('inf')
+            start_time = time.time()
+            for i, voltage in enumerate(voltage_sweep):
+                keithley.source_voltage = voltage
+                time.sleep(delay)
+                resistance = keithley.resistance
+                timestamp = time.time() - start_time
+                current = voltage / resistance if resistance != 0 else float('inf')
 
-            print(
-                f"Step {i+1}/{steps}: V={voltage:.3f} V, I={current:.4e} A, R={resistance:.4e} Ω")
+                print(
+                    f"Step {i+1}/{steps}: V={voltage:.3f} V, I={current:.4e} A, R={resistance:.4e} Ω")
 
-            data_point = [
-                f"{timestamp:.3f}",
-                f"{voltage:.4e}",
-                f"{current:.4e}",
-                f"{resistance:.4e}"]
-            results.append(data_point)
-            writer.writerow(data_point)
+                data_point = [
+                    f"{timestamp:.3f}",
+                    f"{voltage:.4e}",
+                    f"{current:.4e}",
+                    f"{resistance:.4e}"]
+                results.append(data_point)
+                writer.writerow(data_point)
 
-    print("\n--- I-V Sweep Complete ---")
-    print(f"Data saved successfully to '{filename}'")
+        print("\n--- I-V Sweep Complete ---")
+        print(f"Data saved successfully to '{filename}'")
 
-except VisaIOError:
-    print("\n[VISA Connection Error]")
-    print(f"Could not connect to the instrument at '{VISA_ADDRESS}'.")
-    print("Please check the address, cable connections, and if the instrument is on.")
-except ValueError:
-    print("\n[Input Error] Please enter valid numbers for the sweep parameters.")
-except Exception as e:
-    print(f"\n[An Unexpected Error Occurred] Details: {e}")
+    except VisaIOError:
+        print("\n[VISA Connection Error]")
+        print(f"Could not connect to the instrument at '{VISA_ADDRESS}'.")
+        print("Please check the address, cable connections, and if the instrument is on.")
+    except ValueError:
+        print("\n[Input Error] Please enter valid numbers for the sweep parameters.")
+    except Exception as e:
+        print(f"\n[An Unexpected Error Occurred] Details: {e}")
 
-finally:
-    # --- 7. SAFELY SHUT DOWN (V5 Logic) ---
-    if keithley:
-        print("\nShutting down instrument...")
-        keithley.shutdown()
-        print("Voltage source OFF and instrument is safe.")
+    finally:
+        # --- 7. SAFELY SHUT DOWN (V5 Logic) ---
+        if keithley:
+            print("\nShutting down instrument...")
+            keithley.shutdown()
+            print("Voltage source OFF and instrument is safe.")
 
-# --- 8. PLOT RESULTS ---
-plot_results(results)
+    # --- 8. PLOT RESULTS ---
+    plot_results(results)
+
+
+if __name__ == "__main__":
+    main()
