@@ -8,17 +8,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
-#---------------------------------------------------------------
+# ---------------------------------------------------------------
 # User Input
 V = 2       # volt for loop (V)
 V_step = 2  # interval between measurements (V)
-freq = 1000 # freq in Hz
+freq = 1000  # freq in Hz
 loop = 1
 name = "Swastika_Test2_"
 V_ac = 0.5
-#---------------------------------------------------------------
+# ---------------------------------------------------------------
 
-filename = "E:/Prathamesh/Python Stuff/CV/CV_Measurements/" + str(name) + "_freq_" + str(freq) + "_volt_" + str(V) + "_V_step_" + str(V_step) + "_Loops" + str(loop) + ".txt"
+filename = "E:/Prathamesh/Python Stuff/CV/CV_Measurements/" + str(name) + "_freq_" + str(
+    freq) + "_volt_" + str(V) + "_V_step_" + str(V_step) + "_Loops" + str(loop) + ".txt"
 
 loop_ind_new = 0
 protocol_list = []
@@ -26,7 +27,7 @@ V_list = []
 C_list = []
 loop_list = []
 
-#---------------------------------
+# ---------------------------------
 try:
     rm = pyvisa.ResourceManager()
     my_instrument = rm.open_resource("GPIB::17")
@@ -61,9 +62,11 @@ except Exception as e:
     print(f"Initialization error: {e}")
     # Continue for simulation purposes, or exit in real usage
 
-#---------------------------------
+# ---------------------------------
 
 # LCR_fcn for the actual measurements
+
+
 def LCR_fcn(volt_ind):
     # --- FIX: Removed unused globals ---
     global v1
@@ -79,14 +82,22 @@ def LCR_fcn(volt_ind):
 
     if output1:
         C_list.append(output1[0])
-    
+
     v1 = my_instrument.query(':BIAS:VOLTage:LEVel?')
     V_list.append(v1)
     time.sleep(4)
 
-    print("Output: " + str(output1) + "    |  Volt : " + str(v1) + "   |  Loop: " + str(loop_ind_new))
+    print(
+        "Output: " +
+        str(output1) +
+        "    |  Volt : " +
+        str(v1) +
+        "   |  Loop: " +
+        str(loop_ind_new))
 
 # Proto_fcn for the measurements protocol
+
+
 def Proto_fcn():
     global loop_ind_new
     loop_ind_new += 1
@@ -113,9 +124,12 @@ def Proto_fcn():
         protocol_list.append("D")
 
 # Loop_fcn for the looping number of times
+
+
 def Loop_fcn(loop):
     for loop_ind in range(loop):
         Proto_fcn()
+
 
 if __name__ == "__main__":
     try:
@@ -126,9 +140,13 @@ if __name__ == "__main__":
         time.sleep(1)
         LCR.shutdown()
 
-        data_dict = {'Volt': V_list, 'Cp': C_list, 'Loop': loop_list, 'Protocol': protocol_list}
+        data_dict = {
+            'Volt': V_list,
+            'Cp': C_list,
+            'Loop': loop_list,
+            'Protocol': protocol_list}
         df = pd.DataFrame(data_dict)
-        
+
         try:
             df.to_csv(filename, sep=',', index=False, encoding='utf-8')
             print(f"Data saved to {filename}")

@@ -39,6 +39,7 @@ except ImportError:
 # The VISA address is fixed as it was in V5.
 VISA_ADDRESS = "GPIB1::27::INSTR"
 
+
 def get_sweep_parameters():
     """Gets I-V sweep parameters from the user."""
     print("--- I-V Sweep Configuration ---")
@@ -46,11 +47,13 @@ def get_sweep_parameters():
     stop_v = float(input("Enter Stop Voltage (V): "))
     steps = int(input("Enter Number of Steps: "))
     delay = float(input("Enter Settling Delay between points (s): "))
-    filename = input("Enter the filename to save data (e.g., SampleA_IV.csv): ")
+    filename = input(
+        "Enter the filename to save data (e.g., SampleA_IV.csv): ")
 
     if not filename.lower().endswith('.csv'):
         filename += '.csv'
     return start_v, stop_v, steps, delay, filename
+
 
 def plot_results(data):
     """Plots the I-V curve from the collected data."""
@@ -67,11 +70,12 @@ def plot_results(data):
     plt.xlabel('Applied Voltage (V)', fontsize=12)
     plt.ylabel('Measured Current (A)', fontsize=12)
     plt.grid(True, which="both", ls="--", alpha=0.6)
-    plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+    plt.ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
     plt.legend()
     plt.tight_layout()
     print("\nDisplaying I-V plot...")
     plt.show()
+
 
 # --- Main Execution ---
 keithley = None
@@ -90,7 +94,8 @@ try:
     # --- 3. CONFIGURE MEASUREMENT (V5 Logic) ---
     print("\nConfiguring instrument for measurement...")
     keithley.reset()
-    # Set the function to resistance to ensure the ammeter is configured for zero correction.
+    # Set the function to resistance to ensure the ammeter is configured for
+    # zero correction.
     keithley.measure_resistance()
 
     # --- 4. PERFORM ZERO CHECK & CORRECTION (Exact V5 Logic) ---
@@ -100,7 +105,7 @@ try:
     keithley.write(':SYSTem:ZCHeck ON')
     time.sleep(5)
     print("Step 2: Acquiring zero correction value...")
-    #keithley.write(':SYSTem:ZCORrect:ACQuire')
+    # keithley.write(':SYSTem:ZCORrect:ACQuire')
     time.sleep(5)
     print("Step 3: Disabling Zero Check mode...")
     keithley.write(':SYSTem:ZCHeck OFF')
@@ -112,15 +117,18 @@ try:
 
     # --- 5. SETUP AND PERFORM I-V SWEEP ---
     print(f"\nStarting I-V sweep from {start_v}V to {stop_v}V...")
-    keithley.current_nplc = 1 # Set integration rate for noise reduction
+    keithley.current_nplc = 1  # Set integration rate for noise reduction
 
     keithley.enable_source()
 
     with open(filename, 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow([f"# Measurement Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
-        writer.writerow([f"# Sweep Parameters: Start={start_v}V, Stop={stop_v}V, Steps={steps}, Delay={delay}s"])
-        writer.writerow(["Timestamp (s)", "Applied Voltage (V)", "Measured Current (A)", "Resistance (Ohm)"])
+        writer.writerow(
+            [f"# Measurement Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
+        writer.writerow(
+            [f"# Sweep Parameters: Start={start_v}V, Stop={stop_v}V, Steps={steps}, Delay={delay}s"])
+        writer.writerow(["Timestamp (s)", "Applied Voltage (V)",
+                        "Measured Current (A)", "Resistance (Ohm)"])
 
         start_time = time.time()
         for i, voltage in enumerate(voltage_sweep):
@@ -128,12 +136,17 @@ try:
             time.sleep(delay)
             resistance = keithley.resistance
             timestamp = time.time() - start_time
-            #resistance = keithley.resistance
-            current = voltage/resistance if resistance != 0 else float('inf')
+            # resistance = keithley.resistance
+            current = voltage / resistance if resistance != 0 else float('inf')
 
-            print(f"Step {i+1}/{steps}: V={voltage:.3f} V, I={current:.4e} A, R={resistance:.4e} Ω")
+            print(
+                f"Step {i+1}/{steps}: V={voltage:.3f} V, I={current:.4e} A, R={resistance:.4e} Ω")
 
-            data_point = [f"{timestamp:.3f}", f"{voltage:.4e}", f"{current:.4e}", f"{resistance:.4e}"]
+            data_point = [
+                f"{timestamp:.3f}",
+                f"{voltage:.4e}",
+                f"{current:.4e}",
+                f"{resistance:.4e}"]
             results.append(data_point)
             writer.writerow(data_point)
 

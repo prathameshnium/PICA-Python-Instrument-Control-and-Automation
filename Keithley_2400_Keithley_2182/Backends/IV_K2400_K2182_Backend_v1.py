@@ -20,6 +20,7 @@ class IV_Combined_Backend:
     - Keithley 2400 SourceMeter (Current Source)
     - Keithley 2182 Nanovoltmeter (Voltage Measure)
     """
+
     def __init__(self):
         self.rm = None
         self.k2182 = None
@@ -30,11 +31,11 @@ class IV_Combined_Backend:
         """Initializes connection to the instruments."""
         try:
             self.rm = pyvisa.ResourceManager()
-            
+
             # Connect K2182
             self.k2182 = self.rm.open_resource(k2182_addr)
             self.k2182.write("*rst; status:preset; *cls")
-            
+
             # Connect K2400
             self.k2400 = Keithley2400(k2400_addr)
             time.sleep(1)  # Allow settling
@@ -74,35 +75,35 @@ class IV_Combined_Backend:
         self.k2182.write("trace:feed sense1; feed:control next")
         self.k2182.write("initiate")
         self.k2182.assert_trigger()
-        
+
         # Wait for measurement
-        time.sleep(1) 
-        
+        time.sleep(1)
+
         try:
             voltages = self.k2182.query_ascii_values("trace:data?")
         except Exception:
             voltages = [0.0]
 
         self.k2182.write("trace:clear; feed:control next")
-        
+
         # Calculate Average
         v_avg = sum(voltages) / len(voltages) if voltages else 0.0
-        
+
         # Store results
         self.results['I'].append(current_val)
         self.results['V'].append(v_avg)
         print(f"I: {current_val:.3e} A | V: {v_avg:.4e} V")
-        
+
         return v_avg
 
     def run_sweep(self, start_i, stop_i, step_i, filename):
         """Executes the full sweep loop."""
         currents = np.arange(start_i, stop_i, step_i)
         print(f"Starting sweep: {len(currents)} points.")
-        
+
         for i_val in currents:
             self.measure_point(i_val)
-        
+
         # Save Data
         df = pd.DataFrame(self.results)
         try:
@@ -143,24 +144,28 @@ def main():
         filename = "test_abort"
 
     backend = IV_Combined_Backend()
-    
+
     try:
         # Hardcoded GPIB addresses for standalone run
         backend.connect_instruments()
         backend.configure_source()
-        
+
         # Example Loop (0 to 1mA)
         backend.run_sweep(0, 1e-3, 0.1e-3, filename)
-        
+
         # Plotting
         if len(backend.results['V']) > 0:
-            plt.plot(backend.results['V'], backend.results['I'], 'o-g', label='Data')
+            plt.plot(
+                backend.results['V'],
+                backend.results['I'],
+                'o-g',
+                label='Data')
             plt.xlabel('Voltage (V)')
             plt.ylabel('Current (A)')
             plt.title('IV Curve')
             plt.legend()
             plt.show()
-            
+
     except Exception as e:
         print(f"Runtime Error: {e}")
     finally:

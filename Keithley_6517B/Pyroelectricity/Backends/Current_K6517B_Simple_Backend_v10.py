@@ -1,8 +1,8 @@
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Name:        Keithley 6517B electrometer
 # Purpose:     Current Measurement Backend
 # Author:      Prathamesh K Deshmukh
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 import time
 import numpy as np
@@ -32,13 +32,13 @@ try:
 
 except KeyboardInterrupt:
     print("\nMeasurement stopped by User.")
-    
+
     # --- THIS IS THE FIX ---
     if t and I:
         data_df = pd.DataFrame({"Timestamp": t, "Current (A)": I})
         data_df.to_csv("demo_data.dat", index=False)
         print("Data saved to file: demo_data.dat")
-    
+
     time.sleep(0.5)
     keithley.shutdown()
     print("Keithley closed.")

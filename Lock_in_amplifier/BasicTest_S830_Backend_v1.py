@@ -3,7 +3,8 @@ import time
 
 # --- Configuration ---
 # TODO: IMPORTANT! Change this to your instrument's VISA resource address.
-# Find this using NI-MAX or your VISA software. Default SR830 GPIB address is 8.
+# Find this using NI-MAX or your VISA software. Default SR830 GPIB address
+# is 8.
 INSTRUMENT_ADDRESS = 'GPIB0::8::INSTR'
 
 
@@ -13,24 +14,27 @@ def main():
     and read measurement data.
     """
     sr830 = None  # Initialize instrument variable
-    
+
     # Use a try...except...finally block to ensure resources are cleaned up.
     try:
         # 1. Initialize the VISA Resource Manager
         # This is the main object that finds and manages instruments.
         # Explicitly specify the pyvisa-py backend to avoid dependency issues.
         resource_manager = pyvisa.ResourceManager('@py')
-        # print(f"VISA library version: {resource_manager.version}") # .version attribute is deprecated/removed
+        # print(f"VISA library version: {resource_manager.version}") # .version
+        # attribute is deprecated/removed
         print(f"Available resources: {resource_manager.list_resources()}")
 
         # 2. Open a connection to the instrument
-        print(f"\nAttempting to connect to instrument at: {INSTRUMENT_ADDRESS}")
+        print(
+            f"\nAttempting to connect to instrument at: {INSTRUMENT_ADDRESS}")
         sr830 = resource_manager.open_resource(INSTRUMENT_ADDRESS)
 
-        # Set communication termination characters. For the SR830, this is typically a line feed.
+        # Set communication termination characters. For the SR830, this is
+        # typically a line feed.
         sr830.read_termination = '\n'
         sr830.write_termination = '\n'
-        
+
         # Set a timeout for read operations (in milliseconds)
         sr830.timeout = 5000  # 5 seconds
 
@@ -44,21 +48,22 @@ def main():
         # 4. Read a parameter: Get the current sensitivity
         # The 'SENS?' query returns an integer code.
         sens_code = int(sr830.query('SENS?'))
-        print(f"Current sensitivity code: {sens_code} (See manual for V/A mapping)")
-        
+        print(
+            f"Current sensitivity code: {sens_code} (See manual for V/A mapping)")
+
         # Give the instrument a moment to process, if needed.
-        time.sleep(0.1) 
+        time.sleep(0.1)
 
         # 5. Read measurement data
         # 'SNAP? 3, 4' is an efficient way to simultaneously get
         # the magnitude (R, parameter 3) and phase (Theta, parameter 4).
         print("\nRequesting Magnitude (R) and Phase (θ)...")
         values = sr830.query('SNAP? 3,4')
-        
+
         # The result is a string like "1.234E-3,5.678E+1\n".
         # We need to split it and convert the parts to numbers.
         magnitude_str, phase_str = values.strip().split(',')
-        
+
         magnitude_r = float(magnitude_str)
         phase_theta = float(phase_str)
 

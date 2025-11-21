@@ -31,11 +31,11 @@ Configuration:
 - All experiment parameters (temperatures, rate) are requested at runtime.
 - The VISA_ADDRESS constant must be set to match your instrument's setup.
 '''
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Name:         Interfacing Lakeshore 350 Temperature Controller
 # Purpose:      Automate and log a linear temperature ramp with live plotting.
 # Changes_done: V2.0 - Complete restructure for robustness and usability.
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 import pyvisa
 import time
@@ -53,9 +53,11 @@ HEATER_OUTPUT = 1         # Control output loop for the heater (1 or 2)
 
 # Heater hardware configuration (refer to your setup)
 # For 'HTRSET' command, resistance is an integer code: 1=25Ω, 2=50Ω
-HEATER_RESISTANCE_CODE = 1 # Using 25Ω setting
-# For 'HTRSET', max_current is an integer code: 1=0.707A, 2=1A, 3=1.414A, 4=1.732A
-MAX_HEATER_CURRENT_CODE = 2 # Using 1A max
+HEATER_RESISTANCE_CODE = 1  # Using 25Ω setting
+# For 'HTRSET', max_current is an integer code: 1=0.707A, 2=1A, 3=1.414A,
+# 4=1.732A
+MAX_HEATER_CURRENT_CODE = 2  # Using 1A max
+
 
 class Lakeshore350:
     """A class to control the Lakeshore Model 350 Temperature Controller."""
@@ -75,7 +77,8 @@ class Lakeshore350:
             idn = self.instrument.query('*IDN?').strip()
             print(f"Successfully connected to: {idn}")
         except pyvisa.errors.VisaIOError as e:
-            print(f"Connection Error: Could not connect to instrument at {visa_address}")
+            print(
+                f"Connection Error: Could not connect to instrument at {visa_address}")
             print(f"VISA Error: {e}")
             print("Please check the address, connections, and VISA installation.")
             raise ConnectionError("Failed to connect to Lakeshore 350.") from e
@@ -91,7 +94,7 @@ class Lakeshore350:
     def setup_heater(self, output, resistance_code, max_current_code):
         """
         Configures the heater parameters using the HTRSET command.
-        
+
         Args:
             output (int): The heater output to configure (e.g., 1 or 2).
             resistance_code (int): Code for heater resistance (1=25Ω, 2=50Ω).
@@ -107,7 +110,7 @@ class Lakeshore350:
     def setup_ramp(self, output, rate_k_per_min, ramp_on=True):
         """
         Configures the setpoint ramp feature for linear temperature changes.
-        
+
         Args:
             output (int): The control loop output (e.g., 1 or 2).
             rate_k_per_min (float): The desired ramp rate in Kelvin per minute.
@@ -118,11 +121,11 @@ class Lakeshore350:
         print(f"Setting ramp parameters: {command}")
         self.instrument.write(command)
         time.sleep(0.5)
-        
+
     def set_setpoint(self, output, temperature_k):
         """
         Sets the target temperature setpoint.
-        
+
         Args:
             output (int): The control loop output.
             temperature_k (float): The target temperature in Kelvin.
@@ -134,27 +137,28 @@ class Lakeshore350:
     def set_heater_range(self, output, heater_range):
         """
         Sets the heater range, which enables or disables the heater output.
-        
+
         Args:
             output (int): The heater output (1 or 2).
             heater_range (str): 'off', 'low', 'medium', 'high'.
         """
         range_map = {'off': 0, 'low': 2, 'medium': 4, 'high': 5}
         if heater_range.lower() not in range_map:
-            raise ValueError("Invalid heater range. Must be 'off', 'low', 'medium', or 'high'.")
-        
+            raise ValueError(
+                "Invalid heater range. Must be 'off', 'low', 'medium', or 'high'.")
+
         range_code = range_map[heater_range.lower()]
         command = f'RANGE {output},{range_code}'
         print(f"Setting heater range: {command}")
         self.instrument.write(command)
-        
+
     def get_temperature(self, sensor):
         """
         Queries the temperature from a specified sensor.
-        
+
         Args:
             sensor (str): The sensor input ('A', 'B', 'C', or 'D').
-            
+
         Returns:
             float: The temperature in Kelvin, or float('nan') on error.
         """
@@ -162,16 +166,17 @@ class Lakeshore350:
             temp_str = self.instrument.query(f'KRDG? {sensor}').strip()
             return float(temp_str)
         except (pyvisa.errors.VisaIOError, ValueError) as e:
-            print(f"Warning: Could not read temperature from sensor {sensor}. Error: {e}")
-            return float('nan') # Return Not-a-Number on error
+            print(
+                f"Warning: Could not read temperature from sensor {sensor}. Error: {e}")
+            return float('nan')  # Return Not-a-Number on error
 
     def get_heater_output(self, output):
         """
         Queries the current heater output percentage.
-        
+
         Args:
             output (int): The heater output to query.
-            
+
         Returns:
             float: Heater output in percent, or float('nan') on error.
         """
@@ -179,7 +184,8 @@ class Lakeshore350:
             output_str = self.instrument.query(f'HTR? {output}').strip()
             return float(output_str)
         except (pyvisa.errors.VisaIOError, ValueError) as e:
-            print(f"Warning: Could not read heater output {output}. Error: {e}")
+            print(
+                f"Warning: Could not read heater output {output}. Error: {e}")
             return float('nan')
 
     def close(self):
@@ -205,10 +211,12 @@ def get_user_parameters():
             start_temp = float(input("Enter START temperature (K): "))
             end_temp = float(input("Enter END temperature (K): "))
             rate = float(input("Enter ramp rate (K/min): "))
-            safety_cutoff = float(input("Enter SAFETY CUTOFF temperature (K): "))
+            safety_cutoff = float(
+                input("Enter SAFETY CUTOFF temperature (K): "))
 
             if not (start_temp < end_temp < safety_cutoff):
-                print("Error: Temperatures must be in ascending order (start < end < cutoff). Please try again.")
+                print(
+                    "Error: Temperatures must be in ascending order (start < end < cutoff). Please try again.")
                 continue
             if rate <= 0:
                 print("Error: Ramp rate must be positive. Please try again.")
@@ -222,7 +230,7 @@ def main():
     """Main function to run the temperature ramp experiment."""
     # --- 1. Get User Input and Filename ---
     root = tk.Tk()
-    root.withdraw() # Hide the main window
+    root.withdraw()  # Hide the main window
     filename = filedialog.asksaveasfilename(
         defaultextension=".csv",
         filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
@@ -233,39 +241,44 @@ def main():
         return
 
     start_temp, end_temp, rate, safety_cutoff = get_user_parameters()
-    
+
     controller = None
     try:
         # --- 2. Initialize Instrument and Plot ---
         controller = Lakeshore350(VISA_ADDRESS)
         controller.reset_and_clear()
-        controller.setup_heater(HEATER_OUTPUT, HEATER_RESISTANCE_CODE, MAX_HEATER_CURRENT_CODE)
+        controller.setup_heater(
+            HEATER_OUTPUT,
+            HEATER_RESISTANCE_CODE,
+            MAX_HEATER_CURRENT_CODE)
 
         # Setup live plot
         plt.ion()
         fig, ax = plt.subplots()
-        line, = ax.plot([], [], 'r-o') # Empty plot
+        line, = ax.plot([], [], 'r-o')  # Empty plot
         ax.set_xlabel('Elapsed Time (s)')
         ax.set_ylabel('Temperature (K)')
         ax.set_title('Live Temperature Ramp')
         ax.grid(True)
         time_data, temp_data = [], []
-        
+
         # --- 3. Go to Start Temperature and Stabilize ---
         print(f"\nMoving to start temperature of {start_temp} K...")
         controller.set_setpoint(HEATER_OUTPUT, start_temp)
         controller.set_heater_range(HEATER_OUTPUT, 'medium')
-        
+
         while True:
             current_temp = controller.get_temperature(SENSOR_INPUT)
-            print(f"Stabilizing... Current Temp: {current_temp:.4f} K", end='\r')
-            if abs(current_temp - start_temp) < 0.1: # Stabilization tolerance
+            print(
+                f"Stabilizing... Current Temp: {current_temp:.4f} K",
+                end='\r')
+            if abs(current_temp - start_temp) < 0.1:  # Stabilization tolerance
                 print(f"\nStabilized at {start_temp} K.")
                 break
             time.sleep(2)
 
         # --- 4. Start Ramp and Data Logging ---
-        heating_on = 1 # Variable to control heating state
+        heating_on = 1  # Variable to control heating state
         if heating_on:
             controller.setup_ramp(HEATER_OUTPUT, rate)
             controller.set_setpoint(HEATER_OUTPUT, end_temp)
@@ -277,22 +290,24 @@ def main():
         start_time = time.time()
         last_temp = start_temp
         last_time = start_time
-        
+
         # Write header to CSV
         with open(filename, 'w', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow(["Timestamp", "Elapsed Time (s)", "Temperature (K)", "Heater Output (%)"])
+            writer.writerow(["Timestamp", "Elapsed Time (s)",
+                            "Temperature (K)", "Heater Output (%)"])
 
         # Main experiment loop
         while True:
             elapsed_time = time.time() - start_time
             current_temp = controller.get_temperature(SENSOR_INPUT)
             heater_output = controller.get_heater_output(HEATER_OUTPUT)
-            
+
             # Calculate instantaneous rate
             inst_rate = 0.0
             if elapsed_time > 0 and (time.time() - last_time) > 0.1:
-                rate_k_per_s = (current_temp - last_temp) / (time.time() - last_time)
+                rate_k_per_s = (current_temp - last_temp) / \
+                    (time.time() - last_time)
                 inst_rate = rate_k_per_s * 60
             last_temp, last_time = current_temp, time.time()
 
@@ -308,9 +323,9 @@ def main():
             # Log data
             with open(filename, 'a', newline='') as file:
                 writer = csv.writer(file)
-                writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 
-                                 f"{elapsed_time:.2f}", 
-                                 f"{current_temp:.4f}", 
+                writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                 f"{elapsed_time:.2f}",
+                                 f"{current_temp:.4f}",
                                  f"{heater_output:.2f}"])
 
             # Update plot
@@ -324,14 +339,15 @@ def main():
 
             # --- 5. Check for End Conditions ---
             if current_temp >= safety_cutoff:
-                print(f"\n!!! SAFETY CUTOFF REACHED at {current_temp:.4f} K (Limit: {safety_cutoff} K) !!!")
+                print(
+                    f"\n!!! SAFETY CUTOFF REACHED at {current_temp:.4f} K (Limit: {safety_cutoff} K) !!!")
                 break
-            
+
             if current_temp >= end_temp:
                 print(f"\nTarget temperature of {end_temp} K reached.")
                 break
-            
-            time.sleep(2) # Data logging interval
+
+            time.sleep(2)  # Data logging interval
 
     except ConnectionError:
         print("\nCould not start experiment due to connection failure.")
@@ -345,7 +361,8 @@ def main():
             controller.close()
         plt.ioff()
         print("\nExperiment finished. Plot window can be closed.")
-        plt.show() # Keep plot window open until user closes it
+        plt.show()  # Keep plot window open until user closes it
+
 
 if __name__ == "__main__":
     main()

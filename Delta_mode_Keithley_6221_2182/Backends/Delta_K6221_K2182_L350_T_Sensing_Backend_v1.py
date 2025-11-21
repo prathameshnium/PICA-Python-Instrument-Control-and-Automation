@@ -1,11 +1,11 @@
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Name:         Combined Delta and Lakeshore Measurement
 # Purpose:      Perform a Delta mode measurement with a Keithley 6221 while
 #               simultaneously monitoring temperature with a Lakeshore 350.
 # Author:       Prathamesh
 # Created:      09/09/2025
 # Version:      1.0
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 import pyvisa
 import time
 
@@ -15,7 +15,8 @@ KEITHLEY_6221_ADDRESS = "GPIB0::13::INSTR"
 LAKESHORE_350_ADDRESS = "GPIB1::15::INSTR"
 DELTA_CURRENT = 0.002  # Delta current in Amps
 OUTPUT_FILENAME = 'Delta_Lakeshore_Data.csv'
-TEMPERATURE_LIMIT = 302.5 # Temperature in Kelvin to stop the measurement
+TEMPERATURE_LIMIT = 302.5  # Temperature in Kelvin to stop the measurement
+
 
 def run_combined_measurement():
     """
@@ -71,7 +72,8 @@ def run_combined_measurement():
 
         # --- 3. Data Logging Setup ---
         with open(OUTPUT_FILENAME, 'w', newline='') as file:
-            file.write("Time (s),Current (A),Voltage (V),Resistance (Ohm),Temperature (K)\n")
+            file.write(
+                "Time (s),Current (A),Voltage (V),Resistance (Ohm),Temperature (K)\n")
 
         # --- 4. Measurement Loop ---
         print("\n--- Measurement Started ---")
@@ -101,11 +103,13 @@ def run_combined_measurement():
 
             # Append to file
             with open(OUTPUT_FILENAME, 'a', newline='') as file:
-                file.write(f"{elapsed_time:.2f},{DELTA_CURRENT},{voltage},{resistance},{temperature}\n")
+                file.write(
+                    f"{elapsed_time:.2f},{DELTA_CURRENT},{voltage},{resistance},{temperature}\n")
 
             # Check for temperature limit
             if temperature > TEMPERATURE_LIMIT:
-                print(f"\nTemperature limit of {TEMPERATURE_LIMIT} K reached. Stopping measurement.")
+                print(
+                    f"\nTemperature limit of {TEMPERATURE_LIMIT} K reached. Stopping measurement.")
                 break
 
             # Wait before next measurement
@@ -127,7 +131,8 @@ def run_combined_measurement():
                 print("Shutting down Keithley 6221...")
                 keithley_6221.clear()
                 time.sleep(0.1)
-                keithley_6221.write("SOUR:CLE:IMM") # Abort measurement and turn source off
+                # Abort measurement and turn source off
+                keithley_6221.write("SOUR:CLE:IMM")
                 keithley_6221.write("*rst")
                 keithley_6221.close()
                 print("Keithley 6221 connection closed.")
@@ -136,7 +141,7 @@ def run_combined_measurement():
         if lakeshore_350:
             try:
                 print("Shutting down Lakeshore 350...")
-                lakeshore_350.write('RANGE 0') # Turn off heater
+                lakeshore_350.write('RANGE 0')  # Turn off heater
                 time.sleep(0.5)
                 lakeshore_350.close()
                 print("Lakeshore 350 connection closed.")
@@ -144,6 +149,7 @@ def run_combined_measurement():
                 print(f"Warning during Lakeshore 350 shutdown: {e}")
 
         print("\n--- Measurement Complete ---")
+
 
 # --- Main execution block ---
 if __name__ == "__main__":

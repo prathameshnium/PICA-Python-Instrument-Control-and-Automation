@@ -31,7 +31,8 @@ instrument_addresses = rm.list_resources()
 if not instrument_addresses:
     print("No instruments found. Check connections and VISA installation.")
 else:
-    print(f"Found {len(instrument_addresses)} instrument(s). Checking them now...\n")
+    print(
+        f"Found {len(instrument_addresses)} instrument(s). Checking them now...\n")
 
     # Loop through each instrument and try to get its ID
     for address in instrument_addresses:

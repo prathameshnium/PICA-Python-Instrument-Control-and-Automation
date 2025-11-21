@@ -43,6 +43,7 @@ except ImportError:
 import runpy
 from multiprocessing import Process
 
+
 def run_script_process(script_path):
     """
     Wrapper function to execute a script using runpy in its own directory.
@@ -56,43 +57,60 @@ def run_script_process(script_path):
         print(e)
         print("-------------------------")
 
+
 def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_GUI_v3.py")
+    plotter_path = os.path.join(
+        script_dir,
+        "..",
+        "Utilities",
+        "PlotterUtil_GUI_v3.py")
     if not os.path.exists(plotter_path):
-        messagebox.showerror("File Not Found", f"Plotter Utility not found at:\n{plotter_path}")
+        messagebox.showerror("File Not Found",
+                             f"Plotter Utility not found at:\n{plotter_path}")
         return
     Process(target=run_script_process, args=(plotter_path,)).start()
 
 # --- NEW: Function to launch the GPIB Scanner ---
+
+
 def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     # Assuming the standard PICA project structure
-    scanner_path = os.path.join(script_dir, "..", "Utilities", "GPIB_Instrument_Scanner_GUI_v4.py")
+    scanner_path = os.path.join(
+        script_dir,
+        "..",
+        "Utilities",
+        "GPIB_Instrument_Scanner_GUI_v4.py")
     if not os.path.exists(scanner_path):
-         messagebox.showerror("File Not Found", f"GPIB Scanner not found at:\n{scanner_path}")
-         return
+        messagebox.showerror("File Not Found",
+                             f"GPIB Scanner not found at:\n{scanner_path}")
+        return
     Process(target=run_script_process, args=(scanner_path,)).start()
 # --- End of new function ---
 
+
 class Keithley2400_IV_Backend:
     """A dedicated class to handle backend communication with the Keithley 2400 for I-V sweeps."""
+
     def __init__(self):
         self.keithley = None
         if pyvisa:
             try:
                 self.rm = pyvisa.ResourceManager()
             except Exception as e:
-                print(f"Could not initialize VISA resource manager. Error: {e}")
+                print(
+                    f"Could not initialize VISA resource manager. Error: {e}")
                 self.rm = None
         else:
             self.rm = None
 
     def connect_and_configure(self, visa_address, params):
         if not PYMEASURE_AVAILABLE:
-            raise ImportError("Pymeasure library is required. Please run 'pip install pymeasure'.")
+            raise ImportError(
+                "Pymeasure library is required. Please run 'pip install pymeasure'.")
 
         self.keithley = Keithley2400(visa_address)
         self.keithley.reset()
@@ -103,20 +121,24 @@ class Keithley2400_IV_Backend:
         max_abs_current = 0
         if params['sweep_type'] == 'Custom List':
             try:
-                points = [float(p.strip()) * 1e-6 for p in params['custom_list_str'].split(',') if p.strip()]
+                points = [
+                    float(
+                        p.strip()) *
+                    1e-6 for p in params['custom_list_str'].split(',') if p.strip()]
                 if points:
                     max_abs_current = max(abs(p) for p in points)
-            except:
+            except BaseException:
                 max_abs_current = 1.0
         else:
             max_abs_current = abs(params['max_current'])
 
-        self.keithley.source_current_range = max_abs_current * 1.05 if max_abs_current > 0 else 1e-5
+        self.keithley.source_current_range = max_abs_current * \
+            1.05 if max_abs_current > 0 else 1e-5
         self.keithley.compliance_voltage = params['compliance_v']
         self.keithley.measure_voltage_nplc = 1
 
         self.keithley.enable_source()
-        
+
     def generate_sweep_points(self, params):
         sweep_type = params['sweep_type']
         base_sweep = np.array([])
@@ -124,12 +146,16 @@ class Keithley2400_IV_Backend:
         if sweep_type == "Custom List":
             try:
                 custom_list_str = params['custom_list_str']
-                points = [float(p.strip()) * 1e-6 for p in custom_list_str.split(',') if p.strip()]
+                points = [
+                    float(
+                        p.strip()) *
+                    1e-6 for p in custom_list_str.split(',') if p.strip()]
                 if not points:
                     raise ValueError("Custom list is empty or invalid.")
                 base_sweep = np.array(points)
             except ValueError as e:
-                raise ValueError(f"Invalid format in custom list. Please use comma-separated numbers. Error: {e}")
+                raise ValueError(
+                    f"Invalid format in custom list. Please use comma-separated numbers. Error: {e}")
 
         else:
             imax, istep = params['max_current'], params['step_current']
@@ -147,7 +173,8 @@ class Keithley2400_IV_Backend:
                 base_sweep = np.concatenate([s1, s2[1:], s3[1:], s4[1:]])
 
         if base_sweep.size == 0 and sweep_type != "Custom List":
-             raise ValueError(f"Unknown sweep type or invalid parameters for '{sweep_type}'")
+            raise ValueError(
+                f"Unknown sweep type or invalid parameters for '{sweep_type}'")
 
         return np.tile(base_sweep, params['num_loops'])
 
@@ -155,7 +182,8 @@ class Keithley2400_IV_Backend:
         self.keithley.ramp_to_current(current_setpoint, steps=5, pause=0.01)
         time.sleep(delay)
         voltage_reading = self.keithley.voltage
-        return voltage_reading[0] if isinstance(voltage_reading, list) else voltage_reading
+        return voltage_reading[0] if isinstance(
+            voltage_reading, list) else voltage_reading
 
     def shutdown(self):
         if self.keithley:
@@ -164,8 +192,9 @@ class Keithley2400_IV_Backend:
             finally:
                 self.keithley = None
 
+
 class MeasurementAppGUI:
-    PROGRAM_VERSION = "12.2" # Updated Version
+    PROGRAM_VERSION = "12.2"  # Updated Version
     CLR_BG_DARK, CLR_HEADER, CLR_FG_LIGHT = '#2B3D4F', '#3A506B', '#EDF2F4'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_GOLD = '#A7C957', '#EF233C', '#FFC107'
     CLR_CONSOLE_BG = '#1E2B38'
@@ -174,7 +203,12 @@ class MeasurementAppGUI:
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
     try:
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-        LOGO_FILE = os.path.join(SCRIPT_DIR, "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+        LOGO_FILE = os.path.join(
+            SCRIPT_DIR,
+            "..",
+            "assets",
+            "LOGO",
+            "UGC_DAE_CSR_NBG.jpeg")
     except NameError:
         LOGO_FILE = "../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
     LOGO_SIZE = 120
@@ -206,13 +240,22 @@ class MeasurementAppGUI:
         style.theme_use('clam')
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
-        style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
+        style.configure(
+            'TLabel',
+            background=self.CLR_BG_DARK,
+            foreground=self.CLR_FG_LIGHT,
+            font=self.FONT_BASE)
         style.configure('TButton', font=self.FONT_BASE, padding=(10, 8))
-        style.map('TButton', foreground=[('!active', '#2B3D4F'), ('active', '#EDF2F4')],
-                  background=[('!active', '#8D99AE'), ('active', '#2B3D4F')])
+        style.map(
+            'TButton', foreground=[
+                ('!active', '#2B3D4F'), ('active', '#EDF2F4')], background=[
+                ('!active', '#8D99AE'), ('active', '#2B3D4F')])
         style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN)
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED)
-        style.configure('TProgressbar', thickness=25, background=self.CLR_ACCENT_GREEN)
+        style.configure(
+            'TProgressbar',
+            thickness=25,
+            background=self.CLR_ACCENT_GREEN)
         mpl.rcParams['font.family'] = 'Segoe UI'
 
     def create_widgets(self):
@@ -223,12 +266,18 @@ class MeasurementAppGUI:
 
         left_panel_container = ttk.Frame(main_pane)
         main_pane.add(left_panel_container, weight=0)
-        
+
         right_panel_container = tk.Frame(main_pane, bg='white')
         main_pane.add(right_panel_container, weight=1)
 
-        canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(left_panel_container, orient="vertical", command=canvas.yview)
+        canvas = Canvas(
+            left_panel_container,
+            bg=self.CLR_BG_DARK,
+            highlightthickness=0)
+        scrollbar = ttk.Scrollbar(
+            left_panel_container,
+            orient="vertical",
+            command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
 
         scrollable_frame.bind(
@@ -251,92 +300,341 @@ class MeasurementAppGUI:
         font_title_main = ('Segoe UI', self.FONT_SIZE_BASE + 4, 'bold')
 
         # --- Plotter Launch Button (packed first to be on the far right) ---
-        plotter_button = ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3)
+        plotter_button = ttk.Button(
+            header_frame,
+            text="📈",
+            command=launch_plotter_utility,
+            width=3)
         plotter_button.pack(side='right', padx=10, pady=5)
 
         # --- NEW: GPIB Scanner Button (packed second to be to the left of the plotter) ---
-        gpib_button = ttk.Button(header_frame, text="📟", command=launch_gpib_scanner, width=3)
+        gpib_button = ttk.Button(
+            header_frame,
+            text="📟",
+            command=launch_gpib_scanner,
+            width=3)
         gpib_button.pack(side='right', padx=(0, 5), pady=5)
         # --- End of new code ---
 
-        Label(header_frame, text="Keithley 2400: I-V Measurement", bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD, font=font_title_main).pack(side='left', padx=20, pady=10)
-        Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).pack(side='right', padx=20, pady=10)
+        Label(
+            header_frame,
+            text="Keithley 2400: I-V Measurement",
+            bg=self.CLR_HEADER,
+            fg=self.CLR_ACCENT_GOLD,
+            font=font_title_main).pack(
+            side='left',
+            padx=20,
+            pady=10)
+        Label(
+            header_frame,
+            text=f"Version: {self.PROGRAM_VERSION}",
+            bg=self.CLR_HEADER,
+            fg=self.CLR_FG_LIGHT,
+            font=self.FONT_BASE).pack(
+            side='right',
+            padx=20,
+            pady=10)
 
     def create_info_frame(self, parent):
-        frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame = LabelFrame(
+            parent,
+            text='Information',
+            relief='groove',
+            bg=self.CLR_BG_DARK,
+            fg=self.CLR_FG_LIGHT,
+            font=self.FONT_TITLE)
         frame.pack(pady=10, padx=10, fill='x')
         frame.grid_columnconfigure(1, weight=1)
 
-        logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
-        logo_canvas.grid(row=0, column=0, rowspan=4, padx=15, pady=15, sticky='ns')
+        logo_canvas = Canvas(
+            frame,
+            width=self.LOGO_SIZE,
+            height=self.LOGO_SIZE,
+            bg=self.CLR_BG_DARK,
+            highlightthickness=0)
+        logo_canvas.grid(
+            row=0,
+            column=0,
+            rowspan=4,
+            padx=15,
+            pady=15,
+            sticky='ns')
 
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE):
             try:
-                img = Image.open(self.LOGO_FILE).resize((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
+                img = Image.open(
+                    self.LOGO_FILE).resize(
+                    (self.LOGO_SIZE,
+                     self.LOGO_SIZE),
+                    Image.Resampling.LANCZOS)
                 self.logo_image = ImageTk.PhotoImage(img)
-                logo_canvas.create_image(self.LOGO_SIZE/2, self.LOGO_SIZE/2, image=self.logo_image)
+                logo_canvas.create_image(
+                    self.LOGO_SIZE / 2,
+                    self.LOGO_SIZE / 2,
+                    image=self.logo_image)
             except Exception as e:
                 self.log(f"WARNING: Could not process logo file: {e}")
-                logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nERROR", font=self.FONT_BASE, fill="white", justify='center')
+                logo_canvas.create_text(
+                    self.LOGO_SIZE / 2,
+                    self.LOGO_SIZE / 2,
+                    text="LOGO\nERROR",
+                    font=self.FONT_BASE,
+                    fill="white",
+                    justify='center')
         else:
-            self.log(f"WARNING: Logo file '{self.LOGO_FILE}' not found or Pillow not installed.")
-            logo_canvas.create_text(self.LOGO_SIZE/2, self.LOGO_SIZE/2, text="LOGO\nMISSING", font=self.FONT_BASE, fill="white", justify='center')
+            self.log(
+                f"WARNING: Logo file '{self.LOGO_FILE}' not found or Pillow not installed.")
+            logo_canvas.create_text(
+                self.LOGO_SIZE / 2,
+                self.LOGO_SIZE / 2,
+                text="LOGO\nMISSING",
+                font=self.FONT_BASE,
+                fill="white",
+                justify='center')
 
         institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 1, 'bold')
-        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10,0), sticky='sw')
-        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
-        ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
+        ttk.Label(
+            frame,
+            text="UGC-DAE Consortium for Scientific Research",
+            font=institute_font,
+            background=self.CLR_BG_DARK).grid(
+            row=0,
+            column=1,
+            padx=10,
+            pady=(
+                10,
+                0),
+            sticky='sw')
+        ttk.Label(
+            frame,
+            text="Mumbai Centre",
+            font=institute_font,
+            background=self.CLR_BG_DARK).grid(
+            row=1,
+            column=1,
+            padx=10,
+            sticky='nw')
+        ttk.Separator(
+            frame,
+            orient='horizontal').grid(
+            row=2,
+            column=1,
+            sticky='ew',
+            padx=10,
+            pady=8)
         details_text = ("Program Name: I-V Sweep (4-Probe)\n"
                         "Instrument: Keithley 2400\n"
                         "Measurement Range: 100 µΩ to 200 MΩ")
-        ttk.Label(frame, text=details_text, justify='left', background=self.CLR_BG_DARK).grid(row=3, column=1, padx=10, pady=(0, 10), sticky='w')
+        ttk.Label(
+            frame,
+            text=details_text,
+            justify='left',
+            background=self.CLR_BG_DARK).grid(
+            row=3,
+            column=1,
+            padx=10,
+            pady=(
+                0,
+                10),
+            sticky='w')
 
     def create_input_frame(self, parent):
-        frame = LabelFrame(parent, text='Sweep Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame = LabelFrame(
+            parent,
+            text='Sweep Parameters',
+            relief='groove',
+            bg=self.CLR_BG_DARK,
+            fg=self.CLR_FG_LIGHT,
+            font=self.FONT_TITLE)
         frame.pack(pady=10, padx=10, fill='x')
         self.entries = {}
-        grid = ttk.Frame(frame); grid.pack(padx=10, pady=10, fill='x')
+        grid = ttk.Frame(frame)
+        grid.pack(padx=10, pady=10, fill='x')
         grid.grid_columnconfigure((0, 1, 2), weight=1)
 
-        ttk.Label(grid, text="Sample Name:").grid(row=0, column=0, columnspan=3, sticky='w')
-        self.entries["Sample Name"] = Entry(grid, font=self.FONT_BASE, width=20); self.entries["Sample Name"].grid(row=1, column=0, columnspan=3, sticky='ew', pady=(0, 10))
+        ttk.Label(
+            grid,
+            text="Sample Name:").grid(
+            row=0,
+            column=0,
+            columnspan=3,
+            sticky='w')
+        self.entries["Sample Name"] = Entry(
+            grid, font=self.FONT_BASE, width=20)
+        self.entries["Sample Name"].grid(
+            row=1,
+            column=0,
+            columnspan=3,
+            sticky='ew',
+            pady=(
+                0,
+                10))
 
-        ttk.Label(grid, text="Max Current (µA):").grid(row=2, column=0, sticky='w'); self.entries["Max Current"] = Entry(grid, font=self.FONT_BASE, width=10); self.entries["Max Current"].grid(row=3, column=0, sticky='ew', padx=(0, 5))
-        ttk.Label(grid, text="Step Current (µA):").grid(row=2, column=1, sticky='w'); self.entries["Step Current"] = Entry(grid, font=self.FONT_BASE, width=10); self.entries["Step Current"].grid(row=3, column=1, sticky='ew', padx=(0, 5))
-        ttk.Label(grid, text="Loops:").grid(row=2, column=2, sticky='w'); self.entries["Num Loops"] = Entry(grid, font=self.FONT_BASE, width=5); self.entries["Num Loops"].grid(row=3, column=2, sticky='ew'); self.entries["Num Loops"].insert(0, "1")
+        ttk.Label(
+            grid,
+            text="Max Current (µA):").grid(
+            row=2,
+            column=0,
+            sticky='w')
+        self.entries["Max Current"] = Entry(
+            grid, font=self.FONT_BASE, width=10)
+        self.entries["Max Current"].grid(
+            row=3, column=0, sticky='ew', padx=(0, 5))
+        ttk.Label(
+            grid,
+            text="Step Current (µA):").grid(
+            row=2,
+            column=1,
+            sticky='w')
+        self.entries["Step Current"] = Entry(
+            grid, font=self.FONT_BASE, width=10)
+        self.entries["Step Current"].grid(
+            row=3, column=1, sticky='ew', padx=(0, 5))
+        ttk.Label(grid, text="Loops:").grid(row=2, column=2, sticky='w')
+        self.entries["Num Loops"] = Entry(grid, font=self.FONT_BASE, width=5)
+        self.entries["Num Loops"].grid(row=3, column=2, sticky='ew')
+        self.entries["Num Loops"].insert(0, "1")
 
-        ttk.Label(grid, text="Compliance (V):").grid(row=4, column=0, columnspan=2, sticky='w', pady=(10, 0)); self.entries["Compliance"] = Entry(grid, font=self.FONT_BASE, width=10); self.entries["Compliance"].grid(row=5, column=0, columnspan=2, sticky='ew', padx=(0, 5))
-        ttk.Label(grid, text="Delay (s):").grid(row=4, column=2, sticky='w', pady=(10, 0)); self.entries["Delay"] = Entry(grid, font=self.FONT_BASE, width=5); self.entries["Delay"].grid(row=5, column=2, sticky='ew'); self.entries["Delay"].insert(0, "0.1")
+        ttk.Label(
+            grid,
+            text="Compliance (V):").grid(
+            row=4,
+            column=0,
+            columnspan=2,
+            sticky='w',
+            pady=(
+                10,
+                0))
+        self.entries["Compliance"] = Entry(grid, font=self.FONT_BASE, width=10)
+        self.entries["Compliance"].grid(
+            row=5,
+            column=0,
+            columnspan=2,
+            sticky='ew',
+            padx=(
+                0,
+                5))
+        ttk.Label(
+            grid,
+            text="Delay (s):").grid(
+            row=4,
+            column=2,
+            sticky='w',
+            pady=(
+                10,
+                0))
+        self.entries["Delay"] = Entry(grid, font=self.FONT_BASE, width=5)
+        self.entries["Delay"].grid(row=5, column=2, sticky='ew')
+        self.entries["Delay"].insert(0, "0.1")
 
-        ttk.Label(grid, text="Sweep Type:").grid(row=6, column=0, columnspan=3, sticky='w', pady=(10, 0))
+        ttk.Label(
+            grid,
+            text="Sweep Type:").grid(
+            row=6,
+            column=0,
+            columnspan=3,
+            sticky='w',
+            pady=(
+                10,
+                0))
         self.sweep_type_var = tk.StringVar()
-        self.sweep_type_cb = ttk.Combobox(grid, textvariable=self.sweep_type_var, state='readonly', font=self.FONT_BASE, values=["0 to Max", "Loop (0 → Max → 0 → -Max → 0)", "Custom List"])
-        self.sweep_type_cb.grid(row=7, column=0, columnspan=3, sticky='ew', pady=(0, 10))
+        self.sweep_type_cb = ttk.Combobox(
+            grid,
+            textvariable=self.sweep_type_var,
+            state='readonly',
+            font=self.FONT_BASE,
+            values=[
+                "0 to Max",
+                "Loop (0 → Max → 0 → -Max → 0)",
+                "Custom List"])
+        self.sweep_type_cb.grid(
+            row=7,
+            column=0,
+            columnspan=3,
+            sticky='ew',
+            pady=(
+                0,
+                10))
         self.sweep_type_cb.set("0 to Max")
-        self.sweep_type_cb.bind("<<ComboboxSelected>>", self._on_sweep_type_change)
+        self.sweep_type_cb.bind(
+            "<<ComboboxSelected>>",
+            self._on_sweep_type_change)
 
-        self.custom_list_label = ttk.Label(grid, text="Custom Current List (µA, comma-separated):")
-        self.custom_list_label.grid(row=8, column=0, columnspan=3, sticky='w', pady=(10, 0))
-        self.custom_list_text = scrolledtext.ScrolledText(grid, height=4, font=self.FONT_BASE, wrap='word')
+        self.custom_list_label = ttk.Label(
+            grid, text="Custom Current List (µA, comma-separated):")
+        self.custom_list_label.grid(
+            row=8,
+            column=0,
+            columnspan=3,
+            sticky='w',
+            pady=(
+                10,
+                0))
+        self.custom_list_text = scrolledtext.ScrolledText(
+            grid, height=4, font=self.FONT_BASE, wrap='word')
         self.custom_list_text.grid(row=9, column=0, columnspan=3, sticky='ew')
 
-        ttk.Label(grid, text="Keithley 2400 VISA:").grid(row=10, column=0, columnspan=3, sticky='w'); self.keithley_combobox = ttk.Combobox(grid, font=self.FONT_BASE, state='readonly', width=20); self.keithley_combobox.grid(row=11, column=0, columnspan=3, sticky='ew', pady=(0, 10))
+        ttk.Label(
+            grid,
+            text="Keithley 2400 VISA:").grid(
+            row=10,
+            column=0,
+            columnspan=3,
+            sticky='w')
+        self.keithley_combobox = ttk.Combobox(
+            grid, font=self.FONT_BASE, state='readonly', width=20)
+        self.keithley_combobox.grid(
+            row=11,
+            column=0,
+            columnspan=3,
+            sticky='ew',
+            pady=(
+                0,
+                10))
 
-        button_grid = ttk.Frame(frame); button_grid.pack(padx=10, pady=5, fill='x'); button_grid.grid_columnconfigure((0,1), weight=1)
-        self.scan_button = ttk.Button(button_grid, text="Scan Instruments", command=self._scan_for_visa_instruments); self.scan_button.grid(row=0, column=0, sticky='ew', padx=(0,5))
-        self.file_location_button = ttk.Button(button_grid, text="Save Location...", command=self._browse_file_location); self.file_location_button.grid(row=0, column=1, sticky='ew')
+        button_grid = ttk.Frame(frame)
+        button_grid.pack(padx=10, pady=5, fill='x')
+        button_grid.grid_columnconfigure((0, 1), weight=1)
+        self.scan_button = ttk.Button(
+            button_grid,
+            text="Scan Instruments",
+            command=self._scan_for_visa_instruments)
+        self.scan_button.grid(row=0, column=0, sticky='ew', padx=(0, 5))
+        self.file_location_button = ttk.Button(
+            button_grid,
+            text="Save Location...",
+            command=self._browse_file_location)
+        self.file_location_button.grid(row=0, column=1, sticky='ew')
 
-        bf = ttk.Frame(frame); bf.pack(padx=10, pady=10, fill='x'); bf.grid_columnconfigure((0,1), weight=1)
-        self.start_button = ttk.Button(bf, text="Start", command=self.start_measurement, style='Start.TButton'); self.start_button.grid(row=0, column=0, sticky='ew', padx=(0,5))
-        self.stop_button = ttk.Button(bf, text="Stop", command=self.stop_measurement, style='Stop.TButton', state='disabled'); self.stop_button.grid(row=0, column=1, sticky='ew')
+        bf = ttk.Frame(frame)
+        bf.pack(padx=10, pady=10, fill='x')
+        bf.grid_columnconfigure((0, 1), weight=1)
+        self.start_button = ttk.Button(
+            bf,
+            text="Start",
+            command=self.start_measurement,
+            style='Start.TButton')
+        self.start_button.grid(row=0, column=0, sticky='ew', padx=(0, 5))
+        self.stop_button = ttk.Button(
+            bf,
+            text="Stop",
+            command=self.stop_measurement,
+            style='Stop.TButton',
+            state='disabled')
+        self.stop_button.grid(row=0, column=1, sticky='ew')
 
-        self.progress_bar = ttk.Progressbar(frame, orient='horizontal', mode='determinate'); self.progress_bar.pack(padx=10, pady=(5,10), fill='x')
+        self.progress_bar = ttk.Progressbar(
+            frame, orient='horizontal', mode='determinate')
+        self.progress_bar.pack(padx=10, pady=(5, 10), fill='x')
 
     def _on_sweep_type_change(self, event=None):
-        if not hasattr(self, 'sweep_type_var'): return
+        if not hasattr(self, 'sweep_type_var'):
+            return
 
         selection = self.sweep_type_var.get()
-        standard_sweep_entries = [self.entries["Max Current"], self.entries["Step Current"]]
+        standard_sweep_entries = [
+            self.entries["Max Current"],
+            self.entries["Step Current"]]
 
         if selection == "Custom List":
             self.custom_list_label.grid()
@@ -350,10 +648,23 @@ class MeasurementAppGUI:
                 entry.config(state='normal')
 
     def create_console_frame(self, parent):
-        frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame = LabelFrame(
+            parent,
+            text='Console Output',
+            relief='groove',
+            bg=self.CLR_BG_DARK,
+            fg=self.CLR_FG_LIGHT,
+            font=self.FONT_TITLE)
         frame.pack(pady=10, padx=10, fill='x')
-        self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=('Consolas', 10), wrap='word', bd=0)
-        self.console_widget.pack(pady=5, padx=5, fill='both', expand=True, side='bottom')
+        self.console_widget = scrolledtext.ScrolledText(
+            frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=(
+                'Consolas', 10), wrap='word', bd=0)
+        self.console_widget.pack(
+            pady=5,
+            padx=5,
+            fill='both',
+            expand=True,
+            side='bottom')
 
         if self.pre_init_logs:
             self.console_widget.config(state='normal')
@@ -367,20 +678,36 @@ class MeasurementAppGUI:
         return frame
 
     def create_graph_frame(self, parent):
-        graph_container = LabelFrame(parent, text='Live I-V Curve', relief='groove', bg='white', fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
+        graph_container = LabelFrame(
+            parent,
+            text='Live I-V Curve',
+            relief='groove',
+            bg='white',
+            fg=self.CLR_BG_DARK,
+            font=self.FONT_TITLE)
         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
-        
+
         self.figure = Figure(figsize=(8, 8), dpi=100, constrained_layout=True)
         self.ax_vi, self.ax_ri = self.figure.subplots(2, 1, sharex=True)
 
         self.ax_vi.grid(True, linestyle='--', alpha=0.7)
-        self.ax_vi.axhline(0, color='k', linestyle='--', linewidth=0.7, alpha=0.5)
-        self.line_main, = self.ax_vi.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
-        self.ax_vi.set_title("Voltage vs. Current", fontweight='bold'); self.ax_vi.set_ylabel("Voltage (V)")
+        self.ax_vi.axhline(
+            0,
+            color='k',
+            linestyle='--',
+            linewidth=0.7,
+            alpha=0.5)
+        self.line_main, = self.ax_vi.plot(
+            [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
+        self.ax_vi.set_title("Voltage vs. Current", fontweight='bold')
+        self.ax_vi.set_ylabel("Voltage (V)")
 
         self.ax_ri.grid(True, linestyle='--', alpha=0.7)
-        self.line_resistance, = self.ax_ri.plot([], [], color=self.CLR_ACCENT_GREEN, marker='o', markersize=4, linestyle='-')
-        self.ax_ri.set_title("Resistance vs. Current", fontweight='bold'); self.ax_ri.set_xlabel("Current (A)"); self.ax_ri.set_ylabel("Resistance (Ω)")
+        self.line_resistance, = self.ax_ri.plot(
+            [], [], color=self.CLR_ACCENT_GREEN, marker='o', markersize=4, linestyle='-')
+        self.ax_ri.set_title("Resistance vs. Current", fontweight='bold')
+        self.ax_ri.set_xlabel("Current (A)")
+        self.ax_ri.set_ylabel("Resistance (Ω)")
         self.ax_ri.set_yscale('log')
 
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
@@ -390,7 +717,10 @@ class MeasurementAppGUI:
         timestamp = datetime.now().strftime("%H:%M:%S")
         log_line = f"[{timestamp}] {message}\n"
         if hasattr(self, 'console_widget'):
-            self.console_widget.config(state='normal'); self.console_widget.insert('end', log_line); self.console_widget.see('end'); self.console_widget.config(state='disabled')
+            self.console_widget.config(state='normal')
+            self.console_widget.insert('end', log_line)
+            self.console_widget.see('end')
+            self.console_widget.config(state='disabled')
         else:
             self.pre_init_logs.append(log_line)
 
@@ -407,63 +737,104 @@ class MeasurementAppGUI:
             }
 
             if sweep_type == "Custom List":
-                params['custom_list_str'] = self.custom_list_text.get("1.0", tk.END)
+                params['custom_list_str'] = self.custom_list_text.get(
+                    "1.0", tk.END)
                 if not params['custom_list_str'].strip():
                     raise ValueError("Custom list cannot be empty.")
             else:
-                params['max_current'] = float(self.entries["Max Current"].get()) * 1e-6
-                params['step_current'] = float(self.entries["Step Current"].get()) * 1e-6
+                params['max_current'] = float(
+                    self.entries["Max Current"].get()) * 1e-6
+                params['step_current'] = float(
+                    self.entries["Step Current"].get()) * 1e-6
 
             visa_address = self.keithley_combobox.get()
-            if not all([params['sample_name'], visa_address, self.file_location_path]):
-                raise ValueError("Sample Name, VISA address, and Save Location are required.")
+            if not all([params['sample_name'], visa_address,
+                       self.file_location_path]):
+                raise ValueError(
+                    "Sample Name, VISA address, and Save Location are required.")
 
             self.backend.connect_and_configure(visa_address, params)
             self.sweep_points = self.backend.generate_sweep_points(params)
             self.log(f"Generated sweep with {len(self.sweep_points)} points.")
 
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S"); file_name = f"{params['sample_name']}_{ts}_IV.dat"; self.data_filepath = os.path.join(self.file_location_path, file_name)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file_name = f"{params['sample_name']}_{ts}_IV.dat"
+            self.data_filepath = os.path.join(
+                self.file_location_path, file_name)
             with open(self.data_filepath, 'w', newline='') as f:
-                writer = csv.writer(f, delimiter='\t'); writer.writerow([f"# Sample: {params['sample_name']}", f"Compliance: {params['compliance_v']} V"]); writer.writerow(["Current (A)", "Voltage (V)", "Resistance (Ohm)"])
-            self.log(f"Output file created: {os.path.basename(self.data_filepath)}")
+                writer = csv.writer(f, delimiter='\t')
+                writer.writerow(
+                    [f"# Sample: {params['sample_name']}", f"Compliance: {params['compliance_v']} V"])
+                writer.writerow(
+                    ["Current (A)", "Voltage (V)", "Resistance (Ohm)"])
+            self.log(
+                f"Output file created: {os.path.basename(self.data_filepath)}")
 
-            self.is_running = True; self.sweep_index = 0
-            self.start_button.config(state='disabled'); self.stop_button.config(state='normal')
-            for key in self.data_storage: self.data_storage[key].clear()
-            
-            self.line_main.set_data([], []); self.line_resistance.set_data([], [])
-            self.progress_bar['value'] = 0; self.progress_bar['maximum'] = len(self.sweep_points)
-            self.figure.suptitle(f"Sample: {params['sample_name']}", fontweight='bold')
+            self.is_running = True
+            self.sweep_index = 0
+            self.start_button.config(state='disabled')
+            self.stop_button.config(state='normal')
+            for key in self.data_storage:
+                self.data_storage[key].clear()
+
+            self.line_main.set_data([], [])
+            self.line_resistance.set_data([], [])
+            self.progress_bar['value'] = 0
+            self.progress_bar['maximum'] = len(self.sweep_points)
+            self.figure.suptitle(
+                f"Sample: {params['sample_name']}",
+                fontweight='bold')
             self.canvas.draw()
             self.log("Measurement sweep started.")
             self.root.after(100, self._run_sweep_step)
         except Exception as e:
-            self.log(f"ERROR during startup: {traceback.format_exc()}"); messagebox.showerror("Initialization Error", f"Could not start measurement.\n{e}"); self.backend.shutdown()
+            self.log(f"ERROR during startup: {traceback.format_exc()}")
+            messagebox.showerror(
+                "Initialization Error",
+                f"Could not start measurement.\n{e}")
+            self.backend.shutdown()
 
     def stop_measurement(self):
-        if self.is_running: self.is_running = False; self.log("Measurement sweep stopped by user.")
-        self.start_button.config(state='normal'); self.stop_button.config(state='disabled')
-        self.backend.shutdown(); messagebox.showinfo("Info", "Measurement stopped and instrument disconnected.")
+        if self.is_running:
+            self.is_running = False
+            self.log("Measurement sweep stopped by user.")
+        self.start_button.config(state='normal')
+        self.stop_button.config(state='disabled')
+        self.backend.shutdown()
+        messagebox.showinfo(
+            "Info", "Measurement stopped and instrument disconnected.")
 
     def _run_sweep_step(self):
         if not self.is_running or self.sweep_index >= len(self.sweep_points):
-            if self.is_running: self.log("Sweep complete."); self.stop_measurement()
+            if self.is_running:
+                self.log("Sweep complete.")
+                self.stop_measurement()
             return
         try:
             current = self.sweep_points[self.sweep_index]
-            voltage = self.backend.measure_at_current(current, float(self.entries["Delay"].get()))
-            
+            voltage = self.backend.measure_at_current(
+                current, float(self.entries["Delay"].get()))
+
             if abs(voltage) >= 9.9e37:
-                self.log("WARNING: Voltage compliance reached! Check sample connections.")
+                self.log(
+                    "WARNING: Voltage compliance reached! Check sample connections.")
 
             resistance = voltage / current if current != 0 else np.nan
 
-            self.data_storage['current'].append(float(current)); self.data_storage['voltage'].append(voltage); self.data_storage['resistance'].append(resistance)
-            with open(self.data_filepath, 'a', newline='') as f: csv.writer(f, delimiter='\t').writerow([f"{current:.8e}", f"{voltage:.8e}", f"{resistance:.8e}"])
+            self.data_storage['current'].append(float(current))
+            self.data_storage['voltage'].append(voltage)
+            self.data_storage['resistance'].append(resistance)
+            with open(self.data_filepath, 'a', newline='') as f:
+                csv.writer(f, delimiter='\t').writerow(
+                    [f"{current:.8e}", f"{voltage:.8e}", f"{resistance:.8e}"])
 
-            self.line_main.set_data(self.data_storage['current'], self.data_storage['voltage'])
-            self.line_resistance.set_data(self.data_storage['current'], self.data_storage['resistance'])
-            
+            self.line_main.set_data(
+                self.data_storage['current'],
+                self.data_storage['voltage'])
+            self.line_resistance.set_data(
+                self.data_storage['current'],
+                self.data_storage['resistance'])
+
             self.ax_vi.relim()
             self.ax_vi.autoscale_view()
             self.ax_ri.relim()
@@ -474,10 +845,16 @@ class MeasurementAppGUI:
             self.sweep_index += 1
             self.root.after(10, self._run_sweep_step)
         except Exception:
-            self.log(f"RUNTIME ERROR: {traceback.format_exc()}"); messagebox.showerror("Runtime Error", "An error occurred during the sweep. Check console."); self.stop_measurement()
+            self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
+            messagebox.showerror(
+                "Runtime Error",
+                "An error occurred during the sweep. Check console.")
+            self.stop_measurement()
 
     def _scan_for_visa_instruments(self):
-        if pyvisa is None or self.backend.rm is None: self.log("ERROR: PyVISA not found or NI-VISA backend is missing."); return
+        if pyvisa is None or self.backend.rm is None:
+            self.log("ERROR: PyVISA not found or NI-VISA backend is missing.")
+            return
         self.log("Scanning for VISA instruments...")
         try:
             resources = self.backend.rm.list_resources()
@@ -494,22 +871,31 @@ class MeasurementAppGUI:
                             break
                     if not self.keithley_combobox.get() and resources:
                         self.keithley_combobox.set(resources[0])
-            else: self.log("No VISA instruments found.")
-        except Exception as e: self.log(f"ERROR during scan: {e}")
+            else:
+                self.log("No VISA instruments found.")
+        except Exception as e:
+            self.log(f"ERROR during scan: {e}")
 
     def _browse_file_location(self):
         path = filedialog.askdirectory()
-        if path: self.file_location_path = path; self.log(f"Save location set to: {path}")
+        if path:
+            self.file_location_path = path
+            self.log(f"Save location set to: {path}")
 
     def _on_closing(self):
-        if self.is_running and messagebox.askyesno("Exit", "Measurement is running. Stop and exit?"):
-            self.stop_measurement(); self.root.destroy()
-        elif not self.is_running: self.root.destroy()
+        if self.is_running and messagebox.askyesno(
+                "Exit", "Measurement is running. Stop and exit?"):
+            self.stop_measurement()
+            self.root.destroy()
+        elif not self.is_running:
+            self.root.destroy()
+
 
 def main():
     root = tk.Tk()
     app = MeasurementAppGUI(root)
     root.mainloop()
+
 
 if __name__ == '__main__':
     main()

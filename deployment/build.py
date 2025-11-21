@@ -6,7 +6,7 @@
  PURPOSE:      Compiles the PICA suite into a standalone Windows executable.
 
  DESCRIPTION:  This script automates a two-stage build process using PyInstaller.
-               
+
                STAGE 1: Compiles each individual measurement frontend (.py) into
                its own standalone executable (.exe). These are the "sub-exes".
 
@@ -21,18 +21,20 @@
  AUTHOR:       Prathamesh K Deshmukh
 ===============================================================================
 '''
+from deployment.Picachu import PICALauncherApp, resource_path
 import os
 import subprocess
 import shutil
 import sys
 
 # --- Configuration ---
-PYINSTALLER_PATH = "pyinstaller" # Use 'pyinstaller' if it's in your PATH
+PYINSTALLER_PATH = "pyinstaller"  # Use 'pyinstaller' if it's in your PATH
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(PROJECT_ROOT, "dist")
 BUILD_DIR = os.path.join(PROJECT_ROOT, "build")
 
-# This is a temporary directory to store the compiled sub-programs before they are bundled.
+# This is a temporary directory to store the compiled sub-programs before
+# they are bundled.
 SUB_PROGRAMS_TEMP_DIR = os.path.join(BUILD_DIR, "programs")
 SPECS_DIR = os.path.join(PROJECT_ROOT, "Setup", "specs")
 
@@ -40,30 +42,42 @@ SPECS_DIR = os.path.join(PROJECT_ROOT, "Setup", "specs")
 ICON_FILE = os.path.join(PROJECT_ROOT, "assets", "LOGO", "PICA_LOGO.ico")
 
 # --- NEW: Get version from Picachu.py for the zip file name ---
-# Add Setup directory to path for the import below. This also helps linters like Pylance.
+# Add Setup directory to path for the import below. This also helps
+# linters like Pylance.
 setup_dir = os.path.join(PROJECT_ROOT, "Setup")
 if setup_dir not in sys.path:
     sys.path.insert(0, setup_dir)
-from deployment.Picachu import PICALauncherApp, resource_path
 APP_VERSION = PICALauncherApp.PROGRAM_VERSION
 
 # List of all frontend scripts to compile into sub-EXEs.
 # Format: ("path/to/script.py", "FinalExeName.exe")
 SUB_PROGRAMS = [
-    ("Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_GUI_V10.py", "IV_K6221_DC_Sweep_GUI_V10.exe"),
-    ("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.py", "Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.exe"),
-    ("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.py", "Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.exe"),
+    ("Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_GUI_V10.py",
+     "IV_K6221_DC_Sweep_GUI_V10.exe"),
+    ("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.py",
+     "Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.exe"),
+    ("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.py",
+     "Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.exe"),
     ("Keithley_2400/IV_K2400_GUI_v5.py", "IV_K2400_GUI_v5.exe"),
-    ("Keithley_2400/RT_K2400_L350_T_Control_GUI_v3.py", "RT_K2400_L350_T_Control_GUI_v3.exe"),
-    ("Keithley_2400/RT_K2400_L350_T_Sensing_GUI_v4.py", "RT_K2400_L350_T_Sensing_GUI_v4.exe"),
-    ("Keithley_2400_Keithley_2182/IV_K2400_K2182_GUI_v3.py", "IV_K2400_K2182_GUI_v3.exe"),
-    ("Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_GUI_v3.py", "RT_K2400_K2182_T_Control_GUI_v3.exe"),
-    ("Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_GUI_v2.py", "RT_K2400_2182_L350_T_Sensing_GUI_v2.exe"),
+    ("Keithley_2400/RT_K2400_L350_T_Control_GUI_v3.py",
+     "RT_K2400_L350_T_Control_GUI_v3.exe"),
+    ("Keithley_2400/RT_K2400_L350_T_Sensing_GUI_v4.py",
+     "RT_K2400_L350_T_Sensing_GUI_v4.exe"),
+    ("Keithley_2400_Keithley_2182/IV_K2400_K2182_GUI_v3.py",
+     "IV_K2400_K2182_GUI_v3.exe"),
+    ("Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_GUI_v3.py",
+     "RT_K2400_K2182_T_Control_GUI_v3.exe"),
+    ("Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_GUI_v2.py",
+     "RT_K2400_2182_L350_T_Sensing_GUI_v2.exe"),
     ("Keithley_6517B/High_Resistance/IV_K6517B_GUI_v11.py", "IV_K6517B_GUI_v11.exe"),
-    ("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_GUI_v13.py", "RT_K6517B_L350_T_Control_GUI_v13.exe"),
-    ("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_GUI_v14.py", "RT_K6517B_L350_T_Sensing_GUI_v14.exe"),
-    ("Keithley_6517B/Pyroelectricity/Pyroelectric_K6517B_L350_GUI_v4.py", "Pyroelectric_K6517B_L350_GUI_v4.exe"),
-    ("Lakeshore_350_340/T_Control_L350_RangeControl_GUI_v8.py", "T_Control_L350_RangeControl_GUI_v8.exe"),
+    ("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_GUI_v13.py",
+     "RT_K6517B_L350_T_Control_GUI_v13.exe"),
+    ("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_GUI_v14.py",
+     "RT_K6517B_L350_T_Sensing_GUI_v14.exe"),
+    ("Keithley_6517B/Pyroelectricity/Pyroelectric_K6517B_L350_GUI_v4.py",
+     "Pyroelectric_K6517B_L350_GUI_v4.exe"),
+    ("Lakeshore_350_340/T_Control_L350_RangeControl_GUI_v8.py",
+     "T_Control_L350_RangeControl_GUI_v8.exe"),
     ("Lakeshore_350_340/T_Sensing_L350_GUI_v4.py", "T_Sensing_L350_GUI_v4.exe"),
     ("LCR_Keysight_E4980A/CV_KE4980A_GUI_v3.py", "CV_KE4980A_GUI_v3.exe"),
     # Note: The Plotter and GPIB Scanner are now launched from within other frontends,
@@ -76,6 +90,8 @@ SUB_PROGRAMS = [
 PICACHU_SCRIPT = "Setup/Picachu.py"
 
 # --- NEW: Hook for fixing Tcl/Tk bundling issue ---
+
+
 def get_tcl_tk_add_data_args():
     """
     Generates the --add-data arguments needed for PyInstaller to correctly
@@ -84,11 +100,14 @@ def get_tcl_tk_add_data_args():
     try:
         from pyi_tcl_hook import get_tcl_tk_paths
         tcl_path, tk_path = get_tcl_tk_paths()
-        # The destination folder name inside the bundle must match what the hook expects.
+        # The destination folder name inside the bundle must match what the
+        # hook expects.
         return [f"--add-data={tcl_path};tcl", f"--add-data={tk_path};tk"]
     except Exception as e:
-        print(f"--- WARNING: Could not find Tcl/Tk paths. Build might fail. Error: {e} ---")
+        print(
+            f"--- WARNING: Could not find Tcl/Tk paths. Build might fail. Error: {e} ---")
         return []
+
 
 def run_command(command):
     """Executes a command and prints it, raising an error if it fails."""
@@ -101,10 +120,13 @@ def run_command(command):
         print(e.stderr, file=sys.stderr)
         raise
 
+
 def build():
     print(">>> Cleaning previous builds...")
-    if os.path.exists(DIST_DIR): shutil.rmtree(DIST_DIR)
-    if os.path.exists(BUILD_DIR): shutil.rmtree(BUILD_DIR)
+    if os.path.exists(DIST_DIR):
+        shutil.rmtree(DIST_DIR)
+    if os.path.exists(BUILD_DIR):
+        shutil.rmtree(BUILD_DIR)
     os.makedirs(SUB_PROGRAMS_TEMP_DIR, exist_ok=True)
 
     # Get the necessary arguments for bundling Tcl/Tk
@@ -120,13 +142,16 @@ def build():
 
         # Compile each sub-program.
         # The --distpath is set to our temporary directory for sub-programs.
-        # The --workpath is set to a unique directory per-exe to avoid conflicts.
+        # The --workpath is set to a unique directory per-exe to avoid
+        # conflicts.
         cmd = [
-            PYINSTALLER_PATH, "--noconfirm", "--clean",
+            PYINSTALLER_PATH,
+            "--noconfirm",
+            "--clean",
             f"--distpath={SUB_PROGRAMS_TEMP_DIR}",
             f"--workpath={os.path.join(BUILD_DIR, os.path.splitext(exe_name)[0] + '_work')}",
         ]
-        cmd.extend(tcl_tk_args) # Add Tcl/Tk data paths
+        cmd.extend(tcl_tk_args)  # Add Tcl/Tk data paths
         cmd.append(spec_path)
         run_command(cmd)
 
@@ -135,20 +160,26 @@ def build():
     main_cmd = [
         PYINSTALLER_PATH, "--noconfirm", "--clean",
     ]
-    main_cmd.extend(tcl_tk_args) # Add Tcl/Tk data paths
+    main_cmd.extend(tcl_tk_args)  # Add Tcl/Tk data paths
     main_cmd.append(picachu_spec_path)
     run_command(main_cmd)
 
     print("\n>>> STAGE 3: Creating distributable ZIP file...")
     final_app_dir = os.path.join(DIST_DIR, "Picachu")
     zip_filename = f"PICA_v{APP_VERSION}_Windows"
-    shutil.make_archive(os.path.join(DIST_DIR, zip_filename), 'zip', final_app_dir)
+    shutil.make_archive(
+        os.path.join(
+            DIST_DIR,
+            zip_filename),
+        'zip',
+        final_app_dir)
 
     print("\n--- Build Complete! ---")
     print(f"The final application folder is located at:")
     print(f"  {final_app_dir}")
     print(f"\nA distributable ZIP file has been created at:")
     print(f"  {os.path.join(DIST_DIR, zip_filename + '.zip')}")
+
 
 if __name__ == "__main__":
     build()

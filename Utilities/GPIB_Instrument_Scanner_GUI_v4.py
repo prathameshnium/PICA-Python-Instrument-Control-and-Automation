@@ -24,6 +24,8 @@ except ImportError:
 # -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
+
+
 class GpibScannerGUI:
     """The main GUI application class for scanning VISA instruments."""
     PROGRAM_VERSION = "2.0"
@@ -42,7 +44,8 @@ class GpibScannerGUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title(f"GPIB/VISA Instrument Scanner v{self.PROGRAM_VERSION}")
+        self.root.title(
+            f"GPIB/VISA Instrument Scanner v{self.PROGRAM_VERSION}")
         self.root.configure(bg=self.CLR_BG_DARK)
 
         # --- Position the window to the top-right of the screen ---
@@ -62,18 +65,45 @@ class GpibScannerGUI:
 
         self.log("GPIB/VISA scanner window opened. Auto-scan will begin shortly.")
         self.root.after(100, self.process_queue)  # Start the queue processor
-        self.root.after(1000, self.start_scan)     # Auto-start the scan after 1 second
+        # Auto-start the scan after 1 second
+        self.root.after(1000, self.start_scan)
 
     def setup_styles(self):
         """Configures ttk styles for a modern look."""
         style = ttk.Style(self.root)
         style.theme_use('clam')
         style.configure('TFrame', background=self.CLR_BG_DARK)
-        style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        style.configure('App.TButton', font=self.FONT_BASE, padding=(10, 8), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_HEADER, borderwidth=0, focusthickness=0, focuscolor='none')
-        style.map('App.TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
-        style.configure('Scan.TButton', font=self.FONT_BASE, padding=(10, 9), foreground=self.CLR_TEXT_DARK, background=self.CLR_ACCENT_GREEN)
-        style.map('Scan.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
+        style.configure(
+            'TLabel',
+            background=self.CLR_BG_DARK,
+            foreground=self.CLR_FG_LIGHT,
+            font=self.FONT_TITLE)
+        style.configure(
+            'App.TButton',
+            font=self.FONT_BASE,
+            padding=(
+                10,
+                8),
+            foreground=self.CLR_ACCENT_GOLD,
+            background=self.CLR_HEADER,
+            borderwidth=0,
+            focusthickness=0,
+            focuscolor='none')
+        style.map(
+            'App.TButton', background=[
+                ('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[
+                ('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
+        style.configure(
+            'Scan.TButton',
+            font=self.FONT_BASE,
+            padding=(
+                10,
+                9),
+            foreground=self.CLR_TEXT_DARK,
+            background=self.CLR_ACCENT_GREEN)
+        style.map(
+            'Scan.TButton', background=[
+                ('active', '#8AB845'), ('hover', '#8AB845')])
 
     def create_widgets(self):
         """Lays out the main frames and populates them with widgets."""
@@ -87,25 +117,55 @@ class GpibScannerGUI:
         controls_frame.grid(row=0, column=0, sticky='ew', pady=(0, 15))
         controls_frame.columnconfigure((0, 1, 2), weight=1)
 
-        self.scan_button = ttk.Button(controls_frame, text="Scan for Instruments", command=self.start_scan, style='Scan.TButton')
+        self.scan_button = ttk.Button(
+            controls_frame,
+            text="Scan for Instruments",
+            command=self.start_scan,
+            style='Scan.TButton')
         self.scan_button.grid(row=0, column=0, padx=(0, 5), sticky='ew')
 
-        guide_button = ttk.Button(controls_frame, text="Address Guide", command=self.show_address_guide, style='App.TButton')
+        guide_button = ttk.Button(
+            controls_frame,
+            text="Address Guide",
+            command=self.show_address_guide,
+            style='App.TButton')
         guide_button.grid(row=0, column=1, padx=5, sticky='ew')
 
-        clear_button = ttk.Button(controls_frame, text="Clear Log", command=self.clear_log, style='App.TButton')
+        clear_button = ttk.Button(
+            controls_frame,
+            text="Clear Log",
+            command=self.clear_log,
+            style='App.TButton')
         clear_button.grid(row=0, column=2, padx=(5, 0), sticky='ew')
 
         # --- Console/Results Frame ---
-        self.console_widget = scrolledtext.ScrolledText(main_frame, state='disabled', bg=self.CLR_CONSOLE_BG,
-                                                       fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0)
+        self.console_widget = scrolledtext.ScrolledText(
+            main_frame,
+            state='disabled',
+            bg=self.CLR_CONSOLE_BG,
+            fg=self.CLR_FG_LIGHT,
+            font=self.FONT_CONSOLE,
+            wrap='word',
+            bd=0)
         self.console_widget.grid(row=1, column=0, sticky='nsew')
 
-        ttk.Button(main_frame, text="Close", style='App.TButton', command=self.root.destroy).grid(row=2, column=0, sticky='ew', pady=(15, 0))
+        ttk.Button(
+            main_frame,
+            text="Close",
+            style='App.TButton',
+            command=self.root.destroy).grid(
+            row=2,
+            column=0,
+            sticky='ew',
+            pady=(
+                15,
+                0))
 
         self.log("Welcome to the GPIB/VISA Instrument Scanner.")
         if not PYVISA_AVAILABLE:
-            self.log("CRITICAL: PyVISA library not found. Please run 'pip install pyvisa'.", level='error')
+            self.log(
+                "CRITICAL: PyVISA library not found. Please run 'pip install pyvisa'.",
+                level='error')
             self.scan_button.config(state='disabled')
         else:
             self.log("Auto-scanning for instruments in 1 second...")
@@ -133,8 +193,10 @@ class GpibScannerGUI:
         self.scan_button.config(state='disabled')
         self.log("Starting scan...")
 
-        # Run the actual scanning logic in a separate thread to prevent GUI freezing
-        scan_thread = threading.Thread(target=self.run_scan_thread, daemon=True)
+        # Run the actual scanning logic in a separate thread to prevent GUI
+        # freezing
+        scan_thread = threading.Thread(
+            target=self.run_scan_thread, daemon=True)
         scan_thread.start()
 
     def process_queue(self):
@@ -192,9 +254,11 @@ Nanovoltmeters, LCR Meters & Amplifiers
             instrument_addresses = rm.list_resources()
 
             if not instrument_addresses:
-                self.result_queue.put("-> No instruments found. Check connections and VISA installation.\n")
+                self.result_queue.put(
+                    "-> No instruments found. Check connections and VISA installation.\n")
             else:
-                self.result_queue.put(f"-> Found {len(instrument_addresses)} instrument(s). Querying...\n\n")
+                self.result_queue.put(
+                    f"-> Found {len(instrument_addresses)} instrument(s). Querying...\n\n")
 
                 for address in instrument_addresses:
                     try:
@@ -223,6 +287,7 @@ def main():
     root = tk.Tk()
     app = GpibScannerGUI(root)
     root.mainloop()
+
 
 if __name__ == '__main__':
     main()

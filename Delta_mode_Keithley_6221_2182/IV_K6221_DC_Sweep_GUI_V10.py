@@ -1,10 +1,10 @@
-#-------------------------------------------------------------------------------
-# Name:         GPIB Passthrough I-V 
+# -------------------------------------------------------------------------------
+# Name:         GPIB Passthrough I-V
 # Purpose:      Perform a software-timed I-V sweep by controlling a K2182
 #               through a K6221 acting as a GPIB-to-Serial bridge.
 # Author:       Prathamesh Deshmukh
 # Version:      1.6 (Switched to Free-Running Fetch Mode)
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 import tkinter as tk
 from tkinter import ttk, Label, Entry, LabelFrame, filedialog, messagebox, scrolledtext, Canvas
@@ -37,12 +37,15 @@ import runpy
 from multiprocessing import Process
 
 # --- Utility Functions ---
+
+
 def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(os.path.dirname(__file__))
     return os.path.join(base_path, relative_path)
+
 
 def run_script_process(script_path):
     try:
@@ -51,20 +54,30 @@ def run_script_process(script_path):
     except Exception as e:
         print(f"Sub-process Error: {e}")
 
+
 def launch_plotter_utility():
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_GUI_v3.py")
+        plotter_path = os.path.join(
+            script_dir,
+            "..",
+            "Utilities",
+            "PlotterUtil_GUI_v3.py")
         if not os.path.exists(plotter_path):
             return
         Process(target=run_script_process, args=(plotter_path,)).start()
     except Exception:
         pass
 
+
 def launch_gpib_scanner():
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        scanner_path = os.path.join(script_dir, "..", "Utilities", "GPIB_Instrument_Scanner_GUI_v4.py")
+        scanner_path = os.path.join(
+            script_dir,
+            "..",
+            "Utilities",
+            "GPIB_Instrument_Scanner_GUI_v4.py")
         if not os.path.exists(scanner_path):
             return
         Process(target=run_script_process, args=(scanner_path,)).start()
@@ -74,6 +87,8 @@ def launch_gpib_scanner():
 # -------------------------------------------------------------------------------
 # --- BACKEND ---
 # -------------------------------------------------------------------------------
+
+
 class Backend_Passthrough:
     def __init__(self):
         self.visa_queue = queue.Queue()
@@ -98,7 +113,7 @@ class Backend_Passthrough:
         self.k6221.write("SOUR:FUNC CURR")
         self.k6221.write("SOUR:CURR:RANG:AUTO ON")
         self.k6221.write(f"SOUR:CURR:COMP {compliance}")
-        
+
         self.k6221.write("SYST:COMM:SER:SEND '*RST'")
         time.sleep(0.5)
         self.k6221.write("SYST:COMM:SER:SEND 'FUNC \"VOLT\"'")
@@ -142,6 +157,8 @@ class Backend_Passthrough:
 # -------------------------------------------------------------------------------
 # --- GUI ---
 # -------------------------------------------------------------------------------
+
+
 class Passthrough_IV_GUI:
     PROGRAM_VERSION = "1.6"
     LOGO_SIZE = 110
@@ -173,13 +190,13 @@ class Passthrough_IV_GUI:
     def create_widgets(self):
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True)
-        
+
         left_frame = ttk.Frame(main_pane)
         main_pane.add(left_frame, weight=1)
-        
+
         self.create_input_frame(left_frame)
         self.create_console_frame(left_frame)
-        
+
         right_frame = ttk.Frame(main_pane)
         main_pane.add(right_frame, weight=3)
         self.create_graph_frame(right_frame)
@@ -187,11 +204,18 @@ class Passthrough_IV_GUI:
     def create_input_frame(self, parent):
         frame = LabelFrame(parent, text="Parameters")
         frame.pack(fill='x', padx=5, pady=5)
-        
+
         self.entries = {}
-        fields = ["Sample Name", "Start Current", "Stop Current", "Num Points", "Delay", "Initial Delay", "Compliance"]
+        fields = [
+            "Sample Name",
+            "Start Current",
+            "Stop Current",
+            "Num Points",
+            "Delay",
+            "Initial Delay",
+            "Compliance"]
         defaults = ["Test", "-1e-6", "1e-6", "11", "0.1", "1.0", "10"]
-        
+
         for i, (field, default) in enumerate(zip(fields, defaults)):
             Label(frame, text=field).grid(row=i, column=0, sticky='w')
             ent = Entry(frame)
@@ -201,14 +225,22 @@ class Passthrough_IV_GUI:
 
         self.k6221_cb = ttk.Combobox(frame)
         self.k6221_cb.grid(row=len(fields), column=0, columnspan=2)
-        
+
         self.sweep_scale_var = tk.StringVar(value="Linear")
-        
-        self.start_button = ttk.Button(frame, text="Start", command=self.start_sweep, style='Start.TButton')
-        self.start_button.grid(row=len(fields)+2, column=0)
-        
-        self.stop_button = ttk.Button(frame, text="Stop", command=self.stop_sweep, style='Stop.TButton')
-        self.stop_button.grid(row=len(fields)+2, column=1)
+
+        self.start_button = ttk.Button(
+            frame,
+            text="Start",
+            command=self.start_sweep,
+            style='Start.TButton')
+        self.start_button.grid(row=len(fields) + 2, column=0)
+
+        self.stop_button = ttk.Button(
+            frame,
+            text="Stop",
+            command=self.stop_sweep,
+            style='Stop.TButton')
+        self.stop_button.grid(row=len(fields) + 2, column=1)
 
     def create_console_frame(self, parent):
         self.console = scrolledtext.ScrolledText(parent, height=10)
@@ -237,12 +269,14 @@ class Passthrough_IV_GUI:
                 'compliance': float(self.entries["Compliance"].get()),
                 'k6221_visa': self.k6221_cb.get()
             }
-            self.save_path = "." # Dummy for now
+            self.save_path = "."  # Dummy for now
             self.is_running = True
-            
+
             # Start worker thread
-            threading.Thread(target=self._sweep_worker, args=(self.params,), daemon=True).start()
-            
+            threading.Thread(
+                target=self._sweep_worker, args=(
+                    self.params,), daemon=True).start()
+
         except Exception as e:
             self.log(f"Error: {e}")
 
@@ -253,10 +287,13 @@ class Passthrough_IV_GUI:
         try:
             self.backend.connect(params['k6221_visa'])
             self.backend.configure_instruments(params['compliance'])
-            
-            points = np.linspace(params['start_i'], params['stop_i'], params['points'])
+
+            points = np.linspace(
+                params['start_i'],
+                params['stop_i'],
+                params['points'])
             self.data_filepath = "temp_data.csv"
-            
+
             for i, curr in enumerate(points):
                 if not self.is_running:
                     break
@@ -264,25 +301,27 @@ class Passthrough_IV_GUI:
                 time.sleep(params['delay'])
                 volt = self.backend.read_voltage()
                 self.log(f"I: {curr}, V: {volt}")
-                
+
         except Exception as e:
             self.log(f"Worker Error: {e}")
         finally:
             self.backend.close()
 
     def start_visa_scan(self):
-        pass # Simplified for this snippet
-    
+        pass  # Simplified for this snippet
+
     def _browse_save(self):
         pass
 
     def _on_closing(self):
         self.root.destroy()
 
+
 def main():
     root = tk.Tk()
     Passthrough_IV_GUI(root)
     root.mainloop()
+
 
 if __name__ == '__main__':
     main()

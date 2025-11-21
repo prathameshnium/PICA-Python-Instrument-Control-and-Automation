@@ -7,7 +7,7 @@ the current through a predefined pattern from a negative to a positive value and
 back, collecting I-V data points. Finally, it saves the collected data to a
 tab-separated .txt file and generates a plot of the I-V curve.
 """
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 # Name:         #interfacing only Keithley2400(current source) for  IV
 
@@ -27,9 +27,9 @@ tab-separated .txt file and generates a plot of the I-V curve.
 
 # Changes_done:Working
 
-#-------------------------------------------------------------------------------#Importing packages ----------------------------------
+# ------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Name:        #interfacing only Keithley2400(current source) for  IV
 
 # Last Update :27/09/2024
@@ -40,45 +40,47 @@ tab-separated .txt file and generates a plot of the I-V curve.
 # Created:     30/09/2024
 
 # Changes_done:Working
-#-------------------------------------------------------------------------------#Importing packages ----------------------------------
+# ------------------------------------------------------------------------
 
 import pymeasure
 import numpy as np
 import matplotlib.pyplot as plt
 from time import sleep
-#import pyvisa
+# import pyvisa
 from pymeasure.instruments.keithley import Keithley2400
 import pandas as pd
 
-#object creation ----------------------------------
-#rm1 = pyvisa.ResourceManager()
-#keithley_2182= rm1.open_resource("GPIB::7")
-#keithley_2182.write("*rst; status:preset; *cls")
+# object creation ----------------------------------
+# rm1 = pyvisa.ResourceManager()
+# keithley_2182= rm1.open_resource("GPIB::7")
+# keithley_2182.write("*rst; status:preset; *cls")
 keithley_2400 = Keithley2400("GPIB::4")
 keithley_2400.disable_buffer()
 
 sleep(10)
 
-I=[]
-#I1=[]
-Volt=[]
-#interval = 1
-#number_of_readings = 2
+I = []
+# I1=[]
+Volt = []
+# interval = 1
+# number_of_readings = 2
 
-i=0
-#user input ----------------------------------
-I_range = float(input("Enter value of I: (in micro A , Highest value of Current fror -I to I) "))
-I_step= float(input("Enter steps: (The step size , in micro A) "))
+i = 0
+# user input ----------------------------------
+I_range = float(input(
+    "Enter value of I: (in micro A , Highest value of Current fror -I to I) "))
+I_step = float(input("Enter steps: (The step size , in micro A) "))
 filename = input("Enter filename:")
 
 
-print ("Current (A) || Voltage(V) ")
+print("Current (A) || Voltage(V) ")
 
-keithley_2400.apply_current() # Sets up to source current
-keithley_2400.source_current_range = 1e-6 # Sets the source current range to 1 mA
-keithley_2400.compliance_voltage = 210 # Sets the compliance voltage to 210 V
-keithley_2400.source_current = 0 # Sets the source current to 0 mA
-keithley_2400.enable_source() # Enables the source output
+keithley_2400.apply_current()  # Sets up to source current
+# Sets the source current range to 1 mA
+keithley_2400.source_current_range = 1e-6
+keithley_2400.compliance_voltage = 210  # Sets the compliance voltage to 210 V
+keithley_2400.source_current = 0  # Sets the source current to 0 mA
+keithley_2400.enable_source()  # Enables the source output
 keithley_2400.measure_voltage()
 '''
 
@@ -97,24 +99,20 @@ sleep(1)
 
 '''
 
+
 def IV_Measure(cur):
 
-    keithley_2400.ramp_to_current(cur*1e-6)
+    keithley_2400.ramp_to_current(cur * 1e-6)
 
     sleep(1.5)
-    v_meas=keithley_2400.voltage
+    v_meas = keithley_2400.voltage
     sleep(1)
-    #I.append(keithley_2400.current) # actual current in 2400 (in Amps)
-    I.append(cur*1e-3)
+    # I.append(keithley_2400.current) # actual current in 2400 (in Amps)
+    I.append(cur * 1e-3)
 
-    Volt.append(v_meas) #voltage
+    Volt.append(v_meas)  # voltage
 
-
-
-
-    print(str(cur*1e-6)+"  "+str(Volt[i]))
-
-
+    print(str(cur * 1e-6) + "  " + str(Volt[i]))
 
     '''
     keithley_2182.write("status:measurement:enable 512; *sre 1")
@@ -146,12 +144,13 @@ def IV_Measure(cur):
     '''
     sleep(1)
 
-#loop1---------------------------------------------
+
+# loop1---------------------------------------------
 print("In loop 1")
-for i1 in np.arange(0,I_range+I_step,I_step):
+for i1 in np.arange(0, I_range + I_step, I_step):
     IV_Measure(i1)
-    i=i+1
-#--------------------------------------------------
+    i = i + 1
+# --------------------------------------------------
 
 '''
 #loop2---------------------------------------------
@@ -177,15 +176,16 @@ for i5 in np.arange(0,I_range+I_step,I_step):
 '''
 # data saving in file ----------------------------
 
-df=pd.DataFrame()
-df['I']=pd.DataFrame(I)
-df['V']=pd.DataFrame(Volt)
-print ("Current (A) || Voltage(V) \n")
+df = pd.DataFrame()
+df['I'] = pd.DataFrame(I)
+df['V'] = pd.DataFrame(Volt)
+print("Current (A) || Voltage(V) \n")
 
 print(df)
 
-#df.to_csv(r'E:\Prathamesh\Python Stuff\IV Only 2400\'str(filename)+str(filename)'+'.txt', index=None, sep='	', mode='w')
-df.to_csv(r'C:/Users/Instrument-DSL/Desktop/LED_IV/'+str(filename)+'.txt', index=None, sep='	', mode='w')
+# df.to_csv(r'E:\Prathamesh\Python Stuff\IV Only 2400\'str(filename)+str(filename)'+'.txt', index=None, sep='	', mode='w')
+df.to_csv(r'C:/Users/Instrument-DSL/Desktop/LED_IV/' +
+          str(filename) + '.txt', index=None, sep='	', mode='w')
 
 
 # turning of instrument ----------------------------
@@ -193,10 +193,10 @@ sleep(0.5)
 keithley_2400.shutdown()
 print("keithley_2400.shutdown")
 sleep(0.5)               # Ramps the current to 0 mA and disables output
-#keithley_2182.clear()
-#keithley_2182.close()
+# keithley_2182.clear()
+# keithley_2182.close()
 
-#graph ploting ----------------------------
+# graph ploting ----------------------------
 
 plt.plot(I, Volt, marker='o', linestyle='-', color='g', label='Square')
 plt.xlabel('I')
@@ -204,8 +204,3 @@ plt.ylabel('V')
 plt.title('IV curve')
 plt.legend('I')
 plt.show()
-
-
-
-
-
