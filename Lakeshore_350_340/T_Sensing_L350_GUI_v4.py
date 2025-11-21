@@ -11,7 +11,7 @@
 
 # --- Packages for Front end ---
 import tkinter as tk
-from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext, Canvas
+from tkinter import ttk, Label, filedialog, messagebox, scrolledtext, Canvas
 import os
 import time
 import traceback
@@ -21,7 +21,6 @@ from datetime import datetime
 import csv
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import matplotlib.gridspec as gridspec
 import matplotlib as mpl
 
 # --- Pillow for Logo Image ---
@@ -757,7 +756,7 @@ class TempMonitorGUI:
 
 def main():
     root = tk.Tk()
-    app = TempMonitorGUI(root)
+    TempMonitorGUI(root)
     root.mainloop()
 
 

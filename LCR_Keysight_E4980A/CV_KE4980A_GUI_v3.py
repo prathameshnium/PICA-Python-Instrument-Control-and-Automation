@@ -19,7 +19,7 @@
 
 # --- Packages for Front end ---
 import tkinter as tk
-from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext, Canvas, font
+from tkinter import ttk, Label, Entry, LabelFrame, filedialog, messagebox, scrolledtext, Canvas
 import os
 import time
 import traceback
@@ -846,7 +846,7 @@ def main():
         return
 
     root = tk.Tk()
-    app = LCR_CV_GUI(root)
+    LCR_CV_GUI(root)
     root.mainloop()
 
 

@@ -21,7 +21,7 @@
  AUTHOR:       Prathamesh K Deshmukh
 ===============================================================================
 '''
-from deployment.Picachu import PICALauncherApp, resource_path
+from deployment.Picachu import PICALauncherApp
 import os
 import subprocess
 import shutil
@@ -134,7 +134,7 @@ def build():
 
     print("\n>>> STAGE 1: Compiling sub-program executables...")
     for script_path, exe_name in SUB_PROGRAMS:
-        full_script_path = os.path.join(PROJECT_ROOT, script_path)
+        os.path.join(PROJECT_ROOT, script_path)
         print(f"\nCompiling {exe_name}...")
 
         spec_filename = f"{os.path.splitext(exe_name)[0]}.spec"

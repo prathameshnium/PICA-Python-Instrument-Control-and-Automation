@@ -1,6 +1,5 @@
 import tkinter as tk
 from tkinter import Label, Entry, Scrollbar, Listbox, LabelFrame, Button, filedialog, messagebox
-from PIL import ImageTk, Image
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg

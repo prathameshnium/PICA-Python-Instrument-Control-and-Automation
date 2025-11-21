@@ -26,7 +26,7 @@
 ===============================================================================
 '''
 import tkinter as tk
-from tkinter import ttk, messagebox, Toplevel, Text, Canvas, scrolledtext, font
+from tkinter import ttk, messagebox, Toplevel, Canvas, scrolledtext, font
 import os
 import sys
 import subprocess
@@ -503,7 +503,6 @@ class PICALauncherApp:
                 5, 10), pady=(
                 0, 15))
 
-        GROUP_PAD_Y = 15
 
         # --- Left Column Suites ---
         self._create_suite_frame(left_col,
@@ -1077,7 +1076,7 @@ Nanovoltmeters, LCR Meters & Amplifiers
 def main():
     """Initializes and runs the main application."""
     root = tk.Tk()
-    app = PICALauncherApp(root)
+    PICALauncherApp(root)
     root.mainloop()
 
 

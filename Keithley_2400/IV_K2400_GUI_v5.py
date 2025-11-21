@@ -9,7 +9,7 @@
 
 # --- Packages for Front end ---
 import tkinter as tk
-from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext, Canvas
+from tkinter import ttk, Label, Entry, LabelFrame, filedialog, messagebox, scrolledtext, Canvas
 import numpy as np
 import csv
 import os
@@ -893,7 +893,7 @@ class MeasurementAppGUI:
 
 def main():
     root = tk.Tk()
-    app = MeasurementAppGUI(root)
+    MeasurementAppGUI(root)
     root.mainloop()
 
 

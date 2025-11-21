@@ -7,23 +7,17 @@
 # -------------------------------------------------------------------------------
 
 import tkinter as tk
-from tkinter import ttk, Label, Entry, LabelFrame, filedialog, messagebox, scrolledtext, Canvas
+from tkinter import ttk, Label, Entry, LabelFrame, scrolledtext
 import numpy as np
 import os
 import sys
 import time
-import traceback
-from datetime import datetime
-import csv
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import matplotlib.gridspec as gridspec
-import matplotlib as mpl
 import threading
 import queue
 
 try:
-    from PIL import Image, ImageTk
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False

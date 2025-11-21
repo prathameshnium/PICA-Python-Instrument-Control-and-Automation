@@ -15,7 +15,6 @@ from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib as mpl
-import matplotlib.pyplot as plt
 import numpy as np
 
 # --- Multi-instance support ---
@@ -33,7 +32,6 @@ except ImportError:
 
 def _dummy_process_target():
     """A picklable top-level function to satisfy multiprocessing on Windows."""
-    pass
 
 
 def launch_new_instance():
@@ -43,7 +41,6 @@ def launch_new_instance():
     """
     # This function is no longer needed, as the logic is handled directly
     # in the button command for clarity and robustness.
-    pass
 
 
 def run_script_process(script_path):

@@ -5,9 +5,7 @@
 # -------------------------------------------------------------------------------
 
 import time
-import numpy as np
 import pandas as pd
-import pyvisa
 from pymeasure.instruments.keithley import Keithley6517B
 
 I = []

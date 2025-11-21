@@ -946,7 +946,7 @@ class MeasurementAppGUI:
 
 def main():
     root = tk.Tk()
-    app = MeasurementAppGUI(root)
+    MeasurementAppGUI(root)
     root.mainloop()
 
 

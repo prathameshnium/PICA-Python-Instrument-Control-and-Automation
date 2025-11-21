@@ -12,8 +12,6 @@
 # import visa
 import pyvisa
 import time
-import numpy as np
-import pandas as pd
 # from lakeshore import Model350
 from pymeasure.instruments.keithley import Keithley6517B
 from datetime import datetime

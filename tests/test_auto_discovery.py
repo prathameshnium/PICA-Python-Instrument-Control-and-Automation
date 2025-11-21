@@ -2,7 +2,7 @@ import unittest
 import sys
 import os
 import importlib.util
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # -------------------------------------------------------------------------
 # GLOBAL HEADLESS MOCKS

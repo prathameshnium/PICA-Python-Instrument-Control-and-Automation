@@ -42,7 +42,6 @@ tab-separated .txt file and generates a plot of the I-V curve.
 # Changes_done:Working
 # ------------------------------------------------------------------------
 
-import pymeasure
 import numpy as np
 import matplotlib.pyplot as plt
 from time import sleep
@@ -50,157 +49,69 @@ from time import sleep
 from pymeasure.instruments.keithley import Keithley2400
 import pandas as pd
 
-# object creation ----------------------------------
-# rm1 = pyvisa.ResourceManager()
-# keithley_2182= rm1.open_resource("GPIB::7")
-# keithley_2182.write("*rst; status:preset; *cls")
-keithley_2400 = Keithley2400("GPIB::4")
-keithley_2400.disable_buffer()
 
-sleep(10)
+def main():
+    """
+    Main function to run the I-V sweep measurement.
+    """
+    # object creation ----------------------------------
+    keithley_2400 = Keithley2400("GPIB::4")
+    keithley_2400.disable_buffer()
+    sleep(2)
 
-I = []
-# I1=[]
-Volt = []
-# interval = 1
-# number_of_readings = 2
+    i = 0
+    I = []
+    Volt = []
 
-i = 0
-# user input ----------------------------------
-I_range = float(input(
-    "Enter value of I: (in micro A , Highest value of Current fror -I to I) "))
-I_step = float(input("Enter steps: (The step size , in micro A) "))
-filename = input("Enter filename:")
+    # user input ----------------------------------
+    I_range = float(input("Enter value of I: (in micro A, Highest value of Current from -I to I) "))
+    I_step = float(input("Enter steps: (The step size, in micro A) "))
+    filename = input("Enter filename:")
 
+    print("Current (A) || Voltage(V) ")
 
-print("Current (A) || Voltage(V) ")
+    keithley_2400.apply_current()
+    keithley_2400.source_current_range = 1e-6
+    keithley_2400.compliance_voltage = 210
+    keithley_2400.source_current = 0
+    keithley_2400.enable_source()
+    keithley_2400.measure_voltage()
 
-keithley_2400.apply_current()  # Sets up to source current
-# Sets the source current range to 1 mA
-keithley_2400.source_current_range = 1e-6
-keithley_2400.compliance_voltage = 210  # Sets the compliance voltage to 210 V
-keithley_2400.source_current = 0  # Sets the source current to 0 mA
-keithley_2400.enable_source()  # Enables the source output
-keithley_2400.measure_voltage()
-'''
+    def IV_Measure(cur):
+        nonlocal i
+        keithley_2400.ramp_to_current(cur * 1e-6)
+        sleep(1.5)
+        v_meas = keithley_2400.voltage
+        sleep(1)
+        I.append(cur * 1e-6)  # Use the actual sourced value
+        Volt.append(v_meas)
+        print(f"{cur * 1e-6:.3e} A  {v_meas:.4f} V")
+        i += 1
 
-
-#initial set up keithley_2400
-keithley_2400.apply_current()               # Sets up to source current
-keithley_2400.source_current_range = 1e-3   # Sets the source current range to 1 mA
-sleep(10)
-keithley_2400.compliance_voltage = 210       # Sets the compliance voltage to 210 V
-keithley_2400.source_current = 0            # Sets the source current to 0 mA
-keithley_2400.enable_source()              # Enables the source output
-sleep(15)
-keithley_2400.measure_voltage()
-sleep(1)
-# current loop voltage measured ------------------------------
-
-'''
-
-
-def IV_Measure(cur):
-
-    keithley_2400.ramp_to_current(cur * 1e-6)
-
-    sleep(1.5)
-    v_meas = keithley_2400.voltage
-    sleep(1)
-    # I.append(keithley_2400.current) # actual current in 2400 (in Amps)
-    I.append(cur * 1e-3)
-
-    Volt.append(v_meas)  # voltage
-
-    print(str(cur * 1e-6) + "  " + str(Volt[i]))
-
-    '''
-    keithley_2182.write("status:measurement:enable 512; *sre 1")
-    keithley_2182.write("sample:count %d" % number_of_readings)
-    keithley_2182.write("trigger:source bus")
-    keithley_2182.write("trigger:delay %f" % (interval))
-    keithley_2182.write("trace:points %d" % number_of_readings)
-    keithley_2182.write("trace:feed sense1; feed:control next")
-    keithley_2182.write("initiate")
-    keithley_2182.assert_trigger()
-    sleep(1)
-    keithley_2182.wait_for_srq()
-    sleep(1)
-    voltages = keithley_2182.query_ascii_values("trace:data?")
-    keithley_2182.query("status:measurement?")
-    keithley_2182.write("trace:clear; feed:control next")
-
-    v_avr=sum(voltages) / len(voltages)
-
-    sleep(1)
-    #I.append(keithley_2400.current) # actual current in 2400 (in Amps)
-    I.append(cur*1e-3)
-    Volt.append(v_avr) #voltage avg list
-    print(str(cur*1e-3)+"  "+str(v_avr))
-    keithley_2182.write("*rst; status:preset; *cls")
-
-    keithley_2182.clear()
-
-    '''
-    sleep(1)
+    print("In loop 1")
+    for i1 in np.arange(0, I_range + I_step, I_step):
+        IV_Measure(i1)
+    
+    df = pd.DataFrame({'I': I, 'V': Volt})
+    print("\n--- Measurement Complete ---")
+    print(df)
+    
+    save_path = os.path.join('C:/Users/Instrument-DSL/Desktop/LED_IV/', f"{filename}.txt")
+    df.to_csv(save_path, index=None, sep='\t', mode='w')
+    print(f"Data saved to {save_path}")
+    
+    sleep(0.5)
+    keithley_2400.shutdown()
+    print("Keithley 2400 shutdown complete.")
+    
+    plt.plot(I, Volt, marker='o', linestyle='-', color='g', label='I-V Data')
+    plt.xlabel('Current (A)')
+    plt.ylabel('Voltage (V)')
+    plt.title('I-V Curve')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
 
 
-# loop1---------------------------------------------
-print("In loop 1")
-for i1 in np.arange(0, I_range + I_step, I_step):
-    IV_Measure(i1)
-    i = i + 1
-# --------------------------------------------------
-
-'''
-#loop2---------------------------------------------
-print("In loop 2")
-for i2 in np.arange(I_range,0-I_step,-I_step):
-    IV_Measure(i2)
-#--------------------------------------------------
-#loop3---------------------------------------------
-print("In loop 3")
-for i3 in np.arange(0,-I_range-I_step,-I_step):
-    IV_Measure(i3)
-#--------------------------------------------------
-#loop4---------------------------------------------
-print("In loop 4")
-for i4 in np.arange(-I_range,0+I_step,I_step):
-    IV_Measure(i4)
-#--------------------------------------------------
-#loop5---------------------------------------------
-print("In loop 5")
-for i5 in np.arange(0,I_range+I_step,I_step):
-    IV_Measure(i5)
-#--------------------------------------------------
-'''
-# data saving in file ----------------------------
-
-df = pd.DataFrame()
-df['I'] = pd.DataFrame(I)
-df['V'] = pd.DataFrame(Volt)
-print("Current (A) || Voltage(V) \n")
-
-print(df)
-
-# df.to_csv(r'E:\Prathamesh\Python Stuff\IV Only 2400\'str(filename)+str(filename)'+'.txt', index=None, sep='	', mode='w')
-df.to_csv(r'C:/Users/Instrument-DSL/Desktop/LED_IV/' +
-          str(filename) + '.txt', index=None, sep='	', mode='w')
-
-
-# turning of instrument ----------------------------
-sleep(0.5)
-keithley_2400.shutdown()
-print("keithley_2400.shutdown")
-sleep(0.5)               # Ramps the current to 0 mA and disables output
-# keithley_2182.clear()
-# keithley_2182.close()
-
-# graph ploting ----------------------------
-
-plt.plot(I, Volt, marker='o', linestyle='-', color='g', label='Square')
-plt.xlabel('I')
-plt.ylabel('V')
-plt.title('IV curve')
-plt.legend('I')
-plt.show()
+if __name__ == "__main__":
+    main()

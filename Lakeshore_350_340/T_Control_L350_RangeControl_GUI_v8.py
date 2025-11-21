@@ -9,13 +9,11 @@
 
 # --- GUI and System Packages ---
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext, Canvas
+from tkinter import ttk, messagebox, scrolledtext, Canvas
 import os
-import sys
 import time
 import traceback
 from datetime import datetime
-import csv
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl

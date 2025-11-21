@@ -9,7 +9,7 @@
 
 # --- Packages for Front end ---
 import tkinter as tk
-from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext, Canvas
+from tkinter import ttk, Label, Entry, filedialog, messagebox, scrolledtext, Canvas
 import os
 import time
 import traceback
@@ -20,7 +20,6 @@ import matplotlib as mpl
 import threading
 import queue
 import matplotlib.pyplot as plt
-from matplotlib import gridspec
 from multiprocessing import Process
 
 # --- Pillow for Logo Image ---

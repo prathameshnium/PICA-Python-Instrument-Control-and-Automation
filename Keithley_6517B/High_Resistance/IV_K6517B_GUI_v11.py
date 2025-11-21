@@ -10,7 +10,7 @@
 
 # --- Packages for Front end ---
 import tkinter as tk
-from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext, Canvas
+from tkinter import ttk, Label, Entry, LabelFrame, filedialog, messagebox, scrolledtext, Canvas
 import threading
 import queue
 import numpy as np
@@ -959,7 +959,7 @@ class HighResistanceIV_GUI:
 
 def main():
     root = tk.Tk()
-    app = HighResistanceIV_GUI(root)
+    HighResistanceIV_GUI(root)
     root.mainloop()
 
 

@@ -8,7 +8,7 @@
 # -------------------------------------------------------------------------------
 
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox
+from tkinter import ttk, scrolledtext
 import threading
 import queue
 from datetime import datetime
@@ -285,7 +285,7 @@ Nanovoltmeters, LCR Meters & Amplifiers
 def main():
     """Initializes the application."""
     root = tk.Tk()
-    app = GpibScannerGUI(root)
+    GpibScannerGUI(root)
     root.mainloop()
 
 

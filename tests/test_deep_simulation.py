@@ -150,7 +150,7 @@ class TestDeepSimulation(unittest.TestCase):
     def test_05_delta_simple(self):
         with patch('pyvisa.ResourceManager') as MockRM, \
                 patch('time.sleep', side_effect=self.get_circuit_breaker(10)):
-            k6221 = MockRM.return_value.open_resource.return_value
+            MockRM.return_value.open_resource.return_value
             inputs = ['0', '1e-5', '1e-6', 'test_file', 'y', 'y']
             with patch('builtins.input', side_effect=inputs), \
                     patch('pandas.DataFrame.to_csv'):
@@ -202,7 +202,7 @@ class TestDeepSimulation(unittest.TestCase):
     def test_09_poling(self):
         with patch('pyvisa.ResourceManager') as MockRM, \
                 patch('time.sleep', side_effect=self.get_circuit_breaker(5)):
-            spy = MockRM.return_value.open_resource.return_value
+            MockRM.return_value.open_resource.return_value
             inputs = ['100', '10', 'y']
             with patch('builtins.input', side_effect=inputs):
                 self.run_module_safely(

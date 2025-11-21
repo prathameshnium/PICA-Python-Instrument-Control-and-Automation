@@ -10,7 +10,7 @@
 
 # --- Packages for Front end ---
 import tkinter as tk
-from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext, Canvas
+from tkinter import ttk, Label, Entry, LabelFrame, filedialog, messagebox, scrolledtext, Canvas
 import threading
 import queue
 import os
@@ -1028,7 +1028,7 @@ class Integrated_RT_GUI:
 
 def main():
     root = tk.Tk()
-    app = Integrated_RT_GUI(root)
+    Integrated_RT_GUI(root)
     root.mainloop()
 
 

@@ -1011,7 +1011,7 @@ class Advanced_Delta_GUI:
 
 def main():
     root = tk.Tk()
-    app = Advanced_Delta_GUI(root)
+    Advanced_Delta_GUI(root)
     root.mainloop()
 
 

@@ -10,7 +10,6 @@
 # --- GUI and Plotting Packages ---
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext, Canvas
-import sys
 import os
 import time
 import traceback

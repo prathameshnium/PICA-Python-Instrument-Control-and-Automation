@@ -2,7 +2,7 @@ import unittest
 import sys
 import os
 import importlib
-from unittest.mock import MagicMock, patch, mock_open, call
+from unittest.mock import MagicMock, patch, mock_open
 
 # -------------------------------------------------------------------------
 # 1. GLOBAL MOCKS (The "Headless" GUI Trick)
