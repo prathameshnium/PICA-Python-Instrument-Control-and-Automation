@@ -3,23 +3,19 @@ from unittest.mock import patch, MagicMock
 
 
 # Now we can import the module to be tested
-# from Keithley_2400.Backends import IV_K2400_Loop_Backend_v10 as iv_backend
+from Keithley_2400.Backends import IV_K2400_Loop_Backend_v10 as iv_backend
 
 
 class TestIVK2400LoopBackend(unittest.TestCase):
 
     @patch('builtins.input', side_effect=['10', '2', 'test_output'])
-    @patch('pymeasure.instruments.keithley.Keithley2400')
+    @patch('Keithley_2400.Backends.IV_K2400_Loop_Backend_v10.Keithley2400')
     @patch('matplotlib.pyplot.show')
     @patch('pandas.DataFrame.to_csv')
     def test_main_full_run(self, mock_to_csv, mock_plt_show, mock_keithley_class, mock_input):
         """
         Test the main function to ensure it runs through the full I-V sweep process.
         """
-        # --- DYNAMIC IMPORT ---
-        # Import the module here so that the patches are in effect
-        from Keithley_2400.Backends import IV_K2400_Loop_Backend_v10 as iv_backend
-        
         # --- MOCK SETUP ---
         # Mock the instrument instance
         mock_keithley_instance = MagicMock()
@@ -66,7 +62,7 @@ class TestIVK2400LoopBackend(unittest.TestCase):
         # np.linspace(0, 10, int(10/2) + 1) -> linspace(0, 10, 6)
         # The values will be [0., 2., 4., 6., 8., 10.]
         expected_currents_uA = [0., 2., 4., 6., 8., 10.]
-        expected_.calls = [unittest.mock.call(
+        expected_calls = [unittest.mock.call(
             c * 1e-6) for c in expected_currents_uA]
         mock_keithley_instance.ramp_to_current.assert_has_calls(
             expected_calls)
