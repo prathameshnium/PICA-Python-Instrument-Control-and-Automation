@@ -105,7 +105,7 @@ class TestDeepSimulation(unittest.TestCase):
 
     def test_01_k2400_iv_backend(self):
         # GLOBAL PATCH for sleep is critical here
-        with patch('pymeasure.instruments.keithley.Keithley2400') as MockInst, \
+        with patch('pymeasure.instruments.keithley.Keithley2400', autospec=True) as MockInst, \
                 patch('time.sleep', side_effect=self.get_circuit_breaker(5)):
 
             spy = MockInst.return_value
@@ -123,10 +123,15 @@ class TestDeepSimulation(unittest.TestCase):
             spy.query.side_effect = [
                 "LSCI,MODEL350,0,0"] + ["10.0", "300.0"] * 20
 
+            # Create local mocks for matplotlib to avoid issues with global mocks
+            mock_fig, mock_ax = MagicMock(), MagicMock()
+            mock_ax.plot.return_value = [MagicMock()]
+
             with patch('builtins.input', side_effect=['10', '300', '10', '350']), \
                     patch('builtins.open', mock_open()), \
                     patch('tkinter.filedialog.asksaveasfilename', return_value="test.csv"), \
-                    patch('matplotlib.pyplot.show'):
+                    patch('matplotlib.pyplot.show'), \
+                    patch('matplotlib.pyplot.subplots', return_value=(mock_fig, mock_ax)):
                 self.run_module_safely(
                     "Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10")
 
@@ -193,9 +198,9 @@ class TestDeepSimulation(unittest.TestCase):
                 patch('time.sleep', side_effect=self.get_circuit_breaker(10)):
 
             rm = MockRM.return_value
-            # Ensure side_effect doesn't run out if script asks for many
-            # resources
-            rm.open_resource.return_value = MagicMock()
+            k2182_spy = MagicMock()
+            k2182_spy.assert_trigger = MagicMock()
+            rm.open_resource.return_value = k2182_spy
 
             # Add extra inputs just in case the script asks for more than
             # expected
