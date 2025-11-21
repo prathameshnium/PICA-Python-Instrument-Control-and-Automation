@@ -6,14 +6,12 @@
   <p>
     <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
     <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.9+-brightgreen.svg" alt="Python 3.9+"></a>
-    <a href="#"><img src="https://img.shields.io/badge/Status-Active-success.svg" alt="Project Status: Active"></a>
-    <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/stargazers"><img src="https://img.shields.io/github/stars/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=social" alt="GitHub Stars"></a>
-    <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/network/members"><img src="https://img.shields.io/github/forks/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=social" alt="GitHub Forks"></a>
     <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/joss_tests.yml"><img src="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/joss_tests.yml/badge.svg" alt="Run PICA JOSS Tests"></a>
     <a href="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation"><img src="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation/branch/main/graph/badge.svg" alt="codecov"></a>
     <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/codeql.yml"><img src="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
   </p>
 </div>
+
 ---
 
 ## Overview
@@ -22,7 +20,7 @@
 
 A key architectural feature is the use of isolated process execution for each measurement module via Python's `multiprocessing` library, ensuring high stability and preventing inter-script conflicts. This platform is built to streamline data acquisition, enhance experimental reproducibility, and accelerate research workflows.
 
-PICA is designed with a clear separation between the user interface (frontend) and the instrument control logic (backend). This modular approach makes the system easy to maintain, extend, and debug.
+PICA is designed with a clear separation between the user interface (GUI) and the instrument control logic (backend). This modular approach makes the system easy to maintain, extend, and debug.
 
 <div align="center">
     <img src="assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800"/>
@@ -34,9 +32,9 @@ PICA is designed with a clear separation between the user interface (frontend) a
 
 The core design philosophy of PICA is the separation of concerns, implemented through a distinct **GUI-Backend** architecture for each measurement module.
 
--   **GUI:** Each measurement has a dedicated GUI script (e.g., `IV_K2400_GUI_v5.py`) built with `Tkinter` and the `CustomTkinter` library. It is responsible for all user interaction, parameter input, and data visualization (live plotting). It runs in the main process.
+-   **GUI (Frontend):** Each measurement has a dedicated GUI script (e.g., `IV_K2400_GUI_v5.py`) built with `Tkinter`. It is responsible for all user interaction, parameter input, and data visualization (live plotting). It runs in the main process to remain responsive.
 -   **Backend:** The instrument control logic is encapsulated in a separate class (e.g., `Keithley2400_Backend`). This class handles all `PyVISA` communication, instrument configuration, and data acquisition commands.
--   **Process Isolation:** When a measurement is started, the frontend launches its corresponding backend logic in a separate, isolated process using Python's `multiprocessing` library. This is the key to PICA's stability: a crash or error in one measurement script will not affect the main launcher or any other running experiments.
+-   **Process Isolation:** When a measurement is started, the GUI launches its corresponding backend logic in a separate, isolated process using Python's `multiprocessing` library. This is the key to PICA's stability: a crash or error in one measurement script will not affect the main launcher or any other running experiments.
 -   **Communication:** The frontend and backend communicate via `multiprocessing.Queue` for thread-safe data exchange. The backend performs a measurement and places the data into a queue, which the frontend then reads to update plots and save to a file.
 
 ---
@@ -48,10 +46,8 @@ The core design philosophy of PICA is the separation of concerns, implemented th
 - [Available Measurement Modules](#available-measurement-modules)
 - [Instrument Specifications](#instrument-specifications)
 - [Getting Started](#getting-started)
-- [How to Cite](#how-to-cite)
-  - [Prerequisites](#prerequisites)
-  - [Installation Steps](#installation-steps)
 - [Resources & Documentation](#resources--documentation)
+- [How to Cite](#how-to-cite)
 - [Contributing](#contributing)
 - [Authors & Acknowledgments](#authors--acknowledgments)
 - [License](#license)
@@ -64,7 +60,7 @@ The core design philosophy of PICA is the separation of concerns, implemented th
 - **Isolated Process Execution:** Each script operates in a discrete process, guaranteeing application stability and preventing resource conflicts.
 - **Integrated VISA Instrument Scanner:** An embedded utility for discovering, identifying, and troubleshooting GPIB/VISA instrument connections.
 - **Modular Architecture:** Each experimental setup is encapsulated in a self-contained module with direct access to its scripts and data directories.
-- **Embedded Documentation:** In-application viewer for essential project documentation, such as the README and software license.
+- **Embedded Documentation:** In-application viewer for essential project documentation.
 - **System Console Log:** A real-time log provides status updates, confirmations, and error diagnostics for all operations.
 
 ---
@@ -88,34 +84,34 @@ All required packages are listed in the `requirements.txt` file for easy one-ste
 The PICA suite is organized into modules, each containing a frontend GUI application and its corresponding backend logic for instrument control.
 
 #### Low Resistance (Keithley 6221 / 2182)
-*   **Delta Mode I-V Sweep**
-*   **Delta Mode R vs. T (Active Control)**
-*   **Delta Mode R vs. T (Passive Sensing)**
+* **Delta Mode I-V Sweep**
+* **Delta Mode R vs. T (Active Control)**
+* **Delta Mode R vs. T (Passive Sensing)**
 
 #### Mid Resistance (Keithley 2400)
-*   **I-V Sweep**
-*   **R vs. T (Active Control)**
-*   **R vs. T (Passive Sensing)**
+* **I-V Sweep**
+* **R vs. T (Active Control)**
+* **R vs. T (Passive Sensing)**
 
 #### Mid Resistance, High Precision (Keithley 2400 / 2182)
-*   **I-V Sweep**
-*   **R vs. T (Active Control)**
-*   **R vs. T (Passive Sensing)**
+* **I-V Sweep**
+* **R vs. T (Active Control)**
+* **R vs. T (Passive Sensing)**
 
 #### High Resistance (Keithley 6517B)
-*   **I-V Sweep**
-*   **R vs. T (Active Control)**
-*   **R vs. T (Passive Sensing)**
+* **I-V Sweep**
+* **R vs. T (Active Control)**
+* **R vs. T (Passive Sensing)**
 
 #### Pyroelectric Measurement (Keithley 6517B)
-*   **PyroCurrent vs. T**
+* **PyroCurrent vs. T**
 
 #### Capacitance (Keysight E4980A)
-*   **C-V Measurement**
+* **C-V Measurement**
 
 #### Temperature Utilities (Lakeshore 350)
-*   **Temperature Ramp**
-*   **Temperature Monitor**
+* **Temperature Ramp**
+* **Temperature Monitor**
 
 ---
 
@@ -141,30 +137,6 @@ This facility provides users with a comprehensive, modular system for characteri
 
 ---
 
-## How to Cite
-
-If you use this software in your research, please cite it. This helps to credit the work involved in creating and maintaining this resource.
-
-#### BibTeX Entry
-
-You can use the following BibTeX entry for your reference manager (e.g., Zotero, Mendeley, JabRef).
-
-```bibtex
-@software{Deshmukh_PICA_2023,
-  author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
-  title        = {{PICA: Python-based Instrument Control and Automation Software Suite}},
-  month        = sep,
-  year         = 2023,
-  publisher    = {GitHub},
-  version      = {14.1.0},
-  url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
-}
-```
-
-Alternatively, you can use the `CITATION.cff` file in the root of the repository for automatic parsing by modern reference managers.
-
----
-
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -175,7 +147,8 @@ Alternatively, you can use the `CITATION.cff` file in the root of the repository
 ### Installation Steps
 
 1.  **Clone the Repository**
-    git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
+    ```bash
+    git clone [https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git)
     cd PICA-Python-Instrument-Control-and-Automation
     ```
 
@@ -206,28 +179,42 @@ Alternatively, you can use the `CITATION.cff` file in the root of the repository
 
 ---
 
-## 🛠️ Extending PICA: Adding a New Module
+## 📚 Resources & Documentation
 
-The modular architecture makes it straightforward to add support for new instruments or measurement types. Here is a simplified example of the required structure.
+**Comprehensive Documentation:**
+For detailed setup instructions, hardware interfacing guides, and troubleshooting, please refer to the **[PICA User Manual](docs/User_Manual.md)** located in the `docs/` directory.
 
-1.  **Create a Backend Class:** Encapsulate all direct instrument communication (`PyVISA` commands) in a dedicated class.
-2.  **Create a GUI GUI:** Build a `Tkinter` GUI to gather user parameters and display live data. This GUI will instantiate and control the backend.
-3.  **Integrate with the Launcher:** Add a button and the script path to `PICA_v6.py` to make your new module accessible from the main dashboard.
-
----
-
-## Resources & Documentation
-
-#### Included Manuals
-A collection of official instrument manuals and software library documentation is provided within the `/assets/Manuals/` directory. These documents serve as valuable technical references.
-
-#### Instrument Interfacing Guide
-For a quick reference on instrument addresses, see the `GPIB_Address_Guide.md` file.
+**Instrument Manuals:**
+A collection of official instrument manuals is provided within the `assets/Manuals/` directory for technical reference.
 
 ---
+
+## How to Cite
+
+If you use this software in your research, please cite it. This helps to credit the work involved in creating and maintaining this resource.
+
+#### BibTeX Entry
+
+```bibtex
+@software{Deshmukh_PICA_2023,
+  author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
+  title        = {{PICA: Python-based Instrument Control and Automation Software Suite}},
+  month        = sep,
+  year         = 2023,
+  publisher    = {GitHub},
+  version      = {14.1.0},
+  url          = {[https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation)}
+}
+````
+
+Alternatively, you can use the `CITATION.cff` file in the root of the repository for automatic parsing by modern reference managers.
+
+-----
 
 ## 🤝 How to Contribute
-Contributions are welcome! If you have suggestions for improvements or want to add a new instrument module, please feel free to:
+
+Contributions are welcome\! If you have suggestions for improvements or want to add a new instrument module, please feel free to:
+
 1.  Fork the repository.
 2.  Create a new branch (`git checkout -b feature/YourFeature`).
 3.  Commit your changes (`git commit -m 'Add some feature'`).
@@ -236,17 +223,18 @@ Contributions are welcome! If you have suggestions for improvements or want to a
 
 Please open an issue first to discuss any major changes you would like to make.
 
----
+-----
 
 ## Authors & Acknowledgments
 
-<div align="center">
-  <img src="assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
-</div>
+\<div align="center"\>
+\<img src="assets/LOGO/UGC\_DAE\_CSR\_NBG.jpeg" alt="UGC DAE CSR Logo" width="150"\>
+\</div\>
 
-- **Lead Developer:** **[Prathamesh Deshmukh](https://prathameshdeshmukh.site/)**
-- **Principal Investigator:** **[Dr. Sudip Mukherjee](https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)**
-- **Affiliation:** *[UGC-DAE Consortium for Scientific Research, Mumbai Centre](https://www.csr.res.in/Mumbai_Centre)*
+  - **Lead Developer:** **[Prathamesh Deshmukh](https://prathameshdeshmukh.site/)**
+  - **Principal Investigator:** **[Dr. Sudip Mukherjee](https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)**
+  - **Affiliation:** *[UGC-DAE Consortium for Scientific Research, Mumbai Centre](https://www.csr.res.in/Mumbai_Centre)*
 
 #### Funding
+
 Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science & Technology (DST), Government of India.
