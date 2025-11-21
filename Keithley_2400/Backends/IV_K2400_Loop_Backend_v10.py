@@ -71,7 +71,7 @@ def main():
 
     print("Current (A) || Voltage(V) ")
 
-    keithley_2400.apply_current()
+    keithley_2400.source_mode = 'current'
     keithley_2400.source_current_range = 1e-6
     keithley_2400.compliance_voltage = 210
     keithley_2400.source_current = 0
