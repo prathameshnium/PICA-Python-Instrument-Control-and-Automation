@@ -42,40 +42,30 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=18 --max-line-length=127 --statistics
 
     # ------------------------------------------------------------------------
-    # PHASE 3: CUSTOM TESTS (The "Three Pillars")
+    # PHASE 3: COMBINED TESTS (Generates both coverage and test results)
     # ------------------------------------------------------------------------
-    # We keep these separate so the logs are easy for humans to read
-    
-    - name: Run Test 1 - Auto-Discovery (Smoke Test)
+    - name: Run All Tests and Generate Reports
       run: |
         echo "--------------------------------------"
-        echo "GOAL: Verify all GUI modules load without crashing."
-        python -m unittest tests/test_auto_discovery.py
-
-    - name: Run Test 2 - Deep Simulation (Behavior Test)
-      run: |
-        echo "--------------------------------------"
-        echo "GOAL: Verify SCPI commands and hardware protocols."
-        python -m unittest tests/test_deep_simulation.py
-
-    - name: Run Test 3 - Full Stack Simulation (Integration Test)
-      run: |
-        echo "--------------------------------------"
-        echo "GOAL: Verify Launcher buttons and GUI-Backend handoff."
-        python -m unittest tests/test_full_stack_simulation.py
+        echo "GOAL: Generate coverage.xml and junit.xml"
+        
+        # This command runs all tests, generates XML coverage, and JUnit XML.
+        pytest --cov=. --cov-report=xml --junitxml=junit.xml -o junit_family=legacy tests/
 
     # ------------------------------------------------------------------------
-    # PHASE 4: COVERAGE & PROOF (For JOSS Reviewers)
+    # PHASE 4: CODECOV UPLOADS
     # ------------------------------------------------------------------------
-    - name: Generate Coverage Report
-      run: |
-        echo "--------------------------------------"
-        echo "GOAL: Calculate Test Coverage %"
-        # We run pytest to generate the XML report needed by Codecov
-        # This re-runs the tests, but captures which lines were hit.
-        pytest --cov=. --cov-report=xml tests/
-
-    - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v5
+    - name: Upload Coverage Report (XML)
+      uses: codecov/codecov-action@v3
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./coverage.xml
+        fail_ci_if_error: false
+
+    - name: Upload Test Results to Codecov (JUnit)
+      if: ${{ !cancelled() }}
+      uses: codecov/test-results-action@v1
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./junit.xml
+        # This step uploads test timing and failure data
