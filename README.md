@@ -1,16 +1,18 @@
-<div align="center">
+<p align="center">
   <img src="assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
-  <h1>PICA: Python-based Instrument Control and Automation</h1>
-  <p>A modular software suite for automating laboratory measurements in physics research.</p>
+</p>
+<h1 align="center">PICA: Python-based Instrument Control and Automation</h1>
+<p align="center">
+  A modular software suite for automating laboratory measurements in physics research.
+</p>
   
-  <p>
+<p align="center">
     <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
     <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.9+-brightgreen.svg" alt="Python 3.9+"></a>
     <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/joss_tests.yml"><img src="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/joss_tests.yml/badge.svg" alt="Run PICA JOSS Tests"></a>
     <a href="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation"><img src="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation/branch/main/graph/badge.svg" alt="codecov"></a>
     <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/codeql.yml"><img src="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
-  </p>
-</div>
+</p>
 
 ---
 
@@ -22,9 +24,9 @@ A key architectural feature is the use of isolated process execution for each me
 
 PICA is designed with a clear separation between the user interface (GUI) and the instrument control logic (backend). This modular approach makes the system easy to maintain, extend, and debug.
 
-<div align="center">
+<p align="center">
     <img src="assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800"/>
-</div>
+</p>
 
 ---
 
@@ -148,7 +150,7 @@ This facility provides users with a comprehensive, modular system for characteri
 
 1.  **Clone the Repository**
     ```bash
-    git clone [https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git)
+    git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
     cd PICA-Python-Instrument-Control-and-Automation
     ```
 
@@ -203,17 +205,17 @@ If you use this software in your research, please cite it. This helps to credit 
   year         = 2023,
   publisher    = {GitHub},
   version      = {14.1.0},
-  url          = {[https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation)}
+  url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
 }
-````
+```
 
 Alternatively, you can use the `CITATION.cff` file in the root of the repository for automatic parsing by modern reference managers.
 
------
+---
 
 ## 🤝 How to Contribute
 
-Contributions are welcome\! If you have suggestions for improvements or want to add a new instrument module, please feel free to:
+Contributions are welcome! If you have suggestions for improvements or want to add a new instrument module, please feel free to:
 
 1.  Fork the repository.
 2.  Create a new branch (`git checkout -b feature/YourFeature`).
@@ -223,18 +225,17 @@ Contributions are welcome\! If you have suggestions for improvements or want to 
 
 Please open an issue first to discuss any major changes you would like to make.
 
------
+---
 
 ## Authors & Acknowledgments
 
-\<div align="center"\>
-\<img src="assets/LOGO/UGC\_DAE\_CSR\_NBG.jpeg" alt="UGC DAE CSR Logo" width="150"\>
-\</div\>
+<p align="center">
+  <img src="assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
+</p>
 
-  - **Lead Developer:** **[Prathamesh Deshmukh](https://prathameshdeshmukh.site/)**
-  - **Principal Investigator:** **[Dr. Sudip Mukherjee](https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)**
-  - **Affiliation:** *[UGC-DAE Consortium for Scientific Research, Mumbai Centre](https://www.csr.res.in/Mumbai_Centre)*
+- **Lead Developer:** **[Prathamesh Deshmukh](https://prathameshdeshmukh.site/)**
+- **Principal Investigator:** **[Dr. Sudip Mukherjee](https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)**
+- **Affiliation:** *[UGC-DAE Consortium for Scientific Research, Mumbai Centre](https://www.csr.res.in/Mumbai_Centre)*
 
 #### Funding
-
 Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science & Technology (DST), Government of India.
