@@ -803,11 +803,12 @@ class PlotterApp:
 
         except Exception as e:
             self._handle_load_error(filepath, e)
-            
-                finally:
-                    if self.active_filepath == filepath:
-                        self.start_file_watcher()
-                    self.plot_data()    def append_file_data(self):
+        finally:
+            if self.active_filepath == filepath:
+                self.start_file_watcher()
+            self.plot_data()
+
+    def append_file_data(self):
         """Efficiently reads and appends only new data from the file."""
         if not self.active_filepath or not os.path.exists(
                 self.active_filepath):
