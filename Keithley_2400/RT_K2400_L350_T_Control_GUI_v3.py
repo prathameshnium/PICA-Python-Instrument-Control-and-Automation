@@ -303,7 +303,7 @@ class RT_GUI_Active:
         font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
         ttk.Label(
             header,
-            text=f"K2400 & L350: R-T Sweep (T-Control)",
+            text="K2400 & L350: R-T Sweep (T-Control)",
             style='Header.TLabel',
             font=font_title_main,
             foreground=self.CLR_ACCENT_GOLD).pack(

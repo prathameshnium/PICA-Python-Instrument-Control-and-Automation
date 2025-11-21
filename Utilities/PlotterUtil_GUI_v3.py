@@ -747,7 +747,9 @@ class PlotterApp:
             invalid_raise=False,
             skip_header=header_line_index)
 
-        if not isinstance(data_array, np.ndarray) or data_array.dtype is None or data_array.dtype.names is None:
+        if (not isinstance(data_array, np.ndarray) or 
+                data_array.dtype is None or 
+                data_array.dtype.names is None):
             raise ValueError(
                 "Could not parse data. The file may be empty, have an invalid format, or contain only comments.")
         
@@ -802,12 +804,10 @@ class PlotterApp:
         except Exception as e:
             self._handle_load_error(filepath, e)
             
-        finally:
-            if self.active_filepath == filepath:
-                self.start_file_watcher()
-            self.plot_data()
-
-    def append_file_data(self):
+                finally:
+                    if self.active_filepath == filepath:
+                        self.start_file_watcher()
+                    self.plot_data()    def append_file_data(self):
         """Efficiently reads and appends only new data from the file."""
         if not self.active_filepath or not os.path.exists(
                 self.active_filepath):

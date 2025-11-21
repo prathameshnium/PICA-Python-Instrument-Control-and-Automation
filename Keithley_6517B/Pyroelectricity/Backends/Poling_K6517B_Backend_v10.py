@@ -1,52 +1,54 @@
 # -------------------------------------------------------------------------------
 # Name:        Keithley 6517B Poling
-# Purpose:
-#
+# Purpose:     Apply a poling voltage to a sample.
 # Author:      Prathamesh K Deshmukh
-#
 # Created:     03-03-2024
-
-# updates: V1.3
+# Updated:     22-11-2025 (Refactored for robustness)
 # -------------------------------------------------------------------------------
 
 import time
 from pymeasure.instruments.keithley import Keithley6517B
 
 
-try:
-    keithley = Keithley6517B("GPIB0::27::INSTR")
-    time.sleep(0.5)
-    # keithley.apply_voltage() # Sets up to source current
-    # keithley.source_voltage_range = 20 # Sets the source voltage
-    # range to 200 V
-    # keithley.source_voltage = 20 # Sets the source voltage to 20 V
-    time.sleep(0.5)
-    # keithley.enable_source() # Enables the source output
-    time.sleep(0.5)
-    keithley.source_voltage = 100
-    # keithley.measure_resistance() # Sets up to measure resistance
-    # keithley.ramp_to_voltage(10) # Ramps the voltage to 50 V
-    # print(keithley.resistance) # Prints the resistance in Ohms
-    time.sleep(20)
-    print(f'Current is {(keithley.current)}')
+def main():
+    """
+    Connects to a Keithley 6517B, applies a fixed voltage for a duration,
+    and then safely shuts down.
+    """
+    keithley = None
+    try:
+        # Initialize and configure the instrument
+        keithley = Keithley6517B("GPIB0::27::INSTR")
+        time.sleep(0.5)
 
-    # and disables outpu
-except Exception as e:
-    print(f"error with Keithley6517B  : {e}")
+        # Apply a poling voltage
+        keithley.source_voltage = 100
+        keithley.enable_source()
+        print("Source enabled. Applying 100V for poling.")
+        time.sleep(1)
 
-except KeyboardInterrupt:
-    # keithley.source_voltage = 0 # Ramps the voltage to 50 V
-    keithley.shutdown()  # Ramps the voltage to 0 V
-    print("\n Poling stopped...")
+        # Wait for the poling duration, periodically checking current
+        print("Waiting for poling to complete (20s)... Press Ctrl+C to stop early.")
+        for i in range(20):
+            time.sleep(1)
+            # You can uncomment the next line to monitor current during poling
+            # print(f"  -> Time: {i+1}s, Current: {keithley.current:.3e} A", end='\r')
 
-    time.sleep(0.5)
-    keithley.clear()
-    time.sleep(0.5)
-    keithley.reset()
+        print(f"\nPoling complete. Final current: {keithley.current:.3e} A")
 
-    keithley.shutdown()  # Ramps the current to 0 mA and disables output
+    except KeyboardInterrupt:
+        print("\nPoling stopped by user (Ctrl+C).")
+    except Exception as e:
+        print(f"An error occurred with the Keithley 6517B: {e}")
+    finally:
+        # Guaranteed shutdown logic
+        if keithley:
+            print("Ramping down voltage and shutting down source...")
+            keithley.shutdown()
+            print("Source is off.")
+            # Optional: Reset the instrument to default state
+            keithley.reset()
 
 
-except Exception as e:
-    print(f"error with keithley : {e}")
-    keithley.shutdown()
+if __name__ == "__main__":
+    main()

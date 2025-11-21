@@ -300,7 +300,7 @@ class VT_GUI_Passive:
         header.pack(side='top', fill='x')
         ttk.Label(
             header,
-            text=f"K2400/2182 & L350: R-T (T-Sensing)",
+            text="K2400/2182 & L350: R-T (T-Sensing)",
             style='Header.TLabel',
             font=font_title_main,
             foreground=self.CLR_ACCENT_GOLD).pack(

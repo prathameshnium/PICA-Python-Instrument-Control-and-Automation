@@ -176,7 +176,7 @@ class Keithley6517B_Backend:
         except VisaIOError as e:
             print(f"  [VISA Connection Error] Could not connect. Details: {e}")
             raise ConnectionError(
-                f"Could not connect to Keithley 6517B.\nCheck address and connections.") from e
+                "Could not connect to Keithley 6517B.\nCheck address and connections.") from e
         except Exception as e:
             print(f"  [Unexpected Error] during initialization. Details: {e}")
             raise e
@@ -445,11 +445,12 @@ class HighResistanceIV_GUI:
                 justify='center')
 
         institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 1, 'bold')
-        ttk.Label(
+        info_label = ttk.Label(
             frame,
             text="UGC-DAE Consortium for Scientific Research",
             font=institute_font,
-            background=self.CLR_BG_DARK).grid(
+            background=self.CLR_BG_DARK)
+        info_label.grid(
             row=0,
             column=1,
             padx=10,

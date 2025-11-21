@@ -185,7 +185,7 @@ class RT_GUI_Passive:
 
     def __init__(self, root):
         self.root = root
-        self.root.title(f"K2400 & L350: R-T (T-Sensing)")
+        self.root.title("K2400 & L350: R-T (T-Sensing)")
         self.root.geometry("1600x950")
         self.root.minsize(1400, 800)
         self.root.configure(bg=self.CLR_BG_DARK)

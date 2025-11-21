@@ -86,7 +86,7 @@ def main():
         sleep(1)
         current_values.append(cur * 1e-6)  # Use the actual sourced value
         Volt.append(v_meas)
-        print(f"{cur * 1e-6:.3e} A  {v_meas:.4f} V")
+        print(f"{cur * 1e-6:.3e} A  {v_meas} V")
         i += 1
 
     print("In loop 1")

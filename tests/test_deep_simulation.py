@@ -23,6 +23,8 @@ sys.modules['multiprocessing.queues'] = MagicMock()
 mock_plt = MagicMock()
 mock_fig = MagicMock()
 mock_ax = MagicMock()
+mock_line = MagicMock()
+mock_ax.plot.return_value = [mock_line]
 mock_plt.subplots.return_value = (mock_fig, mock_ax)
 sys.modules['matplotlib'] = MagicMock()
 sys.modules['matplotlib.pyplot'] = mock_plt
@@ -175,7 +177,11 @@ class TestDeepSimulation(unittest.TestCase):
         with patch('pyvisa.ResourceManager') as MockRM, \
                 patch('time.sleep', side_effect=self.get_circuit_breaker(5)):
             spy = MockRM.return_value.open_resource.return_value
-            spy.query.return_value = "1.23,4.56"
+            spy.query.side_effect = [
+                "SRS,SR830,s/n12345,ver1.07",  # *IDN?
+                "15",                         # SENS?
+                "1.23,4.56"                   # SNAP? 3,4
+            ]
             self.run_module_safely(
                 "Lock_in_amplifier.BasicTest_S830_Backend_v1")
 
@@ -183,6 +189,7 @@ class TestDeepSimulation(unittest.TestCase):
         # THIS WAS THE TEST CAUSING THE HANG
         # We suspect input mismatch or resource opening hang.
         with patch('pyvisa.ResourceManager') as MockRM, \
+                patch('pymeasure.instruments.keithley.Keithley2400'), \
                 patch('time.sleep', side_effect=self.get_circuit_breaker(10)):
 
             rm = MockRM.return_value
@@ -200,27 +207,28 @@ class TestDeepSimulation(unittest.TestCase):
                     "Keithley_2400_Keithley_2182.Backends.IV_K2400_K2182_Backend_v1")
 
     def test_09_poling(self):
-        with patch('pyvisa.ResourceManager') as MockRM, \
+        with patch('pymeasure.instruments.keithley.Keithley6517B'), \
                 patch('time.sleep', side_effect=self.get_circuit_breaker(5)):
-            MockRM.return_value.open_resource.return_value
             inputs = ['100', '10', 'y']
             with patch('builtins.input', side_effect=inputs):
                 self.run_module_safely(
                     "Keithley_6517B.Pyroelectricity.Backends.Poling_K6517B_Backend_v10")
 
     def test_10_high_resistance(self):
-        with patch('pyvisa.ResourceManager') as MockRM, \
+        with patch('pymeasure.instruments.keithley.Keithley6517B') as Mock6517, \
                 patch('time.sleep', side_effect=self.get_circuit_breaker(5)):
-            spy = MockRM.return_value.open_resource.return_value
-            spy.query.return_value = "+1.0E+12,0,0"
-            inputs = ['10', '1', 'test_file', 'y']
+            spy = Mock6517.return_value
+            spy.id = "Mocked Keithley 6517B"
+            spy.resistance = 1.23e12  # Provide a mock resistance
+
+            # Correct inputs for: start_v, stop_v, steps, delay, filename
+            inputs = ['-10', '10', '5', '0.1', 'test_file']
+
             with patch('builtins.input', side_effect=inputs), \
-                    patch('pandas.DataFrame.to_csv'):
-                try:
-                    self.run_module_safely(
-                        "Keithley_6517B.High_Resistance.Backends.IV_K6517B_Simple_Backend_v10")
-                except Exception:
-                    pass
+                    patch('builtins.open', mock_open()), \
+                    patch('matplotlib.pyplot.show'):
+                self.run_module_safely(
+                    "Keithley_6517B.High_Resistance.Backends.IV_K6517B_Simple_Backend_v10")
 
     def test_11_gpib_scanner(self):
         with patch('pyvisa.ResourceManager') as MockRM:

@@ -291,7 +291,7 @@ class IV_GUI:
 
         ttk.Label(
             header,
-            text=f"I-V Sweep (K2400 + K2182)",
+            text="I-V Sweep (K2400 + K2182)",
             style='Header.TLabel',
             font=font_title_main,
             foreground=self.CLR_ACCENT_GOLD).pack(
@@ -565,8 +565,9 @@ class IV_GUI:
         """Worker thread function to perform the measurement."""
         try:
             current_setpoint = self.current_points[self.current_step_index]
-            self.root.after(0, lambda: self.log(
-                f"--- Setting current to {current_setpoint:.3e} A ({self.current_step_index + 1}/{len(self.current_points)}) ---"))
+            log_msg = (f"--- Setting current to {current_setpoint:.3e} A "
+                       f"({self.current_step_index + 1}/{len(self.current_points)}) ---")
+            self.root.after(0, lambda: self.log(log_msg))
             self.root.after(0, lambda: self.ax_main.set_title(
                 f"Measuring at {current_setpoint:.3e} A..."))
             self.root.after(0, lambda: self.canvas.draw_idle())

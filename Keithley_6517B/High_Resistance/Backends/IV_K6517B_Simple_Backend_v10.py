@@ -154,7 +154,7 @@ try:
     print(f"Data saved successfully to '{filename}'")
 
 except VisaIOError:
-    print(f"\n[VISA Connection Error]")
+    print("\n[VISA Connection Error]")
     print(f"Could not connect to the instrument at '{VISA_ADDRESS}'.")
     print("Please check the address, cable connections, and if the instrument is on.")
 except ValueError:
