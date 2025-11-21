@@ -75,8 +75,6 @@ class IV_Combined_Backend:
         self.k2182.assert_trigger()
         
         # Wait for measurement
-        # Note: We use a short sleep instead of wait_for_srq to prevent hanging
-        # if the instrument doesn't respond correctly in simulation.
         time.sleep(1) 
         
         try:
