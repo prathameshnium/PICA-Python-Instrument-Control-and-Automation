@@ -29,8 +29,8 @@ dependencies = [
     "matplotlib",
     "pandas",
     "pymeasure",
-    "Pillow",
-    # "gpib-ctypes"
+    "Pillow", # For image handling in GUIs
+    "gpib-ctypes" # Provides a mockable GPIB backend for CI/testing
 ]
 
 [project.urls]

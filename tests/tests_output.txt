@@ -1,1056 +1,1057 @@
-2025-11-21T23:49:18.8627375Z Current runner version: '2.329.0'
-2025-11-21T23:49:18.8651092Z ##[group]Runner Image Provisioner
-2025-11-21T23:49:18.8651915Z Hosted Compute Agent
-2025-11-21T23:49:18.8652490Z Version: 20251016.436
-2025-11-21T23:49:18.8653227Z Commit: 8ab8ac8bfd662a3739dab9fe09456aba92132568
-2025-11-21T23:49:18.8654110Z Build Date: 2025-10-15T20:44:12Z
-2025-11-21T23:49:18.8654723Z ##[endgroup]
-2025-11-21T23:49:18.8655403Z ##[group]Operating System
-2025-11-21T23:49:18.8655955Z Ubuntu
-2025-11-21T23:49:18.8656438Z 24.04.3
-2025-11-21T23:49:18.8656957Z LTS
-2025-11-21T23:49:18.8657462Z ##[endgroup]
-2025-11-21T23:49:18.8657976Z ##[group]Runner Image
-2025-11-21T23:49:18.8658622Z Image: ubuntu-24.04
-2025-11-21T23:49:18.8659166Z Version: 20251112.124.1
-2025-11-21T23:49:18.8660189Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20251112.124/images/ubuntu/Ubuntu2404-Readme.md
-2025-11-21T23:49:18.8661862Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20251112.124
-2025-11-21T23:49:18.8662866Z ##[endgroup]
-2025-11-21T23:49:18.8664448Z ##[group]GITHUB_TOKEN Permissions
-2025-11-21T23:49:18.8666562Z Contents: read
-2025-11-21T23:49:18.8667248Z Metadata: read
-2025-11-21T23:49:18.8667760Z Packages: read
-2025-11-21T23:49:18.8668308Z ##[endgroup]
-2025-11-21T23:49:18.8670451Z Secret source: Actions
-2025-11-21T23:49:18.8671156Z Prepare workflow directory
-2025-11-21T23:49:18.9010239Z Prepare all required actions
-2025-11-21T23:49:18.9049746Z Getting action download info
-2025-11-21T23:49:19.2665407Z Download action repository 'actions/checkout@v3' (SHA:f43a0e5ff2bd294095638e18286ca9a3d1956744)
-2025-11-21T23:49:19.3846769Z Download action repository 'actions/setup-python@v4' (SHA:7f4fc3e22c37d6ff65e88745f38bd3157c663f7c)
-2025-11-21T23:49:19.5797009Z Download action repository 'codecov/codecov-action@v3' (SHA:ab904c41d6ece82784817410c45d8b8c02684457)
-2025-11-21T23:49:20.1039264Z Download action repository 'codecov/test-results-action@v1' (SHA:47f89e9acb64b76debcd5ea40642d25a4adced9f)
-2025-11-21T23:49:20.6773394Z Complete job name: test
-2025-11-21T23:49:20.7580369Z ##[group]Run actions/checkout@v3
-2025-11-21T23:49:20.7582054Z with:
-2025-11-21T23:49:20.7583397Z   repository: prathameshnium/PICA-Python-Instrument-Control-and-Automation
-2025-11-21T23:49:20.7585451Z   token: ***
-2025-11-21T23:49:20.7586254Z   ssh-strict: true
-2025-11-21T23:49:20.7587117Z   persist-credentials: true
-2025-11-21T23:49:20.7588053Z   clean: true
-2025-11-21T23:49:20.7588898Z   sparse-checkout-cone-mode: true
-2025-11-21T23:49:20.7589920Z   fetch-depth: 1
-2025-11-21T23:49:20.7590738Z   fetch-tags: false
-2025-11-21T23:49:20.7591545Z   lfs: false
-2025-11-21T23:49:20.7592315Z   submodules: false
-2025-11-21T23:49:20.7593198Z   set-safe-directory: true
-2025-11-21T23:49:20.7594851Z ##[endgroup]
-2025-11-21T23:49:20.8491802Z Syncing repository: prathameshnium/PICA-Python-Instrument-Control-and-Automation
-2025-11-21T23:49:20.8495594Z ##[group]Getting Git version info
-2025-11-21T23:49:20.8498229Z Working directory is '/home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation'
-2025-11-21T23:49:20.8501287Z [command]/usr/bin/git version
-2025-11-21T23:49:20.8548685Z git version 2.51.2
-2025-11-21T23:49:20.8578201Z ##[endgroup]
-2025-11-21T23:49:20.8593576Z Temporarily overriding HOME='/home/runner/work/_temp/5b49da43-8386-4527-a656-b9b6d6ae7fd9' before making global git config changes
-2025-11-21T23:49:20.8596776Z Adding repository directory to the temporary git global config as a safe directory
-2025-11-21T23:49:20.8600130Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation
-2025-11-21T23:49:20.8637309Z Deleting the contents of '/home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation'
-2025-11-21T23:49:20.8642941Z ##[group]Initializing the repository
-2025-11-21T23:49:20.8647415Z [command]/usr/bin/git init /home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation
-2025-11-21T23:49:20.8741856Z hint: Using 'master' as the name for the initial branch. This default branch name
-2025-11-21T23:49:20.8744621Z hint: is subject to change. To configure the initial branch name to use in all
-2025-11-21T23:49:20.8747326Z hint: of your new repositories, which will suppress this warning, call:
-2025-11-21T23:49:20.8749756Z hint:
-2025-11-21T23:49:20.8751412Z hint: 	git config --global init.defaultBranch <name>
-2025-11-21T23:49:20.8753473Z hint:
-2025-11-21T23:49:20.8755710Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
-2025-11-21T23:49:20.8758877Z hint: 'development'. The just-created branch can be renamed via this command:
-2025-11-21T23:49:20.8761359Z hint:
-2025-11-21T23:49:20.8762592Z hint: 	git branch -m <name>
-2025-11-21T23:49:20.8763973Z hint:
-2025-11-21T23:49:20.8765226Z hint: Disable this message with "git config set advice.defaultBranchName false"
-2025-11-21T23:49:20.8769029Z Initialized empty Git repository in /home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation/.git/
-2025-11-21T23:49:20.8776282Z [command]/usr/bin/git remote add origin https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation
-2025-11-21T23:49:20.8794035Z ##[endgroup]
-2025-11-21T23:49:20.8796790Z ##[group]Disabling automatic garbage collection
-2025-11-21T23:49:20.8799308Z [command]/usr/bin/git config --local gc.auto 0
-2025-11-21T23:49:20.8830536Z ##[endgroup]
-2025-11-21T23:49:20.8832958Z ##[group]Setting up auth
-2025-11-21T23:49:20.8836632Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
-2025-11-21T23:49:20.8870910Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
-2025-11-21T23:49:20.9240756Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
-2025-11-21T23:49:20.9275480Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
-2025-11-21T23:49:20.9523153Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
-2025-11-21T23:49:20.9558335Z ##[endgroup]
-2025-11-21T23:49:20.9560879Z ##[group]Fetching the repository
-2025-11-21T23:49:20.9569969Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --progress --no-recurse-submodules --depth=1 origin +03cf7e2ff99dcac97c79846aa9297827410f3a92:refs/remotes/origin/main
-2025-11-21T23:49:21.1725687Z remote: Enumerating objects: 120, done.        
-2025-11-21T23:49:21.1728460Z remote: Counting objects:   0% (1/120)        
-2025-11-21T23:49:21.1730909Z remote: Counting objects:   1% (2/120)        
-2025-11-21T23:49:21.1732944Z remote: Counting objects:   2% (3/120)        
-2025-11-21T23:49:21.1735386Z remote: Counting objects:   3% (4/120)        
-2025-11-21T23:49:21.1736883Z remote: Counting objects:   4% (5/120)        
-2025-11-21T23:49:21.1738870Z remote: Counting objects:   5% (6/120)        
-2025-11-21T23:49:21.1740492Z remote: Counting objects:   6% (8/120)        
-2025-11-21T23:49:21.1741666Z remote: Counting objects:   7% (9/120)        
-2025-11-21T23:49:21.1742827Z remote: Counting objects:   8% (10/120)        
-2025-11-21T23:49:21.1744211Z remote: Counting objects:   9% (11/120)        
-2025-11-21T23:49:21.1745415Z remote: Counting objects:  10% (12/120)        
-2025-11-21T23:49:21.1746591Z remote: Counting objects:  11% (14/120)        
-2025-11-21T23:49:21.1747771Z remote: Counting objects:  12% (15/120)        
-2025-11-21T23:49:21.1748946Z remote: Counting objects:  13% (16/120)        
-2025-11-21T23:49:21.1750126Z remote: Counting objects:  14% (17/120)        
-2025-11-21T23:49:21.1751302Z remote: Counting objects:  15% (18/120)        
-2025-11-21T23:49:21.1752803Z remote: Counting objects:  16% (20/120)        
-2025-11-21T23:49:21.1754282Z remote: Counting objects:  17% (21/120)        
-2025-11-21T23:49:21.1755487Z remote: Counting objects:  18% (22/120)        
-2025-11-21T23:49:21.1756662Z remote: Counting objects:  19% (23/120)        
-2025-11-21T23:49:21.1757832Z remote: Counting objects:  20% (24/120)        
-2025-11-21T23:49:21.1759000Z remote: Counting objects:  21% (26/120)        
-2025-11-21T23:49:21.1760166Z remote: Counting objects:  22% (27/120)        
-2025-11-21T23:49:21.1761364Z remote: Counting objects:  23% (28/120)        
-2025-11-21T23:49:21.1762517Z remote: Counting objects:  24% (29/120)        
-2025-11-21T23:49:21.1763874Z remote: Counting objects:  25% (30/120)        
-2025-11-21T23:49:21.1765067Z remote: Counting objects:  26% (32/120)        
-2025-11-21T23:49:21.1766233Z remote: Counting objects:  27% (33/120)        
-2025-11-21T23:49:21.1767399Z remote: Counting objects:  28% (34/120)        
-2025-11-21T23:49:21.1768562Z remote: Counting objects:  29% (35/120)        
-2025-11-21T23:49:21.1769763Z remote: Counting objects:  30% (36/120)        
-2025-11-21T23:49:21.1770944Z remote: Counting objects:  31% (38/120)        
-2025-11-21T23:49:21.1772106Z remote: Counting objects:  32% (39/120)        
-2025-11-21T23:49:21.1773264Z remote: Counting objects:  33% (40/120)        
-2025-11-21T23:49:21.1774693Z remote: Counting objects:  34% (41/120)        
-2025-11-21T23:49:21.1775865Z remote: Counting objects:  35% (42/120)        
-2025-11-21T23:49:21.1777039Z remote: Counting objects:  36% (44/120)        
-2025-11-21T23:49:21.1778196Z remote: Counting objects:  37% (45/120)        
-2025-11-21T23:49:21.1779362Z remote: Counting objects:  38% (46/120)        
-2025-11-21T23:49:21.1780538Z remote: Counting objects:  39% (47/120)        
-2025-11-21T23:49:21.1781690Z remote: Counting objects:  40% (48/120)        
-2025-11-21T23:49:21.1782856Z remote: Counting objects:  41% (50/120)        
-2025-11-21T23:49:21.1784295Z remote: Counting objects:  42% (51/120)        
-2025-11-21T23:49:21.1785674Z remote: Counting objects:  43% (52/120)        
-2025-11-21T23:49:21.1786853Z remote: Counting objects:  44% (53/120)        
-2025-11-21T23:49:21.1788036Z remote: Counting objects:  45% (54/120)        
-2025-11-21T23:49:21.1789209Z remote: Counting objects:  46% (56/120)        
-2025-11-21T23:49:21.1790364Z remote: Counting objects:  47% (57/120)        
-2025-11-21T23:49:21.1791525Z remote: Counting objects:  48% (58/120)        
-2025-11-21T23:49:21.1792679Z remote: Counting objects:  49% (59/120)        
-2025-11-21T23:49:21.1794006Z remote: Counting objects:  50% (60/120)        
-2025-11-21T23:49:21.1795170Z remote: Counting objects:  51% (62/120)        
-2025-11-21T23:49:21.1796329Z remote: Counting objects:  52% (63/120)        
-2025-11-21T23:49:21.1797485Z remote: Counting objects:  53% (64/120)        
-2025-11-21T23:49:21.1798636Z remote: Counting objects:  54% (65/120)        
-2025-11-21T23:49:21.1799804Z remote: Counting objects:  55% (66/120)        
-2025-11-21T23:49:21.1800978Z remote: Counting objects:  56% (68/120)        
-2025-11-21T23:49:21.1802140Z remote: Counting objects:  57% (69/120)        
-2025-11-21T23:49:21.1803296Z remote: Counting objects:  58% (70/120)        
-2025-11-21T23:49:21.1804553Z remote: Counting objects:  59% (71/120)        
-2025-11-21T23:49:21.1805697Z remote: Counting objects:  60% (72/120)        
-2025-11-21T23:49:21.1806837Z remote: Counting objects:  61% (74/120)        
-2025-11-21T23:49:21.1807986Z remote: Counting objects:  62% (75/120)        
-2025-11-21T23:49:21.1809134Z remote: Counting objects:  63% (76/120)        
-2025-11-21T23:49:21.1810298Z remote: Counting objects:  64% (77/120)        
-2025-11-21T23:49:21.1811443Z remote: Counting objects:  65% (78/120)        
-2025-11-21T23:49:21.1812593Z remote: Counting objects:  66% (80/120)        
-2025-11-21T23:49:21.1813838Z remote: Counting objects:  67% (81/120)        
-2025-11-21T23:49:21.1815106Z remote: Counting objects:  68% (82/120)        
-2025-11-21T23:49:21.1816781Z remote: Counting objects:  69% (83/120)        
-2025-11-21T23:49:21.1819015Z remote: Counting objects:  70% (84/120)        
-2025-11-21T23:49:21.1820211Z remote: Counting objects:  71% (86/120)        
-2025-11-21T23:49:21.1821372Z remote: Counting objects:  72% (87/120)        
-2025-11-21T23:49:21.1822523Z remote: Counting objects:  73% (88/120)        
-2025-11-21T23:49:21.1823810Z remote: Counting objects:  74% (89/120)        
-2025-11-21T23:49:21.1824998Z remote: Counting objects:  75% (90/120)        
-2025-11-21T23:49:21.1826163Z remote: Counting objects:  76% (92/120)        
-2025-11-21T23:49:21.1827363Z remote: Counting objects:  77% (93/120)        
-2025-11-21T23:49:21.1829106Z remote: Counting objects:  78% (94/120)        
-2025-11-21T23:49:21.1830438Z remote: Counting objects:  79% (95/120)        
-2025-11-21T23:49:21.1831605Z remote: Counting objects:  80% (96/120)        
-2025-11-21T23:49:21.1832763Z remote: Counting objects:  81% (98/120)        
-2025-11-21T23:49:21.1834057Z remote: Counting objects:  82% (99/120)        
-2025-11-21T23:49:21.1835271Z remote: Counting objects:  83% (100/120)        
-2025-11-21T23:49:21.1836992Z remote: Counting objects:  84% (101/120)        
-2025-11-21T23:49:21.1838252Z remote: Counting objects:  85% (102/120)        
-2025-11-21T23:49:21.1839436Z remote: Counting objects:  86% (104/120)        
-2025-11-21T23:49:21.1840623Z remote: Counting objects:  87% (105/120)        
-2025-11-21T23:49:21.1841791Z remote: Counting objects:  88% (106/120)        
-2025-11-21T23:49:21.1842954Z remote: Counting objects:  89% (107/120)        
-2025-11-21T23:49:21.1844372Z remote: Counting objects:  90% (108/120)        
-2025-11-21T23:49:21.1845554Z remote: Counting objects:  91% (110/120)        
-2025-11-21T23:49:21.1846726Z remote: Counting objects:  92% (111/120)        
-2025-11-21T23:49:21.1847977Z remote: Counting objects:  93% (112/120)        
-2025-11-21T23:49:21.1849131Z remote: Counting objects:  94% (113/120)        
-2025-11-21T23:49:21.1850304Z remote: Counting objects:  95% (114/120)        
-2025-11-21T23:49:21.1851663Z remote: Counting objects:  96% (116/120)        
-2025-11-21T23:49:21.1852840Z remote: Counting objects:  97% (117/120)        
-2025-11-21T23:49:21.1854122Z remote: Counting objects:  98% (118/120)        
-2025-11-21T23:49:21.1855267Z remote: Counting objects:  99% (119/120)        
-2025-11-21T23:49:21.1856420Z remote: Counting objects: 100% (120/120)        
-2025-11-21T23:49:21.1857675Z remote: Counting objects: 100% (120/120), done.        
-2025-11-21T23:49:21.1858919Z remote: Compressing objects:   0% (1/114)        
-2025-11-21T23:49:21.1860114Z remote: Compressing objects:   1% (2/114)        
-2025-11-21T23:49:21.1861307Z remote: Compressing objects:   2% (3/114)        
-2025-11-21T23:49:21.1862487Z remote: Compressing objects:   3% (4/114)        
-2025-11-21T23:49:21.1863830Z remote: Compressing objects:   4% (5/114)        
-2025-11-21T23:49:21.1865028Z remote: Compressing objects:   5% (6/114)        
-2025-11-21T23:49:21.1866211Z remote: Compressing objects:   6% (7/114)        
-2025-11-21T23:49:21.1867435Z remote: Compressing objects:   7% (8/114)        
-2025-11-21T23:49:21.1868622Z remote: Compressing objects:   8% (10/114)        
-2025-11-21T23:49:21.1870127Z remote: Compressing objects:   9% (11/114)        
-2025-11-21T23:49:21.1871878Z remote: Compressing objects:  10% (12/114)        
-2025-11-21T23:49:21.1873129Z remote: Compressing objects:  11% (13/114)        
-2025-11-21T23:49:21.1874477Z remote: Compressing objects:  12% (14/114)        
-2025-11-21T23:49:21.1875683Z remote: Compressing objects:  13% (15/114)        
-2025-11-21T23:49:21.1876875Z remote: Compressing objects:  14% (16/114)        
-2025-11-21T23:49:21.1878067Z remote: Compressing objects:  15% (18/114)        
-2025-11-21T23:49:21.1879254Z remote: Compressing objects:  16% (19/114)        
-2025-11-21T23:49:21.1880464Z remote: Compressing objects:  17% (20/114)        
-2025-11-21T23:49:21.1881651Z remote: Compressing objects:  18% (21/114)        
-2025-11-21T23:49:21.1882842Z remote: Compressing objects:  19% (22/114)        
-2025-11-21T23:49:21.1884396Z remote: Compressing objects:  20% (23/114)        
-2025-11-21T23:49:21.1885627Z remote: Compressing objects:  21% (24/114)        
-2025-11-21T23:49:21.1894076Z remote: Compressing objects:  22% (26/114)        
-2025-11-21T23:49:21.1920047Z remote: Compressing objects:  23% (27/114)        
-2025-11-21T23:49:21.1929055Z remote: Compressing objects:  24% (28/114)        
-2025-11-21T23:49:21.1971001Z remote: Compressing objects:  25% (29/114)        
-2025-11-21T23:49:21.2006284Z remote: Compressing objects:  26% (30/114)        
-2025-11-21T23:49:21.2033018Z remote: Compressing objects:  27% (31/114)        
-2025-11-21T23:49:21.2041659Z remote: Compressing objects:  28% (32/114)        
-2025-11-21T23:49:21.2046191Z remote: Compressing objects:  29% (34/114)        
-2025-11-21T23:49:21.2051647Z remote: Compressing objects:  30% (35/114)        
-2025-11-21T23:49:21.2055298Z remote: Compressing objects:  31% (36/114)        
-2025-11-21T23:49:21.2058400Z remote: Compressing objects:  32% (37/114)        
-2025-11-21T23:49:21.2078142Z remote: Compressing objects:  33% (38/114)        
-2025-11-21T23:49:21.2090396Z remote: Compressing objects:  34% (39/114)        
-2025-11-21T23:49:21.2107657Z remote: Compressing objects:  35% (40/114)        
-2025-11-21T23:49:21.2111948Z remote: Compressing objects:  36% (42/114)        
-2025-11-21T23:49:21.2117985Z remote: Compressing objects:  37% (43/114)        
-2025-11-21T23:49:21.2129000Z remote: Compressing objects:  38% (44/114)        
-2025-11-21T23:49:21.2130321Z remote: Compressing objects:  39% (45/114)        
-2025-11-21T23:49:21.2131631Z remote: Compressing objects:  40% (46/114)        
-2025-11-21T23:49:21.2132944Z remote: Compressing objects:  41% (47/114)        
-2025-11-21T23:49:21.2141647Z remote: Compressing objects:  42% (48/114)        
-2025-11-21T23:49:21.2142900Z remote: Compressing objects:  43% (50/114)        
-2025-11-21T23:49:21.2144292Z remote: Compressing objects:  44% (51/114)        
-2025-11-21T23:49:21.2145776Z remote: Compressing objects:  45% (52/114)        
-2025-11-21T23:49:21.2147009Z remote: Compressing objects:  46% (53/114)        
-2025-11-21T23:49:21.2148228Z remote: Compressing objects:  47% (54/114)        
-2025-11-21T23:49:21.2149421Z remote: Compressing objects:  48% (55/114)        
-2025-11-21T23:49:21.2150620Z remote: Compressing objects:  49% (56/114)        
-2025-11-21T23:49:21.2214128Z remote: Compressing objects:  50% (57/114)        
-2025-11-21T23:49:21.2215693Z remote: Compressing objects:  51% (59/114)        
-2025-11-21T23:49:21.2217196Z remote: Compressing objects:  52% (60/114)        
-2025-11-21T23:49:21.2218692Z remote: Compressing objects:  53% (61/114)        
-2025-11-21T23:49:21.2274655Z remote: Compressing objects:  54% (62/114)        
-2025-11-21T23:49:21.2318966Z remote: Compressing objects:  55% (63/114)        
-2025-11-21T23:49:21.2325519Z remote: Compressing objects:  56% (64/114)        
-2025-11-21T23:49:21.2382038Z remote: Compressing objects:  57% (65/114)        
-2025-11-21T23:49:21.2384700Z remote: Compressing objects:  58% (67/114)        
-2025-11-21T23:49:21.2386297Z remote: Compressing objects:  59% (68/114)        
-2025-11-21T23:49:21.2387843Z remote: Compressing objects:  60% (69/114)        
-2025-11-21T23:49:21.2389384Z remote: Compressing objects:  61% (70/114)        
-2025-11-21T23:49:21.2390980Z remote: Compressing objects:  62% (71/114)        
-2025-11-21T23:49:21.2392410Z remote: Compressing objects:  63% (72/114)        
-2025-11-21T23:49:21.2393984Z remote: Compressing objects:  64% (73/114)        
-2025-11-21T23:49:21.2395422Z remote: Compressing objects:  65% (75/114)        
-2025-11-21T23:49:21.2396848Z remote: Compressing objects:  66% (76/114)        
-2025-11-21T23:49:21.2712376Z remote: Compressing objects:  67% (77/114)        
-2025-11-21T23:49:21.2714983Z remote: Compressing objects:  68% (78/114)        
-2025-11-21T23:49:21.2716555Z remote: Compressing objects:  69% (79/114)        
-2025-11-21T23:49:21.2718449Z remote: Compressing objects:  70% (80/114)        
-2025-11-21T23:49:21.2720680Z remote: Compressing objects:  71% (81/114)        
-2025-11-21T23:49:21.2722558Z remote: Compressing objects:  72% (83/114)        
-2025-11-21T23:49:21.2724286Z remote: Compressing objects:  73% (84/114)        
-2025-11-21T23:49:21.2726355Z remote: Compressing objects:  74% (85/114)        
-2025-11-21T23:49:21.2728505Z remote: Compressing objects:  75% (86/114)        
-2025-11-21T23:49:21.2730631Z remote: Compressing objects:  76% (87/114)        
-2025-11-21T23:49:21.2732540Z remote: Compressing objects:  77% (88/114)        
-2025-11-21T23:49:21.2734072Z remote: Compressing objects:  78% (89/114)        
-2025-11-21T23:49:21.2735330Z remote: Compressing objects:  79% (91/114)        
-2025-11-21T23:49:21.2736709Z remote: Compressing objects:  80% (92/114)        
-2025-11-21T23:49:21.2737941Z remote: Compressing objects:  81% (93/114)        
-2025-11-21T23:49:21.2739148Z remote: Compressing objects:  82% (94/114)        
-2025-11-21T23:49:21.2740346Z remote: Compressing objects:  83% (95/114)        
-2025-11-21T23:49:21.2741575Z remote: Compressing objects:  84% (96/114)        
-2025-11-21T23:49:21.2742773Z remote: Compressing objects:  85% (97/114)        
-2025-11-21T23:49:21.2744209Z remote: Compressing objects:  86% (99/114)        
-2025-11-21T23:49:21.2745426Z remote: Compressing objects:  87% (100/114)        
-2025-11-21T23:49:21.2746617Z remote: Compressing objects:  88% (101/114)        
-2025-11-21T23:49:21.2747804Z remote: Compressing objects:  89% (102/114)        
-2025-11-21T23:49:21.2749021Z remote: Compressing objects:  90% (103/114)        
-2025-11-21T23:49:21.2750210Z remote: Compressing objects:  91% (104/114)        
-2025-11-21T23:49:21.2751407Z remote: Compressing objects:  92% (105/114)        
-2025-11-21T23:49:21.2752590Z remote: Compressing objects:  93% (107/114)        
-2025-11-21T23:49:21.2753976Z remote: Compressing objects:  94% (108/114)        
-2025-11-21T23:49:21.2755192Z remote: Compressing objects:  95% (109/114)        
-2025-11-21T23:49:21.2756586Z remote: Compressing objects:  96% (110/114)        
-2025-11-21T23:49:21.2757805Z remote: Compressing objects:  97% (111/114)        
-2025-11-21T23:49:21.2759011Z remote: Compressing objects:  98% (112/114)        
-2025-11-21T23:49:21.2760209Z remote: Compressing objects:  99% (113/114)        
-2025-11-21T23:49:21.2761420Z remote: Compressing objects: 100% (114/114)        
-2025-11-21T23:49:21.2762723Z remote: Compressing objects: 100% (114/114), done.        
-2025-11-21T23:49:21.2764944Z Receiving objects:   0% (1/120)
-2025-11-21T23:49:21.2769580Z Receiving objects:   1% (2/120)
-2025-11-21T23:49:21.2771016Z Receiving objects:   2% (3/120)
-2025-11-21T23:49:21.2772623Z Receiving objects:   3% (4/120)
-2025-11-21T23:49:21.2774382Z Receiving objects:   4% (5/120)
-2025-11-21T23:49:21.2837701Z Receiving objects:   5% (6/120)
-2025-11-21T23:49:21.2839131Z Receiving objects:   6% (8/120)
-2025-11-21T23:49:21.2840136Z Receiving objects:   7% (9/120)
-2025-11-21T23:49:21.2841125Z Receiving objects:   8% (10/120)
-2025-11-21T23:49:21.2842189Z Receiving objects:   9% (11/120)
-2025-11-21T23:49:21.2843175Z Receiving objects:  10% (12/120)
-2025-11-21T23:49:21.2844304Z Receiving objects:  11% (14/120)
-2025-11-21T23:49:21.2845329Z Receiving objects:  12% (15/120)
-2025-11-21T23:49:21.2846314Z Receiving objects:  13% (16/120)
-2025-11-21T23:49:21.2847294Z Receiving objects:  14% (17/120)
-2025-11-21T23:49:21.2848272Z Receiving objects:  15% (18/120)
-2025-11-21T23:49:21.2849249Z Receiving objects:  16% (20/120)
-2025-11-21T23:49:21.2850276Z Receiving objects:  17% (21/120)
-2025-11-21T23:49:21.2939582Z Receiving objects:  18% (22/120)
-2025-11-21T23:49:21.2941456Z Receiving objects:  19% (23/120)
-2025-11-21T23:49:21.2952699Z Receiving objects:  20% (24/120)
-2025-11-21T23:49:21.2955433Z Receiving objects:  21% (26/120)
-2025-11-21T23:49:21.2957190Z Receiving objects:  22% (27/120)
-2025-11-21T23:49:21.2958701Z Receiving objects:  23% (28/120)
-2025-11-21T23:49:21.2960061Z Receiving objects:  24% (29/120)
-2025-11-21T23:49:21.2961298Z Receiving objects:  25% (30/120)
-2025-11-21T23:49:21.2962788Z Receiving objects:  26% (32/120)
-2025-11-21T23:49:21.2964044Z Receiving objects:  27% (33/120)
-2025-11-21T23:49:21.2965050Z Receiving objects:  28% (34/120)
-2025-11-21T23:49:21.2966040Z Receiving objects:  29% (35/120)
-2025-11-21T23:49:21.2968133Z Receiving objects:  30% (36/120)
-2025-11-21T23:49:21.2969837Z Receiving objects:  31% (38/120)
-2025-11-21T23:49:21.2971417Z Receiving objects:  32% (39/120)
-2025-11-21T23:49:21.2974379Z Receiving objects:  33% (40/120)
-2025-11-21T23:49:21.2976001Z Receiving objects:  34% (41/120)
-2025-11-21T23:49:21.2977797Z Receiving objects:  35% (42/120)
-2025-11-21T23:49:21.2979259Z Receiving objects:  36% (44/120)
-2025-11-21T23:49:21.2980732Z Receiving objects:  37% (45/120)
-2025-11-21T23:49:21.2981755Z Receiving objects:  38% (46/120)
-2025-11-21T23:49:21.2982723Z Receiving objects:  39% (47/120)
-2025-11-21T23:49:21.2983981Z Receiving objects:  40% (48/120)
-2025-11-21T23:49:21.2984984Z Receiving objects:  41% (50/120)
-2025-11-21T23:49:21.2986012Z Receiving objects:  42% (51/120)
-2025-11-21T23:49:21.2987126Z Receiving objects:  43% (52/120)
-2025-11-21T23:49:21.2988718Z Receiving objects:  44% (53/120)
-2025-11-21T23:49:21.2990506Z Receiving objects:  45% (54/120)
-2025-11-21T23:49:21.2991550Z Receiving objects:  46% (56/120)
-2025-11-21T23:49:21.2992557Z Receiving objects:  47% (57/120)
-2025-11-21T23:49:21.2993523Z Receiving objects:  48% (58/120)
-2025-11-21T23:49:21.2994634Z Receiving objects:  49% (59/120)
-2025-11-21T23:49:21.3171605Z Receiving objects:  50% (60/120)
-2025-11-21T23:49:21.3173039Z Receiving objects:  51% (62/120)
-2025-11-21T23:49:21.3174398Z Receiving objects:  52% (63/120)
-2025-11-21T23:49:21.3175477Z Receiving objects:  53% (64/120)
-2025-11-21T23:49:21.3176509Z Receiving objects:  54% (65/120)
-2025-11-21T23:49:21.3187297Z Receiving objects:  55% (66/120)
-2025-11-21T23:49:21.3188636Z Receiving objects:  56% (68/120)
-2025-11-21T23:49:21.3189617Z Receiving objects:  57% (69/120)
-2025-11-21T23:49:21.3439709Z Receiving objects:  58% (70/120)
-2025-11-21T23:49:21.3673932Z Receiving objects:  59% (71/120)
-2025-11-21T23:49:21.3690181Z Receiving objects:  60% (72/120)
-2025-11-21T23:49:21.3969098Z Receiving objects:  61% (74/120)
-2025-11-21T23:49:21.4106999Z Receiving objects:  62% (75/120)
-2025-11-21T23:49:21.4199851Z Receiving objects:  63% (76/120)
-2025-11-21T23:49:21.4209415Z Receiving objects:  64% (77/120)
-2025-11-21T23:49:21.4248604Z Receiving objects:  65% (78/120)
-2025-11-21T23:49:21.5751388Z Receiving objects:  66% (80/120)
-2025-11-21T23:49:21.7459350Z Receiving objects:  67% (81/120)
-2025-11-21T23:49:21.7875579Z Receiving objects:  68% (82/120)
-2025-11-21T23:49:21.8359462Z Receiving objects:  69% (83/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:21.9096235Z Receiving objects:  70% (84/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.0589548Z Receiving objects:  71% (86/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1123159Z Receiving objects:  72% (87/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1147836Z Receiving objects:  73% (88/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1157918Z Receiving objects:  74% (89/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1276538Z Receiving objects:  75% (90/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1286988Z Receiving objects:  76% (92/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1288061Z remote: Total 120 (delta 16), reused 54 (delta 2), pack-reused 0 (from 0)        
-2025-11-21T23:49:22.1292123Z Receiving objects:  77% (93/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1296835Z Receiving objects:  78% (94/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1298085Z Receiving objects:  79% (95/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1298756Z Receiving objects:  80% (96/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1301347Z Receiving objects:  81% (98/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1302290Z Receiving objects:  82% (99/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1305067Z Receiving objects:  83% (100/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1309029Z Receiving objects:  84% (101/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1309666Z Receiving objects:  85% (102/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1310254Z Receiving objects:  86% (104/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1310830Z Receiving objects:  87% (105/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1311384Z Receiving objects:  88% (106/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1311957Z Receiving objects:  89% (107/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1312554Z Receiving objects:  90% (108/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1313110Z Receiving objects:  91% (110/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1313880Z Receiving objects:  92% (111/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1314452Z Receiving objects:  93% (112/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1315005Z Receiving objects:  94% (113/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1315767Z Receiving objects:  95% (114/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1316354Z Receiving objects:  96% (116/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1316926Z Receiving objects:  97% (117/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1317501Z Receiving objects:  98% (118/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1320545Z Receiving objects:  99% (119/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1321252Z Receiving objects: 100% (120/120), 21.82 MiB | 43.13 MiB/s
-2025-11-21T23:49:22.1322054Z Receiving objects: 100% (120/120), 41.86 MiB | 48.88 MiB/s, done.
-2025-11-21T23:49:22.1328712Z Resolving deltas:   0% (0/16)
-2025-11-21T23:49:22.1329227Z Resolving deltas:   6% (1/16)
-2025-11-21T23:49:22.1330910Z Resolving deltas:  12% (2/16)
-2025-11-21T23:49:22.1337201Z Resolving deltas:  18% (3/16)
-2025-11-21T23:49:22.1338113Z Resolving deltas:  25% (4/16)
-2025-11-21T23:49:22.1339117Z Resolving deltas:  31% (5/16)
-2025-11-21T23:49:22.1339816Z Resolving deltas:  37% (6/16)
-2025-11-21T23:49:22.1340767Z Resolving deltas:  43% (7/16)
-2025-11-21T23:49:22.1341669Z Resolving deltas:  50% (8/16)
-2025-11-21T23:49:22.1342077Z Resolving deltas:  56% (9/16)
-2025-11-21T23:49:22.1342380Z Resolving deltas:  62% (10/16)
-2025-11-21T23:49:22.1342625Z Resolving deltas:  68% (11/16)
-2025-11-21T23:49:22.1342853Z Resolving deltas:  75% (12/16)
-2025-11-21T23:49:22.1343080Z Resolving deltas:  81% (13/16)
-2025-11-21T23:49:22.1343299Z Resolving deltas:  87% (14/16)
-2025-11-21T23:49:22.1707570Z Resolving deltas:  93% (15/16)
-2025-11-21T23:49:22.1708284Z Resolving deltas: 100% (16/16)
-2025-11-21T23:49:22.1708559Z Resolving deltas: 100% (16/16), done.
-2025-11-21T23:49:22.1927389Z From https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation
-2025-11-21T23:49:22.1928100Z  * [new ref]         03cf7e2ff99dcac97c79846aa9297827410f3a92 -> origin/main
-2025-11-21T23:49:22.1961626Z ##[endgroup]
-2025-11-21T23:49:22.1962182Z ##[group]Determining the checkout info
-2025-11-21T23:49:22.1963536Z ##[endgroup]
-2025-11-21T23:49:22.1964245Z ##[group]Checking out the ref
-2025-11-21T23:49:22.1967933Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
-2025-11-21T23:49:22.4183213Z Switched to a new branch 'main'
-2025-11-21T23:49:22.4184668Z branch 'main' set up to track 'origin/main'.
-2025-11-21T23:49:22.4209539Z ##[endgroup]
-2025-11-21T23:49:22.4246290Z [command]/usr/bin/git log -1 --format='%H'
-2025-11-21T23:49:22.4268660Z '03cf7e2ff99dcac97c79846aa9297827410f3a92'
-2025-11-21T23:49:22.4486425Z ##[group]Run actions/setup-python@v4
-2025-11-21T23:49:22.4486700Z with:
-2025-11-21T23:49:22.4486873Z   python-version: 3.10
-2025-11-21T23:49:22.4487068Z   check-latest: false
-2025-11-21T23:49:22.4487396Z   token: ***
-2025-11-21T23:49:22.4487582Z   update-environment: true
-2025-11-21T23:49:22.4487796Z   allow-prereleases: false
-2025-11-21T23:49:22.4487993Z ##[endgroup]
-2025-11-21T23:49:22.6176654Z ##[group]Installed versions
-2025-11-21T23:49:22.6299240Z Successfully set up CPython (3.10.19)
-2025-11-21T23:49:22.6300625Z ##[endgroup]
-2025-11-21T23:49:22.6417832Z ##[group]Run python -m pip install --upgrade pip
-2025-11-21T23:49:22.6418232Z [36;1mpython -m pip install --upgrade pip[0m
-2025-11-21T23:49:22.6418517Z [36;1m# Install PICA in editable mode[0m
-2025-11-21T23:49:22.6418766Z [36;1mpip install -e .[0m
-2025-11-21T23:49:22.6419026Z [36;1m# Install Testing, Linting, and Coverage tools[0m
-2025-11-21T23:49:22.6419334Z [36;1mpip install pytest flake8 pytest-cov[0m
-2025-11-21T23:49:22.6465588Z shell: /usr/bin/bash -e {0}
-2025-11-21T23:49:22.6465816Z env:
-2025-11-21T23:49:22.6466057Z   pythonLocation: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:49:22.6466481Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib/pkgconfig
-2025-11-21T23:49:22.6466868Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:49:22.6467210Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:49:22.6467542Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:49:22.6467935Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib
-2025-11-21T23:49:22.6468220Z ##[endgroup]
-2025-11-21T23:49:25.0790888Z Requirement already satisfied: pip in /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages (25.3)
-2025-11-21T23:49:25.7916093Z Obtaining file:///home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation
-2025-11-21T23:49:25.7936902Z   Installing build dependencies: started
-2025-11-21T23:49:27.0325453Z   Installing build dependencies: finished with status 'done'
-2025-11-21T23:49:27.0332628Z   Checking if build backend supports build_editable: started
-2025-11-21T23:49:27.3288026Z   Checking if build backend supports build_editable: finished with status 'done'
-2025-11-21T23:49:27.3295926Z   Getting requirements to build editable: started
-2025-11-21T23:49:27.6492655Z   Getting requirements to build editable: finished with status 'done'
-2025-11-21T23:49:27.6502014Z   Preparing editable metadata (pyproject.toml): started
-2025-11-21T23:49:27.8407180Z   Preparing editable metadata (pyproject.toml): finished with status 'done'
-2025-11-21T23:49:27.9570109Z Collecting pyvisa (from pica-automation==14.1.0)
-2025-11-21T23:49:28.0447616Z   Downloading pyvisa-1.15.0-py3-none-any.whl.metadata (7.1 kB)
-2025-11-21T23:49:28.0931052Z Collecting pyvisa-py (from pica-automation==14.1.0)
-2025-11-21T23:49:28.1084514Z   Downloading pyvisa_py-0.8.1-py3-none-any.whl.metadata (6.8 kB)
-2025-11-21T23:49:28.4025277Z Collecting numpy (from pica-automation==14.1.0)
-2025-11-21T23:49:28.4170209Z   Downloading numpy-2.2.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (62 kB)
-2025-11-21T23:49:28.6104074Z Collecting matplotlib (from pica-automation==14.1.0)
-2025-11-21T23:49:28.6251256Z   Downloading matplotlib-3.10.7-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (11 kB)
-2025-11-21T23:49:28.7782916Z Collecting pandas (from pica-automation==14.1.0)
-2025-11-21T23:49:28.7928068Z   Downloading pandas-2.3.3-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (91 kB)
-2025-11-21T23:49:28.8927907Z Collecting pymeasure (from pica-automation==14.1.0)
-2025-11-21T23:49:28.9089915Z   Downloading PyMeasure-0.15.0-py3-none-any.whl.metadata (44 kB)
-2025-11-21T23:49:29.1296224Z Collecting Pillow (from pica-automation==14.1.0)
-2025-11-21T23:49:29.1451600Z   Downloading pillow-12.0.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (8.8 kB)
-2025-11-21T23:49:29.2437551Z Collecting contourpy>=1.0.1 (from matplotlib->pica-automation==14.1.0)
-2025-11-21T23:49:29.2585040Z   Downloading contourpy-1.3.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (5.5 kB)
-2025-11-21T23:49:29.2861410Z Collecting cycler>=0.10 (from matplotlib->pica-automation==14.1.0)
-2025-11-21T23:49:29.3002558Z   Downloading cycler-0.12.1-py3-none-any.whl.metadata (3.8 kB)
-2025-11-21T23:49:29.4957867Z Collecting fonttools>=4.22.0 (from matplotlib->pica-automation==14.1.0)
-2025-11-21T23:49:29.5099574Z   Downloading fonttools-4.60.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (112 kB)
-2025-11-21T23:49:29.6506456Z Collecting kiwisolver>=1.3.1 (from matplotlib->pica-automation==14.1.0)
-2025-11-21T23:49:29.6648522Z   Downloading kiwisolver-1.4.9-cp310-cp310-manylinux_2_12_x86_64.manylinux2010_x86_64.whl.metadata (6.3 kB)
-2025-11-21T23:49:29.7050343Z Collecting packaging>=20.0 (from matplotlib->pica-automation==14.1.0)
-2025-11-21T23:49:29.7303576Z   Downloading packaging-25.0-py3-none-any.whl.metadata (3.3 kB)
-2025-11-21T23:49:29.7808849Z Collecting pyparsing>=3 (from matplotlib->pica-automation==14.1.0)
-2025-11-21T23:49:29.7953603Z   Downloading pyparsing-3.2.5-py3-none-any.whl.metadata (5.0 kB)
-2025-11-21T23:49:29.8245660Z Collecting python-dateutil>=2.7 (from matplotlib->pica-automation==14.1.0)
-2025-11-21T23:49:29.8388184Z   Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata (8.4 kB)
-2025-11-21T23:49:29.8720935Z Collecting six>=1.5 (from python-dateutil>=2.7->matplotlib->pica-automation==14.1.0)
-2025-11-21T23:49:29.8882071Z   Downloading six-1.17.0-py2.py3-none-any.whl.metadata (1.7 kB)
-2025-11-21T23:49:29.9585778Z Collecting pytz>=2020.1 (from pandas->pica-automation==14.1.0)
-2025-11-21T23:49:29.9726634Z   Downloading pytz-2025.2-py2.py3-none-any.whl.metadata (22 kB)
-2025-11-21T23:49:30.0084173Z Collecting tzdata>=2022.7 (from pandas->pica-automation==14.1.0)
-2025-11-21T23:49:30.0226625Z   Downloading tzdata-2025.2-py2.py3-none-any.whl.metadata (1.4 kB)
-2025-11-21T23:49:30.0829661Z Collecting pint (from pymeasure->pica-automation==14.1.0)
-2025-11-21T23:49:30.1260469Z   Downloading Pint-0.24.4-py3-none-any.whl.metadata (8.5 kB)
-2025-11-21T23:49:30.1592796Z Collecting pyserial>=2.7 (from pymeasure->pica-automation==14.1.0)
-2025-11-21T23:49:30.1731907Z   Downloading pyserial-3.5-py2.py3-none-any.whl.metadata (1.6 kB)
-2025-11-21T23:49:30.2064487Z Collecting pyqtgraph>=0.12 (from pymeasure->pica-automation==14.1.0)
-2025-11-21T23:49:30.2209780Z   Downloading pyqtgraph-0.14.0-py3-none-any.whl.metadata (1.5 kB)
-2025-11-21T23:49:30.2647240Z Collecting colorama (from pyqtgraph>=0.12->pymeasure->pica-automation==14.1.0)
-2025-11-21T23:49:30.2786797Z   Downloading colorama-0.4.6-py2.py3-none-any.whl.metadata (17 kB)
-2025-11-21T23:49:30.3153481Z Collecting typing_extensions>=4.0.0 (from pyvisa->pica-automation==14.1.0)
-2025-11-21T23:49:30.3314454Z   Downloading typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
-2025-11-21T23:49:30.3706662Z Collecting platformdirs>=2.1.0 (from pint->pymeasure->pica-automation==14.1.0)
-2025-11-21T23:49:30.3847361Z   Downloading platformdirs-4.5.0-py3-none-any.whl.metadata (12 kB)
-2025-11-21T23:49:30.4118156Z Collecting flexcache>=0.3 (from pint->pymeasure->pica-automation==14.1.0)
-2025-11-21T23:49:30.4288524Z   Downloading flexcache-0.3-py3-none-any.whl.metadata (7.0 kB)
-2025-11-21T23:49:30.4579115Z Collecting flexparser>=0.4 (from pint->pymeasure->pica-automation==14.1.0)
-2025-11-21T23:49:30.4743354Z   Downloading flexparser-0.4-py3-none-any.whl.metadata (18 kB)
-2025-11-21T23:49:30.5021102Z Downloading matplotlib-3.10.7-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (8.7 MB)
-2025-11-21T23:49:30.9847573Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8.7/8.7 MB 19.0 MB/s  0:00:00
-2025-11-21T23:49:30.9995750Z Downloading contourpy-1.3.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (325 kB)
-2025-11-21T23:49:31.0206538Z Downloading cycler-0.12.1-py3-none-any.whl (8.3 kB)
-2025-11-21T23:49:31.0377357Z Downloading fonttools-4.60.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (4.8 MB)
-2025-11-21T23:49:31.1421601Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.8/4.8 MB 46.3 MB/s  0:00:00
-2025-11-21T23:49:31.1565864Z Downloading kiwisolver-1.4.9-cp310-cp310-manylinux_2_12_x86_64.manylinux2010_x86_64.whl (1.6 MB)
-2025-11-21T23:49:31.1888640Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.6/1.6 MB 48.9 MB/s  0:00:00
-2025-11-21T23:49:31.2031375Z Downloading numpy-2.2.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (16.8 MB)
-2025-11-21T23:49:31.3967016Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.8/16.8 MB 87.3 MB/s  0:00:00
-2025-11-21T23:49:31.4107015Z Downloading packaging-25.0-py3-none-any.whl (66 kB)
-2025-11-21T23:49:31.4277051Z Downloading pillow-12.0.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (7.0 MB)
-2025-11-21T23:49:31.4879544Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 7.0/7.0 MB 118.5 MB/s  0:00:00
-2025-11-21T23:49:31.5020531Z Downloading pyparsing-3.2.5-py3-none-any.whl (113 kB)
-2025-11-21T23:49:31.5203459Z Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)
-2025-11-21T23:49:31.5386774Z Downloading six-1.17.0-py2.py3-none-any.whl (11 kB)
-2025-11-21T23:49:31.5551693Z Downloading pandas-2.3.3-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (12.8 MB)
-2025-11-21T23:49:31.6420107Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12.8/12.8 MB 149.9 MB/s  0:00:00
-2025-11-21T23:49:31.6566017Z Downloading pytz-2025.2-py2.py3-none-any.whl (509 kB)
-2025-11-21T23:49:31.6754806Z Downloading tzdata-2025.2-py2.py3-none-any.whl (347 kB)
-2025-11-21T23:49:31.6955288Z Downloading PyMeasure-0.15.0-py3-none-any.whl (800 kB)
-2025-11-21T23:49:31.7042975Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 800.2/800.2 kB 95.0 MB/s  0:00:00
-2025-11-21T23:49:31.7219002Z Downloading pyqtgraph-0.14.0-py3-none-any.whl (1.9 MB)
-2025-11-21T23:49:31.7356077Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.9/1.9 MB 159.0 MB/s  0:00:00
-2025-11-21T23:49:31.7496049Z Downloading pyserial-3.5-py2.py3-none-any.whl (90 kB)
-2025-11-21T23:49:31.7671526Z Downloading pyvisa-1.15.0-py3-none-any.whl (179 kB)
-2025-11-21T23:49:31.7861209Z Downloading typing_extensions-4.15.0-py3-none-any.whl (44 kB)
-2025-11-21T23:49:31.8025038Z Downloading colorama-0.4.6-py2.py3-none-any.whl (25 kB)
-2025-11-21T23:49:31.8227106Z Downloading Pint-0.24.4-py3-none-any.whl (302 kB)
-2025-11-21T23:49:31.8413951Z Downloading flexcache-0.3-py3-none-any.whl (13 kB)
-2025-11-21T23:49:31.8574462Z Downloading flexparser-0.4-py3-none-any.whl (27 kB)
-2025-11-21T23:49:31.8790640Z Downloading platformdirs-4.5.0-py3-none-any.whl (18 kB)
-2025-11-21T23:49:31.8976793Z Downloading pyvisa_py-0.8.1-py3-none-any.whl (82 kB)
-2025-11-21T23:49:31.9931095Z Building wheels for collected packages: pica-automation
-2025-11-21T23:49:31.9940384Z   Building editable for pica-automation (pyproject.toml): started
-2025-11-21T23:49:32.2221787Z   Building editable for pica-automation (pyproject.toml): finished with status 'done'
-2025-11-21T23:49:32.2229106Z   Created wheel for pica-automation: filename=pica_automation-14.1.0-0.editable-py3-none-any.whl size=9837 sha256=23cd09b95cbee6ba2ce0777d6a3991de48d230f0f523cd81fcfa2fc53c04af2e
-2025-11-21T23:49:32.2230769Z   Stored in directory: /tmp/pip-ephem-wheel-cache-r5ipul47/wheels/a9/47/ac/63e6b90596909ba45951a37d3681bb2026f27d0b49ff6b466e
-2025-11-21T23:49:32.2249807Z Successfully built pica-automation
-2025-11-21T23:49:32.3592570Z Installing collected packages: pytz, pyserial, tzdata, typing_extensions, six, pyparsing, platformdirs, Pillow, packaging, numpy, kiwisolver, fonttools, cycler, colorama, pyvisa, python-dateutil, pyqtgraph, flexparser, flexcache, contourpy, pyvisa-py, pint, pandas, matplotlib, pymeasure, pica-automation
-2025-11-21T23:49:42.5653146Z 
-2025-11-21T23:49:42.5703537Z Successfully installed Pillow-12.0.0 colorama-0.4.6 contourpy-1.3.2 cycler-0.12.1 flexcache-0.3 flexparser-0.4 fonttools-4.60.1 kiwisolver-1.4.9 matplotlib-3.10.7 numpy-2.2.6 packaging-25.0 pandas-2.3.3 pica-automation-14.1.0 pint-0.24.4 platformdirs-4.5.0 pymeasure-0.15.0 pyparsing-3.2.5 pyqtgraph-0.14.0 pyserial-3.5 python-dateutil-2.9.0.post0 pytz-2025.2 pyvisa-1.15.0 pyvisa-py-0.8.1 six-1.17.0 typing_extensions-4.15.0 tzdata-2025.2
-2025-11-21T23:49:43.3078503Z Collecting pytest
-2025-11-21T23:49:43.3957599Z   Downloading pytest-9.0.1-py3-none-any.whl.metadata (7.6 kB)
-2025-11-21T23:49:43.4529360Z Collecting flake8
-2025-11-21T23:49:43.4680047Z   Downloading flake8-7.3.0-py2.py3-none-any.whl.metadata (3.8 kB)
-2025-11-21T23:49:43.5014920Z Collecting pytest-cov
-2025-11-21T23:49:43.5159015Z   Downloading pytest_cov-7.0.0-py3-none-any.whl.metadata (31 kB)
-2025-11-21T23:49:43.5584372Z Collecting exceptiongroup>=1 (from pytest)
-2025-11-21T23:49:43.5725512Z   Downloading exceptiongroup-1.3.1-py3-none-any.whl.metadata (6.7 kB)
-2025-11-21T23:49:43.5966330Z Collecting iniconfig>=1.0.1 (from pytest)
-2025-11-21T23:49:43.6105831Z   Downloading iniconfig-2.3.0-py3-none-any.whl.metadata (2.5 kB)
-2025-11-21T23:49:43.6139993Z Requirement already satisfied: packaging>=22 in /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages (from pytest) (25.0)
-2025-11-21T23:49:43.6386565Z Collecting pluggy<2,>=1.5 (from pytest)
-2025-11-21T23:49:43.6534644Z   Downloading pluggy-1.6.0-py3-none-any.whl.metadata (4.8 kB)
-2025-11-21T23:49:43.6916326Z Collecting pygments>=2.7.2 (from pytest)
-2025-11-21T23:49:43.7056373Z   Downloading pygments-2.19.2-py3-none-any.whl.metadata (2.5 kB)
-2025-11-21T23:49:43.7425578Z Collecting tomli>=1 (from pytest)
-2025-11-21T23:49:43.7568945Z   Downloading tomli-2.3.0-py3-none-any.whl.metadata (10 kB)
-2025-11-21T23:49:43.7842999Z Collecting mccabe<0.8.0,>=0.7.0 (from flake8)
-2025-11-21T23:49:43.7990508Z   Downloading mccabe-0.7.0-py2.py3-none-any.whl.metadata (5.0 kB)
-2025-11-21T23:49:43.8277298Z Collecting pycodestyle<2.15.0,>=2.14.0 (from flake8)
-2025-11-21T23:49:43.8425790Z   Downloading pycodestyle-2.14.0-py2.py3-none-any.whl.metadata (4.5 kB)
-2025-11-21T23:49:43.8731428Z Collecting pyflakes<3.5.0,>=3.4.0 (from flake8)
-2025-11-21T23:49:43.8900622Z   Downloading pyflakes-3.4.0-py2.py3-none-any.whl.metadata (3.5 kB)
-2025-11-21T23:49:44.4640966Z Collecting coverage>=7.10.6 (from coverage[toml]>=7.10.6->pytest-cov)
-2025-11-21T23:49:44.4787704Z   Downloading coverage-7.12.0-cp310-cp310-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (9.1 kB)
-2025-11-21T23:49:44.4998396Z Requirement already satisfied: typing-extensions>=4.6.0 in /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages (from exceptiongroup>=1->pytest) (4.15.0)
-2025-11-21T23:49:44.5170589Z Downloading pytest-9.0.1-py3-none-any.whl (373 kB)
-2025-11-21T23:49:44.5642357Z Downloading pluggy-1.6.0-py3-none-any.whl (20 kB)
-2025-11-21T23:49:44.5808378Z Downloading flake8-7.3.0-py2.py3-none-any.whl (57 kB)
-2025-11-21T23:49:44.5981569Z Downloading mccabe-0.7.0-py2.py3-none-any.whl (7.3 kB)
-2025-11-21T23:49:44.6164996Z Downloading pycodestyle-2.14.0-py2.py3-none-any.whl (31 kB)
-2025-11-21T23:49:44.6329754Z Downloading pyflakes-3.4.0-py2.py3-none-any.whl (63 kB)
-2025-11-21T23:49:44.6494983Z Downloading pytest_cov-7.0.0-py3-none-any.whl (22 kB)
-2025-11-21T23:49:44.6661895Z Downloading coverage-7.12.0-cp310-cp310-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (246 kB)
-2025-11-21T23:49:44.6853974Z Downloading exceptiongroup-1.3.1-py3-none-any.whl (16 kB)
-2025-11-21T23:49:44.7035109Z Downloading iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
-2025-11-21T23:49:44.7203281Z Downloading pygments-2.19.2-py3-none-any.whl (1.2 MB)
-2025-11-21T23:49:44.7462799Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 45.2 MB/s  0:00:00
-2025-11-21T23:49:44.7601454Z Downloading tomli-2.3.0-py3-none-any.whl (14 kB)
-2025-11-21T23:49:44.8824783Z Installing collected packages: tomli, pygments, pyflakes, pycodestyle, pluggy, mccabe, iniconfig, exceptiongroup, coverage, pytest, flake8, pytest-cov
-2025-11-21T23:49:46.0007115Z 
-2025-11-21T23:49:46.0070568Z Successfully installed coverage-7.12.0 exceptiongroup-1.3.1 flake8-7.3.0 iniconfig-2.3.0 mccabe-0.7.0 pluggy-1.6.0 pycodestyle-2.14.0 pyflakes-3.4.0 pygments-2.19.2 pytest-9.0.1 pytest-cov-7.0.0 tomli-2.3.0
-2025-11-21T23:49:46.1085731Z ##[group]Run echo "STEP 1: Checking for critical syntax errors..."
-2025-11-21T23:49:46.1086177Z [36;1mecho "STEP 1: Checking for critical syntax errors..."[0m
-2025-11-21T23:49:46.1086571Z [36;1mflake8 . --count --select=E9,F63,F7,F82 --show-source --statistics[0m
-2025-11-21T23:49:46.1086889Z [36;1m[0m
-2025-11-21T23:49:46.1087127Z [36;1mecho "STEP 2: Checking for code style warnings..."[0m
-2025-11-21T23:49:46.1087748Z [36;1mflake8 . --count --exit-zero --max-complexity=18 --max-line-length=127 --statistics[0m
-2025-11-21T23:49:46.1119837Z shell: /usr/bin/bash -e {0}
-2025-11-21T23:49:46.1120048Z env:
-2025-11-21T23:49:46.1120282Z   pythonLocation: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:49:46.1120699Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib/pkgconfig
-2025-11-21T23:49:46.1121071Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:49:46.1121400Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:49:46.1121753Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:49:46.1122085Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib
-2025-11-21T23:49:46.1122358Z ##[endgroup]
-2025-11-21T23:49:46.1175030Z STEP 1: Checking for critical syntax errors...
-2025-11-21T23:49:47.9900942Z 0
-2025-11-21T23:49:48.0074394Z STEP 2: Checking for code style warnings...
-2025-11-21T23:49:49.4228862Z ./Keithley_2400/Backends/IV_K2400_Loop_Backend_v10.py:25:1: F401 'pyvisa' imported but unused
-2025-11-21T23:49:49.4229816Z ./Keithley_2400/Backends/IV_K2400_Loop_Backend_v10.py:97:11: W292 no newline at end of file
-2025-11-21T23:49:49.4230732Z ./Keithley_6517B/High_Resistance/IV_K6517B_GUI_v11.py:277:128: E501 line too long (129 > 127 characters)
-2025-11-21T23:49:49.4231783Z ./Keithley_6517B/Pyroelectricity/Backends/Poling_K6517B_Backend_v10.py:54:11: W292 no newline at end of file
-2025-11-21T23:49:49.4233047Z ./Keithley_6517B/Pyroelectricity/Backends/Pyroelectric_K6517B_Working_Backend_v10.py:119:11: W292 no newline at end of file
-2025-11-21T23:49:49.4234117Z ./Keithley_6517B/Pyroelectricity/Pyroelectric_K6517B_L350_GUI_v4.py:749:128: E501 line too long (157 > 127 characters)
-2025-11-21T23:49:49.4234630Z ./PICA_v6.py:508:9: E303 too many blank lines (2)
-2025-11-21T23:49:49.4235003Z ./Utilities/PlotterUtil_GUI_v3.py:459:128: E501 line too long (129 > 127 characters)
-2025-11-21T23:49:49.4235442Z ./Utilities/PlotterUtil_GUI_v3.py:750:54: W291 trailing whitespace
-2025-11-21T23:49:49.4235852Z ./Utilities/PlotterUtil_GUI_v3.py:751:44: W291 trailing whitespace
-2025-11-21T23:49:49.4236260Z ./Utilities/PlotterUtil_GUI_v3.py:755:1: W293 blank line contains whitespace
-2025-11-21T23:49:49.4236698Z ./Utilities/PlotterUtil_GUI_v3.py:835:1: W293 blank line contains whitespace
-2025-11-21T23:49:49.4237132Z ./Utilities/PlotterUtil_GUI_v3.py:872:1: W293 blank line contains whitespace
-2025-11-21T23:49:49.4237551Z ./Utilities/PlotterUtil_GUI_v3.py:956:1: W293 blank line contains whitespace
-2025-11-21T23:49:49.4237987Z ./deployment/Picachu.py:160:128: E501 line too long (135 > 127 characters)
-2025-11-21T23:49:49.4238392Z ./deployment/Picachu.py:161:128: E501 line too long (131 > 127 characters)
-2025-11-21T23:49:49.4238810Z ./deployment/Picachu.py:535:9: E303 too many blank lines (2)
-2025-11-21T23:49:49.4239189Z ./tests/test_auto_discovery.py:97:20: W292 no newline at end of file
-2025-11-21T23:49:49.4239596Z ./tests/test_deep_simulation.py:54:1: W293 blank line contains whitespace
-2025-11-21T23:49:49.4240010Z ./tests/test_deep_simulation.py:85:1: W293 blank line contains whitespace
-2025-11-21T23:49:49.4240417Z ./tests/test_deep_simulation.py:115:1: W293 blank line contains whitespace
-2025-11-21T23:49:49.4240854Z ./tests/test_deep_simulation.py:146:1: W293 blank line contains whitespace
-2025-11-21T23:49:49.4241256Z ./tests/test_deep_simulation.py:163:1: W293 blank line contains whitespace
-2025-11-21T23:49:49.4241662Z ./tests/test_deep_simulation.py:294:20: W292 no newline at end of file
-2025-11-21T23:49:49.4242403Z ./tests/test_fixes.py:4:1: E302 expected 2 blank lines, found 1
-2025-11-21T23:49:49.4242818Z ./tests/test_fixes.py:28:38: E127 continuation line over-indented for visual indent
-2025-11-21T23:49:49.4243314Z ./tests/test_fixes.py:33:1: E305 expected 2 blank lines after class or function definition, found 1
-2025-11-21T23:49:49.4243956Z ./tests/test_fixes.py:34:20: W292 no newline at end of file
-2025-11-21T23:49:49.4244340Z ./tests/test_full_stack_simulation.py:189:20: W292 no newline at end of file
-2025-11-21T23:49:49.4244924Z ./tests/test_gui_iv_k2400.py:2:1: F401 'unittest.mock.MagicMock' imported but unused
-2025-11-21T23:49:49.4245331Z ./tests/test_gui_iv_k2400.py:8:1: E302 expected 2 blank lines, found 1
-2025-11-21T23:49:49.4245727Z ./tests/test_gui_iv_k2400.py:17:29: E261 at least two spaces before inline comment
-2025-11-21T23:49:49.4246145Z ./tests/test_gui_iv_k2400.py:41:52: E261 at least two spaces before inline comment
-2025-11-21T23:49:49.4246558Z ./tests/test_gui_iv_k2400.py:42:52: E261 at least two spaces before inline comment
-2025-11-21T23:49:49.4246970Z ./tests/test_gui_iv_k2400.py:46:46: E261 at least two spaces before inline comment
-2025-11-21T23:49:49.4247357Z ./tests/test_gui_iv_k2400.py:66:73: W292 no newline at end of file
-2025-11-21T23:49:49.4247751Z ./tests/test_iv_k6517b_simple_backend.py:7:1: E302 expected 2 blank lines, found 1
-2025-11-21T23:49:49.4248185Z ./tests/test_iv_k6517b_simple_backend.py:59:39: W292 no newline at end of file
-2025-11-21T23:49:49.4248678Z ./tests/test_t_control_l350_backend.py:81:41: E128 continuation line under-indented for visual indent
-2025-11-21T23:49:49.4249208Z ./tests/test_t_control_l350_backend.py:96:88: E261 at least two spaces before inline comment
-2025-11-21T23:49:49.4249694Z ./tests/test_t_control_l350_backend.py:96:128: E501 line too long (161 > 127 characters)
-2025-11-21T23:49:49.4250100Z 1     E127 continuation line over-indented for visual indent
-2025-11-21T23:49:49.4250429Z 1     E128 continuation line under-indented for visual indent
-2025-11-21T23:49:49.4250741Z 5     E261 at least two spaces before inline comment
-2025-11-21T23:49:49.4251006Z 3     E302 expected 2 blank lines, found 1
-2025-11-21T23:49:49.4251252Z 2     E303 too many blank lines (2)
-2025-11-21T23:49:49.4251567Z 1     E305 expected 2 blank lines after class or function definition, found 1
-2025-11-21T23:49:49.4251899Z 6     E501 line too long (129 > 127 characters)
-2025-11-21T23:49:49.4252156Z 2     F401 'pyvisa' imported but unused
-2025-11-21T23:49:49.4252394Z 2     W291 trailing whitespace
-2025-11-21T23:49:49.4252608Z 9     W292 no newline at end of file
-2025-11-21T23:49:49.4252842Z 9     W293 blank line contains whitespace
-2025-11-21T23:49:49.4253059Z 41
-2025-11-21T23:49:49.4413180Z ##[group]Run echo "--------------------------------------"
-2025-11-21T23:49:49.4413548Z [36;1mecho "--------------------------------------"[0m
-2025-11-21T23:49:49.4414087Z [36;1mecho "GOAL: Generate coverage.xml and junit.xml"[0m
-2025-11-21T23:49:49.4414351Z [36;1m[0m
-2025-11-21T23:49:49.4414619Z [36;1m# This command runs all tests, generates XML coverage, and JUnit XML.[0m
-2025-11-21T23:49:49.4415093Z [36;1mpytest --cov=. --cov-report=xml --junitxml=junit.xml -o junit_family=legacy tests/[0m
-2025-11-21T23:49:49.4447582Z shell: /usr/bin/bash -e {0}
-2025-11-21T23:49:49.4447794Z env:
-2025-11-21T23:49:49.4448034Z   pythonLocation: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:49:49.4448423Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib/pkgconfig
-2025-11-21T23:49:49.4448827Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:49:49.4449159Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:49:49.4449523Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:49:49.4449858Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib
-2025-11-21T23:49:49.4450140Z ##[endgroup]
-2025-11-21T23:49:49.4503840Z --------------------------------------
-2025-11-21T23:49:49.4504283Z GOAL: Generate coverage.xml and junit.xml
-2025-11-21T23:49:50.6477885Z ============================= test session starts ==============================
-2025-11-21T23:49:50.6478550Z platform linux -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0
-2025-11-21T23:49:50.6479634Z rootdir: /home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation
-2025-11-21T23:49:50.6480602Z configfile: pyproject.toml
-2025-11-21T23:49:50.6480970Z plugins: cov-7.0.0
-2025-11-21T23:49:50.6481670Z collected 33 items
-2025-11-21T23:49:50.6481865Z 
-2025-11-21T23:49:50.7766579Z tests/test_auto_discovery.py .                                           [  3%]
-2025-11-21T23:49:50.8816929Z tests/test_deep_simulation.py ............                               [ 39%]
-2025-11-21T23:49:51.1489635Z tests/test_fixes.py F.                                                   [ 45%]
-2025-11-21T23:50:21.2433955Z tests/test_full_stack_simulation.py ...                                  [ 54%]
-2025-11-21T23:50:21.3404805Z tests/test_gui_iv_k2400.py F                                             [ 57%]
-2025-11-21T23:50:21.5867270Z tests/test_iv_k2400_loop_backend.py F                                    [ 60%]
-2025-11-21T23:50:21.7726359Z tests/test_iv_k6517b_simple_backend.py F                                 [ 63%]
-2025-11-21T23:50:24.5925462Z tests/test_t_control_l350_backend.py ...........F                        [100%]
-2025-11-21T23:50:24.5925986Z 
-2025-11-21T23:50:24.5926219Z =================================== FAILURES ===================================
-2025-11-21T23:50:24.5927021Z _________________________ TestFixes.test_iv_k2400_fix __________________________
-2025-11-21T23:50:24.5927512Z 
-2025-11-21T23:50:24.5927864Z self = <tests.test_fixes.TestFixes testMethod=test_iv_k2400_fix>
-2025-11-21T23:50:24.5928443Z mock_to_csv = <MagicMock name='to_csv' id='140231593696880'>
-2025-11-21T23:50:24.5928839Z mock_plt_show = <MagicMock name='show' id='140231312943824'>
-2025-11-21T23:50:24.5929284Z mock_keithley_class = <MagicMock name='Keithley2400' id='140231312999760'>
-2025-11-21T23:50:24.5929736Z mock_input = <MagicMock name='input' id='140231313007680'>
-2025-11-21T23:50:24.5929977Z 
-2025-11-21T23:50:24.5930154Z     @patch('builtins.input', side_effect=['10', '2', 'test_output'])
-2025-11-21T23:50:24.5930598Z     @patch('pymeasure.instruments.keithley.Keithley2400')
-2025-11-21T23:50:24.5930976Z     @patch('matplotlib.pyplot.show')
-2025-11-21T23:50:24.5931268Z     @patch('pandas.DataFrame.to_csv')
-2025-11-21T23:50:24.5931707Z     def test_iv_k2400_fix(self, mock_to_csv, mock_plt_show, mock_keithley_class, mock_input):
-2025-11-21T23:50:24.5932130Z         """
-2025-11-21T23:50:24.5932682Z         This test verifies that the Keithley2400 is correctly mocked in the
-2025-11-21T23:50:24.5933172Z         IV_K2400_Loop_Backend_v10 script, preventing real hardware calls.
-2025-11-21T23:50:24.5933526Z         """
-2025-11-21T23:50:24.5934099Z         from Keithley_2400.Backends import IV_K2400_Loop_Backend_v10 as iv_backend
-2025-11-21T23:50:24.5934513Z >       iv_backend.main()
-2025-11-21T23:50:24.5934662Z 
-2025-11-21T23:50:24.5934760Z tests/test_fixes.py:16: 
-2025-11-21T23:50:24.5935039Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-2025-11-21T23:50:24.5935442Z Keithley_2400/Backends/IV_K2400_Loop_Backend_v10.py:37: in main
-2025-11-21T23:50:24.5935789Z     sleep(2)
-2025-11-21T23:50:24.5936181Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/unittest/mock.py:1114: in __call__
-2025-11-21T23:50:24.5936670Z     return self._mock_call(*args, **kwargs)
-2025-11-21T23:50:24.5937137Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/unittest/mock.py:1118: in _mock_call
-2025-11-21T23:50:24.5937648Z     return self._execute_mock_call(*args, **kwargs)
-2025-11-21T23:50:24.5938178Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/unittest/mock.py:1179: in _execute_mock_call
-2025-11-21T23:50:24.5938689Z     result = effect(*args, **kwargs)
-2025-11-21T23:50:24.5938971Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-2025-11-21T23:50:24.5939160Z 
-2025-11-21T23:50:24.5939236Z args = (2,), kwargs = {}
-2025-11-21T23:50:24.5939366Z 
-2025-11-21T23:50:24.5939454Z     def side_effect(*args, **kwargs):
-2025-11-21T23:50:24.5939693Z         side_effect.counter += 1
-2025-11-21T23:50:24.5939970Z         # Print a heartbeat so we know the loop is actually running
-2025-11-21T23:50:24.5940269Z         if side_effect.counter % 2 == 0:
-2025-11-21T23:50:24.5940493Z             print(
-2025-11-21T23:50:24.5940881Z                 f"      [Clock] Tick {side_effect.counter}/{limit}...",
-2025-11-21T23:50:24.5941150Z                 flush=True)
-2025-11-21T23:50:24.5941333Z     
-2025-11-21T23:50:24.5941505Z         if side_effect.counter >= limit:
-2025-11-21T23:50:24.5941817Z             print("      [Clock] Limit reached! Forcing exit.", flush=True)
-2025-11-21T23:50:24.5942119Z >           raise Exception("Force Test Exit")
-2025-11-21T23:50:24.5942370Z E           Exception: Force Test Exit
-2025-11-21T23:50:24.5942524Z 
-2025-11-21T23:50:24.5942628Z tests/test_deep_simulation.py:102: Exception
-2025-11-21T23:50:24.5942938Z ----------------------------- Captured stdout call -----------------------------
-2025-11-21T23:50:24.5943244Z       [Clock] Tick 6/5...
-2025-11-21T23:50:24.5943448Z       [Clock] Limit reached! Forcing exit.
-2025-11-21T23:50:24.5944004Z _________________ TestIVK2400GUI.test_start_measurement_logic __________________
-2025-11-21T23:50:24.5944255Z 
-2025-11-21T23:50:24.5944466Z self = <tests.test_gui_iv_k2400.TestIVK2400GUI testMethod=test_start_measurement_logic>
-2025-11-21T23:50:24.5944928Z MockBackend = <MagicMock name='Keithley2400_IV_Backend' id='140231314776336'>
-2025-11-21T23:50:24.5945196Z 
-2025-11-21T23:50:24.5945343Z     @patch('Keithley_2400.IV_K2400_GUI_v5.Keithley2400_IV_Backend')
-2025-11-21T23:50:24.5945691Z     def test_start_measurement_logic(self, MockBackend):
-2025-11-21T23:50:24.5945944Z         """
-2025-11-21T23:50:24.5946154Z         Tests the core logic of the 'Start' button click.
-2025-11-21T23:50:24.5946549Z         Verifies that parameters are read from the UI and passed to the backend correctly.
-2025-11-21T23:50:24.5946892Z         """
-2025-11-21T23:50:24.5947061Z         # --- Setup ---
-2025-11-21T23:50:24.5947319Z         # Instantiate the GUI. This also creates all the tk widgets.
-2025-11-21T23:50:24.5947634Z >       app = MeasurementAppGUI(self.root)
-2025-11-21T23:50:24.5947800Z 
-2025-11-21T23:50:24.5947896Z tests/test_gui_iv_k2400.py:33: 
-2025-11-21T23:50:24.5948142Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-2025-11-21T23:50:24.5948440Z Keithley_2400/IV_K2400_GUI_v5.py:234: in __init__
-2025-11-21T23:50:24.5948841Z     self.create_widgets()
-2025-11-21T23:50:24.5949083Z Keithley_2400/IV_K2400_GUI_v5.py:295: in create_widgets
-2025-11-21T23:50:24.5949385Z     self.create_graph_frame(right_panel_container)
-2025-11-21T23:50:24.5949663Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-2025-11-21T23:50:24.5949853Z 
-2025-11-21T23:50:24.5950033Z self = <Keithley_2400.IV_K2400_GUI_v5.MeasurementAppGUI object at 0x7f8a25b421a0>
-2025-11-21T23:50:24.5950432Z parent = <MagicMock name='mock.Frame()' id='140231316298992'>
-2025-11-21T23:50:24.5950643Z 
-2025-11-21T23:50:24.5950734Z     def create_graph_frame(self, parent):
-2025-11-21T23:50:24.5950984Z         graph_container = LabelFrame(
-2025-11-21T23:50:24.5951205Z             parent,
-2025-11-21T23:50:24.5951387Z             text='Live I-V Curve',
-2025-11-21T23:50:24.5951608Z             relief='groove',
-2025-11-21T23:50:24.5951805Z             bg='white',
-2025-11-21T23:50:24.5951984Z             fg=self.CLR_BG_DARK,
-2025-11-21T23:50:24.5952207Z             font=self.FONT_TITLE)
-2025-11-21T23:50:24.5952500Z         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
-2025-11-21T23:50:24.5952797Z     
-2025-11-21T23:50:24.5953041Z         self.figure = Figure(figsize=(8, 8), dpi=100, constrained_layout=True)
-2025-11-21T23:50:24.5953416Z >       self.ax_vi, self.ax_ri = self.figure.subplots(2, 1, sharex=True)
-2025-11-21T23:50:24.5953904Z E       ValueError: not enough values to unpack (expected 2, got 0)
-2025-11-21T23:50:24.5954125Z 
-2025-11-21T23:50:24.5954234Z Keithley_2400/IV_K2400_GUI_v5.py:691: ValueError
-2025-11-21T23:50:24.5954573Z __________________ TestIVK2400LoopBackend.test_main_full_run ___________________
-2025-11-21T23:50:24.5954826Z 
-2025-11-21T23:50:24.5955055Z self = <tests.test_iv_k2400_loop_backend.TestIVK2400LoopBackend testMethod=test_main_full_run>
-2025-11-21T23:50:24.5955612Z mock_to_csv = <MagicMock name='to_csv' id='140231312684608'>
-2025-11-21T23:50:24.5955922Z mock_plt_show = <MagicMock name='show' id='140231312676832'>
-2025-11-21T23:50:24.5956284Z mock_keithley_class = <MagicMock name='Keithley2400' id='140231311861088'>
-2025-11-21T23:50:24.5956646Z mock_input = <MagicMock name='input' id='140231311837024'>
-2025-11-21T23:50:24.5956848Z 
-2025-11-21T23:50:24.5956995Z     @patch('builtins.input', side_effect=['10', '2', 'test_output'])
-2025-11-21T23:50:24.5957359Z     @patch('pymeasure.instruments.keithley.Keithley2400')
-2025-11-21T23:50:24.5957834Z     @patch('matplotlib.pyplot.show')
-2025-11-21T23:50:24.5958100Z     @patch('pandas.DataFrame.to_csv')
-2025-11-21T23:50:24.5958464Z     def test_main_full_run(self, mock_to_csv, mock_plt_show, mock_keithley_class, mock_input):
-2025-11-21T23:50:24.5958807Z         """
-2025-11-21T23:50:24.5959085Z         Test the main function to ensure it runs through the full I-V sweep process.
-2025-11-21T23:50:24.5959413Z         """
-2025-11-21T23:50:24.5959580Z         # --- MOCK SETUP ---
-2025-11-21T23:50:24.5959800Z         # Mock the instrument instance
-2025-11-21T23:50:24.5960042Z         mock_keithley_instance = MagicMock()
-2025-11-21T23:50:24.5960346Z         mock_keithley_class.return_value = mock_keithley_instance
-2025-11-21T23:50:24.5960619Z     
-2025-11-21T23:50:24.5960793Z         # Simulate the voltage measurement
-2025-11-21T23:50:24.5961092Z         # Let's return a voltage that is proportional to the current
-2025-11-21T23:50:24.5961374Z         def voltage_side_effect():
-2025-11-21T23:50:24.5961624Z             # A simple linear relationship for testing
-2025-11-21T23:50:24.5961922Z             return mock_keithley_instance.source_current * 10
-2025-11-21T23:50:24.5962172Z     
-2025-11-21T23:50:24.5962404Z         # We can't directly access the source_current from ramp_to_current,
-2025-11-21T23:50:24.5962729Z         # so we will use a side effect to track it
-2025-11-21T23:50:24.5962971Z         latest_current = [0]
-2025-11-21T23:50:24.5963171Z     
-2025-11-21T23:50:24.5963330Z         def ramp_side_effect(current):
-2025-11-21T23:50:24.5963565Z             latest_current[0] = current
-2025-11-21T23:50:24.5964185Z             # Also update the mock's internal state
-2025-11-21T23:50:24.5964470Z             mock_keithley_instance.source_current = current
-2025-11-21T23:50:24.5964718Z     
-2025-11-21T23:50:24.5964988Z         mock_keithley_instance.ramp_to_current.side_effect = ramp_side_effect
-2025-11-21T23:50:24.5965289Z     
-2025-11-21T23:50:24.5965495Z         # When .voltage is accessed, return the calculated value
-2025-11-21T23:50:24.5965860Z         type(mock_keithley_instance).voltage = unittest.mock.PropertyMock(
-2025-11-21T23:50:24.5966185Z             side_effect=voltage_side_effect)
-2025-11-21T23:50:24.5966401Z     
-2025-11-21T23:50:24.5966552Z         # --- EXECUTE SCRIPT ---
-2025-11-21T23:50:24.5966767Z >       iv_backend.main()
-2025-11-21T23:50:24.5966890Z 
-2025-11-21T23:50:24.5966990Z tests/test_iv_k2400_loop_backend.py:46: 
-2025-11-21T23:50:24.5967255Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-2025-11-21T23:50:24.5967590Z Keithley_2400/Backends/IV_K2400_Loop_Backend_v10.py:35: in main
-2025-11-21T23:50:24.5968019Z     keithley_2400 = Keithley2400("GPIB::4")
-2025-11-21T23:50:24.5968574Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pymeasure/instruments/keithley/keithley2400.py:375: in __init__
-2025-11-21T23:50:24.5969120Z     super().__init__(
-2025-11-21T23:50:24.5969584Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pymeasure/instruments/generic_types.py:39: in __init__
-2025-11-21T23:50:24.5970087Z     super().__init__(*args, **kwargs)
-2025-11-21T23:50:24.5970575Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pymeasure/instruments/instrument.py:86: in __init__
-2025-11-21T23:50:24.5971075Z     adapter = VISAAdapter(adapter, **kwargs)
-2025-11-21T23:50:24.5971547Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pymeasure/adapters/visa.py:126: in __init__
-2025-11-21T23:50:24.5972163Z     self.connection = self.manager.open_resource(
-2025-11-21T23:50:24.5972642Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pyvisa/highlevel.py:3293: in open_resource
-2025-11-21T23:50:24.5973114Z     res.open(access_mode, open_timeout)
-2025-11-21T23:50:24.5973570Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pyvisa/resources/resource.py:282: in open
-2025-11-21T23:50:24.5974221Z     self.session, status = self._resource_manager.open_bare_resource(
-2025-11-21T23:50:24.5974774Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pyvisa/highlevel.py:3218: in open_bare_resource
-2025-11-21T23:50:24.5975362Z     return self.visalib.open(self.session, resource_name, access_mode, open_timeout)
-2025-11-21T23:50:24.5975901Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pyvisa_py/highlevel.py:196: in open
-2025-11-21T23:50:24.5976386Z     sess = cls(session, resource_name, parsed, open_timeout)
-2025-11-21T23:50:24.5976847Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pyvisa_py/gpib.py:57: in __new__
-2025-11-21T23:50:24.5977378Z     return newcls(resource_manager_session, resource_name, parsed, open_timeout)
-2025-11-21T23:50:24.5977743Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-2025-11-21T23:50:24.5977925Z 
-2025-11-21T23:50:24.7670264Z self = <pyvisa_py.gpib.make_unavailable.<locals>._internal object at 0x7f8a2575a050>
-2025-11-21T23:50:24.7671139Z args = (3371349, 'GPIB0::4::INSTR', GPIBInstr(board='0', primary_address='4', secondary_address=None), 0)
-2025-11-21T23:50:24.7671952Z kwargs = {}
-2025-11-21T23:50:24.7672113Z 
-2025-11-21T23:50:24.7672355Z     def __init__(self, *args, **kwargs) -> None:
-2025-11-21T23:50:24.7672892Z >       raise ValueError(self.session_issue)
-2025-11-21T23:50:24.7674366Z E       ValueError: Please install linux-gpib (Linux) or gpib-ctypes (Windows, Linux) to use this resource type. Note that installing gpib-ctypes will give you access to a broader range of functionalities.
-2025-11-21T23:50:24.7675278Z E       No module named 'gpib'
-2025-11-21T23:50:24.7675756Z 
-2025-11-21T23:50:24.7676146Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pyvisa_py/sessions.py:867: ValueError
-2025-11-21T23:50:24.7676827Z ___________________ TestIVK6517BSimpleBackend.test_full_run ____________________
-2025-11-21T23:50:24.7677140Z 
-2025-11-21T23:50:24.7677444Z self = <tests.test_iv_k6517b_simple_backend.TestIVK6517BSimpleBackend testMethod=test_full_run>
-2025-11-21T23:50:24.7677993Z mock_show = <MagicMock name='show' id='140231308812608'>
-2025-11-21T23:50:24.7678474Z mock_file = <MagicMock name='open' spec='builtin_function_or_method' id='140231308809392'>
-2025-11-21T23:50:24.7679038Z mock_keithley_class = <MagicMock name='Keithley6517B' id='140231308819424'>
-2025-11-21T23:50:24.7679486Z mock_input = <MagicMock name='input' id='140231311482000'>
-2025-11-21T23:50:24.7679748Z 
-2025-11-21T23:50:24.7679989Z     @patch('builtins.input', side_effect=['-10', '10', '5', '0.1', 'test_iv_simple.csv'])
-2025-11-21T23:50:24.7680522Z     @patch('pymeasure.instruments.keithley.Keithley6517B')
-2025-11-21T23:50:24.7680955Z     @patch('builtins.open', new_callable=mock_open)
-2025-11-21T23:50:24.7681388Z     @patch('matplotlib.pyplot.show')
-2025-11-21T23:50:24.7681785Z     def test_full_run(self, mock_show, mock_file, mock_keithley_class, mock_input):
-2025-11-21T23:50:24.7682348Z         """
-2025-11-21T23:50:24.7682764Z         Tests a complete, successful run of the IV_K6517B_Simple_Backend script.
-2025-11-21T23:50:24.7683223Z         """
-2025-11-21T23:50:24.7683414Z         # --- Setup Mocks ---
-2025-11-21T23:50:24.7683911Z         mock_instrument = MagicMock()
-2025-11-21T23:50:24.7684219Z         # Set a mock ID for the connection message
-2025-11-21T23:50:24.7684553Z         mock_instrument.id = "Mocked Keithley 6517B"
-2025-11-21T23:50:24.7684872Z         # Simulate resistance measurement
-2025-11-21T23:50:24.7685340Z         mock_instrument.resistance = 1.23e9
-2025-11-21T23:50:24.7685674Z         mock_keithley_class.return_value = mock_instrument
-2025-11-21T23:50:24.7686015Z     
-2025-11-21T23:50:24.7686205Z         # --- Run the main function ---
-2025-11-21T23:50:24.7686477Z         iv_simple_main()
-2025-11-21T23:50:24.7686684Z     
-2025-11-21T23:50:24.7686867Z         # --- Assertions ---
-2025-11-21T23:50:24.7687149Z         # 1. Was the instrument initialized correctly?
-2025-11-21T23:50:24.7687550Z >       mock_keithley_class.assert_called_once_with("GPIB1::27::INSTR")
-2025-11-21T23:50:24.7687833Z 
-2025-11-21T23:50:24.7687945Z tests/test_iv_k6517b_simple_backend.py:30: 
-2025-11-21T23:50:24.7688267Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-2025-11-21T23:50:24.7688493Z 
-2025-11-21T23:50:24.7688639Z self = <MagicMock name='Keithley6517B' id='140231308819424'>
-2025-11-21T23:50:24.7688988Z args = ('GPIB1::27::INSTR',), kwargs = {}
-2025-11-21T23:50:24.7689357Z msg = "Expected 'Keithley6517B' to be called once. Called 0 times."
-2025-11-21T23:50:24.7689636Z 
-2025-11-21T23:50:24.7689774Z     def assert_called_once_with(self, /, *args, **kwargs):
-2025-11-21T23:50:24.7690190Z         """assert that the mock was called exactly once and that that call was
-2025-11-21T23:50:24.7690568Z         with the specified arguments."""
-2025-11-21T23:50:24.7690851Z         if not self.call_count == 1:
-2025-11-21T23:50:24.7691178Z             msg = ("Expected '%s' to be called once. Called %s times.%s"
-2025-11-21T23:50:24.7691532Z                    % (self._mock_name or 'mock',
-2025-11-21T23:50:24.7691814Z                       self.call_count,
-2025-11-21T23:50:24.7692083Z                       self._calls_repr()))
-2025-11-21T23:50:24.7692358Z >           raise AssertionError(msg)
-2025-11-21T23:50:24.7692735Z E           AssertionError: Expected 'Keithley6517B' to be called once. Called 0 times.
-2025-11-21T23:50:24.7693009Z 
-2025-11-21T23:50:24.7693251Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/unittest/mock.py:940: AssertionError
-2025-11-21T23:50:24.7693901Z ----------------------------- Captured stdout call -----------------------------
-2025-11-21T23:50:24.7694344Z --- I-V Sweep Configuration ---
-2025-11-21T23:50:24.7694488Z 
-2025-11-21T23:50:24.7694621Z Attempting to connect to instrument at: GPIB1::27::INSTR
-2025-11-21T23:50:24.7694826Z 
-2025-11-21T23:50:24.7694978Z [Input Error] Please enter valid numbers for the sweep parameters.
-2025-11-21T23:50:24.7695208Z 
-2025-11-21T23:50:24.7695284Z No data to plot.
-2025-11-21T23:50:24.7695575Z __________ TestMainFunctionAndUserInput.test_main_runs_and_completes ___________
-2025-11-21T23:50:24.7695854Z 
-2025-11-21T23:50:24.7696149Z self = <tests.test_t_control_l350_backend.TestMainFunctionAndUserInput testMethod=test_main_runs_and_completes>
-2025-11-21T23:50:24.7696641Z mock_time = <MagicMock name='time' id='140231309792816'>
-2025-11-21T23:50:24.7697035Z mock_open_file = <MagicMock name='open' spec='builtin_function_or_method' id='140231309801072'>
-2025-11-21T23:50:24.7697449Z mock_plt_show = <MagicMock name='show' id='140231309803280'>
-2025-11-21T23:50:24.7697794Z mock_ls_class = <MagicMock name='Lakeshore350' id='140231310233648'>
-2025-11-21T23:50:24.7698125Z mock_input = <MagicMock name='input' id='140231310241568'>
-2025-11-21T23:50:24.7698481Z mock_file_dialog = <MagicMock name='asksaveasfilename' id='140231310183968'>
-2025-11-21T23:50:24.7698827Z mock_tk = <MagicMock name='Tk' id='140231310191792'>
-2025-11-21T23:50:24.7699001Z 
-2025-11-21T23:50:24.7699076Z     @patch('tkinter.Tk')
-2025-11-21T23:50:24.7699374Z     @patch('tkinter.filedialog.asksaveasfilename', return_value='test.csv')
-2025-11-21T23:50:24.7699763Z     @patch('builtins.input', side_effect=['10', '20', '5', '30'])
-2025-11-21T23:50:24.7700368Z     @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.Lakeshore350') # This patch is correct as it targets the class in the script's namespace
-2025-11-21T23:50:24.7700932Z     @patch('matplotlib.pyplot.show')
-2025-11-21T23:50:24.7701318Z     @patch('builtins.open', new_callable=mock_open)
-2025-11-21T23:50:24.7701585Z     @patch('time.sleep', MagicMock())
-2025-11-21T23:50:24.7701818Z     # Simulate time passing
-2025-11-21T23:50:24.7702080Z     @patch('time.time', side_effect=[1000, 1002, 1004, 1006, 1008, 1010])
-2025-11-21T23:50:24.7702438Z     def test_main_runs_and_completes(self, mock_time, mock_open_file,
-2025-11-21T23:50:24.7702820Z                                      mock_plt_show, mock_ls_class, mock_input, mock_file_dialog, mock_tk):
-2025-11-21T23:50:24.7703135Z         # --- MOCK SETUP ---
-2025-11-21T23:50:24.7703346Z         mock_controller = MagicMock()
-2025-11-21T23:50:24.7703594Z         mock_ls_class.return_value = mock_controller
-2025-11-21T23:50:24.7704024Z     
-2025-11-21T23:50:24.7704221Z         # Simulate temperature readings to control the loop
-2025-11-21T23:50:24.7704507Z         # Start at 10K, then ramp up to 21K to finish
-2025-11-21T23:50:24.7704788Z         mock_controller.get_temperature.side_effect = [
-2025-11-21T23:50:24.7705051Z             10.0, 10.0, 10.0, 15.0, 21.0]
-2025-11-21T23:50:24.7705318Z         mock_controller.get_heater_output.return_value = 25.0
-2025-11-21T23:50:24.7705580Z     
-2025-11-21T23:50:24.7705725Z         # --- RUN ---
-2025-11-21T23:50:24.7705893Z         main()
-2025-11-21T23:50:24.7706045Z     
-2025-11-21T23:50:24.7706199Z         # --- ASSERTIONS ---
-2025-11-21T23:50:24.7706406Z         # Check initialization
-2025-11-21T23:50:24.7706619Z >       mock_ls_class.assert_called_once()
-2025-11-21T23:50:24.7706784Z 
-2025-11-21T23:50:24.7706875Z tests/test_t_control_l350_backend.py:119: 
-2025-11-21T23:50:24.7707142Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-2025-11-21T23:50:24.7707322Z 
-2025-11-21T23:50:24.7707445Z self = <MagicMock name='Lakeshore350' id='140231310233648'>
-2025-11-21T23:50:24.7707647Z 
-2025-11-21T23:50:24.7707728Z     def assert_called_once(self):
-2025-11-21T23:50:24.7707965Z         """assert that the mock was called only once.
-2025-11-21T23:50:24.7708198Z         """
-2025-11-21T23:50:24.7708363Z         if not self.call_count == 1:
-2025-11-21T23:50:24.7708781Z             msg = ("Expected '%s' to have been called once. Called %s times.%s"
-2025-11-21T23:50:24.7709097Z                    % (self._mock_name or 'mock',
-2025-11-21T23:50:24.7709339Z                       self.call_count,
-2025-11-21T23:50:24.7709560Z                       self._calls_repr()))
-2025-11-21T23:50:24.7709801Z >           raise AssertionError(msg)
-2025-11-21T23:50:24.7710166Z E           AssertionError: Expected 'Lakeshore350' to have been called once. Called 0 times.
-2025-11-21T23:50:24.7710458Z 
-2025-11-21T23:50:24.7710699Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/unittest/mock.py:908: AssertionError
-2025-11-21T23:50:24.7711160Z ----------------------------- Captured stdout call -----------------------------
-2025-11-21T23:50:24.7711475Z Connecting to instrument...
-2025-11-21T23:50:24.7711609Z 
-2025-11-21T23:50:24.7712195Z An unexpected error occurred: Please install linux-gpib (Linux) or gpib-ctypes (Windows, Linux) to use this resource type. Note that installing gpib-ctypes will give you access to a broader range of functionalities.
-2025-11-21T23:50:24.7713084Z No module named 'gpib'
-2025-11-21T23:50:24.7713234Z 
-2025-11-21T23:50:24.7713347Z Experiment finished. Plot window can be closed.
-2025-11-21T23:50:24.7714198Z - generated xml file: /home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation/junit.xml -
-2025-11-21T23:50:24.7714846Z ================================ tests coverage ================================
-2025-11-21T23:50:24.7715195Z _______________ coverage: platform linux, python 3.10.19-final-0 _______________
-2025-11-21T23:50:24.7715434Z 
-2025-11-21T23:50:24.7715529Z Coverage XML written to file coverage.xml
-2025-11-21T23:50:24.7715804Z =========================== short test summary info ============================
-2025-11-21T23:50:24.7716342Z FAILED tests/test_fixes.py::TestFixes::test_iv_k2400_fix - Exception: Force Test Exit
-2025-11-21T23:50:24.7716996Z FAILED tests/test_gui_iv_k2400.py::TestIVK2400GUI::test_start_measurement_logic - ValueError: not enough values to unpack (expected 2, got 0)
-2025-11-21T23:50:24.7718217Z FAILED tests/test_iv_k2400_loop_backend.py::TestIVK2400LoopBackend::test_main_full_run - ValueError: Please install linux-gpib (Linux) or gpib-ctypes (Windows, Linux) to use this resource type. Note that installing gpib-ctypes will give you access to a broader range of functionalities.
-2025-11-21T23:50:24.7719167Z No module named 'gpib'
-2025-11-21T23:50:24.7719733Z FAILED tests/test_iv_k6517b_simple_backend.py::TestIVK6517BSimpleBackend::test_full_run - AssertionError: Expected 'Keithley6517B' to be called once. Called 0 times.
-2025-11-21T23:50:24.7720782Z FAILED tests/test_t_control_l350_backend.py::TestMainFunctionAndUserInput::test_main_runs_and_completes - AssertionError: Expected 'Lakeshore350' to have been called once. Called 0 times.
-2025-11-21T23:50:24.7721497Z ======================== 5 failed, 28 passed in 34.73s =========================
-2025-11-21T23:50:24.8828608Z ##[error]Process completed with exit code 1.
-2025-11-21T23:50:24.8926225Z ##[group]Run codecov/test-results-action@v1
-2025-11-21T23:50:24.8926510Z with:
-2025-11-21T23:50:24.8926804Z   token: ***
-2025-11-21T23:50:24.8926970Z   files: ./junit.xml
-2025-11-21T23:50:24.8927152Z env:
-2025-11-21T23:50:24.8927375Z   pythonLocation: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:50:24.8927769Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib/pkgconfig
-2025-11-21T23:50:24.8928159Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:50:24.8928496Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:50:24.8928832Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
-2025-11-21T23:50:24.8929173Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib
-2025-11-21T23:50:24.8929446Z ##[endgroup]
-2025-11-21T23:50:24.9764039Z ==> linux OS detected
-2025-11-21T23:50:25.1974688Z https://cli.codecov.io/latest/linux/codecov.SHA256SUM
-2025-11-21T23:50:25.3617234Z gpg: directory '/home/runner/.gnupg' created
-2025-11-21T23:50:25.3622912Z gpg: keybox '/home/runner/.gnupg/pubring.kbx' created
-2025-11-21T23:50:25.3830367Z gpg: /home/runner/.gnupg/trustdb.gpg: trustdb created
-2025-11-21T23:50:25.3831356Z gpg: key 806BB28AED779869: public key "Codecov Uploader (Codecov Uploader Verification Key) <security@codecov.io>" imported
-2025-11-21T23:50:25.4158600Z gpg: Total number processed: 1
-2025-11-21T23:50:25.4159022Z gpg:               imported: 1
-2025-11-21T23:50:25.4208032Z gpg: Signature made Mon Nov 10 14:58:43 2025 UTC
-2025-11-21T23:50:25.4208698Z gpg:                using RSA key 27034E7FDB850E0BBC2C62FF806BB28AED779869
-2025-11-21T23:50:25.4211245Z gpg: Good signature from "Codecov Uploader (Codecov Uploader Verification Key) <security@codecov.io>" [unknown]
-2025-11-21T23:50:25.4212186Z gpg: WARNING: This key is not certified with a trusted signature!
-2025-11-21T23:50:25.4212884Z gpg:          There is no indication that the signature belongs to the owner.
-2025-11-21T23:50:25.4213811Z Primary key fingerprint: 2703 4E7F DB85 0E0B BC2C  62FF 806B B28A ED77 9869
-2025-11-21T23:50:25.4444604Z ==> Uploader SHASUM verified (80b5e6f898d6080be523f53ff169702a008a1c91b20c63c49df1175ed794d822  codecov)
-2025-11-21T23:50:25.4445882Z ==> Running version latest
-2025-11-21T23:50:25.4450867Z eventName: push
-2025-11-21T23:50:25.4457846Z ==> Running command '/home/runner/work/_actions/codecov/test-results-action/v1/dist/codecov do-upload'
-2025-11-21T23:50:25.4474925Z [command]/home/runner/work/_actions/codecov/test-results-action/v1/dist/codecov do-upload -f ./junit.xml --report-type test_results
-2025-11-21T23:50:25.8017321Z info - 2025-11-21 23:50:25,801 -- ci service found: github-actions
-2025-11-21T23:50:25.8111911Z warning - 2025-11-21 23:50:25,810 -- No config file could be found. Ignoring config.
-2025-11-21T23:50:25.8723371Z info - 2025-11-21 23:50:25,871 -- Found 1 test_results files to report
-2025-11-21T23:50:25.8728202Z info - 2025-11-21 23:50:25,872 -- > /home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation/junit.xml
-2025-11-21T23:50:26.7424103Z info - 2025-11-21 23:50:26,741 -- Process Upload complete
-2025-11-21T23:50:26.8456254Z Sentry is attempting to send 2 pending events
-2025-11-21T23:50:26.8456782Z Waiting up to 2 seconds
-2025-11-21T23:50:26.8457141Z Press Ctrl-C to quit
-2025-11-21T23:50:26.9417536Z Post job cleanup.
-2025-11-21T23:50:27.0129781Z [command]/usr/bin/git version
-2025-11-21T23:50:27.0163400Z git version 2.51.2
-2025-11-21T23:50:27.0207567Z Temporarily overriding HOME='/home/runner/work/_temp/b671db58-5844-4e66-a9a8-06c636fd8581' before making global git config changes
-2025-11-21T23:50:27.0208774Z Adding repository directory to the temporary git global config as a safe directory
-2025-11-21T23:50:27.0212876Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation
-2025-11-21T23:50:27.0243575Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
-2025-11-21T23:50:27.0272412Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
-2025-11-21T23:50:27.0498721Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
-2025-11-21T23:50:27.0519515Z http.https://github.com/.extraheader
-2025-11-21T23:50:27.0530941Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
-2025-11-21T23:50:27.0560235Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
-2025-11-21T23:50:27.0879890Z Cleaning up orphan processes
+2025-11-21T23:54:01.2837373Z Current runner version: '2.329.0'
+2025-11-21T23:54:01.2873674Z ##[group]Runner Image Provisioner
+2025-11-21T23:54:01.2874859Z Hosted Compute Agent
+2025-11-21T23:54:01.2875914Z Version: 20251016.436
+2025-11-21T23:54:01.2876866Z Commit: 8ab8ac8bfd662a3739dab9fe09456aba92132568
+2025-11-21T23:54:01.2877884Z Build Date: 2025-10-15T20:44:12Z
+2025-11-21T23:54:01.2879030Z ##[endgroup]
+2025-11-21T23:54:01.2879894Z ##[group]Operating System
+2025-11-21T23:54:01.2880794Z Ubuntu
+2025-11-21T23:54:01.2881805Z 24.04.3
+2025-11-21T23:54:01.2882483Z LTS
+2025-11-21T23:54:01.2883323Z ##[endgroup]
+2025-11-21T23:54:01.2884148Z ##[group]Runner Image
+2025-11-21T23:54:01.2885007Z Image: ubuntu-24.04
+2025-11-21T23:54:01.2885855Z Version: 20251112.124.1
+2025-11-21T23:54:01.2887545Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20251112.124/images/ubuntu/Ubuntu2404-Readme.md
+2025-11-21T23:54:01.2890163Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20251112.124
+2025-11-21T23:54:01.2892105Z ##[endgroup]
+2025-11-21T23:54:01.2893936Z ##[group]GITHUB_TOKEN Permissions
+2025-11-21T23:54:01.2896440Z Contents: read
+2025-11-21T23:54:01.2897289Z Metadata: read
+2025-11-21T23:54:01.2898127Z Packages: read
+2025-11-21T23:54:01.2898993Z ##[endgroup]
+2025-11-21T23:54:01.2902458Z Secret source: Actions
+2025-11-21T23:54:01.2904061Z Prepare workflow directory
+2025-11-21T23:54:01.3356846Z Prepare all required actions
+2025-11-21T23:54:01.3414051Z Getting action download info
+2025-11-21T23:54:01.6697896Z Download action repository 'actions/checkout@v3' (SHA:f43a0e5ff2bd294095638e18286ca9a3d1956744)
+2025-11-21T23:54:01.7510971Z Download action repository 'actions/setup-python@v4' (SHA:7f4fc3e22c37d6ff65e88745f38bd3157c663f7c)
+2025-11-21T23:54:01.8718852Z Download action repository 'codecov/codecov-action@v3' (SHA:ab904c41d6ece82784817410c45d8b8c02684457)
+2025-11-21T23:54:02.1007715Z Download action repository 'codecov/test-results-action@v1' (SHA:47f89e9acb64b76debcd5ea40642d25a4adced9f)
+2025-11-21T23:54:02.3975113Z Complete job name: test
+2025-11-21T23:54:02.4689761Z ##[group]Run actions/checkout@v3
+2025-11-21T23:54:02.4690705Z with:
+2025-11-21T23:54:02.4691414Z   repository: prathameshnium/PICA-Python-Instrument-Control-and-Automation
+2025-11-21T23:54:02.4692651Z   token: ***
+2025-11-21T23:54:02.4693105Z   ssh-strict: true
+2025-11-21T23:54:02.4693583Z   persist-credentials: true
+2025-11-21T23:54:02.4694112Z   clean: true
+2025-11-21T23:54:02.4694577Z   sparse-checkout-cone-mode: true
+2025-11-21T23:54:02.4695126Z   fetch-depth: 1
+2025-11-21T23:54:02.4695584Z   fetch-tags: false
+2025-11-21T23:54:02.4696031Z   lfs: false
+2025-11-21T23:54:02.4696476Z   submodules: false
+2025-11-21T23:54:02.4696951Z   set-safe-directory: true
+2025-11-21T23:54:02.4697740Z ##[endgroup]
+2025-11-21T23:54:02.5561162Z Syncing repository: prathameshnium/PICA-Python-Instrument-Control-and-Automation
+2025-11-21T23:54:02.5563808Z ##[group]Getting Git version info
+2025-11-21T23:54:02.5565385Z Working directory is '/home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation'
+2025-11-21T23:54:02.5567177Z [command]/usr/bin/git version
+2025-11-21T23:54:02.5587919Z git version 2.51.2
+2025-11-21T23:54:02.5614394Z ##[endgroup]
+2025-11-21T23:54:02.5628715Z Temporarily overriding HOME='/home/runner/work/_temp/35797e6a-f061-4612-a337-d83dd5f929dd' before making global git config changes
+2025-11-21T23:54:02.5630192Z Adding repository directory to the temporary git global config as a safe directory
+2025-11-21T23:54:02.5632675Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation
+2025-11-21T23:54:02.5665759Z Deleting the contents of '/home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation'
+2025-11-21T23:54:02.5668562Z ##[group]Initializing the repository
+2025-11-21T23:54:02.5672363Z [command]/usr/bin/git init /home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation
+2025-11-21T23:54:02.5738376Z hint: Using 'master' as the name for the initial branch. This default branch name
+2025-11-21T23:54:02.5740311Z hint: is subject to change. To configure the initial branch name to use in all
+2025-11-21T23:54:02.5742333Z hint: of your new repositories, which will suppress this warning, call:
+2025-11-21T23:54:02.5743681Z hint:
+2025-11-21T23:54:02.5744619Z hint: 	git config --global init.defaultBranch <name>
+2025-11-21T23:54:02.5745345Z hint:
+2025-11-21T23:54:02.5746189Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2025-11-21T23:54:02.5747702Z hint: 'development'. The just-created branch can be renamed via this command:
+2025-11-21T23:54:02.5748543Z hint:
+2025-11-21T23:54:02.5748987Z hint: 	git branch -m <name>
+2025-11-21T23:54:02.5749484Z hint:
+2025-11-21T23:54:02.5750359Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2025-11-21T23:54:02.5752544Z Initialized empty Git repository in /home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation/.git/
+2025-11-21T23:54:02.5755095Z [command]/usr/bin/git remote add origin https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation
+2025-11-21T23:54:02.5784596Z ##[endgroup]
+2025-11-21T23:54:02.5785417Z ##[group]Disabling automatic garbage collection
+2025-11-21T23:54:02.5786828Z [command]/usr/bin/git config --local gc.auto 0
+2025-11-21T23:54:02.5812850Z ##[endgroup]
+2025-11-21T23:54:02.5813614Z ##[group]Setting up auth
+2025-11-21T23:54:02.5817919Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2025-11-21T23:54:02.5844055Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2025-11-21T23:54:02.6114723Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2025-11-21T23:54:02.6140421Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2025-11-21T23:54:02.6356274Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2025-11-21T23:54:02.6387888Z ##[endgroup]
+2025-11-21T23:54:02.6388808Z ##[group]Fetching the repository
+2025-11-21T23:54:02.6396514Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --progress --no-recurse-submodules --depth=1 origin +d8bd49844770ea8eeba24e2241d07e6688493022:refs/remotes/origin/main
+2025-11-21T23:54:02.7832466Z remote: Enumerating objects: 120, done.        
+2025-11-21T23:54:02.7834107Z remote: Counting objects:   0% (1/120)        
+2025-11-21T23:54:02.7835290Z remote: Counting objects:   1% (2/120)        
+2025-11-21T23:54:02.7836085Z remote: Counting objects:   2% (3/120)        
+2025-11-21T23:54:02.7836767Z remote: Counting objects:   3% (4/120)        
+2025-11-21T23:54:02.7837397Z remote: Counting objects:   4% (5/120)        
+2025-11-21T23:54:02.7838027Z remote: Counting objects:   5% (6/120)        
+2025-11-21T23:54:02.7838649Z remote: Counting objects:   6% (8/120)        
+2025-11-21T23:54:02.7839278Z remote: Counting objects:   7% (9/120)        
+2025-11-21T23:54:02.7839911Z remote: Counting objects:   8% (10/120)        
+2025-11-21T23:54:02.7840548Z remote: Counting objects:   9% (11/120)        
+2025-11-21T23:54:02.7841188Z remote: Counting objects:  10% (12/120)        
+2025-11-21T23:54:02.7842004Z remote: Counting objects:  11% (14/120)        
+2025-11-21T23:54:02.7842647Z remote: Counting objects:  12% (15/120)        
+2025-11-21T23:54:02.7843290Z remote: Counting objects:  13% (16/120)        
+2025-11-21T23:54:02.7843917Z remote: Counting objects:  14% (17/120)        
+2025-11-21T23:54:02.7844556Z remote: Counting objects:  15% (18/120)        
+2025-11-21T23:54:02.7845487Z remote: Counting objects:  16% (20/120)        
+2025-11-21T23:54:02.7846102Z remote: Counting objects:  17% (21/120)        
+2025-11-21T23:54:02.7846701Z remote: Counting objects:  18% (22/120)        
+2025-11-21T23:54:02.7847293Z remote: Counting objects:  19% (23/120)        
+2025-11-21T23:54:02.7847889Z remote: Counting objects:  20% (24/120)        
+2025-11-21T23:54:02.7848498Z remote: Counting objects:  21% (26/120)        
+2025-11-21T23:54:02.7849107Z remote: Counting objects:  22% (27/120)        
+2025-11-21T23:54:02.7849709Z remote: Counting objects:  23% (28/120)        
+2025-11-21T23:54:02.7850295Z remote: Counting objects:  24% (29/120)        
+2025-11-21T23:54:02.7850881Z remote: Counting objects:  25% (30/120)        
+2025-11-21T23:54:02.7851880Z remote: Counting objects:  26% (32/120)        
+2025-11-21T23:54:02.7852528Z remote: Counting objects:  27% (33/120)        
+2025-11-21T23:54:02.7853188Z remote: Counting objects:  28% (34/120)        
+2025-11-21T23:54:02.7853789Z remote: Counting objects:  29% (35/120)        
+2025-11-21T23:54:02.7854406Z remote: Counting objects:  30% (36/120)        
+2025-11-21T23:54:02.7855031Z remote: Counting objects:  31% (38/120)        
+2025-11-21T23:54:02.7855634Z remote: Counting objects:  32% (39/120)        
+2025-11-21T23:54:02.7856227Z remote: Counting objects:  33% (40/120)        
+2025-11-21T23:54:02.7856824Z remote: Counting objects:  34% (41/120)        
+2025-11-21T23:54:02.7857412Z remote: Counting objects:  35% (42/120)        
+2025-11-21T23:54:02.7858009Z remote: Counting objects:  36% (44/120)        
+2025-11-21T23:54:02.7858603Z remote: Counting objects:  37% (45/120)        
+2025-11-21T23:54:02.7859197Z remote: Counting objects:  38% (46/120)        
+2025-11-21T23:54:02.7859788Z remote: Counting objects:  39% (47/120)        
+2025-11-21T23:54:02.7860379Z remote: Counting objects:  40% (48/120)        
+2025-11-21T23:54:02.7860975Z remote: Counting objects:  41% (50/120)        
+2025-11-21T23:54:02.7861700Z remote: Counting objects:  42% (51/120)        
+2025-11-21T23:54:02.7862487Z remote: Counting objects:  43% (52/120)        
+2025-11-21T23:54:02.7863094Z remote: Counting objects:  44% (53/120)        
+2025-11-21T23:54:02.7863690Z remote: Counting objects:  45% (54/120)        
+2025-11-21T23:54:02.7864282Z remote: Counting objects:  46% (56/120)        
+2025-11-21T23:54:02.7864864Z remote: Counting objects:  47% (57/120)        
+2025-11-21T23:54:02.7865463Z remote: Counting objects:  48% (58/120)        
+2025-11-21T23:54:02.7866057Z remote: Counting objects:  49% (59/120)        
+2025-11-21T23:54:02.7866646Z remote: Counting objects:  50% (60/120)        
+2025-11-21T23:54:02.7867227Z remote: Counting objects:  51% (62/120)        
+2025-11-21T23:54:02.7867829Z remote: Counting objects:  52% (63/120)        
+2025-11-21T23:54:02.7868461Z remote: Counting objects:  53% (64/120)        
+2025-11-21T23:54:02.7869047Z remote: Counting objects:  54% (65/120)        
+2025-11-21T23:54:02.7869624Z remote: Counting objects:  55% (66/120)        
+2025-11-21T23:54:02.7870227Z remote: Counting objects:  56% (68/120)        
+2025-11-21T23:54:02.7870815Z remote: Counting objects:  57% (69/120)        
+2025-11-21T23:54:02.7871397Z remote: Counting objects:  58% (70/120)        
+2025-11-21T23:54:02.7872163Z remote: Counting objects:  59% (71/120)        
+2025-11-21T23:54:02.7872751Z remote: Counting objects:  60% (72/120)        
+2025-11-21T23:54:02.7873345Z remote: Counting objects:  61% (74/120)        
+2025-11-21T23:54:02.7882553Z remote: Counting objects:  62% (75/120)        
+2025-11-21T23:54:02.7883578Z remote: Counting objects:  63% (76/120)        
+2025-11-21T23:54:02.7884498Z remote: Counting objects:  64% (77/120)        
+2025-11-21T23:54:02.7885102Z remote: Counting objects:  65% (78/120)        
+2025-11-21T23:54:02.7885701Z remote: Counting objects:  66% (80/120)        
+2025-11-21T23:54:02.7886280Z remote: Counting objects:  67% (81/120)        
+2025-11-21T23:54:02.7886870Z remote: Counting objects:  68% (82/120)        
+2025-11-21T23:54:02.7887469Z remote: Counting objects:  69% (83/120)        
+2025-11-21T23:54:02.7888258Z remote: Counting objects:  70% (84/120)        
+2025-11-21T23:54:02.7888884Z remote: Counting objects:  71% (86/120)        
+2025-11-21T23:54:02.7889480Z remote: Counting objects:  72% (87/120)        
+2025-11-21T23:54:02.7890087Z remote: Counting objects:  73% (88/120)        
+2025-11-21T23:54:02.7890690Z remote: Counting objects:  74% (89/120)        
+2025-11-21T23:54:02.7891270Z remote: Counting objects:  75% (90/120)        
+2025-11-21T23:54:02.7892247Z remote: Counting objects:  76% (92/120)        
+2025-11-21T23:54:02.7893023Z remote: Counting objects:  77% (93/120)        
+2025-11-21T23:54:02.7893908Z remote: Counting objects:  78% (94/120)        
+2025-11-21T23:54:02.7894494Z remote: Counting objects:  79% (95/120)        
+2025-11-21T23:54:02.7895074Z remote: Counting objects:  80% (96/120)        
+2025-11-21T23:54:02.7895667Z remote: Counting objects:  81% (98/120)        
+2025-11-21T23:54:02.7896253Z remote: Counting objects:  82% (99/120)        
+2025-11-21T23:54:02.7896856Z remote: Counting objects:  83% (100/120)        
+2025-11-21T23:54:02.7897464Z remote: Counting objects:  84% (101/120)        
+2025-11-21T23:54:02.7898230Z remote: Counting objects:  85% (102/120)        
+2025-11-21T23:54:02.7898972Z remote: Counting objects:  86% (104/120)        
+2025-11-21T23:54:02.7899887Z remote: Counting objects:  87% (105/120)        
+2025-11-21T23:54:02.7900495Z remote: Counting objects:  88% (106/120)        
+2025-11-21T23:54:02.7901094Z remote: Counting objects:  89% (107/120)        
+2025-11-21T23:54:02.7901841Z remote: Counting objects:  90% (108/120)        
+2025-11-21T23:54:02.7902438Z remote: Counting objects:  91% (110/120)        
+2025-11-21T23:54:02.7903037Z remote: Counting objects:  92% (111/120)        
+2025-11-21T23:54:02.7903628Z remote: Counting objects:  93% (112/120)        
+2025-11-21T23:54:02.7904392Z remote: Counting objects:  94% (113/120)        
+2025-11-21T23:54:02.7905141Z remote: Counting objects:  95% (114/120)        
+2025-11-21T23:54:02.7906241Z remote: Counting objects:  96% (116/120)        
+2025-11-21T23:54:02.7906866Z remote: Counting objects:  97% (117/120)        
+2025-11-21T23:54:02.7907457Z remote: Counting objects:  98% (118/120)        
+2025-11-21T23:54:02.7908043Z remote: Counting objects:  99% (119/120)        
+2025-11-21T23:54:02.7908632Z remote: Counting objects: 100% (120/120)        
+2025-11-21T23:54:02.7909262Z remote: Counting objects: 100% (120/120), done.        
+2025-11-21T23:54:02.7909905Z remote: Compressing objects:   0% (1/114)        
+2025-11-21T23:54:02.7910521Z remote: Compressing objects:   1% (2/114)        
+2025-11-21T23:54:02.7911125Z remote: Compressing objects:   2% (3/114)        
+2025-11-21T23:54:02.7911875Z remote: Compressing objects:   3% (4/114)        
+2025-11-21T23:54:02.7912490Z remote: Compressing objects:   4% (5/114)        
+2025-11-21T23:54:02.7913088Z remote: Compressing objects:   5% (6/114)        
+2025-11-21T23:54:02.7913692Z remote: Compressing objects:   6% (7/114)        
+2025-11-21T23:54:02.7914347Z remote: Compressing objects:   7% (8/114)        
+2025-11-21T23:54:02.7914949Z remote: Compressing objects:   8% (10/114)        
+2025-11-21T23:54:02.7915558Z remote: Compressing objects:   9% (11/114)        
+2025-11-21T23:54:02.7916165Z remote: Compressing objects:  10% (12/114)        
+2025-11-21T23:54:02.7916973Z remote: Compressing objects:  11% (13/114)        
+2025-11-21T23:54:02.7917755Z remote: Compressing objects:  12% (14/114)        
+2025-11-21T23:54:02.7918664Z remote: Compressing objects:  13% (15/114)        
+2025-11-21T23:54:02.7919295Z remote: Compressing objects:  14% (16/114)        
+2025-11-21T23:54:02.7919898Z remote: Compressing objects:  15% (18/114)        
+2025-11-21T23:54:02.7920499Z remote: Compressing objects:  16% (19/114)        
+2025-11-21T23:54:02.7921106Z remote: Compressing objects:  17% (20/114)        
+2025-11-21T23:54:02.7924100Z remote: Compressing objects:  18% (21/114)        
+2025-11-21T23:54:02.7940923Z remote: Compressing objects:  19% (22/114)        
+2025-11-21T23:54:02.7948828Z remote: Compressing objects:  20% (23/114)        
+2025-11-21T23:54:02.7983255Z remote: Compressing objects:  21% (24/114)        
+2025-11-21T23:54:02.8003091Z remote: Compressing objects:  22% (26/114)        
+2025-11-21T23:54:02.8029876Z remote: Compressing objects:  23% (27/114)        
+2025-11-21T23:54:02.8038330Z remote: Compressing objects:  24% (28/114)        
+2025-11-21T23:54:02.8083391Z remote: Compressing objects:  25% (29/114)        
+2025-11-21T23:54:02.8110415Z remote: Compressing objects:  26% (30/114)        
+2025-11-21T23:54:02.8133918Z remote: Compressing objects:  27% (31/114)        
+2025-11-21T23:54:02.8148181Z remote: Compressing objects:  28% (32/114)        
+2025-11-21T23:54:02.8153400Z remote: Compressing objects:  29% (34/114)        
+2025-11-21T23:54:02.8158912Z remote: Compressing objects:  30% (35/114)        
+2025-11-21T23:54:02.8164195Z remote: Compressing objects:  31% (36/114)        
+2025-11-21T23:54:02.8164961Z remote: Compressing objects:  32% (37/114)        
+2025-11-21T23:54:02.8186009Z remote: Compressing objects:  33% (38/114)        
+2025-11-21T23:54:02.8191838Z remote: Compressing objects:  34% (39/114)        
+2025-11-21T23:54:02.8212252Z remote: Compressing objects:  35% (40/114)        
+2025-11-21T23:54:02.8217261Z remote: Compressing objects:  36% (42/114)        
+2025-11-21T23:54:02.8222318Z remote: Compressing objects:  37% (43/114)        
+2025-11-21T23:54:02.8226088Z remote: Compressing objects:  38% (44/114)        
+2025-11-21T23:54:02.8229007Z remote: Compressing objects:  39% (45/114)        
+2025-11-21T23:54:02.8231246Z remote: Compressing objects:  40% (46/114)        
+2025-11-21T23:54:02.8233029Z remote: Compressing objects:  41% (47/114)        
+2025-11-21T23:54:02.8240245Z remote: Compressing objects:  42% (48/114)        
+2025-11-21T23:54:02.8243355Z remote: Compressing objects:  43% (50/114)        
+2025-11-21T23:54:02.8244395Z remote: Compressing objects:  44% (51/114)        
+2025-11-21T23:54:02.8245734Z remote: Compressing objects:  45% (52/114)        
+2025-11-21T23:54:02.8246830Z remote: Compressing objects:  46% (53/114)        
+2025-11-21T23:54:02.8247653Z remote: Compressing objects:  47% (54/114)        
+2025-11-21T23:54:02.8248583Z remote: Compressing objects:  48% (55/114)        
+2025-11-21T23:54:02.8249497Z remote: Compressing objects:  49% (56/114)        
+2025-11-21T23:54:02.8318576Z remote: Compressing objects:  50% (57/114)        
+2025-11-21T23:54:02.8319701Z remote: Compressing objects:  51% (59/114)        
+2025-11-21T23:54:02.8320535Z remote: Compressing objects:  52% (60/114)        
+2025-11-21T23:54:02.8321312Z remote: Compressing objects:  53% (61/114)        
+2025-11-21T23:54:02.8381642Z remote: Compressing objects:  54% (62/114)        
+2025-11-21T23:54:02.8430956Z remote: Compressing objects:  55% (63/114)        
+2025-11-21T23:54:02.8437519Z remote: Compressing objects:  56% (64/114)        
+2025-11-21T23:54:02.8496363Z remote: Compressing objects:  57% (65/114)        
+2025-11-21T23:54:02.8497268Z remote: Compressing objects:  58% (67/114)        
+2025-11-21T23:54:02.8498115Z remote: Compressing objects:  59% (68/114)        
+2025-11-21T23:54:02.8498912Z remote: Compressing objects:  60% (69/114)        
+2025-11-21T23:54:02.8499691Z remote: Compressing objects:  61% (70/114)        
+2025-11-21T23:54:02.8500470Z remote: Compressing objects:  62% (71/114)        
+2025-11-21T23:54:02.8501241Z remote: Compressing objects:  63% (72/114)        
+2025-11-21T23:54:02.8502344Z remote: Compressing objects:  64% (73/114)        
+2025-11-21T23:54:02.8503132Z remote: Compressing objects:  65% (75/114)        
+2025-11-21T23:54:02.8503906Z remote: Compressing objects:  66% (76/114)        
+2025-11-21T23:54:02.8823963Z remote: Compressing objects:  67% (77/114)        
+2025-11-21T23:54:02.8824871Z remote: Compressing objects:  68% (78/114)        
+2025-11-21T23:54:02.8825934Z remote: Compressing objects:  69% (79/114)        
+2025-11-21T23:54:02.8827929Z remote: Compressing objects:  70% (80/114)        
+2025-11-21T23:54:02.8829046Z remote: Compressing objects:  71% (81/114)        
+2025-11-21T23:54:02.8835133Z remote: Compressing objects:  72% (83/114)        
+2025-11-21T23:54:02.8836862Z remote: Compressing objects:  73% (84/114)        
+2025-11-21T23:54:02.8838078Z remote: Compressing objects:  74% (85/114)        
+2025-11-21T23:54:02.8838822Z remote: Compressing objects:  75% (86/114)        
+2025-11-21T23:54:02.8839455Z remote: Compressing objects:  76% (87/114)        
+2025-11-21T23:54:02.8840089Z remote: Compressing objects:  77% (88/114)        
+2025-11-21T23:54:02.8840703Z remote: Compressing objects:  78% (89/114)        
+2025-11-21T23:54:02.8841314Z remote: Compressing objects:  79% (91/114)        
+2025-11-21T23:54:02.8842449Z remote: Compressing objects:  80% (92/114)        
+2025-11-21T23:54:02.8843365Z remote: Compressing objects:  81% (93/114)        
+2025-11-21T23:54:02.8843994Z remote: Compressing objects:  82% (94/114)        
+2025-11-21T23:54:02.8844597Z remote: Compressing objects:  83% (95/114)        
+2025-11-21T23:54:02.8845237Z remote: Compressing objects:  84% (96/114)        
+2025-11-21T23:54:02.8845851Z remote: Compressing objects:  85% (97/114)        
+2025-11-21T23:54:02.8846463Z remote: Compressing objects:  86% (99/114)        
+2025-11-21T23:54:02.8847082Z remote: Compressing objects:  87% (100/114)        
+2025-11-21T23:54:02.8847702Z remote: Compressing objects:  88% (101/114)        
+2025-11-21T23:54:02.8848312Z remote: Compressing objects:  89% (102/114)        
+2025-11-21T23:54:02.8848948Z remote: Compressing objects:  90% (103/114)        
+2025-11-21T23:54:02.8849561Z remote: Compressing objects:  91% (104/114)        
+2025-11-21T23:54:02.8850182Z remote: Compressing objects:  92% (105/114)        
+2025-11-21T23:54:02.8850786Z remote: Compressing objects:  93% (107/114)        
+2025-11-21T23:54:02.8851401Z remote: Compressing objects:  94% (108/114)        
+2025-11-21T23:54:02.8852251Z remote: Compressing objects:  95% (109/114)        
+2025-11-21T23:54:02.8853104Z remote: Compressing objects:  96% (110/114)        
+2025-11-21T23:54:02.8853918Z remote: Compressing objects:  97% (111/114)        
+2025-11-21T23:54:02.8854729Z remote: Compressing objects:  98% (112/114)        
+2025-11-21T23:54:02.8855350Z remote: Compressing objects:  99% (113/114)        
+2025-11-21T23:54:02.8855963Z remote: Compressing objects: 100% (114/114)        
+2025-11-21T23:54:02.8856614Z remote: Compressing objects: 100% (114/114), done.        
+2025-11-21T23:54:02.8874026Z Receiving objects:   0% (1/120)
+2025-11-21T23:54:02.8879167Z Receiving objects:   1% (2/120)
+2025-11-21T23:54:02.8880094Z Receiving objects:   2% (3/120)
+2025-11-21T23:54:02.8881104Z Receiving objects:   3% (4/120)
+2025-11-21T23:54:02.8882245Z Receiving objects:   4% (5/120)
+2025-11-21T23:54:02.8883235Z Receiving objects:   5% (6/120)
+2025-11-21T23:54:02.8884098Z Receiving objects:   6% (8/120)
+2025-11-21T23:54:02.8884603Z Receiving objects:   7% (9/120)
+2025-11-21T23:54:02.8885102Z Receiving objects:   8% (10/120)
+2025-11-21T23:54:02.8885624Z Receiving objects:   9% (11/120)
+2025-11-21T23:54:02.8886115Z Receiving objects:  10% (12/120)
+2025-11-21T23:54:02.8886610Z Receiving objects:  11% (14/120)
+2025-11-21T23:54:02.8887102Z Receiving objects:  12% (15/120)
+2025-11-21T23:54:02.8887622Z Receiving objects:  13% (16/120)
+2025-11-21T23:54:02.8898342Z Receiving objects:  14% (17/120)
+2025-11-21T23:54:02.8899997Z Receiving objects:  15% (18/120)
+2025-11-21T23:54:02.8900811Z Receiving objects:  16% (20/120)
+2025-11-21T23:54:02.8901325Z Receiving objects:  17% (21/120)
+2025-11-21T23:54:02.8930963Z Receiving objects:  18% (22/120)
+2025-11-21T23:54:02.8932799Z Receiving objects:  19% (23/120)
+2025-11-21T23:54:02.8950937Z Receiving objects:  20% (24/120)
+2025-11-21T23:54:02.8952403Z Receiving objects:  21% (26/120)
+2025-11-21T23:54:02.8952975Z Receiving objects:  22% (27/120)
+2025-11-21T23:54:02.8953486Z Receiving objects:  23% (28/120)
+2025-11-21T23:54:02.8953986Z Receiving objects:  24% (29/120)
+2025-11-21T23:54:02.8983744Z Receiving objects:  25% (30/120)
+2025-11-21T23:54:02.8984688Z Receiving objects:  26% (32/120)
+2025-11-21T23:54:02.8985210Z Receiving objects:  27% (33/120)
+2025-11-21T23:54:02.8985709Z Receiving objects:  28% (34/120)
+2025-11-21T23:54:02.8986209Z Receiving objects:  29% (35/120)
+2025-11-21T23:54:02.9003588Z Receiving objects:  30% (36/120)
+2025-11-21T23:54:02.9071404Z Receiving objects:  31% (38/120)
+2025-11-21T23:54:02.9072772Z Receiving objects:  32% (39/120)
+2025-11-21T23:54:02.9073423Z Receiving objects:  33% (40/120)
+2025-11-21T23:54:02.9073934Z Receiving objects:  34% (41/120)
+2025-11-21T23:54:02.9074480Z Receiving objects:  35% (42/120)
+2025-11-21T23:54:02.9074976Z Receiving objects:  36% (44/120)
+2025-11-21T23:54:02.9075475Z Receiving objects:  37% (45/120)
+2025-11-21T23:54:02.9075979Z Receiving objects:  38% (46/120)
+2025-11-21T23:54:02.9076472Z Receiving objects:  39% (47/120)
+2025-11-21T23:54:02.9076963Z Receiving objects:  40% (48/120)
+2025-11-21T23:54:02.9077453Z Receiving objects:  41% (50/120)
+2025-11-21T23:54:02.9077993Z Receiving objects:  42% (51/120)
+2025-11-21T23:54:02.9078498Z Receiving objects:  43% (52/120)
+2025-11-21T23:54:02.9078993Z Receiving objects:  44% (53/120)
+2025-11-21T23:54:02.9079488Z Receiving objects:  45% (54/120)
+2025-11-21T23:54:02.9079973Z Receiving objects:  46% (56/120)
+2025-11-21T23:54:02.9080481Z Receiving objects:  47% (57/120)
+2025-11-21T23:54:02.9080978Z Receiving objects:  48% (58/120)
+2025-11-21T23:54:02.9081660Z Receiving objects:  49% (59/120)
+2025-11-21T23:54:02.9089524Z Receiving objects:  50% (60/120)
+2025-11-21T23:54:02.9090454Z Receiving objects:  51% (62/120)
+2025-11-21T23:54:02.9091240Z Receiving objects:  52% (63/120)
+2025-11-21T23:54:02.9092090Z Receiving objects:  53% (64/120)
+2025-11-21T23:54:02.9092611Z Receiving objects:  54% (65/120)
+2025-11-21T23:54:02.9110273Z Receiving objects:  55% (66/120)
+2025-11-21T23:54:02.9111149Z Receiving objects:  56% (68/120)
+2025-11-21T23:54:02.9111914Z Receiving objects:  57% (69/120)
+2025-11-21T23:54:02.9565867Z Receiving objects:  58% (70/120)
+2025-11-21T23:54:02.9985999Z Receiving objects:  59% (71/120)
+2025-11-21T23:54:03.0039928Z Receiving objects:  60% (72/120)
+2025-11-21T23:54:03.0570098Z Receiving objects:  61% (74/120)
+2025-11-21T23:54:03.0953251Z Receiving objects:  62% (75/120)
+2025-11-21T23:54:03.1013148Z Receiving objects:  63% (76/120)
+2025-11-21T23:54:03.1020283Z Receiving objects:  64% (77/120)
+2025-11-21T23:54:03.1064693Z Receiving objects:  65% (78/120)
+2025-11-21T23:54:03.2401790Z Receiving objects:  66% (80/120)
+2025-11-21T23:54:03.3995761Z Receiving objects:  67% (81/120)
+2025-11-21T23:54:03.4266928Z Receiving objects:  68% (82/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.4706698Z Receiving objects:  69% (83/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.5337979Z Receiving objects:  70% (84/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.6858159Z Receiving objects:  71% (86/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7255119Z Receiving objects:  72% (87/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7307392Z Receiving objects:  73% (88/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7317252Z Receiving objects:  74% (89/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7434365Z Receiving objects:  75% (90/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7445214Z Receiving objects:  76% (92/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7447136Z remote: Total 120 (delta 16), reused 51 (delta 2), pack-reused 0 (from 0)        
+2025-11-21T23:54:03.7451929Z Receiving objects:  77% (93/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7455656Z Receiving objects:  78% (94/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7458356Z Receiving objects:  79% (95/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7460131Z Receiving objects:  80% (96/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7462353Z Receiving objects:  81% (98/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7464170Z Receiving objects:  82% (99/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7465919Z Receiving objects:  83% (100/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7468109Z Receiving objects:  84% (101/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7469950Z Receiving objects:  85% (102/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7471877Z Receiving objects:  86% (104/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7473261Z Receiving objects:  87% (105/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7474660Z Receiving objects:  88% (106/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7475960Z Receiving objects:  89% (107/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7477835Z Receiving objects:  90% (108/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7479989Z Receiving objects:  91% (110/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7482059Z Receiving objects:  92% (111/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7483983Z Receiving objects:  93% (112/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7486220Z Receiving objects:  94% (113/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7488566Z Receiving objects:  95% (114/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7491122Z Receiving objects:  96% (116/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7493866Z Receiving objects:  97% (117/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7496493Z Receiving objects:  98% (118/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7499229Z Receiving objects:  99% (119/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7502127Z Receiving objects: 100% (120/120), 19.64 MiB | 39.26 MiB/s
+2025-11-21T23:54:03.7504962Z Receiving objects: 100% (120/120), 41.86 MiB | 48.66 MiB/s, done.
+2025-11-21T23:54:03.7507328Z Resolving deltas:   0% (0/16)
+2025-11-21T23:54:03.7508580Z Resolving deltas:   6% (1/16)
+2025-11-21T23:54:03.7509796Z Resolving deltas:  12% (2/16)
+2025-11-21T23:54:03.7511008Z Resolving deltas:  18% (3/16)
+2025-11-21T23:54:03.7512478Z Resolving deltas:  25% (4/16)
+2025-11-21T23:54:03.7513697Z Resolving deltas:  31% (5/16)
+2025-11-21T23:54:03.7514898Z Resolving deltas:  37% (6/16)
+2025-11-21T23:54:03.7516313Z Resolving deltas:  43% (7/16)
+2025-11-21T23:54:03.7517555Z Resolving deltas:  50% (8/16)
+2025-11-21T23:54:03.7518747Z Resolving deltas:  56% (9/16)
+2025-11-21T23:54:03.7519945Z Resolving deltas:  62% (10/16)
+2025-11-21T23:54:03.7521139Z Resolving deltas:  68% (11/16)
+2025-11-21T23:54:03.7522966Z Resolving deltas:  75% (12/16)
+2025-11-21T23:54:03.7524207Z Resolving deltas:  81% (13/16)
+2025-11-21T23:54:03.7525449Z Resolving deltas:  87% (14/16)
+2025-11-21T23:54:03.7872655Z Resolving deltas:  93% (15/16)
+2025-11-21T23:54:03.7874301Z Resolving deltas: 100% (16/16)
+2025-11-21T23:54:03.7875610Z Resolving deltas: 100% (16/16), done.
+2025-11-21T23:54:03.8067742Z From https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation
+2025-11-21T23:54:03.8071968Z  * [new ref]         d8bd49844770ea8eeba24e2241d07e6688493022 -> origin/main
+2025-11-21T23:54:03.8099477Z ##[endgroup]
+2025-11-21T23:54:03.8102028Z ##[group]Determining the checkout info
+2025-11-21T23:54:03.8104393Z ##[endgroup]
+2025-11-21T23:54:03.8106712Z ##[group]Checking out the ref
+2025-11-21T23:54:03.8108525Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2025-11-21T23:54:04.0355071Z Switched to a new branch 'main'
+2025-11-21T23:54:04.0357152Z branch 'main' set up to track 'origin/main'.
+2025-11-21T23:54:04.0382496Z ##[endgroup]
+2025-11-21T23:54:04.0417617Z [command]/usr/bin/git log -1 --format='%H'
+2025-11-21T23:54:04.0439224Z 'd8bd49844770ea8eeba24e2241d07e6688493022'
+2025-11-21T23:54:04.0729228Z ##[group]Run actions/setup-python@v4
+2025-11-21T23:54:04.0730343Z with:
+2025-11-21T23:54:04.0731083Z   python-version: 3.10
+2025-11-21T23:54:04.0732122Z   check-latest: false
+2025-11-21T23:54:04.0733261Z   token: ***
+2025-11-21T23:54:04.0734053Z   update-environment: true
+2025-11-21T23:54:04.0735019Z   allow-prereleases: false
+2025-11-21T23:54:04.0735930Z ##[endgroup]
+2025-11-21T23:54:04.2545467Z ##[group]Installed versions
+2025-11-21T23:54:04.2641588Z Successfully set up CPython (3.10.19)
+2025-11-21T23:54:04.2644444Z ##[endgroup]
+2025-11-21T23:54:04.2785539Z ##[group]Run python -m pip install --upgrade pip
+2025-11-21T23:54:04.2786975Z [36;1mpython -m pip install --upgrade pip[0m
+2025-11-21T23:54:04.2788183Z [36;1m# Install PICA in editable mode[0m
+2025-11-21T23:54:04.2789299Z [36;1mpip install -e .[0m
+2025-11-21T23:54:04.2790415Z [36;1m# Install Testing, Linting, and Coverage tools[0m
+2025-11-21T23:54:04.2791962Z [36;1mpip install pytest flake8 pytest-cov[0m
+2025-11-21T23:54:04.2867903Z shell: /usr/bin/bash -e {0}
+2025-11-21T23:54:04.2868848Z env:
+2025-11-21T23:54:04.2869822Z   pythonLocation: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:54:04.2871709Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib/pkgconfig
+2025-11-21T23:54:04.2873424Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:54:04.2874951Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:54:04.2876465Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:54:04.2878050Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib
+2025-11-21T23:54:04.2879312Z ##[endgroup]
+2025-11-21T23:54:06.0863322Z Requirement already satisfied: pip in /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages (25.3)
+2025-11-21T23:54:06.7075662Z Obtaining file:///home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation
+2025-11-21T23:54:06.7094787Z   Installing build dependencies: started
+2025-11-21T23:54:07.7316492Z   Installing build dependencies: finished with status 'done'
+2025-11-21T23:54:07.7324507Z   Checking if build backend supports build_editable: started
+2025-11-21T23:54:08.0226959Z   Checking if build backend supports build_editable: finished with status 'done'
+2025-11-21T23:54:08.0235334Z   Getting requirements to build editable: started
+2025-11-21T23:54:08.3326513Z   Getting requirements to build editable: finished with status 'done'
+2025-11-21T23:54:08.3335945Z   Preparing editable metadata (pyproject.toml): started
+2025-11-21T23:54:08.5191345Z   Preparing editable metadata (pyproject.toml): finished with status 'done'
+2025-11-21T23:54:08.6093282Z Collecting pyvisa (from pica-automation==14.1.0)
+2025-11-21T23:54:08.6794998Z   Downloading pyvisa-1.15.0-py3-none-any.whl.metadata (7.1 kB)
+2025-11-21T23:54:08.7037921Z Collecting pyvisa-py (from pica-automation==14.1.0)
+2025-11-21T23:54:08.7119861Z   Downloading pyvisa_py-0.8.1-py3-none-any.whl.metadata (6.8 kB)
+2025-11-21T23:54:08.9725613Z Collecting numpy (from pica-automation==14.1.0)
+2025-11-21T23:54:08.9804862Z   Downloading numpy-2.2.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (62 kB)
+2025-11-21T23:54:09.1639736Z Collecting matplotlib (from pica-automation==14.1.0)
+2025-11-21T23:54:09.1716061Z   Downloading matplotlib-3.10.7-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (11 kB)
+2025-11-21T23:54:09.3205791Z Collecting pandas (from pica-automation==14.1.0)
+2025-11-21T23:54:09.3280815Z   Downloading pandas-2.3.3-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (91 kB)
+2025-11-21T23:54:09.4076325Z Collecting pymeasure (from pica-automation==14.1.0)
+2025-11-21T23:54:09.4163846Z   Downloading PyMeasure-0.15.0-py3-none-any.whl.metadata (44 kB)
+2025-11-21T23:54:09.6317300Z Collecting Pillow (from pica-automation==14.1.0)
+2025-11-21T23:54:09.6394897Z   Downloading pillow-12.0.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (8.8 kB)
+2025-11-21T23:54:09.7292355Z Collecting contourpy>=1.0.1 (from matplotlib->pica-automation==14.1.0)
+2025-11-21T23:54:09.7369141Z   Downloading contourpy-1.3.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (5.5 kB)
+2025-11-21T23:54:09.7548205Z Collecting cycler>=0.10 (from matplotlib->pica-automation==14.1.0)
+2025-11-21T23:54:09.7626309Z   Downloading cycler-0.12.1-py3-none-any.whl.metadata (3.8 kB)
+2025-11-21T23:54:09.9526832Z Collecting fonttools>=4.22.0 (from matplotlib->pica-automation==14.1.0)
+2025-11-21T23:54:09.9606433Z   Downloading fonttools-4.60.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (112 kB)
+2025-11-21T23:54:10.0889589Z Collecting kiwisolver>=1.3.1 (from matplotlib->pica-automation==14.1.0)
+2025-11-21T23:54:10.1002406Z   Downloading kiwisolver-1.4.9-cp310-cp310-manylinux_2_12_x86_64.manylinux2010_x86_64.whl.metadata (6.3 kB)
+2025-11-21T23:54:10.1307788Z Collecting packaging>=20.0 (from matplotlib->pica-automation==14.1.0)
+2025-11-21T23:54:10.1381897Z   Downloading packaging-25.0-py3-none-any.whl.metadata (3.3 kB)
+2025-11-21T23:54:10.1781866Z Collecting pyparsing>=3 (from matplotlib->pica-automation==14.1.0)
+2025-11-21T23:54:10.1857043Z   Downloading pyparsing-3.2.5-py3-none-any.whl.metadata (5.0 kB)
+2025-11-21T23:54:10.2047573Z Collecting python-dateutil>=2.7 (from matplotlib->pica-automation==14.1.0)
+2025-11-21T23:54:10.2122426Z   Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata (8.4 kB)
+2025-11-21T23:54:10.2356198Z Collecting six>=1.5 (from python-dateutil>=2.7->matplotlib->pica-automation==14.1.0)
+2025-11-21T23:54:10.2436136Z   Downloading six-1.17.0-py2.py3-none-any.whl.metadata (1.7 kB)
+2025-11-21T23:54:10.3048682Z Collecting pytz>=2020.1 (from pandas->pica-automation==14.1.0)
+2025-11-21T23:54:10.3125905Z   Downloading pytz-2025.2-py2.py3-none-any.whl.metadata (22 kB)
+2025-11-21T23:54:10.3323594Z Collecting tzdata>=2022.7 (from pandas->pica-automation==14.1.0)
+2025-11-21T23:54:10.3397198Z   Downloading tzdata-2025.2-py2.py3-none-any.whl.metadata (1.4 kB)
+2025-11-21T23:54:10.3884244Z Collecting pint (from pymeasure->pica-automation==14.1.0)
+2025-11-21T23:54:10.3983645Z   Downloading Pint-0.24.4-py3-none-any.whl.metadata (8.5 kB)
+2025-11-21T23:54:10.4208348Z Collecting pyserial>=2.7 (from pymeasure->pica-automation==14.1.0)
+2025-11-21T23:54:10.4281674Z   Downloading pyserial-3.5-py2.py3-none-any.whl.metadata (1.6 kB)
+2025-11-21T23:54:10.4459406Z Collecting pyqtgraph>=0.12 (from pymeasure->pica-automation==14.1.0)
+2025-11-21T23:54:10.4548646Z   Downloading pyqtgraph-0.14.0-py3-none-any.whl.metadata (1.5 kB)
+2025-11-21T23:54:10.4911659Z Collecting colorama (from pyqtgraph>=0.12->pymeasure->pica-automation==14.1.0)
+2025-11-21T23:54:10.4984830Z   Downloading colorama-0.4.6-py2.py3-none-any.whl.metadata (17 kB)
+2025-11-21T23:54:10.5246558Z Collecting typing_extensions>=4.0.0 (from pyvisa->pica-automation==14.1.0)
+2025-11-21T23:54:10.5323816Z   Downloading typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
+2025-11-21T23:54:10.5615428Z Collecting platformdirs>=2.1.0 (from pint->pymeasure->pica-automation==14.1.0)
+2025-11-21T23:54:10.5692368Z   Downloading platformdirs-4.5.0-py3-none-any.whl.metadata (12 kB)
+2025-11-21T23:54:10.5876119Z Collecting flexcache>=0.3 (from pint->pymeasure->pica-automation==14.1.0)
+2025-11-21T23:54:10.5947441Z   Downloading flexcache-0.3-py3-none-any.whl.metadata (7.0 kB)
+2025-11-21T23:54:10.6094237Z Collecting flexparser>=0.4 (from pint->pymeasure->pica-automation==14.1.0)
+2025-11-21T23:54:10.6166210Z   Downloading flexparser-0.4-py3-none-any.whl.metadata (18 kB)
+2025-11-21T23:54:10.6363466Z Downloading matplotlib-3.10.7-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (8.7 MB)
+2025-11-21T23:54:10.8782450Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8.7/8.7 MB 38.1 MB/s  0:00:00
+2025-11-21T23:54:10.8859320Z Downloading contourpy-1.3.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (325 kB)
+2025-11-21T23:54:10.8980416Z Downloading cycler-0.12.1-py3-none-any.whl (8.3 kB)
+2025-11-21T23:54:10.9077327Z Downloading fonttools-4.60.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (4.8 MB)
+2025-11-21T23:54:10.9611237Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.8/4.8 MB 91.9 MB/s  0:00:00
+2025-11-21T23:54:10.9743404Z Downloading kiwisolver-1.4.9-cp310-cp310-manylinux_2_12_x86_64.manylinux2010_x86_64.whl (1.6 MB)
+2025-11-21T23:54:11.0112361Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.6/1.6 MB 54.2 MB/s  0:00:00
+2025-11-21T23:54:11.0191210Z Downloading numpy-2.2.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (16.8 MB)
+2025-11-21T23:54:11.1297270Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.8/16.8 MB 154.0 MB/s  0:00:00
+2025-11-21T23:54:11.1434733Z Downloading packaging-25.0-py3-none-any.whl (66 kB)
+2025-11-21T23:54:11.1542254Z Downloading pillow-12.0.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (7.0 MB)
+2025-11-21T23:54:11.2155905Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 7.0/7.0 MB 118.8 MB/s  0:00:00
+2025-11-21T23:54:11.2230423Z Downloading pyparsing-3.2.5-py3-none-any.whl (113 kB)
+2025-11-21T23:54:11.2330322Z Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)
+2025-11-21T23:54:11.2431973Z Downloading six-1.17.0-py2.py3-none-any.whl (11 kB)
+2025-11-21T23:54:11.2526180Z Downloading pandas-2.3.3-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (12.8 MB)
+2025-11-21T23:54:11.3122991Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12.8/12.8 MB 220.7 MB/s  0:00:00
+2025-11-21T23:54:11.3197921Z Downloading pytz-2025.2-py2.py3-none-any.whl (509 kB)
+2025-11-21T23:54:11.3325036Z Downloading tzdata-2025.2-py2.py3-none-any.whl (347 kB)
+2025-11-21T23:54:11.3438966Z Downloading PyMeasure-0.15.0-py3-none-any.whl (800 kB)
+2025-11-21T23:54:11.3563911Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 800.2/800.2 kB 78.0 MB/s  0:00:00
+2025-11-21T23:54:11.3644736Z Downloading pyqtgraph-0.14.0-py3-none-any.whl (1.9 MB)
+2025-11-21T23:54:11.3783521Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.9/1.9 MB 147.4 MB/s  0:00:00
+2025-11-21T23:54:11.3858171Z Downloading pyserial-3.5-py2.py3-none-any.whl (90 kB)
+2025-11-21T23:54:11.3966546Z Downloading pyvisa-1.15.0-py3-none-any.whl (179 kB)
+2025-11-21T23:54:11.4067093Z Downloading typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+2025-11-21T23:54:11.4159781Z Downloading colorama-0.4.6-py2.py3-none-any.whl (25 kB)
+2025-11-21T23:54:11.4294150Z Downloading Pint-0.24.4-py3-none-any.whl (302 kB)
+2025-11-21T23:54:11.4396265Z Downloading flexcache-0.3-py3-none-any.whl (13 kB)
+2025-11-21T23:54:11.4489240Z Downloading flexparser-0.4-py3-none-any.whl (27 kB)
+2025-11-21T23:54:11.4587951Z Downloading platformdirs-4.5.0-py3-none-any.whl (18 kB)
+2025-11-21T23:54:11.4704166Z Downloading pyvisa_py-0.8.1-py3-none-any.whl (82 kB)
+2025-11-21T23:54:11.5659057Z Building wheels for collected packages: pica-automation
+2025-11-21T23:54:11.5668697Z   Building editable for pica-automation (pyproject.toml): started
+2025-11-21T23:54:11.7968627Z   Building editable for pica-automation (pyproject.toml): finished with status 'done'
+2025-11-21T23:54:11.7974972Z   Created wheel for pica-automation: filename=pica_automation-14.1.0-0.editable-py3-none-any.whl size=9837 sha256=4bb99b72b40f14d54a9748a18c3469bcc6281ce501c7d3b57f6126f3d630c2d1
+2025-11-21T23:54:11.7976543Z   Stored in directory: /tmp/pip-ephem-wheel-cache-n7lb3myh/wheels/a9/47/ac/63e6b90596909ba45951a37d3681bb2026f27d0b49ff6b466e
+2025-11-21T23:54:11.7995544Z Successfully built pica-automation
+2025-11-21T23:54:11.9343923Z Installing collected packages: pytz, pyserial, tzdata, typing_extensions, six, pyparsing, platformdirs, Pillow, packaging, numpy, kiwisolver, fonttools, cycler, colorama, pyvisa, python-dateutil, pyqtgraph, flexparser, flexcache, contourpy, pyvisa-py, pint, pandas, matplotlib, pymeasure, pica-automation
+2025-11-21T23:54:21.8924525Z 
+2025-11-21T23:54:21.8973680Z Successfully installed Pillow-12.0.0 colorama-0.4.6 contourpy-1.3.2 cycler-0.12.1 flexcache-0.3 flexparser-0.4 fonttools-4.60.1 kiwisolver-1.4.9 matplotlib-3.10.7 numpy-2.2.6 packaging-25.0 pandas-2.3.3 pica-automation-14.1.0 pint-0.24.4 platformdirs-4.5.0 pymeasure-0.15.0 pyparsing-3.2.5 pyqtgraph-0.14.0 pyserial-3.5 python-dateutil-2.9.0.post0 pytz-2025.2 pyvisa-1.15.0 pyvisa-py-0.8.1 six-1.17.0 typing_extensions-4.15.0 tzdata-2025.2
+2025-11-21T23:54:22.5625814Z Collecting pytest
+2025-11-21T23:54:22.6386018Z   Downloading pytest-9.0.1-py3-none-any.whl.metadata (7.6 kB)
+2025-11-21T23:54:22.6883628Z Collecting flake8
+2025-11-21T23:54:22.6957650Z   Downloading flake8-7.3.0-py2.py3-none-any.whl.metadata (3.8 kB)
+2025-11-21T23:54:22.7198677Z Collecting pytest-cov
+2025-11-21T23:54:22.7282301Z   Downloading pytest_cov-7.0.0-py3-none-any.whl.metadata (31 kB)
+2025-11-21T23:54:22.7557777Z Collecting exceptiongroup>=1 (from pytest)
+2025-11-21T23:54:22.7636834Z   Downloading exceptiongroup-1.3.1-py3-none-any.whl.metadata (6.7 kB)
+2025-11-21T23:54:22.7790127Z Collecting iniconfig>=1.0.1 (from pytest)
+2025-11-21T23:54:22.7882164Z   Downloading iniconfig-2.3.0-py3-none-any.whl.metadata (2.5 kB)
+2025-11-21T23:54:22.7917812Z Requirement already satisfied: packaging>=22 in /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages (from pytest) (25.0)
+2025-11-21T23:54:22.8138904Z Collecting pluggy<2,>=1.5 (from pytest)
+2025-11-21T23:54:22.8211929Z   Downloading pluggy-1.6.0-py3-none-any.whl.metadata (4.8 kB)
+2025-11-21T23:54:22.8646924Z Collecting pygments>=2.7.2 (from pytest)
+2025-11-21T23:54:22.8723284Z   Downloading pygments-2.19.2-py3-none-any.whl.metadata (2.5 kB)
+2025-11-21T23:54:22.9006290Z Collecting tomli>=1 (from pytest)
+2025-11-21T23:54:22.9092154Z   Downloading tomli-2.3.0-py3-none-any.whl.metadata (10 kB)
+2025-11-21T23:54:22.9387778Z Collecting mccabe<0.8.0,>=0.7.0 (from flake8)
+2025-11-21T23:54:22.9464137Z   Downloading mccabe-0.7.0-py2.py3-none-any.whl.metadata (5.0 kB)
+2025-11-21T23:54:22.9651810Z Collecting pycodestyle<2.15.0,>=2.14.0 (from flake8)
+2025-11-21T23:54:22.9726776Z   Downloading pycodestyle-2.14.0-py2.py3-none-any.whl.metadata (4.5 kB)
+2025-11-21T23:54:22.9967453Z Collecting pyflakes<3.5.0,>=3.4.0 (from flake8)
+2025-11-21T23:54:23.0042611Z   Downloading pyflakes-3.4.0-py2.py3-none-any.whl.metadata (3.5 kB)
+2025-11-21T23:54:23.5071995Z Collecting coverage>=7.10.6 (from coverage[toml]>=7.10.6->pytest-cov)
+2025-11-21T23:54:23.5162537Z   Downloading coverage-7.12.0-cp310-cp310-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (9.1 kB)
+2025-11-21T23:54:23.5376656Z Requirement already satisfied: typing-extensions>=4.6.0 in /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages (from exceptiongroup>=1->pytest) (4.15.0)
+2025-11-21T23:54:23.5489079Z Downloading pytest-9.0.1-py3-none-any.whl (373 kB)
+2025-11-21T23:54:23.5906783Z Downloading pluggy-1.6.0-py3-none-any.whl (20 kB)
+2025-11-21T23:54:23.6003690Z Downloading flake8-7.3.0-py2.py3-none-any.whl (57 kB)
+2025-11-21T23:54:23.6116550Z Downloading mccabe-0.7.0-py2.py3-none-any.whl (7.3 kB)
+2025-11-21T23:54:23.6210360Z Downloading pycodestyle-2.14.0-py2.py3-none-any.whl (31 kB)
+2025-11-21T23:54:23.6309306Z Downloading pyflakes-3.4.0-py2.py3-none-any.whl (63 kB)
+2025-11-21T23:54:23.6430796Z Downloading pytest_cov-7.0.0-py3-none-any.whl (22 kB)
+2025-11-21T23:54:23.6535820Z Downloading coverage-7.12.0-cp310-cp310-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (246 kB)
+2025-11-21T23:54:23.6804995Z Downloading exceptiongroup-1.3.1-py3-none-any.whl (16 kB)
+2025-11-21T23:54:23.6906113Z Downloading iniconfig-2.3.0-py3-none-any.whl (7.5 kB)
+2025-11-21T23:54:23.7007980Z Downloading pygments-2.19.2-py3-none-any.whl (1.2 MB)
+2025-11-21T23:54:23.7678755Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 19.3 MB/s  0:00:00
+2025-11-21T23:54:23.7755628Z Downloading tomli-2.3.0-py3-none-any.whl (14 kB)
+2025-11-21T23:54:23.8969369Z Installing collected packages: tomli, pygments, pyflakes, pycodestyle, pluggy, mccabe, iniconfig, exceptiongroup, coverage, pytest, flake8, pytest-cov
+2025-11-21T23:54:24.9641929Z 
+2025-11-21T23:54:24.9705407Z Successfully installed coverage-7.12.0 exceptiongroup-1.3.1 flake8-7.3.0 iniconfig-2.3.0 mccabe-0.7.0 pluggy-1.6.0 pycodestyle-2.14.0 pyflakes-3.4.0 pygments-2.19.2 pytest-9.0.1 pytest-cov-7.0.0 tomli-2.3.0
+2025-11-21T23:54:25.0539221Z ##[group]Run echo "STEP 1: Checking for critical syntax errors..."
+2025-11-21T23:54:25.0539724Z [36;1mecho "STEP 1: Checking for critical syntax errors..."[0m
+2025-11-21T23:54:25.0540144Z [36;1mflake8 . --count --select=E9,F63,F7,F82 --show-source --statistics[0m
+2025-11-21T23:54:25.0540506Z [36;1m[0m
+2025-11-21T23:54:25.0540732Z [36;1mecho "STEP 2: Checking for code style warnings..."[0m
+2025-11-21T23:54:25.0541395Z [36;1mflake8 . --count --exit-zero --max-complexity=18 --max-line-length=127 --statistics[0m
+2025-11-21T23:54:25.0574934Z shell: /usr/bin/bash -e {0}
+2025-11-21T23:54:25.0575159Z env:
+2025-11-21T23:54:25.0575408Z   pythonLocation: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:54:25.0575834Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib/pkgconfig
+2025-11-21T23:54:25.0576247Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:54:25.0576607Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:54:25.0577018Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:54:25.0577372Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib
+2025-11-21T23:54:25.0577660Z ##[endgroup]
+2025-11-21T23:54:25.0630224Z STEP 1: Checking for critical syntax errors...
+2025-11-21T23:54:26.8460824Z 0
+2025-11-21T23:54:26.8643200Z STEP 2: Checking for code style warnings...
+2025-11-21T23:54:28.2390302Z ./Keithley_2400/Backends/IV_K2400_Loop_Backend_v10.py:25:1: F401 'pyvisa' imported but unused
+2025-11-21T23:54:28.2391673Z ./Keithley_2400/Backends/IV_K2400_Loop_Backend_v10.py:97:11: W292 no newline at end of file
+2025-11-21T23:54:28.2392625Z ./Keithley_6517B/High_Resistance/IV_K6517B_GUI_v11.py:277:128: E501 line too long (129 > 127 characters)
+2025-11-21T23:54:28.2393685Z ./Keithley_6517B/Pyroelectricity/Backends/Poling_K6517B_Backend_v10.py:54:11: W292 no newline at end of file
+2025-11-21T23:54:28.2394971Z ./Keithley_6517B/Pyroelectricity/Backends/Pyroelectric_K6517B_Working_Backend_v10.py:119:11: W292 no newline at end of file
+2025-11-21T23:54:28.2396208Z ./Keithley_6517B/Pyroelectricity/Pyroelectric_K6517B_L350_GUI_v4.py:749:128: E501 line too long (157 > 127 characters)
+2025-11-21T23:54:28.2397028Z ./PICA_v6.py:508:9: E303 too many blank lines (2)
+2025-11-21T23:54:28.2397657Z ./Utilities/PlotterUtil_GUI_v3.py:459:128: E501 line too long (129 > 127 characters)
+2025-11-21T23:54:28.2398372Z ./Utilities/PlotterUtil_GUI_v3.py:750:54: W291 trailing whitespace
+2025-11-21T23:54:28.2399031Z ./Utilities/PlotterUtil_GUI_v3.py:751:44: W291 trailing whitespace
+2025-11-21T23:54:28.2399726Z ./Utilities/PlotterUtil_GUI_v3.py:755:1: W293 blank line contains whitespace
+2025-11-21T23:54:28.2400504Z ./Utilities/PlotterUtil_GUI_v3.py:835:1: W293 blank line contains whitespace
+2025-11-21T23:54:28.2401231Z ./Utilities/PlotterUtil_GUI_v3.py:872:1: W293 blank line contains whitespace
+2025-11-21T23:54:28.2402132Z ./Utilities/PlotterUtil_GUI_v3.py:956:1: W293 blank line contains whitespace
+2025-11-21T23:54:28.2402870Z ./deployment/Picachu.py:160:128: E501 line too long (135 > 127 characters)
+2025-11-21T23:54:28.2403560Z ./deployment/Picachu.py:161:128: E501 line too long (131 > 127 characters)
+2025-11-21T23:54:28.2404184Z ./deployment/Picachu.py:535:9: E303 too many blank lines (2)
+2025-11-21T23:54:28.2404791Z ./tests/test_auto_discovery.py:97:20: W292 no newline at end of file
+2025-11-21T23:54:28.2405455Z ./tests/test_deep_simulation.py:54:1: W293 blank line contains whitespace
+2025-11-21T23:54:28.2406142Z ./tests/test_deep_simulation.py:85:1: W293 blank line contains whitespace
+2025-11-21T23:54:28.2406833Z ./tests/test_deep_simulation.py:115:1: W293 blank line contains whitespace
+2025-11-21T23:54:28.2407543Z ./tests/test_deep_simulation.py:146:1: W293 blank line contains whitespace
+2025-11-21T23:54:28.2408254Z ./tests/test_deep_simulation.py:163:1: W293 blank line contains whitespace
+2025-11-21T23:54:28.2408934Z ./tests/test_deep_simulation.py:294:20: W292 no newline at end of file
+2025-11-21T23:54:28.2409991Z ./tests/test_fixes.py:4:1: E302 expected 2 blank lines, found 1
+2025-11-21T23:54:28.2410666Z ./tests/test_fixes.py:28:38: E127 continuation line over-indented for visual indent
+2025-11-21T23:54:28.2411593Z ./tests/test_fixes.py:33:1: E305 expected 2 blank lines after class or function definition, found 1
+2025-11-21T23:54:28.2412288Z ./tests/test_fixes.py:34:20: W292 no newline at end of file
+2025-11-21T23:54:28.2412907Z ./tests/test_full_stack_simulation.py:189:20: W292 no newline at end of file
+2025-11-21T23:54:28.2413777Z ./tests/test_gui_iv_k2400.py:8:1: E302 expected 2 blank lines, found 1
+2025-11-21T23:54:28.2414419Z ./tests/test_gui_iv_k2400.py:17:29: E261 at least two spaces before inline comment
+2025-11-21T23:54:28.2415095Z ./tests/test_gui_iv_k2400.py:47:52: E261 at least two spaces before inline comment
+2025-11-21T23:54:28.2415762Z ./tests/test_gui_iv_k2400.py:48:52: E261 at least two spaces before inline comment
+2025-11-21T23:54:28.2416436Z ./tests/test_gui_iv_k2400.py:52:46: E261 at least two spaces before inline comment
+2025-11-21T23:54:28.2417050Z ./tests/test_gui_iv_k2400.py:72:73: W292 no newline at end of file
+2025-11-21T23:54:28.2417707Z ./tests/test_iv_k6517b_simple_backend.py:7:1: E302 expected 2 blank lines, found 1
+2025-11-21T23:54:28.2418412Z ./tests/test_iv_k6517b_simple_backend.py:59:39: W292 no newline at end of file
+2025-11-21T23:54:28.2419174Z ./tests/test_t_control_l350_backend.py:81:41: E128 continuation line under-indented for visual indent
+2025-11-21T23:54:28.2419897Z 1     E127 continuation line over-indented for visual indent
+2025-11-21T23:54:28.2420434Z 1     E128 continuation line under-indented for visual indent
+2025-11-21T23:54:28.2420907Z 4     E261 at least two spaces before inline comment
+2025-11-21T23:54:28.2421315Z 3     E302 expected 2 blank lines, found 1
+2025-11-21T23:54:28.2421860Z 2     E303 too many blank lines (2)
+2025-11-21T23:54:28.2422334Z 1     E305 expected 2 blank lines after class or function definition, found 1
+2025-11-21T23:54:28.2422868Z 5     E501 line too long (129 > 127 characters)
+2025-11-21T23:54:28.2423254Z 1     F401 'pyvisa' imported but unused
+2025-11-21T23:54:28.2423611Z 2     W291 trailing whitespace
+2025-11-21T23:54:28.2423940Z 9     W292 no newline at end of file
+2025-11-21T23:54:28.2424315Z 9     W293 blank line contains whitespace
+2025-11-21T23:54:28.2424671Z 38
+2025-11-21T23:54:28.2578750Z ##[group]Run echo "--------------------------------------"
+2025-11-21T23:54:28.2579135Z [36;1mecho "--------------------------------------"[0m
+2025-11-21T23:54:28.2579461Z [36;1mecho "GOAL: Generate coverage.xml and junit.xml"[0m
+2025-11-21T23:54:28.2579735Z [36;1m[0m
+2025-11-21T23:54:28.2580015Z [36;1m# This command runs all tests, generates XML coverage, and JUnit XML.[0m
+2025-11-21T23:54:28.2580521Z [36;1mpytest --cov=. --cov-report=xml --junitxml=junit.xml -o junit_family=legacy tests/[0m
+2025-11-21T23:54:28.2613227Z shell: /usr/bin/bash -e {0}
+2025-11-21T23:54:28.2613451Z env:
+2025-11-21T23:54:28.2613688Z   pythonLocation: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:54:28.2614112Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib/pkgconfig
+2025-11-21T23:54:28.2614505Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:54:28.2614880Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:54:28.2615281Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:54:28.2615651Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib
+2025-11-21T23:54:28.2615960Z ##[endgroup]
+2025-11-21T23:54:28.2666973Z --------------------------------------
+2025-11-21T23:54:28.2667436Z GOAL: Generate coverage.xml and junit.xml
+2025-11-21T23:54:29.3342718Z ============================= test session starts ==============================
+2025-11-21T23:54:29.3343253Z platform linux -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0
+2025-11-21T23:54:29.3344039Z rootdir: /home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation
+2025-11-21T23:54:29.3345057Z configfile: pyproject.toml
+2025-11-21T23:54:29.3364376Z plugins: cov-7.0.0
+2025-11-21T23:54:29.3364594Z collected 33 items
+2025-11-21T23:54:29.3364723Z 
+2025-11-21T23:54:29.4608736Z tests/test_auto_discovery.py .                                           [  3%]
+2025-11-21T23:54:29.5768634Z tests/test_deep_simulation.py ............                               [ 39%]
+2025-11-21T23:54:29.8103494Z tests/test_fixes.py F.                                                   [ 45%]
+2025-11-21T23:54:59.9039632Z tests/test_full_stack_simulation.py ...                                  [ 54%]
+2025-11-21T23:55:00.0029983Z tests/test_gui_iv_k2400.py F                                             [ 57%]
+2025-11-21T23:55:00.3905288Z tests/test_iv_k2400_loop_backend.py F                                    [ 60%]
+2025-11-21T23:55:00.5842819Z tests/test_iv_k6517b_simple_backend.py F                                 [ 63%]
+2025-11-21T23:55:03.4362682Z tests/test_t_control_l350_backend.py ...........F                        [100%]
+2025-11-21T23:55:03.4363177Z 
+2025-11-21T23:55:03.4363363Z =================================== FAILURES ===================================
+2025-11-21T23:55:03.4363950Z _________________________ TestFixes.test_iv_k2400_fix __________________________
+2025-11-21T23:55:03.4364457Z 
+2025-11-21T23:55:03.4364792Z self = <tests.test_fixes.TestFixes testMethod=test_iv_k2400_fix>
+2025-11-21T23:55:03.4365430Z mock_to_csv = <MagicMock name='to_csv' id='140501786549824'>
+2025-11-21T23:55:03.4366031Z mock_plt_show = <MagicMock name='show' id='140501506009808'>
+2025-11-21T23:55:03.4366701Z mock_keithley_class = <MagicMock name='Keithley2400' id='140501506065840'>
+2025-11-21T23:55:03.4367352Z mock_input = <MagicMock name='input' id='140501506073760'>
+2025-11-21T23:55:03.4367718Z 
+2025-11-21T23:55:03.4367958Z     @patch('builtins.input', side_effect=['10', '2', 'test_output'])
+2025-11-21T23:55:03.4368385Z     @patch('pymeasure.instruments.keithley.Keithley2400')
+2025-11-21T23:55:03.4368733Z     @patch('matplotlib.pyplot.show')
+2025-11-21T23:55:03.4369025Z     @patch('pandas.DataFrame.to_csv')
+2025-11-21T23:55:03.4369434Z     def test_iv_k2400_fix(self, mock_to_csv, mock_plt_show, mock_keithley_class, mock_input):
+2025-11-21T23:55:03.4369837Z         """
+2025-11-21T23:55:03.4370392Z         This test verifies that the Keithley2400 is correctly mocked in the
+2025-11-21T23:55:03.4370855Z         IV_K2400_Loop_Backend_v10 script, preventing real hardware calls.
+2025-11-21T23:55:03.4371207Z         """
+2025-11-21T23:55:03.4371857Z         from Keithley_2400.Backends import IV_K2400_Loop_Backend_v10 as iv_backend
+2025-11-21T23:55:03.4372263Z >       iv_backend.main()
+2025-11-21T23:55:03.4372414Z 
+2025-11-21T23:55:03.4372504Z tests/test_fixes.py:16: 
+2025-11-21T23:55:03.4372767Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+2025-11-21T23:55:03.4373162Z Keithley_2400/Backends/IV_K2400_Loop_Backend_v10.py:37: in main
+2025-11-21T23:55:03.4373504Z     sleep(2)
+2025-11-21T23:55:03.4373885Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/unittest/mock.py:1114: in __call__
+2025-11-21T23:55:03.4374376Z     return self._mock_call(*args, **kwargs)
+2025-11-21T23:55:03.4374846Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/unittest/mock.py:1118: in _mock_call
+2025-11-21T23:55:03.4375343Z     return self._execute_mock_call(*args, **kwargs)
+2025-11-21T23:55:03.4375856Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/unittest/mock.py:1179: in _execute_mock_call
+2025-11-21T23:55:03.4376361Z     result = effect(*args, **kwargs)
+2025-11-21T23:55:03.4376652Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+2025-11-21T23:55:03.4376882Z 
+2025-11-21T23:55:03.4376964Z args = (2,), kwargs = {}
+2025-11-21T23:55:03.4377104Z 
+2025-11-21T23:55:03.4377197Z     def side_effect(*args, **kwargs):
+2025-11-21T23:55:03.4377464Z         side_effect.counter += 1
+2025-11-21T23:55:03.4377818Z         # Print a heartbeat so we know the loop is actually running
+2025-11-21T23:55:03.4378160Z         if side_effect.counter % 2 == 0:
+2025-11-21T23:55:03.4378420Z             print(
+2025-11-21T23:55:03.4378672Z                 f"      [Clock] Tick {side_effect.counter}/{limit}...",
+2025-11-21T23:55:03.4378983Z                 flush=True)
+2025-11-21T23:55:03.4379202Z     
+2025-11-21T23:55:03.4379392Z         if side_effect.counter >= limit:
+2025-11-21T23:55:03.4379762Z             print("      [Clock] Limit reached! Forcing exit.", flush=True)
+2025-11-21T23:55:03.4380306Z >           raise Exception("Force Test Exit")
+2025-11-21T23:55:03.4380597Z E           Exception: Force Test Exit
+2025-11-21T23:55:03.4380771Z 
+2025-11-21T23:55:03.4380876Z tests/test_deep_simulation.py:102: Exception
+2025-11-21T23:55:03.4381211Z ----------------------------- Captured stdout call -----------------------------
+2025-11-21T23:55:03.4381772Z       [Clock] Tick 6/5...
+2025-11-21T23:55:03.4382001Z       [Clock] Limit reached! Forcing exit.
+2025-11-21T23:55:03.4382336Z _________________ TestIVK2400GUI.test_start_measurement_logic __________________
+2025-11-21T23:55:03.4382597Z 
+2025-11-21T23:55:03.4382801Z self = <tests.test_gui_iv_k2400.TestIVK2400GUI testMethod=test_start_measurement_logic>
+2025-11-21T23:55:03.4383232Z MockFigure = <MagicMock name='Figure' id='140501507376848'>
+2025-11-21T23:55:03.4383624Z MockBackend = <MagicMock name='Keithley2400_IV_Backend' id='140501507390480'>
+2025-11-21T23:55:03.4383891Z 
+2025-11-21T23:55:03.4384045Z     @patch('Keithley_2400.IV_K2400_GUI_v5.Keithley2400_IV_Backend')
+2025-11-21T23:55:03.4384380Z     @patch('matplotlib.figure.Figure')
+2025-11-21T23:55:03.4384698Z     def test_start_measurement_logic(self, MockFigure, MockBackend):
+2025-11-21T23:55:03.4384992Z         """
+2025-11-21T23:55:03.4385198Z         Tests the core logic of the 'Start' button click.
+2025-11-21T23:55:03.4385590Z         Verifies that parameters are read from the UI and passed to the backend correctly.
+2025-11-21T23:55:03.4385941Z         """
+2025-11-21T23:55:03.4386112Z         # --- Setup ---
+2025-11-21T23:55:03.4386372Z         # Instantiate the GUI. This also creates all the tk widgets.
+2025-11-21T23:55:03.4386717Z         # --- FIX: Configure the mock for Figure.subplots ---
+2025-11-21T23:55:03.4387028Z         mock_figure_instance = MockFigure.return_value
+2025-11-21T23:55:03.4387448Z         mock_ax_vi = MagicMock()
+2025-11-21T23:55:03.4387677Z         mock_ax_ri = MagicMock()
+2025-11-21T23:55:03.4387988Z         mock_figure_instance.subplots.return_value = (mock_ax_vi, mock_ax_ri)
+2025-11-21T23:55:03.4388350Z >       app = MeasurementAppGUI(self.root)
+2025-11-21T23:55:03.4388518Z 
+2025-11-21T23:55:03.4388603Z tests/test_gui_iv_k2400.py:39: 
+2025-11-21T23:55:03.4388845Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+2025-11-21T23:55:03.4389148Z Keithley_2400/IV_K2400_GUI_v5.py:234: in __init__
+2025-11-21T23:55:03.4389413Z     self.create_widgets()
+2025-11-21T23:55:03.4389659Z Keithley_2400/IV_K2400_GUI_v5.py:295: in create_widgets
+2025-11-21T23:55:03.4389968Z     self.create_graph_frame(right_panel_container)
+2025-11-21T23:55:03.4390255Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+2025-11-21T23:55:03.4390458Z 
+2025-11-21T23:55:03.4390642Z self = <Keithley_2400.IV_K2400_GUI_v5.MeasurementAppGUI object at 0x7fc90e7d0c40>
+2025-11-21T23:55:03.4391055Z parent = <MagicMock name='mock.Frame()' id='140501506639280'>
+2025-11-21T23:55:03.4391273Z 
+2025-11-21T23:55:03.4391378Z     def create_graph_frame(self, parent):
+2025-11-21T23:55:03.4391846Z         graph_container = LabelFrame(
+2025-11-21T23:55:03.4392076Z             parent,
+2025-11-21T23:55:03.4392257Z             text='Live I-V Curve',
+2025-11-21T23:55:03.4392480Z             relief='groove',
+2025-11-21T23:55:03.4392675Z             bg='white',
+2025-11-21T23:55:03.4392865Z             fg=self.CLR_BG_DARK,
+2025-11-21T23:55:03.4393079Z             font=self.FONT_TITLE)
+2025-11-21T23:55:03.4393377Z         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
+2025-11-21T23:55:03.4393678Z     
+2025-11-21T23:55:03.4393920Z         self.figure = Figure(figsize=(8, 8), dpi=100, constrained_layout=True)
+2025-11-21T23:55:03.4394315Z >       self.ax_vi, self.ax_ri = self.figure.subplots(2, 1, sharex=True)
+2025-11-21T23:55:03.4394688Z E       ValueError: not enough values to unpack (expected 2, got 0)
+2025-11-21T23:55:03.4394918Z 
+2025-11-21T23:55:03.4395025Z Keithley_2400/IV_K2400_GUI_v5.py:691: ValueError
+2025-11-21T23:55:03.4395625Z __________________ TestIVK2400LoopBackend.test_main_full_run ___________________
+2025-11-21T23:55:03.4395887Z 
+2025-11-21T23:55:03.4396131Z self = <tests.test_iv_k2400_loop_backend.TestIVK2400LoopBackend testMethod=test_main_full_run>
+2025-11-21T23:55:03.4396573Z mock_to_csv = <MagicMock name='to_csv' id='140501504802672'>
+2025-11-21T23:55:03.4396897Z mock_plt_show = <MagicMock name='show' id='140501503830112'>
+2025-11-21T23:55:03.4397267Z mock_keithley_class = <MagicMock name='Keithley2400' id='140501503820416'>
+2025-11-21T23:55:03.4397635Z mock_input = <MagicMock name='input' id='140501505232992'>
+2025-11-21T23:55:03.4397844Z 
+2025-11-21T23:55:03.4397996Z     @patch('builtins.input', side_effect=['10', '2', 'test_output'])
+2025-11-21T23:55:03.4398369Z     @patch('pymeasure.instruments.keithley.Keithley2400')
+2025-11-21T23:55:03.4398675Z     @patch('matplotlib.pyplot.show')
+2025-11-21T23:55:03.4398930Z     @patch('pandas.DataFrame.to_csv')
+2025-11-21T23:55:03.4399287Z     def test_main_full_run(self, mock_to_csv, mock_plt_show, mock_keithley_class, mock_input):
+2025-11-21T23:55:03.4399646Z         """
+2025-11-21T23:55:03.4399920Z         Test the main function to ensure it runs through the full I-V sweep process.
+2025-11-21T23:55:03.4400247Z         """
+2025-11-21T23:55:03.4400414Z         # --- MOCK SETUP ---
+2025-11-21T23:55:03.4400634Z         # Mock the instrument instance
+2025-11-21T23:55:03.4400875Z         mock_keithley_instance = MagicMock()
+2025-11-21T23:55:03.4401178Z         mock_keithley_class.return_value = mock_keithley_instance
+2025-11-21T23:55:03.4401648Z     
+2025-11-21T23:55:03.4401870Z         # Simulate the voltage measurement
+2025-11-21T23:55:03.4402174Z         # Let's return a voltage that is proportional to the current
+2025-11-21T23:55:03.4402463Z         def voltage_side_effect():
+2025-11-21T23:55:03.4402994Z             # A simple linear relationship for testing
+2025-11-21T23:55:03.4403330Z             return mock_keithley_instance.source_current * 10
+2025-11-21T23:55:03.4403593Z     
+2025-11-21T23:55:03.4403829Z         # We can't directly access the source_current from ramp_to_current,
+2025-11-21T23:55:03.4404154Z         # so we will use a side effect to track it
+2025-11-21T23:55:03.4404413Z         latest_current = [0]
+2025-11-21T23:55:03.4404604Z     
+2025-11-21T23:55:03.4404766Z         def ramp_side_effect(current):
+2025-11-21T23:55:03.4405007Z             latest_current[0] = current
+2025-11-21T23:55:03.4405252Z             # Also update the mock's internal state
+2025-11-21T23:55:03.4405542Z             mock_keithley_instance.source_current = current
+2025-11-21T23:55:03.4405800Z     
+2025-11-21T23:55:03.4406050Z         mock_keithley_instance.ramp_to_current.side_effect = ramp_side_effect
+2025-11-21T23:55:03.4406372Z     
+2025-11-21T23:55:03.4406582Z         # When .voltage is accessed, return the calculated value
+2025-11-21T23:55:03.4406955Z         type(mock_keithley_instance).voltage = unittest.mock.PropertyMock(
+2025-11-21T23:55:03.4407293Z             side_effect=voltage_side_effect)
+2025-11-21T23:55:03.4407515Z     
+2025-11-21T23:55:03.4407681Z         # --- EXECUTE SCRIPT ---
+2025-11-21T23:55:03.4407903Z >       iv_backend.main()
+2025-11-21T23:55:03.4408036Z 
+2025-11-21T23:55:03.4408130Z tests/test_iv_k2400_loop_backend.py:46: 
+2025-11-21T23:55:03.4408402Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+2025-11-21T23:55:03.4408743Z Keithley_2400/Backends/IV_K2400_Loop_Backend_v10.py:35: in main
+2025-11-21T23:55:03.4409158Z     keithley_2400 = Keithley2400("GPIB::4")
+2025-11-21T23:55:03.4409733Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pymeasure/instruments/keithley/keithley2400.py:375: in __init__
+2025-11-21T23:55:03.4410285Z     super().__init__(
+2025-11-21T23:55:03.4410755Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pymeasure/instruments/generic_types.py:39: in __init__
+2025-11-21T23:55:03.4411291Z     super().__init__(*args, **kwargs)
+2025-11-21T23:55:03.4412199Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pymeasure/instruments/instrument.py:86: in __init__
+2025-11-21T23:55:03.4412724Z     adapter = VISAAdapter(adapter, **kwargs)
+2025-11-21T23:55:03.4413208Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pymeasure/adapters/visa.py:126: in __init__
+2025-11-21T23:55:03.4413704Z     self.connection = self.manager.open_resource(
+2025-11-21T23:55:03.4414195Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pyvisa/highlevel.py:3293: in open_resource
+2025-11-21T23:55:03.4414664Z     res.open(access_mode, open_timeout)
+2025-11-21T23:55:03.4415121Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pyvisa/resources/resource.py:282: in open
+2025-11-21T23:55:03.4415661Z     self.session, status = self._resource_manager.open_bare_resource(
+2025-11-21T23:55:03.4416229Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pyvisa/highlevel.py:3218: in open_bare_resource
+2025-11-21T23:55:03.4416840Z     return self.visalib.open(self.session, resource_name, access_mode, open_timeout)
+2025-11-21T23:55:03.4417404Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pyvisa_py/highlevel.py:196: in open
+2025-11-21T23:55:03.6297004Z     sess = cls(session, resource_name, parsed, open_timeout)
+2025-11-21T23:55:03.6298217Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pyvisa_py/gpib.py:57: in __new__
+2025-11-21T23:55:03.6298985Z     return newcls(resource_manager_session, resource_name, parsed, open_timeout)
+2025-11-21T23:55:03.6299463Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+2025-11-21T23:55:03.6299716Z 
+2025-11-21T23:55:03.6299979Z self = <pyvisa_py.gpib.make_unavailable.<locals>._internal object at 0x7fc90e3bb700>
+2025-11-21T23:55:03.6301074Z args = (4530580, 'GPIB0::4::INSTR', GPIBInstr(board='0', primary_address='4', secondary_address=None), 0)
+2025-11-21T23:55:03.6301893Z kwargs = {}
+2025-11-21T23:55:03.6302084Z 
+2025-11-21T23:55:03.6302251Z     def __init__(self, *args, **kwargs) -> None:
+2025-11-21T23:55:03.6302601Z >       raise ValueError(self.session_issue)
+2025-11-21T23:55:03.6303592Z E       ValueError: Please install linux-gpib (Linux) or gpib-ctypes (Windows, Linux) to use this resource type. Note that installing gpib-ctypes will give you access to a broader range of functionalities.
+2025-11-21T23:55:03.6304418Z E       No module named 'gpib'
+2025-11-21T23:55:03.6304574Z 
+2025-11-21T23:55:03.6304926Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/site-packages/pyvisa_py/sessions.py:867: ValueError
+2025-11-21T23:55:03.6305568Z ___________________ TestIVK6517BSimpleBackend.test_full_run ____________________
+2025-11-21T23:55:03.6305871Z 
+2025-11-21T23:55:03.6306149Z self = <tests.test_iv_k6517b_simple_backend.TestIVK6517BSimpleBackend testMethod=test_full_run>
+2025-11-21T23:55:03.6306664Z mock_show = <MagicMock name='show' id='140501501982992'>
+2025-11-21T23:55:03.6307109Z mock_file = <MagicMock name='open' spec='builtin_function_or_method' id='140501501974832'>
+2025-11-21T23:55:03.6307643Z mock_keithley_class = <MagicMock name='Keithley6517B' id='140501501968880'>
+2025-11-21T23:55:03.6308072Z mock_input = <MagicMock name='input' id='140501504026000'>
+2025-11-21T23:55:03.6308304Z 
+2025-11-21T23:55:03.6308521Z     @patch('builtins.input', side_effect=['-10', '10', '5', '0.1', 'test_iv_simple.csv'])
+2025-11-21T23:55:03.6309127Z     @patch('Keithley_6517B.High_Resistance.Backends.IV_K6517B_Simple_Backend_v10.Keithley6517B')
+2025-11-21T23:55:03.6309635Z     @patch('builtins.open', new_callable=mock_open)
+2025-11-21T23:55:03.6309957Z     @patch('matplotlib.pyplot.show')
+2025-11-21T23:55:03.6310345Z     def test_full_run(self, mock_show, mock_file, mock_keithley_class, mock_input):
+2025-11-21T23:55:03.6310724Z         """
+2025-11-21T23:55:03.6311028Z         Tests a complete, successful run of the IV_K6517B_Simple_Backend script.
+2025-11-21T23:55:03.6311400Z         """
+2025-11-21T23:55:03.6311701Z         # --- Setup Mocks ---
+2025-11-21T23:55:03.6312126Z         mock_instrument = MagicMock()
+2025-11-21T23:55:03.6312416Z         # Set a mock ID for the connection message
+2025-11-21T23:55:03.6312729Z         mock_instrument.id = "Mocked Keithley 6517B"
+2025-11-21T23:55:03.6313038Z         # Simulate resistance measurement
+2025-11-21T23:55:03.6313320Z         mock_instrument.resistance = 1.23e9
+2025-11-21T23:55:03.6313650Z         mock_keithley_class.return_value = mock_instrument
+2025-11-21T23:55:03.6313940Z     
+2025-11-21T23:55:03.6314121Z         # --- Run the main function ---
+2025-11-21T23:55:03.6314362Z         iv_simple_main()
+2025-11-21T23:55:03.6314543Z     
+2025-11-21T23:55:03.6314694Z         # --- Assertions ---
+2025-11-21T23:55:03.6314936Z         # 1. Was the instrument initialized correctly?
+2025-11-21T23:55:03.6315282Z >       mock_keithley_class.assert_called_once_with("GPIB1::27::INSTR")
+2025-11-21T23:55:03.6315528Z 
+2025-11-21T23:55:03.6315625Z tests/test_iv_k6517b_simple_backend.py:30: 
+2025-11-21T23:55:03.6315908Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+2025-11-21T23:55:03.6316098Z 
+2025-11-21T23:55:03.6316224Z self = <MagicMock name='Keithley6517B' id='140501501968880'>
+2025-11-21T23:55:03.6316521Z args = ('GPIB1::27::INSTR',), kwargs = {}
+2025-11-21T23:55:03.6316832Z msg = "Expected 'Keithley6517B' to be called once. Called 0 times."
+2025-11-21T23:55:03.6317061Z 
+2025-11-21T23:55:03.6317178Z     def assert_called_once_with(self, /, *args, **kwargs):
+2025-11-21T23:55:03.6317526Z         """assert that the mock was called exactly once and that that call was
+2025-11-21T23:55:03.6317849Z         with the specified arguments."""
+2025-11-21T23:55:03.6318082Z         if not self.call_count == 1:
+2025-11-21T23:55:03.6318360Z             msg = ("Expected '%s' to be called once. Called %s times.%s"
+2025-11-21T23:55:03.6318771Z                    % (self._mock_name or 'mock',
+2025-11-21T23:55:03.6319019Z                       self.call_count,
+2025-11-21T23:55:03.6319254Z                       self._calls_repr()))
+2025-11-21T23:55:03.6319486Z >           raise AssertionError(msg)
+2025-11-21T23:55:03.6319828Z E           AssertionError: Expected 'Keithley6517B' to be called once. Called 0 times.
+2025-11-21T23:55:03.6320108Z 
+2025-11-21T23:55:03.6320359Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/unittest/mock.py:940: AssertionError
+2025-11-21T23:55:03.6320823Z ----------------------------- Captured stdout call -----------------------------
+2025-11-21T23:55:03.6321133Z --- I-V Sweep Configuration ---
+2025-11-21T23:55:03.6321277Z 
+2025-11-21T23:55:03.6321416Z Attempting to connect to instrument at: GPIB1::27::INSTR
+2025-11-21T23:55:03.6321738Z 
+2025-11-21T23:55:03.6321910Z [Input Error] Please enter valid numbers for the sweep parameters.
+2025-11-21T23:55:03.6322153Z 
+2025-11-21T23:55:03.6322224Z No data to plot.
+2025-11-21T23:55:03.6322538Z __________ TestMainFunctionAndUserInput.test_main_runs_and_completes ___________
+2025-11-21T23:55:03.6322825Z 
+2025-11-21T23:55:03.6323130Z self = <tests.test_t_control_l350_backend.TestMainFunctionAndUserInput testMethod=test_main_runs_and_completes>
+2025-11-21T23:55:03.6323633Z mock_time = <MagicMock name='time' id='140501502678144'>
+2025-11-21T23:55:03.6324038Z mock_open_file = <MagicMock name='open' spec='builtin_function_or_method' id='140501502686400'>
+2025-11-21T23:55:03.6324453Z mock_plt_show = <MagicMock name='show' id='140501502688320'>
+2025-11-21T23:55:03.6324797Z mock_ls_class = <MagicMock name='Lakeshore350' id='140501503430272'>
+2025-11-21T23:55:03.6325136Z mock_input = <MagicMock name='input' id='140501503086688'>
+2025-11-21T23:55:03.6325502Z mock_file_dialog = <MagicMock name='asksaveasfilename' id='140501503091344'>
+2025-11-21T23:55:03.6325857Z mock_tk = <MagicMock name='Tk' id='140501503336768'>
+2025-11-21T23:55:03.6326034Z 
+2025-11-21T23:55:03.6326110Z     @patch('tkinter.Tk')
+2025-11-21T23:55:03.6326420Z     @patch('tkinter.filedialog.asksaveasfilename', return_value='test.csv')
+2025-11-21T23:55:03.6326827Z     @patch('builtins.input', side_effect=['10', '20', '5', '30'])
+2025-11-21T23:55:03.6327360Z     @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.Lakeshore350')
+2025-11-21T23:55:03.6327738Z     @patch('matplotlib.pyplot.show')
+2025-11-21T23:55:03.6328004Z     @patch('builtins.open', new_callable=mock_open)
+2025-11-21T23:55:03.6328266Z     @patch('time.sleep', MagicMock())
+2025-11-21T23:55:03.6328496Z     # Simulate time passing
+2025-11-21T23:55:03.6328761Z     @patch('time.time', side_effect=[1000, 1002, 1004, 1006, 1008, 1010])
+2025-11-21T23:55:03.6329127Z     def test_main_runs_and_completes(self, mock_time, mock_open_file,
+2025-11-21T23:55:03.6329516Z                                      mock_plt_show, mock_ls_class, mock_input, mock_file_dialog, mock_tk):
+2025-11-21T23:55:03.6329836Z         # --- MOCK SETUP ---
+2025-11-21T23:55:03.6330052Z         mock_controller = MagicMock()
+2025-11-21T23:55:03.6330310Z         mock_ls_class.return_value = mock_controller
+2025-11-21T23:55:03.6330551Z     
+2025-11-21T23:55:03.6330785Z         # Simulate temperature readings to control the loop
+2025-11-21T23:55:03.6331081Z         # Start at 10K, then ramp up to 21K to finish
+2025-11-21T23:55:03.6331368Z         mock_controller.get_temperature.side_effect = [
+2025-11-21T23:55:03.6331727Z             10.0, 10.0, 10.0, 15.0, 21.0]
+2025-11-21T23:55:03.6331999Z         mock_controller.get_heater_output.return_value = 25.0
+2025-11-21T23:55:03.6332263Z     
+2025-11-21T23:55:03.6332413Z         # --- RUN ---
+2025-11-21T23:55:03.6332584Z         main()
+2025-11-21T23:55:03.6332739Z     
+2025-11-21T23:55:03.6332891Z         # --- ASSERTIONS ---
+2025-11-21T23:55:03.6333098Z         # Check initialization
+2025-11-21T23:55:03.6333315Z >       mock_ls_class.assert_called_once()
+2025-11-21T23:55:03.6333477Z 
+2025-11-21T23:55:03.6333569Z tests/test_t_control_l350_backend.py:119: 
+2025-11-21T23:55:03.6333958Z _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+2025-11-21T23:55:03.6334157Z 
+2025-11-21T23:55:03.6334289Z self = <MagicMock name='Lakeshore350' id='140501503430272'>
+2025-11-21T23:55:03.6334492Z 
+2025-11-21T23:55:03.6334572Z     def assert_called_once(self):
+2025-11-21T23:55:03.6334813Z         """assert that the mock was called only once.
+2025-11-21T23:55:03.6335043Z         """
+2025-11-21T23:55:03.6335211Z         if not self.call_count == 1:
+2025-11-21T23:55:03.6335507Z             msg = ("Expected '%s' to have been called once. Called %s times.%s"
+2025-11-21T23:55:03.6335822Z                    % (self._mock_name or 'mock',
+2025-11-21T23:55:03.6336063Z                       self.call_count,
+2025-11-21T23:55:03.6336446Z                       self._calls_repr()))
+2025-11-21T23:55:03.6336712Z >           raise AssertionError(msg)
+2025-11-21T23:55:03.6337074Z E           AssertionError: Expected 'Lakeshore350' to have been called once. Called 0 times.
+2025-11-21T23:55:03.6337369Z 
+2025-11-21T23:55:03.6337618Z /opt/hostedtoolcache/Python/3.10.19/x64/lib/python3.10/unittest/mock.py:908: AssertionError
+2025-11-21T23:55:03.6338086Z ----------------------------- Captured stdout call -----------------------------
+2025-11-21T23:55:03.6338394Z Connecting to instrument...
+2025-11-21T23:55:03.6338527Z 
+2025-11-21T23:55:03.6339125Z An unexpected error occurred: Please install linux-gpib (Linux) or gpib-ctypes (Windows, Linux) to use this resource type. Note that installing gpib-ctypes will give you access to a broader range of functionalities.
+2025-11-21T23:55:03.6339860Z No module named 'gpib'
+2025-11-21T23:55:03.6339983Z 
+2025-11-21T23:55:03.6340089Z Experiment finished. Plot window can be closed.
+2025-11-21T23:55:03.6340734Z - generated xml file: /home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation/junit.xml -
+2025-11-21T23:55:03.6341382Z ================================ tests coverage ================================
+2025-11-21T23:55:03.6342019Z _______________ coverage: platform linux, python 3.10.19-final-0 _______________
+2025-11-21T23:55:03.6342430Z 
+2025-11-21T23:55:03.6342530Z Coverage XML written to file coverage.xml
+2025-11-21T23:55:03.6342804Z =========================== short test summary info ============================
+2025-11-21T23:55:03.6343212Z FAILED tests/test_fixes.py::TestFixes::test_iv_k2400_fix - Exception: Force Test Exit
+2025-11-21T23:55:03.6343989Z FAILED tests/test_gui_iv_k2400.py::TestIVK2400GUI::test_start_measurement_logic - ValueError: not enough values to unpack (expected 2, got 0)
+2025-11-21T23:55:03.6345237Z FAILED tests/test_iv_k2400_loop_backend.py::TestIVK2400LoopBackend::test_main_full_run - ValueError: Please install linux-gpib (Linux) or gpib-ctypes (Windows, Linux) to use this resource type. Note that installing gpib-ctypes will give you access to a broader range of functionalities.
+2025-11-21T23:55:03.6346880Z No module named 'gpib'
+2025-11-21T23:55:03.6347530Z FAILED tests/test_iv_k6517b_simple_backend.py::TestIVK6517BSimpleBackend::test_full_run - AssertionError: Expected 'Keithley6517B' to be called once. Called 0 times.
+2025-11-21T23:55:03.6348610Z FAILED tests/test_t_control_l350_backend.py::TestMainFunctionAndUserInput::test_main_runs_and_completes - AssertionError: Expected 'Lakeshore350' to have been called once. Called 0 times.
+2025-11-21T23:55:03.6349341Z ======================== 5 failed, 28 passed in 34.82s =========================
+2025-11-21T23:55:03.7635320Z ##[error]Process completed with exit code 1.
+2025-11-21T23:55:03.7736475Z ##[group]Run codecov/test-results-action@v1
+2025-11-21T23:55:03.7736752Z with:
+2025-11-21T23:55:03.7737083Z   token: ***
+2025-11-21T23:55:03.7737246Z   files: ./junit.xml
+2025-11-21T23:55:03.7737424Z env:
+2025-11-21T23:55:03.7737650Z   pythonLocation: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:55:03.7738027Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib/pkgconfig
+2025-11-21T23:55:03.7738407Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:55:03.7738741Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:55:03.7739089Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.10.19/x64
+2025-11-21T23:55:03.7739421Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.10.19/x64/lib
+2025-11-21T23:55:03.7739694Z ##[endgroup]
+2025-11-21T23:55:03.8564971Z ==> linux OS detected
+2025-11-21T23:55:04.0704391Z https://cli.codecov.io/latest/linux/codecov.SHA256SUM
+2025-11-21T23:55:04.1895453Z gpg: directory '/home/runner/.gnupg' created
+2025-11-21T23:55:04.1928368Z gpg: keybox '/home/runner/.gnupg/pubring.kbx' created
+2025-11-21T23:55:04.2043426Z gpg: /home/runner/.gnupg/trustdb.gpg: trustdb created
+2025-11-21T23:55:04.2044342Z gpg: key 806BB28AED779869: public key "Codecov Uploader (Codecov Uploader Verification Key) <security@codecov.io>" imported
+2025-11-21T23:55:04.2353653Z gpg: Total number processed: 1
+2025-11-21T23:55:04.2354060Z gpg:               imported: 1
+2025-11-21T23:55:04.2412268Z gpg: Signature made Mon Nov 10 14:58:43 2025 UTC
+2025-11-21T23:55:04.2412860Z gpg:                using RSA key 27034E7FDB850E0BBC2C62FF806BB28AED779869
+2025-11-21T23:55:04.2415661Z gpg: Good signature from "Codecov Uploader (Codecov Uploader Verification Key) <security@codecov.io>" [unknown]
+2025-11-21T23:55:04.2416613Z gpg: WARNING: This key is not certified with a trusted signature!
+2025-11-21T23:55:04.2417309Z gpg:          There is no indication that the signature belongs to the owner.
+2025-11-21T23:55:04.2418052Z Primary key fingerprint: 2703 4E7F DB85 0E0B BC2C  62FF 806B B28A ED77 9869
+2025-11-21T23:55:04.2670170Z ==> Uploader SHASUM verified (80b5e6f898d6080be523f53ff169702a008a1c91b20c63c49df1175ed794d822  codecov)
+2025-11-21T23:55:04.2671253Z ==> Running version latest
+2025-11-21T23:55:04.2676627Z eventName: push
+2025-11-21T23:55:04.2683340Z ==> Running command '/home/runner/work/_actions/codecov/test-results-action/v1/dist/codecov do-upload'
+2025-11-21T23:55:04.2700562Z [command]/home/runner/work/_actions/codecov/test-results-action/v1/dist/codecov do-upload -f ./junit.xml --report-type test_results
+2025-11-21T23:55:04.6228209Z info - 2025-11-21 23:55:04,622 -- ci service found: github-actions
+2025-11-21T23:55:04.6318910Z warning - 2025-11-21 23:55:04,631 -- No config file could be found. Ignoring config.
+2025-11-21T23:55:04.6955567Z info - 2025-11-21 23:55:04,695 -- Found 1 test_results files to report
+2025-11-21T23:55:04.6959660Z info - 2025-11-21 23:55:04,695 -- > /home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation/junit.xml
+2025-11-21T23:55:05.1592933Z info - 2025-11-21 23:55:05,158 -- Process Upload complete
+2025-11-21T23:55:05.2673922Z Post job cleanup.
+2025-11-21T23:55:05.3383024Z [command]/usr/bin/git version
+2025-11-21T23:55:05.3417975Z git version 2.51.2
+2025-11-21T23:55:05.3460180Z Temporarily overriding HOME='/home/runner/work/_temp/f443a6ef-c73d-4ec9-8095-ecb4e24a29c0' before making global git config changes
+2025-11-21T23:55:05.3461026Z Adding repository directory to the temporary git global config as a safe directory
+2025-11-21T23:55:05.3464653Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/PICA-Python-Instrument-Control-and-Automation/PICA-Python-Instrument-Control-and-Automation
+2025-11-21T23:55:05.3494950Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2025-11-21T23:55:05.3523332Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2025-11-21T23:55:05.3746879Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2025-11-21T23:55:05.3767571Z http.https://github.com/.extraheader
+2025-11-21T23:55:05.3778606Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2025-11-21T23:55:05.3807261Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2025-11-21T23:55:05.4128927Z Cleaning up orphan processes
