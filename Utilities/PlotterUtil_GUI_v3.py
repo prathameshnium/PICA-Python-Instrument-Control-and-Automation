@@ -32,6 +32,7 @@ except ImportError:
 
 def _dummy_process_target():
     """A picklable top-level function to satisfy multiprocessing on Windows."""
+    pass
 
 
 def launch_new_instance():
@@ -41,6 +42,7 @@ def launch_new_instance():
     """
     # This function is no longer needed, as the logic is handled directly
     # in the button command for clarity and robustness.
+    pass
 
 
 def run_script_process(script_path):
@@ -202,7 +204,7 @@ class PlotterApp:
         font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
         ttk.Label(
             left_header_frame,
-            text=f"PICA General Purpose Plotter",
+            text="PICA General Purpose Plotter",
             style='Header.TLabel',
             font=font_title_main,
             foreground=self.CLR_ACCENT_GOLD).pack(
@@ -718,6 +720,73 @@ class PlotterApp:
             # The log message is sufficient.
             return False
 
+    def _find_header_row(self, filepath):
+        """Finds the header row index in a file."""
+        header_line_index = -1
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            for i, line in enumerate(f):
+                line = line.strip()
+                if line and not line.startswith('#') and (',' in line or '\t' in line):
+                    header_line_index = i
+                    break
+        return header_line_index
+
+    def _read_data_from_file(self, filepath, header_line_index):
+        """Reads data from a file using numpy.genfromtxt."""
+        if header_line_index == -1:
+            raise ValueError(
+                "No valid data header row found. Ensure the file has a "
+                "non-commented header with comma or tab-separated columns.")
+
+        data_array = np.genfromtxt(
+            filepath,
+            delimiter=',',
+            names=True,
+            comments='#',
+            autostrip=True,
+            invalid_raise=False,
+            skip_header=header_line_index)
+
+        if not isinstance(data_array, np.ndarray) or data_array.dtype is None or data_array.dtype.names is None:
+            raise ValueError(
+                "Could not parse data. The file may be empty, have an invalid format, or contain only comments.")
+        
+        return data_array
+
+    def _update_cache_and_ui(self, filepath, data_array):
+        """Updates the file data cache and UI elements with new data."""
+        if data_array.size == 0:
+            self.log(
+                f"Warning: File '{os.path.basename(filepath)}' was loaded, but contains no valid data rows.")
+            if filepath in self.file_data_cache:
+                file_info = self.file_data_cache[filepath]
+                file_info['headers'] = [
+                    name.strip() for name in data_array.dtype.names] if data_array.dtype.names else []
+                file_info['data'] = {h: np.array(
+                    []) for h in file_info['headers']}
+            data_array = np.array([])
+
+        headers = [name.strip() for name in data_array.dtype.names]
+
+        file_info = self.file_data_cache[filepath]
+        file_info['headers'] = headers
+        file_info['data'] = {name: data_array[name] for name in headers}
+        file_info['mod_time'] = os.path.getmtime(filepath)
+        file_info['size'] = os.path.getsize(filepath)
+
+        self.x_col_cb['values'] = headers
+        self.y_col_cb['values'] = headers
+
+        if len(headers) > 1:
+            self.x_col_cb.set(headers[0])
+            self.y_col_cb.set(headers[1])
+        elif headers:
+            self.x_col_cb.set(headers[0])
+
+        num_points = len(data_array)
+        self.log(
+            f"Loaded {num_points} data points from '{os.path.basename(filepath)}'.")
+
     def load_file_data(self, filepath):
         if not filepath:
             self.log("Cannot load data: No file selected.")
@@ -726,123 +795,16 @@ class PlotterApp:
         self.stop_file_watcher()
 
         try:
-            # --- Two-pass loading for robustness ---
-            # 1. Find the header row and the line number where data starts.
-            header_line_index = -1
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                for i, line in enumerate(f):
-                    # A valid header in PICA files is the first line that is NOT a comment
-                    # and contains multiple columns (separated by comma or
-                    # tab).
-                    line = line.strip()
-                    if line and not line.startswith('#') and (
-                            ',' in line or '\t' in line):
-                        header_line_index = i
-                        break
-
-            if header_line_index == -1:
-                raise ValueError(
-                    "No valid data header row found. Ensure the file has a non-commented header with comma or tab-separated columns.")
-
-            # 2. Use genfromtxt, telling it exactly where to start reading data.
-            #    Explicitly set delimiter to comma for PICA files.
-            data_array = np.genfromtxt(
-                filepath,
-                delimiter=',',
-                names=True,
-                comments='#',
-                autostrip=True,
-                invalid_raise=False,
-                skip_header=header_line_index)
-
-            # --- ROBUSTNESS CHECK ---
-            # If genfromtxt fails completely, it can return a scalar (e.g., nan) which is "unsized".
-            # We must ensure it's an array before proceeding.
-            if not isinstance(
-                    data_array,
-                    np.ndarray) or data_array.dtype is None or data_array.dtype.names is None:
-                raise ValueError(
-                    "Could not parse data. The file may be empty, have an invalid format, or contain only comments.")
-
-            # Check if any data was actually loaded
-            if data_array.size == 0:
-                self.log(
-                    f"Warning: File '{os.path.basename(filepath)}' was loaded, but contains no valid data rows.")
-                # Set up empty structure to prevent future errors
-                if filepath in self.file_data_cache:
-                    file_info = self.file_data_cache[filepath]
-                    file_info['headers'] = [
-                        name.strip() for name in data_array.dtype.names] if data_array.dtype.names else []
-                    file_info['data'] = {h: np.array(
-                        []) for h in file_info['headers']}
-                # Fall through to the rest of the logic, which will handle the
-                # empty state
-                data_array = np.array(
-                    [])  # Ensure data_array is a sized object
-
-            # Sanitize headers to remove extra spaces or quotes that genfromtxt
-            # might add
-            headers = [name.strip() for name in data_array.dtype.names]
-
-            # Store data in our cache
-            file_info = self.file_data_cache[filepath]
-            file_info['headers'] = headers
-            file_info['data'] = {name: data_array[name] for name in headers}
-            file_info['mod_time'] = os.path.getmtime(filepath)
-            file_info['size'] = os.path.getsize(filepath)
-
-            self.x_col_cb['values'] = headers
-            self.y_col_cb['values'] = headers
-
-            # Set default columns if they exist
-            if len(headers) > 1:
-                self.x_col_cb.set(headers[0])
-                self.y_col_cb.set(headers[1])
-            elif headers:
-                self.x_col_cb.set(headers[0])
-
-            num_points = len(data_array)
-            self.log(
-                f"Loaded {num_points} data points from '{os.path.basename(filepath)}'.")
+            header_line_index = self._find_header_row(filepath)
+            data_array = self._read_data_from_file(filepath, header_line_index)
+            self._update_cache_and_ui(filepath, data_array)
 
         except Exception as e:
-            # If loading fails, reset everything for this file to prevent
-            # chained errors.
-            if filepath in self.file_data_cache:
-                # Create an empty but valid cache entry.
-                self.file_data_cache[filepath] = {
-                    "path": filepath, "headers": [], "data": {}}
-            self.column_source_var.set("Columns from: (no file selected)")
-
-            # --- FIX: Explicitly clear the active file path and plot on error ---
-            self.active_filepath = None  # This is the key change to reset the state
-            self.plot_data()  # Call plot_data to clear the plot area immediately
-
-            # Clear UI elements
-            self.x_col_cb.set('')
-            self.y_col_cb.set('')
-            self.x_col_cb['values'] = []
-            self.y_col_cb['values'] = []
-
-            # --- Prevent error loop ---
-            # If loading fails, disable live update to stop retrying on a bad
-            # file.
-            self.live_update_var.set(False)
-            self.toggle_live_update()
-
-            self.log(f"Error loading file: {traceback.format_exc()}")
-            # Show a single, clear error message.
-            messagebox.showerror(
-                "File Load Error",
-                f"Could not read the data file. It may be empty, malformed, or in use.\n\nDetails: {e}")
-            # Do not plot here; let the finally block handle it to ensure the
-            # plot always reflects the current state.
+            self._handle_load_error(filepath, e)
+            
         finally:
-            # Only start the watcher if the file is still the active one (load
-            # might have failed)
             if self.active_filepath == filepath:
                 self.start_file_watcher()
-            # Trigger a plot update with the newly loaded data
             self.plot_data()
 
     def append_file_data(self):
@@ -861,54 +823,57 @@ class PlotterApp:
             return
 
         try:
-            with open(self.active_filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                f.seek(file_info['size'])
-                new_lines = f.readlines()
+            new_lines = self._read_new_lines(self.active_filepath, file_info)
+            appended_count = self._parse_and_append_new_data(new_lines, file_info)
 
-                if not new_lines:
-                    return  # No new data to append
-
-                # Read new lines into temporary lists
-                reader = csv.reader(new_lines)
-                new_data = {h: [] for h in file_info['headers']}
-                appended_count = 0
-                for row in reader:
-                    if len(row) != len(file_info['headers']):
-                        continue
-                    for i, header in enumerate(file_info['headers']):
-                        try:
-                            new_data[header].append(float(row[i]))
-                        except (ValueError, TypeError):
-                            new_data[header].append(np.nan)
-                    appended_count += 1
-
-                # Append new numpy arrays to existing data
-                for header in file_info['headers']:
-                    file_info['data'][header] = np.concatenate(
-                        (file_info['data'][header], np.array(new_data[header], dtype=float)))
-
-            file_info['mod_time'] = os.path.getmtime(self.active_filepath)
-            file_info['size'] = os.path.getsize(self.active_filepath)
-            self.log(f"Appended {appended_count} new data points.")
-            self.plot_data()
-        except Exception as e:
+            if appended_count > 0:
+                file_info['mod_time'] = os.path.getmtime(self.active_filepath)
+                file_info['size'] = os.path.getsize(self.active_filepath)
+                self.log(f"Appended {appended_count} new data points.")
+                self.plot_data()
+                
+        except Exception:
             self.log(f"Error appending data: {traceback.format_exc()}")
             # Fallback to a full reload in case of parsing error
             self.load_file_data(self.active_filepath)
         finally:
-            # Always restart the watcher after an append operation
+            # Always restart the watcher after an append operation.
             self.start_file_watcher()
 
-    def plot_data(self, event=None):
-        x_col = self.x_col_cb.get()
-        y_col = self.y_col_cb.get()
-        # --- Checkbox UI: Get selected files from checkboxes ---
-        selected_filepaths = [
-            fp for fp,
-            ui in self.file_ui_elements.items() if ui['var'].get()]
+    def _read_new_lines(self, filepath, file_info):
+        """Reads new lines from the end of a file."""
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            f.seek(file_info['size'])
+            new_lines = f.readlines()
+        return new_lines
 
-        self.ax_main.clear()  # Clear axes for fresh plot
-        self.ax_main.grid(True, linestyle='--', alpha=0.6)
+    def _parse_and_append_new_data(self, new_lines, file_info):
+        """Parses new lines and appends them to the data cache."""
+        if not new_lines:
+            return 0
+
+        reader = csv.reader(new_lines)
+        new_data = {h: [] for h in file_info['headers']}
+        appended_count = 0
+        for row in reader:
+            if len(row) != len(file_info['headers']):
+                continue
+            for i, header in enumerate(file_info['headers']):
+                try:
+                    new_data[header].append(float(row[i]))
+                except (ValueError, TypeError):
+                    new_data[header].append(np.nan)
+            appended_count += 1
+
+        for header in file_info['headers']:
+            file_info['data'][header] = np.concatenate(
+                (file_info['data'][header], np.array(new_data[header], dtype=float)))
+        
+        return appended_count
+
+    def plot_data(self, event=None):
+        x_col, y_col, selected_filepaths = self._get_plot_parameters()
+        self._clear_and_setup_plot()
 
         if not selected_filepaths or not all([x_col, y_col]):
             self.ax_main.set_title("Click 'Add File(s)...' to begin")
@@ -920,86 +885,107 @@ class PlotterApp:
         plotted_something = False
         try:
             for filepath in selected_filepaths:
-                file_info = self.file_data_cache.get(filepath)
-                filename = os.path.basename(filepath)
-
-                if not file_info or 'headers' not in file_info or not file_info['headers']:
-                    self.log(
-                        f"Skipping '{filename}': Data is missing or invalid.")
-                    continue
-
-                if x_col not in file_info.get(
-                        'headers',
-                        []) or y_col not in file_info.get(
-                        'headers',
-                        []):
-                    self.log(
-                        f"Skipping '{filename}': Does not contain '{x_col}' or '{y_col}'.")
-                    continue
-
-                raw_x = file_info['data'][x_col]
-                raw_y = file_info['data'][y_col]
-
-                finite_mask = np.isfinite(raw_x) & np.isfinite(raw_y)
-                plot_x = raw_x[finite_mask]
-                plot_y = raw_y[finite_mask]
-
-                if plot_x.size > 0:
-                    # --- Set the label for the legend ---
-                    if len(selected_filepaths) > 1:
-                        label_text = f"{y_col} vs {x_col} ({filename})"
-                    else:
-                        label_text = f"{y_col} vs {x_col}"
-                    self.ax_main.plot(
-                        plot_x,
-                        plot_y,
-                        marker='o',
-                        markersize=4,
-                        linestyle='-',
-                        label=label_text)
+                if self._plot_file_data(filepath, x_col, y_col):
                     plotted_something = True
 
-            # --- Finalize Plot ---
             if plotted_something:
-                legend_title = f"File: {os.path.basename(selected_filepaths[0])}" if len(
-                    selected_filepaths) == 1 else "Multiple Files"
-                # Set legend text and title color to be visible against the
-                # white background
-                leg = self.ax_main.legend(
-                    title=legend_title, labelcolor=self.CLR_CONSOLE_BG)
-                if leg:
-                    leg.get_title().set_color(self.CLR_CONSOLE_BG)
-                self.log(
-                    f"Plot updated for {len(selected_filepaths)} selected file(s).")
+                self._finalize_plot(x_col, y_col, selected_filepaths)
+                self.log(f"Plot updated for {len(selected_filepaths)} selected file(s).")
             else:
-                self.log(
-                    "No valid data to plot for the selected files and columns.")
-
-            self.ax_main.set_xscale(
-                'log' if self.x_log_var.get() else 'linear')
-            self.ax_main.set_yscale(
-                'log' if self.y_log_var.get() else 'linear')
-            self.ax_main.set_xlabel(x_col)
-            self.ax_main.set_ylabel(y_col)
-            # Set title to filename if one file is selected, otherwise a
-            # generic title
-            if len(selected_filepaths) == 1:
-                self.ax_main.set_title(
-                    os.path.basename(
-                        selected_filepaths[0]),
-                    fontweight='bold')
-            else:
-                self.ax_main.set_title(
-                    f"{y_col} vs. {x_col}", fontweight='bold')
-            self.figure.tight_layout()
+                self.log("No valid data to plot for the selected files and columns.")
 
         except Exception as e:
             self.log(f"Error plotting data: {traceback.format_exc()}")
             messagebox.showerror("Plotting Error",
                                  f"An error occurred while plotting.\n\n{e}")
         finally:
-            # --- RELIABLE DRAW METHOD ---
             self.canvas.draw_idle()
+
+    def _get_plot_parameters(self):
+        """Gets selected columns and filepaths for plotting."""
+        x_col = self.x_col_cb.get()
+        y_col = self.y_col_cb.get()
+        selected_filepaths = [
+            fp for fp, ui in self.file_ui_elements.items() if ui['var'].get()]
+        return x_col, y_col, selected_filepaths
+
+    def _clear_and_setup_plot(self):
+        """Clears the plot and sets up the grid."""
+        self.ax_main.clear()
+        self.ax_main.grid(True, linestyle='--', alpha=0.6)
+
+    def _plot_file_data(self, filepath, x_col, y_col):
+        """Plots data for a single file."""
+        file_info = self.file_data_cache.get(filepath)
+        filename = os.path.basename(filepath)
+
+        if not file_info or 'headers' not in file_info or not file_info['headers']:
+            self.log(f"Skipping '{filename}': Data is missing or invalid.")
+            return False
+
+        if x_col not in file_info.get('headers', []) or y_col not in file_info.get('headers', []):
+            self.log(f"Skipping '{filename}': Does not contain '{x_col}' or '{y_col}'.")
+            return False
+
+        raw_x = file_info['data'][x_col]
+        raw_y = file_info['data'][y_col]
+
+        finite_mask = np.isfinite(raw_x) & np.isfinite(raw_y)
+        plot_x = raw_x[finite_mask]
+        plot_y = raw_y[finite_mask]
+
+        if plot_x.size > 0:
+            label_text = f"{y_col} vs {x_col} ({filename})" if len(self.file_ui_elements) > 1 else f"{y_col} vs {x_col}"
+            self.ax_main.plot(
+                plot_x,
+                plot_y,
+                marker='o',
+                markersize=4,
+                linestyle='-',
+                label=label_text)
+            return True
+        return False
+
+    def _finalize_plot(self, x_col, y_col, selected_filepaths):
+        """Sets labels, titles, and legend for the plot."""
+        if len(selected_filepaths) == 1:
+            legend_title = f"File: {os.path.basename(selected_filepaths[0])}"
+        else:
+            legend_title = "Multiple Files"
+            
+        leg = self.ax_main.legend(title=legend_title, labelcolor=self.CLR_CONSOLE_BG)
+        if leg:
+            leg.get_title().set_color(self.CLR_CONSOLE_BG)
+
+        self.ax_main.set_xscale('log' if self.x_log_var.get() else 'linear')
+        self.ax_main.set_yscale('log' if self.y_log_var.get() else 'linear')
+        self.ax_main.set_xlabel(x_col)
+        self.ax_main.set_ylabel(y_col)
+
+        if len(selected_filepaths) == 1:
+            self.ax_main.set_title(os.path.basename(selected_filepaths[0]), fontweight='bold')
+        else:
+            self.ax_main.set_title(f"{y_col} vs. {x_col}", fontweight='bold')
+        self.figure.tight_layout()
+
+    def _handle_load_error(self, filepath, e):
+        """Handles errors during file loading."""
+        if filepath in self.file_data_cache:
+            self.file_data_cache[filepath] = {
+                "path": filepath, "headers": [], "data": {}}
+        self.column_source_var.set("Columns from: (no file selected)")
+        self.active_filepath = None
+        self.plot_data()
+        self.x_col_cb.set('')
+        self.y_col_cb.set('')
+        self.x_col_cb['values'] = []
+        self.y_col_cb['values'] = []
+        self.live_update_var.set(False)
+        self.toggle_live_update()
+        self.log(f"Error loading file: {traceback.format_exc()}")
+        messagebox.showerror(
+            "File Load Error",
+            f"Could not read the data file. It may be empty, malformed, or in use.\n\nDetails: {e}")
 
     def toggle_live_update(self):
         if self.live_update_var.get():

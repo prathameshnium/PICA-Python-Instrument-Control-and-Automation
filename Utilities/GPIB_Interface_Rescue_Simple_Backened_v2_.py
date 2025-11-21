@@ -12,7 +12,7 @@ def run_rescue(visa_address: str):
     """
     Connects to a hung instrument and attempts to clear its error state.
     """
-    print(f"--- Instrument Rescue Script Initialized ---")
+    print("--- Instrument Rescue Script Initialized ---")
     rm = pyvisa.ResourceManager()
     instrument = None  # Initialize to None to ensure it exists for the 'finally' block
 

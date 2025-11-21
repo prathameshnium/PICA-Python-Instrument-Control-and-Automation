@@ -42,6 +42,7 @@ tab-separated .txt file and generates a plot of the I-V curve.
 # Changes_done:Working
 # ------------------------------------------------------------------------
 
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from time import sleep
@@ -60,7 +61,7 @@ def main():
     sleep(2)
 
     i = 0
-    I = []
+    current_values = []
     Volt = []
 
     # user input ----------------------------------
@@ -83,7 +84,7 @@ def main():
         sleep(1.5)
         v_meas = keithley_2400.voltage
         sleep(1)
-        I.append(cur * 1e-6)  # Use the actual sourced value
+        current_values.append(cur * 1e-6)  # Use the actual sourced value
         Volt.append(v_meas)
         print(f"{cur * 1e-6:.3e} A  {v_meas:.4f} V")
         i += 1
@@ -92,7 +93,7 @@ def main():
     for i1 in np.arange(0, I_range + I_step, I_step):
         IV_Measure(i1)
     
-    df = pd.DataFrame({'I': I, 'V': Volt})
+    df = pd.DataFrame({'I': current_values, 'V': Volt})
     print("\n--- Measurement Complete ---")
     print(df)
     
@@ -104,7 +105,7 @@ def main():
     keithley_2400.shutdown()
     print("Keithley 2400 shutdown complete.")
     
-    plt.plot(I, Volt, marker='o', linestyle='-', color='g', label='I-V Data')
+    plt.plot(current_values, Volt, marker='o', linestyle='-', color='g', label='I-V Data')
     plt.xlabel('Current (A)')
     plt.ylabel('Voltage (V)')
     plt.title('I-V Curve')

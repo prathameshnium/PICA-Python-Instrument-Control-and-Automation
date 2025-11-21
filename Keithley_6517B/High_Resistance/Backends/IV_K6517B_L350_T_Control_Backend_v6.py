@@ -194,6 +194,100 @@ def perform_keithley_zero_check(keithley):
 # --- Main Program Execution ---
 
 
+def stabilize_temperature(lakeshore, target_temp):
+    """Actively controls the heater to reach and stabilize at the target temperature."""
+    print(f"\nMoving to start temperature of {target_temp} K using active control...")
+    while True:
+        current_temp = lakeshore.get_temperature(SENSOR_INPUT)
+
+        if current_temp > target_temp + 0.2:  # System is too warm
+            print(f"Cooling... Current: {current_temp:.4f} K > Target: {target_temp} K", end='\r')
+            lakeshore.set_heater_range(HEATER_OUTPUT, 'off')
+        else:  # System is too cold or within tolerance
+            print(f"Heating... Current: {current_temp:.4f} K <= Target: {target_temp} K", end='\r')
+            lakeshore.set_heater_range(HEATER_OUTPUT, 'medium')
+            lakeshore.set_setpoint(HEATER_OUTPUT, target_temp)
+
+        if abs(current_temp - target_temp) < 0.1:  # Stabilization tolerance
+            print(f"\nStabilized at {current_temp:.4f} K. Waiting 5 seconds before starting ramp.")
+            time.sleep(5)
+            break
+        time.sleep(2)
+
+
+def run_measurement_loop(lakeshore, keithley, filename, end_temp, safety_cutoff, source_voltage, delay):
+    """Runs the main data acquisition loop, logging data and updating the plot."""
+    plt.ion()
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8))
+    fig.suptitle('Live R-T Measurement', fontsize=16)
+    line1, = ax1.plot([], [], 'b-o', markersize=3)
+    ax1.set_xlabel('Elapsed Time (s)')
+    ax1.set_ylabel('Temperature (K)')
+    ax1.set_title('Temperature Ramp Profile')
+    ax1.grid(True, linestyle=':')
+    line2, = ax2.plot([], [], 'r-s', markersize=3)
+    ax2.set_xlabel('Temperature (K)')
+    ax2.set_ylabel('Resistance (Ω)')
+    ax2.set_title('Resistance vs. Temperature')
+    ax2.grid(True, linestyle=':')
+    ax2.set_yscale('log')
+    fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+    time_data, temp_data, res_data = [], [], []
+
+    start_time = time.time()
+
+    with open(filename, 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["Timestamp", "Elapsed Time (s)", "Temperature (K)", "Heater Output (%)",
+                         "Applied Voltage (V)", "Measured Current (A)", "Resistance (Ohm)"])
+
+    while True:
+        elapsed_time = time.time() - start_time
+        current_temp = lakeshore.get_temperature(SENSOR_INPUT)
+        heater_output = lakeshore.get_heater_output(HEATER_OUTPUT)
+
+        time.sleep(delay)
+        resistance = keithley.resistance
+        current = abs(source_voltage / resistance) if resistance != 0 else float('inf')
+
+        status_str = (
+            f"Time: {elapsed_time:7.2f}s | "
+            f"Temp: {current_temp:8.4f}K | "
+            f"Resistance: {resistance:9.3e} Ω"
+        )
+        print(status_str, end='\r')
+
+        with open(filename, 'a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                f"{elapsed_time:.2f}", f"{current_temp:.4f}", f"{heater_output:.2f}",
+                f"{source_voltage:.4e}", f"{current:.4e}", f"{resistance:.4e}"
+            ])
+
+        time_data.append(elapsed_time)
+        temp_data.append(current_temp)
+        res_data.append(resistance)
+
+        line1.set_data(time_data, temp_data)
+        ax1.relim()
+        ax1.autoscale_view()
+        line2.set_data(temp_data, res_data)
+        ax2.relim()
+        ax2.autoscale_view()
+        fig.canvas.draw()
+        fig.canvas.flush_events()
+
+        if current_temp >= safety_cutoff:
+            print(f"\n\n!!! SAFETY CUTOFF REACHED at {current_temp:.4f} K (Limit: {safety_cutoff} K) !!!")
+            break
+        if current_temp >= end_temp:
+            print(f"\n\nTarget temperature of {end_temp} K reached.")
+            break
+
+        time.sleep(2)
+
+
 def main():
     """Main function to run the R-T experiment."""
     root = tk.Tk()
@@ -225,7 +319,7 @@ def main():
         keithley = Keithley6517B(KEITHLEY_VISA)
         print(f"Successfully connected to: {keithley.id}")
         perform_keithley_zero_check(keithley)
-
+ 
         keithley.source_voltage = source_voltage
         keithley.current_nplc = 1
         keithley.enable_source()
@@ -233,120 +327,14 @@ def main():
 
         # --- Setup Live Plot ---
         plt.ion()
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8))
-        fig.suptitle('Live R-T Measurement', fontsize=16)
-        line1, = ax1.plot([], [], 'b-o', markersize=3)
-        ax1.set_xlabel('Elapsed Time (s)')
-        ax1.set_ylabel('Temperature (K)')
-        ax1.set_title('Temperature Ramp Profile')
-        ax1.grid(True, linestyle=':')
-        line2, = ax2.plot([], [], 'r-s', markersize=3)
-        ax2.set_xlabel('Temperature (K)')
-        ax2.set_ylabel('Resistance (Ω)')
-        ax2.set_title('Resistance vs. Temperature')
-        ax2.grid(True, linestyle=':')
-        ax2.set_yscale('log')
-        fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-        time_data, temp_data, res_data = [], [], []
-
-        # --- NEW: Go to Start Temp and Stabilize with Active Control ---
-        print(
-            f"\nMoving to start temperature of {start_temp} K using active control...")
-        while True:
-            current_temp = lakeshore.get_temperature(SENSOR_INPUT)
-
-            # Active heating/cooling logic
-            if current_temp > start_temp + 0.2:  # System is too warm
-                print(
-                    f"Cooling... Current: {current_temp:.4f} K > Target: {start_temp} K",
-                    end='\r')
-                lakeshore.set_heater_range(HEATER_OUTPUT, 'off')
-            else:  # System is too cold or within tolerance
-                print(
-                    f"Heating... Current: {current_temp:.4f} K <= Target: {start_temp} K",
-                    end='\r')
-                lakeshore.set_heater_range(HEATER_OUTPUT, 'medium')
-                lakeshore.set_setpoint(HEATER_OUTPUT, start_temp)
-
-            # Check for stabilization
-            if abs(current_temp - start_temp) < 0.1:  # Stabilization tolerance
-                print(
-                    f"\nStabilized at {current_temp:.4f} K. Waiting 5 seconds before starting ramp.")
-                time.sleep(5)
-                break
-            time.sleep(2)  # Interval for checking stabilization status
+        stabilize_temperature(lakeshore, start_temp)
 
         # --- Start Ramp and Data Logging ---
         lakeshore.setup_ramp(HEATER_OUTPUT, rate)
         lakeshore.set_setpoint(HEATER_OUTPUT, end_temp)
-        # Ensure heater is on for the ramp
         lakeshore.set_heater_range(HEATER_OUTPUT, 'medium')
         print(f"Ramp started towards {end_temp} K at {rate} K/min.")
-
-        start_time = time.time()
-
-        with open(filename, 'w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(["Timestamp",
-                             "Elapsed Time (s)",
-                             "Temperature (K)",
-                             "Heater Output (%)",
-                             "Applied Voltage (V)",
-                             "Measured Current (A)",
-                             "Resistance (Ohm)"])
-
-        # --- Main experiment loop ---
-        while True:
-            elapsed_time = time.time() - start_time
-            current_temp = lakeshore.get_temperature(SENSOR_INPUT)
-            heater_output = lakeshore.get_heater_output(HEATER_OUTPUT)
-
-            time.sleep(delay)
-            resistance = keithley.resistance
-            current = abs(
-                source_voltage /
-                resistance) if resistance != 0 else float('inf')
-
-            status_str = (
-                f"Time: {elapsed_time:7.2f}s | "
-                f"Temp: {current_temp:8.4f}K | "
-                f"Resistance: {resistance:9.3e} Ω"
-            )
-            print(status_str, end='\r')
-
-            with open(filename, 'a', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerow([
-                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    f"{elapsed_time:.2f}", f"{current_temp:.4f}", f"{heater_output:.2f}",
-                    f"{source_voltage:.4e}", f"{current:.4e}", f"{resistance:.4e}"
-                ])
-
-            time_data.append(elapsed_time)
-            temp_data.append(current_temp)
-            res_data.append(resistance)
-
-            line1.set_data(time_data, temp_data)
-            ax1.relim()
-            ax1.autoscale_view()
-            line2.set_data(temp_data, res_data)
-            ax2.relim()
-            ax2.autoscale_view()
-            fig.canvas.draw()
-            fig.canvas.flush_events()
-
-            # --- Check for End Conditions ---
-            if current_temp >= safety_cutoff:
-                print(
-                    f"\n\n!!! SAFETY CUTOFF REACHED at {current_temp:.4f} K (Limit: {safety_cutoff} K) !!!")
-                break
-            if current_temp >= end_temp:
-                print(f"\n\nTarget temperature of {end_temp} K reached.")
-                break
-
-            # The main data logging interval. Should be independent of Keithley
-            # delay.
-            time.sleep(2)
+        run_measurement_loop(lakeshore, keithley, filename, end_temp, safety_cutoff, source_voltage, delay)
 
     except ConnectionError as e:
         print(f"\nCould not start experiment due to a connection failure: {e}")

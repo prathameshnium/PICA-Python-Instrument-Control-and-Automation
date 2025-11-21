@@ -8,8 +8,8 @@ import time
 import pandas as pd
 from pymeasure.instruments.keithley import Keithley6517B
 
-I = []
-t = []
+time_data = []
+current_data = []
 
 try:
     keithley = Keithley6517B("GPIB0::27::INSTR")
@@ -23,8 +23,8 @@ try:
     while True:
         elapsed_time = time.time() - start_time
         current = keithley.current
-        t.append(elapsed_time)
-        I.append(current)
+        time_data.append(elapsed_time)
+        current_data.append(current)
         print(f"Time: {elapsed_time:.2f} | Current: {current} A")
         time.sleep(2)
 
@@ -32,8 +32,8 @@ except KeyboardInterrupt:
     print("\nMeasurement stopped by User.")
 
     # --- THIS IS THE FIX ---
-    if t and I:
-        data_df = pd.DataFrame({"Timestamp": t, "Current (A)": I})
+    if time_data and current_data:
+        data_df = pd.DataFrame({"Timestamp": time_data, "Current (A)": current_data})
         data_df.to_csv("demo_data.dat", index=False)
         print("Data saved to file: demo_data.dat")
 

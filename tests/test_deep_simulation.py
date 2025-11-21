@@ -48,7 +48,7 @@ class TestDeepSimulation(unittest.TestCase):
     # -------------------------------------------------------------------------
     def _timeout_handler(self, signum, frame):
         raise TimeoutError(
-            f"Test {self._testMethodName} took longer than 30s! Infinite Loop suspected.")
+            "Test {self._testMethodName} took longer than 30s! Infinite Loop suspected.")
 
     def run_module_safely(self, module_name):
         """Imports and runs a module with a strict 30-second timeout."""

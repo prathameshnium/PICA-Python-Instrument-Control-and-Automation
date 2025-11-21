@@ -988,6 +988,39 @@ class Integrated_RT_GUI:
         if self.is_running or self.is_stabilizing:
             self.root.after(200, self._process_data_queue)
 
+    def _handle_new_data_point(self, data):
+        """Helper to process a single data point from the queue."""
+        temp, htr, cur, res, elapsed = data
+        self.log(
+            f"T:{temp:.3f}K | R:{res:.3e}Ω | Htr:{htr:.1f}% ({self.current_heater_range})")
+        with open(self.data_filepath, 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(
+                [
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    f"{elapsed:.2f}",
+                    f"{temp:.4f}",
+                    f"{htr:.2f}",
+                    f"{self.backend.params['source_voltage']:.4e}",
+                    f"{cur:.4e}",
+                    f"{res:.4e}"])
+
+        self.data_storage['time'].append(elapsed)
+        self.data_storage['temperature'].append(temp)
+        self.data_storage['current'].append(cur)
+        self.data_storage['resistance'].append(res)
+
+        # Update plot data
+        self.line_main.set_data(
+            self.data_storage['temperature'],
+            self.data_storage['resistance'])
+        self.line_sub1.set_data(
+            self.data_storage['temperature'],
+            self.data_storage['current'])
+        self.line_sub2.set_data(
+            self.data_storage['time'],
+            self.data_storage['temperature'])
+
     def _scan_for_visa_instruments(self):
         if not pyvisa:
             self.log("ERROR: PyVISA is not installed.")
