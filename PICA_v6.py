@@ -66,7 +66,7 @@ def launch_plotter_utility():
     try:
         # Assuming the plotter is in a standard location relative to other scripts
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        plotter_path = os.path.join(script_dir, "Utilities", "PlotterUtil_Frontend_v3.py")
+        plotter_path = os.path.join(script_dir, "Utilities", "PlotterUtil_GUI_v3.py")
         Process(target=run_script_process, args=(plotter_path,)).start()
     except Exception as e:
         print(f"Failed to launch plotter: {e}")
@@ -108,23 +108,23 @@ class PICALauncherApp:
 
     SCRIPT_PATHS = {
         # Based on Updates.md, using the latest versions of scripts.
-        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_Frontend_V10.py"),
-        "Delta Mode R-T": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.py"),
-        "Delta Mode R-T (T_Sensing)": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.py"),
-        "K2400 I-V": resource_path("Keithley_2400/IV_K2400_Frontend_v5.py"),
-        "K2400 R-T": resource_path("Keithley_2400/RT_K2400_L350_T_Control_Frontend_v3.py"),
-        "K2400 R-T (T_Sensing)": resource_path("Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v4.py"),
-        "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py"),
-        "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_Frontend_v3.py"),
-        "K2400_2182 R-T (T_Sensing)": resource_path("Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_Frontend_v2.py"),
-        "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/IV_K6517B_Frontend_v11.py"),
-        "K6517B R-T": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_Frontend_v13.py"),
-        "K6517B R-T (T_Sensing)": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_Frontend_v14.py"),
-        "Pyroelectric Current": resource_path("Keithley_6517B/Pyroelectricity/Pyroelectric_K6517B_L350_Frontend_v4.py"),
-        "Lakeshore Temp Control": resource_path("Lakeshore_350_340/T_Control_L350_RangeControl_Frontend_v8.py"),
-        "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/T_Sensing_L350_Frontend_v4.py"),
-        "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/CV_KE4980A_Frontend_v3.py"),
-        "Plotter Utility": resource_path("Utilities/PlotterUtil_Frontend_v3.py"),
+        "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_GUI_V10.py"),
+        "Delta Mode R-T": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.py"),
+        "Delta Mode R-T (T_Sensing)": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.py"),
+        "K2400 I-V": resource_path("Keithley_2400/IV_K2400_GUI_v5.py"),
+        "K2400 R-T": resource_path("Keithley_2400/RT_K2400_L350_T_Control_GUI_v3.py"),
+        "K2400 R-T (T_Sensing)": resource_path("Keithley_2400/RT_K2400_L350_T_Sensing_GUI_v4.py"),
+        "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_K2400_K2182_GUI_v3.py"),
+        "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_GUI_v3.py"),
+        "K2400_2182 R-T (T_Sensing)": resource_path("Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_GUI_v2.py"),
+        "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/IV_K6517B_GUI_v11.py"),
+        "K6517B R-T": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_GUI_v13.py"),
+        "K6517B R-T (T_Sensing)": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_GUI_v14.py"),
+        "Pyroelectric Current": resource_path("Keithley_6517B/Pyroelectricity/Pyroelectric_K6517B_L350_GUI_v4.py"),
+        "Lakeshore Temp Control": resource_path("Lakeshore_350_340/T_Control_L350_RangeControl_GUI_v8.py"),
+        "Lakeshore Temp Monitor": resource_path("Lakeshore_350_340/T_Sensing_L350_GUI_v4.py"),
+        "LCR C-V Measurement": resource_path("LCR_Keysight_E4980A/CV_KE4980A_GUI_v3.py"),
+        "Plotter Utility": resource_path("Utilities/PlotterUtil_GUI_v3.py"),
         "PICA Help": resource_path("README.md"),
     }
 

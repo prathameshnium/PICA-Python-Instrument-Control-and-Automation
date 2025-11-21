@@ -188,7 +188,7 @@ class TestDeepSimulation(unittest.TestCase):
             rm = MockRM.return_value
             rm.list_resources.return_value = ('GPIB0::24::INSTR',)
             try:
-                import Utilities.GPIB_Instrument_Scanner_Frontend_v4 as scanner
+                import Utilities.GPIB_Instrument_Scanner_GUI_v4 as scanner
                 if hasattr(scanner, 'GPIBScannerWindow'):
                     print("   -> Verified: Import successful")
             except ImportError:

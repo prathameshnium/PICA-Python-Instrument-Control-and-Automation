@@ -62,7 +62,7 @@ def launch_plotter_utility():
     try:
         # Assumes the plotter is in a standard location relative to this script
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_Frontend_v3.py")
+        plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_GUI_v3.py")
         if not os.path.exists(plotter_path):
             messagebox.showerror("File Not Found", f"Plotter utility not found at expected path:\n{plotter_path}")
             return
@@ -72,7 +72,7 @@ def launch_plotter_utility():
 
 def launch_gpib_scanner():
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    scanner_path = os.path.join(script_dir, "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
+    scanner_path = os.path.join(script_dir, "..", "Utilities", "GPIB_Instrument_Scanner_GUI_v4.py")
     Process(target=run_script_process, args=(scanner_path,)).start()
 
 # -------------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------
-# Name:         V-T Sweep Active Frontend for K2400/2182 & LS350
+# Name:         V-T Sweep Active GUI for K2400/2182 & LS350
 # Purpose:      Provide a professional GUI for performing automated V vs T sweeps
 #               with active temperature control (stabilize then ramp).
 # Author:       Prathamesh Deshmukh
@@ -56,7 +56,7 @@ def launch_plotter_utility():
     try:
         # Assumes the plotter is in a standard location relative to this script
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_Frontend_v3.py")
+        plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_GUI_v3.py")
         if not os.path.exists(plotter_path):
             messagebox.showerror("File Not Found", f"Plotter utility not found at expected path:\n{plotter_path}")
             return
@@ -68,7 +68,7 @@ def launch_plotter_utility():
 def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
     base_path = os.path.dirname(os.path.abspath(__file__))
-    scanner_path = os.path.join(base_path, "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
+    scanner_path = os.path.join(base_path, "..", "Utilities", "GPIB_Instrument_Scanner_GUI_v4.py")
     Process(target=run_script_process, args=(scanner_path,)).start()
 
 

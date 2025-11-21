@@ -57,14 +57,14 @@ def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     # Path is two directories up from the script location to reach project root
-    plotter_path = os.path.join(script_dir, "..", "..", "Utilities", "PlotterUtil_Frontend_v3.py")
+    plotter_path = os.path.join(script_dir, "..", "..", "Utilities", "PlotterUtil_GUI_v3.py")
     Process(target=run_script_process, args=(plotter_path,)).start()
 
 def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     # Path is three directories up from the script location to reach project root
-    scanner_path = os.path.join(script_dir, "..", "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
+    scanner_path = os.path.join(script_dir, "..", "..", "Utilities", "GPIB_Instrument_Scanner_GUI_v4.py")
     Process(target=run_script_process, args=(scanner_path,)).start()
 
 

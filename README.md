@@ -32,9 +32,9 @@ PICA is designed with a clear separation between the user interface (frontend) a
 
 ## Architecture
 
-The core design philosophy of PICA is the separation of concerns, implemented through a distinct **Frontend-Backend** architecture for each measurement module.
+The core design philosophy of PICA is the separation of concerns, implemented through a distinct **GUI-Backend** architecture for each measurement module.
 
--   **Frontend:** Each measurement has a dedicated GUI script (e.g., `IV_K2400_Frontend_v5.py`) built with `Tkinter` and the `CustomTkinter` library. It is responsible for all user interaction, parameter input, and data visualization (live plotting). It runs in the main process.
+-   **GUI:** Each measurement has a dedicated GUI script (e.g., `IV_K2400_GUI_v5.py`) built with `Tkinter` and the `CustomTkinter` library. It is responsible for all user interaction, parameter input, and data visualization (live plotting). It runs in the main process.
 -   **Backend:** The instrument control logic is encapsulated in a separate class (e.g., `Keithley2400_Backend`). This class handles all `PyVISA` communication, instrument configuration, and data acquisition commands.
 -   **Process Isolation:** When a measurement is started, the frontend launches its corresponding backend logic in a separate, isolated process using Python's `multiprocessing` library. This is the key to PICA's stability: a crash or error in one measurement script will not affect the main launcher or any other running experiments.
 -   **Communication:** The frontend and backend communicate via `multiprocessing.Queue` for thread-safe data exchange. The backend performs a measurement and places the data into a queue, which the frontend then reads to update plots and save to a file.
@@ -211,7 +211,7 @@ Alternatively, you can use the `CITATION.cff` file in the root of the repository
 The modular architecture makes it straightforward to add support for new instruments or measurement types. Here is a simplified example of the required structure.
 
 1.  **Create a Backend Class:** Encapsulate all direct instrument communication (`PyVISA` commands) in a dedicated class.
-2.  **Create a Frontend GUI:** Build a `Tkinter` GUI to gather user parameters and display live data. This GUI will instantiate and control the backend.
+2.  **Create a GUI GUI:** Build a `Tkinter` GUI to gather user parameters and display live data. This GUI will instantiate and control the backend.
 3.  **Integrate with the Launcher:** Add a button and the script path to `PICA_v6.py` to make your new module accessible from the main dashboard.
 
 ---

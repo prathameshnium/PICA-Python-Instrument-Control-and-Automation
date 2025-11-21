@@ -64,8 +64,8 @@ class TestDynamicDiscovery(unittest.TestCase):
             for file in files:
                 # DEFINITION OF A GUI MODULE:
                 # 1. Ends with .py
-                # 2. Contains 'Frontend' OR starts with 'PICA_v' (your launcher)
-                if file.endswith(".py") and ("Frontend" in file or file.startswith("PICA_v")):
+                # 2. Contains 'GUI' OR starts with 'PICA_v' (your launcher)
+                if file.endswith(".py") and ("GUI" in file or file.startswith("PICA_v")):
                     
                     full_path = os.path.join(root, file)
                     rel_path = os.path.relpath(full_path, self.root_dir)

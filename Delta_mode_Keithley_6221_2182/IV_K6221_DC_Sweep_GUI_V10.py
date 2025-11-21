@@ -54,7 +54,7 @@ def run_script_process(script_path):
 def launch_plotter_utility():
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_Frontend_v3.py")
+        plotter_path = os.path.join(script_dir, "..", "Utilities", "PlotterUtil_GUI_v3.py")
         if not os.path.exists(plotter_path):
             return
         Process(target=run_script_process, args=(plotter_path,)).start()
@@ -64,7 +64,7 @@ def launch_plotter_utility():
 def launch_gpib_scanner():
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        scanner_path = os.path.join(script_dir, "..", "Utilities", "GPIB_Instrument_Scanner_Frontend_v4.py")
+        scanner_path = os.path.join(script_dir, "..", "Utilities", "GPIB_Instrument_Scanner_GUI_v4.py")
         if not os.path.exists(scanner_path):
             return
         Process(target=run_script_process, args=(scanner_path,)).start()

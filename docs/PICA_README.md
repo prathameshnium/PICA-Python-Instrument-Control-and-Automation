@@ -30,9 +30,9 @@ I started by first creating the measurements program as a CLI (Command-Line Inte
 
 ## Architecture
 
-The core design philosophy of PICA is the separation of concerns, implemented through a distinct **Frontend-Backend** architecture for each measurement module. This is a key feature for the executable version of the software.
+The core design philosophy of PICA is the separation of concerns, implemented through a distinct **GUI-Backend** architecture for each measurement module. This is a key feature for the executable version of the software.
 
--   **Frontend (complete application):** Each measurement has a dedicated GUI script (e.g., `IV_K2400_Frontend_v5.py`) built with `Tkinter`. It is responsible for all user interaction, parameter input, and data visualization (live plotting). It runs in the main process.
+-   **GUI (complete application):** Each measurement has a dedicated GUI script (e.g., `IV_K2400_GUI_v5.py`) built with `Tkinter`. It is responsible for all user interaction, parameter input, and data visualization (live plotting). It runs in the main process.
 
 -   **Backend (CLI-based logic):** The instrument control logic is encapsulated in a separate class (e.g., `Keithley2400_Backend`). This class handles all `PyVISA` communication, instrument configuration, and data acquisition commands.
 
@@ -62,49 +62,49 @@ The PICA suite is organized into modules, each containing a frontend GUI applica
 
 #### Low Resistance (Keithley 6221 / 2182)
 *   **Delta Mode I-V Sweep**
-    *   **Frontend:** `IV_K6221_DC_Sweep_Frontend_V10.exe`
+    *   **GUI:** `IV_K6221_DC_Sweep_GUI_V10.exe`
 *   **Delta Mode R vs. T (Active Control)**
-    *   **Frontend:** `Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.exe`
+    *   **GUI:** `Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.exe`
 *   **Delta Mode R vs. T (Passive Sensing)**
-    *   **Frontend:** `Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.exe`
+    *   **GUI:** `Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.exe`
 
 #### Mid Resistance (Keithley 2400)
 *   **I-V Sweep**
-    *   **Frontend:** `IV_K2400_Frontend_v5.exe`
+    *   **GUI:** `IV_K2400_GUI_v5.exe`
 *   **R vs. T (Active Control)**
-    *   **Frontend:** `RT_K2400_L350_T_Control_Frontend_v3.exe`
+    *   **GUI:** `RT_K2400_L350_T_Control_GUI_v3.exe`
 *   **R vs. T (Passive Sensing)**
-    *   **Frontend:** `RT_K2400_L350_T_Sensing_Frontend_v4.exe`
+    *   **GUI:** `RT_K2400_L350_T_Sensing_GUI_v4.exe`
 
 #### Mid Resistance, High Precision (Keithley 2400 / 2182)
 *   **I-V Sweep**
-    *   **Frontend:** `IV_K2400_K2182_Frontend_v3.exe`
+    *   **GUI:** `IV_K2400_K2182_GUI_v3.exe`
 *   **R vs. T (Active Control)**
-    *   **Frontend:** `RT_K2400_K2182_T_Control_Frontend_v3.exe`
+    *   **GUI:** `RT_K2400_K2182_T_Control_GUI_v3.exe`
 *   **R vs. T (Passive Sensing)**
-    *   **Frontend:** `RT_K2400_2182_L350_T_Sensing_Frontend_v2.exe`
+    *   **GUI:** `RT_K2400_2182_L350_T_Sensing_GUI_v2.exe`
 
 #### High Resistance (Keithley 6517B)
 *   **I-V Sweep**
-    *   **Frontend:** `IV_K6517B_Frontend_v11.exe`
+    *   **GUI:** `IV_K6517B_GUI_v11.exe`
 *   **R vs. T (Active Control)**
-    *   **Frontend:** `RT_K6517B_L350_T_Control_Frontend_v13.exe`
+    *   **GUI:** `RT_K6517B_L350_T_Control_GUI_v13.exe`
 *   **R vs. T (Passive Sensing)**
-    *   **Frontend:** `RT_K6517B_L350_T_Sensing_Frontend_v14.exe`
+    *   **GUI:** `RT_K6517B_L350_T_Sensing_GUI_v14.exe`
 
 #### Pyroelectric Measurement (Keithley 6517B)
 *   **PyroCurrent vs. T**
-    *   **Frontend:** `Pyroelectric_K6517B_L350_Frontend_v4.exe`
+    *   **GUI:** `Pyroelectric_K6517B_L350_GUI_v4.exe`
 
 #### Capacitance (Keysight E4980A)
 *   **C-V Measurement**
-    *   **Frontend:** `CV_KE4980A_Frontend_v3.exe`
+    *   **GUI:** `CV_KE4980A_GUI_v3.exe`
 
 #### Temperature Utilities (Lakeshore 350)
 *   **Temperature Ramp**
-    *   **Frontend:** `T_Control_L350_RangeControl_Frontend_v8.exe`
+    *   **GUI:** `T_Control_L350_RangeControl_GUI_v8.exe`
 *   **Temperature Monitor**
-    *   **Frontend:** `T_Sensing_L350_Frontend_v4.exe`
+    *   **GUI:** `T_Sensing_L350_GUI_v4.exe`
 
 ---
 
