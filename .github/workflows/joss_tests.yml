@@ -75,9 +75,7 @@ jobs:
         # This re-runs the tests, but captures which lines were hit.
         pytest --cov=. --cov-report=xml tests/
 
-    - name: Upload Coverage to Codecov
-      uses: codecov/codecov-action@v3
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v5
       with:
-        token: ${{ secrets.CODECOV_TOKEN }} # Optional for public repos, but good to have
-        files: ./coverage.xml
-        fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
