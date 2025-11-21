@@ -9,7 +9,7 @@ from Keithley_2400.Backends import IV_K2400_Loop_Backend_v10 as iv_backend
 class TestIVK2400LoopBackend(unittest.TestCase):
 
     @patch('builtins.input', side_effect=['10', '2', 'test_output'])
-    @patch('Keithley_2400.Backends.IV_K2400_Loop_Backend_v10.Keithley2400')
+    @patch('pymeasure.instruments.keithley.Keithley2400')
     @patch('matplotlib.pyplot.show')
     @patch('pandas.DataFrame.to_csv')
     def test_main_full_run(self, mock_to_csv, mock_plt_show, mock_keithley_class, mock_input):
