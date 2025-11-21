@@ -62,11 +62,11 @@ class TestDeepSimulation(unittest.TestCase):
         print("\n[SIMULATION] 1. Keithley 2400 I-V Sweep...")
         with patch('pymeasure.instruments.keithley.Keithley2400') as MockInst:
             spy = MockInst.return_value
-            target_sleep = 'Keithley_2400.Backends.IV_K2400_Loop_Backend_v10.sleep'
+            # FIXED: Patch time.sleep globally instead of specific path to ensure capture
             breaker = self.get_circuit_breaker(5)
             with patch('builtins.input', side_effect=['100', '10', 'test']), \
                  patch('pandas.DataFrame.to_csv'), \
-                 patch(target_sleep, side_effect=breaker):
+                 patch('time.sleep', side_effect=breaker):
                 self.run_module_safely("Keithley_2400.Backends.IV_K2400_Loop_Backend_v10")
                 spy.enable_source.assert_called()
 
