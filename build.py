@@ -44,7 +44,7 @@ ICON_FILE = os.path.join(PROJECT_ROOT, "_assets", "LOGO", "PICA_LOGO.ico")
 setup_dir = os.path.join(PROJECT_ROOT, "Setup")
 if setup_dir not in sys.path:
     sys.path.insert(0, setup_dir)
-from Picachu import PICALauncherApp, resource_path
+from deployment.Picachu import PICALauncherApp, resource_path
 APP_VERSION = PICALauncherApp.PROGRAM_VERSION
 
 # List of all frontend scripts to compile into sub-EXEs.
