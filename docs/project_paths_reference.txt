@@ -1,136 +1,112 @@
-===============================================================================
- PICA Project Path Reference
-===============================================================================
+PICA Project File Structure Reference
+Generated on: 2025-11-21 23:18:42
+================================================================================
 
-This document consolidates all hardcoded and dynamically generated paths
-used throughout the PICA project for build, development, and runtime operations.
-
-
--------------------------------------------------------------------------------
- 1. Main Executable Launcher (`Setup/Picachu.py`)
--------------------------------------------------------------------------------
-
-This file is the entry point for the compiled executable. It uses a `resource_path`
-function to resolve paths differently for development vs. bundled modes.
-
-**Asset & Documentation Paths:**
-- LOGO_FILE: _assets/LOGO/UGC_DAE_CSR_NBG.jpeg
-- MANUAL_URL: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tree/main/_assets/Manuals
-- README_FILE: PICA_README.md
-- LICENSE_FILE: LICENSE
-- UPDATES_FILE: Change_Logs.md
-
-**Sub-Program Directory (Bundled):**
-- SUB_PROGRAMS_DIR: "programs"
-
-**Script Paths for Bundled Executable (`SCRIPT_PATHS`):**
-- Delta Mode I-V Sweep: programs/IV_K6221_DC_Sweep_Frontend_V10.exe
-- Delta Mode R-T: programs/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.exe
-- Delta Mode R-T (T_Sensing): programs/Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.exe
-- K2400 I-V: programs/IV_K2400_Frontend_v5.exe
-- K2400 R-T: programs/RT_K2400_L350_T_Control_Frontend_v3.exe
-- K2400 R-T (T_Sensing): programs/RT_K2400_L350_T_Sensing_Frontend_v4.exe
-- K2400_2182 I-V: programs/IV_K2400_K2182_Frontend_v3.exe
-- K2400_2182 R-T: programs/RT_K2400_K2182_T_Control_Frontend_v3.exe
-- K2400_2182 R-T (T_Sensing): programs/RT_K2400_2182_L350_T_Sensing_Frontend_v2.exe
-- K6517B I-V: programs/IV_K6517B_Frontend_v11.exe
-- K6517B R-T: programs/RT_K6517B_L350_T_Control_Frontend_v13.exe
-- K6517B R-T (T_Sensing): programs/RT_K6517B_L350_T_Sensing_Frontend_v14.exe
-- Pyroelectric Current: programs/Pyroelectric_K6517B_L350_Frontend_v4.exe
-- Lakeshore Temp Control: programs/T_Control_L350_RangeControl_Frontend_v8.exe
-- Lakeshore Temp Monitor: programs/T_Sensing_L350_Frontend_v4.exe
-- LCR C-V Measurement: programs/CV_KE4980A_Frontend_v3.exe
-- Plotter Utility: programs/PlotterUtil_Frontend_v3.exe
-
-**Script Paths for Development Mode (`SCRIPT_PATHS_DEV`):**
-- IV_K6221_DC_Sweep_Frontend_V10.py: Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_Frontend_V10.py
-- Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.py: Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_Frontend_v5.py
-- Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.py: Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_Frontend_v5.py
-- IV_K2400_Frontend_v5.py: Keithley_2400/IV_K2400_Frontend_v5.py
-- RT_K2400_L350_T_Control_Frontend_v3.py: Keithley_2400/RT_K2400_L350_T_Control_Frontend_v3.py
-- RT_K2400_L350_T_Sensing_Frontend_v4.py: Keithley_2400/RT_K2400_L350_T_Sensing_Frontend_v4.py
-- IV_K2400_K2182_Frontend_v3.py: Keithley_2400_Keithley_2182/IV_K2400_K2182_Frontend_v3.py
-- RT_K2400_K2182_T_Control_Frontend_v3.py: Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_Frontend_v3.py
-- RT_K2400_2182_L350_T_Sensing_Frontend_v2.py: Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_Frontend_v2.py
-- IV_K6517B_Frontend_v11.py: Keithley_6517B/High_Resistance/IV_K6517B_Frontend_v11.py
-- RT_K6517B_L350_T_Control_Frontend_v13.py: Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_Frontend_v13.py
-- RT_K6517B_L350_T_Sensing_Frontend_v14.py: Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_Frontend_v14.py
-- Pyroelectric_K6517B_L350_Frontend_v4.py: Keithley_6517B/Pyroelectricity/Pyroelectric_K6517B_L350_Frontend_v4.py
-- T_Control_L350_RangeControl_Frontend_v8.py: Lakeshore_350_340/T_Control_L350_RangeControl_Frontend_v8.py
-- T_Sensing_L350_Frontend_v4.py: Lakeshore_350_340/T_Sensing_L350_Frontend_v4.py
-- CV_KE4980A_Frontend_v3.py: LCR_Keysight_E4980A/CV_KE4980A_Frontend_v3.py
-- PlotterUtil_Frontend_v3.py: Utilities/PlotterUtil_Frontend_v3.py
-
-
--------------------------------------------------------------------------------
- 2. Development Launcher (`PICA_v6.py`)
--------------------------------------------------------------------------------
-
-This file is the entry point for running the suite from source code.
-
-**Asset & Documentation Paths:**
-- LOGO_FILE: _assets/LOGO/UGC_DAE_CSR_NBG.jpeg
-- MANUAL_FILE: _assets/Manuals
-- README_FILE: README.md
-- LICENSE_FILE: LICENSE
-- UPDATES_FILE: Change_Logs.md
-
-**Script Paths for Development (`SCRIPT_PATHS`):**
-- All paths are identical to `SCRIPT_PATHS_DEV` in `Picachu.py` but are resolved
-  relative to the project root.
-
-
--------------------------------------------------------------------------------
- 3. Build Script (`build.py`)
--------------------------------------------------------------------------------
-
-This script orchestrates the PyInstaller build process.
-
-**Build Directories:**
-- PROJECT_ROOT: (Dynamically determined) f:\GitHub\PICA-Python-Instrument-Control-and-Automation
-- DIST_DIR: dist/
-- BUILD_DIR: build/
-- SUB_PROGRAMS_TEMP_DIR: build/programs/
-- SPECS_DIR: Setup/specs/
-
-**Build Assets:**
-- ICON_FILE: _assets/LOGO/PICA_LOGO.ico
-- PICACHU_SCRIPT: Setup/Picachu.py
-
-**Sub-Programs to Compile (`SUB_PROGRAMS`):**
-- This list mirrors the keys in `Picachu.py`'s `SCRIPT_PATHS`, mapping the
-  source .py file to its final .exe name.
-
-
--------------------------------------------------------------------------------
- 4. Individual Frontend Scripts (General Pattern)
--------------------------------------------------------------------------------
-
-Most frontend scripts define paths to their assets and utilities relative to
-their own file location.
-
-**Asset Paths (Example from `IV_K2400_Frontend_v5.py`):**
-- LOGO_FILE: ../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg
-
-**Utility Launch Paths (Example from `IV_K2400_Frontend_v5.py`):**
-- Plotter Utility: ../Utilities/PlotterUtil_Frontend_v3.py
-- GPIB Scanner: ../Utilities/GPIB_Instrument_Scanner_Frontend_v4.py
-  (Note: Path depth `..` varies depending on the script's location)
-
-
--------------------------------------------------------------------------------
- 5. GitHub Actions Workflow (`.github/workflows/build-exe.yml`)
--------------------------------------------------------------------------------
-
-This file automates the Nuitka build on GitHub's servers.
-
-**Nuitka Build Paths:**
-- script-name: Setup/Picachu.py
-- output-dir: build
-- windows-icon-from-ico: _assets/LOGO/UGC_DAE_CSR.ico
-- include-data-dir: _assets=_assets
-- include-data-files: LICENSE=LICENSE, PICA_README.md=PICA_README.md, Change_Logs.md=Change_Logs.md
-- include-package: (Lists all top-level script directories like `Keithley_2400`, `Utilities`, etc.)
-
-**Release Asset Path:**
-- file: build/Picachu.exe
+PICA (Root Directory)/
+    .gitignore
+    CITATION.cff
+    CODE_OF_CONDUCT.md
+    CONTRIBUTING.md
+    LICENSE
+    PICA_v6.py
+    README.md
+    Update_path.py
+    pyproject.toml
+    requirements.txt
+    robots.txt
+    assets/
+        Images/
+            PICA_Laucher_V4.png
+            PICA_Laucher_V6.png
+        LOGO/
+            PICA_LOGO.ico
+            PICA_LOGO.png
+            PICA_LOGO_NBG.png
+            UGC_DAE_CSR.ico
+            UGC_DAE_CSR.jpeg
+            UGC_DAE_CSR_NBG.jpeg
+        Manuals/
+            6517B-900-01B_August_2022_User.pdf
+            6517B-901-01E_Aug_2022_Ref.pdf
+            Keithley_2182A_Manual.pdf
+            Keithley_6221_Manual.pdf
+            Keithley_Low-Level-Measurements-Handbook_7Ed.pdf
+            Lakeshore_340_Manual.pdf
+            Lakeshore_350_Manual.pdf
+            PyMeasure_Documentation.pdf
+            PyMeasure_Keithley-2400-Example.pdf
+            PyVISA_Complex-Examples.pdf
+            PyVISA_Documentation.epub
+            pymeasure-readthedocs-io-en-latest.pdf
+    Delta_mode_Keithley_6221_2182/
+        Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.py
+        Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.py
+        IV_K6221_DC_Sweep_GUI_V10.py
+        Backends/
+            Delta_K6221_K2182_L350_T_Sensing_Backend_v1.py
+            Delta_K6221_K2182_Simple_v7.py
+    deployment/
+        Picachu.py
+        build-exe.yml
+        build.py
+    docs/
+        Change_Logs.md
+        GPIB_Address_Guide.md
+        Geting_Strated_With_Interfacing.md
+        PICA_README.md
+        Ranges_for_Measurements.md
+        index.rst
+        project_paths_reference.txt
+    Keithley_2400/
+        IV_K2400_GUI_v5.py
+        RT_K2400_L350_T_Control_GUI_v3.py
+        RT_K2400_L350_T_Sensing_GUI_v4.py
+        Backends/
+            IV_K2400_Loop_Backend_v10.py
+    Keithley_2400_Keithley_2182/
+        IV_K2400_K2182_GUI_v3.py
+        RT_K2400_2182_L350_T_Sensing_GUI_v2.py
+        RT_K2400_K2182_T_Control_GUI_v3.py
+        Backends/
+            IV_K2400_K2182_Backend_v1.py
+    Keithley_6517B/
+        High_Resistance/
+            IV_K6517B_GUI_v11.py
+            RT_K6517B_L350_T_Control_GUI_v13.py
+            RT_K6517B_L350_T_Sensing_GUI_v14.py
+            Backends/
+                IV_K6517B_L350_T_Control_Backend_v6.py
+                IV_K6517B_Simple_Backend_v10.py
+        Pyroelectricity/
+            Pyroelectric_K6517B_L350_GUI_v4.py
+            Backends/
+                Current_K6517B_Simple_Backend_v10.py
+                Poling_K6517B_Backend_v10.py
+                PyroDataVisualization_Simple_v10.py
+                Pyroelectric_K6517B_Working_Backend_v10.py
+    Lakeshore_350_340/
+        T_Control_L350_RangeControl_GUI_v8.py
+        T_Sensing_L350_GUI_v4.py
+        Backends/
+            T_Control_L350_Simple_Backend_v10.py
+    LCR_Keysight_E4980A/
+        CV_KE4980A_GUI_v3.py
+        Backends/
+            CV_KE4980A_Simple_Backend_v10.py
+    Lock_in_amplifier/
+        BasicTest_S830_Backend_v1.py
+    paper/
+        paper.bib
+        paper.md
+    tests/
+        __init__.py
+        test_auto_discovery.py
+        test_deep_simulation.py
+        test_full_stack_simulation.py
+    Utilities/
+        GIPB_InterfaceTest_Simple_Backend.py
+        GPIB_Instrument_Scanner_GUI_v4.py
+        GPIB_Interface_Rescue_Simple_Backened_v2_.py
+        GUI_Basic_Format_v2.py
+        LivePlotter_v10.py
+        PlotterUtil_GUI_v3.py
