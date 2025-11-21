@@ -148,22 +148,22 @@ class Keithley6517B_Backend:
 
             # 1. Enable Zero Check
             print("    Step 1/4: Enabling Zero Check mode...")
-            self.keithley.write(':SYSTem:ZCHeck ON')
+            self.keithley.write(':SYSTem:ZCHeck ON') # type: ignore
             time.sleep(2)
 
             # 2. Acquire the zero measurement
             print("    Step 2/4: Acquiring zero correction value...")
-            self.keithley.write(':SYSTem:ZCORrect:ACQuire')
+            self.keithley.write(':SYSTem:ZCORrect:ACQuire') # type: ignore
             time.sleep(2)  # Allow time for acquisition
 
             # 3. Disable Zero Check
             print("    Step 3/4: Disabling Zero Check mode...")
-            self.keithley.write(':SYSTem:ZCHeck OFF')
+            self.keithley.write(':SYSTem:ZCHeck OFF') # type: ignore
             time.sleep(1)
 
             # 4. Enable Zero Correct
             print("    Step 4/4: Enabling Zero Correction for all measurements.")
-            self.keithley.write(':SYSTem:ZCORrect ON')
+            self.keithley.write(':SYSTem:ZCORrect ON') # type: ignore
             time.sleep(1)
             print("  Zero Correction Complete.")
 

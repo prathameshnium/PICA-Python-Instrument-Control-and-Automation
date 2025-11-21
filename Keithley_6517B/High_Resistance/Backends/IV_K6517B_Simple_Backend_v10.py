@@ -102,7 +102,7 @@ try:
     print("\nStarting zero correction procedure...")
     time.sleep(5)
     print("Step 1: Enabling Zero Check mode...")
-    keithley.write(':SYSTem:ZCHeck ON')
+    keithley.write(':SYSTem:ZCHeck ON') # type: ignore
     time.sleep(5)
     print("Step 2: Acquiring zero correction value...")
     # keithley.write(':SYSTem:ZCORrect:ACQuire')

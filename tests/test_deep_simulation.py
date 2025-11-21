@@ -105,7 +105,7 @@ class TestDeepSimulation(unittest.TestCase):
 
     def test_01_k2400_iv_backend(self):
         # GLOBAL PATCH for sleep is critical here
-        with patch('pymeasure.instruments.keithley.Keithley2400', autospec=True) as MockInst, \
+        with patch('pymeasure.instruments.keithley.Keithley2400') as MockInst, \
                 patch('time.sleep', side_effect=self.get_circuit_breaker(5)):
 
             spy = MockInst.return_value
@@ -194,7 +194,7 @@ class TestDeepSimulation(unittest.TestCase):
         # THIS WAS THE TEST CAUSING THE HANG
         # We suspect input mismatch or resource opening hang.
         with patch('pyvisa.ResourceManager') as MockRM, \
-                patch('pymeasure.instruments.keithley.Keithley2400'), \
+                patch('pymeasure.instruments.keithley.Keithley2400') as MockK2400, \
                 patch('time.sleep', side_effect=self.get_circuit_breaker(10)):
 
             rm = MockRM.return_value

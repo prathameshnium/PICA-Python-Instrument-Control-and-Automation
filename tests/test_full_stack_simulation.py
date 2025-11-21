@@ -68,7 +68,7 @@ class TestDeepSimulation(unittest.TestCase):
     def test_keithley2400_iv_protocol(self):
         print("\n[SIMULATION] Testing Keithley 2400 I-V Protocol...")
 
-        with patch('pymeasure.instruments.keithley.Keithley2400', autospec=True) as MockK2400:
+        with patch('pymeasure.instruments.keithley.Keithley2400') as MockK2400:
             spy_inst = MockK2400.return_value
             spy_inst.voltage = 1.23
 
