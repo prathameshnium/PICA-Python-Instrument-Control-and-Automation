@@ -6,3 +6,6 @@ pyvisa
 pyvisa-py
 gpib-ctypes
 pillow
+freezegun
+pytest
+pytest-cov
