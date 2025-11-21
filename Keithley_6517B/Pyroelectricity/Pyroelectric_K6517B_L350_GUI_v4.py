@@ -848,8 +848,12 @@ class PyroelectricAppGUI:
 
                 elif state == 'ramping':
                     elapsed_time = time.time() - self.start_time
-                    self.log(
-                        f"Ramping... Time: {elapsed_time:7.1f}s | Temp: {current_temp:8.4f}K | Current: {current_val:.3e} A")
+                    log_msg = (
+                        f"Ramping... Time: {elapsed_time:7.1f}s | "
+                        f"Temp: {current_temp:8.4f}K | "
+                        f"Current: {current_val:.3e} A"
+                    )
+                    self.log(log_msg)
 
                     with open(self.data_filepath, 'a', newline='') as f:
                         f.write(

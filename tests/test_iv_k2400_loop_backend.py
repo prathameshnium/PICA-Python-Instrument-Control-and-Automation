@@ -1,13 +1,10 @@
 import unittest
 from unittest.mock import patch, MagicMock
-import sys
-import os
 
-# Add the root directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Now we can import the module to be tested
 from Keithley_2400.Backends import IV_K2400_Loop_Backend_v10 as iv_backend
+
 
 class TestIVK2400LoopBackend(unittest.TestCase):
 
@@ -28,20 +25,22 @@ class TestIVK2400LoopBackend(unittest.TestCase):
         # Let's return a voltage that is proportional to the current
         def voltage_side_effect():
             # A simple linear relationship for testing
-            return mock_keithley_instance.source_current * 10 
+            return mock_keithley_instance.source_current * 10
 
         # We can't directly access the source_current from ramp_to_current,
         # so we will use a side effect to track it
         latest_current = [0]
+
         def ramp_side_effect(current):
             latest_current[0] = current
             # Also update the mock's internal state
             mock_keithley_instance.source_current = current
-            
+
         mock_keithley_instance.ramp_to_current.side_effect = ramp_side_effect
-        
+
         # When .voltage is accessed, return the calculated value
-        type(mock_keithley_instance).voltage = unittest.mock.PropertyMock(side_effect=voltage_side_effect)
+        type(mock_keithley_instance).voltage = unittest.mock.PropertyMock(
+            side_effect=voltage_side_effect)
 
         # --- EXECUTE SCRIPT ---
         iv_backend.main()
@@ -63,9 +62,11 @@ class TestIVK2400LoopBackend(unittest.TestCase):
         # np.linspace(0, 10, int(10/2) + 1) -> linspace(0, 10, 6)
         # The values will be [0., 2., 4., 6., 8., 10.]
         expected_currents_uA = [0., 2., 4., 6., 8., 10.]
-        expected_calls = [unittest.mock.call(c * 1e-6) for c in expected_currents_uA]
-        mock_keithley_instance.ramp_to_current.assert_has_calls(expected_calls)
-        
+        expected_calls = [unittest.mock.call(
+            c * 1e-6) for c in expected_currents_uA]
+        mock_keithley_instance.ramp_to_current.assert_has_calls(
+            expected_calls)
+
         # 4. Verify the number of measurements taken
         self.assertEqual(mock_keithley_instance.ramp_to_current.call_count, 6)
         # Voltage is read once per loop
@@ -77,12 +78,13 @@ class TestIVK2400LoopBackend(unittest.TestCase):
         call_args = mock_to_csv.call_args
         save_path = call_args[0][0]
         self.assertIn('test_output.txt', save_path)
-        
+
         # 6. Check that the instrument was shut down
         mock_keithley_instance.shutdown.assert_called_once()
-        
+
         # 7. Check that the plot was displayed
         mock_plt_show.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()

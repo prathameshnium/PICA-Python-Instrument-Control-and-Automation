@@ -69,20 +69,22 @@ def main():
     num_steps = int(I_range / I_step)
     for i1 in np.linspace(0, I_range, num_steps + 1):
         IV_Measure(i1)
-    
+
     df = pd.DataFrame({'I': current_values, 'V': Volt})
     print("\n--- Measurement Complete ---")
     print(df)
-    
-    save_path = os.path.join('C:/Users/Instrument-DSL/Desktop/LED_IV/', f"{filename}.txt")
+
+    save_path = os.path.join(
+        'C:/Users/Instrument-DSL/Desktop/LED_IV/', f"{filename}.txt")
     df.to_csv(save_path, index=None, sep='\t', mode='w')
     print(f"Data saved to {save_path}")
-    
+
     sleep(0.5)
     keithley_2400.shutdown()
     print("Keithley 2400 shutdown complete.")
-    
-    plt.plot(current_values, Volt, marker='o', linestyle='-', color='g', label='I-V Data')
+
+    plt.plot(current_values, Volt, marker='o',
+             linestyle='-', color='g', label='I-V Data')
     plt.xlabel('Current (A)')
     plt.ylabel('Voltage (V)')
     plt.title('I-V Curve')

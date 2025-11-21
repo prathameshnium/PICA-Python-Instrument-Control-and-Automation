@@ -79,7 +79,10 @@ def run_combined_measurement():
         print("\n--- Measurement Started ---")
         print("Press Ctrl+C to stop the measurement.")
         print("-" * 70)
-        header = f"{'Time (s)':<12} | {'Current (A)':<12} | {'Voltage (V)':<15} | {'Resistance (Ohm)':<18} | {'Temperature (K)'}"
+        header = (
+            f"{'Time (s)':<12} | {'Current (A)':<12} | {'Voltage (V)':<15} | "
+            f"{'Resistance (Ohm)':<18} | {'Temperature (K)'}"
+        )
         print(header)
         print("-" * len(header))
 
@@ -99,7 +102,11 @@ def run_combined_measurement():
             temperature = float(temperature_str)
 
             # Print to console
-            print(f"{elapsed_time:<12.2f} | {DELTA_CURRENT:<12.3f} | {voltage:<15.9f} | {resistance:<18.9f} | {temperature:.3f}")
+            log_msg = (
+                f"{elapsed_time:<12.2f} | {DELTA_CURRENT:<12.3f} | "
+                f"{voltage:<15.9f} | {resistance:<18.9f} | {temperature:.3f}"
+            )
+            print(log_msg)
 
             # Append to file
             with open(OUTPUT_FILENAME, 'a', newline='') as file:

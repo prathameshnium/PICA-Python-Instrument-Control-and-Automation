@@ -1,13 +1,11 @@
 import unittest
 from unittest.mock import patch, MagicMock, mock_open
 import pyvisa
-import sys
-import os
 
-# Add the root directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10 import Lakeshore350, get_user_parameters, main
+from Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10 import (
+    Lakeshore350, get_user_parameters, main)
+
 
 class TestLakeshore350Class(unittest.TestCase):
     @patch('pyvisa.ResourceManager')
@@ -16,7 +14,7 @@ class TestLakeshore350Class(unittest.TestCase):
         self.mock_instrument = MagicMock()
         mock_rm.return_value.open_resource.return_value = self.mock_instrument
         self.mock_instrument.query.return_value = "LSCI,MODEL350,12345,1.0"
-        
+
         # Instantiate the class, which will now use the mock instrument
         self.controller = Lakeshore350("GPIB0::13::INSTR")
         # Keep a reference to the mock for assertions
@@ -30,7 +28,8 @@ class TestLakeshore350Class(unittest.TestCase):
     @patch('pyvisa.ResourceManager')
     def test_initialization_failure(self, mock_rm):
         # Test that a connection error is raised if pyvisa fails
-        mock_rm.return_value.open_resource.side_effect = pyvisa.errors.VisaIOError(pyvisa.constants.VI_ERROR_RSRC_NFOUND)
+        mock_rm.return_value.open_resource.side_effect = pyvisa.errors.VisaIOError(
+            pyvisa.constants.VI_ERROR_RSRC_NFOUND)
         with self.assertRaises(ConnectionError):
             Lakeshore350("GPIB0::13::INSTR")
 
@@ -77,14 +76,16 @@ class TestLakeshore350Class(unittest.TestCase):
         self.mock_instrument.close.assert_called_once()
         self.assertIsNone(self.controller.instrument)
 
+
 class TestMainFunctionAndUserInput(unittest.TestCase):
-    @patch('builtins.input', side_effect=['100', '200', '300', '10', 'not-a-number', '50', '350', '400', '10'])
+    @patch('builtins.input', side_effect=['100', '200', '10', '300',
+                                        'not-a-number', '50', '350', '10', '400'])
     def test_get_user_parameters(self, mock_input):
         # First call: Valid input
         start, end, rate, cutoff = get_user_parameters()
         self.assertEqual((start, end, cutoff), (100, 200, 300))
         self.assertEqual(rate, 10)
-        
+
         # Second call: Invalid text input, should retry and get the next valid ones
         start, end, rate, cutoff = get_user_parameters()
         self.assertEqual((start, end, cutoff), (50, 350, 400))
@@ -97,15 +98,18 @@ class TestMainFunctionAndUserInput(unittest.TestCase):
     @patch('matplotlib.pyplot.show')
     @patch('builtins.open', new_callable=mock_open)
     @patch('time.sleep', MagicMock())
-    @patch('time.time', side_effect=[1000, 1002, 1004, 1006, 1008, 1010]) # Simulate time passing
-    def test_main_runs_and_completes(self, mock_time, mock_open_file, mock_plt_show, mock_ls_class, mock_input, mock_file_dialog, mock_tk):
+    # Simulate time passing
+    @patch('time.time', side_effect=[1000, 1002, 1004, 1006, 1008, 1010])
+    def test_main_runs_and_completes(self, mock_time, mock_open_file,
+                                     mock_plt_show, mock_ls_class, mock_input, mock_file_dialog, mock_tk):
         # --- MOCK SETUP ---
         mock_controller = MagicMock()
         mock_ls_class.return_value = mock_controller
-        
+
         # Simulate temperature readings to control the loop
         # Start at 10K, then ramp up to 21K to finish
-        mock_controller.get_temperature.side_effect = [10.0, 10.0, 10.0, 15.0, 21.0]
+        mock_controller.get_temperature.side_effect = [
+            10.0, 10.0, 10.0, 15.0, 21.0]
         mock_controller.get_heater_output.return_value = 25.0
 
         # --- RUN ---
@@ -116,23 +120,24 @@ class TestMainFunctionAndUserInput(unittest.TestCase):
         mock_ls_class.assert_called_once()
         mock_controller.reset_and_clear.assert_called_once()
         mock_controller.setup_heater.assert_called_once()
-        
+
         # Check stabilization loop
-        mock_controller.set_setpoint.assert_any_call(1, 10) # Set to start temp
-        
+        mock_controller.set_setpoint.assert_any_call(1, 10)  # Set to start temp
+
         # Check main ramp loop
-        mock_controller.set_setpoint.assert_any_call(1, 20) # Set to end temp
+        mock_controller.set_setpoint.assert_any_call(1, 20)  # Set to end temp
         self.assertTrue(mock_controller.get_temperature.call_count >= 3)
-        
+
         # Check file writing
         mock_open_file.assert_called_with('test.csv', 'a', newline='')
         handle = mock_open_file()
         # Header + 3 data rows
-        self.assertEqual(handle.write.call_count, 1) # only one writer created
-        
+        self.assertEqual(handle.write.call_count, 1)  # only one writer created
+
         # Check shutdown
         mock_controller.close.assert_called_once()
         mock_plt_show.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()

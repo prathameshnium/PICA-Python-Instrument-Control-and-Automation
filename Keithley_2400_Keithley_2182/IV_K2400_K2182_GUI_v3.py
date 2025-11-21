@@ -162,7 +162,7 @@ class IV_Backend:
                 self.k2182.close()
             except BaseException:
                 pass
-        print("  Instruments shut down and disconnected.") # type: ignore
+        print("  Instruments shut down and disconnected.")  # type: ignore
 
 # -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---

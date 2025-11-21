@@ -13,6 +13,7 @@ from pymeasure.instruments.keithley import Keithley6517B
 from datetime import datetime
 import traceback
 
+
 def main():
     """
     Main function to run the pyroelectric measurement experiment.

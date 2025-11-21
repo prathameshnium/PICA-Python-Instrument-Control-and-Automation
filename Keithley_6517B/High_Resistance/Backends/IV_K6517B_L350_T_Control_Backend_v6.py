@@ -319,7 +319,6 @@ def main():
         keithley = Keithley6517B(KEITHLEY_VISA)
         print(f"Successfully connected to: {keithley.id}")
         perform_keithley_zero_check(keithley)
- 
         keithley.source_voltage = source_voltage
         keithley.current_nplc = 1
         keithley.enable_source()

@@ -126,13 +126,15 @@ class PICALauncherApp:
         # Based on Updates.md, using the latest versions of scripts.
         "Delta Mode I-V Sweep": resource_path("Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_GUI_V10.py"),
         "Delta Mode R-T": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.py"),
-        "Delta Mode R-T (T_Sensing)": resource_path("Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.py"),
+        "Delta Mode R-T (T_Sensing)": resource_path(
+            "Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.py"),
         "K2400 I-V": resource_path("Keithley_2400/IV_K2400_GUI_v5.py"),
         "K2400 R-T": resource_path("Keithley_2400/RT_K2400_L350_T_Control_GUI_v3.py"),
         "K2400 R-T (T_Sensing)": resource_path("Keithley_2400/RT_K2400_L350_T_Sensing_GUI_v4.py"),
         "K2400_2182 I-V": resource_path("Keithley_2400_Keithley_2182/IV_K2400_K2182_GUI_v3.py"),
         "K2400_2182 R-T": resource_path("Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_GUI_v3.py"),
-        "K2400_2182 R-T (T_Sensing)": resource_path("Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_GUI_v2.py"),
+        "K2400_2182 R-T (T_Sensing)": resource_path(
+            "Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_GUI_v2.py"),
         "K6517B I-V": resource_path("Keithley_6517B/High_Resistance/IV_K6517B_GUI_v11.py"),
         "K6517B R-T": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_GUI_v13.py"),
         "K6517B R-T (T_Sensing)": resource_path("Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_GUI_v14.py"),
@@ -332,7 +334,6 @@ class PICALauncherApp:
         util_frame.pack(fill='x', expand=False, pady=5)
         # --- Make the README button bigger by spanning two columns ---
         util_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
-
         ttk.Button(
             util_frame,
             text="GPIB Utils",
