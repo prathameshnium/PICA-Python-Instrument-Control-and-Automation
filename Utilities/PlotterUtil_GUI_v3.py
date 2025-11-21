@@ -85,7 +85,7 @@ class PlotterApp:
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
         LOGO_FILE_PATH = os.path.join(
             SCRIPT_DIR,
-            "..", # type: ignore
+            "..",  # type: ignore
             "assets",
             "LOGO",
             "UGC_DAE_CSR_NBG.jpeg")
@@ -958,15 +958,22 @@ class PlotterApp:
         if leg:
             leg.get_title().set_color(self.CLR_CONSOLE_BG)
 
-        self.ax_main.set_xscale('log' if self.x_log_var.get() else 'linear') # type: ignore
-        self.ax_main.set_yscale('log' if self.y_log_var.get() else 'linear')
+        self.ax_main.set_xscale(
+            'log' if self.x_log_var.get() else 'linear')  # type: ignore
+        self.ax_main.set_yscale(
+            'log' if self.y_log_var.get() else 'linear')
         self.ax_main.set_xlabel(x_col)
         self.ax_main.set_ylabel(y_col)
 
         if len(selected_filepaths) == 1:
-            self.ax_main.set_title(os.path.basename(selected_filepaths[0]), fontweight='bold')
+            self.ax_main.set_title(
+                os.path.basename(
+                    selected_filepaths[0]),
+                fontweight='bold')
         else:
-            self.ax_main.set_title(f"{y_col} vs. {x_col}", fontweight='bold')
+            self.ax_main.set_title(
+                f"{y_col} vs. {x_col}",
+                fontweight='bold')
         self.figure.tight_layout()
 
     def _handle_load_error(self, filepath, e):

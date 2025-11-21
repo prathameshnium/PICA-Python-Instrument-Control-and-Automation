@@ -22,7 +22,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from time import sleep
-# import pyvisa
+import pyvisa
 from pymeasure.instruments.keithley import Keithley2400
 import pandas as pd
 
