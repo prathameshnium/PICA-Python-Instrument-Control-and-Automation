@@ -84,7 +84,7 @@ def main():
 
     try:
         # Get sweep parameters from the user
-        start_v, stop_v, steps, delay, filename = get_user_parameters()
+        start_v, stop_v, steps, delay, filename = get_sweep_parameters()
         voltage_sweep = np.linspace(start_v, stop_v, steps)
 
         # --- 2. CONNECT TO INSTRUMENT (V5 Logic) ---

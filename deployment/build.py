@@ -98,7 +98,7 @@ def get_tcl_tk_add_data_args():
     bundle the Tcl/Tk libraries, preventing runtime FileNotFoundError.
     """
     try:
-        from pyi_tcl_hook import get_tcl_tk_paths
+        from pyi_tcl_hook import get_tcl_tk_paths  # type: ignore
         tcl_path, tk_path = get_tcl_tk_paths()
         # The destination folder name inside the bundle must match what the
         # hook expects.
