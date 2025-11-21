@@ -221,7 +221,7 @@ class TempControlGUI:
         logo_canvas.grid(row=0, column=0, rowspan=2, padx=10, pady=10)
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            logo_path = os.path.join(script_dir, "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+            logo_path = os.path.join(script_dir, "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
             if PIL_AVAILABLE and os.path.exists(logo_path):
                 img = Image.open(logo_path).resize((LOGO_SIZE, LOGO_SIZE), Image.Resampling.LANCZOS)
                 self.logo_image = ImageTk.PhotoImage(img)

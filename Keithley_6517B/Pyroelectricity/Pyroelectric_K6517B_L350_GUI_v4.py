@@ -288,9 +288,9 @@ class PyroelectricAppGUI:
         # Corrected logo path
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            logo_path = os.path.join(script_dir, "..", "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+            logo_path = os.path.join(script_dir, "..", "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
         except NameError:
-            logo_path = "../../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
+            logo_path = "../../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
         self.logo_image = self._process_logo_image(logo_path, size=LOGO_SIZE)
         if self.logo_image: logo_canvas.create_image(LOGO_SIZE/2, LOGO_SIZE/2, image=self.logo_image) 
         else: logo_canvas.create_text(LOGO_SIZE/2, LOGO_SIZE/2, text="LOGO", font=self.FONT_TITLE, fill=self.CLR_FG_LIGHT)

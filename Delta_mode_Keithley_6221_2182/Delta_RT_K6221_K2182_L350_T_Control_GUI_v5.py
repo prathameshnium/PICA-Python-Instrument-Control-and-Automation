@@ -204,9 +204,9 @@ class Advanced_Delta_GUI:
     try:
         # Robust path finding for assets relative to the script's location
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
     except NameError:
-        LOGO_FILE_PATH = resource_path("../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
+        LOGO_FILE_PATH = resource_path("../assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
 
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'

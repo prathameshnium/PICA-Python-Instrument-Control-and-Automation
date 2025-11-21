@@ -37,7 +37,7 @@ SUB_PROGRAMS_TEMP_DIR = os.path.join(BUILD_DIR, "programs")
 SPECS_DIR = os.path.join(PROJECT_ROOT, "Setup", "specs")
 
 # --- NEW: Path to the application icon ---
-ICON_FILE = os.path.join(PROJECT_ROOT, "_assets", "LOGO", "PICA_LOGO.ico")
+ICON_FILE = os.path.join(PROJECT_ROOT, "assets", "LOGO", "PICA_LOGO.ico")
 
 # --- NEW: Get version from Picachu.py for the zip file name ---
 # Add Setup directory to path for the import below. This also helps linters like Pylance.

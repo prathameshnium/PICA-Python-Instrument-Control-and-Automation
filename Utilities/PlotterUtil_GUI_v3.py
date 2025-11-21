@@ -76,13 +76,13 @@ class PlotterApp:
     try:
         # Robust path finding for assets. When running from source, `__file__` is
         # inside the 'Utilities' directory. We navigate one level up ('..') to
-        # the project root to correctly locate the '_assets' folder. This
+        # the project root to correctly locate the 'assets' folder. This
         # approach also works when the script is bundled.
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "_assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
     except NameError:
         # Fallback for environments where `__file__` might not be defined.
-        LOGO_FILE_PATH = "../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
+        LOGO_FILE_PATH = "../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
 
     def __init__(self, root):
         self.root = root

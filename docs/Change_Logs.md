@@ -74,7 +74,7 @@ Tested and working perfectley , its fast doesnt lag and all communiaction with i
 -   **Automated Releases:** Implemented a GitHub Actions workflow (`build-exe.yml`) that automatically compiles, packages, and uploads the `Picachu.exe` as a release asset whenever a new release is created on GitHub.
 -   **Build Script Refinements:**
     -   The `resource_path` function in `Picachu.py` was adapted to correctly locate bundled assets when running as a compiled executable.
-    -   The Nuitka build configuration was optimized to include all necessary Python packages, data files (`_assets`, `LICENSE`), and documentation (`PICA_README.md`, `Updates.md`), ensuring the executable is fully self-contained.
+    -   The Nuitka build configuration was optimized to include all necessary Python packages, data files (`assets`, `LICENSE`), and documentation (`PICA_README.md`, `Updates.md`), ensuring the executable is fully self-contained.
 -   **Documentation & Portfolio Update:**
     -   Updated the main project `README.md` and the personal portfolio website (`project-pica.html`, `computational-works.html`) to accurately reflect the latest project structure, features, and build process.
 -   **Files Added/Modified:**
