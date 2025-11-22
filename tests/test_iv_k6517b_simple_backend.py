@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch, MagicMock, mock_open, call
+from unittest.mock import patch, MagicMock, mock_open
 
 # Import the main function from the script we want to test
 from Keithley_6517B.High_Resistance.Backends.IV_K6517B_Simple_Backend_v10 import main as iv_simple_main

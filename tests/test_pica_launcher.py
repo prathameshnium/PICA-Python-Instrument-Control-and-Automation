@@ -5,6 +5,8 @@ from unittest.mock import patch
 # MOCK HELPER CLASSES for GUI Testing
 # These classes simulate the necessary parts of the GUI environment (like Tkinter)
 # -----------------------------------------------------------------------------
+
+
 class MockTkWidget:
     """Mock object for Tkinter/PyQt widgets to simulate button interactions."""
     def __init__(self, command=None):
@@ -49,7 +51,7 @@ class TestPicaLauncher(unittest.TestCase):
     """
     Tests the main PICA Launcher (PICA_v6.py) to ensure correct routing logic.
     """
-    
+
     # We patch the actual method that is called by the button to ensure it fires.
     @patch('test_pica_launcher.MockPicaLauncher.open_iv_sweep')
     def test_iv_sweep_button_click_calls_function(self, mock_open_iv_sweep):
