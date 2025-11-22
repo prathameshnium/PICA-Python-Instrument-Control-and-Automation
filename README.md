@@ -168,3 +168,28 @@ If you use this software in your research, please cite it using the following Bi
   version      = {14.1.0},
   url          = {[https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation)}
 }
+````
+
+Alternatively, refer to the `CITATION.cff` file in the root directory.
+
+-----
+
+## Authors & Acknowledgments
+
+\<p align="center"\>
+\<img src="./assets/LOGO/UGC\_DAE\_CSR\_NBG.jpeg" alt="UGC DAE CSR Logo" width="150"\>
+\</p\>
+
+  - **Lead Developer:** **[Prathamesh Deshmukh](https://prathameshdeshmukh.site/)**
+  - **Principal Investigator:** **[Dr. Sudip Mukherjee](https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)**
+  - **Affiliation:** *[UGC-DAE Consortium for Scientific Research, Mumbai Centre](https://www.csr.res.in/Mumbai_Centre)*
+
+**Funding:**
+Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science & Technology (DST), Government of India.
+
+-----
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
+
