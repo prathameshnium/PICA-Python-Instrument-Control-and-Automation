@@ -953,11 +953,8 @@ class PlotterApp:
             legend_title = f"File: {os.path.basename(selected_filepaths[0])}"
         else:
             legend_title = "Multiple Files"
-            
-                leg = self.ax_main.legend(title=legend_title,
-            
+        leg = self.ax_main.legend(title=legend_title,
                                           labelcolor=self.CLR_CONSOLE_BG)
-            
                 if leg:
             
                     leg.get_title().set_color(self.CLR_CONSOLE_BG)
