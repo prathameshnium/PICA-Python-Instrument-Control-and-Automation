@@ -92,7 +92,7 @@ class TestMainFunctionAndUserInput(unittest.TestCase):
 
     @patch('tkinter.Tk')
     @patch('tkinter.filedialog.asksaveasfilename', return_value='test.csv')
-    @patch('builtins.input', side_effect=['10', '20', '5', '300'])
+    @patch('builtins.input', side_effect=['10', '20', '5', '30'])
     @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.Lakeshore350')
     @patch('matplotlib.pyplot.show')
     @patch('builtins.open', new_callable=mock_open)

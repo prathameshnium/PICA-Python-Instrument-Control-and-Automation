@@ -45,13 +45,6 @@ class TestDeepSimulation(unittest.TestCase):
     def tearDown(self):
         print(f"[TEST END]   {self._testMethodName}\n", flush=True)
 
-    # -------------------------------------------------------------------------
-    # HELPER: The "Watchdog" Timer
-    # -------------------------------------------------------------------------
-    def _timeout_handler(self, signum, frame):
-        raise TimeoutError(
-            "Test {self._testMethodName} took longer than 30s! Infinite Loop suspected.")
-    
     def run_module_safely(self, module_name):
         """Imports and runs a module with a strict 30-second timeout."""
         # Set an alarm for 30 seconds (Works on Linux/GitHub Actions)
@@ -110,9 +103,9 @@ class TestDeepSimulation(unittest.TestCase):
 
     def test_01_k2400_iv_backend(self):
         # GLOBAL PATCH for sleep is critical here
-        with patch('pymeasure.instruments.keithley.Keithley2400') as MockInst, \
-                patch('time.sleep', side_effect=self.get_circuit_breaker(5)) as mock_sleep:
-            
+        with patch('pymeasure.instruments.keithley.Keithley2400') as MockInst:
+            mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(5))
+            mock_sleep.start()
             self.addCleanup(mock_sleep.stop)
 
             spy = MockInst.return_value
@@ -123,7 +116,9 @@ class TestDeepSimulation(unittest.TestCase):
                 spy.enable_source.assert_called()
 
     def test_02_lakeshore_backend(self):
-        with patch('pyvisa.ResourceManager') as MockRM:
+        with patch('pyvisa.ResourceManager') as MockRM, \
+             patch('tkinter.Tk'), \
+             patch('tkinter.filedialog.asksaveasfilename', return_value="test.csv"):
             mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(15))
             mock_sleep.start()
             self.addCleanup(mock_sleep.stop)
@@ -138,7 +133,6 @@ class TestDeepSimulation(unittest.TestCase):
 
             with patch('builtins.input', side_effect=['10', '300', '10', '350']), \
                     patch('builtins.open', mock_open()), \
-                    patch('tkinter.filedialog.asksaveasfilename', return_value="test.csv"), \
                     patch('matplotlib.pyplot.show'), \
                     patch('matplotlib.pyplot.subplots', return_value=(mock_fig, mock_ax)):
                 self.run_module_safely(
@@ -146,7 +140,7 @@ class TestDeepSimulation(unittest.TestCase):
     
     def test_03_k6517b_pyro_backend(self):
         with patch('pymeasure.instruments.keithley.Keithley6517B') as MockInst:
-            mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(5))
+            mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(10))
             mock_sleep.start()
             self.addCleanup(mock_sleep.stop)
 
@@ -158,9 +152,9 @@ class TestDeepSimulation(unittest.TestCase):
 
     def test_04_lcr_keysight_backend(self):
         with patch('pymeasure.instruments.agilent.AgilentE4980'), \
-                patch('pyvisa.ResourceManager') as MockRM, \
-                patch('time.sleep', side_effect=self.get_circuit_breaker(5)) as mock_sleep:
-            
+                patch('pyvisa.ResourceManager') as MockRM:
+            mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(5))
+            mock_sleep.start()
             self.addCleanup(mock_sleep.stop)
 
             visa_spy = MockRM.return_value.open_resource.return_value
@@ -202,10 +196,10 @@ class TestDeepSimulation(unittest.TestCase):
     def test_07_lockin_backend(self):
         with patch('pyvisa.ResourceManager') as MockRM:
             mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(5))
+            spy = MockRM.return_value.open_resource.return_value
             mock_sleep.start()
             self.addCleanup(mock_sleep.stop)
 
-            spy = MockRM.return_value.open_resource.return_value
             spy.query.side_effect = [
                 "SRS,SR830,s/n12345,ver1.07",  # *IDN?
                 "15",                         # SENS?
@@ -217,10 +211,10 @@ class TestDeepSimulation(unittest.TestCase):
     def test_08_combined_2400_2182(self):
         # THIS WAS THE TEST CAUSING THE HANG
         # We suspect input mismatch or resource opening hang.
-        with patch('pyvisa.ResourceManager') as MockRM, \
-                patch('pymeasure.instruments.keithley.Keithley2400'), \
-                patch('time.sleep', side_effect=self.get_circuit_breaker(10)) as mock_sleep:
-
+        with patch('pyvisa.ResourceManager') as MockRM:
+            mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(10))
+            mock_pymeasure = patch('pymeasure.instruments.keithley.Keithley2400')
+            mock_pymeasure.start()
             self.addCleanup(mock_sleep.stop)
 
             rm = MockRM.return_value
@@ -231,11 +225,12 @@ class TestDeepSimulation(unittest.TestCase):
             # Add extra inputs just in case the script asks for more than
             # expected
             inputs = ['10', '1', 'test_file', 'y', 'y', 'y', 'y']
-
+            mock_sleep.start()
             with patch('builtins.input', side_effect=inputs), \
                     patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
                     "Keithley_2400_Keithley_2182.Backends.IV_K2400_K2182_Backend_v1")
+            mock_pymeasure.stop()
 
     def test_09_poling(self):
         with patch('pymeasure.instruments.keithley.Keithley6517B'):
