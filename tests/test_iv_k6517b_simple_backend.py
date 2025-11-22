@@ -33,7 +33,7 @@ class TestIVK6517BSimpleBackend(unittest.TestCase):
 
         # --- Assertions ---
         # 1. Was the instrument initialized correctly?
-        mock_keithley_class.assert_called_once_with("GPIB1::27::INSTR", adapter_args={'py_library': '@sim'})
+        mock_keithley_class.assert_called_once_with("GPIB1::27::INSTR")
 
         # 2. Was the zero-check and correction sequence performed?
         mock_instrument.reset.assert_called_once()

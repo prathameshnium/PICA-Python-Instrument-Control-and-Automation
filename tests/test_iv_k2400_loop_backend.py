@@ -47,7 +47,7 @@ class TestIVK2400LoopBackend(unittest.TestCase):
 
         # --- ASSERTIONS ---
         # 1. Check instrument initialization
-        mock_keithley_class.assert_called_once_with("GPIB::4", adapter_args={'py_library': '@sim'})
+        mock_keithley_class.assert_called_once_with("GPIB::4")
         mock_keithley_instance.disable_buffer.assert_called_once()
 
         # 2. Check instrument configuration
