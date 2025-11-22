@@ -954,50 +954,27 @@ class PlotterApp:
         else:
             legend_title = "Multiple Files"
         leg = self.ax_main.legend(title=legend_title,
-                                          labelcolor=self.CLR_CONSOLE_BG)
-                if leg:
-            
-                    leg.get_title().set_color(self.CLR_CONSOLE_BG)
-            
-        
-            
-                self.ax_main.set_xscale(
-            
-                    'log' if self.x_log_var.get() else 'linear')  # type: ignore
-            
-                self.ax_main.set_yscale(
-            
-                    'log' if self.y_log_var.get() else 'linear')
-            
-                self.ax_main.set_xlabel(x_col)
-            
-                self.ax_main.set_ylabel(y_col)
-            
-        
-            
-                if len(selected_filepaths) == 1:
-            
-                    self.ax_main.set_title(
-            
-                        os.path.basename(
-            
-                            selected_filepaths[0]),
-            
-                        fontweight='bold')
-            
-                else:
-            
-                    self.ax_main.set_title(
-            
-                        f"{y_col} vs. {x_col}",
-            
-                        fontweight='bold')
-            
-                self.figure.tight_layout()
-            
-        
-            
-            def _handle_load_error(self, filepath, e):
+                                  labelcolor=self.CLR_FG)
+        if leg:
+            leg.get_title().set_color(self.CLR_FG)
+
+        self.ax_main.set_xscale('log' if self.x_log_var.get() else 'linear')  # type: ignore
+        self.ax_main.set_yscale('log' if self.y_log_var.get() else 'linear')
+        self.ax_main.set_xlabel(x_col)
+        self.ax_main.set_ylabel(y_col)
+
+        if len(selected_filepaths) == 1:
+            self.ax_main.set_title(
+                os.path.basename(
+                    selected_filepaths[0]),
+                fontweight='bold')
+        else:
+            self.ax_main.set_title(
+                f"{y_col} vs. {x_col}",
+                fontweight='bold')
+        self.figure.tight_layout()
+
+    def _handle_load_error(self, filepath, e):
             
                 """Handles errors during file loading."""
             
@@ -1027,15 +1004,15 @@ class PlotterApp:
             
                 self.log(f"Error loading file: {traceback.format_exc()}")
             
-                messagebox.showerror(
+                                messagebox.showerror(
             
-                    "File Load Error",
+                                    "File Load Error",
             
-                    f"Could not read the data file. It may be empty, malformed, or in use.\n\nDetails: {e}")
+                                    f"Could not read the data file. It may be empty, malformed, or in use.\n\nDetails: {e}")
             
-        
+                
             
-            def toggle_live_update(self):
+                    def toggle_live_update(self):
             
                 if self.live_update_var.get():
             
@@ -1045,9 +1022,7 @@ class PlotterApp:
             
                     self.stop_file_watcher()
             
-        
-            
-            def start_file_watcher(self):
+    def start_file_watcher(self):
             
                 self.stop_file_watcher()  # Ensure no multiple watchers are running
             
@@ -1056,12 +1031,9 @@ class PlotterApp:
                     self.log("Live update enabled. Watching for file changes...")
             
                     self.file_watcher_job = self.root.after(
-            
                         1000, self.check_for_updates)
-            
-        
-            
-            def stop_file_watcher(self):
+
+    def stop_file_watcher(self):
             
                 if self.file_watcher_job:
             
@@ -1071,9 +1043,7 @@ class PlotterApp:
             
                     self.log("Live update disabled.")
             
-        
-            
-            def check_for_updates(self):
+    def check_for_updates(self):
             
                 if not self.active_filepath or not self.live_update_var.get(
             
@@ -1135,23 +1105,6 @@ class PlotterApp:
             
         
             
-        
-            
-        if __name__ == '__main__':
-            
-            # This is ESSENTIAL for multiprocessing to work in a bundled executable
-            
-            # and to prevent pickling errors with 'spawn' start method on Windows.
-            
-            multiprocessing.freeze_support()
-            
-        
-            
-            root = tk.Tk()
-            
-            app = PlotterApp(root)
-            
-            root.mainloop()
 
 
 if __name__ == '__main__':

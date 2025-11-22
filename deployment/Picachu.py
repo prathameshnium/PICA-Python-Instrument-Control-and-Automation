@@ -532,8 +532,6 @@ class PICALauncherApp:
             row=0, column=1, sticky='new', padx=(
                 10, 15), pady=(
                 0, 15))
-
-
         # --- Left Column Suites ---
         self._create_suite_frame(left_col,
                                  'Low Resistance (~10 nΩ to 200 MΩ)',
@@ -1153,6 +1151,6 @@ if __name__ == '__main__':
     # and ensures a consistent, stable process creation method across platforms.
     # 'spawn' is the most robust method for GUI apps, though it is the default
     # on Windows and macOS.
-        multiprocessing.set_start_method('spawn', force=True)
+    multiprocessing.set_start_method('spawn', force=True)
         multiprocessing.freeze_support()
         main()
