@@ -1,3 +1,8 @@
+"""
+Module: T_Sensing_L350_GUI_v4.py
+Purpose: GUI module for T Sensing L350 GUI v4.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:           Lakeshore 350 Passive Temperature Monitor
 # Purpose:        Provide a GUI to passively monitor and record temperature

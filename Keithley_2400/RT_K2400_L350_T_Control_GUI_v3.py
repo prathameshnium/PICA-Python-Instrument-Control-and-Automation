@@ -1,3 +1,8 @@
+"""
+Module: RT_K2400_L350_T_Control_GUI_v3.py
+Purpose: GUI module for RT K2400 L350 T Control GUI v3.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:         Active R-T Measurement for Keithley 2400
 # Purpose:      Provide a GUI for automated R-T sweeps using a K2400 and LS350

@@ -1,3 +1,8 @@
+"""
+Module: GUI_Basic_Format_v2.py
+Purpose: GUI module for GUI Basic Format v2.
+"""
+
 import tkinter as tk
 from tkinter import Label, Entry, Scrollbar, Listbox, LabelFrame, Button, filedialog, messagebox
 import numpy as np

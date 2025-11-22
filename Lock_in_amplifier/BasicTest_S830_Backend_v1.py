@@ -1,3 +1,8 @@
+"""
+Module: BasicTest_S830_Backend_v1.py
+Purpose: GUI module for BasicTest S830 Backend v1.
+"""
+
 import pyvisa
 import time
 

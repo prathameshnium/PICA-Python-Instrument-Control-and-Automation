@@ -1,3 +1,8 @@
+"""
+Module: Delta_K6221_K2182_L350_T_Sensing_Backend_v1.py
+Purpose: GUI module for Delta K6221 K2182 L350 T Sensing Backend v1.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:         Combined Delta and Lakeshore Measurement
 # Purpose:      Perform a Delta mode measurement with a Keithley 6221 while

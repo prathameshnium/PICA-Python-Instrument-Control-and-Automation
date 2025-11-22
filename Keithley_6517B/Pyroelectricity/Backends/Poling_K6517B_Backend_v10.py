@@ -1,3 +1,8 @@
+"""
+Module: Poling_K6517B_Backend_v10.py
+Purpose: GUI module for Poling K6517B Backend v10.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:        Keithley 6517B Poling
 # Purpose:     Apply a poling voltage to a sample.

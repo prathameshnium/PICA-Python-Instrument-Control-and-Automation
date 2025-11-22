@@ -1,3 +1,8 @@
+"""
+Module: Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.py
+Purpose: GUI module for Delta RT K6221 K2182 L350 Sensing GUI v5.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:          Delta Lakeshore Passive Measurement GUI
 # Purpose:       Perform a temperature-dependent Delta mode measurement with a

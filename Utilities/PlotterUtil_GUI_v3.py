@@ -1,3 +1,8 @@
+"""
+Module: PlotterUtil_GUI_v3.py
+Purpose: GUI module for PlotterUtil GUI v3.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:         PICA Plotter Utility
 # Purpose:      A general-purpose CSV/DAT file plotter for the PICA suite.

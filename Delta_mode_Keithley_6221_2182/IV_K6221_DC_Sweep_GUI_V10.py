@@ -1,3 +1,8 @@
+"""
+Module: IV_K6221_DC_Sweep_GUI_V10.py
+Purpose: GUI module for IV K6221 DC Sweep GUI V10.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:         GPIB Passthrough I-V
 # Purpose:      Perform a software-timed I-V sweep by controlling a K2182

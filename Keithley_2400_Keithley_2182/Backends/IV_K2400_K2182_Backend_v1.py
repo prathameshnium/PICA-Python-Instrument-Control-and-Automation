@@ -1,3 +1,8 @@
+"""
+Module: IV_K2400_K2182_Backend_v1.py
+Purpose: GUI module for IV K2400 K2182 Backend v1.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:        IV_K2400_K2182_Backend
 # Purpose:     IV Measurement using Keithley 2400 (Source) & 2182 (Voltmeter)

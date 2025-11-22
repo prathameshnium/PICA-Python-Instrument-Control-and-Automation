@@ -1,3 +1,8 @@
+"""
+Module: IV_K2400_GUI_v5.py
+Purpose: GUI module for IV K2400 GUI v5.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:           Keithley 2400 I-V Measurement GUI
 # Purpose:        Perform an automated I-V sweep using a Keithley 2400.

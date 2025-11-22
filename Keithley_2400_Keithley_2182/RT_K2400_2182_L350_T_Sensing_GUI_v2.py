@@ -1,3 +1,8 @@
+"""
+Module: RT_K2400_2182_L350_T_Sensing_GUI_v2.py
+Purpose: GUI module for RT K2400 2182 L350 T Sensing GUI v2.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:         R-T Sweep Passive GUI for K2400/2182 & LS350
 # Purpose:      Provide a professional GUI for passively logging R vs T data.

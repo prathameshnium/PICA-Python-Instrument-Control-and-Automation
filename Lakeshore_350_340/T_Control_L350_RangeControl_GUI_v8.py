@@ -1,3 +1,8 @@
+"""
+Module: T_Control_L350_RangeControl_GUI_v8.py
+Purpose: GUI module for T Control L350 RangeControl GUI v8.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:         Lakeshore 350 Temperature Ramp Utility
 # Purpose:      Provide a professional GUI for setting a temperature ramp on

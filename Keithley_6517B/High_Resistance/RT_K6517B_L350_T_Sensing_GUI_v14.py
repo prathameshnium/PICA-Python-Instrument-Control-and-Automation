@@ -1,3 +1,8 @@
+"""
+Module: RT_K6517B_L350_T_Sensing_GUI_v14.py
+Purpose: GUI module for RT K6517B L350 T Sensing GUI v14.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:             Integrated R-T Passive Data
 # Purpose:          Provide a GUI to passively measure and record Resistance vs.

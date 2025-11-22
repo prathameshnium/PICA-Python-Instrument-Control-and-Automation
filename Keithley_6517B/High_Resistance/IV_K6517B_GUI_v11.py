@@ -1,3 +1,8 @@
+"""
+Module: IV_K6517B_GUI_v11.py
+Purpose: GUI module for IV K6517B GUI v11.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:             High Resistance IV GUI for Keithley 6517B
 # Purpose:          Perform a voltage sweep and measure resistance using a

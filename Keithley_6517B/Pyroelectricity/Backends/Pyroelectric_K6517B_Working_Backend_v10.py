@@ -1,3 +1,8 @@
+"""
+Module: Pyroelectric_K6517B_Working_Backend_v10.py
+Purpose: GUI module for Pyroelectric K6517B Working Backend v10.
+"""
+
 # -----------------------------------------------------------------------
 # Name:       Pyroelectricity measurement
 # Purpose:    Interface with Lakeshore 350 Temperature Controller and

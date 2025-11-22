@@ -1,3 +1,8 @@
+"""
+Module: GPIB_Instrument_Scanner_GUI_v4.py
+Purpose: GUI module for GPIB Instrument Scanner GUI v4.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:         GPIB/VISA Instrument Scanner GUI
 # Purpose:      A graphical user interface to find all connected instruments

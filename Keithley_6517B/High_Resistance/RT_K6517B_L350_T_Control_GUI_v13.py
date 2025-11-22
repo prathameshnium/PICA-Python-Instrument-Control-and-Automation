@@ -1,3 +1,8 @@
+"""
+Module: RT_K6517B_L350_T_Control_GUI_v13.py
+Purpose: GUI module for RT K6517B L350 T Control GUI v13.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:             Integrated R-T Measurement GUI (Aggressive Ramp)
 # Purpose:          Provide a GUI for the Lakeshore 350 and Keithley 6517B

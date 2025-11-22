@@ -1,3 +1,8 @@
+"""
+Module: IV_K2400_K2182_GUI_v3.py
+Purpose: GUI module for IV K2400 K2182 GUI v3.
+"""
+
 # -------------------------------------------------------------------------------
 # Name:         IV Sweep GUI for Keithley 2400/2182
 # Purpose:      Provide a professional GUI for performing I-V sweeps using a
