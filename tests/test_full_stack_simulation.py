@@ -13,11 +13,7 @@ sys.modules['tkinter.messagebox'] = MagicMock()
 sys.modules['tkinter.filedialog'] = MagicMock()
 
 # Matplotlib Mocks
-sys.modules['matplotlib'] = MagicMock()
-sys.modules['matplotlib.pyplot'] = MagicMock()
-sys.modules['matplotlib.figure'] = MagicMock()
-sys.modules['matplotlib.backends'] = MagicMock()
-sys.modules['matplotlib.backends.backend_tkagg'] = MagicMock()
+
 
 
 class TestDeepSimulation(unittest.TestCase):
@@ -92,78 +88,73 @@ class TestDeepSimulation(unittest.TestCase):
     # =========================================================================
     # TEST 2: LAKESHORE 350 (Complex Logic with Loop)
     # =========================================================================
-    def test_lakeshore_visa_communication(self):
+    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.pyvisa.ResourceManager')
+    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.plt')
+    def test_lakeshore_visa_communication(self, MockPlot, MockResourceManager):
         print("\n[SIMULATION] Testing Lakeshore 350 SCPI Commands...")
 
-        with patch('pyvisa.ResourceManager') as MockRM:
-            mock_rm_instance = MockRM.return_value
-            spy_instr = MagicMock()
-            mock_rm_instance.open_resource.return_value = spy_instr
+        # Mock matplotlib components
+        mock_fig = MagicMock()
+        mock_ax = MagicMock()
+        MockPlot.subplots.return_value = (mock_fig, mock_ax)
+        MockPlot.ion.return_value = None
+        MockPlot.ioff.return_value = None
+        MockPlot.show.return_value = None
 
-            # 1. Mock Responses (IDN, then temperature readings)
-            spy_instr.query.side_effect = [
-                "LSCI,MODEL350,123456,1.0",  # *IDN?
-                "10.0",  # Initial Temp
-                "10.0",  # Stabilize check 1
-                "10.1",  # Stabilize check 2
-                "10.1",  # Loop 1
-                "10.2",  # Loop 2
-                "300.0"  # Safety Fallback
-            ] * 5
+        mock_rm_instance = MockResourceManager.return_value
+        spy_instr = MagicMock()
+        mock_rm_instance.open_resource.return_value = spy_instr
 
-            # 2. Mock Inputs: Start=10, End=300, Rate=10, Cutoff=350
-            # (Logic: 10 < 300 < 350 is Valid)
-            fake_inputs = ['10', '300', '10', '350']
+        # 1. Mock Responses (IDN, then temperature readings)
+        # Add the "Force Test Exit" exception to the side_effect for the query,
+        # ensuring the loop breaks and cleanup is called.
+        spy_instr.query.side_effect = [
+            "LSCI,MODEL350,123456,1.0",  # *IDN?
+            "10.0",  # Initial Temp
+            "10.0",  # Stabilize check 1
+            "10.1",  # Stabilize check 2
+            "10.1",  # Loop 1
+            "10.2",  # Loop 2
+            "300.0",  # Safety Fallback
+            Exception("Force Test Exit") # Force exit after some iterations
+        ] * 5
 
-            # 3. Mock File Dialog (Must return string)
-            sys.modules['tkinter'].filedialog.asksaveasfilename.return_value = "dummy.csv"
+        # 2. Mock Inputs: Start=10, End=300, Rate=10, Cutoff=350
+        # (Logic: 10 < 300 < 350 is Valid)
+        fake_inputs = ['10', '300', '10', '350']
 
-            # 4. Circuit Breaker: Force script to exit after 5 sleep calls
-            mock_sleep = MagicMock(
-                side_effect=[
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    Exception("Force Test Exit")])
+        # 3. Mock File Dialog (Must return string)
+        sys.modules['tkinter'].filedialog.asksaveasfilename.return_value = "dummy.csv"
 
-            # 5. Run It
-            with patch('builtins.input', side_effect=fake_inputs), \
-                    patch('builtins.open', mock_open()), \
-                    patch('time.sleep', mock_sleep):
+        # 4. Circuit Breaker: We now let the spy_instr.query raise the exception
+        # mock_sleep = MagicMock(side_effect=[None, None, None, None, None, Exception("Force Test Exit")])
 
-                self.run_module_safely(
-                    "Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10")
+        # 5. Run It
+        with patch('builtins.input', side_effect=fake_inputs), \
+             patch('builtins.open', mock_open()), \
+             patch('time.sleep', MagicMock()): # We mock sleep to prevent delays
 
-            # --- ASSERTIONS ---
+            self.run_module_safely(
+                "Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10")
 
-            # Did we ask for ID?
-            try:
-                spy_instr.query.assert_any_call('*IDN?')
-                print("   -> Verified: *IDN? Query Sent")
-            except AssertionError:
-                print("   [FAIL] Connection was not established.")
+        # --- ASSERTIONS ---
 
-            # Get all write commands sent
-            write_calls = [str(c) for c in spy_instr.write.mock_calls]
+        # Did we ask for ID?
+        spy_instr.query.assert_any_call('*IDN?')
+        print("   -> Verified: *IDN? Query Sent")
 
-            # Did we configure the heater? (HTRSET)
-            if any("HTRSET" in c for c in write_calls):
-                print("   -> Verified: Heater Configured (HTRSET)")
-            else:
-                print(
-                    f"   [Warn] HTRSET command not found. Commands sent: {write_calls[:2]}...")
+        # Get all write commands sent
+        write_calls = [str(c) for c in spy_instr.write.mock_calls]
 
-            # Did we turn it off at the end? (RANGE ... 0)
-            # The script calls: set_heater_range(..., 'off') -> 'RANGE 1,0'
-            if any("RANGE 1,0" in c for c in write_calls):
-                print("   -> Verified: Heater Turned Off (RANGE 1,0)")
-            elif spy_instr.close.called:
-                print("   -> Verified: Instrument Connection Closed")
-            else:
-                self.fail(
-                    "Safety Shutdown Failed: Heater not off and connection not closed.")
+        # Did we configure the heater? (HTRSET)
+        self.assertTrue(any("HTRSET" in c for c in write_calls), "HTRSET command not found")
+        print("   -> Verified: Heater Configured (HTRSET)")
+
+        # Did we turn it off at the end? (RANGE ... 0) or close the instrument
+        self.assertTrue(any("RANGE 1,0" in c for c in write_calls) or spy_instr.close.called,
+                        "Safety Shutdown Failed: Heater not off and connection not closed.")
+        print("   -> Verified: Safety Shutdown (Heater Off or Connection Closed)")
+
 
     # =========================================================================
     # TEST 3: GPIB SCANNER

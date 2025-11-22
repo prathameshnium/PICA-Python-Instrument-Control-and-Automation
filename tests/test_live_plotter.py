@@ -1,13 +1,8 @@
-# This test is temporarily commented out due to a persistent ModuleNotFoundError related to
-# 'matplotlib.animation' in the testing environment, specifically "matplotlib is not a package".
-# This issue appears to be an environmental configuration problem rather than a bug in the code
-# being tested. Until the environment can correctly resolve matplotlib.animation, this test
-# cannot run.
 import unittest
-
-import pandas as pd
 from unittest import mock
 import pytest
+
+import pandas as pd
 
 
 @pytest.fixture

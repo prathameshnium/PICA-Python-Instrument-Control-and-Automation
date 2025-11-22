@@ -23,15 +23,19 @@ class TestFixes(unittest.TestCase):
             iv_backend.main()
         self.assertIn("Force Test Exit", str(context.exception))
 
-    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.Lakeshore350')
-    def test_t_control_l350_fix(self, mock_ls_class):  # type: ignore
+    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.pyvisa.ResourceManager')
+    def test_t_control_l350_fix(self, MockResourceManager):  # type: ignore
         from Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10 import main
 
         # Configure the mock Lakeshore350 instance that main() will receive
+        mock_rm = MagicMock()
+        MockResourceManager.return_value = mock_rm
         mock_controller_instance = MagicMock()
-        mock_ls_class.return_value = mock_controller_instance
-        # Simulate temp increase
-        mock_controller_instance.get_temperature.side_effect = [10.0, 10.0, 10.0, 15.0, 21.0]
+        mock_rm.open_resource.return_value = mock_controller_instance
+
+        # Simulate temp increase and force test exit
+        mock_controller_instance.get_temperature.side_effect = [
+            10.0, 10.0, 10.0, 15.0, 21.0, Exception("Force Test Exit")]
         mock_controller_instance.get_heater_output.return_value = 25.0  # Simulate heater output
 
         with patch('builtins.input', side_effect=['10', '20', '5', '30']), \
