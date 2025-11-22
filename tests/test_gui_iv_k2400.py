@@ -23,7 +23,7 @@ class TestIVK2400GUI(unittest.TestCase):
         self.root.destroy()
 
     @patch('Keithley_2400.IV_K2400_GUI_v5.Keithley2400_IV_Backend')
-    @patch('Keithley_2400.IV_K2400_GUI_v5.Figure.subplots', return_value=(MagicMock(), MagicMock()))
+    @patch('matplotlib.figure.Figure.subplots', return_value=(MagicMock(), MagicMock()))
     def test_start_measurement_logic(self, mock_subplots, MockBackend):
         """
         Tests the core logic of the 'Start' button click.

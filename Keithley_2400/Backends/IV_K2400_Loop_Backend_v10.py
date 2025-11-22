@@ -22,7 +22,6 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from time import sleep
-import pyvisa
 from pymeasure.instruments.keithley import Keithley2400
 import pandas as pd
 
@@ -91,7 +90,3 @@ def main():
     plt.legend()
     plt.grid(True)
     plt.show()
-
-
-if __name__ == "__main__":
-    main()

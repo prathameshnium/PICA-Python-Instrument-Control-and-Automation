@@ -849,9 +849,9 @@ class PyroelectricAppGUI:
                 elif state == 'ramping':
                     elapsed_time = time.time() - self.start_time
                     log_msg = (
-                        f"Ramping... Time: {elapsed_time:7.1f}s | "
-                        f"Temp: {current_temp:8.4f}K | "
-                        f"Current: {current_val:.3e} A"
+                        f"Time: {elapsed_time:.1f}s | "
+                        f"Temp: {current_temp:.2f}K | "
+                        f"Current: {current_val:.2e}A"
                     )
                     self.log(log_msg)
 

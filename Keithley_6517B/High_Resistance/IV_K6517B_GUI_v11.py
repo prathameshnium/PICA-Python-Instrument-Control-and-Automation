@@ -314,8 +314,10 @@ class HighResistanceIV_GUI:
             focuscolor='none')
         style.map(
             'TButton',
-            background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)],
-            foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)]
+            background=[('active', self.CLR_ACCENT_GOLD),
+                        ('hover', self.CLR_ACCENT_GOLD)],
+            foreground=[('active', self.CLR_TEXT_DARK),
+                        ('hover', self.CLR_TEXT_DARK)]
         )
         style.configure(
             'Start.TButton',

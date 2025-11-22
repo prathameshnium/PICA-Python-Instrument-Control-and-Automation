@@ -9,14 +9,21 @@ from Keithley_2400.Backends import IV_K2400_Loop_Backend_v10 as iv_backend
 class TestIVK2400LoopBackend(unittest.TestCase):
 
     @patch('builtins.input', side_effect=['10', '2', 'test_output'])
+    @patch('Keithley_2400.Backends.IV_K2400_Loop_Backend_v10.pyvisa.ResourceManager')
     @patch('Keithley_2400.Backends.IV_K2400_Loop_Backend_v10.Keithley2400')
     @patch('matplotlib.pyplot.show')
     @patch('pandas.DataFrame.to_csv')
-    def test_main_full_run(self, mock_to_csv, mock_plt_show, mock_keithley_class, mock_input):
+    def test_main_full_run(self, mock_to_csv, mock_plt_show, mock_keithley_class, mock_rm, mock_input):
         """
         Test the main function to ensure it runs through the full I-V sweep process.
         """
-        # --- MOCK SETUP ---
+        # --- MOCK SETUP for pyvisa.ResourceManager ---
+        mock_resource_manager_instance = MagicMock()
+        mock_rm.return_value = mock_resource_manager_instance
+        mock_instrument_visa = MagicMock()
+        mock_resource_manager_instance.open_resource.return_value = mock_instrument_visa
+
+        # --- MOCK SETUP for Keithley2400 ---
         # Mock the instrument instance
         mock_keithley_instance = MagicMock()
         mock_keithley_class.return_value = mock_keithley_instance

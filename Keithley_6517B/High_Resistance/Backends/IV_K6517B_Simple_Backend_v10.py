@@ -54,7 +54,6 @@ def get_sweep_parameters():
         filename += '.csv'
     return start_v, stop_v, steps, delay, filename
 
-
 def plot_results(data):
     """Plots the I-V curve from the collected data."""
     if not data:

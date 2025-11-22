@@ -69,7 +69,7 @@ def live_plot_from_csv(selected_file):
         axs[2].set_ylabel('Voltage (V)', fontsize=13)
         axs[2].legend(loc='upper left')
 
-    ani = FuncAnimation(plt.gcf(), animate, interval=1000, cache_frame_data=False)
+    ani = FuncAnimation(plt.gcf(), animate, interval=1000, cache_frame_data=False) # noqa: F841
 
     plt.tight_layout()
     plt.show()

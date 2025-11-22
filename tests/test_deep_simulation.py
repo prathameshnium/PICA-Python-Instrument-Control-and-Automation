@@ -5,6 +5,7 @@ import importlib
 import signal
 from unittest.mock import MagicMock, patch, mock_open
 
+
 class TestDeepSimulation(unittest.TestCase):
 
     def setUp(self):
@@ -22,10 +23,8 @@ class TestDeepSimulation(unittest.TestCase):
     # -------------------------------------------------------------------------
     def _timeout_handler(self, signum, frame):
         raise TimeoutError(
-            f"Test {self._testMethodName} took longer than 30s! Infinite Loop suspected.")
-
-    def run_module_safely(self, module_name, mock_modules):
-        """Imports and runs a module with a strict 30-second timeout."""
+                            f"Test {self._testMethodName} took longer than 30s! Infinite Loop suspected.")
+                def run_module_safely(self, module_name, mock_modules):        """Imports and runs a module with a strict 30-second timeout."""
         with patch.dict('sys.modules', mock_modules):
             # Set an alarm for 30 seconds (Works on Linux/GitHub Actions)
             if hasattr(signal, 'SIGALRM'):
@@ -80,7 +79,6 @@ class TestDeepSimulation(unittest.TestCase):
     # =========================================================================
     # TESTS
     # =========================================================================
-
     def test_01_k2400_iv_backend(self):
         # Define mocks locally for this test
         mock_modules = {
@@ -172,7 +170,8 @@ class TestDeepSimulation(unittest.TestCase):
             spy.current = 1.23e-9
             with patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
-                    "Keithley_6517B.Pyroelectricity.Backends.Current_K6517B_Simple_Backend_v10", mock_modules)
+                    "Keithley_6517B.Pyroelectricity.Backends."
+                    "Current_K6517B_Simple_Backend_v10", mock_modules)
 
     def test_04_lcr_keysight_backend(self):
         mock_modules = {
@@ -415,7 +414,9 @@ class TestDeepSimulation(unittest.TestCase):
             rm = MockRM.return_value
             rm.list_resources.return_value = ('GPIB0::1::INSTR',)
             self.run_module_safely(
-                "Utilities.GPIB_Interface_Rescue_Simple_Backened_v2_", mock_modules)
-
-if __name__ == '__main__':
-    unittest.main()
+                                "Utilities.GPIB_Interface_Rescue_Simple_Backened_v2_", mock_modules)
+                
+                
+                if __name__ == '__main__':
+                    unittest.main()
+                

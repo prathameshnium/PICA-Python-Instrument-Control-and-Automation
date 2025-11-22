@@ -133,10 +133,12 @@ class PICALauncherApp:
     SCRIPT_PATHS = {
         "Sweep Mode I-V": os.path.join(SUB_PROGRAMS_DIR, "IV_K6221_DC_Sweep_GUI_V10.exe"),
         "Delta Mode R-T": os.path.join(SUB_PROGRAMS_DIR, "Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.exe"),
-        "Delta Mode R-T (T_Sensing)": os.path.join(SUB_PROGRAMS_DIR, "Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.exe"),
+        "Delta Mode R-T (T_Sensing)": os.path.join(
+            SUB_PROGRAMS_DIR, "Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.exe"),
         "K2400 I-V": os.path.join(SUB_PROGRAMS_DIR, "IV_K2400_GUI_v5.exe"),
         "K2400 R-T": os.path.join(SUB_PROGRAMS_DIR, "RT_K2400_L350_T_Control_GUI_v3.exe"),
-        "K2400 R-T (T_Sensing)": os.path.join(SUB_PROGRAMS_DIR, "RT_K2400_L350_T_Sensing_GUI_v4.exe"),
+        "K2400 R-T (T_Sensing)": os.path.join(
+            SUB_PROGRAMS_DIR, "RT_K2400_L350_T_Sensing_GUI_v4.exe"),
         "K2400_2182 I-V": os.path.join(SUB_PROGRAMS_DIR, "IV_K2400_K2182_GUI_v3.exe"),
         "K2400_2182 R-T": os.path.join(SUB_PROGRAMS_DIR, "RT_K2400_K2182_T_Control_GUI_v3.exe"),
         "K2400_2182 R-T (T_Sensing)": os.path.join(SUB_PROGRAMS_DIR, "RT_K2400_2182_L350_T_Sensing_GUI_v2.exe"),
@@ -1151,6 +1153,6 @@ if __name__ == '__main__':
     # and ensures a consistent, stable process creation method across platforms.
     # 'spawn' is the most robust method for GUI apps, though it is the default
     # on Windows and macOS.
-    multiprocessing.set_start_method('spawn', force=True)
-    multiprocessing.freeze_support()
-    main()
+        multiprocessing.set_start_method('spawn', force=True)
+        multiprocessing.freeze_support()
+        main()

@@ -53,7 +53,7 @@ class TestPicaLauncher(unittest.TestCase):
     """
     
     # We patch the actual method that is called by the button to ensure it fires.
-    @patch('__main__.MockPicaLauncher.open_iv_sweep')
+    @patch('test_pica_launcher.MockPicaLauncher.open_iv_sweep')
     def test_iv_sweep_button_click_calls_function(self, mock_open_iv_sweep):
         """Tests that clicking the IV Sweep button calls its launch function once."""
         launcher = MockPicaLauncher()
@@ -67,7 +67,7 @@ class TestPicaLauncher(unittest.TestCase):
         # Assert the internal counter was incremented
         self.assertEqual(launcher.open_gui_calls['iv_sweep'], 1)
 
-    @patch('__main__.MockPicaLauncher.open_temp_control')
+    @patch('test_pica_launcher.MockPicaLauncher.open_temp_control')
     def test_temp_control_button_click_calls_function(self, mock_open_temp_control):
         """Tests that clicking the Temp Control button calls its launch function once."""
         launcher = MockPicaLauncher()

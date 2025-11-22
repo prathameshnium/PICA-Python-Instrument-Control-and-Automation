@@ -504,7 +504,6 @@ class PICALauncherApp:
                 5, 10), pady=(
                 0, 15))
 
-
         # --- Left Column Suites ---
         self._create_suite_frame(left_col,
                                  'Low Resistance (10 nΩ to 100 MΩ)',

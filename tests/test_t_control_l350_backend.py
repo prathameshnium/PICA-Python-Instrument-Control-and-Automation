@@ -93,6 +93,7 @@ class TestMainFunctionAndUserInput(unittest.TestCase):
     @patch('tkinter.Tk')
     @patch('tkinter.filedialog.asksaveasfilename', return_value='test.csv')
     @patch('builtins.input', side_effect=['10', '20', '5', '30'])
+    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.pyvisa.ResourceManager')
     @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.Lakeshore350') # Correct patch target
     @patch('matplotlib.pyplot.subplots')
     @patch('matplotlib.pyplot.show')
@@ -101,8 +102,15 @@ class TestMainFunctionAndUserInput(unittest.TestCase):
     # Simulate time passing
     @patch('time.time', side_effect=[1000, 1002, 1004, 1006, 1008, 1010])
     def test_main_runs_and_completes(self, mock_time, mock_open_file,
-                                     mock_plt_show, mock_subplots, mock_ls_class, mock_input, mock_file_dialog, mock_tk):
+                                     mock_plt_show, mock_subplots, mock_rm, mock_ls_class, mock_input, mock_file_dialog, mock_tk):
         # --- MOCK SETUP ---
+        # Configure the mock ResourceManager to return a mock instrument
+        mock_resource_manager_instance = MagicMock()
+        mock_rm.return_value = mock_resource_manager_instance
+        mock_instrument = MagicMock()
+        mock_resource_manager_instance.open_resource.return_value = mock_instrument
+        mock_instrument.query.return_value = "Mocked Lakeshore 350 ID"  # For IDN query
+
         mock_controller = MagicMock()
         mock_ls_class.return_value = mock_controller
 
