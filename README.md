@@ -1,3 +1,6 @@
+![PICA CI](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/python-package.yml/badge.svg)
+[![codecov](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation/branch/main/graph/badge.svg)](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation)
+
 <p align="center">
   <img src="_assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
 </p>
@@ -128,8 +131,8 @@ The PICA suite is organized into modules, each containing a frontend GUI applica
 **Overview**
 This facility provides users with a comprehensive, modular system for characterizing the full spectrum of electronic transport properties in cryogenic environments. The setup integrates multiple high-precision instruments to cover the entire resistance scale, from superconductors to perfect insulators.
 
-* **Temperature Range:** 80 K to 320 K.
-* **Complete Resistance Range:** $10 n\Omega$ to $10 P\Omega$, i.e., covering 24-orders-of-magnitude.
+*   **Temperature Range:** 80 K to 320 K.
+*   **Complete Resistance Range:** $10 n\Omega$ to $10 P\Omega$, i.e., covering 24-orders-of-magnitude.
 
 **Measurement Modules**
 
