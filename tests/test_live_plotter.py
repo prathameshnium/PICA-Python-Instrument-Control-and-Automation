@@ -20,7 +20,7 @@ def dummy_csv_file(tmp_path):
 
 
 class TestLivePlotter(unittest.TestCase):
-    @mock.patch('Utilities.LivePlotter_v10.select_file')
+    @mock.patch('Utilities.my_plot_utils.select_file')
     @mock.patch('matplotlib.pyplot.show')
     @mock.patch('matplotlib.animation.FuncAnimation')
     def test_live_plot_from_csv(self, mock_animation, mock_show, mock_select_file, dummy_csv_file):
@@ -32,8 +32,8 @@ class TestLivePlotter(unittest.TestCase):
 
         # We need to run the script's main execution block.
         # Since it's under `if __name__ == '__main__':`, we can import it.
-        with mock.patch('Utilities.LivePlotter_v10.live_plot_from_csv') as mock_live_plot:
-            from Utilities import LivePlotter_v10 # noqa
+        with mock.patch('Utilities.my_plot_utils.live_plot_from_csv') as mock_live_plot:
+            from Utilities import my_plot_utils # noqa
             # The main block calls live_plot_from_csv, so we check that
             mock_live_plot.assert_called_once()
 

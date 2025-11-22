@@ -25,13 +25,7 @@ class TestDeepSimulation(unittest.TestCase):
         if self.root_dir not in sys.path:
             sys.path.insert(0, self.root_dir)
 
-        # --- FIX FOR "not enough values to unpack" ---
-        # Your script does: fig, ax = plt.subplots()
-        # We must tell the mock to return a tuple of (fig, ax)
-        mock_fig = MagicMock()
-        mock_ax = MagicMock()
-        sys.modules['matplotlib.pyplot'].subplots.return_value = (
-            mock_fig, mock_ax)
+
 
     def run_module_safely(self, module_name):
         """Helper to import a module and run its main() if it exists."""
@@ -89,17 +83,21 @@ class TestDeepSimulation(unittest.TestCase):
     # TEST 2: LAKESHORE 350 (Complex Logic with Loop)
     # =========================================================================
     @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.pyvisa.ResourceManager')
-    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.plt')
-    def test_lakeshore_visa_communication(self, MockPlot, MockResourceManager):
+    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.plt.show')
+    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.plt.ioff')
+    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.plt.ion')
+    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.plt.subplots')
+    def test_lakeshore_visa_communication(self, MockSubplots, MockIon, MockIoff, MockShow, MockResourceManager):
         print("\n[SIMULATION] Testing Lakeshore 350 SCPI Commands...")
 
         # Mock matplotlib components
         mock_fig = MagicMock()
         mock_ax = MagicMock()
-        MockPlot.subplots.return_value = (mock_fig, mock_ax)
-        MockPlot.ion.return_value = None
-        MockPlot.ioff.return_value = None
-        MockPlot.show.return_value = None
+        MockSubplots.return_value = (mock_fig, mock_ax)
+        mock_ax.plot.return_value = [MagicMock()] # Added for plot() unpacking error
+        MockIon.return_value = None
+        MockIoff.return_value = None
+        MockShow.return_value = None
 
         mock_rm_instance = MockResourceManager.return_value
         spy_instr = MagicMock()

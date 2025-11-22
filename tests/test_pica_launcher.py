@@ -1,20 +1,28 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
-# -----------------------------------------------------------------------------
-# MOCK HELPER CLASSES for GUI Testing
-# These classes simulate the necessary parts of the GUI environment (like Tkinter)
-# -----------------------------------------------------------------------------
+# The actual script paths from PICA_v6.py, for reference.
+# These are hardcoded here to make the test self-contained and independent
+# of the actual PICA_v6.py file's SCRIPT_PATHS for basic mock testing.
+# In a more advanced setup, you might try to import and use PICALauncherApp.SCRIPT_PATHS
+REAL_SCRIPT_PATHS = {
+    "K2400 I-V": "Keithley_2400/IV_K2400_GUI_v5.py",
+    "Lakeshore Temp Control": "Lakeshore_350_340/T_Control_L350_RangeControl_GUI_v8.py",
+}
+
+# Mapping from script_key to the text displayed on the button in PICA_v6.py
+SCRIPT_KEY_TO_BUTTON_TEXT = {
+    "K2400 I-V": "I-V Sweep",
+    "Lakeshore Temp Control": "Temperature Ramp",
+}
 
 
 class MockTkWidget:
     """Mock object for Tkinter/PyQt widgets to simulate button interactions."""
-    def __init__(self, command=None):
-        self.command = command
 
-    def get(self):
-        """Not typically used for launcher buttons, but included for completeness."""
-        return ''
+    def __init__(self, command=None, text=""):
+        self.command = command
+        self.text = text
 
     def invoke(self):
         """Simulates a button click (calls the attached command)."""
@@ -24,68 +32,70 @@ class MockTkWidget:
 
 class MockPicaLauncher:
     """
-    Simulates the PICA_v6.py launcher class structure.
-    NOTE: Adapt the button names and method names below to match your real PICA_v6.py file.
+    Simulates the PICALauncherApp's button creation and launching logic.
     """
+    SCRIPT_PATHS = REAL_SCRIPT_PATHS  # Use the actual script paths for consistency
+
     def __init__(self):
-        # Attach MockTkWidget to simulate the 'command' binding for the button
-        self.button_iv_sweep = MockTkWidget(command=self.open_iv_sweep)
-        self.button_temp_control = MockTkWidget(command=self.open_temp_control)
-        # Internal state tracker to confirm methods are called
-        self.open_gui_calls = {'iv_sweep': 0, 'temp_control': 0}
+        # This will store mock button objects, keyed by script_key
+        self._mock_buttons = {}
+        # Simulate the creation of a few buttons based on actual PICA_v6.py structure
+        self._create_mock_buttons()
 
-    def open_iv_sweep(self):
-        """Simulates the handler for the IV sweep button."""
-        self.open_gui_calls['iv_sweep'] += 1
+    def _create_mock_buttons(self):
+        """Simulates the button creation logic of PICALauncherApp."""
+        for script_key, script_path in self.SCRIPT_PATHS.items():
+            button_text = SCRIPT_KEY_TO_BUTTON_TEXT.get(
+                script_key, script_key)  # Fallback to key if text not mapped
+            # The lambda captures the current script_key at definition time
+            command_func = lambda key=script_key: self.launch_script(
+                self.SCRIPT_PATHS[key])
+            mock_button = MockTkWidget(command=command_func, text=button_text)
+            self._mock_buttons[script_key] = mock_button
 
-    def open_temp_control(self):
-        """Simulates the handler for the Temperature Control button."""
-        self.open_gui_calls['temp_control'] += 1
+    def get_button_by_script_key(self, script_key):
+        """Returns the mock button associated with a given script key."""
+        return self._mock_buttons.get(script_key)
 
+    def launch_script(self, script_path):
+        """Mock method for launching script. This method will be patched by the tests."""
+        pass
 
-# -----------------------------------------------------------------------------
-# THE ACTUAL TESTS for the Launcher
-# -----------------------------------------------------------------------------
 
 class TestPicaLauncher(unittest.TestCase):
     """
-    Tests the main PICA Launcher (PICA_v6.py) to ensure correct routing logic.
+    Tests the main PICA Launcher's button-script launching logic
+    using a mock PicaLauncher.
     """
 
-    # We patch the actual method that is called by the button to ensure it fires.
-    @patch('tests.test_pica_launcher.MockPicaLauncher.open_iv_sweep')
-    def test_iv_sweep_button_click_calls_function(self, mock_open_iv_sweep):
-        """Tests that clicking the IV Sweep button calls its launch function once."""
+    @patch('tests.test_pica_launcher.MockPicaLauncher.launch_script')
+    def test_k2400_iv_button_launches_correct_script(self, mock_launch_script):
+        """
+        Tests that the 'K2400 I-V' button, when invoked, calls launch_script
+        with the correct path.
+        """
         launcher = MockPicaLauncher()
-        # Simulate button click
-        launcher.button_iv_sweep.invoke()
+        button = launcher.get_button_by_script_key("K2400 I-V")
+        self.assertIsNotNone(button, "Button for 'K2400 I-V' not found.")
+        button.invoke()
+        mock_launch_script.assert_called_once_with(
+            REAL_SCRIPT_PATHS["K2400 I-V"])
 
-        # Assert the mocked function was called
-        mock_open_iv_sweep.assert_called_once()
-        # Assert the internal counter was incremented
-        self.assertEqual(launcher.open_gui_calls['iv_sweep'], 1)
-
-    @patch('tests.test_pica_launcher.MockPicaLauncher.open_temp_control')
-    def test_temp_control_button_click_calls_function(self, mock_open_temp_control):
-        """Tests that clicking the Temp Control button calls its launch function once."""
+    @patch('tests.test_pica_launcher.MockPicaLauncher.launch_script')
+    def test_lakeshore_temp_control_button_launches_correct_script(
+            self, mock_launch_script):
+        """
+        Tests that the 'Lakeshore Temp Control' button, when invoked,
+        calls launch_script with the correct path.
+        """
         launcher = MockPicaLauncher()
-        # Simulate button click
-        launcher.button_temp_control.invoke()
+        button = launcher.get_button_by_script_key("Lakeshore Temp Control")
+        self.assertIsNotNone(
+            button, "Button for 'Lakeshore Temp Control' not found.")
+        button.invoke()
+        mock_launch_script.assert_called_once_with(
+            REAL_SCRIPT_PATHS["Lakeshore Temp Control"])
 
-        # Assert the mocked function was called
-        mock_open_temp_control.assert_called_once()
-        # Assert the internal counter was incremented
-        self.assertEqual(launcher.open_gui_calls['temp_control'], 1)
-
-    def test_multiple_clicks(self):
-        """Tests that multiple clicks correctly register multiple calls."""
-        launcher = MockPicaLauncher()
-        # Simulate multiple clicks
-        for _ in range(3):
-            launcher.button_iv_sweep.invoke()
-        self.assertEqual(launcher.open_gui_calls['iv_sweep'], 3)
-        self.assertEqual(launcher.open_gui_calls['temp_control'], 0)  # Ensure others are not called
-
-
-if __name__ == '__main__':
-    unittest.main()
+    # Add more tests here for other relevant buttons if desired
+    # For example, to test that a button for which script_key_to_button_text
+    # is not defined still works, or to test other script types.

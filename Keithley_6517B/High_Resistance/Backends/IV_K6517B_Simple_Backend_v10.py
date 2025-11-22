@@ -83,13 +83,19 @@ def main():
     results = []
 
     try:
+        print("DEBUG: Calling get_sweep_parameters()")
         # Get sweep parameters from the user
         start_v, stop_v, steps, delay, filename = get_sweep_parameters()
+        print(f"DEBUG: Parameters: start_v={start_v}, stop_v={stop_v}, steps={steps}, delay={delay}, filename={filename}")
+
+        print("DEBUG: Calling np.linspace()")
         voltage_sweep = np.linspace(start_v, stop_v, steps)
+        print("DEBUG: np.linspace successful.")
 
         # --- 2. CONNECT TO INSTRUMENT (V5 Logic) ---
         print(f"\nAttempting to connect to instrument at: {VISA_ADDRESS}")
         keithley = Keithley6517B(VISA_ADDRESS)
+        print(f"DEBUG: Connected to instrument: {keithley.id}")
         print(f"Successfully connected to: {keithley.id}")
 
         # --- 3. CONFIGURE MEASUREMENT (V5 Logic) ---

@@ -2,12 +2,11 @@ import unittest
 from unittest.mock import patch, MagicMock, mock_open
 import pyvisa
 
-from Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10 import (
-    Lakeshore350, get_user_parameters, main)
+import Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10 as ls_backend
 
 
 class TestLakeshore350Class(unittest.TestCase):
-    @patch('pyvisa.ResourceManager')
+    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.pyvisa.ResourceManager')
     def setUp(self, mock_rm):
         # Mock the entire pyvisa resource manager and the instrument it returns
         self.mock_instrument = MagicMock()
@@ -15,7 +14,7 @@ class TestLakeshore350Class(unittest.TestCase):
         self.mock_instrument.query.return_value = "LSCI,MODEL350,12345,1.0"
 
         # Instantiate the class, which will now use the mock instrument
-        self.controller = Lakeshore350("GPIB0::13::INSTR")
+        self.controller = ls_backend.Lakeshore350("GPIB0::13::INSTR")
         # Keep a reference to the mock for assertions
         self.controller.instrument = self.mock_instrument
 
@@ -30,7 +29,7 @@ class TestLakeshore350Class(unittest.TestCase):
         mock_rm.return_value.open_resource.side_effect = pyvisa.errors.VisaIOError(
             pyvisa.constants.VI_ERROR_RSRC_NFOUND)
         with self.assertRaises(ConnectionError):
-            Lakeshore350("GPIB0::13::INSTR")
+            ls_backend.Lakeshore350("GPIB0::13::INSTR")
 
     def test_reset_and_clear(self):
         with patch('time.sleep') as mock_sleep:
@@ -77,54 +76,64 @@ class TestLakeshore350Class(unittest.TestCase):
 
 
 class TestMainFunctionAndUserInput(unittest.TestCase):
+    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.pyvisa.ResourceManager')
+    def setUp(self, mock_rm_manager):
+        self.mock_controller = MagicMock()
+        mock_rm_manager.return_value.open_resource.return_value = self.mock_controller
+        # Simulate temperature readings to control the loop
+        # Start at 10K, then ramp up to 21K to finish
+        self.mock_controller.get_temperature.side_effect = [
+            10.0, 10.0, 10.0, 15.0, 21.0]
+        self.mock_controller.get_heater_output.return_value = 25.0
+
     @patch('builtins.input', side_effect=['100', '200', '10', '300',
                                           'not-a-number', '50', '350', '10', '400'])
     def test_get_user_parameters(self, mock_input):
         # First call: Valid input
-        start, end, rate, cutoff = get_user_parameters()
+        start, end, rate, cutoff = ls_backend.get_user_parameters()
         self.assertEqual((start, end, cutoff), (100, 200, 300))
         self.assertEqual(rate, 10)
 
         # Second call: Invalid text input, should retry and get the next valid ones
-        start, end, rate, cutoff = get_user_parameters()
+        start, end, rate, cutoff = ls_backend.get_user_parameters()
         self.assertEqual((start, end, cutoff), (50, 350, 400))
         self.assertEqual(rate, 10)
 
-    @patch('tkinter.Tk')
     @patch('tkinter.filedialog.asksaveasfilename', return_value='test.csv')
     @patch('builtins.input', side_effect=['10', '20', '5', '30'])
-    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.Lakeshore350')
+    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.pyvisa.ResourceManager')
     @patch('matplotlib.pyplot.show')
     @patch('builtins.open', new_callable=mock_open)
     @patch('time.sleep', MagicMock())
     @patch('time.time', side_effect=[1000, 1002, 1004, 1006, 1008, 1010])
-    def test_main_runs_and_completes(self, mock_time, mock_open_file, mock_plt_show, mock_ls_class,
-                                     mock_input, mock_file_dialog, mock_tk):
-        # --- MOCK SETUP ---
-        mock_controller = MagicMock()
-        mock_ls_class.return_value = mock_controller
+    @patch('matplotlib.pyplot.subplots')
+    def test_main_runs_and_completes(self, mock_subplots, mock_time, mock_open_file, mock_plt_show,
+                                     mock_rm_manager, mock_input, mock_file_dialog):
+        # --- Configure mock_subplots ---
+        mock_ax1 = MagicMock()
+        mock_ax2 = MagicMock()
+        mock_subplots.return_value = (mock_ax1, mock_ax2)
+        mock_ax1.plot.return_value = [MagicMock()]
+        mock_ax2.plot.return_value = [MagicMock()]
 
-        # Simulate temperature readings to control the loop
-        # Start at 10K, then ramp up to 21K to finish
-        mock_controller.get_temperature.side_effect = [
-            10.0, 10.0, 10.0, 15.0, 21.0]
-        mock_controller.get_heater_output.return_value = 25.0
+        # Configure mock_rm_manager to return a mock instrument
+        mock_instrument = MagicMock()
+        mock_rm_manager.return_value.open_resource.return_value = mock_instrument
 
         # --- RUN ---
-        main()
+        ls_backend.main()
 
         # --- ASSERTIONS ---
         # Check initialization
-        mock_ls_class.assert_called_once_with("GPIB0::13::INSTR")
-        mock_controller.reset_and_clear.assert_called_once()
-        mock_controller.setup_heater.assert_called_once()
+        mock_instrument.reset_and_clear.assert_called_once()
+        mock_instrument.setup_heater.assert_called_once()
 
         # Check stabilization loop
-        mock_controller.set_setpoint.assert_any_call(1, 10)  # Set to start temp
+        mock_instrument.set_setpoint.assert_any_call(1, 10)  # Set to start temp
 
         # Check main ramp loop
-        mock_controller.set_setpoint.assert_any_call(1, 20)  # Set to end temp
-        self.assertTrue(mock_controller.get_temperature.call_count >= 3)
+        mock_instrument.set_setpoint.assert_any_call(1, 20)  # Set to end temp
+        self.assertTrue(mock_instrument.get_temperature.call_count >= 3)
 
         # Check file writing
         mock_open_file.assert_called_with('test.csv', 'a', newline='')
@@ -133,7 +142,7 @@ class TestMainFunctionAndUserInput(unittest.TestCase):
         self.assertEqual(handle.write.call_count, 1)  # only one writer created
 
         # Check shutdown
-        mock_controller.close.assert_called_once()
+        mock_instrument.close.assert_called_once()
         mock_plt_show.assert_called_once()
 
 

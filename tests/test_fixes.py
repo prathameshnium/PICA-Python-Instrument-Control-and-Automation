@@ -24,8 +24,15 @@ class TestFixes(unittest.TestCase):
         self.assertIn("Force Test Exit", str(context.exception))
 
     @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.pyvisa.ResourceManager')
-    def test_t_control_l350_fix(self, MockResourceManager):  # type: ignore
+    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.plt.subplots')
+    def test_t_control_l350_fix(self, mock_subplots, MockResourceManager):  # type: ignore
         from Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10 import main
+
+        # Configure mock_subplots
+        mock_fig = MagicMock()
+        mock_ax = MagicMock()
+        mock_subplots.return_value = (mock_fig, mock_ax)
+        mock_ax.plot.return_value = [MagicMock()]
 
         # Configure the mock Lakeshore350 instance that main() will receive
         mock_rm = MagicMock()

@@ -1,15 +1,13 @@
 import unittest
 from unittest.mock import patch, MagicMock
 
-
-# Now we can import the module to be tested
-from Keithley_2400.Backends import IV_K2400_Loop_Backend_v10 as iv_backend
+import Keithley_2400.Backends.IV_K2400_Loop_Backend_v10 as iv_backend
 
 
 class TestIVK2400LoopBackend(unittest.TestCase):
 
     @patch('builtins.input', side_effect=['10', '2', 'test_output'])
-    @patch('Keithley_2400.Backends.IV_K2400_Loop_Backend_v10.Keithley2400')
+    @patch.object(iv_backend, 'Keithley2400')
     @patch('matplotlib.pyplot.show')
     @patch('pandas.DataFrame.to_csv')
     def test_main_full_run(self, mock_to_csv, mock_plt_show, mock_keithley_class, mock_input):
@@ -39,8 +37,9 @@ class TestIVK2400LoopBackend(unittest.TestCase):
         mock_keithley_instance.ramp_to_current.side_effect = ramp_side_effect
 
         # When .voltage is accessed, return the calculated value
-        type(mock_keithley_instance).voltage = unittest.mock.PropertyMock(
+        mock_voltage_property = unittest.mock.PropertyMock(
             side_effect=voltage_side_effect)
+        type(mock_keithley_instance).voltage = mock_voltage_property
 
         # --- EXECUTE SCRIPT ---
         iv_backend.main()
@@ -70,7 +69,7 @@ class TestIVK2400LoopBackend(unittest.TestCase):
         # 4. Verify the number of measurements taken
         self.assertEqual(mock_keithley_instance.ramp_to_current.call_count, 6)
         # Voltage is read once per loop
-        self.assertEqual(type(mock_keithley_instance).voltage.call_count, 6)
+        self.assertEqual(mock_voltage_property.call_count, 6)
 
         # 5. Check data saving
         self.assertEqual(mock_to_csv.call_count, 1)
