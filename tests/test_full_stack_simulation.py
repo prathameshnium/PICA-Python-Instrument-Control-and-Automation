@@ -13,9 +13,6 @@ sys.modules['tkinter.messagebox'] = MagicMock()
 sys.modules['tkinter.filedialog'] = MagicMock()
 
 # Matplotlib Mocks
-
-
-
 class TestDeepSimulation(unittest.TestCase):
 
     def setUp(self):
@@ -24,9 +21,6 @@ class TestDeepSimulation(unittest.TestCase):
             os.path.join(os.path.dirname(__file__), '..'))
         if self.root_dir not in sys.path:
             sys.path.insert(0, self.root_dir)
-
-
-
     def run_module_safely(self, module_name):
         """Helper to import a module and run its main() if it exists."""
         if module_name in sys.modules:
@@ -66,7 +60,8 @@ class TestDeepSimulation(unittest.TestCase):
             fake_inputs = ['100', '10', 'test_output']
 
             with patch('builtins.input', side_effect=fake_inputs), \
-                    patch('pandas.DataFrame.to_csv'):
+                    patch('pandas.DataFrame.to_csv'), \
+                    patch('matplotlib.pyplot.show'):  # Suppress the plt.show() warning
 
                 self.run_module_safely(
                     "Keithley_2400.Backends.IV_K2400_Loop_Backend_v10")
@@ -94,7 +89,7 @@ class TestDeepSimulation(unittest.TestCase):
         mock_fig = MagicMock()
         mock_ax = MagicMock()
         MockSubplots.return_value = (mock_fig, mock_ax)
-        mock_ax.plot.return_value = [MagicMock()] # Added for plot() unpacking error
+        mock_ax.plot.return_value = [MagicMock()]  # Added for plot() unpacking error
         MockIon.return_value = None
         MockIoff.return_value = None
         MockShow.return_value = None
@@ -130,7 +125,7 @@ class TestDeepSimulation(unittest.TestCase):
         # 5. Run It
         with patch('builtins.input', side_effect=fake_inputs), \
              patch('builtins.open', mock_open()), \
-             patch('time.sleep', MagicMock()): # We mock sleep to prevent delays
+             patch('time.sleep', MagicMock()):  # We mock sleep to prevent delays
 
             self.run_module_safely(
                 "Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10")

@@ -840,14 +840,6 @@ class PlotterApp:
         finally:
             # Always restart the watcher after an append operation.
             self.start_file_watcher()
-
-    def _read_new_lines(self, filepath, file_info):
-        """Reads new lines from the end of a file."""
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-            f.seek(file_info['size'])
-            new_lines = f.readlines()
-        return new_lines
-
     def _parse_and_append_new_data(self, new_lines, file_info):
         """Parses new lines and appends them to the data cache."""
         if not new_lines:
@@ -936,7 +928,9 @@ class PlotterApp:
         plot_y = raw_y[finite_mask]
 
         if plot_x.size > 0:
-            label_text = f"{y_col} vs {x_col} ({filename})" if len(self.file_ui_elements) > 1 else f"{y_col} vs {x_col}"
+            label_text = (f"{y_col} vs {x_col} ({filename})"
+                          if len(self.file_ui_elements) > 1
+                          else f"{y_col} vs {x_col}")
             self.ax_main.plot(
                 plot_x,
                 plot_y,
@@ -1042,11 +1036,6 @@ class PlotterApp:
             self.log(
                 "File watcher stopped: file is inaccessible or has been deleted.")
             self.stop_file_watcher()
-            
-        
-            
-
-
 if __name__ == '__main__':
     # This is ESSENTIAL for multiprocessing to work in a bundled executable
     # and to prevent pickling errors with 'spawn' start method on Windows.
