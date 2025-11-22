@@ -6,10 +6,10 @@ class TestFixes(unittest.TestCase):
 
     @patch('Keithley_2400.Backends.IV_K2400_Loop_Backend_v10.sleep', MagicMock())
     @patch('builtins.input', side_effect=['10', '2', 'test_output'])
-    @patch('pyvisa.ResourceManager') # Patch pyvisa.ResourceManager
+    @patch('pymeasure.instruments.keithley.Keithley2400') # Patch Keithley2400 from pymeasure
     @patch('matplotlib.pyplot.show')
     @patch('pandas.DataFrame.to_csv')
-    def test_iv_k2400_fix(self, mock_to_csv, mock_plt_show, mock_rm, mock_input):
+    def test_iv_k2400_fix(self, mock_to_csv, mock_plt_show, mock_keithley_class, mock_input):
         """
         This test verifies that the Keithley2400 is correctly mocked in the
         IV_K2400_Loop_Backend_v10 script, preventing real hardware calls.
@@ -17,11 +17,11 @@ class TestFixes(unittest.TestCase):
         from Keithley_2400.Backends import IV_K2400_Loop_Backend_v10 as iv_backend
 
         mock_keithley_instance = MagicMock()
-        mock_rm.return_value.open_resource.return_value = mock_keithley_instance
+        mock_keithley_class.return_value = mock_keithley_instance
         mock_keithley_instance.query.return_value = "KEITHLEY INSTRUMENTS INC., MODEL 2400" # Simulate IDN query
 
         iv_backend.main()
-        mock_rm.return_value.open_resource.assert_called_once_with("GPIB::4")
+        mock_keithley_class.assert_called_once_with("GPIB::4")
 
 
     @patch('tkinter.Tk')
