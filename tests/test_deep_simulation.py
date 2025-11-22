@@ -110,10 +110,11 @@ class TestDeepSimulation(unittest.TestCase):
 
     def test_01_k2400_iv_backend(self):
         # GLOBAL PATCH for sleep is critical here
+        mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(5))
+        mock_sleep.start()
+        self.addCleanup(mock_sleep.stop)
+
         with patch('pymeasure.instruments.keithley.Keithley2400') as MockInst:
-            mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(5))
-            mock_sleep.start()
-            self.addCleanup(mock_sleep.stop)
 
             spy = MockInst.return_value
             with patch('builtins.input', side_effect=['100', '10', 'test_file']), \
@@ -123,12 +124,12 @@ class TestDeepSimulation(unittest.TestCase):
                 spy.enable_source.assert_called()
 
     def test_02_lakeshore_backend(self):
+        mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(15))
+        mock_sleep.start()
+        self.addCleanup(mock_sleep.stop)
         with patch('pyvisa.ResourceManager') as MockRM, \
              patch('tkinter.Tk'), \
              patch('tkinter.filedialog.asksaveasfilename', return_value="test.csv"):
-            mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(15))
-            mock_sleep.start()
-            self.addCleanup(mock_sleep.stop)
 
             spy = MockRM.return_value.open_resource.return_value
             spy.query.side_effect = [
@@ -146,10 +147,10 @@ class TestDeepSimulation(unittest.TestCase):
                     "Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10")
     
     def test_03_k6517b_pyro_backend(self):
+        mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(10))
+        mock_sleep.start()
+        self.addCleanup(mock_sleep.stop)
         with patch('pymeasure.instruments.keithley.Keithley6517B') as MockInst:
-            mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(10))
-            mock_sleep.start()
-            self.addCleanup(mock_sleep.stop)
 
             spy = MockInst.return_value
             spy.current = 1.23e-9
@@ -171,10 +172,10 @@ class TestDeepSimulation(unittest.TestCase):
                     "LCR_Keysight_E4980A.Backends.CV_KE4980A_Simple_Backend_v10")
 
     def test_05_delta_simple(self):
+        mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(10))
+        mock_sleep.start()
+        self.addCleanup(mock_sleep.stop)
         with patch('pyvisa.ResourceManager') as MockRM:
-            mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(10))
-            mock_sleep.start()
-            self.addCleanup(mock_sleep.stop)
 
             MockRM.return_value.open_resource.return_value
             inputs = ['0', '1e-5', '1e-6', 'test_file', 'y', 'y']
@@ -201,11 +202,11 @@ class TestDeepSimulation(unittest.TestCase):
                     print("   [SKIP] Module not found, skipping.")
 
     def test_07_lockin_backend(self):
+        mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(5))
+        mock_sleep.start()
+        self.addCleanup(mock_sleep.stop)
         with patch('pyvisa.ResourceManager') as MockRM:
-            mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(5))
             spy = MockRM.return_value.open_resource.return_value
-            mock_sleep.start()
-            self.addCleanup(mock_sleep.stop)
 
             spy.query.side_effect = [
                 "SRS,SR830,s/n12345,ver1.07",  # *IDN?
@@ -218,11 +219,12 @@ class TestDeepSimulation(unittest.TestCase):
     def test_08_combined_2400_2182(self):
         # THIS WAS THE TEST CAUSING THE HANG
         # We suspect input mismatch or resource opening hang.
+        mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(10))
+        mock_sleep.start()
+        self.addCleanup(mock_sleep.stop)
         with patch('pyvisa.ResourceManager') as MockRM:
-            mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(10))
             mock_pymeasure = patch('pymeasure.instruments.keithley.Keithley2400')
             mock_pymeasure.start()
-            self.addCleanup(mock_sleep.stop)
 
             rm = MockRM.return_value
             k2182_spy = MagicMock()
@@ -232,7 +234,6 @@ class TestDeepSimulation(unittest.TestCase):
             # Add extra inputs just in case the script asks for more than
             # expected
             inputs = ['10', '1', 'test_file', 'y', 'y', 'y', 'y']
-            mock_sleep.start()
             with patch('builtins.input', side_effect=inputs), \
                     patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
@@ -240,10 +241,10 @@ class TestDeepSimulation(unittest.TestCase):
             mock_pymeasure.stop()
 
     def test_09_poling(self):
+        mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(5))
+        mock_sleep.start()
+        self.addCleanup(mock_sleep.stop)
         with patch('pymeasure.instruments.keithley.Keithley6517B'):
-            mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(5))
-            mock_sleep.start()
-            self.addCleanup(mock_sleep.stop)
 
             inputs = ['100', '10', 'y']
             with patch('builtins.input', side_effect=inputs):

@@ -23,8 +23,8 @@ class TestIVK2400GUI(unittest.TestCase):
         self.root.destroy()
 
     @patch('Keithley_2400.IV_K2400_GUI_v5.Keithley2400_IV_Backend')
-    @patch('matplotlib.pyplot.subplots')
-    def test_start_measurement_logic(self, mock_subplots, MockBackend):
+    @patch('matplotlib.figure.Figure.subplots')
+    def test_start_measurement_logic(self, mock_fig_subplots, MockBackend):
         """
         Tests the core logic of the 'Start' button click.
         Verifies that parameters are read from the UI and passed to the backend correctly.
@@ -33,7 +33,7 @@ class TestIVK2400GUI(unittest.TestCase):
         # Configure the mock for subplots to return two mock axes
         mock_ax_vi = MagicMock()
         mock_ax_ri = MagicMock()
-        mock_subplots.return_value = (MagicMock(), (mock_ax_vi, mock_ax_ri))
+        mock_fig_subplots.return_value = (mock_ax_vi, mock_ax_ri)
 
         # Instantiate the GUI. This also creates all the tk widgets.
         app = MeasurementAppGUI(self.root)

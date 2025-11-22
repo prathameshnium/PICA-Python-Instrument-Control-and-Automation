@@ -15,19 +15,30 @@ jobs:
     # PHASE 1: SETUP
     # ------------------------------------------------------------------------
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up Python 3.10
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "3.10"
 
+    - name: Cache pip dependencies
+      id: cache-pip
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        # The key invalidates the cache if requirements change
+        key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
     - name: Install Dependencies
+      # Use a dedicated step for installing dependencies.
+      # The 'if' condition prevents re-installing if the cache was restored.
+      if: steps.cache-pip.outputs.cache-hit != 'true'
       run: |
         python -m pip install --upgrade pip
-        # Install PICA in editable mode
         pip install -e .
-        # Install Testing, Linting, and Coverage tools
         pip install pytest flake8 pytest-cov
 
     # ------------------------------------------------------------------------
@@ -56,14 +67,14 @@ jobs:
     # PHASE 4: CODECOV UPLOADS
     # ------------------------------------------------------------------------
     - name: Upload Coverage Report (XML)
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: ./coverage.xml
-        fail_ci_if_error: false
+        fail_ci_if_error: true # It's good practice to fail if coverage upload fails.
 
     - name: Upload Test Results to Codecov (JUnit)
-      if: ${{ !cancelled() }}
+      if: always() # This ensures test results are uploaded even if previous steps fail.
       uses: codecov/test-results-action@v1
       with:
         token: ${{ secrets.CODECOV_TOKEN }}

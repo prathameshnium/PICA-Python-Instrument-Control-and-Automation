@@ -116,7 +116,7 @@ class TestMainFunctionAndUserInput(unittest.TestCase):
 
         # --- ASSERTIONS ---
         # Check initialization
-        mock_ls_class.assert_called_once()
+        mock_ls_class.assert_called_once_with("GPIB0::12::INSTR", adapter_args={"py_library": "@sim"})
         mock_controller.reset_and_clear.assert_called_once()
         mock_controller.setup_heater.assert_called_once()
 
