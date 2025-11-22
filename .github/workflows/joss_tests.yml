@@ -34,8 +34,6 @@ jobs:
 
     - name: Install Dependencies
       # Use a dedicated step for installing dependencies.
-      # The 'if' condition prevents re-installing if the cache was restored.
-      if: steps.cache-pip.outputs.cache-hit != 'true'
       run: |
         python -m pip install --upgrade pip
         pip install -e .
