@@ -975,133 +975,73 @@ class PlotterApp:
         self.figure.tight_layout()
 
     def _handle_load_error(self, filepath, e):
-            
-                """Handles errors during file loading."""
-            
-                if filepath in self.file_data_cache:
-            
-                    self.file_data_cache[filepath] = {
-            
-                        "path": filepath, "headers": [], "data": {}}
-            
-                self.column_source_var.set("Columns from: (no file selected)")
-            
-                self.active_filepath = None
-            
-                self.plot_data()
-            
-                self.x_col_cb.set('')
-            
-                self.y_col_cb.set('')
-            
-                self.x_col_cb['values'] = []
-            
-                self.y_col_cb['values'] = []
-            
-                self.live_update_var.set(False)
-            
-                self.toggle_live_update()
-            
-                self.log(f"Error loading file: {traceback.format_exc()}")
-            
-                                messagebox.showerror(
-            
-                                    "File Load Error",
-            
-                                    f"Could not read the data file. It may be empty, malformed, or in use.\n\nDetails: {e}")
-            
-                
-            
-                    def toggle_live_update(self):
-            
-                if self.live_update_var.get():
-            
-                    self.start_file_watcher()
-            
-                else:
-            
-                    self.stop_file_watcher()
-            
+        """Handles errors during file loading."""
+        if filepath in self.file_data_cache:
+            self.file_data_cache[filepath] = {
+                "path": filepath, "headers": [], "data": {}}
+        self.column_source_var.set("Columns from: (no file selected)")
+        self.active_filepath = None
+        self.plot_data()
+        self.x_col_cb.set('')
+        self.y_col_cb.set('')
+        self.x_col_cb['values'] = []
+        self.y_col_cb['values'] = []
+        self.live_update_var.set(False)
+        self.toggle_live_update()
+        self.log(f"Error loading file: {traceback.format_exc()}")
+        messagebox.showerror(
+            "File Load Error",
+            f"Could not read the data file. It may be empty, malformed, or in use.\n\nDetails: {e}")
+
+    def toggle_live_update(self):
+        if self.live_update_var.get():
+            self.start_file_watcher()
+        else:
+            self.stop_file_watcher()
+
     def start_file_watcher(self):
-            
-                self.stop_file_watcher()  # Ensure no multiple watchers are running
-            
-                if self.live_update_var.get() and self.active_filepath:
-            
-                    self.log("Live update enabled. Watching for file changes...")
-            
-                    self.file_watcher_job = self.root.after(
-                        1000, self.check_for_updates)
+        self.stop_file_watcher()  # Ensure no multiple watchers are running
+        if self.live_update_var.get() and self.active_filepath:
+            self.log("Live update enabled. Watching for file changes...")
+            self.file_watcher_job = self.root.after(
+                1000, self.check_for_updates)
 
     def stop_file_watcher(self):
-            
-                if self.file_watcher_job:
-            
-                    self.root.after_cancel(self.file_watcher_job)
-            
-                    self.file_watcher_job = None
-            
-                    self.log("Live update disabled.")
-            
+        if self.file_watcher_job:
+            self.root.after_cancel(self.file_watcher_job)
+            self.file_watcher_job = None
+            self.log("Live update disabled.")
+
     def check_for_updates(self):
-            
-                if not self.active_filepath or not self.live_update_var.get(
-            
-                ) or not os.path.exists(self.active_filepath):
-            
-                    self.file_watcher_job = None  # Stop watching if file is gone or disabled
-            
-                    return
-            
-        
-            
-                try:
-            
-                    file_info = self.file_data_cache[self.active_filepath]
-            
-                    mod_time = os.path.getmtime(self.active_filepath)
-            
-                    current_size = os.path.getsize(self.active_filepath)
-            
-        
-            
-                    if mod_time != file_info.get('mod_time'):
-            
-                        if current_size > file_info.get('size', 0):
-            
-                            # File has grown, append new data
-            
-                            self.append_file_data()
-            
-                        else:
-            
-                            # File was overwritten or shrunk, do a full reload
-            
-                            self.log(
-            
-                                "File has been overwritten. Performing full reload...")
-            
-                            self.load_file_data(self.active_filepath)
-            
-                    else:
-            
-                        # If no changes, schedule the next check
-            
-                        self.file_watcher_job = self.root.after(
-            
-                            1000, self.check_for_updates)
-            
-        
-            
-                except OSError:
-            
-                    # File might have been deleted or is temporarily inaccessible
-            
+        if not self.active_filepath or not self.live_update_var.get(
+        ) or not os.path.exists(self.active_filepath):
+            self.file_watcher_job = None  # Stop watching if file is gone or disabled
+            return
+
+        try:
+            file_info = self.file_data_cache[self.active_filepath]
+            mod_time = os.path.getmtime(self.active_filepath)
+            current_size = os.path.getsize(self.active_filepath)
+
+            if mod_time != file_info.get('mod_time'):
+                if current_size > file_info.get('size', 0):
+                    # File has grown, append new data
+                    self.append_file_data()
+                else:
+                    # File was overwritten or shrunk, do a full reload
                     self.log(
-            
-                        "File watcher stopped: file is inaccessible or has been deleted.")
-            
-                    self.stop_file_watcher()
+                        "File has been overwritten. Performing full reload...")
+                    self.load_file_data(self.active_filepath)
+            else:
+                # If no changes, schedule the next check
+                self.file_watcher_job = self.root.after(
+                    1000, self.check_for_updates)
+
+        except OSError:
+            # File might have been deleted or is temporarily inaccessible
+            self.log(
+                "File watcher stopped: file is inaccessible or has been deleted.")
+            self.stop_file_watcher()
             
         
             

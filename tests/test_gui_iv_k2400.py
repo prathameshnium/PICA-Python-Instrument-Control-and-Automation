@@ -42,9 +42,9 @@ class TestIVK2400GUI(unittest.TestCase):
         mock_backend_instance = MockBackend.return_value
         # --- Simulate User Input ---
         # We directly set the values that would be entered into the GUI's Entry widgets
-        app.entries["Sample Name"].insert(0, "TestSample") # 100 µA
-        app.entries["Max Current"].insert(0, "100") # 10 µA
-        app.entries["Step Current"].insert(0, "10") # 20 V
+        app.entries["Sample Name"].insert(0, "TestSample")  # 100 µA
+        app.entries["Max Current"].insert(0, "100")  # 10 µA
+        app.entries["Step Current"].insert(0, "10")  # 20 V
         app.entries["Delay"].insert(0, "0.5")    # 0.5 s
         app.keithley_combobox.set("GPIB0::24::INSTR")
         app.file_location_path = "/fake/path"  # Simulate browsing for a file

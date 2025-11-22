@@ -26,10 +26,6 @@ Dependencies:
 - matplotlib: For live data plotting.
 - tkinter: For the graphical file-save dialog.
 - A VISA backend (e.g., NI-VISA) must be installed.
-
-Configuration:
-- All experiment parameters (temperatures, rate) are requested at runtime.
-- The VISA_ADDRESS constant must be set to match your instrument's setup.
 '''
 # -------------------------------------------------------------------------------
 # Name:         Interfacing Lakeshore 350 Temperature Controller
@@ -226,11 +222,9 @@ def get_user_parameters():
             print("Invalid input. Please enter numeric values.")
 
 
-def main():
-    """Main function to run the temperature ramp experiment."""
-    # --- 1. Get User Input and Filename ---
+def _get_filename_from_user():
     root = tk.Tk()
-    root.withdraw()  # Hide the main window
+    root.withdraw()
     filename = filedialog.asksaveasfilename(
         defaultextension=".csv",
         filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
@@ -238,130 +232,146 @@ def main():
     )
     if not filename:
         print("No file selected. Exiting.")
+        return None
+    return filename
+
+
+def _initialize_instrument_and_plot(start_temp):
+    controller = Lakeshore350(VISA_ADDRESS)
+    controller.reset_and_clear()
+    controller.setup_heater(
+        HEATER_OUTPUT, HEATER_RESISTANCE_CODE, MAX_HEATER_CURRENT_CODE)
+
+    plt.ion()
+    fig, ax = plt.subplots()
+    line, = ax.plot([], [], 'r-o')
+    ax.set_xlabel('Elapsed Time (s)')
+    ax.set_ylabel('Temperature (K)')
+    ax.set_title('Live Temperature Ramp')
+    ax.grid(True)
+    time_data, temp_data = [], []
+    return controller, fig, ax, line, time_data, temp_data
+
+
+def _stabilize_temperature(controller, start_temp):
+    print(f"\nMoving to start temperature of {start_temp} K...")
+    controller.set_setpoint(HEATER_OUTPUT, start_temp)
+    controller.set_heater_range(HEATER_OUTPUT, 'medium')
+
+    while True:
+        current_temp = controller.get_temperature(SENSOR_INPUT)
+        print(f"Stabilizing... Current Temp: {current_temp:.4f} K", end='\r')
+        if abs(current_temp - start_temp) < 0.1:
+            print(f"\nStabilized at {start_temp} K.")
+            break
+        time.sleep(2)
+
+
+def _start_ramp_and_log_header(controller, end_temp, rate, filename):
+    heating_on = 1
+    if heating_on:
+        controller.setup_ramp(HEATER_OUTPUT, rate)
+        controller.set_setpoint(HEATER_OUTPUT, end_temp)
+        print(f"Ramp started towards {end_temp} K at {rate} K/min.")
+    else:
+        print("Heating is disabled by variable. Exiting.")
+        return False
+
+    with open(filename, 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["Timestamp", "Elapsed Time (s)", "Temperature (K)", "Heater Output (%)"])
+    return True
+
+
+def _run_experiment_loop(
+        controller, start_time, filename, safety_cutoff, end_temp,
+        fig, ax, line, time_data, temp_data, last_temp, last_time):
+    while True:
+        elapsed_time = time.time() - start_time
+        current_temp = controller.get_temperature(SENSOR_INPUT)
+        heater_output = controller.get_heater_output(HEATER_OUTPUT)
+
+        inst_rate = 0.0
+        if elapsed_time > 0 and (time.time() - last_time) > 0.1:
+            rate_k_per_s = (current_temp - last_temp) / (time.time() - last_time)
+            inst_rate = rate_k_per_s * 60
+        last_temp, last_time = current_temp, time.time()
+
+        status_str = (
+            f"Time: {elapsed_time:8.2f}s | "
+            f"Temp: {current_temp:8.4f}K | "
+            f"Rate: {inst_rate:6.3f}K/min | "
+            f"Heater: {heater_output:5.1f}%"
+        )
+        print(status_str, end='\r')
+
+        with open(filename, 'a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                             f"{elapsed_time:.2f}",
+                             f"{current_temp:.4f}",
+                             f"{heater_output:.2f}"])
+
+        time_data.append(elapsed_time)
+        temp_data.append(current_temp)
+        line.set_data(time_data, temp_data)
+        ax.relim()
+        ax.autoscale_view()
+        fig.canvas.draw()
+        fig.canvas.flush_events()
+
+        if current_temp >= safety_cutoff:
+            print(f"\n!!! SAFETY CUTOFF REACHED at {current_temp:.4f} K (Limit: {safety_cutoff} K) !!!")
+            break
+
+        if current_temp >= end_temp:
+            print(f"\nTarget temperature of {end_temp} K reached.")
+            break
+
+        time.sleep(2)
+
+
+def _safe_shutdown(controller):
+    if controller:
+        controller.close()
+    plt.ioff()
+    print("\nExperiment finished. Plot window can be closed.")
+    plt.show()
+
+
+def main():
+    start_temp, end_temp, rate, safety_cutoff = get_user_parameters()
+    if start_temp is None:
         return
 
-    start_temp, end_temp, rate, safety_cutoff = get_user_parameters()
+    filename = _get_filename_from_user()
+    if filename is None:
+        return
 
-    controller = None
+    controller, fig, ax, line, time_data, temp_data = _initialize_instrument_and_plot(
+        start_temp)
+
     try:
-        # --- 2. Initialize Instrument and Plot ---
-        controller = Lakeshore350(VISA_ADDRESS)
-        controller.reset_and_clear()
-        controller.setup_heater(
-            HEATER_OUTPUT,
-            HEATER_RESISTANCE_CODE,
-            MAX_HEATER_CURRENT_CODE)
+        _stabilize_temperature(controller, start_temp)
 
-        # Setup live plot
-        plt.ion()
-        fig, ax = plt.subplots()
-        line, = ax.plot([], [], 'r-o')  # Empty plot
-        ax.set_xlabel('Elapsed Time (s)')
-        ax.set_ylabel('Temperature (K)')
-        ax.set_title('Live Temperature Ramp')
-        ax.grid(True)
-        time_data, temp_data = [], []
-
-        # --- 3. Go to Start Temperature and Stabilize ---
-        print(f"\nMoving to start temperature of {start_temp} K...")
-        controller.set_setpoint(HEATER_OUTPUT, start_temp)
-        controller.set_heater_range(HEATER_OUTPUT, 'medium')
-
-        while True:
-            current_temp = controller.get_temperature(SENSOR_INPUT)
-            print(
-                f"Stabilizing... Current Temp: {current_temp:.4f} K",
-                end='\r')
-            if abs(current_temp - start_temp) < 0.1:  # Stabilization tolerance
-                print(f"\nStabilized at {start_temp} K.")
-                break
-            time.sleep(2)
-
-        # --- 4. Start Ramp and Data Logging ---
-        heating_on = 1  # Variable to control heating state
-        if heating_on:
-            controller.setup_ramp(HEATER_OUTPUT, rate)
-            controller.set_setpoint(HEATER_OUTPUT, end_temp)
-            print(f"Ramp started towards {end_temp} K at {rate} K/min.")
-        else:
-            print("Heating is disabled by variable. Exiting.")
+        if not _start_ramp_and_log_header(controller, end_temp, rate, filename):
             return
 
         start_time = time.time()
         last_temp = start_temp
         last_time = start_time
 
-        # Write header to CSV
-        with open(filename, 'w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(["Timestamp", "Elapsed Time (s)",
-                            "Temperature (K)", "Heater Output (%)"])
+        _run_experiment_loop(controller, start_time, filename, safety_cutoff, end_temp,
+                             fig, ax, line, time_data, temp_data, last_temp, last_time)
 
-        # Main experiment loop
-        while True:
-            elapsed_time = time.time() - start_time
-            current_temp = controller.get_temperature(SENSOR_INPUT)
-            heater_output = controller.get_heater_output(HEATER_OUTPUT)
-
-            # Calculate instantaneous rate
-            inst_rate = 0.0
-            if elapsed_time > 0 and (time.time() - last_time) > 0.1:
-                rate_k_per_s = (current_temp - last_temp) / \
-                    (time.time() - last_time)
-                inst_rate = rate_k_per_s * 60
-            last_temp, last_time = current_temp, time.time()
-
-            # Print status
-            status_str = (
-                f"Time: {elapsed_time:8.2f}s | "
-                f"Temp: {current_temp:8.4f}K | "
-                f"Rate: {inst_rate:6.3f}K/min | "
-                f"Heater: {heater_output:5.1f}%"
-            )
-            print(status_str, end='\r')
-
-            # Log data
-            with open(filename, 'a', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                 f"{elapsed_time:.2f}",
-                                 f"{current_temp:.4f}",
-                                 f"{heater_output:.2f}"])
-
-            # Update plot
-            time_data.append(elapsed_time)
-            temp_data.append(current_temp)
-            line.set_data(time_data, temp_data)
-            ax.relim()
-            ax.autoscale_view()
-            fig.canvas.draw()
-            fig.canvas.flush_events()
-
-            # --- 5. Check for End Conditions ---
-            if current_temp >= safety_cutoff:
-                print(
-                    f"\n!!! SAFETY CUTOFF REACHED at {current_temp:.4f} K (Limit: {safety_cutoff} K) !!!")
-                break
-
-            if current_temp >= end_temp:
-                print(f"\nTarget temperature of {end_temp} K reached.")
-                break
-
-            time.sleep(2)  # Data logging interval
-
-    except ConnectionError:
-        print("\nCould not start experiment due to connection failure.")
     except KeyboardInterrupt:
-        print("\nExperiment stopped by user (Ctrl+C).")
+        print("\nExperiment stopped by user.")
     except Exception as e:
-        print(f"\nAn unexpected error occurred: {e}")
+        print(f"\nAn error occurred: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
-        # --- 6. Guaranteed Safe Shutdown ---
-        if controller:
-            controller.close()
-        plt.ioff()
-        print("\nExperiment finished. Plot window can be closed.")
-        plt.show()  # Keep plot window open until user closes it
+        _safe_shutdown(controller)
 
 
 if __name__ == "__main__":

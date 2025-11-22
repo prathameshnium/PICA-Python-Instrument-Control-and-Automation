@@ -700,30 +700,14 @@ class LCR_CV_GUI:
         return (points_per_segment * 4 - 4) * params['loops']
 
     def _sweep_loop(self):
-        """Generator-based loop to avoid freezing the GUI."""
+        """Manages the C-V sweep process, advancing through generated points."""
         if not self.is_running:
             return
 
         params = self.backend.params
-        v_max, v_step = params['v_max'], params['v_step']
-
-        def sweep_generator():
-            for loop_num in range(1, params['loops'] + 1):
-                # Protocol A: 0 to V
-                for v_ind in np.arange(0, v_max + v_step, v_step):
-                    yield (v_ind, loop_num, "A")
-                # Protocol B: V to 0
-                for v_ind in np.arange(v_max, 0 - v_step, -v_step):
-                    yield (v_ind, loop_num, "B")
-                # Protocol C: 0 to -V
-                for v_ind in np.arange(0, -v_max - v_step, -v_step):
-                    yield (v_ind, loop_num, "C")
-                # Protocol D: -V to 0
-                for v_ind in np.arange(-v_max, 0 + v_step, v_step):
-                    yield (v_ind, loop_num, "D")
 
         if not hasattr(self, 'sweep_gen'):
-            self.sweep_gen = sweep_generator()
+            self.sweep_gen = self._create_sweep_generator(params)
 
         try:
             target_v, loop_n, proto = next(self.sweep_gen)
@@ -732,44 +716,16 @@ class LCR_CV_GUI:
                 return
 
             actual_v, cap = self.backend.perform_measurement(target_v)
-            self.log(
-                f"V: {actual_v:.3f}V | C: {cap:.4e}F | Loop: {loop_n} ({proto})")
-
-            # Store and save data
-            self.data_storage['voltage'].append(actual_v)
-            self.data_storage['capacitance'].append(cap)
-            self.data_storage['loop'].append(loop_n)
-            self.data_storage['protocol'].append(proto)
-            with open(self.data_filepath, 'a', newline='') as f:
-                csv.writer(f).writerow(
-                    [f"{actual_v:.6f}", f"{cap:.6e}", loop_n, proto])
-
-            # Update plot
-            self.line_main.set_data(
-                self.data_storage['voltage'],
-                self.data_storage['capacitance'])
-            self.ax_main.relim()
-            self.ax_main.autoscale_view()
-            self.figure.tight_layout(pad=2.5)
-            self.canvas.draw()
-            self.progress_bar.step()
+            self._process_sweep_point(actual_v, cap, loop_n, proto)
+            self._update_sweep_plot()
 
             # Short delay before next point
             self.root.after(50, self._sweep_loop)
 
         except StopIteration:
-            self.log("Sweep finished successfully.")
-            messagebox.showinfo("Finished", "C-V sweep is complete.")
-            self.stop_sweep("Sweep complete.")
-            del self.sweep_gen
-        except Exception:
-            self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
-            self.stop_sweep("A critical error occurred.")
-            messagebox.showerror(
-                "Runtime Error",
-                "An error occurred during the sweep. Check console.")
-            if hasattr(self, 'sweep_gen'):
-                del self.sweep_gen
+            self._handle_sweep_completion()
+        except Exception as e:
+            self._handle_sweep_error(e)
 
     def _scan_for_visa(self):
         if not PYMEASURE_AVAILABLE:
@@ -833,6 +789,58 @@ class LCR_CV_GUI:
             sticky='ew')
         entry.insert(0, default)
         self.entries[text] = entry
+
+    def _create_sweep_generator(self, params):
+        v_max, v_step = params['v_max'], params['v_step']
+        for loop_num in range(1, params['loops'] + 1):
+            # Protocol A: 0 to V
+            for v_ind in np.arange(0, v_max + v_step, v_step):
+                yield (v_ind, loop_num, "A")
+            # Protocol B: V to 0
+            for v_ind in np.arange(v_max, 0 - v_step, -v_step):
+                yield (v_ind, loop_num, "B")
+            # Protocol C: 0 to -V
+            for v_ind in np.arange(0, -v_max - v_step, -v_step):
+                yield (v_ind, loop_num, "C")
+            # Protocol D: -V to 0
+            for v_ind in np.arange(-v_max, 0 + v_step, v_step):
+                yield (v_ind, loop_num, "D")
+
+    def _process_sweep_point(self, actual_v, cap, loop_n, proto):
+        self.log(f"V: {actual_v:.3f}V | C: {cap:.4e}F | Loop: {loop_n} ({proto})")
+        self.data_storage['voltage'].append(actual_v)
+        self.data_storage['capacitance'].append(cap)
+        self.data_storage['loop'].append(loop_n)
+        self.data_storage['protocol'].append(proto)
+        with open(self.data_filepath, 'a', newline='') as f:
+            csv.writer(f).writerow(
+                [f"{actual_v:.6f}", f"{cap:.6e}", loop_n, proto])
+
+    def _update_sweep_plot(self):
+        self.line_main.set_data(
+            self.data_storage['voltage'],
+            self.data_storage['capacitance'])
+        self.ax_main.relim()
+        self.ax_main.autoscale_view()
+        self.figure.tight_layout(pad=2.5)
+        self.canvas.draw()
+        self.progress_bar.step()
+
+    def _handle_sweep_completion(self):
+        self.log("Sweep finished successfully.")
+        messagebox.showinfo("Finished", "C-V sweep is complete.")
+        self.stop_sweep("Sweep complete.")
+        if hasattr(self, 'sweep_gen'):
+            del self.sweep_gen
+
+    def _handle_sweep_error(self, exception):
+        self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
+        self.stop_sweep("A critical error occurred.")
+        messagebox.showerror(
+            "Runtime Error",
+            "An error occurred during the sweep. Check console.")
+        if hasattr(self, 'sweep_gen'):
+            del self.sweep_gen
 
 
 def main():

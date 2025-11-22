@@ -274,7 +274,8 @@ class HighResistanceIV_GUI:
         except Exception as e:
             messagebox.showerror(
                 "Backend Error",
-                f"Could not initialize the backend.\nError: {e}\n\nPlease ensure PyMeasure and NI-VISA are installed correctly.")
+                f"Could not initialize the backend.\nError: {e}\n\n"
+                "Please ensure PyMeasure and NI-VISA are installed correctly.")
             self.backend = None
         self.file_location_path = ""
         self.data_storage = {

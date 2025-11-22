@@ -690,117 +690,17 @@ class PICALauncherApp:
         return content.split('\n')
 
     def _show_file_in_window(self, file_path, title):
-        abs_path = os.path.abspath(file_path)
-
-        if not os.path.exists(abs_path):
-            self.log(f"ERROR: File not found: {abs_path}")
-            messagebox.showerror(
-                "File Not Found",
-                f"The specified file does not exist:\n\n{abs_path}")
-            return
-        try:
-            # Use cache if available
-            if file_path in self._md_cache:
-                lines = self._md_cache[file_path]
-            else:
-                with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
-                lines = self._parse_markdown(content)
-                if file_path.lower().endswith('.md'):
-                    self._md_cache[file_path] = lines  # Cache the parsed lines
-        except Exception as e:
-            messagebox.showerror(
-                "Error Reading File",
-                f"Could not read the file:\n\n{e}")
+        lines = self._get_file_content_for_display(file_path)
+        if lines is None:
             return
 
-        win = Toplevel(self.root)
-        win.title(title)
-        win.geometry("800x600")
-        win.configure(bg=self.CLR_BG_DARK)
-        win.transient(self.root)
-        win.grab_set()
-
-        text_area = scrolledtext.ScrolledText(
-            win,
-            wrap='word',
-            bg=self.CLR_CONSOLE_BG,
-            fg=self.CLR_TEXT,
-            font=self.FONT_BASE,
-            bd=0,
-            padx=15,
-            pady=10)
-
-        # --- Define styles for rendering ---
-        text_area.tag_configure(
-            "h1",
-            font=(
-                'Segoe UI',
-                20,
-                'bold'),
-            foreground=self.CLR_ACCENT_GOLD,
-            spacing3=15)
-        text_area.tag_configure(
-            "h3",
-            font=(
-                'Segoe UI',
-                13,
-                'bold'),
-            foreground=self.CLR_TEXT,
-            spacing3=10)
-        text_area.tag_configure("p", spacing3=8)
-        text_area.tag_configure(
-            "list_l1",
-            lmargin1=25,
-            lmargin2=40,
-            spacing3=4)
-        text_area.tag_configure(
-            "bold",
-            font=(
-                'Segoe UI',
-                self.FONT_SIZE_BASE,
-                'bold'))
-        text_area.tag_configure(
-            "hr",
-            justify='center',
-            spacing1=15,
-            spacing3=15,
-            foreground=self.CLR_FRAME_BG)
+        win = self._create_display_window(title)
+        text_area = self._configure_text_area(win)
 
         is_markdown = file_path.lower().endswith('.md')
-
         if is_markdown:
-            # Simple parser to apply styles line by line
-            for line in lines:
-                stripped = line.strip()
-                if stripped.startswith('### '):
-                    text_area.insert('end', f"{stripped[4:]}\n", "h3")
-                elif stripped.startswith('# '):
-                    text_area.insert('end', f"{stripped[2:]}\n", "h1")
-                elif stripped.startswith('* '):
-                    # Apply bold tags within list items
-                    line_content = stripped[2:]
-                    parts = re.split(r'(\*\*.*?\*\*)', line_content)
-                    text_area.insert('end', "• ", "list_l1")
-                    for part in parts:
-                        if part.startswith('**') and part.endswith('**'):
-                            text_area.insert(
-                                'end', part[2:-2], ("list_l1", "bold"))
-                        else:
-                            text_area.insert('end', part, "list_l1")
-                    text_area.insert('end', '\n')
-                elif stripped in ('---', '***', '___'):
-                    text_area.insert('end', f"{'─'*120}\n", "hr")
-                else:
-                    # Apply bold tags within paragraphs
-                    parts = re.split(r'(\*\*.*?\*\*)', line)
-                    for part in parts:
-                        if part.startswith('**') and part.endswith('**'):
-                            text_area.insert('end', part[2:-2], ("p", "bold"))
-                        else:
-                            text_area.insert('end', part, "p")
-                    text_area.insert('end', '\n')
-        else:  # For non-markdown files like LICENSE
+            self._render_markdown_content(text_area, lines)
+        else:
             text_area.insert('1.0', "\n".join(lines))
 
         text_area.pack(expand=True, fill='both')
@@ -904,6 +804,113 @@ class PICALauncherApp:
                     self.log(f"Pre-cached '{name}' for faster access.")
                 except Exception as e:
                     self.log(f"Warning: Could not pre-cache '{name}'. {e}")
+
+    def _get_file_content_for_display(self, file_path):
+        abs_path = os.path.abspath(file_path)
+        if not os.path.exists(abs_path):
+            self.log(f"ERROR: File not found: {abs_path}")
+            messagebox.showerror(
+                "File Not Found",
+                f"The specified file does not exist:\n\n{abs_path}")
+            return None
+        try:
+            if file_path in self._md_cache:
+                return self._md_cache[file_path]
+            else:
+                with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                lines = self._parse_markdown(content)
+                if file_path.lower().endswith('.md'):
+                    self._md_cache[file_path] = lines
+                return lines
+        except Exception as e:
+            messagebox.showerror(
+                "Error Reading File",
+                f"Could not read the file:\n\n{e}")
+            return None
+
+    def _create_display_window(self, title):
+        win = Toplevel(self.root)
+        win.title(title)
+        win.geometry("800x600")
+        win.configure(bg=self.CLR_BG_DARK)
+        win.transient(self.root)
+        win.grab_set()
+        return win
+
+    def _configure_text_area(self, win):
+        text_area = scrolledtext.ScrolledText(
+            win,
+            wrap='word',
+            bg=self.CLR_CONSOLE_BG,
+            fg=self.CLR_TEXT,
+            font=self.FONT_BASE,
+            bd=0,
+            padx=15,
+            pady=10)
+        text_area.tag_configure(
+            "h1",
+            font=(
+                'Segoe UI',
+                20,
+                'bold'),
+            foreground=self.CLR_ACCENT_GOLD,
+            spacing3=15)
+        text_area.tag_configure(
+            "h3",
+            font=(
+                'Segoe UI',
+                13,
+                'bold'),
+            foreground=self.CLR_TEXT,
+            spacing3=10)
+        text_area.tag_configure("p", spacing3=8)
+        text_area.tag_configure(
+            "list_l1",
+            lmargin1=25,
+            lmargin2=40,
+            spacing3=4)
+        text_area.tag_configure(
+            "bold",
+            font=(
+                'Segoe UI',
+                self.FONT_SIZE_BASE,
+                'bold'))
+        text_area.tag_configure(
+            "hr",
+            justify='center',
+            spacing1=15,
+            spacing3=15,
+            foreground=self.CLR_FRAME_BG)
+        return text_area
+
+    def _render_markdown_content(self, text_area, lines):
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith('### '):
+                text_area.insert('end', f"{stripped[4:]}\n", "h3")
+            elif stripped.startswith('# '):
+                text_area.insert('end', f"{stripped[2:]}\n", "h1")
+            elif stripped.startswith('* '):
+                line_content = stripped[2:]
+                parts = re.split(r'(\*\*.*?\*\*)', line_content)
+                text_area.insert('end', "• ", "list_l1")
+                for part in parts:
+                    if part.startswith('**') and part.endswith('**'):
+                        text_area.insert('end', part[2:-2], ("list_l1", "bold"))
+                    else:
+                        text_area.insert('end', part, "list_l1")
+                text_area.insert('end', '\n')
+            elif stripped in ('---', '***', '___'):
+                text_area.insert('end', f"{'─'*120}\n", "hr")
+            else:
+                parts = re.split(r'(\*\*.*?\*\*)', line)
+                for part in parts:
+                    if part.startswith('**') and part.endswith('**'):
+                        text_area.insert('end', part[2:-2], ("p", "bold"))
+                    else:
+                        text_area.insert('end', part, "p")
+                text_area.insert('end', '\n')
 
 
 class GPIBScannerWindow(Toplevel):

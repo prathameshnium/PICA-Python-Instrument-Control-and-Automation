@@ -768,6 +768,85 @@ class Integrated_RT_GUI:
         self.console_widget.see('end')
         self.console_widget.config(state='disabled')
 
+    def _handle_log_message(self, message):
+        self.log(message)
+
+    def _handle_cutoff_event(self):
+        self.log("!!! SAFETY CUTOFF REACHED !!!")
+        self.stop_measurement(False)
+        messagebox.showwarning("Cutoff", "Safety cutoff temperature reached.")
+
+    def _handle_complete_event(self):
+        self.log("Target temperature reached.")
+        self.stop_measurement(False)
+        messagebox.showinfo("Finished", "Measurement complete.")
+
+    def _handle_runtime_error(self, exception):
+        self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
+        self.stop_measurement(False)
+        messagebox.showerror(
+            "Runtime Error", f"A critical error occurred: {exception}")
+
+    def _process_measurement_data_point(self, data):
+        temp, htr, cur, res, elapsed = data
+        self._log_measurement_data(temp, htr, cur, res)
+        self._save_measurement_to_csv(temp, htr, cur, res, elapsed)
+        self._update_data_storage(temp, htr, cur, res, elapsed)
+        self._update_live_plots()
+
+    def _log_measurement_data(self, temp, htr, cur, res):
+        self.log(
+            f"T:{temp:.3f}K | R:{res:.3e}Ω | Htr:{htr:.1f}% ({self.current_heater_range})")
+
+    def _save_measurement_to_csv(self, temp, htr, cur, res, elapsed):
+        with open(self.data_filepath, 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(
+                [
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    f"{elapsed:.2f}",
+                    f"{temp:.4f}",
+                    f"{htr:.2f}",
+                    f"{self.backend.params['source_voltage']:.4e}",
+                    f"{cur:.4e}",
+                    f"{res:.4e}"])
+
+    def _update_data_storage(self, temp, htr, cur, res, elapsed):
+        self.data_storage['time'].append(elapsed)
+        self.data_storage['temperature'].append(temp)
+        self.data_storage['current'].append(cur)
+        self.data_storage['resistance'].append(res)
+
+    def _update_live_plots(self):
+        self.line_main.set_data(
+            self.data_storage['temperature'],
+            self.data_storage['resistance'])
+        self.line_sub1.set_data(
+            self.data_storage['temperature'],
+            self.data_storage['current'])
+        self.line_sub2.set_data(
+            self.data_storage['time'],
+            self.data_storage['temperature'])
+
+        if self.plot_backgrounds:
+            for bg in self.plot_backgrounds:
+                self.canvas.restore_region(bg)
+            for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
+                ax.relim()
+                ax.autoscale_view()
+
+            self.ax_main.draw_artist(self.line_main)
+            self.ax_sub1.draw_artist(self.line_sub1)
+            self.ax_sub2.draw_artist(self.line_sub2)
+
+            self.canvas.blit(self.figure.bbox)
+        else:
+            for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
+                ax.relim()
+                ax.autoscale_view()
+            self.figure.tight_layout(pad=3.0)
+            self.canvas.draw_idle()
+
     def start_measurement(self):
         try:
             params = {
@@ -914,112 +993,23 @@ class Integrated_RT_GUI:
             while not self.data_queue.empty():
                 data = self.data_queue.get_nowait()
                 if isinstance(data, str) and data.startswith("LOG:"):
-                    self.log(data[4:])
+                    self._handle_log_message(data[4:])
                 elif isinstance(data, str) and data == "CUTOFF":
-                    self.log("!!! SAFETY CUTOFF REACHED !!!")
-                    self.stop_measurement(False)
-                    messagebox.showwarning(
-                        "Cutoff", "Safety cutoff temperature reached.")
+                    self._handle_cutoff_event()
                     return
                 elif isinstance(data, str) and data == "COMPLETE":
-                    self.log("Target temperature reached.")
-                    self.stop_measurement(False)
-                    messagebox.showinfo("Finished", "Measurement complete.")
+                    self._handle_complete_event()
                     return
                 elif isinstance(data, Exception):
-                    self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
-                    self.stop_measurement(False)
-                    messagebox.showerror(
-                        "Runtime Error", f"A critical error occurred: {data}")
+                    self._handle_runtime_error(data)
                     return
                 else:
-                    temp, htr, cur, res, elapsed = data
-                    self.log(
-                        f"T:{temp:.3f}K | R:{res:.3e}Ω | Htr:{htr:.1f}% ({self.current_heater_range})")
-                    with open(self.data_filepath, 'a', newline='') as f:
-                        writer = csv.writer(f)
-                        writer.writerow(
-                            [
-                                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                f"{elapsed:.2f}",
-                                f"{temp:.4f}",
-                                f"{htr:.2f}",
-                                f"{self.backend.params['source_voltage']:.4e}",
-                                f"{cur:.4e}",
-                                f"{res:.4e}"])
-
-                    self.data_storage['time'].append(elapsed)
-                    self.data_storage['temperature'].append(temp)
-                    self.data_storage['current'].append(cur)
-                    self.data_storage['resistance'].append(res)
-
-                    self.line_main.set_data(
-                        self.data_storage['temperature'],
-                        self.data_storage['resistance'])
-                    self.line_sub1.set_data(
-                        self.data_storage['temperature'],
-                        self.data_storage['current'])  # This was likely a bug, should be temp vs current
-                    self.line_sub2.set_data(
-                        self.data_storage['time'],
-                        self.data_storage['temperature'])
-
-                    # --- Performance Improvement: Use blitting for fast graph updates ---
-                    if self.plot_backgrounds:
-                        for bg in self.plot_backgrounds:
-                            self.canvas.restore_region(bg)
-                        for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
-                            ax.relim()
-                            ax.autoscale_view()
-
-                        self.ax_main.draw_artist(self.line_main)
-                        self.ax_sub1.draw_artist(self.line_sub1)
-                        self.ax_sub2.draw_artist(self.line_sub2)
-
-                        self.canvas.blit(self.figure.bbox)
-                    else:
-                        for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
-                            ax.relim()
-                            ax.autoscale_view()
-                        self.figure.tight_layout(pad=3.0)
-                        self.canvas.draw_idle()
+                    self._process_measurement_data_point(data)
         except queue.Empty:
             pass
 
         if self.is_running or self.is_stabilizing:
             self.root.after(200, self._process_data_queue)
-
-    def _handle_new_data_point(self, data):
-        """Helper to process a single data point from the queue."""
-        temp, htr, cur, res, elapsed = data
-        self.log(
-            f"T:{temp:.3f}K | R:{res:.3e}Ω | Htr:{htr:.1f}% ({self.current_heater_range})")
-        with open(self.data_filepath, 'a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(
-                [
-                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    f"{elapsed:.2f}",
-                    f"{temp:.4f}",
-                    f"{htr:.2f}",
-                    f"{self.backend.params['source_voltage']:.4e}",
-                    f"{cur:.4e}",
-                    f"{res:.4e}"])
-
-        self.data_storage['time'].append(elapsed)
-        self.data_storage['temperature'].append(temp)
-        self.data_storage['current'].append(cur)
-        self.data_storage['resistance'].append(res)
-
-        # Update plot data
-        self.line_main.set_data(
-            self.data_storage['temperature'],
-            self.data_storage['resistance'])
-        self.line_sub1.set_data(
-            self.data_storage['temperature'],
-            self.data_storage['current'])
-        self.line_sub2.set_data(
-            self.data_storage['time'],
-            self.data_storage['temperature'])
 
     def _scan_for_visa_instruments(self):
         if not pyvisa:

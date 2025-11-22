@@ -159,8 +159,10 @@ class PICALauncherApp:
     # The `resource_path` function will use this in development mode.
     SCRIPT_PATHS_DEV = {
         "IV_K6221_DC_Sweep_GUI_V10.py": "Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_GUI_V10.py",
-        "Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.py": "Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.py",
-        "Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.py": "Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.py",
+        "Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.py": ("Delta_mode_Keithley_6221_2182/"
+                                                          "Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.py"),
+        "Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.py": ("Delta_mode_Keithley_6221_2182/"
+                                                          "Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.py"),
         "IV_K2400_GUI_v5.py": "Keithley_2400/IV_K2400_GUI_v5.py",
         "RT_K2400_L350_T_Control_GUI_v3.py": "Keithley_2400/RT_K2400_L350_T_Control_GUI_v3.py",
         "RT_K2400_L350_T_Sensing_GUI_v4.py": "Keithley_2400/RT_K2400_L350_T_Sensing_GUI_v4.py",
@@ -1152,5 +1154,5 @@ if __name__ == '__main__':
     # 'spawn' is the most robust method for GUI apps, though it is the default
     # on Windows and macOS.
     multiprocessing.set_start_method('spawn', force=True)
-        multiprocessing.freeze_support()
-        main()
+    multiprocessing.freeze_support()
+    main()

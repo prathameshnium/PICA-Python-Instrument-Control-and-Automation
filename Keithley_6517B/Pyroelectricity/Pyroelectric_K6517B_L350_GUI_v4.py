@@ -713,6 +713,79 @@ class PyroelectricAppGUI:
         self.console_widget.see('end')
         self.console_widget.config(state='disabled')
 
+    def _handle_worker_thread_completion(self):
+        # This function is called when the worker thread sends a None sentinel.
+        # Any final cleanup or UI updates can go here if needed.
+        pass
+
+    def _handle_worker_thread_error(self, exception):
+        self.log(f"RUNTIME ERROR in worker thread: {traceback.format_exc()}")
+        self.stop_measurement("runtime error")
+        messagebox.showerror("Runtime Error", "An error occurred. Check console.")
+
+    def _process_stabilizing_state(self, current_temp, params):
+        self.log(
+            f"Stabilizing... Current Temp: {current_temp:.4f} K (Target: {params['start_temp']} K)")
+        if abs(current_temp - params['start_temp']) < 0.1:
+            self.log(f"Stabilized at {params['start_temp']} K. Starting ramp.")
+            self.experiment_state = 'ramping'
+            self.backend.start_ramp()
+            self.start_time = time.time()
+
+    def _process_ramping_state(self, current_temp, current_val, params):
+        elapsed_time = time.time() - self.start_time
+        self._log_and_save_ramping_data(elapsed_time, current_temp, current_val)
+        self._update_data_storage_and_plots(elapsed_time, current_temp, current_val)
+        self._check_ramping_completion_conditions(current_temp, params)
+
+    def _log_and_save_ramping_data(self, elapsed_time, current_temp, current_val):
+        log_msg = (
+            f"Time: {elapsed_time:.1f}s | "
+            f"Temp: {current_temp:.2f}K | "
+            f"Current: {current_val:.2e}A"
+        )
+        self.log(log_msg)
+        with open(self.data_filepath, 'a', newline='') as f:
+            f.write(
+                f"{elapsed_time:.2f},{current_temp:.4f},{current_val}\n")
+
+    def _update_data_storage_and_plots(self, elapsed_time, current_temp, current_val):
+        self.data_storage['time'].append(elapsed_time)
+        self.data_storage['temperature'].append(current_temp)
+        self.data_storage['current'].append(current_val)
+
+        if self.plot_backgrounds:
+            for bg in self.plot_backgrounds:
+                self.canvas.restore_region(bg)
+            self.line_main.set_data(
+                self.data_storage['temperature'],
+                self.data_storage['current'])
+            self.line_sub1.set_data(
+                self.data_storage['time'],
+                self.data_storage['temperature'])
+            self.line_sub2.set_data(
+                self.data_storage['time'], self.data_storage['current'])
+            for ax, line in zip(
+                self.axes, [
+                    self.line_main, self.line_sub1, self.line_sub2]):
+                ax.relim()
+                ax.autoscale_view()
+                ax.draw_artist(line)
+            self.canvas.blit(self.figure.bbox)
+        else:
+            self.figure.tight_layout(pad=3.0)
+            self.canvas.draw_idle()
+
+    def _check_ramping_completion_conditions(self, current_temp, params):
+        if current_temp >= params['safety_cutoff']:
+            self.stop_measurement(
+                f"SAFETY CUTOFF REACHED at {current_temp:.4f} K!")
+            return
+        if current_temp >= params['end_temp']:
+            self.stop_measurement(
+                f"Target temperature of {params['end_temp']} K reached.")
+            return
+
     def start_measurement(self):
         try:
             params = {
@@ -746,7 +819,11 @@ class PyroelectricAppGUI:
             self.data_filepath = os.path.join(
                 self.file_location_path, file_name)
             with open(self.data_filepath, 'w', newline='') as f:
-                header = f"# Sample: {params['sample_name']}\n# Start: {params['start_temp']} K, End: {params['end_temp']} K, Ramp: {params['rate']} K/min\n"
+                header = (
+                    f"# Sample: {params['sample_name']}\n"
+                    f"# Start: {params['start_temp']} K, End: {params['end_temp']} K, "
+                    f"Ramp: {params['rate']} K/min\n"
+                )
                 f.write(header)
                 f.write("Time (s),Temperature (K),Current (A)\n")
             self.log(
@@ -824,79 +901,19 @@ class PyroelectricAppGUI:
             while not self.data_queue.empty():
                 data = self.data_queue.get_nowait()
                 if data is None:
-                    return  # Thread finished
+                    self._handle_worker_thread_completion()
+                    return
                 if isinstance(data, Exception):
-                    self.log(
-                        f"RUNTIME ERROR in worker thread: {traceback.format_exc()}")
-                    self.stop_measurement("runtime error")
-                    messagebox.showerror(
-                        "Runtime Error", "An error occurred. Check console.")
+                    self._handle_worker_thread_error(data)
                     return
 
                 current_temp, current_val, state = data
                 params = self.backend.params
 
                 if state == 'stabilizing':
-                    self.log(
-                        f"Stabilizing... Current Temp: {current_temp:.4f} K (Target: {params['start_temp']} K)")
-                    if abs(current_temp - params['start_temp']) < 0.1:
-                        self.log(
-                            f"Stabilized at {params['start_temp']} K. Starting ramp.")
-                        self.experiment_state = 'ramping'
-                        self.backend.start_ramp()
-                        self.start_time = time.time()
-
+                    self._process_stabilizing_state(current_temp, params)
                 elif state == 'ramping':
-                    elapsed_time = time.time() - self.start_time
-                    log_msg = (
-                        f"Time: {elapsed_time:.1f}s | "
-                        f"Temp: {current_temp:.2f}K | "
-                        f"Current: {current_val:.2e}A"
-                    )
-                    self.log(log_msg)
-
-                    with open(self.data_filepath, 'a', newline='') as f:
-                        f.write(
-                            f"{elapsed_time:.2f},{current_temp:.4f},{current_val}\n")
-
-                    self.data_storage['time'].append(elapsed_time)
-                    self.data_storage['temperature'].append(current_temp)
-                    self.data_storage['current'].append(current_val)
-
-                    # --- Performance Improvement: Use blitting for fast graph updates ---
-                    if self.plot_backgrounds:
-                        # Restore the clean backgrounds
-                        for bg in self.plot_backgrounds:
-                            self.canvas.restore_region(bg)
-                        # Update data and redraw only the artists
-                        self.line_main.set_data(
-                            self.data_storage['temperature'],
-                            self.data_storage['current'])
-                        self.line_sub1.set_data(
-                            self.data_storage['time'],
-                            self.data_storage['temperature'])
-                        self.line_sub2.set_data(
-                            self.data_storage['time'], self.data_storage['current'])
-                        for ax, line in zip(
-                            self.axes, [
-                                self.line_main, self.line_sub1, self.line_sub2]):
-                            ax.relim()
-                            ax.autoscale_view()
-                            ax.draw_artist(line)
-                        self.canvas.blit(self.figure.bbox)
-                    else:  # Fallback to a full redraw
-                        self.figure.tight_layout(pad=3.0)
-                        self.canvas.draw_idle()
-                    # --- End of performance improvement ---
-
-                    if current_temp >= params['safety_cutoff']:
-                        self.stop_measurement(
-                            f"SAFETY CUTOFF REACHED at {current_temp:.4f} K!")
-                        return
-                    if current_temp >= params['end_temp']:
-                        self.stop_measurement(
-                            f"Target temperature of {params['end_temp']} K reached.")
-                        return
+                    self._process_ramping_state(current_temp, current_val, params)
 
         except queue.Empty:
             pass  # No data to process, which is normal
@@ -905,28 +922,16 @@ class PyroelectricAppGUI:
             self.root.after(200, self._process_data_queue)
 
     def _scan_for_visa_instruments(self):
-        if not PYVISA_AVAILABLE:
-            self.log("ERROR: PyVISA not installed.")
+        if not self._check_visa_prerequisites():
             return
-        if self.backend.rm is None:
-            self.log("ERROR: VISA manager failed. Is NI-VISA installed?")
-            return
+
         self.log("Scanning for VISA instruments...")
         try:
             resources = self.backend.rm.list_resources()
             if resources:
                 self.log(f"Found: {resources}")
-                self.keithley_combobox['values'] = resources
-                self.lakeshore_combobox['values'] = resources
-                for res in resources:
-                    if "GPIB1::27" in res:
-                        self.keithley_combobox.set(res)
-                    if "GPIB1::15" in res:
-                        self.lakeshore_combobox.set(res)
-                if not self.keithley_combobox.get() and resources:
-                    self.keithley_combobox.set(resources[0])
-                if not self.lakeshore_combobox.get() and resources:
-                    self.lakeshore_combobox.set(resources[-1])
+                self._assign_instruments_to_comboboxes(resources)
+                self._set_default_combobox_values(resources)
             else:
                 self.log("No VISA instruments found.")
         except Exception as e:
@@ -946,6 +951,34 @@ class PyroelectricAppGUI:
                 self.root.destroy()
         else:
             self.root.destroy()
+
+    def _check_visa_prerequisites(self):
+        if not PYVISA_AVAILABLE:
+            self.log("ERROR: PyVISA not installed.")
+            return False
+        if self.backend.rm is None:
+            self.log("ERROR: VISA manager failed. Is NI-VISA installed?")
+            return False
+        return True
+
+    def _assign_instruments_to_comboboxes(self, resources):
+        self.keithley_combobox['values'] = resources
+        self.lakeshore_combobox['values'] = resources
+        for res in resources:
+            if "GPIB1::27" in res:  # Common Keithley 6517B address
+                self.keithley_combobox.set(res)
+            if "GPIB1::15" in res:  # Common Lakeshore 350 address
+                self.lakeshore_combobox.set(res)
+
+    def _set_default_combobox_values(self, resources):
+        if not self.keithley_combobox.get() and resources:
+            self.keithley_combobox.set(resources[0])
+        if not self.lakeshore_combobox.get() and resources:
+            # Try to pick a different one if possible, or just the first
+            if len(resources) > 1 and resources[0] == self.keithley_combobox.get():
+                self.lakeshore_combobox.set(resources[1])
+            elif resources:
+                self.lakeshore_combobox.set(resources[0])
 
 
 if __name__ == '__main__':
