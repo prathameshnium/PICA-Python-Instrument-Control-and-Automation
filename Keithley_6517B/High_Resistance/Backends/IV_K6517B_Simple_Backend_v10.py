@@ -89,7 +89,7 @@ def main():
 
         # --- 2. CONNECT TO INSTRUMENT (V5 Logic) ---
         print(f"\nAttempting to connect to instrument at: {VISA_ADDRESS}")
-        keithley = Keithley6517B(VISA_ADDRESS, adapter_args={"py_library": "@sim"})
+        keithley = Keithley6517B(VISA_ADDRESS)
         print(f"Successfully connected to: {keithley.id}")
 
         # --- 3. CONFIGURE MEASUREMENT (V5 Logic) ---

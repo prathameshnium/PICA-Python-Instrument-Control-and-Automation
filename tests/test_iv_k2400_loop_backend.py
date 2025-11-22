@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
+import pyvisa
 
 
 # Now we can import the module to be tested
@@ -9,7 +10,7 @@ from Keithley_2400.Backends import IV_K2400_Loop_Backend_v10 as iv_backend
 class TestIVK2400LoopBackend(unittest.TestCase):
 
     @patch('builtins.input', side_effect=['10', '2', 'test_output'])
-    @patch('Keithley_2400.Backends.IV_K2400_Loop_Backend_v10.Keithley2400')
+    @patch('Keithley_2400.Backends.IV_K2400_Loop_Backend_v10.Keithley2400') # Patch Keithley2400 directly
     @patch('matplotlib.pyplot.show')
     @patch('pandas.DataFrame.to_csv')
     def test_main_full_run(self, mock_to_csv, mock_plt_show, mock_keithley_class, mock_input):
@@ -20,6 +21,16 @@ class TestIVK2400LoopBackend(unittest.TestCase):
         # Mock the instrument instance
         mock_keithley_instance = MagicMock()
         mock_keithley_class.return_value = mock_keithley_instance
+
+        # Simulate the voltage measurement
+        # Let's return a voltage that is proportional to the current
+        def voltage_side_effect():
+            # A simple linear relationship for testing
+            return mock_keithley_instance.source_current * 10
+
+        # We can't directly access the source_current from ramp_to_current,
+        # so we will use a side effect to track it
+        latest_current = [0]
 
         # Simulate the voltage measurement
         # Let's return a voltage that is proportional to the current
@@ -47,7 +58,7 @@ class TestIVK2400LoopBackend(unittest.TestCase):
 
         # --- ASSERTIONS ---
         # 1. Check instrument initialization
-        mock_keithley_class.assert_called_with("GPIB::4", adapter_args={"py_library": "@sim"})
+        mock_keithley_class.assert_called_once_with("GPIB::4")
         mock_keithley_instance.disable_buffer.assert_called_once()
 
         # 2. Check instrument configuration

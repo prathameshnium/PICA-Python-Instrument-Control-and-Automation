@@ -33,7 +33,7 @@ class TestIVK2400GUI(unittest.TestCase):
         # Configure the mock for subplots to return two mock axes
         mock_ax_vi = MagicMock()
         mock_ax_ri = MagicMock()
-        mock_fig_subplots.return_value = (mock_ax_vi, mock_ax_ri)
+        mock_fig_subplots.return_value = [mock_ax_vi, mock_ax_ri]
 
         # Instantiate the GUI. This also creates all the tk widgets.
         app = MeasurementAppGUI(self.root)

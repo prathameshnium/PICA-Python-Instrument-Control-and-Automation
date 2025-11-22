@@ -94,22 +94,29 @@ class TestMainFunctionAndUserInput(unittest.TestCase):
     @patch('tkinter.filedialog.asksaveasfilename', return_value='test.csv')
     @patch('builtins.input', side_effect=['10', '20', '5', '30'])
     @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.Lakeshore350')
+    @patch('matplotlib.pyplot.subplots') # NEW PATCH
     @patch('matplotlib.pyplot.show')
     @patch('builtins.open', new_callable=mock_open)
     @patch('time.sleep', MagicMock())
     # Simulate time passing
     @patch('time.time', side_effect=[1000, 1002, 1004, 1006, 1008, 1010])
-    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.pyvisa.ResourceManager')
-    def test_main_runs_and_completes(self, mock_rm, mock_time, mock_open_file,
-                                     mock_plt_show, mock_ls_class, mock_input, mock_file_dialog, mock_tk):
+    def test_main_runs_and_completes(self, mock_time, mock_open_file,
+                                     mock_plt_show, mock_plt_subplots, mock_ls_class, mock_input, mock_file_dialog, mock_tk):
         # --- MOCK SETUP ---
-        # Configure mock_rm to return a mock instrument
-        mock_instrument_from_rm = MagicMock()
-        mock_rm.return_value.open_resource.return_value = mock_instrument_from_rm
-        mock_instrument_from_rm.query.return_value = "LSCI,MODEL350,12345,1.0" # IDN query
-
         mock_controller = MagicMock()
         mock_ls_class.return_value = mock_controller
+
+        # Configure the internal pyvisa.ResourceManager within the mocked Lakeshore350 instance
+        mock_rm_inside_ls350 = MagicMock()
+        mock_controller.rm = mock_rm_inside_ls350 # lakeshore350 creates rm = pyvisa.ResourceManager()
+        mock_instrument_from_rm = MagicMock()
+        mock_rm_inside_ls350.open_resource.return_value = mock_instrument_from_rm
+        mock_instrument_from_rm.query.return_value = "LSCI,MODEL350,12345,1.0" # IDN query
+
+        # Configure mock_plt_subplots
+        mock_fig = MagicMock()
+        mock_ax = MagicMock()
+        mock_plt_subplots.return_value = (mock_fig, mock_ax)
 
         # Simulate temperature readings to control the loop
         # Start at 10K, then ramp up to 21K to finish

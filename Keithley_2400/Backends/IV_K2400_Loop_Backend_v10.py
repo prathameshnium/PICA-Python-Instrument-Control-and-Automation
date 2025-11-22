@@ -32,7 +32,7 @@ def main():
     Main function to run the I-V sweep measurement.
     """
     # object creation ----------------------------------
-    keithley_2400 = Keithley2400("GPIB::4", adapter_args={"py_library": "@sim"})
+    keithley_2400 = Keithley2400("GPIB::4")
     keithley_2400.disable_buffer()
     sleep(2)
 
