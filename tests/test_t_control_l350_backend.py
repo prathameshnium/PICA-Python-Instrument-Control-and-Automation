@@ -78,7 +78,7 @@ class TestLakeshore350Class(unittest.TestCase):
 
 class TestMainFunctionAndUserInput(unittest.TestCase):
     @patch('builtins.input', side_effect=['100', '200', '10', '300',
-                                        'not-a-number', '50', '350', '10', '400'])
+                                          'not-a-number', '50', '350', '10', '400'])
     def test_get_user_parameters(self, mock_input):
         # First call: Valid input
         start, end, rate, cutoff = get_user_parameters()
@@ -97,10 +97,9 @@ class TestMainFunctionAndUserInput(unittest.TestCase):
     @patch('matplotlib.pyplot.show')
     @patch('builtins.open', new_callable=mock_open)
     @patch('time.sleep', MagicMock())
-    # Simulate time passing
     @patch('time.time', side_effect=[1000, 1002, 1004, 1006, 1008, 1010])
-    def test_main_runs_and_completes(self, mock_time, mock_open_file,
-                                     mock_plt_show, mock_ls_class, mock_input, mock_file_dialog, mock_tk):
+    def test_main_runs_and_completes(self, mock_time, mock_open_file, mock_plt_show, mock_ls_class,
+                                     mock_input, mock_file_dialog, mock_tk):
         # --- MOCK SETUP ---
         mock_controller = MagicMock()
         mock_ls_class.return_value = mock_controller
@@ -116,8 +115,7 @@ class TestMainFunctionAndUserInput(unittest.TestCase):
 
         # --- ASSERTIONS ---
         # Check initialization
-        mock_ls_class.assert_called_once_with(
-            "GPIB0::13::INSTR", adapter_args={'py_library': '@sim'})
+        mock_ls_class.assert_called_once_with("GPIB0::13::INSTR", adapter_args={'py_library': '@sim'})
         mock_controller.reset_and_clear.assert_called_once()
         mock_controller.setup_heater.assert_called_once()
 

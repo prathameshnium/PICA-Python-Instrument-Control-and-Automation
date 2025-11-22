@@ -15,7 +15,6 @@ class TestFixes(unittest.TestCase):
         IV_K2400_Loop_Backend_v10 script, preventing real hardware calls.
         """
         from Keithley_2400.Backends import IV_K2400_Loop_Backend_v10 as iv_backend
-
         mock_keithley_instance = MagicMock()
         mock_keithley_class.return_value = mock_keithley_instance
         mock_keithley_instance.query.return_value = "KEITHLEY INSTRUMENTS INC., MODEL 2400"
@@ -25,6 +24,7 @@ class TestFixes(unittest.TestCase):
 
     @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.Lakeshore350')
     def test_t_control_l350_fix(self, mock_ls_class):
+
         from Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10 import main
 
         # Configure the mock Lakeshore350 instance that main() will receive

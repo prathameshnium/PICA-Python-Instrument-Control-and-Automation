@@ -13,7 +13,7 @@ class TestIVK2400GUI(unittest.TestCase):
         Set up a root Tk window and instantiate the GUI class.
         This runs before each test.
         """
-        # We need a root window for the GUI to be instantiated, but we don't need to see it.
+        # We need a root window for the GUI to be instantiated, but we don't need to see it
         self.root = tk.Tk()
         self.root.withdraw()  # Hide the window
 
@@ -41,11 +41,10 @@ class TestIVK2400GUI(unittest.TestCase):
         # Mock the backend instance that the GUI will create
         mock_backend_instance = MockBackend.return_value
         # --- Simulate User Input ---
-        # We directly set the values that would be entered into the GUI's Entry widgets.
-        app.entries["Sample Name"].insert(0, "TestSample")
-        app.entries["Max Current"].insert(0, "100")  # 100 µA
-        app.entries["Step Current"].insert(0, "10")  # 10 µA
-        app.entries["Compliance"].insert(0, "20")    # 20 V
+        # We directly set the values that would be entered into the GUI's Entry widgets
+        app.entries["Sample Name"].insert(0, "TestSample") # 100 µA
+        app.entries["Max Current"].insert(0, "100") # 10 µA
+        app.entries["Step Current"].insert(0, "10") # 20 V
         app.entries["Delay"].insert(0, "0.5")    # 0.5 s
         app.keithley_combobox.set("GPIB0::24::INSTR")
         app.file_location_path = "/fake/path"  # Simulate browsing for a file

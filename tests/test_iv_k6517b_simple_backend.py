@@ -1,11 +1,11 @@
 import unittest
 from unittest.mock import patch, MagicMock, mock_open
-
 # Import the main function from the script we want to test
 from Keithley_6517B.High_Resistance.Backends.IV_K6517B_Simple_Backend_v10 import main as iv_simple_main
 
 
 class TestIVK6517BSimpleBackend(unittest.TestCase):
+
     @patch('time.sleep', MagicMock())
     @patch('builtins.input', side_effect=['-10', '10', '5', '0.1', 'test_iv_simple.csv'])
     @patch('pymeasure.instruments.keithley.Keithley6517B')
@@ -33,7 +33,7 @@ class TestIVK6517BSimpleBackend(unittest.TestCase):
 
         # --- Assertions ---
         # 1. Was the instrument initialized correctly?
-        mock_keithley_class.assert_called_once_with("GPIB1::27::INSTR")
+        mock_keithley_class.assert_called_once_with("GPIB1::27::INSTR", adapter_args={'py_library': '@sim'})
 
         # 2. Was the zero-check and correction sequence performed?
         mock_instrument.reset.assert_called_once()

@@ -23,9 +23,11 @@ class TestDeepSimulation(unittest.TestCase):
     # -------------------------------------------------------------------------
     def _timeout_handler(self, signum, frame):
         raise TimeoutError(
-                            f"Test {self._testMethodName} took longer than 30s! Infinite Loop suspected.")
-    def run_module_safely(self, module_name, mock_modules):        """Imports and runs a module with a strict 30-second timeout."""
-        with patch.dict('sys.modules', mock_modules):
+            f"Test {self._testMethodName} took longer than 30s! Infinite Loop suspected.")
+
+    def run_module_safely(self, module_name, mock_modules):
+        """Imports and runs a module with a strict 30-second timeout."""
+        with patch.dict('sys.modules', mock_modules):  # type: ignore
             # Set an alarm for 30 seconds (Works on Linux/GitHub Actions)
             if hasattr(signal, 'SIGALRM'):
                 # Ensure any previous alarm is cleared
@@ -54,7 +56,7 @@ class TestDeepSimulation(unittest.TestCase):
                     raise e  # Re-raise to fail the test
                 else:
                     print(f"   -> [INFO] Script stopped with: {e}", flush=True)
-            
+
             finally:
                 if hasattr(signal, 'SIGALRM'):
                     signal.alarm(0)  # Disable the alarm
@@ -143,9 +145,9 @@ class TestDeepSimulation(unittest.TestCase):
             with patch('builtins.input', side_effect=['10', '300', '10', '350']), \
                     patch('builtins.open', mock_open()), \
                     patch('matplotlib.pyplot.show'), \
-                    patch('matplotlib.pyplot.subplots', return_value=(mock_fig, mock_ax)):
+                    patch('matplotlib.pyplot.subplots', return_value=(mock_fig, mock_ax)): # noqa
                 self.run_module_safely("Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10", mock_modules)
-    
+
     def test_03_k6517b_pyro_backend(self):
         mock_modules = {
             'tkinter': MagicMock(),
@@ -252,7 +254,8 @@ class TestDeepSimulation(unittest.TestCase):
             with patch('builtins.input', side_effect=inputs), \
                     patch('pandas.DataFrame.to_csv'):
                 try:
-                    self.run_module_safely("Delta_mode_Keithley_6221_2182.Backends.Delta_K6221_K2182_L350_T_Sensing_Backend_v1", mock_modules)
+                    self.run_module_safely(
+                        "Delta_mode_Keithley_6221_2182.Backends.Delta_K6221_K2182_L350_T_Sensing_Backend_v1", mock_modules)
                 except ModuleNotFoundError:
                     print("   [SKIP] Module not found, skipping.")
 
@@ -319,7 +322,8 @@ class TestDeepSimulation(unittest.TestCase):
             inputs = ['10', '1', 'test_file', 'y', 'y', 'y', 'y']
             with patch('builtins.input', side_effect=inputs), \
                     patch('pandas.DataFrame.to_csv'):
-                self.run_module_safely("Keithley_2400_Keithley_2182.Backends.IV_K2400_K2182_Backend_v1", mock_modules)
+                self.run_module_safely(
+                    "Keithley_2400_Keithley_2182.Backends.IV_K2400_K2182_Backend_v1", mock_modules)
             mock_pymeasure.stop()
 
     def test_09_poling(self):
@@ -414,9 +418,8 @@ class TestDeepSimulation(unittest.TestCase):
             rm = MockRM.return_value
             rm.list_resources.return_value = ('GPIB0::1::INSTR',)
             self.run_module_safely(
-                                "Utilities.GPIB_Interface_Rescue_Simple_Backened_v2_", mock_modules)
-                
-                
-                if __name__ == '__main__':
-                    unittest.main()
-                
+                "Utilities.GPIB_Interface_Rescue_Simple_Backened_v2_", mock_modules)
+
+
+if __name__ == '__main__':
+    unittest.main()
