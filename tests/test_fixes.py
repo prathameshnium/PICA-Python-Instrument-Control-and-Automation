@@ -5,7 +5,7 @@ class TestFixes(unittest.TestCase):
 
     @patch('time.sleep', MagicMock())  # Add mock for time.sleep to isolate the test
     @patch('builtins.input', side_effect=['10', '2', 'test_output']) 
-    @patch('pymeasure.instruments.keithley.Keithley2400')
+    @patch('Keithley_2400.Backends.IV_K2400_Loop_Backend_v10.Keithley2400')
     @patch('matplotlib.pyplot.show')
     @patch('pandas.DataFrame.to_csv')
     def test_iv_k2400_fix(self, mock_to_csv, mock_plt_show, mock_keithley_class, mock_input):

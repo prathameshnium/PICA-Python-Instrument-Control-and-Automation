@@ -106,7 +106,7 @@ def main():
         keithley.write(':SYSTem:ZCHeck ON')  # type: ignore
         time.sleep(5)
         print("Step 2: Acquiring zero correction value...")
-        # keithley.write(':SYSTem:ZCORrect:ACQuire')
+        keithley.write(':SYSTem:ZCORrect:ACQuire')
         time.sleep(5)
         print("Step 3: Disabling Zero Check mode...")
         keithley.write(':SYSTem:ZCHeck OFF')

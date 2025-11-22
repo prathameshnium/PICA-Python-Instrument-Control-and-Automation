@@ -45,6 +45,13 @@ class TestDeepSimulation(unittest.TestCase):
     def tearDown(self):
         print(f"[TEST END]   {self._testMethodName}\n", flush=True)
 
+    # -------------------------------------------------------------------------
+    # HELPER: The "Watchdog" Timer
+    # -------------------------------------------------------------------------
+    def _timeout_handler(self, signum, frame):
+        raise TimeoutError(
+            f"Test {self._testMethodName} took longer than 30s! Infinite Loop suspected.")
+
     def run_module_safely(self, module_name):
         """Imports and runs a module with a strict 30-second timeout."""
         # Set an alarm for 30 seconds (Works on Linux/GitHub Actions)
