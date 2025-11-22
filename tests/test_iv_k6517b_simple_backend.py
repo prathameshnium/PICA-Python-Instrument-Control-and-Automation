@@ -1,27 +1,20 @@
 import unittest
-from unittest.mock import patch, MagicMock, mock_open
-import numpy as np
+from unittest.mock import patch, MagicMock, mock_open, call
 
 # Import the main function from the script we want to test
 from Keithley_6517B.High_Resistance.Backends.IV_K6517B_Simple_Backend_v10 import main as iv_simple_main
 
+
 class TestIVK6517BSimpleBackend(unittest.TestCase):
     @patch('time.sleep', MagicMock())
     @patch('builtins.input', side_effect=['-10', '10', '5', '0.1', 'test_iv_simple.csv'])
-    @patch('pymeasure.adapters.visa.VISAAdapter') # New patch
-    @patch('Keithley_6517B.High_Resistance.Backends.IV_K6517B_Simple_Backend_v10.Keithley6517B')
+    @patch('pymeasure.instruments.keithley.Keithley6517B')
     @patch('builtins.open', new_callable=mock_open)
     @patch('matplotlib.pyplot.show')
-    def test_full_run(self, mock_show, mock_file, mock_keithley_class, mock_visa_adapter, mock_input):
+    def test_full_run(self, mock_show, mock_file, mock_keithley_class, mock_input):
         """
         Tests a complete, successful run of the IV_K6517B_Simple_Backend script.
         """
-        # --- MOCK SETUP for VISAAdapter ---
-        mock_visa_adapter_instance = MagicMock()
-        mock_visa_adapter.return_value = mock_visa_adapter_instance
-        # Simulate IDN query result that Keithley6517B might perform
-        mock_visa_adapter_instance.ask.return_value = "Mocked Keithley 6517B ID"
-
         # --- Setup Mocks for Keithley6517B ---
         mock_instrument = MagicMock()
         mock_keithley_class.return_value = mock_instrument
@@ -30,13 +23,12 @@ class TestIVK6517BSimpleBackend(unittest.TestCase):
         # Simulate resistance measurement
         mock_instrument.resistance = 1.23e9
 
-
         # --- Run the main function and catch exceptions ---
         try:
             iv_simple_main()
         except Exception as e:
             # The script might exit or raise an error after plotting, which is fine for this test
-            if "no display name" not in str(e): # Ignore matplotlib display errors in CI
+            if "no display name" not in str(e):  # Ignore matplotlib display errors in CI
                 pass
 
         # --- Assertions ---

@@ -69,4 +69,3 @@ class TestIVK2400GUI(unittest.TestCase):
 
         # 3. Did the GUI generate the correct sweep points?
         mock_backend_instance.generate_sweep_points.assert_called_once()
-        
