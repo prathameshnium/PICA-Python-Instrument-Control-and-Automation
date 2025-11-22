@@ -1,7 +1,7 @@
 # ploter for the Live_plots_Temperature_dependendent_V
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
+import matplotlib.animation as animation
 import os
 import tkinter
 from tkinter import filedialog
@@ -69,7 +69,7 @@ def live_plot_from_csv(selected_file):
         axs[2].set_ylabel('Voltage (V)', fontsize=13)
         axs[2].legend(loc='upper left')
 
-    ani = FuncAnimation(plt.gcf(), animate, interval=1000, cache_frame_data=False)
+    ani = animation.FuncAnimation(plt.gcf(), animate, interval=1000, cache_frame_data=False)
 
     plt.tight_layout()
     plt.show()
