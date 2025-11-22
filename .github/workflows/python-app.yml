@@ -1,0 +1,54 @@
+name: PICA Automation CI
+
+# Trigger on push to main or pull requests
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Check out your code
+    - uses: actions/checkout@v4
+
+    # 2. Set up Python 3.10 (Matches your local environment)
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    # 3. Install System Dependencies (Required for Tkinter/Matplotlib on Linux)
+    - name: Install Tkinter System Libs
+      run: sudo apt-get update && sudo apt-get install -y python3-tk
+
+    # 4. Install Your Python Dependencies
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest flake8 pytest-cov
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        # Install the package itself in editable mode
+        pip install -e .
+
+    # 5. Lint with Flake8 (The "Lite" Check)
+    # This finds syntax errors and undefined names without running code
+    - name: Lint with flake8
+      run: |
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    # 6. Run Tests (The "Logic" Check)
+    # We ignore the visual GUI rendering tests if they are too heavy, 
+    # but since we mocked them, they should run fast!
+    - name: Test with pytest
+      run: |
+        python -m pytest tests/
