@@ -2,17 +2,27 @@ import unittest
 import sys
 import os
 import importlib
-from unittest.mock import MagicMock, patch, mock_open
+import pytest
+from unittest.mock import MagicMock, patch, mock_open, PropertyMock
 
-# -------------------------------------------------------------------------
-# 1. GLOBAL MOCKS (The "Headless" GUI Trick)
-# -------------------------------------------------------------------------
-sys.modules['tkinter'] = MagicMock()
-sys.modules['tkinter.ttk'] = MagicMock()
-sys.modules['tkinter.messagebox'] = MagicMock()
-sys.modules['tkinter.filedialog'] = MagicMock()
 
 # Matplotlib Mocks
+@pytest.fixture(autouse=True)
+def mock_gui_libraries():
+    """
+    This fixture mocks the entire tkinter and matplotlib libraries to prevent
+    any GUI windows from being created during tests. It is applied automatically
+    to all tests within this file.
+    """
+    with patch.dict('sys.modules', {
+        'tkinter': MagicMock(),
+        'tkinter.ttk': MagicMock(),
+        'tkinter.messagebox': MagicMock(),
+        'tkinter.filedialog': MagicMock(),
+    }):
+        yield
+
+
 class TestDeepSimulation(unittest.TestCase):
 
     def setUp(self):
