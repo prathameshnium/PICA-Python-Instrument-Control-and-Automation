@@ -1,3 +1,7 @@
+"""
+Visualization backend for Pyroelectricity measurements using the Keithley 6517B.
+Handles real-time data plotting and formatting.
+"""
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation

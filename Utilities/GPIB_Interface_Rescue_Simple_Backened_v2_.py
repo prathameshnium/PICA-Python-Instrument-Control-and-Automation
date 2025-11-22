@@ -1,3 +1,7 @@
+"""
+Utility script to attempt rescuing a stuck GPIB interface.
+Resets the bus and clears instrument states.
+"""
 import pyvisa
 import time
 

@@ -1,3 +1,7 @@
+"""
+General utility for live plotting data streams.
+Provides a standardized class for real-time graph updates.
+"""
 # ploter for the Live_plots_Temperature_dependendent_V
 import pandas as pd
 import matplotlib.pyplot as plt
