@@ -26,7 +26,7 @@ except ImportError:
 # -------------------------------------------------------------------------------
 
 
-class GpibScannerGUI:
+class GPIB_Instrument_Scanner_GUI:
     """The main GUI application class for scanning VISA instruments."""
     PROGRAM_VERSION = "2.0"
     # --- Styling constants from PICA Launcher ---
@@ -285,7 +285,7 @@ Nanovoltmeters, LCR Meters & Amplifiers
 def main():
     """Initializes the application."""
     root = tk.Tk()
-    GpibScannerGUI(root)
+    GPIB_Instrument_Scanner_GUI(root)
     root.mainloop()
 
 

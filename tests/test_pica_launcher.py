@@ -15,19 +15,17 @@ from PICA_v6 import PICALauncherApp
 
 
 @pytest.fixture
-def mock_app_dependencies():
+def mock_app_dependencies(mock_tkinter):
     """
     Pytest fixture to mock dependencies that would block or interfere with
     a non-interactive test run.
     """
     # Mock methods that would create new windows, run blocking loops, or
     # perform file I/O.
-    with patch('tkinter.Tk.mainloop', MagicMock()), \
-         patch('PICA_v6.PICALauncherApp.run_gpib_test', MagicMock()), \
+    with patch('PICA_v6.PICALauncherApp.run_gpib_test', MagicMock()), \
          patch('PICA_v6.PICALauncherApp._load_logo', MagicMock()), \
          patch('PICA_v6.PICALauncherApp._pre_cache_markdown_files', MagicMock()):
         yield
-
 
 def test_pica_launcher_initialization(mock_app_dependencies):
     """
@@ -36,7 +34,8 @@ def test_pica_launcher_initialization(mock_app_dependencies):
     It confirms that the main window is created and that key widgets
     like the console are initialized.
     """
-    root = tk.Tk()
+    # With mock_tkinter, this is now a MagicMock, not a real window
+    root = tk.Tk() 
     app = PICALauncherApp(root)
 
     # --- Assertions ---
