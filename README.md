@@ -23,6 +23,10 @@ A key architectural feature is the use of isolated process execution for each me
 
 PICA is designed with a clear separation between the user interface (GUI) and the instrument control logic (backend). This modular approach makes the system easy to maintain, extend, and debug.
 
+**A Note on Recent Updates and Testing:**
+
+> This software suite is actively used for daily laboratory measurements and is regularly tested on the physical instruments. Recently, a suite of automated tests has been integrated to improve code quality and stability. While these tests validate the core logic, the changes made to support them require a new round of thorough manual testing on the hardware to identify and resolve any practical bugs that may have been introduced. This process is currently underway, and further updates will be provided upon its completion.
+
 <p align="center">
     <img src="_assets/Images/PICA_Launcher_v6.png" alt="PICA Launcher Screenshot" width="800"/>
 </p>
