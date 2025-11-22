@@ -35,8 +35,7 @@ class TestIVK2400GUI(unittest.TestCase):
         mock_figure_instance = MockFigure.return_value
         mock_ax_vi = MagicMock()
         mock_ax_ri = MagicMock()
-        # The GUI script calls subplots(), which needs to return our two mock axes
-        mock_figure_instance.subplots.return_value = mock_ax_vi, mock_ax_ri
+        mock_figure_instance.subplots.return_value = (mock_ax_vi, mock_ax_ri)
         app = MeasurementAppGUI(self.root)
 
         # Mock the backend instance that the GUI will create

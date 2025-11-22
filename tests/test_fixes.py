@@ -3,7 +3,8 @@ from unittest.mock import patch, MagicMock, mock_open
 
 class TestFixes(unittest.TestCase):
 
-    @patch('builtins.input', side_effect=['10', '2', 'test_output'])
+    @patch('time.sleep', MagicMock())  # Add mock for time.sleep to isolate the test
+    @patch('builtins.input', side_effect=['10', '2', 'test_output']) 
     @patch('pymeasure.instruments.keithley.Keithley2400')
     @patch('matplotlib.pyplot.show')
     @patch('pandas.DataFrame.to_csv')

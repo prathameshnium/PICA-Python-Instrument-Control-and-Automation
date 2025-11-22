@@ -49,7 +49,7 @@ def get_sweep_parameters():
     delay = float(input("Enter Settling Delay between points (s): "))
     filename = input(
         "Enter the filename to save data (e.g., SampleA_IV.csv): ")
-
+    
     if not filename.lower().endswith('.csv'):
         filename += '.csv'
     return start_v, stop_v, steps, delay, filename
