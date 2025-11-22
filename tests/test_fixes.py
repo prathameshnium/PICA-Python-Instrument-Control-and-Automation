@@ -3,8 +3,8 @@ from unittest.mock import patch, MagicMock, mock_open
 
 class TestFixes(unittest.TestCase):
 
-    @patch('time.sleep', MagicMock())  # Add mock for time.sleep to isolate the test
-    @patch('builtins.input', side_effect=['10', '2', 'test_output']) 
+    @patch('Keithley_2400.Backends.IV_K2400_Loop_Backend_v10.sleep', MagicMock())  # Add mock for time.sleep to isolate the test
+    @patch('builtins.input', side_effect=['10', '2', 'test_output'])
     @patch('Keithley_2400.Backends.IV_K2400_Loop_Backend_v10.Keithley2400')
     @patch('matplotlib.pyplot.show')
     @patch('pandas.DataFrame.to_csv')
@@ -23,7 +23,7 @@ class TestFixes(unittest.TestCase):
     @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.Lakeshore350')
     @patch('matplotlib.pyplot.show')
     @patch('builtins.open', new_callable=mock_open)
-    @patch('time.sleep', MagicMock())
+    @patch('Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10.sleep', MagicMock())
     @patch('time.time', side_effect=[1000, 1002, 1004, 1006, 1008, 1010])
     def test_t_control_l350_fix(self, mock_time, mock_open_file,
                                      mock_plt_show, mock_ls_class, mock_input, mock_file_dialog, mock_tk):

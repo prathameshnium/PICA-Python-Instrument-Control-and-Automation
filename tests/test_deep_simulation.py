@@ -5,37 +5,44 @@ import importlib
 import signal
 from unittest.mock import MagicMock, patch, mock_open
 
-# -------------------------------------------------------------------------
-# 1. GLOBAL MOCKS
-# -------------------------------------------------------------------------
-# Mock GUI elements
-sys.modules['tkinter'] = MagicMock()
-sys.modules['tkinter.ttk'] = MagicMock()
-sys.modules['tkinter.messagebox'] = MagicMock()
-sys.modules['tkinter.filedialog'] = MagicMock()
-
-# Mock Multiprocessing to prevent Queue.get() hangs
-mock_mp = MagicMock()
-sys.modules['multiprocessing'] = mock_mp
-sys.modules['multiprocessing.queues'] = MagicMock()
-
-# Mock Matplotlib
-mock_plt = MagicMock()
-mock_fig = MagicMock()
-mock_ax = MagicMock()
-mock_line = MagicMock()
-mock_ax.plot.return_value = [mock_line]
-mock_plt.subplots.return_value = (mock_fig, mock_ax)
-sys.modules['matplotlib'] = MagicMock()
-sys.modules['matplotlib.pyplot'] = mock_plt
-sys.modules['matplotlib.figure'] = MagicMock()
-sys.modules['matplotlib.backends'] = MagicMock()
-sys.modules['matplotlib.backends.backend_tkagg'] = MagicMock()
-
-
 class TestDeepSimulation(unittest.TestCase):
 
     def setUp(self):
+        # Mock GUI elements
+        self.tkinter_patch = patch.dict('sys.modules', {
+            'tkinter': MagicMock(),
+            'tkinter.ttk': MagicMock(),
+            'tkinter.messagebox': MagicMock(),
+            'tkinter.filedialog': MagicMock(),
+        })
+        self.tkinter_patch.start()
+        self.addCleanup(self.tkinter_patch.stop)
+
+        # Mock Multiprocessing to prevent Queue.get() hangs
+        self.mp_patch = patch.dict('sys.modules', {
+            'multiprocessing': MagicMock(),
+            'multiprocessing.queues': MagicMock(),
+        })
+        self.mp_patch.start()
+        self.addCleanup(self.mp_patch.stop)
+
+        # Mock Matplotlib
+        mock_plt = MagicMock()
+        mock_fig = MagicMock()
+        mock_ax = MagicMock()
+        mock_line = MagicMock()
+        mock_ax.plot.return_value = [mock_line]
+        mock_plt.subplots.return_value = (mock_fig, mock_ax)
+        self.matplotlib_patch = patch.dict('sys.modules', {
+            'matplotlib': MagicMock(),
+            'matplotlib.pyplot': mock_plt,
+            'matplotlib.figure': MagicMock(),
+            'matplotlib.backends': MagicMock(),
+            'matplotlib.backends.backend_tkagg': MagicMock(),
+        })
+        self.matplotlib_patch.start()
+        self.addCleanup(self.matplotlib_patch.stop)
+        
         self.root_dir = os.path.abspath(
             os.path.join(os.path.dirname(__file__), '..'))
         if self.root_dir not in sys.path:
