@@ -1,257 +1,164 @@
+## Instrument & Software Update Log
+---
+### Version 15 (Current)
+*Released: November 22, 2025*
+*Status: Tested and operational. Minor cosmetic updates pending.*
+**JOSS Submission & Professionalization**
+-   **Code Cleanup:** Comprehensive refactoring and cleanup of the codebase to meet professional standards for JOSS submission.
 **A Note on Recent Updates and Testing:**
-
 > This software suite is actively used for daily laboratory measurements and is regularly tested on the physical instruments. Recently, a suite of automated tests has been integrated to improve code quality and stability. While these tests validate the core logic, the changes made to support them require a new round of thorough manual testing on the hardware to identify and resolve any practical bugs that may have been introduced. This process is currently underway, and further updates will be provided upon its completion.
 
 ---
 
-## Instrument & Software Update Log
-### Version 14.1 (Current)
-Tested and working perfectley , its fast doesnt lag and all communiaction with instruments are good. only some cosmatic changes required now i have decided not to change the file names for while now , for these small change.
-**Documentation & Code Examples**
-
+### Version 14.0 and 14.1
+*Released: November 15, 2025*
+-   **Improved "Getting Started" Guide:** Clarified installation and launch instructions.
 -   **Enhanced Documentation:** Overhauled the main project `README.md` to provide a more comprehensive overview, including a new "Architecture" section that details the frontend-backend separation and the role of `multiprocessing`.
--   **Code Snippets for Extensibility:** Added illustrative code snippets to `README.md` demonstrating the structure of a backend instrument class and how a frontend GUI class interacts with it. This serves as a practical guide for developers looking to add new instrument modules.
--   **Improved "Getting Started" Guide:** The installation and launch instructions in `README.md` have been clarified and expanded for a smoother onboarding experience.
--   **Synchronized Executable README:** Updated `PICA_README.md` to align with the core documentation, ensuring users of the standalone executable have access to the latest information.
--   **Files Added/Modified:**
-    -   `README.md`
-    -   `PICA_README.md`
-    -   `Change_Logs.md`
-
----
-
-## Instrument & Software Update Log
-### Version 14.0 (Current)
+-   **Synchronized Executable README:** Updated `PICA_README.md` for the standalone executable.
 
 **GUI Enhancements & New Measurement Modes**
-
--   **Major GUI Version Bumps:** Updated numerous frontend scripts to their latest, most stable versions. This includes significant improvements in reliability, UI consistency, and backend logic across all major measurement suites.
--   **New Passive "Sensing" Modes:** Introduced new "T-Sensing" (passive) measurement modes for several instrument combinations. These modules allow for resistance logging while the temperature changes externally (e.g., during natural cooling), complementing the existing "T-Control" (active) modes.
+-   **Major GUI Version Bumps:** Updated numerous frontend scripts to their latest stable versions.
+-   **New Passive "Sensing" Modes:** Introduced "T-Sensing" modes for resistance logging during external temperature changes.
     -   New `Delta Mode R-T (T_Sensing)` module.
     -   New `K2400 R-T (T_Sensing)` module.
     -   New `K2400_2182 R-T (T_Sensing)` module.
     -   New `K6517B R-T (T_Sensing)` module.
--   **Launcher Script Synchronization:** Updated the main launcher (`PICA_v6.py`) and the executable build script (`Setup/Picachu.py`) to point to all the new and updated frontend versions, ensuring users always access the latest features.
--   **Plotter Utility Upgrade:** The standalone plotter (`PlotterUtil_GUI_v3.py`) has been enhanced to support plotting multiple files simultaneously, improving comparative data analysis workflows.
--   **Documentation Refresh:** Updated `README.md` and `PICA_README.md` to reflect the current feature set, expanded measurement capabilities, and latest UI.
--   **Files Added/Modified:**
-    -   `PICA_v6.py`
-    -   `Setup/Picachu.py`
-    -   `README.md`
-    -   `PICA_README.md`
-    -   `Change_Logs.md`
-    -   `Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_GUI_V10.py`
-    -   `Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.py`
-    -   `Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_Sensing_GUI_v5.py` (New)
-    -   `Keithley_2400_Keithley_2182/IV_K2400_K2182_GUI_v3.py`
-    -   `Keithley_2400/RT_K2400_L350_T_Control_GUI_v3.py`
-    -   `Keithley_2400/RT_K2400_L350_T_Sensing_GUI_v4.py`
-    -   `Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_GUI_v3.py`
-    -   `Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_GUI_v2.py`
-    -   `Keithley_6517B/High_Resistance/IV_K6517B_GUI_v11.py`
-    -   `Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_GUI_v13.py`
-    -   `Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Sensing_GUI_v14.py`
-    -   `LCR_Keysight_E4980A/CV_KE4980A_GUI_v3.py`
-    -   `Utilities/PlotterUtil_GUI_v3.py`
+-   **Plotter Utility Upgrade:** Enhanced `PlotterUtil_GUI_v3.py` to support simultaneous multi-file plotting.
 
 ---
 
-### Version 13.9 (Current)
+### Version 13.10 (Lab Baseline)
+*Released: October 10, 2025*
+
+**Milestone: Base Laboratory Deployment**
+-   **Status:** A stable base version for the laboratory is in place. Almost all core instrument communication and measurement loops are working perfectly.
+-   **Context:** This release (`b545cef`) marked the completion of functional development before the focus shifted to cosmetic UI improvements and standardization.
+
+---
+
+### Version 13.9
+*Released: October 09, 2025*
 
 **Documentation & Launcher Synchronization**
-
--   **Documentation Overhaul:** Updated and synchronized key documentation files (`README.md`, `Change_Logs.md`) to accurately reflect the latest project structure, features, and build process.
--   **Executable-Specific README:** Created `PICA_README.md`, a version of the main README tailored for inclusion in the Nuitka-built executable. This ensures users of the standalone application have access to relevant project information.
--   **Launcher Script Update:** Updated the main launcher script (`PICA_v6.py`) to reflect the latest versioning and ensure consistency with the project's documentation.
--   **Files Added/Modified:**
-    -   `PICA_v6.py`
-    -   `README.md`
-    -   `PICA_README.md` (New File)
-    -   `Change_Logs.md`
+-   **Documentation Overhaul:** Synchronized `README.md` and `Change_Logs.md`.
+-   **Executable-Specific README:** Created `PICA_README.md`.
+-   **Launcher Script Update:** Updated `PICA_v6.py` to reflect versioning.
 
 ---
 
-## Instrument & Software Update Log
-### Version 13.8 (Current)
+### Version 13.8
+*Released: October 09, 2025*
 
 **Build System & Documentation Overhaul**
+-   **New Build System:** Introduced `Picachu.py` for creating standalone Windows executables via Nuitka.
+-   **Automated Releases:** Implemented GitHub Actions `build-exe.yml` for automated compilation.
+-   **Build Script Refinements:** Optimized `resource_path` for bundled assets.
 
--   **New Build System:** Introduced `Picachu.py`, a dedicated build script for creating a standalone Windows executable using Nuitka. This separates the development launcher (`PICA_v6.py`) from the production build script.
--   **Automated Releases:** Implemented a GitHub Actions workflow (`build-exe.yml`) that automatically compiles, packages, and uploads the `Picachu.exe` as a release asset whenever a new release is created on GitHub.
--   **Build Script Refinements:**
-    -   The `resource_path` function in `Picachu.py` was adapted to correctly locate bundled assets when running as a compiled executable.
-    -   The Nuitka build configuration was optimized to include all necessary Python packages, data files (`assets`, `LICENSE`), and documentation (`PICA_README.md`, `Updates.md`), ensuring the executable is fully self-contained.
--   **Documentation & Portfolio Update:**
-    -   Updated the main project `README.md` and the personal portfolio website (`project-pica.html`, `computational-works.html`) to accurately reflect the latest project structure, features, and build process.
--   **Files Added/Modified:**
-    -   `Setup/Picachu.py`
-    -   `.github/workflows/build-exe.yml`
-    -   `README.md`
- 
 ---
 
-## Instrument & Software Update Log
 ### Version 13.7
+*Released: October 08, 2025*
 
 **GUI Standardization & Modernization**
-
--   **Major UI/UX Overhaul:** Refactored and redesigned several key measurement frontends to align with the modern, dark-themed, and professional UI standard established in Version 13.6. This creates a consistent user experience across the entire PICA suite.
--   **New Delta Mode R-T GUI:** Integrated a new, robust GUI for Delta Mode R-T measurements (`Delta_RT_K6221_K2182_L350_T_Control_GUI_v4.py`). This frontend now includes the advanced temperature stabilization and hardware ramp logic, along with the standardized live plotting and console layout.
--   **New High-Resistance R-T GUI:** Deployed a new GUI for High-Resistance R-T sweeps (`RT_K6517B_L350_T_Control_GUI_v12.py`). It replaces the previous version with the standardized UI, featuring improved graph layouts and more reliable instrument control.
--   **New Lakeshore Temp Control GUI:** Released a modernized GUI for the standalone Lakeshore 350 temperature ramp utility (`T_Control_L350_RangeControl_GUI_v7.py`), bringing its appearance and functionality in line with other modules.
--   **New Delta Mode I-V GUI:** Updated the Delta Mode I-V sweep GUI (`IV_K6221_DC_Sweep_GUI_V9.py`) with the standardized modern theme, improving usability and visual consistency.
--   **Backend Refinements:**
-    -   The backend for the High-Resistance R-T module (`IV_K6517B_L350_T_Control_Backend_v6.py`) was updated with a more robust active stabilization logic.
-    -   The Lakeshore 350 backend (`T_Control_L350_Simple_Backend_v10.py`) was improved for clarity and reliability.
--   **PICA Launcher Update:** The main launcher (`PICA_v6.py`) has been updated to point to all the new and improved frontend scripts.
--   **Files Added/Modified:**
-    -   `PICA_v6.py`
-    -   `Delta_mode_Keithley_6221_2182/Delta_RT_K6221_K2182_L350_T_Control_GUI_v4.py`
-    -   `Delta_mode_Keithley_6221_2182/IV_K6221_DC_Sweep_GUI_V9.py`
-    -   `Keithley_6517B/High_Resistance/RT_K6517B_L350_T_Control_GUI_v12.py`
-    -   `Keithley_6517B/High_Resistance/Backends/IV_K6517B_L350_T_Control_Backend_v6.py`
-    -   `Lakeshore_350_340/T_Control_L350_RangeControl_GUI_v7.py`
-    -   `Lakeshore_350_340/Backends/T_Control_L350_Simple_Backend_v10.py`
+-   **Major UI/UX Overhaul:** Refactored key frontends (Delta Mode R-T, High-Resistance R-T, Lakeshore Control) to align with the modern, dark-themed UI standard.
+-   **Backend Refinements:** Updated `IV_K6517B_L350_T_Control_Backend_v6.py` and `T_Control_L350_Simple_Backend_v10.py` with improved stability logic.
 
 ---
 
 ### Version 13.6
+*Released: October 07, 2025*
 
 **New Measurement GUIs & UI Standardization**
-
--   **New LCR C-V GUI:** Integrated a new professional GUI for C-V measurements using the Keysight E4980A (`CV_KE4980A_GUI_v2.py`). It features a modern, dark-themed UI, live plotting, and robust instrument control logic separated into a backend class.
--   **New K2400/2182 I-V GUI:** Added a new professional GUI for high-precision 4-probe I-V sweeps using the Keithley 2400 and 2182 (`IV_K2400_K2182_GUI_v2.py`). This replaces older versions with a standardized, more reliable interface.
--   **New K2400/2182 R-T GUIs:**
-    -   Integrated an **active** R-T sweep frontend (`RT_K2400_K2182_T_Control_GUI_v2.py`) that automates temperature stabilization and ramping with the Lakeshore 350.
-    -   Integrated a **passive** R-T logging frontend (`RT_K2400_2182_L350_T_Sensing_GUI_v1.py`) for monitoring resistance while temperature changes externally.
--   **New K2400 R-T (Passive) GUI:** Added a dedicated GUI for passive R-T logging using a single Keithley 2400 and a Lakeshore 350 (`RT_K2400_L350_T_Sensing_GUI_v3.py`).
--   **UI/UX Overhaul:** All new frontends share a consistent, modern, dark-themed design with scrollable control panels, live Matplotlib graphs, and integrated logging consoles, significantly improving usability and professional appearance.
--   **PICA Launcher Update:** The main launcher (`PICA_v6.py`) has been updated to point to all these new, versioned frontend scripts, ensuring users always launch the latest and most stable versions.
--   **Files Added/Modified:**
-    -   `PICA_v6.py`
-    -   `LCR_Keysight_E4980A/CV_KE4980A_GUI_v2.py`
-    -   `Keithley_2400_Keithley_2182/IV_K2400_K2182_GUI_v2.py`
-    -   `Keithley_2400_Keithley_2182/RT_K2400_K2182_T_Control_GUI_v2.py`
-    -   `Keithley_2400_Keithley_2182/RT_K2400_2182_L350_T_Sensing_GUI_v1.py`
-    -   `Keithley_2400/RT_K2400_L350_T_Sensing_GUI_v3.py`
+-   **New LCR C-V GUI:** Integrated `CV_KE4980A_GUI_v2.py`.
+-   **New K2400/2182 Suites:** Added standardized I-V and R-T frontends.
+-   **UI/UX Overhaul:** Standardized all new frontends with a consistent dark-themed design.
 
 ---
 
 ### Version 13.5
+*Released: October 06, 2025*
 
-**Project-Wide Refactoring & Reorganization**
-
--   **Major Refactoring:** Implemented a major project-wide restructuring to improve modularity and maintainability. All measurement scripts have been reorganized into instrument-specific folders (e.g., `Keithley_2400`, `Delta_mode_Keithley_6221_2182`).
--   **New Structure:** Within each instrument directory, a `Backends` sub-folder has been created to house the instrument control logic, separating it from the `GUI` GUI files. This promotes code reuse and simplifies development.
--   **Path Updates:** The main PICA launcher (`PICA_v6.py`) has been updated to reflect all new script paths, ensuring that all measurement suites launch correctly from their new locations.
--   **File Cleanup:** This reorganization standardizes the location of all measurement scripts, making the project easier to navigate and manage.
--   **Files Modified:** `PICA_v6.py`, and all frontend/backend scripts moved to new locations.
+**Project-Wide Refactoring**
+-   **Major Refactoring:** Reorganized all scripts into instrument-specific folders (e.g., `Keithley_2400`, `Delta_mode_Keithley_6221_2182`).
+-   **New Structure:** Separated logic into `Backends` and `GUI` sub-folders.
 
 ---
 
 ### Version 13.4
+*Released: October 05, 2025*
 
 **PICA Launcher & Script Integration**
-
--   **Enhancement:** Upgraded the PICA Launcher to `PICA_v6.py` (internally version 5.3), featuring a significant UI/UX overhaul for a more professional and organized layout.
--   **Refinement:** Re-structured the launcher layout into two columns for better readability and grouping of related measurement suites (Low, Mid, High Resistance).
--   **New Feature:** Added an integrated markdown parser to the documentation viewer (`README`, `Updates.md`) for improved readability with styled headers, lists, and bold text.
--   **New Feature:** The GPIB/VISA scanner now automatically starts a scan upon opening and includes a quick-reference "Address Guide" for common instruments.
--   **Script Update:** Updated script paths in the launcher to point to the latest, most stable versions across all modules, including:
-    -   `Delta_Mode_GUI_Active_Temp_Control_V3.py`
-    -   `Delta_Lakeshore_GUI_Passive_V2.py`
-    -   `Keithley_6517B_IV_GUI_V9.py`
-    -   `6517B_high_resistance_lakeshore_RT_GUI_V11p2_5Always.py`
-    -   `6517B_high_resistance_lakeshore_RT_GUI_V12_Passive.py`
-    -   `lakeshore350_temp_ramp_GUI_V6.py`
-    -   `lakeshore350_passive_monitor_GUI_V2.py`
--   **Files Modified:** `PICA_v6.py`.
+-   **Enhancement:** Upgraded to `PICA_v6.py` with a two-column layout.
+-   **New Feature:** Integrated markdown documentation viewer and automatic GPIB/VISA scanner.
 
 ---
 
-### Version 13.3 (10/05/2025)
+### Version 13.3
+*Released: October 05, 2025*
 
-**PICA Launcher & K2400 / K2400-2182 Suites**
-
--   **Enhancement:** Updated `PICA_Launcher_V5p1.py` to correctly point to the latest and most specific scripts for R-T measurements, distinguishing between "Active" (temperature ramp) and "Passive" (temperature logging) modes.
--   **New Scripts Integrated:**
-    -   `GUI_Keithley_2400_Lakeshore_350_V_vs_T_V1.py`: For automated R-T sweeps with active temperature ramping using a Keithley 2400.
-    -   `Keithley_2400_Lakeshore_350_V_vs_T_Passive_V2.py`: For passive R-T data logging using a Keithley 2400.
-    -   `VT_Sweep_Keithley_2400_2182_GUI_Active_V1.py`: For automated R-T sweeps with active temperature ramping using the Keithley 2400/2182 pair.
-    -   `VT_Sweep_K2400_2182_Passive_V1.py`: For passive R-T data logging using the Keithley 2400/2182 pair.
--   **Refinement:** The launcher now provides a clearer, more organized structure for selecting the correct measurement type.
--   **Files Modified:** `PICA_Launcher_V5.3.py`.
+-   **Enhancement:** Updated launcher to distinguish between "Active" and "Passive" R-T modes.
+-   **New Scripts:** Integrated specialized scripts for Keithley 2400 R-T measurements.
 
 ---
 
-### Version 13.2 (10/05/2025)
+### Version 13.2
+*Released: October 05, 2025*
 
-**PICA Launcher & K2400/2182 Suite**
-
--   **Enhancement:** Updated `PICA_Launcher_V5.py` to integrate the new professional frontends for the Keithley 2400/2182 measurement suite.
--   **New Launchers Added:**
-    -   `IV_Sweep_Keithley_2400_2182_GUI_V1.py`: For high-precision I-V sweeps.
-    -   `VT_Sweep_Keithley_2400_2182_GUI_V1.py`: For automated V-T measurements.
--   **Files Modified:** `PICA_Launcher_V5.2.py`.
+-   **Enhancement:** Integrated new professional frontends for the Keithley 2400/2182 measurement suite.
 
 ---
 
-### Version 13.1 (04/10/2025)
+### Version 13.1
+*Released: October 04, 2025*
 
-*This version number is being retroactively assigned to the previous update for better version tracking.*
-
-### October 4, 2025
-**New Features & Enhancements:**
-
-**PICA Launcher & Delta Mode Suite**
-
--   **Enhancement:** Updated `PICA_Launcher_V5.py` to resolve duplicate script paths and ensure it correctly launches the latest versions of all measurement programs.
--   **Enhancement:** Successfully tested and validated the latest Delta Mode scripts:
-    -   `Delta_Mode_Active_Temp_Control_V2.py`: Active R-T measurements confirmed to be stable and accurate.
-    -   `Delta_Mode_IV_Ambient.py`: I-V sweep functionality verified.
--   **Files Modified:** `PICA_Launcher_V5.1.py`, `Delta_Mode_Active_Temp_Control_V2.py`, `Delta_Mode_IV_Ambient.py`.
+-   **Enhancement:** Validated `Delta_Mode_Active_Temp_Control_V2.py` and `Delta_Mode_IV_Ambient.py`.
 
 ---
 
-### October 3, 2025
+### Version 13.0 (Delta Mode Milestone)
+*Released: October 03, 2025*
 
-**Delta Mode Measurement Suite (Keithley 6221/2182)**
-
--   **New Program:** Developed `Delta_Mode_Active_Temp_Control.py` for automated measurements. The software now ramps to a user-defined temperature, waits for thermal stability, and then begins the Delta Mode measurement sequence. Includes critical safety logic to disable the heater on completion, error, or exit.
--   **New Program:** Created `Delta_Mode_IV_Ambient.py` to perform high-precision I-V sweeps at ambient temperature using the Delta Mode for each data point.
--   **Enhancement:** Merged modern GUI, plotting, and passive temperature sensing features into `Delta_Lakeshore_Front_end_Passive.py` for improved usability and data logging.
+-   **New Program:** Developed `Delta_Mode_Active_Temp_Control.py` for automated temperature ramping.
+-   **New Program:** Created `Delta_Mode_IV_Ambient.py`.
 
 ---
+## Historical Development Archive
 
-### September 18, 2025
+> **Note on Project Origins:**
+> The PICA software suite underwent an extensive offline development phase on isolated laboratory instrument control systems before its full migration to GitHub. The timeline below reconstructs the development history from raw commit logs and code diffs.
 
-**General Updates**
+### Phase 3: Expansion & Refinement (Sept 2025)
+*Focus on High Resistance & Temperature Control*
+-   **Sep 18, 2025:** Refined backend logic for High-Resistance Module (6517B).
+-   **Sep 17, 2025:** Developed comprehensive front-end/back-end for High-Resistance R vs. T. Integrated linearized drivers for Lakeshore 350.
+-   **Sep 10, 2025:** Major cleanup of `IV_Measurement` scripts and creation of `Lockin_Only.py`.
+-   **Sep 06, 2025:** **First Major Refactor.** Reorganized loose scripts into categorized folders (`IV_2400_Only`, `Pyroelectricity`, `Temprature_Controller`).
 
--   **High-Resistance Module (6517B):** Refined backend logic for improved stability and updated the front-end with a more intuitive color scheme for control buttons.
--   **PICA:** Standardized and updated all relevant library paths for the PICA software.
+### Phase 2: Modularization (July - Aug 2024)
+*Transitioning from Scripts to Modules*
+-   **Aug 15, 2024:** Added `Lakeshore_340_Continue_test.py` to support the older Lakeshore 340 model.
+-   **July 27, 2024:** **Structural reorganization.** Moved root-level scripts into categorized folders (`Pyroelectricity`, `LCR Keysight E 4980 A`). Renamed `Keithley_6517B.py` to `Pyroelectricity/Keithley_6517B.py`.
 
----
+### Phase 1: The "Bulk Upload" Era (Mar 2024)
+*Migration of Offline Work*
+-   **Mar 22, 2024:** Added Poling capabilities (`Poling_Keithley6517B.py`).
+-   **Mar 12, 2024:** Updates to `IV_Measurement.py` and `IV_Combine_2400-2182.py` logic.
+-   **Mar 11, 2024:** **Massive Feature Commit.** Added `LCR_CV.py` (Capacitance-Voltage), `Live_Data_Final-pyro.py`, and `IV_Measurement.py`.
+-   **Mar 03, 2024:** **Core Drivers Added.** Initial upload of `Keithley_6517B.py`, `Lakeshore350.py`, and `Pyroelectric.py` drivers. This marks the end of the first major offline development block.
 
-### September 17, 2025
+### Phase 0: Implementation & Testing (Dec 2023)
+*Proof of Concept & Raw SCPI Implementation*
+-   **Dec 09, 2023:** Updates to `IV_Front_End.py` and `README`.
+-   **Dec 08, 2023:** **Project Birth (Version Control).**
+    -   *Commit:* `963c8fd` - "Create Combine_2400-2182.py".
+    -   *Technical Detail:* This initial script implemented raw SCPI buffer operations (`trace:data?`, `assert_trigger`).
+    -   *Commit:* `f45dba8` - "Create GPIB_TEST.py". Established the first connectivity test for instrument communication.
 
-**Keithley 6517B Electrometer Suite**
+### Phase -1: Inception & Feasibility (June 2022)
+*Concept, Learning, and Prototyping*
+-   **June 10, 2022:** **First Tangible Prototype.** Initial proof-of-concept scripts for I-V characterization and shared ("Emailing code for IV.pdf"). This marked the validation of the Python-based control approach before formal development began.
+-   **June 09, 2022:** **Environment Setup & Skill Acquisition.** Due to the air-gapped nature of the laboratory computers, the initial Python environment was established by manually downloading dependencies (PyVISA, NumPy, Matplotlib) and installing them offline. This phase involved guided learning of instrument control concepts (e.g., "Python in Origin", SCPI basics) alongside specific training provided by the PI.
 
--   **New Measurement Capability:** Developed a comprehensive front-end and back-end for high-resistance R vs. T measurements.
--   **New Measurement Capability:** Integrated a linearized driver for the temperature controller to enable pyroelectric current measurements as a function of temperature.
--   **Enhancement:** Overhauled the user interface for the I-V measurement module.
+-   **Collaboration Note:** The project's realization was significantly aided by colleagues (from UGC-DAE CSR,Mumbai) who assisted in rectifying technical issues and developing the necessary cryogenic probes and hardware fixtures required for measurements.
+-   **June 2022:** **Project Ideation.** Dr. Sudip Mukherjee (Principal Investigator) proposed the initiative for laboratory automation from manual methods to Python-based control. He provided critical roadmap materials, including reference videos, instrument handling protocols, and conceptual designs for the GUI layouts and hardware integration.
 
-**Keithley 2400 SourceMeter Suite**
-
--   **New Measurement Capability:** Created a new, dedicated front-end and back-end for V vs. T measurements, including a linearized driver for the Lake Shore 350.
--   **Enhancement:** Simplified the communication protocol for the I-V measurement back-end and updated the corresponding front-end.
-
-**General Enhancements**
-
--   **GPIB:** Deployed a new interface for testing instrument connections.
--   **PICA:** Improved the graphical user interface.
-*   **New K2400/2182 I-V GUI:**
-    *   Created `IV_Sweep_Keithley_2182_GUI_V1.py`, a new professional GUI for I-V sweeps using the Keithley 2400 and 2182.
-    *   Features a modern UI consistent with other PICA modules, live plotting, and robust instrument control.
-*   **New K2400/2182 V-T GUI:**
-    *   Created `VT_Sweep_Keithley_2400_2182_GUI_V1.py`, a dedicated GUI for V-T measurements.
-    *   Provides a user-friendly interface for the existing V-T measurement script, including temperature control and live data visualization.
