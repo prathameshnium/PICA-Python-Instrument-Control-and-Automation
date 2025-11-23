@@ -1,11 +1,5 @@
-
-![PICA CI](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/python-app.yml/badge.svg)
-[![codecov](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation/branch/main/graph/badge.svg)](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-brightgreen.svg)](https://www.python.org/downloads/)
-
 <p align="center">
-  <img src="./assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
+  <img src="assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
 </p>
 
 <h1 align="center">PICA: Python-based Instrument Control and Automation</h1>
@@ -14,14 +8,44 @@
   <strong>A modular software suite for automating laboratory measurements in physics research.</strong>
 </p>
 
-<p align="center">
+<div align="center">
+
+  <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/python-app.yml">
+    <img src="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/python-app.yml/badge.svg" alt="CI Build Status">
+  </a>
+  <a href="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation">
+    <img src="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation/branch/main/graph/badge.svg" alt="Code Coverage">
+  </a>
+  <a href="https://www.python.org/downloads/">
+    <img src="https://img.shields.io/badge/Python-3.10+-brightgreen.svg?logo=python&logoColor=white" alt="Python Version">
+  </a>
+
+  <br>
+
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
+  </a>
+  <a href="docs/User_Manual.md">
+    <img src="https://img.shields.io/badge/Docs-User_Manual-blue.svg?logo=markdown" alt="Documentation">
+  </a>
+  <a href="CONTRIBUTING.md">
+    <img src="https://img.shields.io/badge/Contributing-Guidelines-orange.svg" alt="Contributing Guidelines">
+  </a>
+  <a href="CODE_OF_CONDUCT.md">
+    <img src="https://img.shields.io/badge/Code%20of%20Conduct-Contributor%20Covenant-ff69b4.svg" alt="Code of Conduct">
+  </a>
+
+  <br>
+
   <img src="https://img.shields.io/badge/Inception-June%202022-orange?style=flat-square&logo=calendar" alt="Inception Date">
   <img src="https://img.shields.io/badge/Project%20Age-3%2B%20Years-blueviolet?style=flat-square" alt="Project Age">
-  <img src="https://img.shields.io/tokei/lines/github/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square" alt="Lines of Code">
-  <img src="https://img.shields.io/github/repo-size/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=blue" alt="Repo Size">
+  <img src="https://img.shields.io/github/commit-activity/y/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=success" alt="Commits (Yearly)">
+  <img src="https://img.shields.io/github/languages/code-size/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=blue" alt="Code Size">
   <img src="https://img.shields.io/github/last-commit/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=critical" alt="Last Commit">
-</p>
 
+</div>
+
+---
 ---
 
 ## Overview
@@ -206,12 +230,11 @@ If you use this software in your research, please cite it using the following Bi
 Alternatively, refer to the `CITATION.cff` file in the root directory.
 
 -----
-
 ## Authors & Acknowledgments
 
-\<p align="center"\>
-\<img src="./assets/LOGO/UGC\_DAE\_CSR\_NBG.jpeg" alt="UGC DAE CSR Logo" width="150"\>
-\</p\>
+<p align="center">
+  <img src="assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
+</p>
 
   - **Lead Developer:** **[Prathamesh Deshmukh](https://prathameshdeshmukh.site/)**
   - **Principal Investigator:** **[Dr. Sudip Mukherjee](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)**
