@@ -1,17 +1,34 @@
-#-------------------------------------------------------------------------------
-# Name:         GPIB Passthrough I-V 
-# Purpose:      Perform a software-timed I-V sweep by controlling a K2182
-#               through a K6221 acting as a GPIB-to-Serial bridge.
-#
-# Author:       Prathamesh Deshmukh
-# Created:      03/10/2025
-#
-# Version:      1.6 (Switched to Free-Running Fetch Mode)
-#
-# Description:  Modified the backend to put the K2182 into continuous
-#               measurement mode and use 'FETC?' to retrieve data. This is a
-#               more robust communication protocol to prevent timing errors.
-#-------------------------------------------------------------------------------
+"""
+Summary
+-------
+This script provides a graphical user interface (GUI) for performing current-voltage (I-V) sweeps
+using a Keithley 6221 Current Source and a Keithley 2182A Nanovoltmeter. The K6221 acts as a
+GPIB-to-serial bridge to control the K2182A, enabling precise, software-timed measurements.
+
+Description
+-----------
+The application allows users to define a linear or logarithmic current sweep, set compliance
+voltage, and configure timing parameters. It plots the resulting I-V curve and Resistance-Current
+curve in real-time. Data is saved to a CSV file for later analysis.
+
+The backend communication has been optimized to use the K2182A's continuous measurement
+("free-running") mode, with data retrieved via 'FETC?' commands. This approach provides a more
+robust and reliable data acquisition loop compared to trigger-based methods, minimizing the
+risk of timing errors or buffer overflows during the sweep.
+
+Features
+--------
+- Intuitive GUI for setting up and running I-V sweeps.
+- Real-time plotting of Voltage vs. Current and Resistance vs. Current.
+- Linear and logarithmic sweep modes.
+- Automatic scanning for connected GPIB instruments.
+- Data export to a timestamped `.dat` (CSV) file.
+- Packaged with utility launchers for data plotting and GPIB scanning.
+
+Author: Prathamesh Deshmukh
+Date: October 2025
+Version: 1.6
+"""
 
 import tkinter as tk
 from tkinter import ttk, Label, Entry, LabelFrame, Button, filedialog, messagebox, scrolledtext, Canvas
@@ -167,7 +184,7 @@ class Backend_Passthrough:
 class Passthrough_IV_GUI:
     PROGRAM_VERSION = "1.6"
     LOGO_SIZE = 110
-    LOGO_FILE_PATH = resource_path("../_assets/LOGO/UGC_DAE_CSR_NBG.jpeg") # Path to your logo image
+    LOGO_FILE_PATH = resource_path("../assets/LOGO/UGC_DAE_CSR_NBG.jpeg") # Path to your logo image
     CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'; CLR_TEXT_DARK = '#1A1A1A' # Base colors
     CLR_ACCENT_GOLD = '#FFC107'; CLR_ACCENT_GREEN = '#A7C957'; CLR_ACCENT_RED = '#E74C3C' # Accent colors
     CLR_CONSOLE_BG = '#1E2B38'; CLR_GRAPH_BG = '#FFFFFF' # Specific component colors
