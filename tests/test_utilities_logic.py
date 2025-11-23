@@ -1,7 +1,7 @@
 """
-tests/test_utilities_logic.py
-Tests the logic inside the Utilities folder (Plotters, Formatters)
-without needing a GUI or Hardware.
+Purpose: Logic checks for helper tools.
+
+What it does: Verifies that the LivePlotter correctly appends data to arrays and that formatting utilities define the correct fonts/styles.
 """
 import pytest
 from unittest.mock import MagicMock, patch

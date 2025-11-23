@@ -1,6 +1,7 @@
 """
-tests/test_gui_layouts.py
-Tests GUI instantiation by deeply patching the Matplotlib Figure class.
+Purpose: GUI instantiation stability.
+
+What it does: Attempts to build the GUI windows in memory. It uses a "Safe" mock for Matplotlib to prevent graphing errors from crashing the test, ensuring the layout logic is sound.
 """
 import pytest
 import os

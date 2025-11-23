@@ -49,6 +49,6 @@ jobs:
     # 6. Run Tests (The "Logic" Check)
     # We ignore the visual GUI rendering tests if they are too heavy, 
     # but since we mocked them, they should run fast!
-    - name: Test with pytest
+    - name: automated test
       run: |
         python -m pytest tests/

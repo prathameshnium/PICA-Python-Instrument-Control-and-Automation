@@ -1,3 +1,8 @@
+"""
+Purpose: End-to-end protocol verification.
+
+What it does: Simulates specific instrument responses (e.g., feeding fake temperature data like "10.0, 50.0" to the Lakeshore script) and verifies that the script sends the correct commands back (e.g., "HTRSET").
+"""
 import unittest
 
 import os

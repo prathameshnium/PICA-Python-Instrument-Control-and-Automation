@@ -1,8 +1,7 @@
 """
-tests/test_backends_logic.py
+Purpose: Structure verification for control scripts.
 
-This file tests the LOGIC of the backends without connecting to hardware.
-It is designed to handle Classes, Scripts with main(), or loose Procedural Scripts.
+What it does: Analyzes your backend files to determine if they are classes, procedural scripts, or functions, and attempts to run them in a "dry" mode to verify their logic structure.
 """
 
 import pytest

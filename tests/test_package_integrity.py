@@ -1,3 +1,8 @@
+"""
+Purpose: Basic code health checks.
+
+What it does: Compiles every Python file to catch syntax errors and checks if every file has a top-level docstring (a JOSS requirement).
+"""
 import pytest
 import os
 import ast
@@ -71,10 +76,11 @@ def test_has_docstring(file_path):
         tree = ast.parse(source)
         # Check if the first node in the file is a Docstring (Expression -> Constant string)
         if not (tree.body and isinstance(tree.body[0], ast.Expr) and 
-                isinstance(tree.body[0].value, (ast.Str, ast.Constant))):            
+                isinstance(tree.body[0].value, (ast.Str, ast.Constant))):
+            
             # This is a 'Warning' - it won't break code, but it fails JOSS standards
             warnings.warn(f"JOSS STANDARD MISSING: {os.path.basename(file_path)} has no top-level docstring. "
-                          "Please add a description at the top of the file using '\"\"\" ... \"\"\"'.", UserWarning)
+                          "Please add a description at the top of the file using '""" ... """'.", UserWarning)
             
     except SyntaxError:
         # Syntax errors are handled by the other test

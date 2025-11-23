@@ -1,3 +1,8 @@
+"""
+Purpose: Module-level GUI smoke tests.
+
+What it does: Dynamically finds all files ending in _GUI.py, imports them, and tries to initialize their main class to ensure they don't crash on startup.
+"""
 import pytest
 import os
 import sys
