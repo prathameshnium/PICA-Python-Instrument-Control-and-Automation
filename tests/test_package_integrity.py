@@ -51,8 +51,8 @@ def test_syntax_compilation(file_path):
         # compile() is stricter than ast.parse(); it generates bytecode
         compile(source, filename=file_path, mode='exec')
     except SyntaxError as e:
-        pytest.fail(f"CRITICAL SYNTAX ERROR in {os.path.basename(file_path)}:\n"
-                    f"Line {e.lineno}: {e.msg}\n"
+        pytest.fail(f"CRITICAL SYNTAX ERROR in {os.path.basename(file_path)}:\n" 
+                    f"Line {e.lineno}: {e.msg}\n" 
                     f"Code: {e.text}")
     except Exception as e:
         pytest.fail(f"File {os.path.basename(file_path)} could not be compiled. Error: {e}")
@@ -74,13 +74,8 @@ def test_has_docstring(file_path):
     
     try:
         tree = ast.parse(source)
-        # Check if the first node in the file is a Docstring (Expression -> Constant string)
-        if not (tree.body and isinstance(tree.body[0], ast.Expr) and 
-                isinstance(tree.body[0].value, (ast.Str, ast.Constant))):
-            
-            # This is a 'Warning' - it won't break code, but it fails JOSS standards
-            warnings.warn(f"JOSS STANDARD MISSING: {os.path.basename(file_path)} has no top-level docstring. "
-                          "Please add a description at the top of the file using '""" ... """'.", UserWarning)
+        if not (tree.body and isinstance(tree.body[0], ast.Expr) and isinstance(tree.body[0].value, (ast.Str, ast.Constant))):
+            warnings.warn(f"JOSS STANDARD MISSING: {os.path.basename(file_path)} has no top-level docstring.", UserWarning)
             
     except SyntaxError:
         # Syntax errors are handled by the other test

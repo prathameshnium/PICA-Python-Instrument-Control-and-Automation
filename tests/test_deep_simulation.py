@@ -99,10 +99,10 @@ class TestDeepSimulation(unittest.TestCase):
 
         with patch('pymeasure.instruments.keithley.Keithley2400') as MockInst:
             spy = MockInst.return_value
-            with patch('builtins.input', side_effect=['100', '10', 'test_file']),
-                    patch('pandas.DataFrame.to_csv'):
+            with patch('builtins.input', side_effect=['100', '10', 'test_file']), \
+                 patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
-                    "Keithley_2400.Backends.IV_K2400_Loop_Backend_v10", {})
+                    "Keithley_2400.Instrument_Control.IV_K2400_Loop_Instrument_Control_v10", {})
                 spy.enable_source.assert_called()
 
     @pytest.mark.usefixtures("mock_tkinter")
@@ -111,13 +111,13 @@ class TestDeepSimulation(unittest.TestCase):
         mock_sleep.start()
         self.addCleanup(mock_sleep.stop)
         with patch('pyvisa.ResourceManager') as MockRM:
-            spy = MockRM.return_value.open_resource.return_value # noqa
+            spy = MockRM.return_value.open_resource.return_value
             spy.query.side_effect = [
                 "LSCI,MODEL350,0,0"] + ["10.0", "300.0"] * 20
 
-            with patch('builtins.input', side_effect=['10', '300', '10', '350']),
-                    patch('builtins.open', mock_open()):
-                self.run_module_safely("Lakeshore_350_340.Backends.T_Control_L350_Simple_Backend_v10", {})
+            with patch('builtins.input', side_effect=['10', '300', '10', '350']), \
+                 patch('builtins.open', mock_open()):
+                self.run_module_safely("Lakeshore_350_340.Instrument_Control.T_Control_L350_Simple_Instrument_Control_v10", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_03_k6517b_pyro_backend(self):
@@ -129,13 +129,13 @@ class TestDeepSimulation(unittest.TestCase):
             spy.current = 1.23e-9
             with patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
-                    "Keithley_6517B.Pyroelectricity.Backends."
-                    "Current_K6517B_Simple_Backend_v10", {})
+                    "Keithley_6517B.Pyroelectricity.Instrument_Control."
+                    "Current_K6517B_Simple_Instrument_Control_v10", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_04_lcr_keysight_backend(self):
         with patch('pymeasure.instruments.agilent.AgilentE4980'), \
-                patch('pyvisa.ResourceManager') as MockRM:
+             patch('pyvisa.ResourceManager') as MockRM:
             mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(5))
             mock_sleep.start()
             self.addCleanup(mock_sleep.stop)
@@ -144,7 +144,7 @@ class TestDeepSimulation(unittest.TestCase):
             visa_spy.query.return_value = "0.5"
             with patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
-                    "LCR_Keysight_E4980A.Backends.CV_KE4980A_Simple_Backend_v10", {})
+                    "LCR_Keysight_E4980A.Instrument_Control.CV_KE4980A_Simple_Instrument_Control_v10", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_05_delta_simple(self):
@@ -154,9 +154,9 @@ class TestDeepSimulation(unittest.TestCase):
         with patch('pyvisa.ResourceManager') as MockRM:
             MockRM.return_value.open_resource.return_value
             inputs = ['0', '1e-5', '1e-6', 'test_file', 'y', 'y']
-            with patch('builtins.input', side_effect=inputs),
-                    patch('pandas.DataFrame.to_csv'):
-                self.run_module_safely("Delta_mode_Keithley_6221_2182.Backends.Delta_K6221_K2182_Simple_v7", {})
+            with patch('builtins.input', side_effect=inputs), \
+                 patch('pandas.DataFrame.to_csv'):
+                self.run_module_safely("Delta_mode_Keithley_6221_2182.Instrument_Control.Delta_K6221_K2182_Simple_v7", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_06_delta_sensing(self):
@@ -168,11 +168,11 @@ class TestDeepSimulation(unittest.TestCase):
             inst = MockRM.return_value.open_resource.return_value
             inst.query.return_value = "+1.23E-5"
             inputs = ['10', '300', '10', 'test_file', 'y']
-            with patch('builtins.input', side_effect=inputs),
-                    patch('pandas.DataFrame.to_csv'):
+            with patch('builtins.input', side_effect=inputs), \
+                 patch('pandas.DataFrame.to_csv'):
                 try:
                     self.run_module_safely(
-                        "Delta_mode_Keithley_6221_2182.Backends.Delta_K6221_K2182_L350_T_Sensing_Backend_v1", {})
+                        "Delta_mode_Keithley_6221_2182.Instrument_Control.Delta_K6221_K2182_L350_T_Sensing_Instrument_Control_v1", {})
                 except ModuleNotFoundError:
                     print("   [SKIP] Module not found, skipping.")
 
@@ -190,7 +190,7 @@ class TestDeepSimulation(unittest.TestCase):
                 "1.23,4.56"                   # SNAP? 3,4
             ]
             self.run_module_safely(
-                "Lock_in_amplifier.BasicTest_S830_Backend_v1", {})
+                "Lock_in_amplifier.BasicTest_S830_Instrument_Control_v1", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_08_combined_2400_2182(self):
@@ -211,10 +211,10 @@ class TestDeepSimulation(unittest.TestCase):
             # Add extra inputs just in case the script asks for more than
             # expected
             inputs = ['10', '1', 'test_file', 'y', 'y', 'y', 'y']
-            with patch('builtins.input', side_effect=inputs),
-                    patch('pandas.DataFrame.to_csv'):
+            with patch('builtins.input', side_effect=inputs), \
+                 patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
-                    "Keithley_2400_Keithley_2182.Backends.IV_K2400_K2182_Backend_v1", {})
+                    "Keithley_2400_Keithley_2182.Instrument_Control.IV_K2400_K2182_Instrument_Control_v1", {})
             mock_pymeasure.stop()
 
     @pytest.mark.usefixtures("mock_tkinter")
@@ -226,7 +226,7 @@ class TestDeepSimulation(unittest.TestCase):
             inputs = ['100', '10', 'y']
             with patch('builtins.input', side_effect=inputs):
                 self.run_module_safely(
-                    "Keithley_6517B.Pyroelectricity.Backends.Poling_K6517B_Backend_v10", {})
+                    "Keithley_6517B.Pyroelectricity.Instrument_Control.Poling_K6517B_Instrument_Control_v10", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_10_high_resistance(self):
@@ -242,9 +242,9 @@ class TestDeepSimulation(unittest.TestCase):
             # Correct inputs for: start_v, stop_v, steps, delay, filename
             inputs = ['-10', '10', '5', '0.1', 'test_file']
 
-            with patch('builtins.input', side_effect=inputs),
-                    patch('builtins.open', mock_open()):
-                self.run_module_safely("Keithley_6517B.High_Resistance.Backends.IV_K6517B_Simple_Backend_v10", {}) # noqa
+            with patch('builtins.input', side_effect=inputs), \
+                 patch('builtins.open', mock_open()):
+                self.run_module_safely("Keithley_6517B.High_Resistance.Instrument_Control.IV_K6517B_Simple_Instrument_Control_v10", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_11_gpib_scanner(self):
@@ -266,9 +266,9 @@ class TestDeepSimulation(unittest.TestCase):
             self.addCleanup(mock_sleep.stop)
 
             rm = MockRM.return_value
-            rm.list_.resources.return_value = ('GPIB0::1::INSTR',)
+            rm.list_resources.return_value = ('GPIB0::1::INSTR',)
             self.run_module_safely(
-                "Utilities.GPIB_Interface_Rescue_Simple_Backened_v2_", {})
+                "Utilities.GPIB_Interface_Rescue_Simple_Instrument_Control_v2_", {})
 
 
 if __name__ == '__main__':
