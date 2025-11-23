@@ -1,20 +1,28 @@
 
+![PICA CI](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/python-app.yml/badge.svg)
+[![codecov](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation/branch/main/graph/badge.svg)](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-brightgreen.svg)](https://www.python.org/downloads/)
 
-[](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation)
-[](https://opensource.org/licenses/MIT)
-[](https://www.python.org/downloads/)
+<p align="center">
+  <img src="./assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
+</p>
 
-\<p align="center"\>
-\<img src="./assets/LOGO/PICA\_LOGO\_NBG.png" alt="PICA Logo" width="150"/\>
-\</p\>
+<h1 align="center">PICA: Python-based Instrument Control and Automation</h1>
 
-\<h1 align="center"\>PICA: Python-based Instrument Control and Automation\</h1\>
+<p align="center">
+  <strong>A modular software suite for automating laboratory measurements in physics research.</strong>
+</p>
 
-\<p align="center"\>
-\<strong\>A modular software suite for automating laboratory measurements in physics research.\</strong\>
-\</p\>
+<p align="center">
+  <img src="https://img.shields.io/badge/Inception-June%202022-orange?style=flat-square&logo=calendar" alt="Inception Date">
+  <img src="https://img.shields.io/badge/Project%20Age-3%2B%20Years-blueviolet?style=flat-square" alt="Project Age">
+  <img src="https://img.shields.io/tokei/lines/github/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square" alt="Lines of Code">
+  <img src="https://img.shields.io/github/repo-size/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=blue" alt="Repo Size">
+  <img src="https://img.shields.io/github/last-commit/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=critical" alt="Last Commit">
+</p>
 
------
+---
 
 ## Overview
 
@@ -28,54 +36,43 @@ A key architectural feature is the use of **isolated process execution** for eac
 >
 > Recently, significant updates were made to the codebase to integrate **Automated CI/CD Testing** (simulations and logic checks). While these automated tests pass successfully, the refactoring required for them may have introduced subtle timing or hardware-specific regressions. **A comprehensive round of manual validation on the physical instruments is currently underway** to ensure full operational stability.
 
------
-<p align="center">
-  <!-- Project Inception Date (Static) -->
-  <img src="https://img.shields.io/badge/Inception-June%202022-orange?style=flat-square&logo=calendar" alt="Inception Date">
-  <!-- Total Lines of Code (Dynamic via Tokei) -->
-  <img src="https://tokei.rs/b1/github/prathameshnium/PICA-Python-Instrument-Control-and-Automation?category=code" alt="Lines of Code">
-  <!-- Repository Size -->
-  <img src="https://img.shields.io/github/repo-size/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=blue" alt="Repo Size">
-  <!-- Last Commit -->
-  <img src="https://img.shields.io/github/last-commit/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=critical" alt="Last Commit">
-</p>
------
+---
 
 ## Table of Contents
 
-  - [Architecture](https://www.google.com/search?q=%23architecture)
-  - [Core Features](https://www.google.com/search?q=%23core-features)
-  - [Instrument Specifications](https://www.google.com/search?q=%23instrument-specifications)
-  - [Getting Started](https://www.google.com/search?q=%23-getting-started)
-  - [Running Tests](https://www.google.com/search?q=%23-running-tests)
-  - [Project History & Evolution](https://www.google.com/search?q=%23project-history--evolution)
-  - [Resources & Documentation](https://www.google.com/search?q=%23-resources--documentation)
-  - [Citation](https://www.google.com/search?q=%23citation)
-  - [License](https://www.google.com/search?q=%23license)
-  - [Authors & Acknowledgments](https://www.google.com/search?q=%23authors--acknowledgments)
+- [Architecture](#architecture)
+- [Core Features](#core-features)
+- [Instrument Specifications](#instrument-specifications)
+- [Getting Started](#-getting-started)
+- [Running Tests](#-running-tests)
+- [Project History & Evolution](#project-history--evolution)
+- [Resources & Documentation](#-resources--documentation)
+- [Citation](#citation)
+- [License](#license)
+- [Authors & Acknowledgments](#authors--acknowledgments)
 
------
+---
 
 ## Architecture
 
 The core design philosophy of PICA is the separation of concerns, implemented through a distinct **GUI-Backend** architecture for each measurement module.
 
-  - **GUI (Frontend):** Each measurement has a dedicated GUI script (e.g., `IV_K2400_GUI_v5.py`) built with `Tkinter`. It is responsible for user interaction, parameter input, and real-time data visualization using `Matplotlib`.
-  - **Backend:** The instrument control logic is encapsulated in separate classes (e.g., `Keithley2400_Backend`). This layer handles all `PyVISA` communication, SCPI command parsing, and data retrieval.
-  - **Process Isolation:** When a measurement starts, the GUI launches the backend logic in a separate, isolated process. This prevents a hardware timeout or script error from crashing the entire application suite.
-  - **Inter-Process Communication:** The frontend and backend communicate via thread-safe `multiprocessing.Queues`, allowing for high-speed data transfer without race conditions.
+- **GUI (Frontend):** Each measurement has a dedicated GUI script (e.g., `IV_K2400_GUI_v5.py`) built with `Tkinter`. It is responsible for user interaction, parameter input, and real-time data visualization using `Matplotlib`.
+- **Backend:** The instrument control logic is encapsulated in separate classes (e.g., `Keithley2400_Backend`). This layer handles all `PyVISA` communication, SCPI command parsing, and data retrieval.
+- **Process Isolation:** When a measurement starts, the GUI launches the backend logic in a separate, isolated process. This prevents a hardware timeout or script error from crashing the entire application suite.
+- **Inter-Process Communication:** The frontend and backend communicate via thread-safe `multiprocessing.Queues`, allowing for high-speed data transfer without race conditions.
 
------
+---
 
 ## Core Features
 
-  - **Centralized Control Dashboard:** A comprehensive GUI for launching all measurement modules.
-  - **Integrated VISA Instrument Scanner:** An embedded utility for identifying and troubleshooting GPIB/VISA connections via the NI-VISA backend.
-  - **Modular Design:** Each experimental setup is a self-contained module, making the codebase easy to extend.
-  - **Embedded Documentation:** In-application viewer for technical manuals and project guides.
-  - **System Console Log:** A real-time logging system that provides status updates and error diagnostics.
+- **Centralized Control Dashboard:** A comprehensive GUI for launching all measurement modules.
+- **Integrated VISA Instrument Scanner:** An embedded utility for identifying and troubleshooting GPIB/VISA connections via the NI-VISA backend.
+- **Modular Design:** Each experimental setup is a self-contained module, making the codebase easy to extend.
+- **Embedded Documentation:** In-application viewer for technical manuals and project guides.
+- **System Console Log:** A real-time logging system that provides status updates and error diagnostics.
 
------
+---
 
 ## Instrument Specifications
 
@@ -90,7 +87,7 @@ This software controls a facility designed for characterizing the full spectrum 
 | **3. Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** | Detecting subtle phase transitions. | $1 \mu\Omega$ to $100 M\Omega$ |
 | **4. High-Resistance** | **Keithley 6517B** Electrometer | Dielectrics, polymers, & ceramics. | $1 \Omega$ to $10^{16} \Omega$ |
 
------
+---
 
 ## 🚀 Getting Started
 
@@ -102,19 +99,17 @@ This software controls a facility designed for characterizing the full spectrum 
 ### Installation Steps
 
 1.  **Clone the Repository**
-
     ```bash
-    git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
+    git clone [https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git)
     cd PICA-Python-Instrument-Control-and-Automation
     ```
 
 2.  **Create a Virtual Environment**
     Recommended to verify dependencies and avoid conflicts.
-
     ```bash
     # Create the virtual environment
     python -m venv venv
-
+    
     # Activate (Windows)
     venv\Scripts\activate
     # Activate (macOS/Linux)
@@ -122,18 +117,16 @@ This software controls a facility designed for characterizing the full spectrum 
     ```
 
 3.  **Install Dependencies**
-
     ```bash
     pip install -r requirements.txt
     ```
 
 4.  **Launch the Application**
-
     ```bash
     python PICA_v6.py
     ```
 
------
+---
 
 ## 🧪 Running Tests
 
@@ -142,25 +135,22 @@ This repository includes a robust test suite using `pytest`. It mocks hardware i
 To run the tests locally:
 
 1.  **Install Test Dependencies:**
-
     ```bash
     pip install pytest pytest-cov flake8
     ```
 
 2.  **Run the Test Suite:**
-
     ```bash
     python -m pytest
     ```
 
 3.  **Generate Coverage Report:**
-
     ```bash
     # Generates an HTML report in the htmlcov/ directory
     python -m pytest --cov=. --cov-report=html
     ```
 
------
+---
 
 ## Project History & Evolution
 
@@ -169,38 +159,33 @@ PICA has evolved from a collection of offline utility scripts into a modular sof
 > **📜 Project Lore:** For a detailed chronological log of the project's development history, including the offline prototyping phase and specific version changelogs, please refer to [`docs/Change_Logs.md`](docs/Change_Logs.md).
 
 ### **v15.0 (Current): JOSS Submission & Professionalization**
-
 *Status: Released November 2025*
 Focus shifted to code quality, stability, and documentation standards.
-
-  * **CI/CD Integration:** Implementation of automated testing pipelines using GitHub Actions.
-  * **Refactoring:** Comprehensive cleanup of the codebase to meet JOSS standards.
-  * **Validation:** Currently undergoing rigorous physical validation to ensure the refactoring process retained hardware-specific timing integrity.
+* **CI/CD Integration:** Implementation of automated testing pipelines using GitHub Actions.
+* **Refactoring:** Comprehensive cleanup of the codebase to meet JOSS standards.
+* **Validation:** Currently undergoing rigorous physical validation to ensure the refactoring process retained hardware-specific timing integrity.
 
 ### **v13.0 – v14.1 (2025): Architecture Modernization**
-
 *Status: Major Release*
 This period marked the transition to the **GUI-Backend isolated architecture**.
-
-  * **Multiprocessing:** Implementation of `multiprocessing` to separate UI threads from instrument control loops.
-  * **UI Standardization:** Adoption of a unified dark-themed UI across all measurement modules.
-  * **New Modes:** Added "Passive Sensing" modes for R-T measurements and integrated plotting utilities.
+* **Multiprocessing:** Implementation of `multiprocessing` to separate UI threads from instrument control loops.
+* **UI Standardization:** Adoption of a unified dark-themed UI across all measurement modules.
+* **New Modes:** Added "Passive Sensing" modes for R-T measurements and integrated plotting utilities.
 
 ### **2022 – 2024: Inception & Prototyping**
+* **2024 (Migration):** The codebase was migrated from offline laboratory systems to GitHub. The structure was reorganized from loose scripts into categorized instrument measurement modules (Keithley/Lakeshore).
+* **2022 (Origins):** Development began in an air-gapped laboratory environment. Initial work focused on proof-of-concept scripts using `PyVISA` to replace manual data logging.
+    * *Project Concept:* Proposed by Dr. Sudip Mukherjee to automate characterization workflows.
+    * *Early Prototypes:* Built iteratively alongside hardware upgrades and cryogenic probe development at UGC-DAE CSR.
 
-  * **2024 (Migration):** The codebase was migrated from offline laboratory System to GitHub. The structure was reorganized from loose scripts into categorized instrument measuremenet modules  (Keithley/Lakeshore).
-  * **2022 (Origins):** Development began in an air-gapped laboratory environment. Initial work focused on proof-of-concept scripts using `PyVISA` to replace manual data logging.
-      * *Project Concept:* Proposed by Dr. Sudip Mukherjee to automate characterization workflows.
-      * *Early Prototypes:* Built iteratively alongside hardware upgrades and cryogenic probe development at UGC-DAE CSR.
-
------
+---
 
 ## 📚 Resources & Documentation
 
-  * **User Manual:** Detailed setup and troubleshooting guides are available in [docs/User\_Manual.md](https://www.google.com/search?q=docs/User_Manual.md).
-  * **Instrument Manuals:** Original PDF manuals for the supported hardware are located in `assets/Manuals/`.
+* **User Manual:** Detailed setup and troubleshooting guides are available in [docs/User_Manual.md](docs/User_Manual.md).
+* **Instrument Manuals:** Original PDF manuals for the supported hardware are located in `assets/Manuals/`.
 
------
+---
 
 ## Citation
 
@@ -214,9 +199,9 @@ If you use this software in your research, please cite it using the following Bi
   year         = 2023,
   publisher    = {GitHub},
   version      = {15.0.0},
-  url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
+  url          = {[https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation)}
 }
-```
+````
 
 Alternatively, refer to the `CITATION.cff` file in the root directory.
 
@@ -229,7 +214,7 @@ Alternatively, refer to the `CITATION.cff` file in the root directory.
 \</p\>
 
   - **Lead Developer:** **[Prathamesh Deshmukh](https://prathameshdeshmukh.site/)**
-  - **Principal Investigator:** **[Dr. Sudip Mukherjee](https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)**
+  - **Principal Investigator:** **[Dr. Sudip Mukherjee](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)**
   - **Affiliation:** *[UGC-DAE Consortium for Scientific Research, Mumbai Centre](https://www.csr.res.in/Mumbai_Centre)*
 
 **Funding:**
@@ -240,9 +225,3 @@ Financial support for this work was provided under SERB-CRG project grant No. CR
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
-
------
-
-### **Next Step**
-
-Would you like me to generate the **`paper.md`** draft required for the JOSS submission, based on this updated README and your project history?
