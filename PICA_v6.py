@@ -1,4 +1,4 @@
-# BUILD VERSION: 13.3 (Active/Passive R-T Launchers)
+# BUILD VERSION: 6.0
 '''
 ===============================================================================
  PROGRAM:      PICA Launcher
@@ -19,6 +19,7 @@
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
 
  VERSION HISTORY:
+   6.0 (23/11/2025): Updated launcher version to 6.0 and fixed Change_Logs.md path.
    13.3 (05/10/2025): Added distinct launchers for Active and Passive R-T modes.
    13.2 (05/10/2025): Integrated new K2400/2182 frontend GUIs.
    13.1 (04/10/2025): Resolved duplicate script paths and validated Delta Mode scripts.
@@ -94,7 +95,7 @@ def resource_path(relative_path):
 
 class PICALauncherApp:
 
-    PROGRAM_VERSION = "5.3"
+    PROGRAM_VERSION = "6.0"
     CLR_BG_DARK = '#2B3D4F'
     CLR_FRAME_BG = '#3A506B'
     CLR_ACCENT_GOLD = '#FFC107'
@@ -106,7 +107,7 @@ class PICALauncherApp:
     FONT_SIZE_BASE = 12
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 10, 'bold')
-    FONT_SUBTITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
+    FONT_SUBTITLE = ('Segoe UI', FONT_SIZE_BASE + 1, 'bold')  # Reduced size from +2
     FONT_INSTITUTE = (
         'Segoe UI',
         FONT_SIZE_BASE + 6,
@@ -119,7 +120,8 @@ class PICALauncherApp:
     MANUAL_FILE = resource_path("assets/Manuals")
     README_FILE = resource_path("README.md")
     LICENSE_FILE = resource_path("LICENSE")
-    UPDATES_FILE = resource_path("Change_Logs.md")
+    UPDATES_FILE = resource_path("docs/Change_Logs.md")
+    REPO_URL = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tree/main"
     LOGO_SIZE = 140
 
     SCRIPT_PATHS = {
@@ -401,6 +403,17 @@ class PICALauncherApp:
         license_label.pack()
         license_label.bind("<Button-1>", lambda e: self.open_license())
 
+        # --- Repo Link (Clickable) ---
+        repo_font = font.Font(family='Segoe UI', size=9, underline=True)
+        repo_label = ttk.Label(
+            bottom_frame,
+            text="View Project on GitHub",
+            font=repo_font,
+            foreground=self.CLR_LINK,
+            cursor="hand2")
+        repo_label.pack(pady=(5, 0))
+        repo_label.bind("<Button-1>", self.open_repo)
+
         console_container = ttk.LabelFrame(
             info_frame, text="Console", padding=(5, 10))
         console_container.pack(side='bottom', fill='x', pady=(20, 0))
@@ -501,7 +514,7 @@ class PICALauncherApp:
         right_col = ttk.Frame(scrollable_frame)
         right_col.grid(
             row=0, column=1, sticky='new', padx=(
-                5, 10), pady=(
+                5, 5), pady=(
                 0, 15))
 
         # --- Left Column Suites ---
@@ -614,7 +627,7 @@ class PICALauncherApp:
                 left_header,
                 text=instruments_text,
                 font=self.FONT_INFO,
-                wraplength=250,
+                wraplength=200,
                 justify='left')
             instrument_label.pack(
                 side='left', anchor='w', padx=(
@@ -750,6 +763,10 @@ class PICALauncherApp:
 
     def open_license(self):
         self._show_file_in_window(self.LICENSE_FILE, "MIT License")
+
+    def open_repo(self, event=None):
+        import webbrowser
+        webbrowser.open(self.REPO_URL)
 
     def launch_script(self, script_path):
         self.log(f"Launching: {os.path.basename(script_path)}")
