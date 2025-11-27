@@ -55,10 +55,11 @@ class TestDeepSimulation(unittest.TestCase):
             spy_inst = MockK2400.return_value
             spy_inst.voltage = 1.23
 
-            # Inputs: Current=100uA, Step=10uA, File=test_output
-            fake_inputs = ['100', '10', 'test_output']
+            # The script now uses argparse, so we patch sys.argv
+            # Corresponds to: Current=100uA, Step=10uA, File=test_output
+            test_args = ['-m', '--filename', 'test_output', '--range', '100', '--step', '10']
 
-            with patch('builtins.input', side_effect=fake_inputs), \
+            with patch('sys.argv', test_args), \
                     patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
                     "Keithley_2400.Instrument_Control.IV_K2400_Loop_Instrument_Control_v10")
