@@ -24,12 +24,20 @@ import matplotlib.pyplot as plt
 from time import sleep
 from pymeasure.instruments.keithley import Keithley2400
 import pandas as pd
+import argparse
 
 
 def main():
     """
     Main function to run the I-V sweep measurement.
     """
+    parser = argparse.ArgumentParser(description="Keithley 2400 I-V Sweep")
+    parser.add_argument("--filename", required=True, help="Name of the file to save the data.")
+    parser.add_argument("--path", help="Path to save the data file. Defaults to a 'data' folder.")
+    parser.add_argument("--range", type=float, required=True, help="Highest value of Current (in micro A).")
+    parser.add_argument("--step", type=float, required=True, help="The step size (in micro A).")
+    args = parser.parse_args()
+
     # object creation ----------------------------------
     keithley_2400 = Keithley2400("GPIB::4")
     keithley_2400.disable_buffer()
@@ -40,9 +48,9 @@ def main():
     Volt = []
 
     # user input ----------------------------------
-    I_range = float(input("Enter value of I: (in micro A, Highest value of Current from -I to I) "))
-    I_step = float(input("Enter steps: (The step size, in micro A) "))
-    filename = input("Enter filename:")
+    I_range = args.range
+    I_step = args.step
+    filename = args.filename
 
     print("Current (A) || Voltage(V) ")
 
@@ -73,8 +81,15 @@ def main():
     print("\n--- Measurement Complete ---")
     print(df)
 
-    save_path = os.path.join(
-        'C:/Users/Instrument-DSL/Desktop/LED_IV/', f"{filename}.txt")
+    if args.path:
+        save_dir = args.path
+    else:
+        save_dir = "data"
+    
+    if not os.path.isdir(save_dir):
+        os.makedirs(save_dir)
+
+    save_path = os.path.join(save_dir, f"{filename}.txt")
     df.to_csv(save_path, index=None, sep='\t', mode='w')
     print(f"Data saved to {save_path}")
 
@@ -90,3 +105,6 @@ def main():
     plt.legend()
     plt.grid(True)
     plt.show()
+
+if __name__ == "__main__":
+    main()
