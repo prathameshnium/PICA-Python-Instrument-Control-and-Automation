@@ -99,7 +99,9 @@ class TestDeepSimulation(unittest.TestCase):
 
         with patch('pymeasure.instruments.keithley.Keithley2400') as MockInst:
             spy = MockInst.return_value
-            with patch('builtins.input', side_effect=['100', '10', 'test_file']), \
+            # The script now uses argparse, so we patch sys.argv
+            test_args = ['-m', '--filename', 'test_file', '--range', '100', '--step', '10']
+            with patch('sys.argv', test_args), \
                  patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
                     "Keithley_2400.Instrument_Control.IV_K2400_Loop_Instrument_Control_v10", {})
