@@ -845,6 +845,26 @@ class PlotterApp:
         finally:
             # Always restart the watcher after an append operation.
             self.start_file_watcher()
+    def _read_new_lines(self, filepath, file_info):
+        """Reads new lines from a file since the last known size."""
+        try:
+            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                f.seek(file_info.get('size', 0))
+                new_text = f.read()
+            
+            if not new_text:
+                return []
+
+            # Process lines, stripping whitespace and filtering comments/empty lines
+            new_lines = [
+                line for line in new_text.strip().splitlines()
+                if line.strip() and not line.strip().startswith('#')
+            ]
+            return new_lines
+        except Exception as e:
+            self.log(f"Error reading new lines from file: {e}")
+            return []
+
     def _parse_and_append_new_data(self, new_lines, file_info):
         """Parses new lines and appends them to the data cache."""
         if not new_lines:
