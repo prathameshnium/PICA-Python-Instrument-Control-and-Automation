@@ -1,5 +1,5 @@
 """
-Module: GPIB_Instrument_Scanner_GUI_v4.py
+Module: GPIB_Instrument_Scanner_GUI.py
 Purpose: GUI module for GPIB Instrument Scanner GUI v4.
 """
 

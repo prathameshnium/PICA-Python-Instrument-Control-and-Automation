@@ -65,7 +65,7 @@ Before running the software, ensure your physical connections are established:
     ```
 3.  **Launch PICA:**
     ```bash
-    python PICA_v6.py
+    python PICA.py
     ```
 
 ### Connection Testing
@@ -154,7 +154,7 @@ Reference for the project directory layout.
 
 ```text
 PICA (Root Directory)/
-    PICA_v6.py              <-- Main Entry Point
+    PICA.py              <-- Main Entry Point
     README.md
     requirements.txt
     assets/                 <-- Images, Logos, Manuals

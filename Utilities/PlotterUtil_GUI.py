@@ -1,5 +1,5 @@
 """
-Module: PlotterUtil_GUI_v3.py
+Module: PlotterUtil_GUI.py
 Purpose: GUI module for PlotterUtil GUI v3.
 """
 

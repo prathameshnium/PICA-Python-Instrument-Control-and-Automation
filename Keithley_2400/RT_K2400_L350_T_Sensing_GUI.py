@@ -1,12 +1,12 @@
 """
-Module: RT_K2400_L350_T_Control_GUI_v3.py
-Purpose: GUI module for RT K2400 L350 T Control GUI v3.
+Module: RT_K2400_L350_T_Sensing_GUI.py
+Purpose: GUI module for RT K2400 L350 T Sensing GUI v4.
 """
 
 # -------------------------------------------------------------------------------
-# Name:         Active R-T Measurement for Keithley 2400
-# Purpose:      Provide a GUI for automated R-T sweeps using a K2400 and LS350
-#               with active temperature control (stabilize then ramp).
+# Name:         Passive R-T  for Keithley 2400
+# Purpose:      Provide a GUI for passively logging R-T data using a K2400
+#               and LS350. This version does not control temperature.
 # Author:       Prathamesh Deshmukh (Adapted from 6517B & 2400 scripts)
 # Created:      05/10/2025
 # Version:      1.0
@@ -19,6 +19,8 @@ import os
 import sys
 import time
 import traceback
+import runpy
+from multiprocessing import Process
 from datetime import datetime
 import csv
 from matplotlib.figure import Figure
@@ -50,61 +52,13 @@ except Exception:
     # executables)
     pass
 
-import runpy
-from multiprocessing import Process
-
-
-def run_script_process(script_path):
-    """
-    Wrapper function to execute a script using runpy in its own directory.
-    This becomes the target for the new, isolated process.
-    """
-    try:
-        os.chdir(os.path.dirname(script_path))
-        runpy.run_path(script_path, run_name="__main__")
-    except Exception as e:
-        print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
-        print(e)
-        print("-------------------------")
-
-
-def launch_plotter_utility():
-    """Finds and launches the plotter utility script in a new process."""
-    try:
-        # Assumes the plotter is in a standard location relative to this script
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        plotter_path = os.path.join(
-            script_dir,
-            "..",
-            "Utilities",
-            "PlotterUtil_GUI_v3.py")
-        if not os.path.exists(plotter_path):
-            messagebox.showerror(
-                "File Not Found",
-                f"Plotter utility not found at expected path:\n{plotter_path}")
-            return
-        Process(target=run_script_process, args=(plotter_path,)).start()
-    except Exception as e:
-        messagebox.showerror("Launch Error",
-                             f"Failed to launch Plotter Utility: {e}")
-
-
-def launch_gpib_scanner():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    scanner_path = os.path.join(
-        script_dir,
-        "..",
-        "Utilities",
-        "GPIB_Instrument_Scanner_GUI_v4.py")
-    Process(target=run_script_process, args=(scanner_path,)).start()
-
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
 # -------------------------------------------------------------------------------
 
 
-class RT_Backend_Active:
-    """ Manages communication with the K2400 and Lakeshore 350. """
+class RT_Backend_Passive:
+    """ Manages communication for passive monitoring. """
 
     def __init__(self):
         self.k2400, self.lakeshore = None, None
@@ -127,11 +81,11 @@ class RT_Backend_Active:
             f"  Lakeshore Connected: {self.lakeshore.query('*IDN?').strip()}")
 
     def configure_instruments(self, current_ma, compliance_v):
-        # Lakeshore setup
+        # Lakeshore setup for passive monitoring
         self.lakeshore.write('*RST')
         time.sleep(0.5)
         self.lakeshore.write('*CLS')
-        self.lakeshore.write('HTRSET 1,1,2,0,1')  # 25Ω heater, 1A max
+        self.lakeshore.write('RANGE 1,0')  # Ensure heater is OFF
 
         # Keithley 2400 setup
         self.k2400.reset()
@@ -142,26 +96,6 @@ class RT_Backend_Active:
         self.k2400.source_current = current_ma * 1e-3
         self.k2400.measure_voltage()
         self.k2400.enable_source()
-
-    def get_temperature(self):
-        if not self.lakeshore:
-            return 0.0
-        return float(self.lakeshore.query('KRDG? A').strip())
-
-    def set_heater_range(self, output, heater_range):
-        range_map = {'off': 0, 'low': 2, 'medium': 4, 'high': 5}
-        range_code = range_map.get(heater_range.lower())
-        if range_code is None:
-            raise ValueError("Invalid heater range.")
-        self.lakeshore.write(f'RANGE {output},{range_code}')
-
-    def set_setpoint(self, output, temperature_k):
-        self.lakeshore.write(f'SETP {output},{temperature_k}')
-
-    def start_ramp(self, end_temp, rate_k_min):
-        self.lakeshore.write(f'SETP 1,{end_temp}')
-        self.lakeshore.write(f'RAMP 1,1,{rate_k_min}')
-        self.lakeshore.write('RANGE 1,5')  # Heater High for ramp
 
     def get_measurement(self):
         voltage = self.k2400.voltage
@@ -187,63 +121,110 @@ class RT_Backend_Active:
 # -------------------------------------------------------------------------------
 
 
-class RT_GUI_Active:
-    PROGRAM_VERSION = "3.1"  # UI/UX Update
-    CLR_BG = '#2B3D4F'
+def run_script_process(script_path):
+    """
+    Wrapper function to execute a script using runpy in its own directory.
+    This becomes the target for the new, isolated process.
+    """
+    try:
+        os.chdir(os.path.dirname(script_path))
+        runpy.run_path(script_path, run_name="__main__")
+    except Exception as e:
+        print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
+        print(e)
+        print("-------------------------")
+
+
+def launch_plotter_utility():
+    """Finds and launches the plotter utility script in a new process."""
+    try:
+        # Assumes the plotter is in a standard location relative to this script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        plotter_path = os.path.join(
+            script_dir,
+            "..",
+            "Utilities",
+            "PlotterUtil_GUI.py")
+        if not os.path.exists(plotter_path):
+            messagebox.showerror(
+                "File Not Found",
+                f"Plotter utility not found at expected path:\n{plotter_path}")
+            return
+        Process(target=run_script_process, args=(plotter_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error",
+                             f"Failed to launch Plotter Utility: {e}")
+
+
+def launch_gpib_scanner():
+    """Finds and launches the GPIB scanner utility in a new process."""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        scanner_path = os.path.join(
+            script_dir,
+            "..",
+            "Utilities",
+            "GPIB_Instrument_Scanner_GUI.py")
+        Process(target=run_script_process, args=(scanner_path,)).start()
+    except Exception as e:
+        messagebox.showerror(
+            "Launch Error",
+            f"Failed to launch GPIB Scanner: {e}")
+
+
+class RT_GUI_Passive:
+    PROGRAM_VERSION = "3.1"
+    CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
-    CLR_FG = '#EDF2F4'
-    CLR_FRAME_BG = '#3A506B'
-    CLR_INPUT_BG = '#4C566A'
-    CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE'
-    CLR_ACCENT_GOLD = '#FFC107'
-    CLR_CONSOLE_BG = '#1E2B38'
+    CLR_FG_LIGHT = '#EDF2F4'
     CLR_TEXT_DARK = '#1A1A1A'
-    FONT_BASE = ('Segoe UI', 11)
-    FONT_TITLE = ('Segoe UI', 13, 'bold')
+    CLR_ACCENT_GOLD = '#FFC107'
+    CLR_ACCENT_GREEN = '#A7C957'
+    CLR_ACCENT_RED = '#E74C3C'
+    CLR_CONSOLE_BG = '#1E2B38'
+    CLR_GRAPH_BG = '#FFFFFF'
+    FONT_SIZE_BASE = 11
+    FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
+    FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
+    FONT_CONSOLE = ('Consolas', 10)
 
     def __init__(self, root):
         self.root = root
-        self.root.title(
-            f"K2400 & L350: R-T Sweep (T-Control) v{self.PROGRAM_VERSION}")
+        self.root.title("K2400 & L350: R-T (T-Sensing)")
         self.root.geometry("1600x950")
         self.root.minsize(1400, 800)
-        self.root.configure(bg=self.CLR_BG)
-        self.experiment_state = 'idle'
+        self.root.configure(bg=self.CLR_BG_DARK)
+        self.is_running = False
         self.logo_image = None
-        self.backend = RT_Backend_Active()
+        self.backend = RT_Backend_Passive()
         self.data_storage = {
             'temperature': [],
             'voltage': [],
             'resistance': []}
-        # --- NEW: Blitting optimization ---
-        self.plot_bg = None
-        self.is_resizing = False
-        self.resize_timer = None
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
-        self.root.bind('<Configure>', self._on_resize)
 
     def setup_styles(self):
         style = ttk.Style(self.root)
         style.theme_use('clam')
         style.configure(
             '.',
-            background=self.CLR_BG,
-            foreground=self.CLR_FG,
+            background=self.CLR_BG_DARK,
+            foreground=self.CLR_FG_LIGHT,
             font=self.FONT_BASE)
-        style.configure('TFrame', background=self.CLR_BG)
-        style.configure('TPanedWindow', background=self.CLR_BG)
+        style.configure('TFrame', background=self.CLR_BG_DARK)
+        style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure(
             'TLabel',
-            background=self.CLR_FRAME_BG,
-            foreground=self.CLR_FG)
+            background=self.CLR_HEADER,
+            foreground=self.CLR_FG_LIGHT)
         style.configure('Header.TLabel', background=self.CLR_HEADER)
         style.configure(
             'TEntry',
-            fieldbackground=self.CLR_INPUT_BG,
-            foreground=self.CLR_FG,
-            insertcolor=self.CLR_FG)
+            fieldbackground='#4C566A',
+            foreground=self.CLR_FG_LIGHT,
+            insertcolor=self.CLR_FG_LIGHT)
         style.configure(
             'TButton',
             font=self.FONT_BASE,
@@ -251,14 +232,11 @@ class RT_GUI_Active:
                 10,
                 9),
             foreground=self.CLR_ACCENT_GOLD,
-            background=self.CLR_HEADER,
-            borderwidth=0,
-            focusthickness=0,
-            focuscolor='none')
+            background=self.CLR_HEADER)
         style.map(
             'TButton', background=[
                 ('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[
-                ('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
+                ('active', self.CLR_BG_DARK), ('hover', self.CLR_BG_DARK)])
         style.configure(
             'Start.TButton',
             background=self.CLR_ACCENT_GREEN,
@@ -269,7 +247,7 @@ class RT_GUI_Active:
         style.configure(
             'Stop.TButton',
             background=self.CLR_ACCENT_RED,
-            foreground=self.CLR_FG)
+            foreground=self.CLR_FG_LIGHT)
         style.map(
             'Stop.TButton', background=[
                 ('active', '#D63C2A'), ('hover', '#D63C2A')])
@@ -277,38 +255,39 @@ class RT_GUI_Active:
         style.configure(
             'Browse.TButton',
             foreground=self.CLR_TEXT_DARK,
-            background=self.CLR_ACCENT_BLUE)
+            background='#8D99AE')
         style.map(
             'Browse.TButton', background=[
                 ('active', '#7C899E'), ('hover', '#7C899E')])
         style.configure(
             'TLabelframe',
-            background=self.CLR_FRAME_BG,
-            bordercolor=self.CLR_ACCENT_BLUE)
+            background=self.CLR_HEADER,
+            bordercolor='#8D99AE')
+        # --- NEW: Style for Comboboxes to make them more visible ---
+        style.configure(
+            'TCombobox',
+            fieldbackground='#4C566A',
+            foreground=self.CLR_FG_LIGHT,
+            arrowcolor=self.CLR_FG_LIGHT,
+            selectbackground='#8D99AE',
+            selectforeground=self.CLR_FG_LIGHT)
         style.configure(
             'TLabelframe.Label',
-            background=self.CLR_FRAME_BG,
-            foreground=self.CLR_FG,
+            background=self.CLR_HEADER,
+            foreground=self.CLR_FG_LIGHT,
             font=self.FONT_TITLE)
-        # --- NEW: Style for Comboboxes to make them more visible ---
-        style.configure('TCombobox',
-                        fieldbackground=self.CLR_INPUT_BG,
-                        foreground=self.CLR_FG,
-                        arrowcolor=self.CLR_FG,
-                        selectbackground=self.CLR_ACCENT_BLUE,
-                        selectforeground=self.CLR_FG)
         mpl.rcParams.update({'font.family': 'Segoe UI',
-                             'font.size': 11,
-                             'axes.titlesize': 15,
-                             'axes.labelsize': 13})
+                             'font.size': self.FONT_SIZE_BASE,
+                             'axes.titlesize': self.FONT_SIZE_BASE + 4,
+                             'axes.labelsize': self.FONT_SIZE_BASE + 2})
 
     def create_widgets(self):
+        font_title_main = ('Segoe UI', self.FONT_SIZE_BASE + 4, 'bold')
         header = tk.Frame(self.root, bg=self.CLR_HEADER)
         header.pack(side='top', fill='x')
-        font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
         ttk.Label(
             header,
-            text="K2400 & L350: R-T Sweep (T-Control)",
+            text="K2400 & L350: R-T (T-Sensing)",
             style='Header.TLabel',
             font=font_title_main,
             foreground=self.CLR_ACCENT_GOLD).pack(
@@ -337,49 +316,49 @@ class RT_GUI_Active:
 
         left_panel_container = ttk.Frame(main_pane)
         main_pane.add(left_panel_container, weight=0)
-        right_panel = ttk.Frame(main_pane, padding=5)
-        main_pane.add(right_panel, weight=1)
 
         # --- Make the left panel scrollable ---
         canvas = Canvas(
             left_panel_container,
-            bg=self.CLR_BG,
+            bg=self.CLR_BG_DARK,
             highlightthickness=0)
         scrollbar = ttk.Scrollbar(
             left_panel_container,
             orient="vertical",
             command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas, padding=10)
-        scrollable_frame.bind(
-            "<Configure>", lambda e: canvas.configure(
+        # This is now the scrollable_frame
+        left_panel = ttk.Frame(canvas, padding=5)
+        left_panel.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
                 scrollregion=canvas.bbox("all")))
-        canvas.create_window(
-            (0, 0), window=scrollable_frame, anchor="nw", width=500)
+        canvas.create_window((0, 0), window=left_panel, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        self._populate_left_panel(scrollable_frame)
-        self._populate_right_panel(right_panel)
+        right_panel = self._create_right_panel(main_pane)
+        main_pane.add(right_panel, weight=1)
+        self._populate_left_panel(left_panel)
 
     def _populate_left_panel(self, panel):
         panel.grid_columnconfigure(0, weight=1)
-        self._create_info_panel(panel).pack(
-            fill='x', expand=True, pady=(0, 10))
-        self._create_params_panel(panel).pack(fill='x', expand=True, pady=10)
-        self._create_control_panel(panel).pack(fill='x', expand=True, pady=10)
-        self._create_console_panel(panel).pack(
-            fill='both', expand=True, pady=(10, 0))
+        panel.grid_rowconfigure(3, weight=1)
+        self._create_info_panel(panel, 0)
+        self._create_params_panel(panel, 1)
+        self._create_control_panel(panel, 2)
+        self._create_console_panel(panel, 3)
 
-    def _create_info_panel(self, parent):
+    def _create_info_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Information')
+        frame.grid(row=grid_row, column=0, sticky='new', pady=5)
         frame.grid_columnconfigure(1, weight=1)
         LOGO_SIZE = 110
         logo_canvas = Canvas(
             frame,
             width=LOGO_SIZE,
             height=LOGO_SIZE,
-            bg=self.CLR_FRAME_BG,
+            bg=self.CLR_HEADER,
             highlightthickness=0)
         logo_canvas.grid(row=0, column=0, rowspan=3, padx=10, pady=10)
         try:  # Use a more robust relative path
@@ -399,12 +378,12 @@ class RT_GUI_Active:
         except Exception as e:
             self.log(f"Warning: Could not load logo. {e}")
 
-        institute_font = ('Segoe UI', self.FONT_BASE[1], 'bold')
+        institute_font = ('Segoe UI', self.FONT_BASE[1] + 6, 'bold')
         ttk.Label(
             frame,
             text="UGC-DAE Consortium for Scientific Research",
             font=institute_font,
-            background=self.CLR_FRAME_BG).grid(
+            background=self.CLR_HEADER).grid(
             row=0,
             column=1,
             padx=10,
@@ -416,7 +395,7 @@ class RT_GUI_Active:
             frame,
             text="Mumbai Centre",
             font=institute_font,
-            background=self.CLR_FRAME_BG).grid(
+            background=self.CLR_HEADER).grid(
             row=1,
             column=1,
             padx=10,
@@ -432,14 +411,14 @@ class RT_GUI_Active:
             sticky='ew',
             padx=10,
             pady=8)
-        details_text = ("Program Name: R vs. T (T-Control)\n"
+        details_text = ("Program Name: R vs. T (T-Sensing)\n"
                         "Instruments: Keithley 2400, Lakeshore 350\n"
                         "Measurement Range: 100 µΩ to 200 MΩ")
         ttk.Label(
             frame,
             text=details_text,
             justify='left',
-            background=self.CLR_FRAME_BG).grid(
+            background=self.CLR_HEADER).grid(
             row=3,
             column=0,
             columnspan=2,
@@ -448,70 +427,59 @@ class RT_GUI_Active:
                 0,
                 10),
             sticky='w')
-        return frame
 
-    def _populate_right_panel(self, panel):
-        container = ttk.LabelFrame(panel, text='Live R-T Curve')
+    def _create_right_panel(self, parent):
+        panel = ttk.Frame(parent, padding=5)
+        container = ttk.LabelFrame(
+            panel, text='Live R-T Curve', style='TLabelframe')
         container.pack(fill='both', expand=True)
-        self.figure = Figure(
-            dpi=100,
-            facecolor='white',
-            constrained_layout=True)
-
-        # --- MODIFIED: Create two subplots sharing the x-axis ---
-        self.ax_main, self.ax_sub = self.figure.subplots(2, 1, sharex=True)
-
-        # Top plot: Resistance vs. Temperature
+        self.figure = Figure(dpi=100, facecolor='white')
+        self.ax_main = self.figure.add_subplot(111)
         self.line_main, = self.ax_main.plot(
-            [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-', animated=True)
-        self.ax_main.set_title("Live R-T and V-T Curves", fontweight='bold')
+            [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
+        self.ax_main.set_title("Waiting for logging...", fontweight='bold')
+        self.ax_main.set_xlabel("Temperature (K)")
         self.ax_main.set_ylabel("Resistance (Ω)")
-        self.ax_main.set_yscale('log')
         self.ax_main.grid(True, linestyle='--', alpha=0.6)
-
-        # Bottom plot: Voltage vs. Temperature
-        self.line_sub, = self.ax_sub.plot(
-            [], [], color=self.CLR_ACCENT_BLUE, marker='o', markersize=4, linestyle='-', animated=True)
-        self.ax_sub.set_xlabel("Temperature (K)")
-        self.ax_sub.set_ylabel("Voltage (V)")
-        self.ax_sub.grid(True, linestyle='--', alpha=0.6)
-
+        self.figure.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.figure, container)
         self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
-        self.canvas.mpl_connect('draw_event', self._on_draw)
+        return panel
 
-    def _create_params_panel(self, parent):
+    def _create_params_panel(self, parent, grid_row):
         container = ttk.Frame(parent)
-        container.grid_columnconfigure(0, weight=1)
+        container.grid(row=grid_row, column=0, sticky='new', pady=5)
+        container.grid_columnconfigure(1, weight=1)
         self.entries = {}
 
-        temp_frame = ttk.LabelFrame(container, text='Temperature Control')
-        temp_frame.pack(fill='x', expand=True, pady=(0, 10))
-        temp_frame.grid_columnconfigure(1, weight=1)
-        self._create_entry(temp_frame, "Start Temp (K)", "300", 0)
-        self._create_entry(temp_frame, "End Temp (K)", "310", 1)
-        self._create_entry(temp_frame, "Ramp Rate (K/min)", "2", 2)
-        self._create_entry(temp_frame, "Safety Cutoff (K)", "320", 3)
+        # --- Measurement Settings ---
+        settings_frame = ttk.LabelFrame(container, text='Measurement Settings')
+        settings_frame.grid(
+            row=0,
+            column=0,
+            columnspan=2,
+            sticky='nsew',
+            pady=(
+                0,
+                5))
+        settings_frame.grid_columnconfigure(1, weight=1)
+        self._create_entry(settings_frame, "Source Current (mA)", "1", 0)
+        self._create_entry(settings_frame, "Compliance (V)", "10", 1)
+        self._create_entry(settings_frame, "Logging Delay (s)", "1", 2)
 
-        iv_frame = ttk.LabelFrame(container, text='Measurement Settings')
-        iv_frame.pack(fill='x', expand=True, pady=(0, 10))
-        iv_frame.grid_columnconfigure(1, weight=1)
-        self._create_entry(iv_frame, "Source Current (mA)", "1", 0)
-        self._create_entry(iv_frame, "Compliance (V)", "10", 1)
-        self._create_entry(iv_frame, "Logging Delay (s)", "1", 2)
-
+        # --- VISA Address Settings ---
         visa_frame = ttk.LabelFrame(container, text='Instrument Addresses')
-        visa_frame.pack(fill='x', expand=True)
+        visa_frame.grid(row=1, column=0, columnspan=2, sticky='nsew')
         visa_frame.grid_columnconfigure(1, weight=1)
         self.ls_cb = self._create_combobox(visa_frame, "Lakeshore VISA", 0)
         self.k2400_cb = self._create_combobox(
             visa_frame, "Keithley 2400 VISA", 1)
-        return container
 
-    def _create_control_panel(self, parent):
-        frame = ttk.LabelFrame(parent, text='File & Control')
-        frame.grid_columnconfigure(0, weight=1)
-        self._create_entry(frame, "Sample Name", "Sample_RT_Active", 0)
+    def _create_control_panel(self, parent, grid_row):
+        frame = ttk.LabelFrame(parent, text='File Control')
+        frame.grid(row=grid_row, column=0, sticky='new', pady=5)
+        frame.grid_columnconfigure(1, weight=1)
+        self._create_entry(frame, "Sample Name", "Sample_RT_Passive", 0)
         self._create_entry(frame, "Save Location", "", 1, browse=True)
         button_frame = ttk.Frame(frame)
         button_frame.grid(row=2, column=0, columnspan=4, sticky='ew', pady=5)
@@ -537,15 +505,19 @@ class RT_GUI_Active:
             column=2,
             sticky='ew',
             padx=5)
-        return frame
 
-    def _create_console_panel(self, parent):
+    def _create_console_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Console')
+        frame.grid(row=grid_row, column=0, sticky='nsew', pady=5)
         self.console = scrolledtext.ScrolledText(
-            frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG, font=(
-                'Consolas', 10), wrap='word', borderwidth=0)
+            frame,
+            state='disabled',
+            bg=self.CLR_CONSOLE_BG,
+            fg=self.CLR_FG_LIGHT,
+            font=self.FONT_CONSOLE,
+            wrap='word',
+            borderwidth=0)
         self.console.pack(fill='both', expand=True, padx=5, pady=5)
-        return frame
 
     def log(self, message):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -564,10 +536,11 @@ class RT_GUI_Active:
                 self.params['ls_visa'])
             self.backend.configure_instruments(
                 self.params['current_ma'], self.params['compliance_v'])
-            self.log("All instruments connected and configured.")
+            self.log(
+                "All instruments connected and configured for passive logging.")
 
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{self.params['name']}_{ts}_RT_Active.csv"
+            filename = f"{self.params['name']}_{ts}_RT_Passive.csv"
             self.data_filepath = os.path.join(
                 self.params['save_path'], filename)
             with open(self.data_filepath, 'w', newline='') as f:
@@ -576,150 +549,57 @@ class RT_GUI_Active:
                                 "Resistance (Ohm)", "Elapsed Time (s)"])
 
             self.set_ui_state(running=True)
-            self.experiment_state = 'stabilizing'
             for key in self.data_storage:
                 self.data_storage[key].clear()
-            # --- MODIFIED: Plot setup for blitting ---
             self.line_main.set_data([], [])
             self.ax_main.set_title(f"R-T Curve: {self.params['name']}")
-            self.ax_main.set_yscale('log')
-            self.ax_main.relim()
-            self.ax_main.autoscale_view()
-            self.canvas.draw()  # Full draw to prepare background
-            self.plot_bg = self.canvas.copy_from_bbox(
-                self.ax_main.bbox)  # Cache background
-            # Set line to animated for blitting
-            self.line_main.set_animated(True)
-
-            self.log(
-                f"Starting stabilization at {self.params['start_temp']} K...")
+            self.canvas.draw()
+            self.log("Starting passive logging...")
+            self.start_time = time.time()
             self.root.after(100, self._experiment_loop)
-
         except Exception as e:
             self.log(f"ERROR: {traceback.format_exc()}")
             messagebox.showerror("Start Failed", f"{e}")
             self.backend.shutdown()
 
     def stop_experiment(self, reason=""):
-        if self.experiment_state == 'idle':
+        if not self.is_running:
             return
         self.log(
             f"Stopping... {reason}" if reason else "Stopping by user request.")
-        self.experiment_state = 'idle'
+        self.is_running = False
         self.backend.shutdown()
         self.set_ui_state(running=False)
-        # --- MODIFIED: Disable animation for final draw (both plots) ---
-        self.line_main.set_animated(False)
-        self.line_sub.set_animated(False)
-        self.plot_bg = None
-        self.ax_main.set_title("Experiment stopped.")
+        self.ax_main.set_title("Logging stopped.")
         self.canvas.draw()
         if reason:
             messagebox.showinfo("Experiment Finished", f"Reason: {reason}")
 
-    # --- NON-BLOCKING HEATER LOGIC (from 6517B scripts) ---
-    def _stabilization_loop(self):
-        if self.experiment_state != 'stabilizing':
-            return
-        try:
-            current_temp = self.backend.get_temperature()
-            start_temp = self.params['start_temp']
-
-            if current_temp > start_temp + 0.2:
-                self.log(
-                    f"Cooling... Current: {current_temp:.4f} K > Target: {start_temp} K")
-                self.backend.set_heater_range(1, 'off')
-            else:
-                self.log(
-                    f"Heating... Current: {current_temp:.4f} K <= Target: {start_temp} K")
-                self.backend.set_heater_range(1, 'medium')
-                self.backend.set_setpoint(1, start_temp)
-
-            if abs(current_temp - start_temp) < 0.1:
-                self.log(
-                    f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
-                self.experiment_state = 'ramping_setup'
-                # Transition to next state
-                self.root.after(5000, self._experiment_loop)
-            else:
-                # Continue stabilizing
-                self.root.after(2000, self._stabilization_loop)
-        except Exception as e:
-            self.log(f"ERROR during stabilization: {e}")
-            self.stop_experiment("Stabilization Error")
-
     def _experiment_loop(self):
-        if self.experiment_state == 'idle':
+        if not self.is_running:
             return
         try:
-            if self.experiment_state == 'stabilizing':
-                self._stabilization_loop()
-                return  # Let the after() calls manage the flow
+            temp, voltage = self.backend.get_measurement()
+            resistance = voltage / \
+                (self.params['current_ma'] * 1e-3) if self.params['current_ma'] != 0 else float('inf')
+            elapsed = time.time() - self.start_time
+            self.log(f"T: {temp:.3f} K | R: {resistance:.4e} Ω")
 
-            elif self.experiment_state == 'ramping_setup':
-                self.backend.start_ramp(
-                    self.params['end_temp'], self.params['rate'])
-                self.log(f"Ramp started towards {self.params['end_temp']} K.")
-                self.experiment_state = 'ramping'
-                self.start_time = time.time()
-                # Transition to measurement
-                self.root.after(100, self._experiment_loop)
-                return
+            self.data_storage['temperature'].append(temp)
+            self.data_storage['voltage'].append(voltage)
+            self.data_storage['resistance'].append(resistance)
+            with open(self.data_filepath, 'a', newline='') as f:
+                csv.writer(f).writerow(
+                    [f"{temp:.4f}", f"{voltage:.6e}", f"{resistance:.6e}", f"{elapsed:.2f}"])
+            self.line_main.set_data(
+                self.data_storage['temperature'],
+                self.data_storage['resistance'])
+            self.ax_main.relim()
+            self.ax_main.autoscale_view()
+            self.canvas.draw()
 
-            elif self.experiment_state == 'ramping':
-                temp, voltage = self.backend.get_measurement()
-                resistance = voltage / \
-                    (self.params['current_ma'] * 1e-3) if self.params['current_ma'] != 0 else float('inf')
-                elapsed = time.time() - self.start_time
-                self.log(f"T: {temp:.3f} K | R: {resistance:.4e} Ω")
-
-                self.data_storage['temperature'].append(temp)
-                self.data_storage['voltage'].append(voltage)
-                self.data_storage['resistance'].append(resistance)
-                with open(self.data_filepath, 'a', newline='') as f:
-                    csv.writer(f).writerow(
-                        [f"{temp:.4f}", f"{voltage:.6e}", f"{resistance:.6e}", f"{elapsed:.2f}"])
-
-                # --- MODIFIED: Use blitting for efficient plotting ---
-                if self.plot_bg:
-                    # Restore entire figure background
-                    self.canvas.restore_region(self.plot_bg)
-                    # Update data for both lines
-                    self.line_main.set_data(
-                        self.data_storage['temperature'],
-                        self.data_storage['resistance'])
-                    self.line_sub.set_data(
-                        self.data_storage['temperature'],
-                        self.data_storage['voltage'])
-                    # Autoscale and draw artists
-                    self.ax_main.relim()
-                    self.ax_main.autoscale_view()
-                    self.ax_sub.relim()
-                    self.ax_sub.autoscale_view()
-                    self.ax_main.draw_artist(self.line_main)
-                    self.ax_sub.draw_artist(self.line_sub)
-                    # Blit the entire figure
-                    self.canvas.blit(self.figure.bbox)
-                    self.canvas.flush_events()
-                else:  # Fallback to full redraw if blitting isn't ready
-                    self.line_main.set_data(
-                        self.data_storage['temperature'],
-                        self.data_storage['resistance'])
-                    self.line_sub.set_data(
-                        self.data_storage['temperature'],
-                        self.data_storage['voltage'])
-                    self.canvas.draw_idle()
-
-                # Check end conditions
-                if temp >= self.params['cutoff']:
-                    self.stop_experiment(
-                        f"Safety cutoff reached at {temp:.2f} K.")
-                elif (self.params['rate'] > 0 and temp >= self.params['end_temp']) or \
-                     (self.params['rate'] < 0 and temp <= self.params['end_temp']):
-                    self.stop_experiment("End temperature reached.")
-                else:
-                    self.root.after(
-                        int(self.params['delay_s'] * 1000), self._experiment_loop)
+            self.root.after(
+                int(self.params['delay_s'] * 1000), self._experiment_loop)
 
         except Exception as e:
             self.log(f"CRITICAL ERROR: {traceback.format_exc()}")
@@ -731,14 +611,6 @@ class RT_GUI_Active:
             params = {
                 'name': self.entries["Sample Name"].get(),
                 'save_path': self.entries["Save Location"].get(),
-                'start_temp': float(
-                    self.entries["Start Temp (K)"].get()),
-                'end_temp': float(
-                    self.entries["End Temp (K)"].get()),
-                'rate': float(
-                    self.entries["Ramp Rate (K/min)"].get()),
-                'cutoff': float(
-                    self.entries["Safety Cutoff (K)"].get()),
                 'ls_visa': self.ls_cb.get(),
                 'current_ma': float(
                     self.entries["Source Current (mA)"].get()),
@@ -747,22 +619,14 @@ class RT_GUI_Active:
                 'delay_s': float(
                     self.entries["Logging Delay (s)"].get()),
                 'k2400_visa': self.k2400_cb.get()}
-            if not all([p for k, p in params.items()
-                       if k not in ['rate', 'cutoff']]):
-                raise ValueError("A required field is empty.")
-            if params['rate'] > 0 and not (
-                    params['start_temp'] < params['end_temp'] < params['cutoff']):
-                raise ValueError(
-                    "For heating, temperatures must be in order: start < end < cutoff.")
-            if params['rate'] < 0 and not (
-                    params['start_temp'] > params['end_temp'] > params['cutoff']):
-                raise ValueError(
-                    "For cooling, temperatures must be in order: start > end > cutoff.")
+            if not all(params.values()):
+                raise ValueError("All fields must be filled.")
             return params
         except Exception as e:
             raise ValueError(f"Invalid parameter input: {e}")
 
     def set_ui_state(self, running: bool):
+        self.is_running = running
         state = 'disabled' if running else 'normal'
         self.start_button.config(state=state)
         for w in self.entries.values():
@@ -781,11 +645,12 @@ class RT_GUI_Active:
             self.log(f"Found: {resources}")
             self.ls_cb['values'] = resources
             self.k2400_cb['values'] = resources
+            default_k2400_addr = 'GPIB1::4::INSTR'
             for r in resources:
                 if 'GPIB1::15' in r:
                     self.ls_cb.set(r)
-                if 'GPIB1::4' in r:
-                    self.k2400_cb.set(r)
+            if default_k2400_addr in resources:
+                self.k2400_cb.set(default_k2400_addr)
         else:
             self.log("No VISA instruments found.")
 
@@ -819,16 +684,16 @@ class RT_GUI_Active:
             sticky='ew',
             padx=10,
             pady=3,
-            columnspan=3 if browse else 1)
+            columnspan=2)
         entry.insert(0, default_value)
         self.entries[label_text] = entry
-        if browse:  # Special handling for the save location entry
+        if browse:
             btn = ttk.Button(
                 parent,
                 text="Browse...",
                 style='Browse.TButton',
                 command=self._browse_file_location)
-            btn.grid(row=row, column=4, sticky='e', padx=(0, 10))
+            btn.grid(row=row, column=3, sticky='e', padx=(0, 10))
             entry.config(state='disabled')
 
     def _create_combobox(self, parent, label_text, row):
@@ -840,43 +705,16 @@ class RT_GUI_Active:
             sticky='w',
             padx=10,
             pady=3)
-        cb = ttk.Combobox(
-            parent,
-            font=self.FONT_BASE,
-            state='readonly',
-            style='TCombobox',
-            height=5)
+        cb = ttk.Combobox(parent, font=self.FONT_BASE, state='readonly')
         cb.grid(row=row, column=1, sticky='ew', padx=10, pady=3, columnspan=3)
         return cb
 
-    # --- NEW: Blitting and resize handling methods ---
-    def _on_draw(self, event):
-        """Callback for draw events to cache the plot background."""
-        if self.is_resizing:
-            return
-        self.plot_bg = self.canvas.copy_from_bbox(self.figure.bbox)
-
-    def _on_resize(self, event):
-        """Handle window resize events to trigger a full redraw."""
-        self.is_resizing = True
-        self.plot_bg = None  # Invalidate background
-        if self.resize_timer:
-            self.root.after_cancel(self.resize_timer)
-        self.resize_timer = self.root.after(300, self._finalize_resize)
-
-    def _finalize_resize(self):
-        """Finalize the resize by performing a full redraw."""
-        self.is_resizing = False
-        self.resize_timer = None
-        if self.canvas:
-            self.canvas.draw_idle()
-
     def _on_closing(self):
-        if self.experiment_state != 'idle' and messagebox.askyesno(
+        if self.is_running and messagebox.askyesno(
                 "Exit", "Experiment is running. Stop and exit?"):
             self.stop_experiment("Application closed by user.")
             self.root.destroy()
-        elif self.experiment_state == 'idle':
+        elif not self.is_running:
             self.root.destroy()
 
 
@@ -887,5 +725,5 @@ if __name__ == '__main__':
             "Pymeasure or PyVISA is not installed. Please run 'pip install pymeasure'.")
     else:
         root = tk.Tk()
-        app = RT_GUI_Active(root)
+        app = RT_GUI_Passive(root)
         root.mainloop()

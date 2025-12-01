@@ -1,5 +1,5 @@
 """
-Module: IV_K6517B_GUI_v11.py
+Module: IV_K6517B_GUI.py
 Purpose: GUI module for IV K6517B GUI v11.
 """
 
@@ -76,7 +76,7 @@ def launch_plotter_utility():
             "..",
             "..",
             "Utilities",
-            "PlotterUtil_GUI_v3.py")
+            "PlotterUtil_GUI.py")
         if not os.path.exists(plotter_path):
             messagebox.showerror(
                 "File Not Found",
@@ -98,7 +98,7 @@ def launch_gpib_scanner():
             "..",
             "..",
             "Utilities",
-            "GPIB_Instrument_Scanner_GUI_v4.py")
+            "GPIB_Instrument_Scanner_GUI.py")
         if not os.path.exists(scanner_path):
             messagebox.showerror(
                 "File Not Found",

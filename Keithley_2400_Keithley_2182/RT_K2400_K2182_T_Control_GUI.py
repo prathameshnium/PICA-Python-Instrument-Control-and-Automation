@@ -1,42 +1,37 @@
 """
-Module: IV_K2400_K2182_GUI_v3.py
-Purpose: GUI module for IV K2400 K2182 GUI v3.
+Module: RT_K2400_K2182_T_Control_GUI.py
+Purpose: GUI module for RT K2400 K2182 T Control GUI v3.
 """
 
 # -------------------------------------------------------------------------------
-# Name:         IV Sweep GUI for Keithley 2400/2182
-# Purpose:      Provide a professional GUI for performing I-V sweeps using a
-#               Keithley 2400 as a current source and a Keithley 2182
-#               as a nanovoltmeter.
+# Name:         V-T Sweep Active GUI for K2400/2182 & LS350
+# Purpose:      Provide a professional GUI for performing automated V vs T sweeps
+#               with active temperature control (stabilize then ramp).
 # Author:       Prathamesh Deshmukh
-# Created:      04/10/2025
-# Version:      1.0
+# Created:      05/10/2025
+# Version:      2.2 (JOSS Cleaned)
 # -------------------------------------------------------------------------------
 
 # --- GUI and Plotting Packages ---
 import tkinter as tk
-from tkinter import Canvas
-from tkinter import ttk, filedialog, messagebox, scrolledtext
-import numpy as np
+from tkinter import ttk, filedialog, messagebox, scrolledtext, Canvas
 import os
 import time
 import traceback
-import csv
-import threading
-import queue
 from datetime import datetime
+import csv
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
+import runpy
+from multiprocessing import Process
 
-# --- Pillow for Logo Image ---
 try:
     from PIL import Image, ImageTk
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
 
-# --- Instrument Control Packages ---
 try:
     import pyvisa
     from pymeasure.instruments.keithley import Keithley2400
@@ -44,9 +39,6 @@ try:
 except ImportError:
     pyvisa, Keithley2400 = None, None
     PYMEASURE_AVAILABLE = False
-
-import runpy
-from multiprocessing import Process
 
 
 def run_script_process(script_path):
@@ -65,80 +57,109 @@ def run_script_process(script_path):
 
 def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    plotter_path = os.path.join(
-        script_dir,
-        "..",
-        "Utilities",
-        "PlotterUtil_GUI_v3.py")
-    Process(target=run_script_process, args=(plotter_path,)).start()
+    try:
+        # Assumes the plotter is in a standard location relative to this script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        plotter_path = os.path.join(
+            script_dir,
+            "..",
+            "Utilities",
+            "PlotterUtil_GUI.py")
+        if not os.path.exists(plotter_path):
+            messagebox.showerror(
+                "File Not Found",
+                f"Plotter utility not found at expected path:\n{plotter_path}")
+            return
+        Process(target=run_script_process, args=(plotter_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error",
+                             f"Failed to launch Plotter Utility: {e}")
 
 
 def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
-    try:
-        # Assumes the scanner is in a standard location relative to this script
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        scanner_path = os.path.join(
-            script_dir,
-            "..",
-            "Utilities",
-            "GPIB_Instrument_Scanner_GUI_v4.py")
-        if not os.path.exists(scanner_path):
-            messagebox.showerror(
-                "File Not Found",
-                f"GPIB Scanner not found at expected path:\n{scanner_path}")
-            return
-        Process(target=run_script_process, args=(scanner_path,)).start()
-    except Exception as e:
-        messagebox.showerror(
-            "Launch Error",
-            f"Failed to launch GPIB Scanner: {e}")
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    scanner_path = os.path.join(
+        base_path,
+        "..",
+        "Utilities",
+        "GPIB_Instrument_Scanner_GUI.py")
+    Process(target=run_script_process, args=(scanner_path,)).start()
+
 
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
 # -------------------------------------------------------------------------------
-
-
-class IV_Backend:
-    """ Manages communication with the Keithley 2400 and 2182. """
+class VT_Backend:
+    """ Manages communication with the K2400, K2182, and Lakeshore 350. """
 
     def __init__(self):
-        self.k2400, self.k2182 = None, None
+        self.k2400 = None
+        self.k2182 = None
+        self.lakeshore = None
         if pyvisa:
             try:
                 self.rm = pyvisa.ResourceManager()
             except Exception as e:
                 print(f"Could not initialize VISA: {e}")
                 self.rm = None
+        else:
+            self.rm = None
 
-    def connect(self, k2400_visa, k2182_visa):
+    def connect(self, k2400_visa, k2182_visa, ls_visa):
         if not self.rm:
             raise ConnectionError("PyVISA is not available.")
         if not PYMEASURE_AVAILABLE:
             raise ImportError("Pymeasure is not available.")
+
         self.k2400 = Keithley2400(k2400_visa)
         print(f"  K2400 Connected: {self.k2400.id}")
+
         self.k2182 = self.rm.open_resource(k2182_visa)
         print(f"  K2182 Connected: {self.k2182.query('*IDN?').strip()}")
 
-    def configure_instruments(self, compliance_v, current_range_a):
-        # Keithley 2400 setup
+        self.lakeshore = self.rm.open_resource(ls_visa)
+        print(
+            f"  Lakeshore Connected: {self.lakeshore.query('*IDN?').strip()}")
+
+    def configure_instruments(self, current_ma, compliance_v):
+        # Lakeshore setup
+        self.lakeshore.write('*RST')
+        time.sleep(0.5)
+        self.lakeshore.write('*CLS')
+        self.lakeshore.write('HTRSET 1,1,2,0,1')  # 25Ω heater, 1A max
+
+        # Keithley 2400/2182 setup
         self.k2400.reset()
         self.k2400.apply_current()
-        self.k2400.source_current_range = current_range_a
+        self.k2400.source_current_range = abs(current_ma * 1e-3) * 1.05
         self.k2400.compliance_voltage = compliance_v
-        self.k2400.source_current = 0
+        self.k2400.source_current = current_ma * 1e-3
         self.k2400.enable_source()
-
-        # Keithley 2182 setup
         self.k2182.write("*rst; status:preset; *cls")
         time.sleep(1)
 
-    def measure_voltage_at_current(self, current_a, delay_s):
-        self.k2400.ramp_to_current(current_a, steps=10, pause=0.05)
-        time.sleep(delay_s)
+    def get_temperature(self):
+        if not self.lakeshore:
+            return 0.0
+        return float(self.lakeshore.query('KRDG? A').strip())
 
+    def set_heater_range(self, output, heater_range):
+        range_map = {'off': 0, 'low': 2, 'medium': 4, 'high': 5}
+        range_code = range_map.get(heater_range.lower())
+        if range_code is None:
+            raise ValueError("Invalid heater range.")
+        self.lakeshore.write(f'RANGE {output},{range_code}')
+
+    def set_setpoint(self, output, temperature_k):
+        self.lakeshore.write(f'SETP {output},{temperature_k}')
+
+    def start_ramp(self, end_temp, rate_k_min):
+        self.lakeshore.write(f'SETP 1,{end_temp}')
+        self.lakeshore.write(f'RAMP 1,1,{rate_k_min}')
+        self.lakeshore.write('RANGE 1,5')  # Heater High for ramp
+
+    def get_measurement(self):
         # K2182 measurement sequence
         self.k2182.write("status:measurement:enable 512; *sre 1")
         self.k2182.write("sample:count 2")
@@ -152,8 +173,11 @@ class IV_Backend:
         voltages = self.k2182.query_ascii_values("trace:data?")
         self.k2182.query("status:measurement?")
         self.k2182.write("trace:clear; feed:control next")
+        voltage = sum(voltages) / len(voltages) if voltages else float('nan')
 
-        return sum(voltages) / len(voltages) if voltages else float('nan')
+        # Lakeshore temperature reading
+        temperature = float(self.lakeshore.query('KRDG? A').strip())
+        return temperature, voltage
 
     def shutdown(self):
         if self.k2400:
@@ -165,24 +189,31 @@ class IV_Backend:
             try:
                 self.k2182.write("*rst")
                 self.k2182.close()
-            except BaseException:
+            except Exception:
                 pass
-        print("  Instruments shut down and disconnected.")  # type: ignore
+        if self.lakeshore:
+            try:
+                self.lakeshore.write("RANGE 1,0")
+                self.lakeshore.close()
+            except Exception:
+                pass
+        print("  Instruments shut down and disconnected.")
+
 
 # -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
-
-
-class IV_GUI:
-    PROGRAM_VERSION = "2.2"  # Performance and UI update
+class VT_GUI_Active:
+    PROGRAM_VERSION = "2.2"
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'
     CLR_FG_LIGHT = '#EDF2F4'
     CLR_FRAME_BG = '#3A506B'
     CLR_INPUT_BG = '#4C566A'
     CLR_TEXT_DARK = '#1A1A1A'
-    CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_BLUE = '#A7C957', '#E74C3C', '#8D99AE'
+    CLR_ACCENT_GREEN = '#A7C957'
+    CLR_ACCENT_RED = '#E74C3C'
+    CLR_ACCENT_BLUE = '#8D99AE'
     CLR_ACCENT_GOLD = '#FFC107'
     CLR_CONSOLE_BG = '#1E2B38'
     CLR_GRAPH_BG = '#FFFFFF'
@@ -192,16 +223,16 @@ class IV_GUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title(f"I-V Sweep (K2400 + K2182) v{self.PROGRAM_VERSION}")
+        self.root.title(
+            f"K2400/2182 & L350: R-T Sweep (T-Control) v{self.PROGRAM_VERSION}")
         self.root.geometry("1650x950")
         self.root.minsize(1400, 800)
         self.root.configure(bg=self.CLR_BG_DARK)
-        self.is_running = False
+        self.experiment_state = 'idle'
         self.logo_image = None
-        self.backend = IV_Backend()
-        self.data_storage = {'current': [], 'voltage': []}
+        self.backend = VT_Backend()
+        self.data_storage = {'temperature': [], 'voltage': []}
         self.setup_styles()
-        self.result_queue = queue.Queue()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
@@ -251,7 +282,6 @@ class IV_GUI:
         style.map(
             'Stop.TButton', background=[
                 ('active', '#D63C2A'), ('hover', '#D63C2A')])
-        # --- NEW: Style for the Browse button ---
         style.configure(
             'Browse.TButton',
             foreground=self.CLR_TEXT_DARK,
@@ -268,15 +298,20 @@ class IV_GUI:
             background=self.CLR_FRAME_BG,
             foreground=self.CLR_FG_LIGHT,
             font=self.FONT_TITLE)
-        mpl.rcParams.update({'font.family': 'Segoe UI',
-                             'font.size': 11,
-                             'axes.titlesize': 15,
-                             'axes.labelsize': 13})
+        style.configure(
+            'TCombobox',
+            fieldbackground=self.CLR_INPUT_BG,
+            foreground=self.CLR_FG_LIGHT,
+            arrowcolor=self.CLR_FG_LIGHT,
+            selectbackground=self.CLR_ACCENT_BLUE,
+            selectforeground=self.CLR_FG_LIGHT)
+        mpl.rcParams.update({'font.family': 'Segoe UI', 'font.size': 11,
+                             'axes.titlesize': 15, 'axes.labelsize': 13})
 
     def create_widgets(self):
-        font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
         header = tk.Frame(self.root, bg=self.CLR_HEADER)
         header.pack(side='top', fill='x')
+        font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
 
         # --- Plotter Launch Button ---
         plotter_button = ttk.Button(
@@ -296,7 +331,7 @@ class IV_GUI:
 
         ttk.Label(
             header,
-            text="I-V Sweep (K2400 + K2182)",
+            text="K2400/2182 & L350: R-T Sweep (T-Control)",
             style='Header.TLabel',
             font=font_title_main,
             foreground=self.CLR_ACCENT_GOLD).pack(
@@ -307,8 +342,7 @@ class IV_GUI:
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         left_panel_container = ttk.Frame(main_pane)
-        # Give more weight to controls
-        main_pane.add(left_panel_container, weight=0)
+        main_pane.add(left_panel_container, weight=2)
 
         # --- Make the left panel scrollable ---
         canvas = Canvas(
@@ -319,7 +353,6 @@ class IV_GUI:
             left_panel_container,
             orient="vertical",
             command=canvas.yview)
-        # This is now the scrollable_frame
         left_panel = ttk.Frame(canvas, padding=5)
         left_panel.bind(
             "<Configure>",
@@ -331,7 +364,7 @@ class IV_GUI:
         scrollbar.pack(side="right", fill="y")
 
         right_panel = self._create_right_panel(main_pane)
-        main_pane.add(right_panel, weight=1)
+        main_pane.add(right_panel, weight=4)
         self._populate_left_panel(left_panel)
 
     def _populate_left_panel(self, panel):
@@ -347,14 +380,10 @@ class IV_GUI:
         frame.grid(row=grid_row, column=0, sticky='new', pady=5)
         frame.grid_columnconfigure(1, weight=1)
         LOGO_SIZE = 110
-        logo_canvas = Canvas(
-            frame,
-            width=LOGO_SIZE,
-            height=LOGO_SIZE,
-            bg=self.CLR_FRAME_BG,
-            highlightthickness=0)
+        logo_canvas = Canvas(frame, width=LOGO_SIZE, height=LOGO_SIZE,
+                             bg=self.CLR_FRAME_BG, highlightthickness=0)
         logo_canvas.grid(row=0, column=0, rowspan=3, padx=10, pady=10)
-        try:  # Use a more robust relative path
+        try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
             logo_path = os.path.join(
                 script_dir,
@@ -371,19 +400,10 @@ class IV_GUI:
         except Exception as e:
             self.log(f"Warning: Could not load logo. {e}")
 
-        institute_font = ('Segoe UI', self.FONT_BASE[1] + 6, 'bold')
-        ttk.Label(
-            frame,
-            text="UGC-DAE Consortium for Scientific Research",
-            font=institute_font,
-            background=self.CLR_FRAME_BG).grid(
-            row=0,
-            column=1,
-            padx=10,
-            pady=(
-                15,
-                0),
-            sticky='sw')
+        institute_font = ('Segoe UI', self.FONT_BASE[1] + 1, 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research",
+                  font=institute_font, background=self.CLR_FRAME_BG).grid(
+                      row=0, column=1, padx=10, pady=(15, 0), sticky='sw')
         ttk.Label(
             frame,
             text="Mumbai Centre",
@@ -404,9 +424,9 @@ class IV_GUI:
             sticky='ew',
             padx=10,
             pady=8)
-        details_text = ("Program Name: I-V Sweep (4-Probe)\n"
-                        "Instruments: Keithley 2400, Keithley 2182\n"
-                        "Measurement Range: 1 µΩ to 100 MΩ")
+        details_text = ("Program Name: R vs. T (T-Control)\n"
+                        "Instruments: K2400, K2182, L350\n"
+                        "Measurement Range: 10⁻⁶ Ω to 10⁹ Ω")
         ttk.Label(
             frame,
             text=details_text,
@@ -423,15 +443,17 @@ class IV_GUI:
 
     def _create_right_panel(self, parent):
         panel = ttk.Frame(parent, padding=5)
-        container = ttk.LabelFrame(panel, text='Live I-V Curve')
+        container = ttk.LabelFrame(panel, text='Live R-T Curve')
         container.pack(fill='both', expand=True)
         self.figure = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
         self.ax_main = self.figure.add_subplot(111)
+        self.plot_background = None
         self.line_main, = self.ax_main.plot(
             [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
+        self.ax_main.set_yscale('log')
         self.ax_main.set_title("Waiting for experiment...", fontweight='bold')
-        self.ax_main.set_xlabel("Voltage (V)")
-        self.ax_main.set_ylabel("Current (A)")
+        self.ax_main.set_xlabel("Temperature (K)")
+        self.ax_main.set_ylabel("Voltage (V)")
         self.ax_main.grid(True, linestyle='--', alpha=0.6)
         self.figure.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.figure, container)
@@ -441,31 +463,33 @@ class IV_GUI:
     def _create_params_panel(self, parent, grid_row):
         container = ttk.Frame(parent)
         container.grid(row=grid_row, column=0, sticky='new', pady=5)
-        container.grid_columnconfigure(0, weight=1)
+        container.grid_columnconfigure((0, 1), weight=1, uniform="params")
         self.entries = {}
+        temp_frame = ttk.LabelFrame(container, text='Temperature')
+        temp_frame.grid(row=0, column=0, sticky='nsew', padx=(0, 5))
+        temp_frame.grid_columnconfigure(1, weight=1)
+        self._create_entry(temp_frame, "Start Temp (K)", "300", 0)
+        self._create_entry(temp_frame, "End Temp (K)", "310", 1)
+        self._create_entry(temp_frame, "Ramp Rate (K/min)", "2", 2)
+        self._create_entry(temp_frame, "Safety Cutoff (K)", "320", 3)
+        self.ls_cb = self._create_combobox(temp_frame, "Lakeshore VISA", 4)
 
-        sweep_frame = ttk.LabelFrame(container, text='Sweep Parameters')
-        sweep_frame.grid(row=0, column=0, sticky='nsew', pady=(0, 5))
-        sweep_frame.grid_columnconfigure(1, weight=1)
-        self._create_entry(sweep_frame, "Start Current (mA)", "-1", 0)
-        self._create_entry(sweep_frame, "Stop Current (mA)", "1", 1)
-        self._create_entry(sweep_frame, "Step Current (mA)", "0.1", 2)
-        self._create_entry(sweep_frame, "Compliance (V)", "10", 3)
-        self._create_entry(sweep_frame, "Dwell Time (s)", "0.5", 4)
-
-        visa_frame = ttk.LabelFrame(container, text='Instrument Addresses')
-        visa_frame.grid(row=1, column=0, sticky='nsew')
-        visa_frame.grid_columnconfigure(1, weight=1)
+        iv_frame = ttk.LabelFrame(container, text='Measurement Settings')
+        iv_frame.grid(row=0, column=1, sticky='nsew', padx=(5, 0))
+        iv_frame.grid_columnconfigure(1, weight=1)
+        self._create_entry(iv_frame, "Source Current (mA)", "1", 0)
+        self._create_entry(iv_frame, "Compliance (V)", "10", 1)
+        self._create_entry(iv_frame, "Logging Delay (s)", "1", 2)
         self.k2400_cb = self._create_combobox(
-            visa_frame, "Keithley 2400 VISA", 0)
+            iv_frame, "Keithley 2400 VISA", 3)
         self.k2182_cb = self._create_combobox(
-            visa_frame, "Keithley 2182 VISA", 1)
+            iv_frame, "Keithley 2182 VISA", 4)
 
     def _create_control_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Experiment Control')
         frame.grid(row=grid_row, column=0, sticky='new', pady=5)
         frame.grid_columnconfigure(0, weight=1)
-        self._create_entry(frame, "Sample Name", "Sample_IV", 0)
+        self._create_entry(frame, "Sample Name", "Sample_VT_Active", 0)
         self._create_entry(frame, "Save Location", "", 1, browse=True)
         button_frame = ttk.Frame(frame)
         button_frame.grid(row=2, column=0, columnspan=4, sticky='ew', pady=5)
@@ -519,34 +543,38 @@ class IV_GUI:
             self.log("Connecting to instruments...")
             self.backend.connect(
                 self.params['k2400_visa'],
-                self.params['k2182_visa'])
+                self.params['k2182_visa'],
+                self.params['ls_visa'])
             self.backend.configure_instruments(
-                self.params['compliance_v'], self.params['stop_i'])
+                self.params['current_ma'], self.params['compliance_v'])
             self.log("All instruments connected and configured.")
 
-            start_i, stop_i, step_i = self.params['start_i'], self.params['stop_i'], self.params['step_i']
-            self.current_points = np.arange(
-                start_i, stop_i + step_i / 2, step_i)
-            if not len(self.current_points):
-                raise ValueError("Current sweep results in zero points.")
-
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{self.params['name']}_{ts}_IV.csv"
+            filename = f"{self.params['name']}_{ts}_VT_Active.csv"
             self.data_filepath = os.path.join(
                 self.params['save_path'], filename)
             with open(self.data_filepath, 'w', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow(["Current (A)", "Voltage (V)"])
+                writer.writerow(
+                    ["Temperature (K)", "Voltage (V)", "Elapsed Time (s)"])
 
-            self.current_step_index = 0
             self.set_ui_state(running=True)
+            self.experiment_state = 'stabilizing'
             for key in self.data_storage:
                 self.data_storage[key].clear()
             self.line_main.set_data([], [])
-            self.ax_main.set_title(f"I-V Curve: {self.params['name']}")
+            self.ax_main.set_title(f"R-T Curve: {self.params['name']}")
+            self.ax_main.set_yscale('log')
+
+            # --- Performance Improvement: Full draw before starting loop ---
             self.canvas.draw()
+            self.plot_background = self.canvas.copy_from_bbox(
+                self.ax_main.bbox)
+            self.line_main.set_animated(True)
+            self.log("Blitting enabled for fast graph updates.")
+
             self.log(
-                f"Starting sweep: {len(self.current_points)} points from {start_i:.1e} A to {stop_i:.1e} A.")
+                f"Starting stabilization at {self.params['start_temp']} K...")
             self.root.after(100, self._experiment_loop)
         except Exception as e:
             self.log(f"ERROR: {traceback.format_exc()}")
@@ -554,84 +582,105 @@ class IV_GUI:
             self.backend.shutdown()
 
     def stop_experiment(self, reason=""):
-        if not self.is_running:
+        if self.experiment_state == 'idle':
             return
         self.log(
             f"Stopping... {reason}" if reason else "Stopping by user request.")
-        self.is_running = False
+        self.experiment_state = 'idle'
         self.backend.shutdown()
         self.set_ui_state(running=False)
+        self.line_main.set_animated(False)
+        self.plot_background = None
         self.ax_main.set_title("Experiment stopped.")
         self.canvas.draw_idle()
         if reason:
             messagebox.showinfo("Experiment Finished", f"Reason: {reason}")
 
-    def _measurement_worker(self):
-        """Worker thread function to perform the measurement."""
+    def _stabilization_loop(self):
+        if self.experiment_state != 'stabilizing':
+            return
         try:
-            current_setpoint = self.current_points[self.current_step_index]
-            log_msg = (f"--- Setting current to {current_setpoint:.3e} A "
-                       f"({self.current_step_index + 1}/{len(self.current_points)}) ---")
-            self.root.after(0, lambda: self.log(log_msg))
-            self.root.after(0, lambda: self.ax_main.set_title(
-                f"Measuring at {current_setpoint:.3e} A..."))
-            self.root.after(0, lambda: self.canvas.draw_idle())
+            current_temp = self.backend.get_temperature()
+            start_temp = self.params['start_temp']
 
-            voltage = self.backend.measure_voltage_at_current(
-                current_setpoint, self.params['delay_s'])
+            if current_temp > start_temp + 0.2:
+                self.log(
+                    f"Cooling... Current: {current_temp:.4f} K > Target: {start_temp} K")
+                self.backend.set_heater_range(1, 'off')
+            else:
+                self.log(
+                    f"Heating... Current: {current_temp:.4f} K <= Target: {start_temp} K")
+                self.backend.set_heater_range(1, 'medium')
+                self.backend.set_setpoint(1, start_temp)
 
-            if self.is_running:  # Check if stop was called during measurement
-                self.result_queue.put((current_setpoint, voltage))
-
+            if abs(current_temp - start_temp) < 0.1:
+                self.log(
+                    f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
+                self.experiment_state = 'ramping_setup'
+                # Transition to next state
+                self.root.after(5000, self._experiment_loop)
+            else:
+                # Continue stabilizing
+                self.root.after(2000, self._stabilization_loop)
         except Exception as e:
-            # Put exception in queue to be handled by main thread
-            self.result_queue.put(e)
+            self.log(f"ERROR during stabilization: {e}")
+            self.stop_experiment("Stabilization Error")
 
     def _experiment_loop(self):
-        if not self.is_running:
+        if self.experiment_state == 'idle':
             return
-
-        # Start the measurement in a separate thread
-        measurement_thread = threading.Thread(
-            target=self._measurement_worker, daemon=True)
-        measurement_thread.start()
-
-        # Start processing the queue
-        self.root.after(100, self._process_queue)
-
-    def _process_queue(self):
-        """Process results from the measurement worker thread."""
         try:
-            result = self.result_queue.get_nowait()
-            if isinstance(result, Exception):
-                raise result
+            if self.experiment_state == 'stabilizing':
+                self._stabilization_loop()
+                return
 
-            current_setpoint, voltage = result
-            self.log(f"  Read: V = {voltage:.6e} V")
-            self.data_storage['current'].append(current_setpoint)
-            self.data_storage['voltage'].append(voltage)
-            with open(self.data_filepath, 'a', newline='') as f:
-                csv.writer(f).writerow(
-                    [f"{current_setpoint:.6e}", f"{voltage:.6e}"])
-            self.line_main.set_data(
-                self.data_storage['voltage'],
-                self.data_storage['current'])
-            self.ax_main.relim()
-            self.ax_main.autoscale_view()
-            self.canvas.draw_idle()
-
-            self.current_step_index += 1
-            if self.is_running and self.current_step_index < len(
-                    self.current_points):
-                # Schedule next point
+            elif self.experiment_state == 'ramping_setup':
+                self.backend.start_ramp(
+                    self.params['end_temp'], self.params['rate'])
+                self.log(f"Ramp started towards {self.params['end_temp']} K.")
+                self.experiment_state = 'ramping'
+                self.start_time = time.time()
                 self.root.after(100, self._experiment_loop)
-            elif self.is_running:
-                self.stop_experiment("All points measured.")
+                return
 
-        except queue.Empty:  # No new data yet
-            if self.is_running:
-                self.root.after(100, self._process_queue)  # Keep checking
-        except Exception as e:  # An error occurred in the worker thread
+            elif self.experiment_state == 'ramping':
+                temp, voltage = self.backend.get_measurement()
+                elapsed = time.time() - self.start_time
+                resistance = voltage / \
+                    (self.params['current_ma'] * 1e-3) if self.params['current_ma'] != 0 else float('inf')
+                self.log(f"T: {temp:.3f} K | R: {resistance:.4e} Ω")
+
+                self.data_storage['temperature'].append(temp)
+                self.data_storage['voltage'].append(voltage)
+                with open(self.data_filepath, 'a', newline='') as f:
+                    csv.writer(f).writerow(
+                        [f"{temp:.4f}", f"{voltage:.6e}", f"{elapsed:.2f}"])
+
+                # --- Performance Improvement: Use blitting for fast updates ---
+                if self.plot_background:
+                    self.canvas.restore_region(self.plot_background)
+                    self.line_main.set_data(
+                        self.data_storage['temperature'],
+                        self.data_storage['voltage'])
+                    self.ax_main.relim()
+                    self.ax_main.autoscale_view()
+                    self.ax_main.draw_artist(self.line_main)
+                    self.canvas.blit(self.ax_main.bbox)
+                else:
+                    self.canvas.draw_idle()
+
+                # Check end conditions
+                if temp >= self.params['cutoff']:
+                    self.stop_experiment(
+                        f"Safety cutoff reached at {temp:.2f} K.")
+                elif (self.params['rate'] > 0 and temp >= self.params['end_temp']) or \
+                     (self.params['rate'] < 0 and temp <= self.params['end_temp']):
+                    self.stop_experiment("End temperature reached.")
+                else:
+                    self.root.after(
+                        int(self.params['delay_s'] * 1000), self._experiment_loop)
+
+        except Exception as e:
             self.log(f"CRITICAL ERROR: {traceback.format_exc()}")
             messagebox.showerror("Runtime Error", f"{e}")
             self.stop_experiment("Runtime Error")
@@ -641,33 +690,41 @@ class IV_GUI:
             params = {
                 'name': self.entries["Sample Name"].get(),
                 'save_path': self.entries["Save Location"].get(),
-                'start_i': float(
-                    self.entries["Start Current (mA)"].get()) * 1e-3,
-                'stop_i': float(
-                    self.entries["Stop Current (mA)"].get()) * 1e-3,
-                'step_i': float(
-                    self.entries["Step Current (mA)"].get()) * 1e-3,
-                'compliance_v': float(
-                    self.entries["Compliance (V)"].get()),
-                'delay_s': float(
-                    self.entries["Dwell Time (s)"].get()),
+                'start_temp': float(self.entries["Start Temp (K)"].get()),
+                'end_temp': float(self.entries["End Temp (K)"].get()),
+                'rate': float(self.entries["Ramp Rate (K/min)"].get()),
+                'cutoff': float(self.entries["Safety Cutoff (K)"].get()),
+                'ls_visa': self.ls_cb.get(),
+                'current_ma': float(self.entries["Source Current (mA)"].get()),
+                'compliance_v': float(self.entries["Compliance (V)"].get()),
+                'delay_s': float(self.entries["Logging Delay (s)"].get()),
                 'k2400_visa': self.k2400_cb.get(),
-                'k2182_visa': self.k2182_cb.get()}
-            if not all(params.values()):
-                raise ValueError("All fields must be filled.")
-            if params['step_i'] == 0:
-                raise ValueError("Step Current cannot be zero.")
+                'k2182_visa': self.k2182_cb.get()
+            }
+            if not all([p for k, p in params.items()
+                       if k not in ['rate', 'cutoff']]):
+                raise ValueError("A required field is empty.")
+            if params['rate'] == 0:
+                raise ValueError(
+                    "Ramp Rate cannot be zero for an active sweep.")
+            if params['rate'] > 0 and not (
+                    params['start_temp'] < params['end_temp'] < params['cutoff']):
+                raise ValueError(
+                    "For heating, temperatures must be in order: start < end < cutoff.")
+            if params['rate'] < 0 and not (
+                    params['start_temp'] > params['end_temp'] > params['cutoff']):
+                raise ValueError(
+                    "For cooling, temperatures must be in order: start > end > cutoff.")
             return params
         except Exception as e:
             raise ValueError(f"Invalid parameter input: {e}")
 
     def set_ui_state(self, running: bool):
-        self.is_running = running
         state = 'disabled' if running else 'normal'
         self.start_button.config(state=state)
         for w in self.entries.values():
             w.config(state=state)
-        for cb in [self.k2400_cb, self.k2182_cb]:
+        for cb in [self.ls_cb, self.k2400_cb, self.k2182_cb]:
             cb.config(state=state if state == 'normal' else 'readonly')
         self.stop_button.config(state='normal' if running else 'disabled')
 
@@ -679,9 +736,12 @@ class IV_GUI:
         resources = self.backend.rm.list_resources()
         if resources:
             self.log(f"Found: {resources}")
+            self.ls_cb['values'] = resources
             self.k2400_cb['values'] = resources
             self.k2182_cb['values'] = resources
             for r in resources:
+                if '12' in r or '15' in r:
+                    self.ls_cb.set(r)
                 if '2400' in r or 'GPIB::4' in r:
                     self.k2400_cb.set(r)
                 if '2182' in r or 'GPIB::7' in r:
@@ -723,11 +783,8 @@ class IV_GUI:
         entry.insert(0, default_value)
         self.entries[label_text] = entry
         if browse:
-            btn = ttk.Button(
-                parent,
-                text="Browse...",
-                style='Browse.TButton',
-                command=self._browse_file_location)
+            btn = ttk.Button(parent, text="Browse...", style='Browse.TButton',
+                             command=self._browse_file_location)
             btn.grid(row=row, column=3, sticky='e', padx=(0, 10))
             entry.config(state='disabled')
 
@@ -749,11 +806,11 @@ class IV_GUI:
         return cb
 
     def _on_closing(self):
-        if self.is_running and messagebox.askyesno(
+        if self.experiment_state != 'idle' and messagebox.askyesno(
                 "Exit", "Experiment is running. Stop and exit?"):
             self.stop_experiment("Application closed by user.")
             self.root.destroy()
-        elif not self.is_running:
+        elif self.experiment_state == 'idle':
             self.root.destroy()
 
 
@@ -764,5 +821,5 @@ if __name__ == '__main__':
             "Pymeasure or PyVISA is not installed. Please run 'pip install pymeasure'.")
     else:
         root = tk.Tk()
-        app = IV_GUI(root)
+        app = VT_GUI_Active(root)
         root.mainloop()

@@ -85,7 +85,7 @@ A key architectural feature is the use of **isolated process execution** for eac
 
 The core design philosophy of PICA is the separation of concerns, implemented through a distinct **GUI-Backend** architecture for each measurement module.
 
-- **GUI (Frontend):** Each measurement has a dedicated GUI script (e.g., `IV_K2400_GUI_v5.py`) built with `Tkinter`. It is responsible for user interaction, parameter input, and real-time data visualization using `Matplotlib`.
+- **GUI (Frontend):** Each measurement has a dedicated GUI script (e.g., `IV_K2400_GUI.py`) built with `Tkinter`. It is responsible for user interaction, parameter input, and real-time data visualization using `Matplotlib`.
 - **Backend:** The instrument control logic is encapsulated in separate classes (e.g., `Keithley2400_Backend`). This layer handles all `PyVISA` communication, SCPI command parsing, and data retrieval.
 - **Process Isolation:** When a measurement starts, the GUI launches the backend logic in a separate, isolated process. This prevents a hardware timeout or script error from crashing the entire application suite.
 - **Inter-Process Communication:** The frontend and backend communicate via thread-safe `multiprocessing.Queues`, allowing for high-speed data transfer without race conditions.
@@ -151,7 +151,7 @@ This software controls a facility designed for characterizing the full spectrum 
 
 4.  **Launch the Application**
     ```bash
-    python PICA_v6.py
+    python PICA.py
     ```
 
 ---

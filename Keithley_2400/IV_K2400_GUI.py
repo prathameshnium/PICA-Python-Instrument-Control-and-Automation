@@ -1,5 +1,5 @@
 """
-Module: IV_K2400_GUI_v5.py
+Module: IV_K2400_GUI.py
 Purpose: GUI module for IV K2400 GUI v5.
 """
 
@@ -70,7 +70,7 @@ def launch_plotter_utility():
         script_dir,
         "..",
         "Utilities",
-        "PlotterUtil_GUI_v3.py")
+        "PlotterUtil_GUI.py")
     if not os.path.exists(plotter_path):
         messagebox.showerror("File Not Found",
                              f"Plotter Utility not found at:\n{plotter_path}")
@@ -88,7 +88,7 @@ def launch_gpib_scanner():
         script_dir,
         "..",
         "Utilities",
-        "GPIB_Instrument_Scanner_GUI_v4.py")
+        "GPIB_Instrument_Scanner_GUI.py")
     if not os.path.exists(scanner_path):
         messagebox.showerror("File Not Found",
                              f"GPIB Scanner not found at:\n{scanner_path}")

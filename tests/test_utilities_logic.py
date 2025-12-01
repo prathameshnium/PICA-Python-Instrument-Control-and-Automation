@@ -23,7 +23,7 @@ def test_live_plotter_logic():
          patch('matplotlib.backends.backend_tkagg.FigureCanvasTkAgg'):
         
         try:
-            from Utilities.LivePlotter_v10 import LivePlotter
+            from Utilities.LivePlotter import LivePlotter
         except ImportError:
             pytest.skip("Could not import LivePlotter.")
 
@@ -49,12 +49,12 @@ def test_live_plotter_logic():
 
 def test_gui_basic_formatter():
     """
-    Tests the GUI_Basic_Format_v2 module.
+    Tests the GUI_Basic_Format module.
     This module likely sets up fonts or styles.
     """
     with patch('tkinter.font.Font', MagicMock()): # Mock font creation
         try:
-            import Utilities.GUI_Basic_Format_v2 as GUI_Format
+            import Utilities.GUI_Basic_Format as GUI_Format
         except ImportError:
             pytest.skip("Could not import GUI_Basic_Format.")
             

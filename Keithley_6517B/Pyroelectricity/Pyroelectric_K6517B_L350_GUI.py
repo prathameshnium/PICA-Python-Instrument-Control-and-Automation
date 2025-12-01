@@ -1,5 +1,5 @@
 """
-Module: Pyroelectric_K6517B_L350_GUI_v4.py
+Module: Pyroelectric_K6517B_L350_GUI.py
 Purpose: GUI module for Pyroelectric K6517B L350 GUI v4.
 """
 
@@ -68,7 +68,7 @@ def launch_plotter_utility():
         "..",
         "..",
         "Utilities",
-        "PlotterUtil_GUI_v3.py")
+        "PlotterUtil_GUI.py")
     Process(target=run_script_process, args=(plotter_path,)).start()
 
 
@@ -82,7 +82,7 @@ def launch_gpib_scanner():
         "..",
         "..",
         "Utilities",
-        "GPIB_Instrument_Scanner_GUI_v4.py")
+        "GPIB_Instrument_Scanner_GUI.py")
     Process(target=run_script_process, args=(scanner_path,)).start()
 
 

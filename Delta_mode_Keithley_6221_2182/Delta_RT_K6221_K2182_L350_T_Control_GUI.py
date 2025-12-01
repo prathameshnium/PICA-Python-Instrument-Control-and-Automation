@@ -1,5 +1,5 @@
 """
-Module: Delta_RT_K6221_K2182_L350_T_Control_GUI_v5.py
+Module: Delta_RT_K6221_K2182_L350_T_Control_GUI.py
 Purpose: GUI module for Delta RT K6221 K2182 L350 T Control GUI v5.
 """
 
@@ -68,7 +68,7 @@ def launch_plotter_utility():
             script_dir,
             "..",
             "Utilities",
-            "PlotterUtil_GUI_v3.py")
+            "PlotterUtil_GUI.py")
         if not os.path.exists(plotter_path):
             messagebox.showerror(
                 "File Not Found",
@@ -89,7 +89,7 @@ def launch_gpib_scanner():
             script_dir,
             "..",
             "Utilities",
-            "GPIB_Instrument_Scanner_GUI_v4.py")
+            "GPIB_Instrument_Scanner_GUI.py")
         if not os.path.exists(scanner_path):
             messagebox.showerror(
                 "File Not Found",

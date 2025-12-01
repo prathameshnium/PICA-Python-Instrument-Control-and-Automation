@@ -20,4 +20,4 @@ If you have a script for a new instrument (e.g., a lock-in amplifier) that you w
 To run the PICA launcher locally for development:
 ```bash
 pip install -e .
-python PICA_v6.py
+python PICA.py

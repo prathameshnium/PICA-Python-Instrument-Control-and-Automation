@@ -1,5 +1,5 @@
 """
-Module: T_Control_L350_RangeControl_GUI_v8.py
+Module: T_Control_L350_RangeControl_GUI.py
 Purpose: GUI module for T Control L350 RangeControl GUI v8.
 """
 
@@ -60,7 +60,7 @@ def launch_plotter_utility():
             script_dir,
             "..",
             "Utilities",
-            "PlotterUtil_GUI_v3.py")
+            "PlotterUtil_GUI.py")
         if not os.path.exists(plotter_path):
             messagebox.showerror(
                 "File Not Found",
@@ -80,7 +80,7 @@ def launch_gpib_scanner():
             script_dir,
             "..",
             "Utilities",
-            "GPIB_Instrument_Scanner_GUI_v4.py")
+            "GPIB_Instrument_Scanner_GUI.py")
         if not os.path.exists(scanner_path):
             messagebox.showerror(
                 "File Not Found",

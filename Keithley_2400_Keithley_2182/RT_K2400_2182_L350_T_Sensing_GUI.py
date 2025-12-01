@@ -1,5 +1,5 @@
 """
-Module: RT_K2400_2182_L350_T_Sensing_GUI_v2.py
+Module: RT_K2400_2182_L350_T_Sensing_GUI.py
 Purpose: GUI module for RT K2400 2182 L350 T Sensing GUI v2.
 """
 
@@ -77,7 +77,7 @@ def launch_plotter_utility():
             script_dir,
             "..",
             "Utilities",
-            "PlotterUtil_GUI_v3.py")
+            "PlotterUtil_GUI.py")
         if not os.path.exists(plotter_path):
             messagebox.showerror(
                 "File Not Found",
@@ -96,7 +96,7 @@ def launch_gpib_scanner():
             os.path.abspath(__file__)),
         "..",
         "Utilities",
-        "GPIB_Instrument_Scanner_GUI_v4.py")
+        "GPIB_Instrument_Scanner_GUI.py")
     Process(target=run_script_process, args=(scanner_path,)).start()
 
 

@@ -1,5 +1,5 @@
 """
-Module: GUI_Basic_Format_v2.py
+Module: GUI_Basic_Format.py
 Purpose: GUI module for GUI Basic Format v2.
 """
 
