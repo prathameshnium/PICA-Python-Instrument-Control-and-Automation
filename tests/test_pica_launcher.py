@@ -16,7 +16,7 @@ if project_root not in sys.path:
 
 # Try importing the Launcher. If it fails due to imports, we skip.
 try:
-    from PICA_v6 import PICALauncherApp
+    from PICA import PICALauncherApp
 except ImportError:
     PICALauncherApp = None
 

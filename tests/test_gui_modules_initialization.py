@@ -18,7 +18,7 @@ if project_root not in sys.path:
 def find_gui_modules():
     """
     Recursively finds all GUI modules in the project, excluding non-GUI files.
-    Returns them in a format suitable for importlib (e.g., 'Keithley_2400.IV_K2400_GUI_v5').
+    Returns them in a format suitable for importlib (e.g., 'Keithley_2400.IV_K2400_GUI').
     """
     gui_files = []
     for root, _, files in os.walk(project_root):
@@ -29,7 +29,7 @@ def find_gui_modules():
             if file.endswith('_GUI_v' or '_GUI.py') and file != '__init__.py':
                 full_path = os.path.join(root, file)
                 # Convert file path to module path
-                # e.g., F:\...\PICA\Keithley_2400\IV_K2400_GUI_v5.py -> Keithley_2400.IV_K2400_GUI_v5
+                # e.g., F:\...\PICA\Keithley_2400\IV_K2400_GUI.py -> Keithley_2400.IV_K2400_GUI
                 relative_path = os.path.relpath(full_path, project_root)
                 module_path = os.path.splitext(relative_path)[0].replace(os.path.sep, '.')
                 gui_files.append(module_path)
@@ -50,7 +50,7 @@ def test_gui_module_initialization(module_path):
         gui_module = importlib.import_module(module_path)
 
         # The main application class is assumed to have the same name as the file,
-        # but without the version suffix (e.g., 'IV_K2400_GUI' from 'IV_K2400_GUI_v5.py')
+        # but without the version suffix (e.g., 'IV_K2400_GUI' from 'IV_K2400_GUI.py')
         # This logic needs to be robust to handle different naming conventions.
         base_name = module_path.split('.')[-1]
         if '_GUI_v' in base_name:

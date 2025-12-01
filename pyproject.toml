@@ -39,7 +39,7 @@ dependencies = [
 "Bug Tracker" = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues"
 
 [project.gui-scripts]
-pica-launcher = "PICA_v6:main"
+pica-launcher = "PICA:main"
 
 # --- CRITICAL CONFIGURATION FOR YOUR FOLDER STRUCTURE ---
 [tool.setuptools.packages.find]

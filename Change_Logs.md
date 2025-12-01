@@ -23,7 +23,7 @@
     -   New `K2400 R-T (T_Sensing)` module.
     -   New `K2400_2182 R-T (T_Sensing)` module.
     -   New `K6517B R-T (T_Sensing)` module.
--   **Plotter Utility Upgrade:** Enhanced `PlotterUtil_GUI_v3.py` to support simultaneous multi-file plotting.
+-   **Plotter Utility Upgrade:** Enhanced `PlotterUtil_GUI.py` to support simultaneous multi-file plotting.
 
 ---
 
@@ -42,7 +42,7 @@
 **Documentation & Launcher Synchronization**
 -   **Documentation Overhaul:** Synchronized `README.md` and `Change_Logs.md`.
 -   **Executable-Specific README:** Created `PICA_README.md`.
--   **Launcher Script Update:** Updated `PICA_v6.py` to reflect versioning.
+-   **Launcher Script Update:** Updated `PICA.py` to reflect versioning.
 
 ---
 
@@ -88,7 +88,7 @@
 *Released: October 05, 2025*
 
 **PICA Launcher & Script Integration**
--   **Enhancement:** Upgraded to `PICA_v6.py` with a two-column layout.
+-   **Enhancement:** Upgraded to `PICA.py` with a two-column layout.
 -   **New Feature:** Integrated markdown documentation viewer and automatic GPIB/VISA scanner.
 
 ---
