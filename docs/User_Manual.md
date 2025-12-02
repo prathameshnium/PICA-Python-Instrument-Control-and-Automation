@@ -1,6 +1,6 @@
 -----
 \<div align="center"\>
-\<img src="../assets/LOGO/PICA\_LOGO\_NBG.png" alt="PICA Logo" width="150"/\>
+\<img src="../pica/assets/LOGO/PICA\_LOGO\_NBG.png" alt="PICA Logo" width="150"/\>
 \<h1\>PICA User Manual\</h1\>
 \<p\>\<strong\>Python-based Instrument Control and Automation Software Suite\</strong\>\</p\>
 <p><em>Comprehensive Guide for Version 17.0.0</em></p>

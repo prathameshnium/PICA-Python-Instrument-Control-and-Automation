@@ -184,7 +184,7 @@ class Backend_Passthrough:
 class Passthrough_IV_GUI:
     PROGRAM_VERSION = "1.6"
     LOGO_SIZE = 110
-    LOGO_FILE_PATH = resource_path("../assets/LOGO/UGC_DAE_CSR_NBG.jpeg") # Path to your logo image
+    LOGO_FILE_PATH = resource_path("../../assets/LOGO/UGC_DAE_CSR_NBG.jpeg") # Path to your logo image
     CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'; CLR_TEXT_DARK = '#1A1A1A' # Base colors
     CLR_ACCENT_GOLD = '#FFC107'; CLR_ACCENT_GREEN = '#A7C957'; CLR_ACCENT_RED = '#E74C3C' # Accent colors
     CLR_CONSOLE_BG = '#1E2B38'; CLR_GRAPH_BG = '#FFFFFF' # Specific component colors
