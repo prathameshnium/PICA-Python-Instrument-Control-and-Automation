@@ -1,48 +1,72 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pica-automation"
-version = "1.0.0"
+name = "pica-suite"
+version = "1.0.1"
 authors = [
-    { name = "Prathamesh Deshmukh", email = "prathameshium@duck.com" },
+  { name="Prathamesh Deshmukh", email="prathamesh.deshmukh@example.com" },
+  { name="Sudip Mukherjee", email="sudipm@csr.res.in" },
 ]
-description = "A modular software suite for automating laboratory measurements in physics research."
+description = "Python-based Instrument Control and Automation Suite"
 readme = "README.md"
-license = { file = "LICENSE" }
 requires-python = ">=3.10"
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Topic :: Scientific/Engineering :: Physics",
-    "Topic :: System :: Hardware :: Hardware Drivers",
 ]
 dependencies = [
-    "pyvisa",
-    "pyvisa-py",
     "numpy",
-    "matplotlib",
     "pandas",
-    "pymeasure",
-    "Pillow", # For image handling in GUIs
-    "gpib-ctypes" # Provides a mockable GPIB backend for CI/testing
+    "matplotlib",
+    "PyVISA",
+    "PyMeasure",
+    "pyvisa-py",
+    "scipy"
 ]
 
 [project.urls]
 "Homepage" = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
 "Bug Tracker" = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues"
 
-[project.gui-scripts]
-pica-launcher = "PICA:main"
-
-# --- CRITICAL CONFIGURATION FOR YOUR FOLDER STRUCTURE ---
+# This finds the new 'pica' folder automatically
 [tool.setuptools.packages.find]
-where = ["."]  # Tells pip your code is in the root, not 'src'
-include = ["*"]  # Explicitly includes all subfolders (Keithley_2400, Utilities, etc.)
-exclude = ["tests*", "_assets*", "Setup*"]  # Excludes non-code assets from the installed package
+where = ["."]
+include = ["pica*"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+pythonpath = [
+    ".",
+]
+```
+
+#### Step 2: Fix Asset Paths in `pica/main.py`
+Since `main.py` is no longer in the root folder, it might not find the images (logos). Open `pica/main.py` and look for where `ASSET_PATH` or image paths are defined.
+
+Replace hardcoded paths like `"assets/"` with this dynamic path code:
+
+```python
+import os
+# Get the directory where this file resides (pica/)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Build path to assets relative to this file
+ASSET_PATH = os.path.join(BASE_DIR, 'assets')
+```
+
+#### Step 3: Install & Test
+Run these commands in your terminal to register the new package structure and test it:
+
+```bash
+# 1. Install the package in "editable" mode
+pip install -e .
+
+# 2. Run the new launcher shim
+python run_pica.py

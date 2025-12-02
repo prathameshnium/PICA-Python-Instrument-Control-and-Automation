@@ -43,7 +43,7 @@ def analyze_module_content(module):
 def test_lcr_backend_structure():
     with patch('pyvisa.ResourceManager'), patch('pyvisa.resources.MessageBasedResource'):
         try:
-            from LCR_Keysight_E4980A.Instrument_Control import CV_KE4980A_Simple_Instrument_Control as LCR_Module
+            from pica.keysight.Instrument_Control import CV_KE4980A_Simple_Instrument_Control as LCR_Module
         except ImportError:
             pytest.skip("Could not import LCR Instrument Control.")
 
@@ -68,7 +68,7 @@ def test_lcr_backend_structure():
 def test_delta_backend_structure():
     with patch('pyvisa.ResourceManager'):
         try:
-            from Delta_mode_Keithley_6221_2182.Instrument_Control import Delta_K6221_K2182_Simple as Delta_Module
+            from pica.keithley.delta_mode.Instrument_Control import Delta_K6221_K2182_Simple as Delta_Module
         except ImportError:
             pytest.skip("Could not import Delta Instrument Control.")
 
@@ -91,7 +91,7 @@ def test_delta_backend_structure():
 def test_k2400_backend_structure():
     with patch('pyvisa.ResourceManager'):
         try:
-            from Keithley_2400.Instrument_Control import IV_K2400_Loop_Instrument_Control as K2400_Module
+            from pica.keithley.k2400.Instrument_Control import IV_K2400_Loop_Instrument_Control as K2400_Module
         except ImportError:
             pytest.skip("Could not import Keithley 2400 Instrument Control.")
 
