@@ -44,7 +44,6 @@
   
   <img src="https://img.shields.io/github/commit-activity/y/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=success" alt="Commits (Yearly)">
   <img src="https://img.shields.io/github/languages/code-size/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=blue" alt="Code Size">
-  <img src="https://img.shields.io/tokei/lines/github/prathameshnium/PICA-Python-Instrument-Control-and-Automation" alt="Lines of Code">
   <img src="https://img.shields.io/github/last-commit/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=critical" alt="Last Commit">
 
 </div>
@@ -117,41 +116,47 @@ This software controls a facility designed for characterizing the full spectrum 
 
 ---
 
-## 🚀 Getting Started
+##  Installation
 
-### Prerequisites
-
-1.  **Python:** Python 3.10 or newer is recommended.
-2.  **NI-VISA Driver:** You must install the [National Instruments VISA Driver](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html) or an equivalent backend. This is required for the `pyvisa` library to communicate with the instruments.
-
-### Installation Steps
+PICA is now structured as a standard Python package. Follow these steps to install it in editable mode, which allows you to modify code and see changes immediately.
 
 1.  **Clone the Repository**
     ```bash
-    git clone [https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git)
+    git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
     cd PICA-Python-Instrument-Control-and-Automation
     ```
 
 2.  **Create a Virtual Environment**
-    Recommended to verify dependencies and avoid conflicts.
     ```bash
-    # Create the virtual environment
+    # Windows
     python -m venv venv
-    
-    # Activate (Windows)
     venv\Scripts\activate
-    # Activate (macOS/Linux)
+
+    # macOS/Linux
+    python3 -m venv venv
     source venv/bin/activate
     ```
 
-3.  **Install Dependencies**
+3.  **Install the Package**
+    Use the `-e` (editable) flag. This installs PICA and all its dependencies (PyVISA, Pandas, etc.) linked to your current folder.
     ```bash
-    pip install -r requirements.txt
+    pip install -e .
     ```
 
-4.  **Launch the Application**
+## 🖥️ Running the Software
+
+You can now run PICA in two modes: the standard Graphical User Interface (GUI) or the new Command Line Interface (CLI) for headless operation.
+
+1.  **Graphical Launcher (GUI)**
+    The standard dashboard for desktop users.
     ```bash
-    python PICA.py
+    python run_pica.py
+    ```
+
+2.  **Command Line Interface (CLI)**
+    New in v.1.0.1: A text-based menu for running measurements via SSH, on Raspberry Pis, or in automated environments without a monitor.
+    ```bash
+    python pica_cli.py
     ```
 
 ---
@@ -184,7 +189,7 @@ To run the tests locally:
 
 PICA has evolved from a collection of offline utility scripts into a modular software suite. The development timeline highlights the shift from manual instrument handling to a fully automated, asynchronous control system.
 
-> **📜 Project Lore:** For a detailed chronological log of the project's development history, including the offline prototyping phase and specific version changelogs, please refer to [`docs/Change_Logs.md`](docs/Change_Logs.md).
+> **📜 Project Lore:** For a detailed chronological log of the project's development history, including the offline prototyping phase and specific version changelogs, please refer to [`Change_Logs.md`](Change_Logs.md).
 
 ### **v15.0 (Current): JOSS Submission & Professionalization**
 *Status: Released November 2025*
