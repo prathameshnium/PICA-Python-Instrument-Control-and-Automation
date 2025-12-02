@@ -201,23 +201,19 @@ class TestDeepSimulation(unittest.TestCase):
         mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(10))
         mock_sleep.start()
         self.addCleanup(mock_sleep.stop)
-        with patch('pyvisa.ResourceManager') as MockRM:
-            mock_pymeasure = patch('pymeasure.instruments.keithley.Keithley2400')
-            mock_pymeasure.start()
-
+        with patch('pyvisa.ResourceManager') as MockRM, \
+             patch('pymeasure.instruments.keithley.Keithley2400'):
             rm = MockRM.return_value
             k2182_spy = MagicMock()
             k2182_spy.assert_trigger = MagicMock()
             rm.open_resource.return_value = k2182_spy
 
-            # Add extra inputs just in case the script asks for more than
-            # expected
+            # Add extra inputs just in case the script asks for more than expected
             inputs = ['10', '1', 'test_file', 'y', 'y', 'y', 'y']
             with patch('builtins.input', side_effect=inputs), \
                  patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
-                    "pica.keithley.k2400.Keithley_2182.Instrument_Control.IV_K2400_K2182_Instrument_Control", {})
-            mock_pymeasure.stop()
+                    "Keithley_2400_Keithley_2182.Backends.IV_K2400_K2182_Backend_v1", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_09_poling(self):

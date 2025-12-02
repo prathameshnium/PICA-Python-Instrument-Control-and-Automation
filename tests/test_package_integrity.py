@@ -74,9 +74,16 @@ def test_has_docstring(file_path):
     
     try:
         tree = ast.parse(source)
-        if not (tree.body and isinstance(tree.body[0], ast.Expr) and isinstance(tree.body[0].value, (ast.Str, ast.Constant))):
+        # A docstring is the first statement in a module and must be an expression
+        # containing a string.
+        # For Python < 3.8, this is ast.Str. For >= 3.8, it's ast.Constant holding a str.
+        docstring_node = ast.get_docstring(tree, clean=False)
+
+        # ast.get_docstring returns the string value or None if not found.
+        # We just need to know if it exists.
+        if docstring_node is None:
             warnings.warn(f"JOSS STANDARD MISSING: {os.path.basename(file_path)} has no top-level docstring.", UserWarning)
-            
+        
     except SyntaxError:
         # Syntax errors are handled by the other test
         pass
