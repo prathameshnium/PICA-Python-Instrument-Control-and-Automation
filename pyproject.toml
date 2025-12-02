@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pica-automation"
-version = "14.1.0"
+version = "1.0.0"
 authors = [
     { name = "Prathamesh Deshmukh", email = "prathameshium@duck.com" },
 ]
