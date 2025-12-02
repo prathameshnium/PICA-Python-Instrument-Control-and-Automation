@@ -1,112 +1,146 @@
 PICA Project File Structure Reference
-Generated on: 2025-11-21 23:18:42
+Generated on: 2025-12-03 01:43:13
 ================================================================================
 
 PICA (Root Directory)/
+    .coveragerc
     .gitignore
+    CHANGELOG.md
     CITATION.cff
     CODE_OF_CONDUCT.md
     CONTRIBUTING.md
     LICENSE
-    PICA.py
     README.md
-    Update_path.py
+    path.py
+    pica_cli.py
     pyproject.toml
     requirements.txt
     robots.txt
-    assets/
-        Images/
-            PICA_Laucher.png
-            PICA_Laucher.png
-        LOGO/
-            PICA_LOGO.ico
-            PICA_LOGO.png
-            PICA_LOGO_NBG.png
-            UGC_DAE_CSR.ico
-            UGC_DAE_CSR.jpeg
-            UGC_DAE_CSR_NBG.jpeg
-        Manuals/
-            6517B-900-01B_August_2022_User.pdf
-            6517B-901-01E_Aug_2022_Ref.pdf
-            Keithley_2182A_Manual.pdf
-            Keithley_6221_Manual.pdf
-            Keithley_Low-Level-Measurements-Handbook_7Ed.pdf
-            Lakeshore_340_Manual.pdf
-            Lakeshore_350_Manual.pdf
-            PyMeasure_Documentation.pdf
-            PyMeasure_Keithley-2400-Example.pdf
-            PyVISA_Complex-Examples.pdf
-            PyVISA_Documentation.epub
-            pymeasure-readthedocs-io-en-latest.pdf
-    Delta_mode_Keithley_6221_2182/
-        Delta_RT_K6221_K2182_L350_Sensing_GUI.py
-        Delta_RT_K6221_K2182_L350_T_Control_GUI.py
-        IV_K6221_DC_Sweep_GUI.py
-        Backends/
-            Delta_K6221_K2182_L350_T_Sensing_Backend_v1.py
-            Delta_K6221_K2182_Simple.py
-    deployment/
-        Picachu.py
-        build-exe.yml
-        build.py
+    run_pica.py
+    .github/
+        workflows/
+            build_pdf.yml
+            codeql.yml
+            joss_tests.yml
+            python-app.yml
     docs/
-        Change_Logs.md
-        GPIB_Address_Guide.md
-        Geting_Strated_With_Interfacing.md
-        PICA_README.md
         Ranges_for_Measurements.md
-        index.rst
-        project_paths_reference.txt
-    Keithley_2400/
-        IV_K2400_GUI.py
-        RT_K2400_L350_T_Control_GUI.py
-        RT_K2400_L350_T_Sensing_GUI.py
-        Backends/
-            IV_K2400_Loop_Backend_v10.py
-    Keithley_2400_Keithley_2182/
-        IV_K2400_K2182_GUI.py
-        RT_K2400_2182_L350_T_Sensing_GUI.py
-        RT_K2400_K2182_T_Control_GUI.py
-        Backends/
-            IV_K2400_K2182_Backend_v1.py
-    Keithley_6517B/
-        High_Resistance/
-            IV_K6517B_GUI.py
-            RT_K6517B_L350_T_Control_GUI.py
-            RT_K6517B_L350_T_Sensing_GUI.py
-            Backends/
-                IV_K6517B_L350_T_Control_Backend_v6.py
-                IV_K6517B_Simple_Backend_v10.py
-        Pyroelectricity/
-            Pyroelectric_K6517B_L350_GUI.py
-            Backends/
-                Current_K6517B_Simple_Backend_v10.py
-                Poling_K6517B_Backend_v10.py
-                PyroDataVisualization_Simple.py
-                Pyroelectric_K6517B_Working_Backend_v10.py
-    Lakeshore_350_340/
-        T_Control_L350_RangeControl_GUI.py
-        T_Sensing_L350_GUI.py
-        Backends/
-            T_Control_L350_Simple_Backend_v10.py
-    LCR_Keysight_E4980A/
-        CV_KE4980A_GUI.py
-        Backends/
-            CV_KE4980A_Simple_Backend_v10.py
-    Lock_in_amplifier/
-        BasicTest_S830_Backend_v1.py
-    paper/
+        User_Manual.md
         paper.bib
         paper.md
+        project_paths_reference.txt
+    pica/
+        __init__.py
+        cli.py
+        main.py
+        assets/
+            __init__.py
+            Images/
+                PICA_Laucher.png
+                PICA_Laucher_V6.png
+                __init__.py
+            LOGO/
+                PICA_LOGO.ico
+                PICA_LOGO.png
+                PICA_LOGO_NBG.png
+                UGC_DAE_CSR.ico
+                UGC_DAE_CSR.jpeg
+                UGC_DAE_CSR_NBG.jpeg
+                __init__.py
+            Manuals/
+                6517B-900-01B_August_2022_User.pdf
+                6517B-901-01E_Aug_2022_Ref.pdf
+                Keithley_2182A_Manual.pdf
+                Keithley_6221_Manual.pdf
+                Keithley_Low-Level-Measurements-Handbook_7Ed.pdf
+                Lakeshore_340_Manual.pdf
+                Lakeshore_350_Manual.pdf
+                PyMeasure_Documentation.pdf
+                PyMeasure_Keithley-2400-Example.pdf
+                PyVISA_Complex-Examples.pdf
+                PyVISA_Documentation.epub
+                __init__.py
+                pymeasure-readthedocs-io-en-latest.pdf
+        keithley/
+            __init__.py
+            delta_mode/
+                Delta_RT_K6221_K2182_L350_Sensing_GUI.py
+                Delta_RT_K6221_K2182_L350_T_Control_GUI.py
+                IV_K6221_DC_Sweep_GUI.py
+                __init__.py
+                Instrument_Control/
+                    Delta_K6221_K2182_L350_T_Sensing_Instrument_Control.py
+                    Delta_K6221_K2182_Simple.py
+                    __init__.py
+            k2400/
+                IV_K2400_GUI.py
+                RT_K2400_L350_T_Control_GUI.py
+                RT_K2400_L350_T_Sensing_GUI.py
+                __init__.py
+                Instrument_Control/
+                    IV_K2400_Loop_Instrument_Control.py
+                    __init__.py
+            k2400_2182/
+                IV_K2400_K2182_GUI.py
+                RT_K2400_2182_L350_T_Sensing_GUI.py
+                RT_K2400_K2182_T_Control_GUI.py
+                __init__.py
+                Instrument_Control/
+                    IV_K2400_K2182_Instrument_Control.py
+                    __init__.py
+            k6517b/
+                __init__.py
+                High_Resistance/
+                    IV_K6517B_GUI.py
+                    RT_K6517B_L350_T_Control_GUI.py
+                    RT_K6517B_L350_T_Sensing_GUI.py
+                    __init__.py
+                    Instrument_Control/
+                        IV_K6517B_L350_T_Control_Instrument_Control.py
+                        IV_K6517B_Simple_Instrument_Control.py
+                        __init__.py
+                Pyroelectricity/
+                    Pyroelectric_K6517B_L350_GUI.py
+                    __init__.py
+                    Instrument_Control/
+                        Current_K6517B_Simple_Instrument_Control.py
+                        Poling_K6517B_Instrument_Control.py
+                        PyroDataVisualization_Simple.py
+                        Pyroelectric_K6517B_Working_Instrument_Control.py
+                        __init__.py
+        keysight/
+            CV_KE4980A_GUI.py
+            __init__.py
+            Instrument_Control/
+                CV_KE4980A_Simple_Instrument_Control.py
+                __init__.py
+        lakeshore/
+            T_Control_L350_RangeControl_GUI.py
+            T_Sensing_L350_GUI.py
+            __init__.py
+            Instrument_Control/
+                T_Control_L350_Simple_Instrument_Control.py
+                __init__.py
+        lockin/
+            BasicTest_S830_Instrument_Control.py
+            __init__.py
+        utils/
+            GIPB_InterfaceTest_Simple_Instrument_Control.py
+            GPIB_Instrument_Scanner_GUI.py
+            GPIB_Interface_Rescue_Simple_Instrument_Control_v2_.py
+            GUI_Basic_Format.py
+            LivePlotter.py
+            PlotterUtil_GUI.py
+            __init__.py
+    scripts/
     tests/
         __init__.py
-        test_auto_discovery.py
+        conftest.py
+        test_backends_logic.py
         test_deep_simulation.py
         test_full_stack_simulation.py
-    Utilities/
-        GIPB_InterfaceTest_Simple_Backend.py
-        GPIB_Instrument_Scanner_GUI.py
-        GPIB_Interface_Rescue_Simple_Backened_v2_.py
-        GUI_Basic_Format.py
-        LivePlotter.py
-        PlotterUtil_GUI.py
+        test_gui_layouts.py
+        test_gui_modules_initialization.py
+        test_package_integrity.py
+        test_pica_launcher.py
+        test_utilities_logic.py
