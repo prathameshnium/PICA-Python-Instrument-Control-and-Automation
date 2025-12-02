@@ -8,62 +8,80 @@
 
 -----
 
-## 📖 Table of Contents
+## �� Table of Contents
 
 1.  [Overview](https://www.google.com/search?q=%231-overview)
-2.  [Getting Started](https://www.google.com/search?q=%232-getting-started)
-      * [Hardware Setup](https://www.google.com/search?q=%23hardware-setup)
-      * [Software Installation](https://www.google.com/search?q=%23software-installation)
-      * [Running the Software (GUI & CLI)](https://www.google.com/search?q=%23running-the-software)
-      * [Connection Testing](https://www.google.com/search?q=%23connection-testing)
-3.  [Software Architecture](https://www.google.com/search?q=%233-software-architecture)
-4.  [Available Measurement Modules](https://www.google.com/search?q=%234-available-measurement-modules)
-5.  [Testing & Validation](https://www.google.com/search?q=%235-testing--validation)
-6.  [Technical Reference](https://www.google.com/search?q=%236-technical-reference)
-      * [Instrument Specifications](https://www.google.com/search?q=%23instrument-specifications)
-      * [GPIB Address Guide](https://www.google.com/search?q=%23gpib-address-guide)
-      * [File Structure](https://www.google.com/search?q=%23file-structure)
-7.  [Citation, Attribution & Funding](https://www.google.com/search?q=%237-citation-attribution--funding)
-8.  [Version History](https://www.google.com/search?q=%238-version-history)
+2.  [Statement of Need](#2-statement-of-need)
+3.  [Getting Started](#3--getting-started)
+    *   [Hardware Setup](#hardware-setup)
+    *   [Software Installation](#software-installation)
+    *   [Running the Software](#running-the-software)
+    *   [Connection Testing](#connection-testing)
+4.  [Software Architecture](#4--️-software-architecture)
+5.  [Available Measurement Modules](#5--available-measurement-modules)
+6.  [Testing & Validation](#6-testing--validation)
+7.  [Technical Reference](#7--technical-reference)
+    *   [Instrument Specifications](#instrument-specifications)
+    *   [GPIB Address Guide](#gpib-address-guide)
+    *   [File Structure](#file-structure)
+8.  [Citation, Attribution & Funding](#8--citation-attribution--funding)
+9.  [Version History](#9--version-history)
 
 -----
 
 ## 1\. Overview
+PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite specifically designed to automate complex characterisation experiments and provide a robust framework for automating laboratory instruments in materials science and condensed matter physics research.
+Developed to operate as a custom laboratory-built measurement system, PICA provides a unifying graphical user interface (GUI) for orchestrating high-precision instruments, specifically Keithley SourceMeters/Nanovoltmeters, Lakeshore Temperature Controllers, and Keysight LCR Meters. The suite regulates the cryogenic environment to perform automated protocols such as temperature-dependent resistivity, current-voltage (I-V) characteristics, and pyroelectric current measurements.
+The suite features a central graphical user interface (GUI), the **PICA Launcher**, which serves as a dashboard for managing and executing a variety of characterisation experiments. Built to streamline data acquisition and enhance experimental reproducibility, PICA leverages Python's `multiprocessing` library to ensure high stability by isolating each measurement process.
 
-**PICA (Python-based Instrument Control and Automation)** is a modular software suite designed to provide a robust framework for automating laboratory instruments in materials science and condensed matter physics research.
 
-The suite features a central graphical user interface (GUI), the **PICA Launcher**, which serves as a dashboard for managing and executing a variety of characterization experiments. Built to streamline data acquisition and enhance experimental reproducibility, PICA leverages Python's `multiprocessing` library to ensure high stability by isolating each measurement process.
+## 2\. Statement of Need
+
+Advancements in experimental physics critically depend on the accurate characterization of material properties under extreme physical conditions. Such experiments typically require the coordinated operation and precise control of multiple instruments sourced from different vendors.
+
+Researchers are often faced with a choice between using expensive proprietary software platforms such as LabVIEW or developing custom measurement scripts from scratch. Python libraries such as PyVISA and PyMeasure provide robust low-level driver support and are essential for instrument communication and control. However, these libraries primarily function as developer-oriented toolkits: they generally require users to possess detailed knowledge of measurement protocols and, in the case of PyVISA, familiarity with SCPI (Standard Commands for Programmable Instruments). Furthermore, users must design and implement their own graphical user interfaces (GUIs) tailored to specific experimental workflows. These libraries also do not natively provide comprehensive multithreading support, thereby requiring users to understand and manage concurrency and other computational aspects themselves.
+
+By contrast, LabVIEW offers a graphical programming paradigm that simplifies certain aspects of instrument control but introduces other limitations. Its visual programming model is difficult to integrate with modern software engineering practices such as version control, and its proprietary nature constrains the extent to which users can modify low-level behaviour compared to Python-based solutions.
+
+This situation reveals a clear gap for an open-source, laboratory-ready framework that provides well-tested measurement protocols together with an intuitive user interface, enabling experimentalists to perform sophisticated measurements without directly interacting with source code. At the same time, being implemented in open-source Python would preserve the ability for advanced users to modify virtually any component of the system and to contribute enhancements back to the project. Such a framework would foster a more open and collaborative scientific ecosystem, facilitating reproducibility, extensibility, and community-driven development in experimental physics research.
+
+PICA was developed at the UGC–DAE Consortium for Scientific Research, Mumbai Centre, a research institute under the Government of India. The mandate of the institute is to support universities, including those in remote locations, in conducting advanced research. The open-source nature of PICA is fully aligned with this mandate, as it facilitates broader access to computational tools and thereby promotes and enhances the research capabilities of the scientific community.
+
+We tried to reduce dependencies, making it suitable for the laboratory systems that are not connected to the internet by providing stable, scientifically validated protocols and a robust user interface for conducting measurements on our ATMS (Advanced Transport Measurement System), a laboratory-built platform comprising custom-developed hardware and software.
+
+Although PICA was initially designed for our in-house ATMS infrastructure, the underlying code and framework are sufficiently generalizable for use in a wide range of experimental setups. We particularly encourage researchers in developing countries, where access to advanced measurement systems may be limited, to adopt and adapt this tool. Furthermore, the architecture allows for modular extensions, enabling the integration of additional functionalities as required by users. 
 
 ### Core Features
 
-  * **Centralized Control Dashboard:** A comprehensive GUI for launching all measurement modules.
+  * **Accessibility:** PICA provides a professional dashboard that enables researchers without programming experience to configure and execute complex measurements.
+  * **Physical Validation:** PICA protocols are routinely employed for cryogenic transport measurements in the temperature range 80–320 K at the UGC–DAE Consortium for Scientific Research, Mumbai Centre. Particular emphasis is placed on ensuring that the protocols are physically valid and that any artifacts arising from instrument output start-up transients, synchronization errors, or other physical anomalies are identified and eliminated.
+ 
+  *  **Centralized Control Dashboard:** A comprehensive GUI for launching all measurement modules.
   * **CLI Mode:** A new command-line interface for headless operation (e.g., via SSH or Raspberry Pi).
   * **Isolated Process Execution:** Each script operates in a discrete process, guaranteeing application stability.
   * **Integrated VISA Instrument Scanner:** An embedded utility for discovering and troubleshooting connections.
+  * **Operational Transparency:** Unlike black-box solutions, PICA exposes real-time logs that facilitate debugging in the event of errors or anomalies, thereby enhancing scientific reproducibility.
   * **Automated Testing:** Integrated CI/CD pipelines for logic verification.
 
-> **⚠️ Important Note on Validation**
->
-> While Version 15.0 introduces **Automated CI/CD Testing** that passes all logic checks, the refactoring required for packaging may introduce subtle timing differences on physical hardware. **A comprehensive round of manual validation on physical instruments is currently underway** to ensure full operational stability matches the simulations.
-
------
-
-## 2\. 🚀 Getting Started
+## 3\.  Getting Started
 
 ### Hardware Setup
+Prior to executing the software, verify that all physical connections between the measurement instruments and the computer hosting PICA are correctly and securely established. [1]
 
-Before running the software, ensure your physical connections are established:
+There are multiple methods for establishing communication between an instrument and a computer, including direct USB, LAN (Ethernet), or via a USB‑to‑GPIB converter. Use a reliable, compliant interface cable (e.g., Keysight 82357B) to connect the computer to the instruments.
 
-  * **USB to GPIB Converter:** Use a reliable interface cable (e.g., Keysight 82357B) to connect your computer to the instruments.
-  * **Status Check:** Ensure the converter's status light is active (usually green).
-  * **Instrument Config:** Enable GPIB communication on your physical instruments and note their addresses (e.g., 12, 24).
+If a converter (e.g., GPIB‑to‑USB) is used, confirm that its status indicator is active (typically a green LED). Similarly, for LAN connections, check the link/activity indicators on the instrument and network interface. Many instruments also provide a “REMOTE” or similar status indication on their front panel to show that a remote communication session has been established.
+
+Instrument configuration: enable the appropriate communication interface (GPIB, USB, or LAN) on each physical instrument and record their corresponding addresses. If necessary, modify the instrument address and related communication parameters through the instrument’s configuration or setup menu..
 
 ### Software Installation
 
 **Prerequisites:**
 
-  * **Python:** Version 3.10 or newer.
-  * **NI-VISA Driver:** Install the National Instruments VISA Driver for your OS to enable communication.
+*   **Python:** Version 3.10 or newer.
+*   **NI-VISA Driver:** Install the National Instruments VISA Driver for your OS to enable communication.
+
+Install the required dependencies as specified in the `requirements.txt` file.
 
 **Installation Steps (Package Mode):**
 
@@ -78,12 +96,12 @@ PICA is now structured as a standard Python package. We recommend installing it 
 
 2.  **Create and Activate Virtual Environment:**
 
-      * *Windows:*
+    *   *Windows:*
         ```bash
         python -m venv venv
-        venv\Scripts\activate
+        .\venv\Scripts\activate
         ```
-      * *macOS/Linux:*
+    *   *macOS/Linux:*
         ```bash
         python3 -m venv venv
         source venv/bin/activate
@@ -98,9 +116,9 @@ PICA is now structured as a standard Python package. We recommend installing it 
 
 ### Running the Software
 
-You can now run PICA in two modes depending on your environment:
+PICA can be executed in two modes: a graphical user interface (GUI) for interactive use and a command-line interface (CLI) for headless or automated environments.
 
-**1. Graphical Launcher (GUI)**
+#### 1. Graphical Launcher (GUI)
 The standard dashboard for desktop users with a monitor.
 
 ```bash
@@ -118,16 +136,9 @@ python pica_cli.py
 
 You can quickly verify which instruments are connected and recognized by your system using the built-in scanner or this Python snippet:
 
-```python
-import pyvisa
-rm = pyvisa.ResourceManager()
-print(rm.list_resources())
-# Output Example: ('GPIB0::12::INSTR', 'GPIB0::24::INSTR')
-```
 
------
 
-## 3\. 🏗️ Software Architecture
+## 4\. ️ Software Architecture
 
 The core design philosophy of PICA is the **separation of concerns**, implemented through a distinct Frontend-Backend architecture.
 
@@ -138,7 +149,7 @@ The core design philosophy of PICA is the **separation of concerns**, implemente
 
 -----
 
-## 4\. 🔬 Available Measurement Modules
+## 5\.  Available Measurement Modules
 
 The suite is organized into modules, each containing a specific experimental setup:
 
@@ -153,29 +164,12 @@ The suite is organized into modules, each containing a specific experimental set
 
 -----
 
-## 5\. 🧪 Testing & Validation
-
-PICA now includes a robust test suite using `pytest`. It mocks hardware interactions, allowing the logic to be verified in a headless environment.
-
-To run the tests locally:
-
-1.  **Install Test Dependencies:**
-    ```bash
-    pip install pytest pytest-cov flake8
-    ```
-2.  **Run the Test Suite:**
-    ```bash
-    python -m pytest
-    ```
-3.  **Generate Coverage Report:**
-    ```bash
-    # Generates an HTML report in the htmlcov/ directory
-    python -m pytest --cov=. --cov-report=html
-    ```
+# Example usage
+# Functionality
 
 -----
 
-## 6\. 📚 Technical Reference
+## 7\.  Technical Reference
 
 ### Instrument Specifications
 
@@ -206,8 +200,7 @@ Specifications for instruments used in the PICA project.
 
 ### GPIB Address Guide
 
-Default addresses for PICA instruments. Use the **Test GPIB** utility in the GUI to confirm.
-
+Default communication addresses for selected instruments. Use the **Test GPIB** utility available in the graphical user interface (GUI) to verify proper connectivity and configuration.
   * **Lakeshore 340:** `GPIB0::12::INSTR`
   * **Lakeshore 350:** `GPIB1::15::INSTR`
   * **Keithley 2400:** `GPIB1::4::INSTR`
@@ -238,7 +231,7 @@ PICA (Root Directory)/
 
 -----
 
-## 7\. 📄 Citation, Attribution & Funding
+## 8\.  Citation, Attribution & Funding
 
 ### Citation
 
@@ -247,30 +240,21 @@ If you use this software in your research, please cite it.
 **BibTeX:**
 
 ```bibtex
-@software{Deshmukh_PICA_2023,
+@software{Deshmukh_PICA_2025,
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
   title        = {{PICA: Python-based Instrument Control and Automation Software Suite}},
   month        = sep,
-  year         = 2023,
+  year         = 2025,
   publisher    = {GitHub},
-  version      = {15.0.0},
+  version      = {1.0.1},
   url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
 }
 ```
 
-### Authors
-
-  * **Lead Developer:** Prathamesh Keshao Deshmukh
-  * **Principal Investigator:** Dr. Sudip Mukherjee
-  * **Institute:** UGC-DAE Consortium for Scientific Research, Mumbai Centre
-
-### Funding
-
-Financial support for this work was provided under **SERB-CRG project grant No. CRG/2022/005676** from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science & Technology (DST), Government of India.
 
 -----
 
-## 8\. 📝 Version History
+## 9\.  Version History
 -----
 [1.0.1] - 2025-12-02 (Current)
 Changed
@@ -306,3 +290,43 @@ Research & Documentation
 
   * **GUI Upgrade:** Updated frontend scripts to new standardized "Version 5" interfaces.
   * **New Module:** Added `RT_K2400_L350_T_Sensing_Frontend_v4.py` for passive monitoring.
+# tests
+To ensure measurement reliability and correct software operation, comprehensive testing is required. To this end, all modules were thoroughly tested in conjunction with the corresponding hardware. In addition to automated procedures, extensive manual testing was performed directly on the instrument, with particular emphasis on identifying limitations and edge conditions. In practice, each individual measurement effectively serves as a distinct test case. [1]
+
+Recognizing that full validation of the software suite is difficult without access to the complete set of instrument hardware, a limited set of automated tests has been implemented to provide at least a baseline level of verification.
+
+For manual testing of the PICA graphical user interface (GUI), the user can interact with different components, such as resizing the measurement panel and the plotting panel, and launching multiple instances of PICA modules (e.g., different measurement modules, the plotting utility, and the launcher). On modern hardware, the system has been empirically verified not to hang under such multitasking conditions.
+
+A particularly accessible component for testing is the plotting utility, <#plotterutil#>. It can be evaluated by repeatedly plotting data and modifying the data points to confirm that all visual elements update in real time. The performance of the measurement modules can likewise be assessed under concurrent operation to ensure there are no issues with multitasking. In addition, one should verify that all links and buttons from the main dashboard to the individual modules function correctly and lead to the intended targets. 
+# Automated tests
+## 6\. Testing & Validation
+PICA now includes a robust test suite using `pytest`. It mocks hardware interactions, allowing the logic to be verified in a headless environment.
+
+To run the tests locally:
+
+1.  **Install Test Dependencies:**
+    ```bash
+    pip install pytest pytest-cov flake8
+    ```
+2.  **Run the Test Suite:**
+    ```bash
+    python -m pytest
+    ```
+3.  **Generate Coverage Report:**
+    ```bash
+    # Generates an HTML report in the htmlcov/ directory
+    python -m pytest --cov=. --cov-report=html
+    ```
+# Community guidelines
+We encourage the community to contribute to PICA, either by developing new modules or by correcting existing issues. Individuals interested in contributing are invited to report problems or feature requests via the GitHub “Issues” tab. We are available to provide support with the installation and configuration of PICA, as well as with the setup of custom measurement systems; therefore, prospective users should not hesitate to contact us.
+Additional details regarding the code of conduct for contributors are available at:
+
+### Authors
+
+  * **Lead Developer:** Prathamesh Keshao Deshmukh
+  * **Principal Investigator:** Dr. Sudip Mukherjee
+  * **Institute:** UGC-DAE Consortium for Scientific Research, Mumbai Centre
+
+### Funding
+
+Financial support for this work was provided under **SERB-CRG project grant No. CRG/2022/005676** from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science & Technology (DST), Government of India.
