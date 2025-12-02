@@ -1,3 +1,7 @@
+"""
+A one-time script to restructure the PICA project from a flat layout
+to a professional, installable Python package structure.
+"""
 import os
 import shutil
 import subprocess
@@ -15,7 +19,7 @@ MAPPING = {
     "LCR_Keysight_E4980A": "pica/keysight",
     "Lock_in_amplifier": "pica/lockin",
     "Utilities": "pica/utils",
-    "assets": "pica/assets" # Assets often go inside the package for GUI access
+    "assets": "pica/assets"  # Assets often go inside the package for GUI access
 }
 
 ROOT_FILES_TO_MOVE = {
@@ -28,7 +32,7 @@ def run_command(command):
     try:
         subprocess.check_call(command, shell=True)
     except subprocess.CalledProcessError as e:
-        print(f"Error running command: {command}")
+        print(f"Error running command: {command}\n{e}")
         sys.exit(1)
 
 def ensure_dir(path):
@@ -53,26 +57,20 @@ def update_imports(file_path):
 
     original_content = content
 
-    # 1. Fix Utilities imports
-    content = re.sub(r'from Utilities', 'from pica.utils', content)
-    content = re.sub(r'import Utilities', 'import pica.utils', content)
+    # Generic import fixer based on the MAPPING dictionary
+    # This makes the script more robust to future changes
+    replacements = {
+        "from Utilities": "from pica.utils",
+        "import Utilities": "import pica.utils",
+        "from Keithley_2400": "from pica.keithley.k2400",
+        "from Lakeshore_350_340": "from pica.lakeshore",
+        "from Delta_mode_Keithley_6221_2182": "from pica.keithley.delta_mode",
+        "from LCR_Keysight_E4980A": "from pica.keysight",
+    }
 
-    # 2. Fix Keithley 2400 imports
-    content = re.sub(r'from Keithley_2400', 'from pica.keithley.k2400', content)
-    
-    # 3. Fix Lakeshore imports
-    content = re.sub(r'from Lakeshore_350_340', 'from pica.lakeshore', content)
-    
-    # 4. Fix Delta Mode imports
-    content = re.sub(r'from Delta_mode_Keithley_6221_2182', 'from pica.keithley.delta_mode', content)
+    for old, new in replacements.items():
+        content = re.sub(old, new, content)
 
-    # 5. Fix Keysight imports
-    content = re.sub(r'from LCR_Keysight_E4980A', 'from pica.keysight', content)
-
-    # 6. Fix generic "assets" paths in GUI code (assuming relative paths)
-    # This replaces "assets/" with dynamic path logic, but for now let's just update the string
-    # If the code uses strict relative paths, this might need manual checking.
-    
     if content != original_content:
         print(f"  [Refactoring] Updated imports in {file_path}")
         with open(file_path, 'w', encoding='utf-8') as f:
@@ -80,11 +78,11 @@ def update_imports(file_path):
 
 def main():
     print("--- Starting Professional PICA Refactoring ---")
-    
+
     # 1. Create Base Directories
     ensure_dir("pica")
     ensure_dir("scripts")
-    
+
     # Check if this is a git repo
     is_git = os.path.exists(".git")
     if is_git:
@@ -98,7 +96,7 @@ def main():
             print(f"Moving {old_name} -> {new_path}")
             # Ensure parent dir exists
             ensure_dir(os.path.dirname(new_path))
-            
+
             if is_git:
                 # git mv expects the parent directory of destination to exist
                 run_command(f'git mv "{old_name}" "{new_path}"')
@@ -126,7 +124,7 @@ def main():
         for filename in filenames:
             if filename.endswith(".py"):
                 update_imports(os.path.join(dirpath, filename))
-    
+
     # Also check tests
     if os.path.exists("tests"):
         for dirpath, _, filenames in os.walk("tests"):
