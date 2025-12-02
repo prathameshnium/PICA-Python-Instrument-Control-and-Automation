@@ -58,8 +58,7 @@ def test_gui_module_initialization(module_path):
         elif base_name.endswith('_GUI'):
             class_name = base_name
         else:
-             pytest.fail(f"Could not determine class name from module path: {module_path}")
-
+            pytest.fail(f"Could not determine class name from module path: {module_path}")
 
         # Get the class from the module and instantiate it
         AppClass = getattr(gui_module, class_name)
