@@ -204,7 +204,7 @@ Research & Documentation
     Launch: PICA project posted on Hacker News.
 ---
 
-### **v15.0 : JOSS Submission & Professionalization**
+### **v 15.0 : JOSS Submission & Professionalization**
 *Status: Released November 2025*
 Focus shifted to code quality, stability, and documentation standards.
 * **CI/CD Integration:** Implementation of automated testing pipelines using GitHub Actions.
@@ -238,16 +238,16 @@ This period marked the transition to the **GUI-Backend isolated architecture**.
 If you use this software in your research, please cite it using the following BibTeX entry:
 
 ```bibtex
-@software{Deshmukh_PICA_2023,
+@software{Deshmukh_PICA_2025,
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
   title        = {{PICA: Python-based Instrument Control and Automation Software Suite}},
   month        = sep,
-  year         = 2023,
+  year         = 2025,
   publisher    = {GitHub},
-  version      = {15.0.0},
-  url          = {[https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation)}
+  version      = {1.0.1},
+  url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
 }
-````
+```
 
 Alternatively, refer to the `CITATION.cff` file in the root directory.
 
