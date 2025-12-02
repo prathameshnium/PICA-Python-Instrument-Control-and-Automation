@@ -26,7 +26,10 @@ jobs:
 
     # 3. Install System Dependencies (Required for Tkinter/Matplotlib on Linux)
     - name: Install Tkinter System Libs
-      run: sudo apt-get update && sudo apt-get install -y python3-tk
+      run: |
+        sudo rm -f /etc/apt/sources.list.d/azure-cli.list
+        sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
+        sudo apt-get update && sudo apt-get install -y python3-tk
 
     # 4. Install Your Python Dependencies
     - name: Install dependencies

@@ -354,11 +354,18 @@ class HighResistanceIV_GUI:
         right_panel = tk.Frame(main_pane, bg='white')
         main_pane.add(right_panel, weight=3)
         top_controls_frame = ttk.Frame(left_panel)
-        left_panel.add(top_controls_frame, weight=0)
+
+        # Create the console frame first to initialize the logger, but don't add it to the layout yet.
+        console_pane = self.create_console_frame(left_panel)
+
+        # Create and populate the top frame, which can now safely log messages.
         self.create_info_frame(top_controls_frame)
         self.create_input_frame(top_controls_frame)
-        console_pane = self.create_console_frame(left_panel)
+
+        # Add the frames to the layout in the correct visual order.
+        left_panel.add(top_controls_frame, weight=0)
         left_panel.add(console_pane, weight=1)
+
         self.create_graph_frame(right_panel)
 
     def create_header(self):
