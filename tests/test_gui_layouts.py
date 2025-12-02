@@ -14,10 +14,10 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 GUI_TARGETS = [
-    "Keithley_6517B.High_Resistance.IV_K6517B_GUI",
-    "Keithley_6517B.High_Resistance.RT_K6517B_L350_T_Control_GUI",
-    "Keithley_2400.IV_K2400_GUI",
-    "Lakeshore_350_340.T_Sensing_L350_GUI"
+    "pica.keithley.k6517b.High_Resistance.IV_K6517B_GUI",
+    "pica.keithley.k6517b.High_Resistance.RT_K6517B_L350_T_Control_GUI",
+    "pica.keithley.k2400.IV_K2400_GUI",
+    "pica.lakeshore.T_Sensing_L350_GUI"
 ]
 
 # --- SAFE CLASSES ---
