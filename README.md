@@ -191,7 +191,26 @@ PICA has evolved from a collection of offline utility scripts into a modular sof
 
 > **📜 Project Lore:** For a detailed chronological log of the project's development history, including the offline prototyping phase and specific version changelogs, please refer to [`Change_Logs.md`](Change_Logs.md).
 
-### **v15.0 (Current): JOSS Submission & Professionalization**
+---
+[1.0.1] - 2025-12-02 (Current)
+Changed
+
+    Directory Structure: Refactored codebase into a professional project structure; moved numerous files to appropriate subdirectories for better organization.
+
+    Versioning: Standardized version naming conventions. Adopted Semantic Versioning (v1.0.1).
+
+Research & Documentation
+
+    Paper Draft: Completed and presented the first draft of the research paper to Dr. Sudip Mukherjee.
+
+    Feedback: Received critical feedback regarding the inclusion of ATMS (Advanced Trasport Measuremenet Systems).
+
+[Community] - 2025-12-01
+
+    Launch: PICA project posted on Hacker News.
+---
+
+### **v15.0 : JOSS Submission & Professionalization**
 *Status: Released November 2025*
 Focus shifted to code quality, stability, and documentation standards.
 * **CI/CD Integration:** Implementation of automated testing pipelines using GitHub Actions.
