@@ -46,27 +46,3 @@ testpaths = [
 pythonpath = [
     ".",
 ]
-```
-
-#### Step 2: Fix Asset Paths in `pica/main.py`
-Since `main.py` is no longer in the root folder, it might not find the images (logos). Open `pica/main.py` and look for where `ASSET_PATH` or image paths are defined.
-
-Replace hardcoded paths like `"assets/"` with this dynamic path code:
-
-```python
-import os
-# Get the directory where this file resides (pica/)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Build path to assets relative to this file
-ASSET_PATH = os.path.join(BASE_DIR, 'assets')
-```
-
-#### Step 3: Install & Test
-Run these commands in your terminal to register the new package structure and test it:
-
-```bash
-# 1. Install the package in "editable" mode
-pip install -e .
-
-# 2. Run the new launcher shim
-python run_pica.py
