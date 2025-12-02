@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pica-suite"
-version = "1.0.1"
+version = "17.0.0"
 authors = [
   { name="Prathamesh Deshmukh", email="prathamesh.deshmukh@example.com" },
   { name="Sudip Mukherjee", email="sudipm@csr.res.in" },

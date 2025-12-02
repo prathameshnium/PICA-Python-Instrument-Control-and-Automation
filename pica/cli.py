@@ -6,7 +6,7 @@ from pathlib import Path
 
 # Metadata & Terms
 APP_NAME = "PICA Command Line Interface"
-VERSION = "1.0.1"
+VERSION = "17.0.0"
 AUTHORS = "Prathamesh Deshmukh, Sudip Mukherjee"
 AFFILIATION = "UGC-DAE Consortium for Scientific Research, Mumbai Centre"
 LICENSE = "MIT License"
