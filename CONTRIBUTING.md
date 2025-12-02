@@ -13,7 +13,7 @@ If you encounter an error while running a measurement:
 ## How to Suggest Features
 If you have a script for a new instrument (e.g., a lock-in amplifier) that you would like to include:
 1.  Fork this repository.
-2.  Add your script to a new folder (e.g., `SRS_830/`).
+2.  Add your script to a new folder in pica (e.g., `SRS_830/`).
 3.  Submit a Pull Request (PR) describing what the instrument does.
 
 ## Development Setup
