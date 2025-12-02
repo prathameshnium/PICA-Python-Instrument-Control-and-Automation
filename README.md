@@ -53,15 +53,10 @@
 
 ## Overview
 
-**PICA (Python-based Instrument Control and Automation)** is a software suite designed to provide a robust framework for automating laboratory instruments in materials science and condensed matter physics research. The suite features a central graphical user interface (GUI), the **PICA Launcher**, which serves as a dashboard for managing and executing a variety of characterization experiments.
-
-A key architectural feature is the use of **isolated process execution** for each measurement module via Python's `multiprocessing` library. This ensures high stability, prevents inter-script conflicts, and allows the main dashboard to remain responsive during long-running experiments.
-
-> **⚠️ Important Note on Testing & Validation**
->
-> This software is actively used for daily laboratory measurements and has been verified on physical instruments (Keithley, Lakeshore, etc.).
->
-> Recently, significant updates were made to the codebase to integrate **Automated CI/CD Testing** (simulations and logic checks). While these automated tests pass successfully, the refactoring required for them may have introduced subtle timing or hardware-specific regressions. **A comprehensive round of manual validation on the physical instruments is currently underway** to ensure full operational stability.
+PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite specifically designed to automate complex characterisation experiments and provide a robust framework for automating laboratory instruments in materials science and condensed matter physics research.
+Developed to operate as a custom laboratory-built measurement system, PICA provides a unifying graphical user interface (GUI) for orchestrating high-precision instruments, specifically Keithley SourceMeters/Nanovoltmeters, Lakeshore Temperature Controllers, and Keysight LCR Meters. The suite regulates the cryogenic environment to perform automated protocols such as temperature-dependent resistivity, current-voltage (I-V) characteristics, and pyroelectric current measurements.
+The suite features a central graphical user interface (GUI), the **PICA Launcher**, which serves as a dashboard for managing and executing a variety of characterisation experiments. Built to streamline data acquisition and enhance experimental reproducibility, PICA leverages Python's `multiprocessing` library to ensure high stability by isolating each measurement process.
+.
 
 ---
 
@@ -92,10 +87,9 @@ The core design philosophy of PICA is the separation of concerns, implemented th
 ---
 
 ## Core Features
-
+- **Modular Design:** Each experimental setup is a self-contained module, making the codebase easy to extend.
 - **Centralized Control Dashboard:** A comprehensive GUI for launching all measurement modules.
 - **Integrated VISA Instrument Scanner:** An embedded utility for identifying and troubleshooting GPIB/VISA connections via the NI-VISA backend.
-- **Modular Design:** Each experimental setup is a self-contained module, making the codebase easy to extend.
 - **Embedded Documentation:** In-application viewer for technical manuals and project guides.
 - **System Console Log:** A real-time logging system that provides status updates and error diagnostics.
 
@@ -143,7 +137,7 @@ PICA is now structured as a standard Python package. Follow these steps to insta
     pip install -e .
     ```
 
-## 🖥️ Running the Software
+## ��️ Running the Software
 
 You can now run PICA in two modes: the standard Graphical User Interface (GUI) or the new Command Line Interface (CLI) for headless operation.
 
@@ -161,7 +155,7 @@ You can now run PICA in two modes: the standard Graphical User Interface (GUI) o
 
 ---
 
-## 🧪 Running Tests
+## �� Running Tests
 
 This repository includes a robust test suite using `pytest`. It mocks hardware interactions and GUI components, allowing the logic to be verified in a headless environment (CI).
 
@@ -189,7 +183,7 @@ To run the tests locally:
 
 PICA has evolved from a collection of offline utility scripts into a modular software suite. The development timeline highlights the shift from manual instrument handling to a fully automated, asynchronous control system.
 
-> **📜 Project Lore:** For a detailed chronological log of the project's development history, including the offline prototyping phase and specific version changelogs, please refer to [`Change_Logs.md`](Change_Logs.md).
+> **�� Project Lore:** For a detailed chronological log of the project's development history, including the offline prototyping phase and specific version changelogs, please refer to [`Change_Logs.md`](Change_Logs.md).
 
 ---
 [1.0.1] - 2025-12-02 (Current)
@@ -232,7 +226,7 @@ This period marked the transition to the **GUI-Backend isolated architecture**.
 
 ---
 
-## 📚 Resources & Documentation
+## �� Resources & Documentation
 
 * **User Manual:** Detailed setup and troubleshooting guides are available in [docs/User_Manual.md](docs/User_Manual.md).
 * **Instrument Manuals:** Original PDF manuals for the supported hardware are located in `assets/Manuals/`.
