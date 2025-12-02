@@ -122,15 +122,13 @@ PICA is now structured as a standard Python package. Follow these steps to insta
 
 1.  **Clone the Repository**
     ```bash
-    git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
+    git clone [https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git)
+    cd PICA-Python-Instrument-Control-and-Automation
     ```
 
 2.  **Create a Virtual Environment**
     ```bash
-    # First, navigate into the cloned repository
-    cd PICA-Python-Instrument-Control-and-Automation
-
-    # Windows
+    # Create the virtual environment
     python -m venv venv
     venv\Scripts\activate
 
