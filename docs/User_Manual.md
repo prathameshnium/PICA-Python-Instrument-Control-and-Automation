@@ -3,7 +3,7 @@
 \<img src="../assets/LOGO/PICA\_LOGO\_NBG.png" alt="PICA Logo" width="150"/\>
 \<h1\>PICA User Manual\</h1\>
 \<p\>\<strong\>Python-based Instrument Control and Automation Software Suite\</strong\>\</p\>
-<p><em>Comprehensive Guide for Version 1.0.1</em></p>
+<p><em>Comprehensive Guide for Version 17.0.0</em></p>
 \</div\>
 
 -----
@@ -212,7 +212,7 @@ Default communication addresses for selected instruments. Use the **Test GPIB** 
 
 ### File Structure
 
-Reference for the project directory layout (v1.0.1).
+Reference for the project directory layout (v17.0.0).
 
 ```text
 PICA (Root Directory)/
@@ -246,7 +246,7 @@ If you use this software in your research, please cite it.
   month        = sep,
   year         = 2025,
   publisher    = {GitHub},
-  version      = {1.0.1},
+  version      = {17.0.0},
   url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
 }
 ```
@@ -256,12 +256,12 @@ If you use this software in your research, please cite it.
 
 ## 9\.  Version History
 -----
-[1.0.1] - 2025-12-02 (Current)
+[17.0.0] - 2025-12-02 (Current)
 Changed
 
     Directory Structure: Refactored codebase into a professional project structure; moved numerous files to appropriate subdirectories for better organization.
 
-    Versioning: Standardized version naming conventions. Adopted Semantic Versioning (v1.0.1).
+    Versioning: Standardized version naming conventions. Adopted Semantic Versioning (v17.0.0).
 
 Research & Documentation
 

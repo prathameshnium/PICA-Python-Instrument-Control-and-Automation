@@ -1,11 +1,11 @@
 ## Instrument & Software Update Log
 ---
-[1.0.1] - 2025-12-02 (Current)
+[17.0.0] - 2025-12-02 (Current)
 Changed
 
     Directory Structure: Refactored codebase into a professional project structure; moved numerous files to appropriate subdirectories for better organization.
 
-    Versioning: Standardized version naming conventions. Adopted Semantic Versioning (v1.0.1).
+    Versioning: Standardized version naming conventions. Adopted Semantic Versioning (v17.0.0).
 
 Research & Documentation
 

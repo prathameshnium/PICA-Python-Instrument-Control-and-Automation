@@ -9,7 +9,7 @@ authors:
     given-names: "Sudip"
     affiliation: "UGC-DAE Consortium for Scientific Research, Mumbai Centre"
 title: "PICA: Python-based Instrument Control and Automation Software Suite"
-version: 1.0.1
+version: 17.0.0
 date-released: 2025-11-23
 url: "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
 repository-code: "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"

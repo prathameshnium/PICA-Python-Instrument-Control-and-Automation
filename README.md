@@ -148,7 +148,7 @@ You can now run PICA in two modes: the standard Graphical User Interface (GUI) o
     ```
 
 2.  **Command Line Interface (CLI)**
-    New in v.1.0.1: A text-based menu for running measurements via SSH, on Raspberry Pis, or in automated environments without a monitor.
+    New in v.17.0.0: A text-based menu for running measurements via SSH, on Raspberry Pis, or in automated environments without a monitor.
     ```bash
     python pica_cli.py
     ```
@@ -186,12 +186,12 @@ PICA has evolved from a collection of offline utility scripts into a modular sof
 > **�� Project Lore:** For a detailed chronological log of the project's development history, including the offline prototyping phase and specific version changelogs, please refer to [`Change_Logs.md`](Change_Logs.md).
 
 ---
-[1.0.1] - 2025-12-02 (Current)
+[17.0.0] - 2025-12-02 (Current)
 Changed
 
     Directory Structure: Refactored codebase into a professional project structure; moved numerous files to appropriate subdirectories for better organization.
 
-    Versioning: Standardized version naming conventions. Adopted Semantic Versioning (v1.0.1).
+    Versioning: Standardized version naming conventions. Adopted Semantic Versioning (v17.0.0).
 
 Research & Documentation
 
@@ -244,7 +244,7 @@ If you use this software in your research, please cite it using the following Bi
   month        = sep,
   year         = 2025,
   publisher    = {GitHub},
-  version      = {1.0.1},
+  version      = {17.0.0},
   url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
 }
 ```
