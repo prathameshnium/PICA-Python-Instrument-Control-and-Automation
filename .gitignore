@@ -80,6 +80,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+Untracked_Stuff/
 
 # Installer logs
 pip-log.txt
@@ -109,3 +110,4 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
