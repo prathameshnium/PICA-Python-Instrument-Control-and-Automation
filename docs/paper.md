@@ -12,10 +12,6 @@ authors:
   - name: Prathamesh Deshmukh
     orcid: 0009-0008-3278-0837
     affiliation: "1,2"
-  - name: Srishti Kashyap
-    affiliation: "1,2"
-  - name: Swastika Mukherjee
-    affiliation: "1,2"
   - name: Sudip Mukherjee
     orcid: 0000-0003-4734-9157
     affiliation: "1,2"
