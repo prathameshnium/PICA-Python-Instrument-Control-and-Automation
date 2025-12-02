@@ -104,7 +104,7 @@ class TestDeepSimulation(unittest.TestCase):
             with patch('sys.argv', test_args), \
                  patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
-                    "Keithley_2400.Instrument_Control.IV_K2400_Loop_Instrument_Control", {})
+                    "pica.keithley.k2400.Instrument_Control.IV_K2400_Loop_Instrument_Control", {})
                 spy.enable_source.assert_called()
 
     @pytest.mark.usefixtures("mock_tkinter")
@@ -119,7 +119,7 @@ class TestDeepSimulation(unittest.TestCase):
 
             with patch('builtins.input', side_effect=['10', '300', '10', '350']), \
                  patch('builtins.open', mock_open()):
-                self.run_module_safely("Lakeshore_350_340.Instrument_Control.T_Control_L350_Simple_Instrument_Control", {})
+                self.run_module_safely("pica.lakeshore.Instrument_Control.T_Control_L350_Simple_Instrument_Control", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_03_k6517b_pyro_backend(self):
@@ -131,7 +131,7 @@ class TestDeepSimulation(unittest.TestCase):
             spy.current = 1.23e-9
             with patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
-                    "Keithley_6517B.Pyroelectricity.Instrument_Control."
+                    "pica.keithley.k6517b.Pyroelectricity.Instrument_Control."
                     "Current_K6517B_Simple_Instrument_Control", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
@@ -146,7 +146,7 @@ class TestDeepSimulation(unittest.TestCase):
             visa_spy.query.return_value = "0.5"
             with patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
-                    "LCR_Keysight_E4980A.Instrument_Control.CV_KE4980A_Simple_Instrument_Control", {})
+                    "pica.keysight.Instrument_Control.CV_KE4980A_Simple_Instrument_Control", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_05_delta_simple(self):
@@ -158,7 +158,7 @@ class TestDeepSimulation(unittest.TestCase):
             inputs = ['0', '1e-5', '1e-6', 'test_file', 'y', 'y']
             with patch('builtins.input', side_effect=inputs), \
                  patch('pandas.DataFrame.to_csv'):
-                self.run_module_safely("Delta_mode_Keithley_6221_2182.Instrument_Control.Delta_K6221_K2182_Simple", {})
+                self.run_module_safely("pica.keithley.delta_mode.Instrument_Control.Delta_K6221_K2182_Simple", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_06_delta_sensing(self):
@@ -174,7 +174,7 @@ class TestDeepSimulation(unittest.TestCase):
                  patch('pandas.DataFrame.to_csv'):
                 try:
                     self.run_module_safely(
-                        "Delta_mode_Keithley_6221_2182.Instrument_Control.Delta_K6221_K2182_L350_T_Sensing_Instrument_Control", {})
+                        "pica.keithley.delta_mode.Instrument_Control.Delta_K6221_K2182_L350_T_Sensing_Instrument_Control", {})
                 except ModuleNotFoundError:
                     print("   [SKIP] Module not found, skipping.")
 
@@ -216,7 +216,7 @@ class TestDeepSimulation(unittest.TestCase):
             with patch('builtins.input', side_effect=inputs), \
                  patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
-                    "Keithley_2400_Keithley_2182.Instrument_Control.IV_K2400_K2182_Instrument_Control", {})
+                    "pica.keithley.k2400.Keithley_2182.Instrument_Control.IV_K2400_K2182_Instrument_Control", {})
             mock_pymeasure.stop()
 
     @pytest.mark.usefixtures("mock_tkinter")
@@ -228,7 +228,7 @@ class TestDeepSimulation(unittest.TestCase):
             inputs = ['100', '10', 'y']
             with patch('builtins.input', side_effect=inputs):
                 self.run_module_safely(
-                    "Keithley_6517B.Pyroelectricity.Instrument_Control.Poling_K6517B_Instrument_Control", {})
+                    "pica.keithley.k6517b.Pyroelectricity.Instrument_Control.Poling_K6517B_Instrument_Control", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_10_high_resistance(self):
@@ -246,7 +246,7 @@ class TestDeepSimulation(unittest.TestCase):
 
             with patch('builtins.input', side_effect=inputs), \
                  patch('builtins.open', mock_open()):
-                self.run_module_safely("Keithley_6517B.High_Resistance.Instrument_Control.IV_K6517B_Simple_Instrument_Control", {})
+                self.run_module_safely("pica.keithley.k6517b.High_Resistance.Instrument_Control.IV_K6517B_Simple_Instrument_Control", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_11_gpib_scanner(self):

@@ -62,7 +62,7 @@ class TestDeepSimulation(unittest.TestCase):
             with patch('sys.argv', test_args), \
                     patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
-                    "Keithley_2400.Instrument_Control.IV_K2400_Loop_Instrument_Control")
+                    "pica.keithley.k2400.Instrument_Control.IV_K2400_Loop_Instrument_Control")
 
                 # Assertions
                 spy_inst.enable_source.assert_called()
@@ -121,7 +121,7 @@ class TestDeepSimulation(unittest.TestCase):
                  patch('tkinter.filedialog.asksaveasfilename', mock_file_dialog):
 
                 self.run_module_safely(
-                    "Lakeshore_350_340.Instrument_Control.T_Control_L350_Simple_Instrument_Control")
+                    "pica.lakeshore.Instrument_Control.T_Control_L350_Simple_Instrument_Control")
 
             # --- ASSERTIONS ---
             # Now that the script runs fully without crashing on .plot(), 
