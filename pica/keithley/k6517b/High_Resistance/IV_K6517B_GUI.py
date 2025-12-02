@@ -246,7 +246,7 @@ class HighResistanceIV_GUI:
             "UGC_DAE_CSR_NBG.jpeg")
     except NameError:
         # Fallback for environments where __file__ is not defined
-        LOGO_FILE_PATH = "../../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
+        LOGO_FILE_PATH = "../../../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
 
     CLR_BG_DARK = '#2B3D4F'
     CLR_HEADER = '#3A506B'

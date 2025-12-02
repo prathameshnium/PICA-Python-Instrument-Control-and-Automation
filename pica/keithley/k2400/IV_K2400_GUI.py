@@ -215,7 +215,7 @@ class MeasurementAppGUI:
             "LOGO",
             "UGC_DAE_CSR_NBG.jpeg")
     except NameError:
-        LOGO_FILE = "../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
+        LOGO_FILE = "../../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
     LOGO_SIZE = 120
 
     def __init__(self, root):

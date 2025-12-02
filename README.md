@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
+  <img src="pica/assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="150"/>
 </p>
 
 <h1 align="center">PICA: Python-based Instrument Control and Automation</h1>
@@ -255,7 +255,7 @@ Alternatively, refer to the `CITATION.cff` file in the root directory.
 ## Authors & Acknowledgments
 
 <p align="center">
-  <img src="assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
+  <img src="pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
 
   - **Lead Developer:** **[Prathamesh Deshmukh](https://prathameshdeshmukh.site/)**

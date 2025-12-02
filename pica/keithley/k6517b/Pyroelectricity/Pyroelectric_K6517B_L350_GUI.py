@@ -405,7 +405,7 @@ class PyroelectricAppGUI:
                 "LOGO",
                 "UGC_DAE_CSR_NBG.jpeg")
         except NameError:
-            logo_path = "../../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
+            logo_path = "../../../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
         self.logo_image = self._process_logo_image(logo_path, size=LOGO_SIZE)
         if self.logo_image:
             logo_canvas.create_image(
