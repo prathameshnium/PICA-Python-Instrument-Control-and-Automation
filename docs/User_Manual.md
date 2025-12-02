@@ -3,7 +3,7 @@
 \<img src="../assets/LOGO/PICA\_LOGO\_NBG.png" alt="PICA Logo" width="150"/\>
 \<h1\>PICA User Manual\</h1\>
 \<p\>\<strong\>Python-based Instrument Control and Automation Software Suite\</strong\>\</p\>
-\<p\>\<em\>Comprehensive Guide for Version 15.0\</em\>\</p\>
+<p><em>Comprehensive Guide for Version 1.0.1</em></p>
 \</div\>
 
 -----
@@ -212,7 +212,7 @@ Default communication addresses for selected instruments. Use the **Test GPIB** 
 
 ### File Structure
 
-Reference for the project directory layout (v15.0).
+Reference for the project directory layout (v1.0.1).
 
 ```text
 PICA (Root Directory)/
@@ -273,7 +273,7 @@ Research & Documentation
 
     Launch: PICA project posted on Hacker News.
 
-**Version 15.0 (Current)**
+**Version 15****
 
   * **JOSS Submission:** Codebase refactored to meet open-source software standards.
   * **CI/CD:** Added automated testing pipelines via GitHub Actions.
