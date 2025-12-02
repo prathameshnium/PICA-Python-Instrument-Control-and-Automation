@@ -149,7 +149,7 @@ class TestDeepSimulation(unittest.TestCase):
                 'GPIB0::24::INSTR', 'GPIB0::12::INSTR')
 
             try:
-                import Utilities.GPIB_Instrument_Scanner_GUI as scanner
+                import pica.utils.GPIB_Instrument_Scanner_GUI as scanner
                 if hasattr(scanner, 'GPIBScannerWindow'):
                     scanner.GPIBScannerWindow(MagicMock(), MagicMock())
                     rm.list_resources.assert_called()
