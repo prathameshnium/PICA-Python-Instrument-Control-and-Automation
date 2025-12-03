@@ -25,6 +25,7 @@ dependencies = [ # Pinned to match requirements.txt for stability
     "PyVISA==1.12.0",
     "PyMeasure==0.10.0",
     "pyvisa-py==0.5.3",
+    "gpib-ctypes==0.3.0",
     "scipy" # Scipy is flexible enough to work with the older numpy
 ]
 
