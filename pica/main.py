@@ -120,7 +120,7 @@ class PICALauncherApp:
     MANUAL_FILE = resource_path("assets/Manuals")
     README_FILE = resource_path("../README.md")
     LICENSE_FILE = resource_path("../LICENSE")
-    UPDATES_FILE = resource_path("../docs/Change_Logs.md")
+    UPDATES_FILE = resource_path("../CHANGELOG.md")
     REPO_URL = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tree/main"
     LOGO_SIZE = 140
 
@@ -759,7 +759,8 @@ class PICALauncherApp:
         self._show_file_in_window(self.UPDATES_FILE, "Change Log")
 
     def open_manual_folder(self):
-        self._open_path(self.MANUAL_FILE)
+        manual_path = os.path.abspath(self.MANUAL_FILE)
+        self._open_path(manual_path)
 
     def open_license(self):
         self._show_file_in_window(self.LICENSE_FILE, "MIT License")
