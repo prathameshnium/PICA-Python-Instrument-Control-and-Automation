@@ -1,60 +1,38 @@
 # tests/conftest.py
-"""
-This file contains shared fixtures for the PICA test suite.
-Fixtures defined here are automatically available to all test files.
-"""
 import pytest
-from unittest.mock import MagicMock, patch
 import sys
+from unittest.mock import MagicMock
+import matplotlib
 
+# Force Agg backend immediately when tests start
+matplotlib.use('Agg')
 
 @pytest.fixture
-def mock_tkinter():
+def mock_tkinter(monkeypatch):
     """
-    A comprehensive pytest fixture that mocks essential libraries (tkinter,
-    matplotlib, pyvisa, etc.) to prevent any actual GUI rendering or hardware
-    communication during tests. This is crucial for CI/CD environments.
-
-    It correctly mocks matplotlib as a package to allow submodule imports
-    like 'from matplotlib.figure import Figure'.
+    Mocks tkinter to prevent GUI windows from opening.
     """
-    # Create a mock for matplotlib that acts like a package
-    mock_matplotlib = MagicMock()
-    mock_matplotlib.figure.Figure = MagicMock()
-    mock_matplotlib.backends.backend_tkagg.FigureCanvasTkAgg = MagicMock(
-        return_value=MagicMock(get_tk_widget=MagicMock())
-    )
-
-    # Create a mock for pymeasure that acts like a package
-    mock_pymeasure = MagicMock()
-    mock_pymeasure.instruments.keithley.Keithley2400 = MagicMock()
-    mock_pymeasure.instruments.keithley.Keithley6517B = MagicMock()
-    mock_pymeasure.instruments.agilent.AgilentE4980 = MagicMock()
+    mock_tk = MagicMock()
+    # Mock specific attributes accessed by your GUIs
+    mock_tk.Tk = MagicMock()
+    mock_tk.Toplevel = MagicMock()
+    mock_tk.Canvas = MagicMock()
     
-    # Mock libraries that would otherwise create windows or require hardware
-    mocked_modules = {
-        'tkinter': MagicMock(),
-        'tkinter.ttk': MagicMock(),
-        'tkinter.messagebox': MagicMock(),
-        'tkinter.filedialog': MagicMock(),
-        'tkinter.simpledialog': MagicMock(),
-        'tkinter.font': MagicMock(),
-        'matplotlib': mock_matplotlib,
-        'matplotlib.pyplot': MagicMock(),
-        'matplotlib.figure': mock_matplotlib.figure,
-        'matplotlib.backends': mock_matplotlib.backends,
-        'matplotlib.backends.backend_tkagg': mock_matplotlib.backends.backend_tkagg,
-        'pyvisa': MagicMock(), # Mock pyvisa
-        'pymeasure': mock_pymeasure,
-        'pymeasure.instruments': mock_pymeasure.instruments,
-        'pymeasure.instruments.keithley': mock_pymeasure.instruments.keithley,
-        'PIL': MagicMock(),
-        'PIL.Image': MagicMock(),
-        'PIL.ImageTk': MagicMock(),
-    }
-    with patch.dict('sys.modules', {
-        **mocked_modules,
-        'sys': sys.modules['sys'],
-        'warnings': sys.modules['warnings'],
-    }) as patched_modules:
-        yield
+    # Ensure variables return mocks that can be .get() or .set()
+    mock_var = MagicMock()
+    mock_var.get.return_value = 0
+    mock_tk.StringVar.return_value = mock_var
+    mock_tk.IntVar.return_value = mock_var
+    mock_tk.BooleanVar.return_value = mock_var
+    
+    monkeypatch.setitem(sys.modules, 'tkinter', mock_tk)
+    return mock_tk
+
+@pytest.fixture
+def safe_matplotlib():
+    """
+    Ensures plots are closed after test to free memory.
+    """
+    # We already set 'Agg' globally, so just handle cleanup here.
+    yield
+    matplotlib.pyplot.close('all')

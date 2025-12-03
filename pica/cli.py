@@ -1,3 +1,32 @@
+"""
+PICA Command Line Interface (CLI)
+
+This module handles the parsing of command-line arguments to launch
+specific instrument control GUIs and utility scripts.
+"""
+# pica/cli.py
+
+ALL_GUI_MODULES = [
+    "pica.keithley.delta_mode.Delta_RT_K6221_K2182_L350_Sensing_GUI",
+    "pica.keithley.delta_mode.Delta_RT_K6221_K2182_L350_T_Control_GUI",
+    "pica.keithley.delta_mode.IV_K6221_DC_Sweep_GUI",
+    "pica.keithley.k2400.IV_K2400_GUI",
+    "pica.keithley.k2400.RT_K2400_L350_T_Control_GUI",
+    "pica.keithley.k2400.RT_K2400_L350_T_Sensing_GUI",
+    "pica.keithley.k2400_2182.IV_K2400_K2182_GUI",
+    "pica.keithley.k2400_2182.RT_K2400_2182_L350_T_Sensing_GUI",
+    "pica.keithley.k2400_2182.RT_K2400_K2182_T_Control_GUI",
+    "pica.keithley.k6517b.High_Resistance.IV_K6517B_GUI",
+    "pica.keithley.k6517b.High_Resistance.RT_K6517B_L350_T_Control_GUI",
+    "pica.keithley.k6517b.High_Resistance.RT_K6517B_L350_T_Sensing_GUI",
+    "pica.keithley.k6517b.Pyroelectricity.Pyroelectric_K6517B_L350_GUI",
+    "pica.keysight.CV_KE4980A_GUI",
+    "pica.lakeshore.T_Control_L350_RangeControl_GUI",
+    "pica.lakeshore.T_Sensing_L350_GUI",
+    "pica.utils.GPIB_Instrument_Scanner_GUI",
+    "pica.utils.PlotterUtil_GUI",
+]
+
 import os
 import sys
 import subprocess
@@ -11,6 +40,7 @@ AUTHORS = "Prathamesh Deshmukh, Sudip Mukherjee"
 AFFILIATION = "UGC-DAE Consortium for Scientific Research, Mumbai Centre"
 LICENSE = "MIT License"
 TERMS = """
+
 TERMS OF SERVICE / DISCLAIMER:
 This software is provided "as is", without warranty of any kind.
 The authors are not responsible for any damage to hardware instruments
