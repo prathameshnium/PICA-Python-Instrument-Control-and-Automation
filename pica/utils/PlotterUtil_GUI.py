@@ -66,7 +66,7 @@ def run_script_process(script_path):
         print("-------------------------")
 
 
-class PlotterApp:
+class PlotterAppGUI:
     PROGRAM_VERSION = "2.1"
     CLR_BG = '#2B3D4F'
     CLR_HEADER = '#3A506B'
@@ -1067,5 +1067,5 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
 
     root = tk.Tk()
-    app = PlotterApp(root)
+    app = PlotterAppGUI(root)
     root.mainloop()
