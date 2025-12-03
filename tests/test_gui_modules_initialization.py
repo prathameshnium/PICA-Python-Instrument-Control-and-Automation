@@ -17,19 +17,16 @@ if project_root not in sys.path:
 
 def find_gui_modules():
     """
-    Recursively finds all GUI modules in the project, excluding non-GUI files.
-    Returns them in a format suitable for importlib (e.g., 'Keithley_2400.IV_K2400_GUI').
+    Recursively finds all GUI modules in the `pica` directory.
+    Returns them in a format suitable for importlib (e.g., 'pica.keithley.k2400.IV_K2400_GUI').
     """
     gui_files = []
-    for root, _, files in os.walk(project_root):
-        # Exclude directories that are not part of the main source code
-        if 'tests' in root or '.git' in root or 'venv' in root or '__pycache__' in root or 'assets' in root or 'Setup' in root:
-            continue
+    pica_dir = os.path.join(project_root, 'pica')
+    for root, _, files in os.walk(pica_dir):
         for file in files:
-            if file.endswith('_GUI_v' or '_GUI.py') and file != '__init__.py':
+            if file.endswith('_GUI.py') and not file.startswith('__'):
                 full_path = os.path.join(root, file)
                 # Convert file path to module path
-                # e.g., F:\...\PICA\Keithley_2400\IV_K2400_GUI.py -> Keithley_2400.IV_K2400_GUI
                 relative_path = os.path.relpath(full_path, project_root)
                 module_path = os.path.splitext(relative_path)[0].replace(os.path.sep, '.')
                 gui_files.append(module_path)
@@ -50,20 +47,24 @@ def test_gui_module_initialization(module_path):
         gui_module = importlib.import_module(module_path)
 
         # The main application class is assumed to have the same name as the file,
-        # but without the version suffix (e.g., 'IV_K2400_GUI' from 'IV_K2400_GUI.py')
-        # This logic needs to be robust to handle different naming conventions.
         base_name = module_path.split('.')[-1]
-        if '_GUI_v' in base_name:
-            class_name = base_name.split('_GUI_v')[0] + "_GUI"
-        elif base_name.endswith('_GUI'):
-            class_name = base_name
-        else:
-            pytest.fail(f"Could not determine class name from module path: {module_path}")
+        
+        # A more robust way to find the class.
+        # We look for a class in the module that ends with 'GUI' and is defined in that module.
+        gui_class = None
+        for name, obj in gui_module.__dict__.items():
+            if isinstance(obj, type) and obj.__module__ == gui_module.__name__:
+                if name.endswith('GUI'):
+                    gui_class = obj
+                    break
+        
+        if not gui_class:
+            pytest.fail(f"Could not find a suitable GUI class in module: {module_path}")
+
 
         # Get the class from the module and instantiate it
-        AppClass = getattr(gui_module, class_name)
         mock_root = MagicMock()
-        app_instance = AppClass(mock_root)
+        app_instance = gui_class(mock_root)
 
         assert app_instance is not None, "GUI class failed to instantiate."
 

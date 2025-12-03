@@ -192,7 +192,7 @@ class TestDeepSimulation(unittest.TestCase):
                 "1.23,4.56"                   # SNAP? 3,4
             ]
             self.run_module_safely(
-                "Lock_in_amplifier.BasicTest_S830_Instrument_Control", {})
+                "pica.lockin.BasicTest_S830_Instrument_Control", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_08_combined_2400_2182(self):
@@ -213,7 +213,7 @@ class TestDeepSimulation(unittest.TestCase):
             with patch('builtins.input', side_effect=inputs), \
                  patch('pandas.DataFrame.to_csv'):
                 self.run_module_safely(
-                    "Keithley_2400_Keithley_2182.Backends.IV_K2400_K2182_Backend_v1", {})
+                    "pica.keithley.k2400_2182.Instrument_Control.IV_K2400_K2182_Instrument_Control", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_09_poling(self):
@@ -266,7 +266,7 @@ class TestDeepSimulation(unittest.TestCase):
             rm = MockRM.return_value
             rm.list_resources.return_value = ('GPIB0::1::INSTR',)
             self.run_module_safely(
-                "Utilities.GPIB_Interface_Rescue_Simple_Instrument_Control_v2_", {})
+                "pica.utils.GPIB_Interface_Rescue_Simple_Instrument_Control_v2_", {})
 
 
 if __name__ == '__main__':

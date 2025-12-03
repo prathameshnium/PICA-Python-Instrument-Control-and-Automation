@@ -18,16 +18,13 @@ if project_root not in sys.path:
 
 def find_python_files():
     """
-    Recursively finds all python files in the project,
-    excluding the test directory, git, and virtual environments.
+    Recursively finds all python files in the `pica` directory.
     """
     py_files = []
-    for root, _, files in os.walk(project_root):
-        if 'tests' in root or '.git' in root or 'venv' in root or '__pycache__' in root:
-            continue
+    pica_dir = os.path.join(project_root, 'pica')
+    for root, _, files in os.walk(pica_dir):
         for file in files:
             if file.endswith('.py'):
-                # Return the full path for reading, and relative for reporting
                 full_path = os.path.join(root, file)
                 py_files.append(full_path)
     return py_files
