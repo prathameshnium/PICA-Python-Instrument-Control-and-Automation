@@ -70,12 +70,12 @@ jobs:
     # PHASE 3: SECURITY SCAN (CodeQL)
     # ------------------------------------------------------------------------
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
+      uses: github/codeql-action/init@v3 # v3 is still supported, v4 is the latest
       with:
         languages: ${{ matrix.language }}
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
+      uses: github/codeql-action/analyze@v3 # v3 is still supported, v4 is the latest
       with:
         category: "/language:${{ matrix.language }}"
 
