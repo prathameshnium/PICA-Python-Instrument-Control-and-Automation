@@ -1,21 +1,60 @@
 # Contributing to PICA
 
-Thank you for your interest in PICA (Python-based Instrument Control and Automation)
-The UGC-DAE Consortium for Scientific Research has the overarching objective of facilitating researchers by providing convenient access to a wide range of advanced research facilities. In alignment with this mission, the present software has been developed to serve a similar purpose.
+First off, thank you for considering contributing to PICA! It's people like you that make PICA such a great tool.
 
-Originally, this project was conceived and implemented for our Advanced Transport Measurement System. We are now extending its scope beyond this specific system, with the intention of establishing a general software framework upon which users can contribute and integrate additional modules. All contributed modules are expected to be rigorously tested on the corresponding experimental instruments to ensure reliability and scientific validity.
+## Where do I go from here?
 
-We welcome requests for new features and are open to collaboration in developing modules tailored to the specific requirements of individual users. Feedback, contributions, and constructive criticism from both the scientific and software development communities are explicitly encouraged, as they are essential for the continuous improvement and robustness of this software platform.
+If you've noticed a bug or have a feature request, [make one](https://github.com/Ketan-Anand/PICA-Python-Instrument-Control-and-Automation/issues/new)! It's generally best if you get confirmation of your bug or approval for your feature request this way before starting to code.
 
+### Fork & create a branch
 
-## How to Report Bugs
-If you encounter an error while running a measurement:
-1.  Go to the [Issues tab](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues).
-2.  Click "New Issue".
-3.  Include the error message from the PICA console and which instrument you were using (e.g., Keithley 2400).
+If this is something you think you can fix, then [fork PICA](https://github.com/Ketan-Anand/PICA-Python-Instrument-Control-and-Automation/fork) and create a branch with a descriptive name.
 
-## How to Suggest Features
-If you have a script for a new instrument (e.g., a lock-in amplifier) that you would like to include:
-1.  Fork this repository.
-2.  Add your script to a new folder in pica (e.g., `SRS_830/`).
-3.  Submit a Pull Request (PR) describing what the instrument does.
+A good branch name would be (where issue #325 is the ticket you're working on):
+
+```sh
+git checkout -b 325-add-japanese-translations
+```
+
+### Get the test suite running
+
+Make sure you're running the test suite locally. It's a good idea to do this before you start making changes to ensure that everything is working correctly.
+
+### Implement your fix or feature
+
+At this point, you're ready to make your changes! Feel free to ask for help; everyone is a beginner at first :smile_cat:
+
+### Make a Pull Request
+
+At this point, you should switch back to your master branch and make sure it's up to date with the latest upstream version of PICA.
+
+```sh
+git remote add upstream git@github.com:Ketan-Anand/PICA-Python-Instrument-Control-and-Automation.git
+git checkout master
+git pull upstream master
+```
+
+Then update your feature branch from your local copy of master, and push it!
+
+```sh
+git checkout 325-add-japanese-translations
+git rebase master
+git push --force-with-lease origin 325-add-japanese-translations
+```
+
+Finally, go to GitHub and [make a Pull Request](https://github.com/Ketan-Anand/PICA-Python-Instrument-Control-and-Automation/compare)
+
+### Keeping your Pull Request updated
+
+If a maintainer asks you to "rebase" your PR, they're saying that a lot of code has changed, and that you need to update your branch so it's easier to merge.
+
+To learn more about rebasing and merging, check out this guide from Atlassian:
+[https://www.atlassian.com/git/tutorials/merging-vs-rebasing](https://www.atlassian.com/git/tutorials/merging-vs-rebasing)
+
+## How to get in touch
+
+You can reach out to the maintainers of PICA by creating an issue.
+
+## Code of Conduct
+
+Everyone interacting in the PICA project's codebases, issue trackers, chat rooms, and mailing lists is expected to follow the [PICA Code of Conduct](CODE_OF_CONDUCT.md).
