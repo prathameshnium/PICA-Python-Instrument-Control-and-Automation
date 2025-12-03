@@ -31,14 +31,9 @@ bibliography: paper.bib
 
 PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate complex characterisation experiments in condensed matter physics. Developed to operate a custom laboratory-built measurement system, PICA provides a unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically Keithley SourceMeters/Nanovoltmeters, Lakeshore Temperature Controllers, and Keysight LCR metres. The suite regulates the cryogenic environment to perform automated protocols such as temperature-dependent resistivity, current voltage (I-V) characteristics, and pyroelectric current measurement.
 
-<figure>
-<img src="pica-architecture-schematic.png" width="70%" />
-<figcaption>System architecture of PICA</figcaption>
-</figure>
-
 # Statement of need
 
-Advancements in experimental physics depend on the precise characterisation of material properties under extreme physical conditions. Researchers have to choose between expensive proprietary software like LabVIEW or developing a custom measurement script from scratch. While Python libraries such as PyVISA [] and PyMeasure [] provide excellent low-level driver support. They function as a primary developer toolkit. They often require significant boilerplate code to handle data visualisation and error handling, effectively forcing physicists to become software engineers.
+Advancements in experimental physics depend on the precise characterisation of material properties under extreme physical conditions. Researchers have to choose between expensive proprietary software like LabVIEW or developing a custom measurement script from scratch. While Python libraries such as PyVISA [@grecco2023pyvisa] and PyMeasure [@jermain2020pymeasure] provide excellent low-level driver support. They function as a primary developer toolkit. They often require significant boilerplate code to handle data visualisation and error handling, effectively forcing physicists to become software engineers.
 PICA fills this niche by providing a **"lab-ready" application layer** built on top of these libraries. It differentiates itself through.
 * **Accessibility:** A professional dashboard that allows researchers without coding experience to configure and run a complex measurement protocol immediately.
 * **Physical Validation:** Unlike general-purpose drivers, PICA's protocols are actively used for cryogenic transport measurements (80K - 320K) at the UGC DAE Consortium for Scientific Research, Mumbai Centre.Ensuring that the protocols are physically accurate and lab tested
@@ -78,7 +73,5 @@ To ensure measurement reliability, all of these modules were thoroughly tested w
 # Acknowledgements
 
 We acknowledge the financial support provided under the SERB-GRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science and Technology (DST), Government of India.
-PD would also like to thank Akshay Kamble for his valuable discussions on instrument control and for his effective assistance in resolving technical issues.
-
 # References
 
