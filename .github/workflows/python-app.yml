@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
     # 1. Check out your code
@@ -27,9 +27,8 @@ jobs:
     # 3. Install System Dependencies (Required for Tkinter/Matplotlib on Linux)
     - name: Install Tkinter System Libs
       run: |
-        sudo rm -f /etc/apt/sources.list.d/azure-cli.list
-        sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
-        sudo apt-get update && sudo apt-get install -y python3-tk
+        sudo apt-get update
+        sudo apt-get install -y python3-tk xvfb
 
     # 4. Install Your Python Dependencies
     - name: Install dependencies
@@ -54,4 +53,4 @@ jobs:
     # but since we mocked them, they should run fast!
     - name: automated test
       run: |
-        python -m pytest tests/
+        xvfb-run --auto-servernum python -m pytest tests/
