@@ -64,12 +64,11 @@ combined list of all manuals and documents relevenet to PICA
 * **PyVISA Documentation (Full)**
     * **Creator:** PyVISA Developers
     * **Type:** Complete Documentation (EPUB format)
-    * [cite_start]**Contents:** Covers Installation, Architecture, Backends, Communication, and API references. [cite: 39, 42]
+    ***Contents:** Covers Installation, Architecture, Backends, Communication, and API references.
 
 * **PyVISA "A More Complex Example" (Tutorial Excerpt)**
     * **Creator:** PyVISA Developers
     * **Type:** Tutorial / PDF Excerpt
-    * [cite_start]**Context:** A guide on using SCPI commands with a Keithley 2000 multimeter, including initializing the instrument and reading voltages. [cite: 5, 6]
-    * [cite_start]**Version Note:** The document notes that "1.12.0 is the latest version available" at the time of its creation. [cite: 4]
+    * **Context:** A guide on using SCPI commands with a Keithley 2000 multimeter, including initializing the instrument and reading voltages. 
+    ***Version Note:** The document notes that "1.12.0 is the latest version available" at the time of its creation.
 
-I am standing by for any further manuals you wish to add.
