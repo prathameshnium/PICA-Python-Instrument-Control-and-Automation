@@ -137,7 +137,7 @@ PICA is now structured as a standard Python package. Follow these steps to insta
     pip install -e .
     ```
 
-## ��️ Running the Software
+## Running the Software
 
 You can now run PICA in two modes: the standard Graphical User Interface (GUI) or the new Command Line Interface (CLI) for headless operation.
 
@@ -155,7 +155,7 @@ You can now run PICA in two modes: the standard Graphical User Interface (GUI) o
 
 ---
 
-## �� Running Tests
+## Running Tests
 
 This repository includes a robust test suite using `pytest`. It mocks hardware interactions and GUI components, allowing the logic to be verified in a headless environment (CI).
 
@@ -226,7 +226,7 @@ This period marked the transition to the **GUI-Backend isolated architecture**.
 
 ---
 
-## �� Resources & Documentation
+## Resources & Documentation
 
 * **User Manual:** Detailed setup and troubleshooting guides are available in [docs/User_Manual.md](docs/User_Manual.md).
 * **Instrument Manuals:** Original PDF manuals for the supported hardware are located in `assets/Manuals/`.
