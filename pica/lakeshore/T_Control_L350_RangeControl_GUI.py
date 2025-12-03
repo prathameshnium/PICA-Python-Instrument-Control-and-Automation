@@ -450,7 +450,7 @@ class TempControlGUI:
         self.ax_temp = self.figure.add_subplot(211)
         self.ax_heater = self.figure.add_subplot(212, sharex=self.ax_temp)
 
-        self.line_temp, = self.ax_temp.plot(
+        self.line_temp = self.ax_temp.plot(
             [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-')
         self.ax_temp.set_ylabel("Temperature (K)")
         self.ax_temp.grid(True, linestyle='--', alpha=0.6)
@@ -461,7 +461,7 @@ class TempControlGUI:
             top=False,
             labelbottom=False)
 
-        self.line_heater, = self.ax_heater.plot(
+        self.line_heater = self.ax_heater.plot(
             [], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=3, linestyle='-')
         self.ax_heater.set_xlabel("Time (s)")
         self.ax_heater.set_ylabel("Heater Output (%)")
@@ -495,8 +495,8 @@ class TempControlGUI:
             self.set_ui_state(running=True)
             for key in self.data_storage:
                 self.data_storage[key].clear()
-            self.line_temp.set_data([], [])
-            self.line_heater.set_data([], [])
+            self.line_temp[0].set_data([], [])
+            self.line_heater[0].set_data([], [])
             self.ax_temp.set_title(f"Ramping to {self.params['setpoint']} K")
             self.canvas.draw()
 
@@ -532,10 +532,10 @@ class TempControlGUI:
             self.data_storage['temperature'].append(temp)
             self.data_storage['heater'].append(htr_output)
 
-            self.line_temp.set_data(
+            self.line_temp[0].set_data(
                 self.data_storage['time'],
                 self.data_storage['temperature'])
-            self.line_heater.set_data(
+            self.line_heater[0].set_data(
                 self.data_storage['time'],
                 self.data_storage['heater'])
 
