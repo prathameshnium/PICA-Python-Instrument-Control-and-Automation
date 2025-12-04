@@ -129,7 +129,7 @@ PICA (Root Directory)/
             GPIB_Instrument_Scanner_GUI.py
             GPIB_Interface_Rescue_Simple_Instrument_Control_v2_.py
             GUI_Basic_Format.py
-            LivePlotter.py
+
             PlotterUtil_GUI.py
             __init__.py
     scripts/

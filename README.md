@@ -91,7 +91,7 @@ PICA is structured as a standard Python package.
     ```bash
     python -m venv venv
     # Activate venv (Windows: venv\Scripts\activate, Linux/Mac: source venv/bin/activate)
-    pip install -r requirements.txt
+    pip install .
     ```
 
     *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow `PyVISA` to communicate with the hardware.*
@@ -101,13 +101,13 @@ PICA is structured as a standard Python package.
 1.  **Graphical Launcher (Recommended)**
     The central dashboard for accessing all modules, the plotter, and the scanner.
     ```bash
-    python run_pica.py
+    pica-gui
     ```
 
 2.  **Command Line Interface (CLI)**
-    Legacy support for headless operation (e.g., Raspberry Pi).
+    For headless operation (e.g., Raspberry Pi).
     ```bash
-    python pica_cli.py
+    pica-cli
     ```
 
 <hr />
