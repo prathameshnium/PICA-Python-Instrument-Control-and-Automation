@@ -34,7 +34,7 @@ def test_gui_module_initialization(module_path, safe_matplotlib):
                 break
         if not gui_class:
             for obj in defined_classes:
-                if any(obj.__name__.endswith(s) for s in ['GUI', 'App', 'Window']):
+                if any(s in obj.__name__ for s in ['GUI', 'App', 'Window']):
                     gui_class = obj
                     break
         if not gui_class and defined_classes:
