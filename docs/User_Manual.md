@@ -1,8 +1,9 @@
 # PICA User Manual
 
 <p align="center">
-  <img src="../pica/assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="500">
+  <img src="../pica/assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="250">
 </p>
+
 
 **Python-based Instrument Control and Automation Software Suite**
 
@@ -249,6 +250,21 @@ The following modules and features are currently under active development and ar
 
 In the future, I also plan to develop executable (`.exe`) versions of the PICA software suite. This will remove the need for users to manage Python environments and dependencies, further simplifying the setup process and facilitating rapid adoption in laboratories with strict IT policies or offline computers.
 
+
+## Authors & Acknowledgments
+<p align="center">
+  <img src="pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="250">
+</p>
+  - **Lead Developer:** [**Prathamesh Deshmukh**](https://prathameshdeshmukh.site/)
+  - **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)
+  - **Affiliation:** [*UGC-DAE Consortium for Scientific Research, Mumbai Centre*](https://www.csr.res.in/Mumbai_Centre)
+
+**Funding:**
+Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
 ## 9\. Appendix A: Project File Structure
 
 For developers and advanced users, the following reference outlines the PICA directory structure (v17.0.0).
