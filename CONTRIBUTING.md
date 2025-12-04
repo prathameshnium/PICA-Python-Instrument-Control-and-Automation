@@ -4,11 +4,11 @@ First off, thank you for considering contributing to PICA! It's people like you 
 
 ## Where do I go from here?
 
-If you've noticed a bug or have a feature request, [make one](https://github.com/Ketan-Anand/PICA-Python-Instrument-Control-and-Automation/issues/new)! It's generally best if you get confirmation of your bug or approval for your feature request this way before starting to code.
+If you've noticed a bug or have a feature request, [make one](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues/new)! It's generally best if you get confirmation of your bug or approval for your feature request this way before starting to code.
 
 ### Fork & create a branch
 
-If this is something you think you can fix, then [fork PICA](https://github.com/Ketan-Anand/PICA-Python-Instrument-Control-and-Automation/fork) and create a branch with a descriptive name.
+If this is something you think you can fix, then [fork PICA](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/fork) and create a branch with a descriptive name.
 
 A good branch name would be (where issue #325 is the ticket you're working on):
 
@@ -29,7 +29,7 @@ At this point, you're ready to make your changes! Feel free to ask for help; eve
 At this point, you should switch back to your master branch and make sure it's up to date with the latest upstream version of PICA.
 
 ```sh
-git remote add upstream git@github.com:Ketan-Anand/PICA-Python-Instrument-Control-and-Automation.git
+git remote add upstream git@github.com:prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
 git checkout master
 git pull upstream master
 ```
@@ -42,7 +42,7 @@ git rebase master
 git push --force-with-lease origin 325-add-japanese-translations
 ```
 
-Finally, go to GitHub and [make a Pull Request](https://github.com/Ketan-Anand/PICA-Python-Instrument-Control-and-Automation/compare)
+Finally, go to GitHub and [make a Pull Request](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare)
 
 ### Keeping your Pull Request updated
 

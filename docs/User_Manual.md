@@ -312,6 +312,5 @@ PICA (Root Directory)/
         utils/                  <-- Core Utilities
             GPIB_Instrument_Scanner_GUI.py
             PlotterUtil_GUI.py
-            LivePlotter.py
     tests/                      <-- Automated Test Suite
 ```
