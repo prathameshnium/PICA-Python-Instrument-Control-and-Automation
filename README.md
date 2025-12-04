@@ -1,27 +1,31 @@
 # PICA: Python-based Instrument Control and Automation
 
-![PICA Logo](pica/assets/LOGO/PICA_LOGO_NBG.png)
+<p align="center">
+  <img src="pica/assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="500">
+</p>
 
 **A modular, open-source framework for automating laboratory measurements in physics research.**
 
-[![CI Build Status](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/python-app.yml/badge.svg)](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/python-app.yml)
-[![Code Coverage](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation/branch/main/graph/badge.svg)](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation)
-![Python Version](https://img.shields.io/badge/Python-3.10+-brightgreen.svg?logo=python&logoColor=white)
+<p align="center">
+  <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/ci.yml"><img src="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/ci.yml/badge.svg" alt="CI Build Status"></a>
+  <a href="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation"><img src="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation/branch/main/graph/badge.svg" alt="Code Coverage"></a>
+  <img src="https://img.shields.io/badge/Python-3.10+-brightgreen.svg?logo=python&logoColor=white&style=flat-square" alt="Python Version">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License: MIT"></a>
+  <br />
+  <a href="docs/User_Manual.md"><img src="https://img.shields.io/badge/Docs-User_Manual-blue.svg?logo=markdown&style=flat-square" alt="Documentation"></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/Contributing-Guidelines-orange.svg?style=flat-square" alt="Contributing Guidelines"></a>
+  <a href="CODE_OF_CONDUCT.md"><img src="https://img.shields.io/badge/Code%20of%20Conduct-Contributor%20Covenant-ff69b4.svg?style=flat-square" alt="Code of Conduct"></a>
+  <br />
+  <img src="https://img.shields.io/badge/Inception-June%202022-orange?style=flat-square&logo=calendar" alt="Inception Date">
+  <img src="https://img.shields.io/badge/Project%20Age-3%2B%20Years-blueviolet?style=flat-square" alt="Project Age">
+  <img src="https://img.shields.io/github/downloads/prathameshnium/PICA-Python-Instrument-Control-and-Automation/total?style=flat-square&color=blue" alt="Total Downloads">
+  <img src="https://img.shields.io/github/forks/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&logo=github" alt="Forks">
+  <img src="https://img.shields.io/github/commit-activity/y/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=success" alt="Commits (Yearly)">
+  <img src="https://img.shields.io/github/languages/code-size/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=blue" alt="Code Size">
+  <img src="https://img.shields.io/github/last-commit/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=critical" alt="Last Commit">
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Documentation](https://img.shields.io/badge/Docs-User_Manual-blue.svg?logo=markdown)](docs/User_Manual.md)
-[![Contributing Guidelines](https://img.shields.io/badge/Contributing-Guidelines-orange.svg)](CONTRIBUTING.md)
-[![Code of Conduct](https://img.shields.io/badge/Code%20of%20Conduct-Contributor%20Covenant-ff69b4.svg)](CODE_OF_CONDUCT.md)
-
-![Inception Date](https://img.shields.io/badge/Inception-June%202022-orange?style=flat-square&logo=calendar)
-![Project Age](https://img.shields.io/badge/Project%20Age-3%2B%20Years-blueviolet?style=flat-square)
-![Total Downloads](https://img.shields.io/github/downloads/prathameshnium/PICA-Python-Instrument-Control-and-Automation/total?style=flat-square&color=blue)
-![Forks](https://img.shields.io/github/forks/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&logo=github)
-![Commits (Yearly)](https://img.shields.io/github/commit-activity/y/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=success)
-![Code Size](https://img.shields.io/github/languages/code-size/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=blue)
-![Last Commit](https://img.shields.io/github/last-commit/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=critical)
-
----
+<hr />
 
 ## Overview
 
@@ -72,14 +76,14 @@ PICA includes built-in support for the following instrument configurations, cove
 | **Pyroelectric** | **K6517B** + **Temp Controller** | Current vs Temp (detecting Curie temperature). | pA - nA range |
 
 ---
-
+<hr />
 ## Getting Started
 
 PICA is structured as a standard Python package. 
 
 1.  **Clone the Repository**
     ```bash
-    git clone [https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git)
+    git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
     cd PICA-Python-Instrument-Control-and-Automation
     ```
 
@@ -106,17 +110,16 @@ PICA is structured as a standard Python package.
     python pica_cli.py
     ```
 
----
-
+<hr />
 ## Running Tests
 
 To run the test suite locally:
 ```bash
 pip install pytest pytest-cov flake8
 python -m pytest
-````
+```
 
------
+<hr />
 
 ## Project History
 
@@ -137,10 +140,10 @@ PICA evolved from simple offline scripts in 2022 to a full-stack automated suite
 
 ## Resources & Documentation
 
-  * **User Manual:** Detailed physics and usage guides are available in [docs/User\_Manual.md](User_Manual.md).
+  * **User Manual:** Detailed physics and usage guides are available in the [User Manual](docs/User_Manual.md).
   * **Instrument Manuals:** Original PDF manuals are located in `assets/Manuals/`.
 
------
+<hr />
 
 ## Citation
 
@@ -154,7 +157,7 @@ If you use this software in your research, please cite it:
   year         = 2025,
   publisher    = {GitHub},
   version      = {17.0.0},
-  url          = {[https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation)}
+  url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
 }
 ```
 
@@ -169,6 +172,6 @@ Financial support for this work was provided under SERB-CRG project grant No. CR
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ````

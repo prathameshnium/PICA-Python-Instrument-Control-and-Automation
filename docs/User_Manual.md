@@ -1,12 +1,14 @@
 # PICA User Manual
 
-![PICA Logo](../pica/assets/LOGO/PICA_LOGO_NBG.png)
+<p align="center">
+  <img src="../pica/assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="500">
+</p>
 
 **Python-based Instrument Control and Automation Software Suite**
 
 *Comprehensive Guide for Version 17.0.0*
 
----
+<hr />
 
 ## Table of Contents
 
@@ -27,7 +29,7 @@
 8. [Future Development](#8-future-development)
 9. [Appendix A: Project File Structure](#9-appendix-a-project-file-structure)
 
----
+<hr />
 
 ## 1. Overview
 
@@ -44,7 +46,7 @@ PICA was constructed on a core philosophy of **robustness, modularity, and acces
 ### 2.1 The Choice of Python
 Python was selected as the foundational language for PICA due to its ubiquity in the scientific community:
 * **Scientific Ecosystem:** Libraries like `NumPy` (array operations), `Pandas` (data structuring), and `Matplotlib` (publication-quality plotting) create a seamless workflow from acquisition to analysis.
-* **PyVISA Integration:** The `PyVISA` library provides platform-independent wrappers for VISA drivers, allowing communication via simple, readable commands (e.g., `instrument.query('*IDN?')`) rather than complex low-level protocols.
+* **PyVISA Integration:** The `PyVISA` library provides platform-independent wrappers for VISA drivers, allowing communication via simple, readable commands (e.g., ``instrument.query('*IDN?')``) rather than complex low-level protocols.
 * **Cross-Platform:** PICA runs on Windows, Linux, and macOS with minimal modification, accommodating diverse lab environments.
 
 ### 2.2 The Case for GUIs
@@ -70,11 +72,11 @@ This ensures that if a measurement script hangs due to a hardware timeout, it do
 1.  **Python 3.9+**: The core execution environment.
 2.  **VISA Drivers:** A critical non-Python dependency. You must install vendor-supplied drivers (e.g., NI-VISA, Keysight IO Libraries) to provide the underlying communication layer between the OS and GPIB/USB hardware.
 3.  **Dependencies:** Install via `pip install -r requirements.txt`.
-
+ 
 ### 3.2 Installation Procedure
 ```bash
 # Clone the repository
-git clone [https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git)
+git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
 cd PICA-Python-Instrument-Control-and-Automation
 
 # Create virtual environment (Recommended)
@@ -83,7 +85,7 @@ python -m venv venv
 
 # Install Python dependencies
 pip install -r requirements.txt
-````
+```
 
 ### 3.3 Execution
 
@@ -99,7 +101,7 @@ python run_pica.py
 
 *File Reference: `pica/utils/GPIB_Instrument_Scanner_GUI.py`*
 
-Automatically launched upon startup (and accessible within modules), this utility scans for connected hardware. It uses `ResourceManager.list_resources()` to find devices and sends a standard `*IDN?` query to verify communication. This allows users to verify their hardware configuration before starting any experiment.
+Automatically launched upon startup (and accessible within modules), this utility scans for connected hardware. It uses `ResourceManager.list_resources()` to find devices and sends a standard ``*IDN?`` query to verify communication. This allows users to verify their hardware configuration before starting any experiment.
 
 ### 4.2 PICA Plotter Utility
 
@@ -225,7 +227,7 @@ Supported by SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan Nati
   year         = 2025,
   publisher    = {GitHub},
   version      = {17.0.0},
-  url          = {[https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation)}
+  url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
 }
 ```
 
@@ -313,4 +315,3 @@ PICA (Root Directory)/
             LivePlotter.py
     tests/                      <-- Automated Test Suite
 ```
-
