@@ -164,7 +164,7 @@ If you use this software in your research, please cite it:
 
 ## Authors & Acknowledgments
 <p align="center">
-  <img src="pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="250">
+  <img src="pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
   - **Lead Developer:** [**Prathamesh Deshmukh**](https://prathameshdeshmukh.site/)
   - **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)
@@ -176,5 +176,3 @@ Financial support for this work was provided under SERB-CRG project grant No. CR
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-````
