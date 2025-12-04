@@ -283,7 +283,7 @@ PICA (Root Directory)/
         __init__.py
         cli.py
         main.py
-        assets/                 <-- Images, Logos, PDFs
+        assets/                 <-- Images, Logos
         keithley/
             delta_mode/         <-- Low Resistance (K6221 + K2182)
                 Delta_RT_K6221_K2182_L350_Sensing_GUI.py

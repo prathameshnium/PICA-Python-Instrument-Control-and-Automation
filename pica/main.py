@@ -117,7 +117,7 @@ class PICALauncherApp:
     FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
     LOGO_FILE = resource_path("assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
     # This path is correct as it points to a directory
-    MANUAL_FILE = resource_path("assets/Manuals")
+    MANUAL_FILE = resource_path("../docs/Instruments_Manuals_Lists.md")
     README_FILE = resource_path("../README.md")
     LICENSE_FILE = resource_path("../LICENSE")
     UPDATES_FILE = resource_path("../CHANGELOG.md")
@@ -370,7 +370,7 @@ class PICALauncherApp:
             util_frame,
             text="Manuals",
             style='App.TButton',
-            command=self.open_manual_folder).grid(
+            command=self.open_manual_file).grid(
             row=0,
             column=3,
             sticky='ew',
@@ -758,9 +758,8 @@ class PICALauncherApp:
     def open_updates(self):
         self._show_file_in_window(self.UPDATES_FILE, "Change Log")
 
-    def open_manual_folder(self):
-        manual_path = os.path.abspath(self.MANUAL_FILE)
-        self._open_path(manual_path)
+    def open_manual_file(self):
+        self._show_file_in_window(self.MANUAL_FILE, "Instrument Manuals")
 
     def open_license(self):
         self._show_file_in_window(self.LICENSE_FILE, "MIT License")
