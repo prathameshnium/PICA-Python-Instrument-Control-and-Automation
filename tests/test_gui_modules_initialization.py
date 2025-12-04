@@ -6,8 +6,8 @@ import contextlib
 
 from pica.cli import ALL_GUI_MODULES
 
-@pytest.mark.parametrize("module_path", ALL_GUI_MODULES)
 @pytest.mark.usefixtures("mock_tkinter", "safe_matplotlib")
+@pytest.mark.parametrize("module_path", ALL_GUI_MODULES)
 def test_gui_module_initialization(module_path, safe_matplotlib):
     """
     Attempts to import and instantiate the main application class.
@@ -21,7 +21,7 @@ def test_gui_module_initialization(module_path, safe_matplotlib):
         # 2. Find the GUI class
         gui_class = None
         module_name_base = module_path.split('.')[-1]
-        
+
         defined_classes = [
             obj for name, obj in inspect.getmembers(gui_module, inspect.isclass)
             if obj.__module__ == gui_module.__name__
@@ -51,7 +51,7 @@ def test_gui_module_initialization(module_path, safe_matplotlib):
         num_params = len(sig.parameters)
 
         mock_root = MagicMock()
-        
+
         # 4. Instantiate with Patching
         # We patch 'log' to prevent errors on a non-existent console widget.
         # We patch 'create_widgets' to prevent deep instantiation of Tkinter/Matplotlib
@@ -60,7 +60,7 @@ def test_gui_module_initialization(module_path, safe_matplotlib):
         patchers = []
         if hasattr(gui_class, 'log'):
             patchers.append(patch.object(gui_class, 'log', return_value=None))
-        
+
         # The main fix: prevent widget creation, which triggers the complex error
         if hasattr(gui_class, 'create_widgets'):
             patchers.append(patch.object(gui_class, 'create_widgets', return_value=None))
@@ -69,7 +69,7 @@ def test_gui_module_initialization(module_path, safe_matplotlib):
         with contextlib.ExitStack() as stack:
             for p in patchers:
                 stack.enter_context(p)
-            
+
             # Instantiate the class
             if num_params <= 2:
                 app_instance = gui_class(mock_root)
