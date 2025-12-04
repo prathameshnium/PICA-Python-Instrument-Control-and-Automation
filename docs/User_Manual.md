@@ -253,7 +253,7 @@ In the future, I also plan to develop executable (`.exe`) versions of the PICA s
 
 ## Authors & Acknowledgments
 <p align="center">
-  <img src="pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="250">
+  <img src="pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
   - **Lead Developer:** [**Prathamesh Deshmukh**](https://prathameshdeshmukh.site/)
   - **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)
