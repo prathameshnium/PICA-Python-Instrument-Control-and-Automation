@@ -141,7 +141,7 @@ PICA evolved from simple offline scripts in 2022 to a full-stack automated suite
 ## Resources & Documentation
 
   * **User Manual:** Detailed physics and usage guides are available in the [User Manual](docs/User_Manual.md).
-  * **Instrument Manuals:** Original PDF manuals are located in `assets/Manuals/`.
+  * **Instrument Manuals:** A list of instrument manuals is available in [docs/Instruments_Manuals_Lists.md](docs/Instruments_Manuals_Lists.md).
 
 <hr />
 
