@@ -1,8 +1,9 @@
 # PICA: Python-based Instrument Control and Automation
 
 <p align="center">
-  <img src="pica/assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="500">
+  <img src="pica/assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="250">
 </p>
+
 
 **A modular, open-source framework for automating laboratory measurements in physics research.**
 
@@ -162,7 +163,9 @@ If you use this software in your research, please cite it:
 ```
 
 ## Authors & Acknowledgments
-
+<p align="center">
+  <img src="pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="250">
+</p>
   - **Lead Developer:** [**Prathamesh Deshmukh**](https://prathameshdeshmukh.site/)
   - **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)
   - **Affiliation:** [*UGC-DAE Consortium for Scientific Research, Mumbai Centre*](https://www.csr.res.in/Mumbai_Centre)
