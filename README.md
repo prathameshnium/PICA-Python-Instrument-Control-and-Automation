@@ -49,70 +49,82 @@
 </div>
 
 ---
----
 
 ## Overview
 
 PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite specifically designed to automate complex characterisation experiments and provide a robust framework for automating laboratory instruments in materials science and condensed matter physics research.
-Developed to operate as a custom laboratory-built measurement system, PICA provides a unifying graphical user interface (GUI) for orchestrating high-precision instruments, specifically Keithley SourceMeters/Nanovoltmeters, Lakeshore Temperature Controllers, and Keysight LCR Meters. The suite regulates the cryogenic environment to perform automated protocols such as temperature-dependent resistivity, current-voltage (I-V) characteristics, and pyroelectric current measurements.
-The suite features a central graphical user interface (GUI), the **PICA Launcher**, which serves as a dashboard for managing and executing a variety of characterisation experiments. Built to streamline data acquisition and enhance experimental reproducibility, PICA leverages Python's `multiprocessing` library to ensure high stability by isolating each measurement process.
-.
 
----
+Developed to operate as a custom laboratory-built measurement system, PICA provides a unifying graphical user interface (GUI) for orchestrating high-precision instruments, specifically Keithley SourceMeters/Nanovoltmeters, Lakeshore Temperature Controllers, and Keysight LCR Meters. The suite regulates the cryogenic environment to perform automated protocols such as temperature-dependent resistivity, current-voltage (I-V) characteristics, and pyroelectric current measurements.
+
+The suite features a central graphical user interface (GUI), the **PICA Launcher**, which serves as a dashboard for managing and executing a variety of characterisation experiments. Built to streamline data acquisition and enhance experimental reproducibility, PICA leverages Python's `multiprocessing` library to ensure high stability by isolating each measurement process.
 
 ## Table of Contents
 
+- [Overview](#overview)
+- [What's the Need for PICA](#whats-the-need-for-pica)
 - [Architecture](#architecture)
 - [Core Features](#core-features)
+- [Instrument Support](#instrument-support)
 - [Instrument Specifications](#instrument-specifications)
-- [Getting Started](#-getting-started)
-- [Running Tests](#-running-tests)
+- [Getting Started](#getting-started)
+- [Running the Software](#running-the-software)
+- [Running Tests](#running-tests)
 - [Project History & Evolution](#project-history--evolution)
-- [Resources & Documentation](#-resources--documentation)
+- [Resources & Documentation](#resources--documentation)
 - [Citation](#citation)
-- [License](#license)
 - [Authors & Acknowledgments](#authors--acknowledgments)
+- [License](#license)
 
----
+## What's the Need for PICA
+
+PICA tries to fill a clear gap for an open-source, laboratory-ready framework that provides well-tested measurement protocols together with an intuitive user interface, enabling experimentalists to perform sophisticated measurements without directly interacting with the source code. At the same time, implementing it in open-source Python would preserve the ability for advanced users to modify virtually any component of the system and contribute enhancements back to the project. Such a framework would foster a more open and collaborative scientific ecosystem, facilitating reproducibility, extensibility, and community-driven development in experimental physics research.
 
 ## Architecture
 
 The core design philosophy of PICA is the separation of concerns, implemented through a distinct **GUI-Backend** architecture for each measurement module.
 
-- **GUI (Frontend):** Each measurement has a dedicated GUI script (e.g., `IV_K2400_GUI.py`) built with `Tkinter`. It is responsible for user interaction, parameter input, and real-time data visualization using `Matplotlib`.
-- **Backend:** The instrument control logic is encapsulated in separate classes (e.g., `Keithley2400_Backend`). This layer handles all `PyVISA` communication, SCPI command parsing, and data retrieval.
+- **GUI (Frontend):** Each measurement has a dedicated GUI script (e.g., `IV_K6221_DC_Sweep_GUI.py`) built with `tkinter`. It is responsible for user interaction, parameter input, and real-time data visualisation using `matplotlib`.
+- **Backend:** The instrument control logic is encapsulated in separate classes. This layer handles all `pyvisa` communication, SCPI command parsing, and data retrieval.
 - **Process Isolation:** When a measurement starts, the GUI launches the backend logic in a separate, isolated process. This prevents a hardware timeout or script error from crashing the entire application suite.
-- **Inter-Process Communication:** The frontend and backend communicate via thread-safe `multiprocessing.Queues`, allowing for high-speed data transfer without race conditions.
+- **Inter-Process Communication:** The frontend and backend communicate via thread-safe `multiprocessing.Queue`, allowing for high-speed data transfer without race conditions.
 
 ---
 
 ## Core Features
-- **Modular Design:** Each experimental setup is a self-contained module, making the codebase easy to extend.
-- **Centralized Control Dashboard:** A comprehensive GUI for launching all measurement modules.
-- **Integrated VISA Instrument Scanner:** An embedded utility for identifying and troubleshooting GPIB/VISA connections via the NI-VISA backend.
-- **Embedded Documentation:** In-application viewer for technical manuals and project guides.
-- **System Console Log:** A real-time logging system that provides status updates and error diagnostics.
+
+* **Accessibility:** PICA provides a professional dashboard that enables researchers without programming experience to configure and execute complex measurements.
+* **Physical Validation:** PICA protocols are routinely employed for cryogenic transport measurements in the temperature range of 80–320 K at the UGC–DAE Consortium for Scientific Research, Mumbai Centre. Particular emphasis is placed on ensuring that the protocols are physically valid and that any artefacts arising from instrument output start‑up transients, synchronisation errors, or other physical anomalies are identified and eliminated.
+* **Centralized Control Dashboard:** A comprehensive GUI for launching all measurement modules.
+* **CLI Mode:** A new command-line interface for headless operation (e.g., via SSH or Raspberry Pi).
+* **Isolated Process Execution:** Each script operates in a discrete process, guaranteeing application stability.
+* **Integrated VISA Instrument Scanner:** An embedded utility for discovering and troubleshooting connections.
+* **Operational Transparency:** Unlike black-box solutions, PICA exposes real-time logs that facilitate debugging in the event of errors or anomalies, thereby enhancing scientific reproducibility.
+* **Automated Testing:** Integrated CI/CD pipelines for logic verification.
 
 ---
+
+## Instrument Support
+
+These are the instruments currently supported by PICA. We are working to integrate additional devices and to extend the range of measurement protocols available for the existing instruments.
 
 ## Instrument Specifications
 
 ### Advanced Cryogenic Transport Measurement System
 
-This software controls a facility designed for characterizing the full spectrum of electronic transport properties in cryogenic environments (80 K to 320 K). The setup integrates multiple high-precision instruments to cover a resistance range spanning 24 orders of magnitude.
+This software controls a facility designed for characterising the full spectrum of electronic transport properties in cryogenic environments (80 K to 320 K). The setup integrates multiple high-precision instruments to cover a resistance range spanning 24 orders of magnitude.
 
 | Module | Configuration / Instrument | Use Case | Resistance Range |
 | :--- | :--- | :--- | :--- |
-| **1. Low-Resistance (Delta Mode)** | **Keithley 6221** (Current Source) + **K2182** (Nanovoltmeter) | Superconductors & metallic films; actively cancels thermal EMFs. | $10 n\Omega$ to $100 M\Omega$ |
-| **2. Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter | Semiconductors, oxides, general transport. | $100 \mu\Omega$ to $200 M\Omega$ |
-| **3. Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** | Detecting subtle phase transitions. | $1 \mu\Omega$ to $100 M\Omega$ |
-| **4. High-Resistance** | **Keithley 6517B** Electrometer | Dielectrics, polymers, & ceramics. | $1 \Omega$ to $10^{16} \Omega$ |
+| **1. Low-Resistance (Delta Mode)** | **Keithley 6221** (Current Source) + **K2182** (Nanovoltmeter) | Superconductors & metallic films; actively cancels thermal EMFs. | $10\,\text{n}\Omega$ to $100\,\text{M}\Omega$ |
+| **2. Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter | Semiconductors, oxides, general transport. | $100\,\mu\Omega$ to $200\,\text{M}\Omega$ |
+| **3. Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** | Detecting subtle phase transitions. | $1\,\mu\Omega$ to $100\,\text{M}\Omega$ |
+| **4. High-Resistance** | **Keithley 6517B** Electrometer | Dielectrics, polymers, & ceramics. | $1\,\Omega$ to $10^{16}\,\Omega$ |
 
 ---
 
-##  Installation
+## Getting Started
 
-PICA is now structured as a standard Python package. Follow these steps to install it in editable mode, which allows you to modify code and see changes immediately.
+PICA is structured as a standard Python package. Follow these steps to install it in editable mode, which allows you to modify code and see changes immediately.
 
 1.  **Clone the Repository**
     ```bash
@@ -139,7 +151,11 @@ PICA is now structured as a standard Python package. Follow these steps to insta
 
 ## Running the Software
 
-You can now run PICA in two modes: the standard Graphical User Interface (GUI) or the new Command Line Interface (CLI) for headless operation.
+You can now run PICA in two modes: the standard Graphical User Interface (GUI) or the older Command Line Interface (CLI) for headless operation.
+
+I strongly recommend using the graphical user interface (GUI) version, as it represents the finalized protocols and provides laboratory-ready applications. By contrast, the command-line interface (CLI) tools correspond to earlier prototype scripts that were used during protocol development prior to completion of the full-stack program. Consequently, the CLI tools are outdated and no longer actively maintained. They are included here primarily for the sake of completeness and may still be useful for users who wish to learn about the underlying interfacing mechanisms.
+
+In the future, I also plan to develop executable (`.exe`) versions in order to further simplify setup and facilitate rapid adoption.
 
 1.  **Graphical Launcher (GUI)**
     The standard dashboard for desktop users.
@@ -148,7 +164,7 @@ You can now run PICA in two modes: the standard Graphical User Interface (GUI) o
     ```
 
 2.  **Command Line Interface (CLI)**
-    New in v.17.0.0: A text-based menu for running measurements via SSH, on Raspberry Pis, or in automated environments without a monitor.
+    In v.17.0: A text-based menu for running measurements via SSH, on Raspberry Pis, or in automated environments without a monitor.
     ```bash
     python pica_cli.py
     ```
@@ -181,48 +197,44 @@ To run the tests locally:
 
 ## Project History & Evolution
 
-PICA has evolved from a collection of offline utility scripts into a modular software suite. The development timeline highlights the shift from manual instrument handling to a fully automated, asynchronous control system.
+PICA has grown from offline utility scripts into a modular, automated, asynchronous control suite, moving from manual instrument handling to fully automated operation.
 
-> **�� Project Lore:** For a detailed chronological log of the project's development history, including the offline prototyping phase and specific version changelogs, please refer to [`Change_Logs.md`](Change_Logs.md).
+> **Project Lore:** For a full chronological development log, including offline prototyping and detailed version history, see [`CHANGELOG.md`](CHANGELOG.md).
 
----
-[17.0.0] - 2025-12-02 (Current)
-Changed
+### v17.0: Naming & Folder Standardization
+*2025-12-02 (Current)*
 
-    Directory Structure: Refactored codebase into a professional project structure; moved numerous files to appropriate subdirectories for better organization.
+- **Directory Structure:** Refactored into a professional layout with organized subdirectories.
+- **Versioning:** Standardized names and adopted Semantic Versioning (v17.0.0).
 
-    Versioning: Standardized version naming conventions. Adopted Semantic Versioning (v17.0.0).
+**Research & Documentation**
+- **Paper Draft:** First research paper draft completed and presented to Dr. Sudip Mukherjee.
+- **Feedback:** Received key feedback on integrating ATMS (Advanced Transport Measurement Systems).
 
-Research & Documentation
+**[Community] - 2025-12-01**
+- **Launch:** PICA announced on Hacker News.
 
-    Paper Draft: Completed and presented the first draft of the research paper to Dr. Sudip Mukherjee.
+### v15.0: JOSS Submission & Professionalization
+*Released November 2025*
 
-    Feedback: Received critical feedback regarding the inclusion of ATMS (Advanced Trasport Measuremenet Systems).
+- **CI/CD:** Added automated tests via GitHub Actions.
+- **Refactoring:** Reorganized code to meet JOSS standards.
+- **Validation:** Ongoing physical validation of hardware timing.
 
-[Community] - 2025-12-01
+### v13.0 – v14.1 (2025): Architecture Modernization
+*Major Release*
 
-    Launch: PICA project posted on Hacker News.
----
+- **Architecture:** Introduced GUI–backend isolation.
+- **Multiprocessing:** Used `multiprocessing` to separate UI from instrument control loops.
+- **UI:** Standardized dark theme across modules.
+- **New Modes:** Added Passive Sensing for R–T and integrated plotting tools.
 
-### **v 15.0 : JOSS Submission & Professionalization**
-*Status: Released November 2025*
-Focus shifted to code quality, stability, and documentation standards.
-* **CI/CD Integration:** Implementation of automated testing pipelines using GitHub Actions.
-* **Refactoring:** Comprehensive cleanup of the codebase to meet JOSS standards.
-* **Validation:** Currently undergoing rigorous physical validation to ensure the refactoring process retained hardware-specific timing integrity.
+### 2022 – 2024: Inception & Prototyping
 
-### **v13.0 – v14.1 (2025): Architecture Modernization**
-*Status: Major Release*
-This period marked the transition to the **GUI-Backend isolated architecture**.
-* **Multiprocessing:** Implementation of `multiprocessing` to separate UI threads from instrument control loops.
-* **UI Standardization:** Adoption of a unified dark-themed UI across all measurement modules.
-* **New Modes:** Added "Passive Sensing" modes for R-T measurements and integrated plotting utilities.
-
-### **2022 – 2024: Inception & Prototyping**
-* **2024 (Migration):** The codebase was migrated from offline laboratory systems to GitHub. The structure was reorganized from loose scripts into categorized instrument measurement modules (Keithley/Lakeshore).
-* **2022 (Origins):** Development began in an air-gapped laboratory environment. Initial work focused on proof-of-concept scripts using `PyVISA` to replace manual data logging.
-    * *Project Concept:* Proposed by Dr. Sudip Mukherjee to automate characterization workflows.
-    * *Early Prototypes:* Built iteratively alongside hardware upgrades and cryogenic probe development at UGC-DAE CSR.
+- **2024 (Migration):** Moved from offline lab systems to GitHub; organized scripts into instrument modules (Keithley/Lakeshore).
+- **2022 (Origins):** Started in an air-gapped lab with `pyvisa` scripts replacing manual logging.
+  - *Concept:* Proposed by Dr. Sudip Mukherjee to automate characterization workflows.
+  - *Prototypes:* Built alongside hardware upgrades and cryogenic probe work at UGC-DAE CSR.
 
 ---
 
@@ -241,22 +253,23 @@ If you use this software in your research, please cite it using the following Bi
 @software{Deshmukh_PICA_2025,
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
   title        = {{PICA: Python-based Instrument Control and Automation Software Suite}},
-  month        = sep,
+  month        = dec,
   year         = 2025,
   publisher    = {GitHub},
-  version      = {17.0.0},
-  url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
+  version      = {17.0},
+  url          = {[https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation)}
 }
-```
+````
 
 Alternatively, refer to the `CITATION.cff` file in the root directory.
 
 -----
+
 ## Authors & Acknowledgments
 
-<p align="center">
-  <img src="pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
-</p>
+\<p align="center"\>
+\<img src="pica/assets/LOGO/UGC\_DAE\_CSR\_NBG.jpeg" alt="UGC DAE CSR Logo" width="150"\>
+\</p\>
 
   - **Lead Developer:** **[Prathamesh Deshmukh](https://prathameshdeshmukh.site/)**
   - **Principal Investigator:** **[Dr. Sudip Mukherjee](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)**
@@ -270,3 +283,6 @@ Financial support for this work was provided under SERB-CRG project grant No. CR
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/LICENSE) file for details.
+
+```
+```
