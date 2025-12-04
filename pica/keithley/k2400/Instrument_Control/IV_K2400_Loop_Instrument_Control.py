@@ -1,11 +1,13 @@
 """
-This script interfaces with a Keithley 2400 SourceMeter to perform Current-Voltage (I-V) characterization of a device.
+This script interfaces with a Keithley 2400 SourceMeter to perform
+Current-Voltage (I-V) characterization of a device.
 
-The script prompts the user for a current range and step size, then configures the
-instrument to source a current and measure the corresponding voltage. It sweeps
-the current through a predefined pattern from a negative to a positive value and
-back, collecting I-V data points. Finally, it saves the collected data to a
-tab-separated .txt file and generates a plot of the I-V curve.
+The script prompts the user for a current range and step size, then configures
+the instrument to source a current and measure the corresponding voltage.
+It sweeps the current through a predefined pattern from a negative to a
+positive value and back, collecting I-V data points. Finally, it saves the
+collected data to a tab-separated .txt file and generates a plot of the
+I-V curve.
 """
 # -------------------------------------------------------------------------------
 # Name:         #interfacing only Keithley2400(current source) for  IV
