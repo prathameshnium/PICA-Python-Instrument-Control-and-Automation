@@ -45,6 +45,8 @@ import matplotlib.gridspec as gridspec
 import matplotlib as mpl
 import threading
 import queue
+import runpy
+from multiprocessing import Process
 
 try:
     from PIL import Image, ImageTk
@@ -73,9 +75,6 @@ def resource_path(relative_path):
     except Exception:
         base_path = os.path.abspath(os.path.dirname(__file__))
     return os.path.join(base_path, relative_path)
-
-import runpy
-from multiprocessing import Process
 
 def run_script_process(script_path):
     """
@@ -121,10 +120,13 @@ class Backend_Passthrough:
     """ Manages K6221 and K2182 via GPIB passthrough communication. """
     def __init__(self):
         self.visa_queue = queue.Queue()
-        self.k6221 = None; self.rm = None
+        self.k6221 = None
+        self.rm = None
         if pyvisa:
-            try: self.rm = pyvisa.ResourceManager()
-            except Exception as e: print(f"Could not initialize VISA: {e}")
+            try:
+                self.rm = pyvisa.ResourceManager()
+            except Exception as e:
+                print(f"Could not initialize VISA: {e}")
 
     def connect(self, k6221_visa):
         if not self.rm: raise ConnectionError("VISA is not available.")

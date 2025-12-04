@@ -6,6 +6,12 @@ specific instrument control GUIs and utility scripts.
 """
 # pica/cli.py
 
+import os
+import sys
+import subprocess
+import time
+from pathlib import Path
+
 ALL_GUI_MODULES = [
     "pica.keithley.delta_mode.Delta_RT_K6221_K2182_L350_Sensing_GUI",
     "pica.keithley.delta_mode.Delta_RT_K6221_K2182_L350_T_Control_GUI",
@@ -26,12 +32,6 @@ ALL_GUI_MODULES = [
     "pica.utils.GPIB_Instrument_Scanner_GUI",
     "pica.utils.PlotterUtil_GUI",
 ]
-
-import os
-import sys
-import subprocess
-import time
-from pathlib import Path
 
 # Metadata & Terms
 APP_NAME = "PICA Command Line Interface"
