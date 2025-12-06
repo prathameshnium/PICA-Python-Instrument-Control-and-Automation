@@ -26,7 +26,8 @@ dependencies = [ # Pinned to match requirements.txt for stability
     "PyMeasure>=0.10.0",
     "pyvisa-py>=0.5.3",
     "gpib-ctypes>=0.3.0",
-    "scipy" # Scipy is flexible enough to work with the older numpy
+    "scipy",
+    "Pillow>=10.3.0"
 ]
 
 [project.urls]
