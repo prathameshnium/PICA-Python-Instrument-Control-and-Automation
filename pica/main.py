@@ -19,7 +19,7 @@
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
 
  VERSION HISTORY:
-   6.0 (23/11/2025): Updated launcher version to 6.0 and fixed Change_Logs.md path.
+   17.0.0 (06/12/2025): Updated launcher version to match project metadata.
    13.3 (05/10/2025): Added distinct launchers for Active and Passive R-T modes.
    13.2 (05/10/2025): Integrated new K2400/2182 frontend GUIs.
    13.1 (04/10/2025): Resolved duplicate script paths and validated Delta Mode scripts.
