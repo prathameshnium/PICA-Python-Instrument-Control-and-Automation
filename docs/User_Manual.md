@@ -293,6 +293,7 @@ PICA (Root Directory)/
     docs/
         Ranges_for_Measurements.md
         User_Manual.md
+    paper/
         paper.bib
         paper.md
     pica/
