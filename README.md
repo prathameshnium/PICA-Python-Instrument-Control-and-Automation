@@ -80,6 +80,21 @@ PICA includes built-in support for the following instrument configurations, cove
 | **Dielectric** | **Keysight E4980A** | C-V Analysis. | 20 Hz - 2 MHz |
 | **Pyroelectric** | **K6517B** + **Temp Controller** | Current vs Temp (detecting Curie temperature). | pA - nA range |
 
+## Module Previews
+
+Here are a few examples of the measurement modules available in PICA:
+
+<p align="center">
+  <img src="pica/assets/Images/screenshots/K6221_RT_Control.png" alt="K6221 RT Control" width="600">
+  <br>
+  <em>K6221 RT Control</em>
+</p>
+<p align="center">
+  <img src="pica/assets/Images/screenshots/K6517B_IV.png" alt="K6517B IV" width="600">
+  <br>
+  <em>K6517B IV</em>
+</p>
+
 ---
 ## Getting Started
 
