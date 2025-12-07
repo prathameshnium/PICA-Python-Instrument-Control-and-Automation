@@ -29,17 +29,17 @@ bibliography: paper.bib
 
 # Summary
 
-PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate complex characterisation experiments in condensed matter physics. While initially developed to operate a custom laboratory-built measurement system,PICA is designed as a hardware agnostic framework. It provides an extensible unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically Keithley SourceMeters/Nanovoltmeters, Lakeshore Temperature Controllers, and Keysight LCR metres. The suite controls temperature setpoints to perform automated protocols, including temperature-dependent resistivity, current-voltage (I-V) characteristics, and pyroelectric current measurement.
+PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate complex characterisation experiments in condensed matter physics. PICA is designed as a versatile framework capable of operating on any standard laboratory workstation. It provides an extensible unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically Keithley SourceMeters/Nanovoltmeters, Lakeshore Temperature Controllers, and Keysight LCR metres. The suite controls temperature setpoints to perform automated protocols, including temperature-dependent resistivity, current-voltage (I-V) characteristics, and pyroelectric current measurement.
 
 # Statement of need
 
-Advancements in experimental physics depend on the precise characterisation of material properties under extreme physical conditions. Researchers have to choose between expensive proprietary software like LabVIEW or developing a custom measurement script from scratch. While powerful ecosystem libraries such as PyVISA [@grecco2023pyvisa] and PyMeasure [@pymeasure_2025] provide the foundational drivers for instrumental communication, they are fundamentally software libraries that require the user to write and maintain code.This creates a technical barrier for researchers who lack programming expertise. PICA addresses this gap by functioning as a turnkey application rather than a library. It offers a ready to run graphical interface that abstracts the underlying control logic, allowing the experimentalist to focus on data acquisition without the need to develop custom software scripts.
+Advancements in experimental physics depend on the precise characterisation of material properties under extreme physical conditions. Researchers have to choose between expensive proprietary software like LabVIEW or developing a custom measurement script from scratch. While powerful ecosystem libraries such as PyVISA [@grecco2023pyvisa] and PyMeasure [@pymeasure_2025] provide the foundational drivers for instrumental communication, they are fundamentally software libraries that require the user to write and maintain code. This creates a technical barrier for researchers who lack programming expertise. PICA addresses this gap by functioning as a turnkey application rather than a library. It offers a "ready-to-run" graphical interface that abstracts the underlying control logic, allowing the experimentalist to focus on data acquisition without the need to develop custom software scripts for the supported hardware configurations.
 
 It differentiates itself through the following unique features:
 
-* **Accessibility:** A professional dashboard that allows researchers without coding experience to configure and run a complex measurement protocol immediately.
+* **Accessibility:** A professional dashboard that allows researchers without coding experience to configure and run a complex measurement protocol immediately using the suite's pre-packaged measurement modules.
 
-* **Physical Validation:** Unlike general-purpose drivers, PICA's protocols are actively used for cryogenic transport measurements (80K - 320K) at the UGC DAE Consortium for Scientific Research, Mumbai Centre, validating the software's core architecture in a real world research environment and providing a stable, tested foundation for the university and researchers to build upon.
+* **Physical Validation:** Unlike general-purpose drivers, PICA's protocols are actively used for cryogenic transport measurements (80K - 320K) at the UGC DAE Consortium for Scientific Research, Mumbai Centre, validating the software's core architecture in a real-world research environment and providing a stable, tested foundation for the university and researchers to build upon.
 
 * **Process Isolation:** PICA deploys a `multiprocessing` architecture that runs instrumentation control logic in an isolated process. This ensures that hardware timeouts or driver crashes do not freeze the main dashboard, which is a common problem in single-threaded Python scripts.
 
@@ -47,7 +47,7 @@ It differentiates itself through the following unique features:
 
 *  **Operational Transparency:** Unlike a black box solution, PICA exposes real-time command logs, aiding in debugging and ensuring scientific reproducibility.
 
-*  **Open Source Extensibility:** PICA's modular design allows researchers to easily integrate new instrument drivers or experimental protocols by subclassing existing templates, fostering a community-driven ecosystem for instrument control.
+*  **Open Source Extensibility:** PICA's modular design allows researchers to easily integrate new instrument drivers or experimental protocols by subclassing existing templates, fostering a community-driven ecosystem for instrument control. This ensures that the software remains adaptable, allowing researchers to extend support for their unique instrument configurations.
 
 
 
@@ -75,6 +75,7 @@ PICA utilises **PyVISA** [@grecco2023pyvisa] to abstract the low-level communica
 
 3.  **Graceful Shutdown:** A "Safety Shutdown Routine" logic ensures that sources are ramped down to zero and heaters are disabled safely, even if the software is interrupted unexpectedly.
 
+
 ### Operational Transparency
 
 To support the scientific reproducibility of experimental results, PICA rejects hidden automation and replaces the "black box" paradigm with real-time console logs. Each measurement module has a console that records time-stamped actions (e.g., `[10:05:25] Keithley 6221: Ramping current to 10 mA`), showing every command sent to the instrument. This allows researchers to verify measurement protocols and troubleshoot hardware instantly. 
@@ -86,7 +87,7 @@ To ensure measurement reliability, all of these modules were thoroughly tested w
 
 # Acknowledgements
 
-We acknowledge the financial support provided under the SERB-GRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science and Technology (DST), Government of India.
+We acknowledge the financial support provided under the SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science and Technology (DST), Government of India.
 
 
 # References
