@@ -33,7 +33,7 @@ PICA (Python-based Instrument Control and Automation) is a modular, open-source 
 
 # Statement of need
 
-Advancements in experimental physics depend on the precise characterisation of material properties under extreme physical conditions. Researchers have to choose between expensive proprietary software like LabVIEW or developing a custom measurement script from scratch. While powerful ecosystem libraries such as PyVISA [@grecco2023pyvisa] and PyMeasure [pymeasure_2025] provide the foundational drivers for instrumental communication, they are fundamentally software libraries that require the user to write and maintain code.This creates a technical barrier for researchers who lack programming expertise. PICA addresses this gap by functioning as a turnkey application rather than a library. It offers a ready to run graphical interface that abstracts the underlying control logic, allowing the experimentalist to focus on data acquisition without the need to develop custom software scripts.
+Advancements in experimental physics depend on the precise characterisation of material properties under extreme physical conditions. Researchers have to choose between expensive proprietary software like LabVIEW or developing a custom measurement script from scratch. While powerful ecosystem libraries such as PyVISA [@grecco2023pyvisa] and PyMeasure [@pymeasure_2025] provide the foundational drivers for instrumental communication, they are fundamentally software libraries that require the user to write and maintain code.This creates a technical barrier for researchers who lack programming expertise. PICA addresses this gap by functioning as a turnkey application rather than a library. It offers a ready to run graphical interface that abstracts the underlying control logic, allowing the experimentalist to focus on data acquisition without the need to develop custom software scripts.
 
 It differentiates itself through the following unique features:
 
@@ -55,7 +55,7 @@ It differentiates itself through the following unique features:
 
 PICA is built on a modular architecture characterised by self-contained modules, ensuring future extensibility. This design allows individual measurement protocols to be modified independently or added without impacting the core system stability.
 
-![The PICA Launcher Dashboard.](pica\assets\Images\PICA_Laucher_V6.png)
+![The PICA Launcher Dashboard.](pica/assets/Images/PICA_Laucher_V6.png)
 
 ### Process Isolation and Concurrency 
 
