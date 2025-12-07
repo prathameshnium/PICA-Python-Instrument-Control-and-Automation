@@ -388,6 +388,7 @@ class VT_GUI_Active:
             logo_path = os.path.join(
                 script_dir,
                 "..",
+                "..",
                 "assets",
                 "LOGO",
                 "UGC_DAE_CSR_NBG.jpeg")

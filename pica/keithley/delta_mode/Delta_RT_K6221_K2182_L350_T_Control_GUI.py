@@ -231,6 +231,7 @@ class Advanced_Delta_GUI:
         LOGO_FILE_PATH = os.path.join(
             SCRIPT_DIR,
             "..",
+            "..",
             "assets",
             "LOGO",
             "UGC_DAE_CSR_NBG.jpeg")
