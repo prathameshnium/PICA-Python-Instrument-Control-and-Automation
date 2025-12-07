@@ -105,7 +105,7 @@ python run_pica.py
 Automatically launched upon startup (and accessible within modules), this utility scans for connected hardware. It uses `ResourceManager.list_resources()` to find devices and sends a standard ``*IDN?`` query to verify communication. This allows users to verify their hardware configuration before starting any experiment.
 
 <p align="center">
-  <img src="../pica/assets/Images/screenshots/01_GPIB_Scanner.png" alt="GPIB Scanner" width="600">
+  <img src="../pica/assets/Images/screenshots/01_GPIB_Scanner.png" alt="GPIB Scanner" width="300">
 </p>
 
 ### 4.2 PICA Plotter Utility
@@ -289,7 +289,7 @@ In the future, I also plan to develop executable (`.exe`) versions of the PICA s
 
 ## Authors & Acknowledgments
 <p align="center">
-  <img src="pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
+  <img src="../pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
   - **Lead Developer:** [**Prathamesh Deshmukh**](https://prathameshdeshmukh.site/)
   - **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)

@@ -26,7 +26,7 @@
   <img src="https://img.shields.io/github/last-commit/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=critical" alt="Last Commit">
 </p>
 
-<hr />
+---
 
 ## Overview
 
@@ -81,7 +81,6 @@ PICA includes built-in support for the following instrument configurations, cove
 | **Pyroelectric** | **K6517B** + **Temp Controller** | Current vs Temp (detecting Curie temperature). | pA - nA range |
 
 ---
-<hr />
 ## Getting Started
 
 PICA is structured as a standard Python package. 
@@ -115,7 +114,7 @@ PICA is structured as a standard Python package.
     pica-cli
     ```
 
-<hr />
+---
 ## Running Tests
 
 To run the test suite locally:
@@ -124,7 +123,7 @@ pip install pytest pytest-cov flake8
 python -m pytest
 ```
 
-<hr />
+---
 
 ## Project History
 
@@ -148,7 +147,7 @@ PICA evolved from simple offline scripts in 2022 to a full-stack automated suite
   * **User Manual:** Detailed physics and usage guides are available in the [User Manual](docs/User_Manual.md).
   * **Instrument Manuals:** A list of instrument manuals is available in [docs/Instruments_Manuals_Lists.md](docs/Instruments_Manuals_Lists.md).
 
-<hr />
+---
 
 ## Citation
 
@@ -170,9 +169,9 @@ If you use this software in your research, please cite it:
 <p align="center">
   <img src="pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
-  - **Lead Developer:** [**Prathamesh Deshmukh**](https://prathameshdeshmukh.site/)
-  - **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)
-  - **Affiliation:** [*UGC-DAE Consortium for Scientific Research, Mumbai Centre*](https://www.csr.res.in/Mumbai_Centre)
+- **Lead Developer:** [**Prathamesh Deshmukh**](https://prathameshdeshmukh.site/)
+- **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)
+- **Affiliation:** [*UGC-DAE Consortium for Scientific Research, Mumbai Centre*](https://www.csr.res.in/Mumbai_Centre)
 
 **Funding:**
 Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
