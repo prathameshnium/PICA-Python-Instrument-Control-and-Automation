@@ -34,6 +34,10 @@ PICA (Python-based Instrument Control and Automation) is a modular software suit
 
 While originally developed for cryogenic transport characterization, PICA's architecture is **hardware-agnostic**. It provides a centralized dashboard - the **PICA Launcher** - that allows researchers in any facility to configure and execute complex measurement sequences without writing code.
 
+<p align="center">
+  <img src="pica/assets/Images/screenshots/00_PICA_Launcher.png" alt="PICA Launcher" width="800">
+</p>
+
 ## Table of Contents
 
 - [Overview](#overview)

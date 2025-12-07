@@ -104,6 +104,10 @@ python run_pica.py
 
 Automatically launched upon startup (and accessible within modules), this utility scans for connected hardware. It uses `ResourceManager.list_resources()` to find devices and sends a standard ``*IDN?`` query to verify communication. This allows users to verify their hardware configuration before starting any experiment.
 
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/01_GPIB_Scanner.png" alt="GPIB Scanner" width="600">
+</p>
+
 ### 4.2 PICA Plotter Utility
 
 *File Reference: `pica/utils/PlotterUtil_GUI.py`*
@@ -113,6 +117,10 @@ A standalone, multiprocessing-enabled tool for detailed data analysis. Unlike th
   * **Comparative Analysis:** Overlaying multiple `.csv` or `.dat` files.
   * **Live Updates:** Monitoring active experiments by auto-refreshing data from disk.
   * **Flexible Axis Control:** Toggling linear/log scales to analyze data spanning orders of magnitude.
+
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/02_Plotter_Utility.png" alt="Plotter Utility" width="600">
+</p>
 
 ### 4.3 Embedded Document Viewer
 
@@ -134,6 +142,10 @@ PICA is designed to be hardware-agnostic where possible, but optimized for speci
     3.  Compute V\_corr = (V1 - V2) / 2.
         The software synchronizes the source and voltmeter via a **hardware trigger link (RS-232)** for microsecond-level timing.
 
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/K6221_IV_Sweep.png" alt="Delta Mode IV Sweep" width="600">
+</p>
+
 ### 5.2 General Transport (Standard I-V & R-T)
 
 **Target Hardware:** Keithley 2400 SourceMeter (or compatible SMU).
@@ -144,6 +156,10 @@ PICA is designed to be hardware-agnostic where possible, but optimized for speci
       * **I-V Sweep:** Linear sweeps, hysteresis loops, or custom current lists.
       * **R-T Active Control:** Applies constant DC current while coordinating with a temperature controller (e.g., Lake Shore 350) to ramp temperature.
 
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/K2400_IV_Sweep.png" alt="K2400 IV Sweep" width="600">
+</p>
+
 ### 5.3 High Precision Transport
 
 **Target Hardware:** Keithley 2400 (Source) + K2182 (Nanovoltmeter).
@@ -151,6 +167,10 @@ PICA is designed to be hardware-agnostic where possible, but optimized for speci
 
   * **Scientific Objective:** Detects subtle phase transitions in semiconductors and oxides where standard SMU resolution is insufficient.
   * **Advantage:** Combines the stable sourcing of the SMU with the nanovolt-level sensitivity of a dedicated voltmeter, utilizing a true 4-wire configuration to eliminate lead resistance errors.
+
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/K2400_2182_IV.png" alt="K2400_2182 IV" width="600">
+</p>
 
 ### 5.4 Electrometry & High Resistance
 
@@ -160,6 +180,10 @@ PICA is designed to be hardware-agnostic where possible, but optimized for speci
   * **Scientific Objective:** Characterization of dielectrics, polymers, and ceramics (Electrometry).
   * **Principle (Voltage Driven):** Applies a high voltage and measures the resulting leakage current (pA/fA range).
   * **Note:** PICA manages settling times to account for the capacitive nature of high-impedance setups, ensuring steady-state ohmic currents are recorded.
+
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/K6517B_IV.png" alt="K6517B IV" width="600">
+</p>
 
 ### 5.5 Pyroelectric Current Measurements
 
@@ -173,6 +197,10 @@ This module automates the measurement of pyroelectric currents (Ip) as a functio
     2.  **Heating:** Remove bias; heat sample at a linear rate.
     3.  **Measurement:** Record the depolarization current peak indicative of phase transition.
   * **Best Practice:** For measurements in the fA range, ensure your setup utilizes proper shielding (e.g., double-layer Faraday cage).
+
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/Pyroelectric_Current.png" alt="Pyroelectric Current" width="600">
+</p>
 
 ### 5.6 High Voltage Poling
 
@@ -189,7 +217,15 @@ This utility provides a dedicated interface for **In-situ and ex-situ electrical
 **Target Hardware:** Keysight E4980A Precision LCR Meter.
 **Frequency Range:** Instrument dependent (typically 20 Hz to 2 MHz).
 
-  * **Scientific Objective:** Measures Capacitance (C) and Loss Tangent (tan delta) as a function of frequency or DC bias voltage (C-V Analysis).
+  *   **Scientific Objective:** Measures Capacitance (C) and Loss Tangent (tan delta) as a function of frequency or DC bias voltage (C-V Analysis).
+
+  
+
+  <p align="center">
+
+    <img src="../pica/assets/Images/screenshots/Keysight_CV.png" alt="Keysight CV" width="600">
+
+  </p>
 
 ## 6\. Technical Reference
 
