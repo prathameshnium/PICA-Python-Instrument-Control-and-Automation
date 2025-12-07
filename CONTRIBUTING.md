@@ -23,7 +23,7 @@ If this is something you think you can fix, then [fork PICA](https://github.com/
 A good branch name would be (where issue #325 is the ticket you're working on):
 
 ```sh
-git checkout -b 325-add-marathi-translations
+git checkout -b 325-add-ac-resistivity-module
 ```
 
 ### Get the test suite running
@@ -47,9 +47,9 @@ git pull upstream master
 Then update your feature branch from your local copy of master, and push it!
 
 ```sh
-git checkout 325-add-marathi-translations
+git checkout 325-add-ac-resistivity-module
 git rebase master
-git push --force-with-lease origin 325-add-marathi-translations
+git push --force-with-lease origin 325-add-ac-resistivity-module
 ```
 
 Finally, go to GitHub and [make a Pull Request](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare)
