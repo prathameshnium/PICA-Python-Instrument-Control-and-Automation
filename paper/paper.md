@@ -29,18 +29,19 @@ bibliography: paper.bib
 
 # Summary
 
-PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate complex characterisation experiments in condensed matter physics. Developed to operate a custom, laboratory-built measurement system, PICA provides a unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically Keithley SourceMeters/Nanovoltmeters, Lakeshore Temperature Controllers, and Keysight LCR metres. The suite controls temperature setpoints to perform automated protocols, including temperature-dependent resistivity, current-voltage (I-V) characteristics, and pyroelectric current measurement.
+PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate complex characterisation experiments in condensed matter physics. While initially developed to operate a custom laboratory-built measurement system,PICA is designed as a
+hardware agnostic framework.It provides an extensible unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically Keithley SourceMeters/Nanovoltmeters, Lakeshore Temperature Controllers, and Keysight LCR metres. The suite controls temperature setpoints to perform automated protocols, including temperature-dependent resistivity, current-voltage (I-V) characteristics, and pyroelectric current measurement.
 
 # Statement of need
 
 Advancements in experimental physics depend on the precise characterisation of material properties under extreme physical conditions. Researchers have to choose between expensive proprietary software like LabVIEW or developing a custom measurement script from scratch. While Python libraries such as PyVISA [@grecco2023pyvisa] and PyMeasure [pymeasure_2025] provide excellent low-level driver support, they primarily function as developer toolkits. They often require significant boilerplate code to handle data visualisation and error handling, effectively forcing physicists to become software engineers.
 PICA fills this niche by providing a **"lab-ready" application layer** built on top of these libraries. It differentiates itself through the following unique features:
 * **Accessibility:** A professional dashboard that allows researchers without coding experience to configure and run a complex measurement protocol immediately.
-* **Physical Validation:** Unlike general-purpose drivers, PICA's protocols are actively used for cryogenic transport measurements (80K - 320K) at the UGC DAE Consortium for Scientific Research, Mumbai Centre, validating the softeares core architecture in a real world research enveriemenet and provides a stable , tested foundation for the university and resuschers to build upon.
+* **Physical Validation:** Unlike general-purpose drivers, PICA's protocols are actively used for cryogenic transport measurements (80K - 320K) at the UGC DAE Consortium for Scientific Research, Mumbai Centre, validating the software's core architecture in a real world research environment and providing a stable, tested foundation for the university and researchers to build upon.
 * **Process Isolation:** PICA deploys a `multiprocessing` architecture that runs instrumentation control logic in an isolated process. This ensures that hardware timeouts or driver crashes do not freeze the main dashboard, which is a common problem in single-threaded Python scripts.
 *  **Modular CLI Architecture:** As demonstrated in the repository, measurement modules also contain a CLI measurement module that allows researchers to utilise PICA's measurement protocol and logic for headless automation or integration into other workflows without GUI overhead.
 *  **Operational Transparency:** Unlike a Black box solution, PICA exposes the real-time command logs, aiding in debugging and ensuring scientific reproducibility.
-*  **Open Source Extesiblity:** PICA's modular design allows researchers to easily integrate new instrument drivers or experimental protocols by subclassing existing templates, fostering a community-driven ecosystem for instrument control.
+*  **Open Source Extensibility:** PICA's modular design allows researchers to easily integrate new instrument drivers or experimental protocols by subclassing existing templates, fostering a community-driven ecosystem for instrument control.
 
 
 
