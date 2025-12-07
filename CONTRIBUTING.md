@@ -6,7 +6,7 @@ First off, thank you for considering contributing to PICA! It's people like you 
 
 PICA is distributed under the permissive MIT License because we believe scientific software should be a dynamic, living project rather than a static tool. Our goal is to foster a community-driven ecosystem where researchers are free to modify and extend the codebase to support their specific instruments.
 
-We designed PICA’s  with a modular architecture specifically to make this process straightforward preventing the redundant effort of rewriting automation scripts from scratch. By contributing your custom drivers or experimental protocols back to the project via GitHub Pull Requests, you help create a more robust and versatile tool for the entire scientific community. Additionally, we rely on community feedback via GitHub Issues to identify edge cases and resolve bugs across diverse hardware setups, accelerating development far beyond what a single team could achieve.
+We designed PICA’s with a modular architecture specifically to make this process straightforward preventing the redundant effort of rewriting automation scripts from scratch. By contributing your custom drivers or experimental protocols back to the project via GitHub Pull Requests, you help create a more robust and versatile tool for the entire scientific community. Additionally, we rely on community feedback via GitHub Issues to identify edge cases and resolve bugs across diverse hardware setups, accelerating development far beyond what a single team could achieve.
 
 # Commitment to Transparency & Reproducibility
 
