@@ -247,10 +247,10 @@ class Integrated_RT_GUI:
     try:
         # Robust path finding for assets
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-        # Path is two directories up from the script location to reach project
-        # root
+        # Path is three directories up from the script location
         LOGO_FILE_PATH = os.path.join(
             SCRIPT_DIR,
+            "..",
             "..",
             "..",
             "assets",

@@ -401,6 +401,7 @@ class PyroelectricAppGUI:
                 script_dir,
                 "..",
                 "..",
+                "..",
                 "assets",
                 "LOGO",
                 "UGC_DAE_CSR_NBG.jpeg")

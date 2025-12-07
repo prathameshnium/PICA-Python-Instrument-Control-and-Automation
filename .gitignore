@@ -111,3 +111,4 @@ ENV/
 env.bak/
 venv.bak/
 
+capture_screenshots.py

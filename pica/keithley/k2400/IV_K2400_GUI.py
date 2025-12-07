@@ -211,6 +211,7 @@ class MeasurementAppGUI:
         LOGO_FILE = os.path.join(
             SCRIPT_DIR,
             "..",
+            "..",
             "assets",
             "LOGO",
             "UGC_DAE_CSR_NBG.jpeg")
