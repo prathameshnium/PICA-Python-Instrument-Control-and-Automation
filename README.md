@@ -38,6 +38,9 @@ While originally developed for cryogenic transport characterization, PICA's arch
   <img src="pica/assets/Images/screenshots/00_PICA_Launcher.png" alt="PICA Launcher" width="800">
 </p>
 
+> **More details here:**
+> For more information, go through the [User Manual](docs/User_Manual.md) and the [Quick Interfacing Guide](docs/python_instrument_interfacing.md).
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -187,10 +190,8 @@ If you use this software in your research, please cite it:
 - **Lead Developer:** [**Prathamesh Deshmukh**](https://prathameshdeshmukh.site/)
 - **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)
 - **Affiliation:** [*UGC-DAE Consortium for Scientific Research, Mumbai Centre*](https://www.csr.res.in/Mumbai_Centre)
-
-**Funding:**
-Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
+- **Funding:** Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE file](LICENSE) for details.
