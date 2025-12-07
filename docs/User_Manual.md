@@ -370,6 +370,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 For developers and advanced users, the following reference outlines the PICA directory structure (v17.0).
 
+> [!NOTE]
+> Adding a new module to the main launcher or integrating new modules into the GUI requires modifying `pica/main.py`.
+
 ```text
 PICA (Root Directory)/
     .coveragerc
