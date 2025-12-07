@@ -47,7 +47,7 @@ git pull upstream master
 Then update your feature branch from your local copy of master, and push it!
 
 ```sh
-git checkout 325-add-japanese-translations
+git checkout 325-add-marathi-translations
 git rebase master
 git push --force-with-lease origin 325-add-marathi-translations
 ```
