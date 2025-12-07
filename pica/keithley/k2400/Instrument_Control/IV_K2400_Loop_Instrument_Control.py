@@ -38,10 +38,11 @@ def main():
     parser.add_argument("--path", help="Path to save the data file. Defaults to a 'data' folder.")
     parser.add_argument("--range", type=float, required=True, help="Highest value of Current (in micro A).")
     parser.add_argument("--step", type=float, required=True, help="The step size (in micro A).")
+    parser.add_argument("--gpib-address", default="GPIB::4", help="GPIB address of the instrument.")
     args = parser.parse_args()
 
     # object creation ----------------------------------
-    keithley_2400 = Keithley2400("GPIB::4")
+    keithley_2400 = Keithley2400(args.gpib_address)
     keithley_2400.disable_buffer()
     sleep(2)
 
