@@ -55,6 +55,7 @@ It differentiates itself through the following unique features:
 
 PICA is built on a modular architecture characterised by self-contained modules, ensuring future extensibility. This design allows individual measurement protocols to be modified independently or added without impacting the core system stability.
 
+
 ### Process Isolation and Concurrency 
 
 Unlike simple script-based automation, PICA decouples the User Interface (UI) from the instrumentation control logic. It utilises Python's standard 'multiprocessing' libraries to spawn isolated processes for measurement tasks.
