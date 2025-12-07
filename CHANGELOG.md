@@ -1,6 +1,6 @@
 ## Instrument & Software Update Log
 ---
-[17.0.0] - 2025-12-02 (Current)
+[17.0] - 2025-12-02 (Current)
 Changed
 
     Directory Structure: Refactored codebase into a professional project structure; moved numerous files to appropriate subdirectories for better organization.
@@ -17,7 +17,7 @@ Research & Documentation
 
     Launch: PICA project posted on Hacker News.
 ---
-### Version 15 
+### Version 15.0 
 *Released: November 22, 2025*
 *Status: Tested and operational. Minor cosmetic updates pending.*
 **JOSS Submission & Professionalization**
