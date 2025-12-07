@@ -72,8 +72,10 @@ This ensures that if a measurement script hangs due to a hardware timeout, it do
 
 ### 3.1 System Prerequisites
 1.  **Python 3.9+**: The core execution environment.
-2.  **VISA Drivers:** A critical non-Python dependency. You must install vendor-supplied drivers (e.g., NI-VISA, Keysight IO Libraries) to provide the underlying communication layer between the OS and GPIB/USB hardware.
-3.  **Dependencies:** Install via `pip install -r requirements.txt`.
+2.  **Dependencies:** Install via `pip install -r requirements.txt`.
+
+> [!WARNING]
+> **A VISA Backend is Required:** Before proceeding, ensure you have installed the necessary VISA drivers from your hardware vendor (e.g., NI-VISA, Keysight IO Libraries). PICA uses PyVISA to communicate with instruments, and it will fail silently or with obscure errors if the underlying driver is not installed. This is a very common setup issue.
  
 ### 3.2 Installation Procedure
 ```bash
