@@ -155,7 +155,7 @@ PICA evolved from simple offline scripts in 2022 to a full-stack automated suite
       - *Concept:* Proposed by Dr. Sudip Mukherjee to automate characterization workflows.
       - *Prototypes:* Built alongside hardware upgrades and cryogenic probe work at UGC-DAE CSR.
 
-> **Lore:** For a detailed chronological log, see [`CHANGELOG.md`](CHANGELOG.md).
+> **Background:** For a detailed chronological log, see [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Resources & Documentation
 
