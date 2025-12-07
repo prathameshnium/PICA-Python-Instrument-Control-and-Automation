@@ -135,7 +135,7 @@ To ensure the software is self-contained (useful for offline lab computers), PIC
 
 ## 5\. Supported Measurement Modules
 
-PICA is designed to be hardware-agnostic where possible, but optimized for specific classes of instruments. The following modules represent the core capabilities of the suite, supporting a resistance scale spanning **24 orders of magnitude** (10 nOhm to 10 POhm) depending on the hardware used.
+PICA is designed to be as versatile as possible, while being optimized for specific classes of instruments. The following modules represent the core capabilities of the suite, supporting a resistance scale spanning **24 orders of magnitude** (10 nOhm to 10 POhm) depending on the hardware used.
 
 ### 5.1 Low Resistance (Delta Mode)
 
