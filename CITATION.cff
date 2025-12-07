@@ -10,7 +10,7 @@ authors:
     affiliation: "UGC-DAE Consortium for Scientific Research, Mumbai Centre"
 title: "PICA: Python-based Instrument Control and Automation Software Suite"
 version: 17.0.0
-date-released: 2025-11-23
+date-released: 2025-12-08
 url: "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
 repository-code: "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
 license: MIT
