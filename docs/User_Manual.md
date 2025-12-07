@@ -25,6 +25,7 @@
    * [Pyroelectric Measurements](#55-pyroelectric-measurements)
    * [High Voltage Poling](#56-high-voltage-poling)
    * [Dielectric Spectroscopy](#57-dielectric-spectroscopy)
+   * [Standalone Temperature Utilities](#58-standalone-temperature-utilities)
 6. [Technical Reference](#6-technical-reference)
 7. [Citation & Funding](#7-citation--funding)
 8. [Future Development](#8-future-development)
@@ -106,6 +107,8 @@ Automatically launched upon startup (and accessible within modules), this utilit
 
 <p align="center">
   <img src="../pica/assets/Images/screenshots/01_GPIB_Scanner.png" alt="GPIB Scanner" width="300">
+  <br>
+  <em>GPIB Scanner</em>
 </p>
 
 ### 4.2 PICA Plotter Utility
@@ -120,6 +123,8 @@ A standalone, multiprocessing-enabled tool for detailed data analysis. Unlike th
 
 <p align="center">
   <img src="../pica/assets/Images/screenshots/02_Plotter_Utility.png" alt="Plotter Utility" width="600">
+  <br>
+  <em>Plotter Utility</em>
 </p>
 
 ### 4.3 Embedded Document Viewer
@@ -144,6 +149,8 @@ PICA is designed to be hardware-agnostic where possible, but optimized for speci
 
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K6221_IV_Sweep.png" alt="Delta Mode IV Sweep" width="600">
+  <br>
+  <em>K6221 IV Sweep</em>
 </p>
 
 ### 5.2 General Transport (Standard I-V & R-T)
@@ -158,6 +165,18 @@ PICA is designed to be hardware-agnostic where possible, but optimized for speci
 
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K2400_IV_Sweep.png" alt="K2400 IV Sweep" width="600">
+  <br>
+  <em>K2400 IV Sweep</em>
+</p>
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/K2400_RT_Control.png" alt="K2400 RT Control" width="600">
+  <br>
+  <em>K2400 RT Control</em>
+</p>
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/K2400_RT_Sensing.png" alt="K2400 RT Sensing" width="600">
+  <br>
+  <em>K2400 RT Sensing</em>
 </p>
 
 ### 5.3 High Precision Transport
@@ -170,6 +189,18 @@ PICA is designed to be hardware-agnostic where possible, but optimized for speci
 
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K2400_2182_IV.png" alt="K2400_2182 IV" width="600">
+  <br>
+  <em>K2400_2182 IV</em>
+</p>
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/K2400_2182_RT_Control.png" alt="K2400 2182 RT Control" width="600">
+  <br>
+  <em>K2400 2182 RT Control</em>
+</p>
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/K2400_2182_RT_Sensing.png" alt="K2400 2182 RT Sensing" width="600">
+  <br>
+  <em>K2400 2182 RT Sensing</em>
 </p>
 
 ### 5.4 Electrometry & High Resistance
@@ -183,6 +214,18 @@ PICA is designed to be hardware-agnostic where possible, but optimized for speci
 
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K6517B_IV.png" alt="K6517B IV" width="600">
+  <br>
+  <em>K6517B IV</em>
+</p>
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/K6517B_RT_Control.png" alt="K6517B RT Control" width="600">
+  <br>
+  <em>K6517B RT Control</em>
+</p>
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/K6517B_RT_Sensing.png" alt="K6517B RT Sensing" width="600">
+  <br>
+  <em>K6517B RT Sensing</em>
 </p>
 
 ### 5.5 Pyroelectric Current Measurements
@@ -200,6 +243,8 @@ This module automates the measurement of pyroelectric currents (Ip) as a functio
 
 <p align="center">
   <img src="../pica/assets/Images/screenshots/Pyroelectric_Current.png" alt="Pyroelectric Current" width="600">
+  <br>
+  <em>Pyroelectric Current</em>
 </p>
 
 ### 5.6 High Voltage Poling
@@ -224,8 +269,29 @@ This utility provides a dedicated interface for **In-situ and ex-situ electrical
   <p align="center">
 
     <img src="../pica/assets/Images/screenshots/Keysight_CV.png" alt="Keysight CV" width="600">
-
+    <br>
+    <em>Keysight CV</em>
   </p>
+
+### 5.8 Standalone Temperature Utilities
+
+**Target Hardware:** Lake Shore 350 Temperature Controller.
+
+PICA also includes standalone utilities for monitoring and controlling temperature, independent of other measurement modules.
+
+  * **Temperature Monitor:** A simple interface for logging temperature from multiple sensors.
+  * **Temperature Control:** A dedicated module for setting temperature ramps, controlling heater outputs, and managing control loops.
+
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/Lakeshore_Temp_Monitor.png" alt="Lakeshore Temp Monitor" width="600">
+  <br>
+  <em>Lakeshore Temp Monitor</em>
+</p>
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/Lakeshore_Temp_Control.png" alt="Lakeshore Temp Control" width="600">
+  <br>
+  <em>Lakeshore Temp Control</em>
+</p>
 
 ## 6\. Technical Reference
 
