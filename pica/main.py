@@ -1,4 +1,4 @@
-# BUILD VERSION: 17.0.0
+# BUILD VERSION: 17.0
 '''
 ===============================================================================
  PROGRAM:      PICA Launcher
@@ -19,7 +19,7 @@
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
 
  VERSION HISTORY:
-   17.0.0 (06/12/2025): Updated launcher version to match project metadata.
+   17.0 (06/12/2025): Updated launcher version to match project metadata.
    13.3 (05/10/2025): Added distinct launchers for Active and Passive R-T modes.
    13.2 (05/10/2025): Integrated new K2400/2182 frontend GUIs.
    13.1 (04/10/2025): Resolved duplicate script paths and validated Delta Mode scripts.
@@ -95,7 +95,7 @@ def resource_path(relative_path):
 
 class PICALauncherApp:
 
-    PROGRAM_VERSION = "17.0.0"
+    PROGRAM_VERSION = "17.0"
     CLR_BG_DARK = '#2B3D4F'
     CLR_FRAME_BG = '#3A506B'
     CLR_ACCENT_GOLD = '#FFC107'

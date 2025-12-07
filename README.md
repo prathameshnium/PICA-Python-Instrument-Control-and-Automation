@@ -148,7 +148,7 @@ python -m pytest
 
 PICA evolved from simple offline scripts in 2022 to a full-stack automated suite.
 
-  * **v17.0.0 (Current):** Professional directory restructuring, Semantic Versioning, and documentation overhaul.
+  * **v17.0 (Current):** Professional directory restructuring, Semantic Versioning, and documentation overhaul.
   * **v15.0:** JOSS submission preparation, CI/CD integration.
   * **v13.0:** Transition to Multiprocessing and standardized GUI themes.
 
@@ -179,7 +179,7 @@ If you use this software in your research, please cite it:
   month        = dec,
   year         = 2025,
   publisher    = {GitHub},
-  version      = {17.0.0},
+  version      = {17.0},
   url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
 }
 ```

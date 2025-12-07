@@ -5,7 +5,7 @@ Changed
 
     Directory Structure: Refactored codebase into a professional project structure; moved numerous files to appropriate subdirectories for better organization.
 
-    Versioning: Standardized version naming conventions. Adopted Semantic Versioning (v17.0.0).
+    Versioning: Standardized version naming conventions. Adopted Semantic Versioning (v17.0).
 
 Research & Documentation
 
