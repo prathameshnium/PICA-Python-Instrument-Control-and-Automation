@@ -320,9 +320,6 @@ PICA uses standard VISA resource strings. While the defaults below are common, u
 **Collaborative Ecosystem:**
 PICA is open-source (MIT License) to foster transparency. By providing the source code, the measurement protocols become auditable, ensuring that experimental conditions are reproducible and not hidden behind a proprietary "black box." We encourage other research groups to adapt these scripts for their specific hardware configurations.
 
-**Funding:**
-Supported by SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF), Govt. of India.
-
 **Citation:**
 
 ```bibtex
@@ -359,9 +356,9 @@ In the future, I also plan to develop executable (`.exe`) versions of the PICA s
 <p align="center">
   <img src="../pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
-  - **Lead Developer:** [**Prathamesh Deshmukh**](https://prathameshdeshmukh.site/)
-  - **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)
-  - **Affiliation:** [*UGC-DAE Consortium for Scientific Research, Mumbai Centre*](https://www.csr.res.in/Mumbai_Centre)
+- **Lead Developer:** [**Prathamesh Deshmukh**](https://prathameshdeshmukh.site/)
+- **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)
+- **Affiliation:** [*UGC-DAE Consortium for Scientific Research, Mumbai Centre*](https://www.csr.res.in/Mumbai_Centre)
 
 **Funding:**
 Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
