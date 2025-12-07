@@ -55,13 +55,15 @@ It differentiates itself through the following unique features:
 
 PICA is built on a modular architecture characterised by self-contained modules, ensuring future extensibility. This design allows individual measurement protocols to be modified independently or added without impacting the core system stability.
 
-![The PICA Launcher Dashboard.](pica/assets/Images/PICA_Laucher_V6.png)
+![The PICA Launcher Dashboard.](pica\assets\Images\PICA_Laucher_V6.png)
 
 ### Process Isolation and Concurrency 
 
 Unlike simple script-based automation, PICA decouples the User Interface (UI) from the instrumentation control logic. It utilises Python's standard 'multiprocessing' libraries to spawn isolated processes for measurement tasks.
 * **Stability:** If an instrument hangs or a communication bus times out, the isolated process can be terminated safely without freezing the main  GUI or losing previous data.
+
 * **Responsiveness:** The `tkinter`-based frontend remains responsive for live data plotting (using `matplotlib` [@hunter2007matplotlib] with blitting) even while the backend waits for hardware triggers. Numpy [@harris2020numpy] is utilised throughout this pipeline for efficient array manipulation and data validation during real-time updates.
+
 * **Data Integrity:** Experimental data integrity is prioritised through a "write on acquisition" strategy. Data is structured using `pandas` [@pandas2025] and is saved to a CSV file immediately after every acquisition point, preventing data loss in the event of a power failure or program/system crash.
 
 ### Hardware Abstraction Layer
