@@ -75,7 +75,7 @@ PICA is built on a philosophy of **robustness, modularity, and accessibility**.
 
 PICA includes built-in support for the following instrument configurations, covering a resistance range spanning 24 orders of magnitude.
 
-| Module | Configuration / Instrument | Use Case | Resistance Range |
+| Module | Configuration / Instrument | Use Case | Range |
 | :--- | :--- | :--- | :--- |
 | **Low-Resistance (Delta)** | **Keithley 6221** + **K2182** | Superconductors & metallic films; cancels thermal EMFs via AC Delta method. | 10 nOhm - 100 MOhm |
 | **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter | Semiconductors, oxides, general transport. | 100 uOhm - 200 MOhm |
