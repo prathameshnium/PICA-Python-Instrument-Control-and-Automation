@@ -12,7 +12,7 @@
                saves the data to a CSV file, and displays a plot of the
                resulting I-V curve.
 
- AUTHOR:       Prathamesh Deshmukh
+ AUTHOR:       Prathamesh K. Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
 

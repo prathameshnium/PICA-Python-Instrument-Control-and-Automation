@@ -14,7 +14,7 @@
                documentation (README, LICENSE), quick access to script folders
                and instrument manuals, and a real-time logging console.
 
- AUTHOR:       Prathamesh K Deshmukh
+ AUTHOR:       Prathamesh K. Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
 
@@ -314,7 +314,7 @@ class PICALauncherApp:
 
         ttk.Label(
             info_frame,
-            text="Developed by Prathamesh Deshmukh",
+            text="Developed by Prathamesh K. Deshmukh",
             font=bold_font,
             justify='center',
             anchor='center').pack(

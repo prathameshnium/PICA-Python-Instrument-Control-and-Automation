@@ -7,7 +7,7 @@ Purpose: GUI module for RT K2400 L350 T Sensing GUI v4.
 # Name:         Passive R-T  for Keithley 2400
 # Purpose:      Provide a GUI for passively logging R-T data using a K2400
 #               and LS350. This version does not control temperature.
-# Author:       Prathamesh Deshmukh (Adapted from 6517B & 2400 scripts)
+# Author:       Prathamesh K. Deshmukh (Adapted from 6517B & 2400 scripts)
 # Created:      05/10/2025
 # Version:      1.0
 # -------------------------------------------------------------------------------

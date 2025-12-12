@@ -12,7 +12,7 @@
                that are unreachable, making it a quick diagnostic tool for
                debugging instrument control setups.
 
- AUTHOR:       Prathamesh Deshmukh
+ AUTHOR:       Prathamesh K. Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
 

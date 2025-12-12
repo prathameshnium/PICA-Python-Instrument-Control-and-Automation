@@ -10,7 +10,7 @@ tags:
   - scpi
   - instrumentation
 authors:
-  - name: Prathamesh Deshmukh
+  - name: Prathamesh K. Deshmukh
     orcid: 0009-0008-3278-0837
     affiliation: "1,2"
   - name: Sudip Mukherjee

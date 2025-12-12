@@ -25,7 +25,7 @@ Features
 - Data export to a timestamped `.dat` (CSV) file.
 - Packaged with utility launchers for data plotting and GPIB scanning.
 
-Author: Prathamesh Deshmukh
+Author: Prathamesh K. Deshmukh
 Date: October 2025
 Version: 1.6
 """

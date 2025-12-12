@@ -7,7 +7,7 @@ Purpose: GUI module for Pyroelectric K6517B L350 GUI v4.
 # Name:         Pyroelectric Measurement GUI
 # Purpose:      Perform a pyroelectric current measurement with enhanced, two-stage
 #               temperature ramp control.
-# Author:       Prathamesh Deshmukh
+# Author:       Prathamesh K. Deshmukh
 # Created:      17/09/2025
 # Version:      V2.5 (Matplotlib Style Fix)
 # -------------------------------------------------------------------------------

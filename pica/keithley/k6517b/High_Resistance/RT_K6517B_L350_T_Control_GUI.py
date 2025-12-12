@@ -7,7 +7,7 @@ Purpose: GUI module for RT K6517B L350 T Control GUI v13.
 # Name:             Integrated R-T Measurement GUI (Aggressive Ramp)
 # Purpose:          Provide a GUI for the Lakeshore 350 and Keithley 6517B
 #                   using a hardware ramp with a fixed high-power heater setting.
-# Author:           Prathamesh Deshmukh
+# Author:           Prathamesh K. Deshmukh
 # Created:          26/09/2025
 # Version:          V: 3.9 (Performance & UI Update)
 # -------------------------------------------------------------------------------

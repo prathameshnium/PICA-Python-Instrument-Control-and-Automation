@@ -1,6 +1,6 @@
 '''
 File:         lakeshore_350_ramp_control.py
-Author:       Prathamesh K Deshmukh
+Author:       Prathamesh K. Deshmukh
 Date:         10/09/2025
 Version:      2.0
 

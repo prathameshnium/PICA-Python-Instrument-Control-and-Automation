@@ -7,7 +7,7 @@ Purpose: GUI module for IV K6517B GUI v11.
 # Name:             High Resistance IV GUI for Keithley 6517B
 # Purpose:          Perform a voltage sweep and measure resistance using a
 #                   Keithley 6517B Electrometer with a real instrument backend.
-# Author:           Prathamesh Deshmukh
+# Author:           Prathamesh K. Deshmukh
 # Created:          17/09/2025
 # Version:          V: 4.4 (Performance & UI Update)
 # -------------------------------------------------------------------------------

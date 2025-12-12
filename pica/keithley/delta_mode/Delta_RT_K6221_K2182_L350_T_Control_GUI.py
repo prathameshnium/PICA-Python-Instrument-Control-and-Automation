@@ -9,7 +9,7 @@ Purpose: GUI module for Delta RT K6221 K2182 L350 T Control GUI v5.
 #               Keithley 6221/2182 and Lakeshore 350, using an advanced GUI
 #               and temperature control logic.
 #
-# Author:       Prathamesh Deshmukh
+# Author:       Prathamesh K. Deshmukh
 # Created:      03/10/2025
 #
 # Version:      2.1 (JOSS Cleaned)

@@ -7,7 +7,7 @@ Purpose: GUI module for Delta K6221 K2182 L350 T Sensing Backend v1.
 # Name:         Combined Delta and Lakeshore Measurement
 # Purpose:      Perform a Delta mode measurement with a Keithley 6221 while
 #               simultaneously monitoring temperature with a Lakeshore 350.
-# Author:       Prathamesh
+# Author:       Prathamesh K. Deshmukh
 # Created:      09/09/2025
 # Version:      1.0
 # -------------------------------------------------------------------------------

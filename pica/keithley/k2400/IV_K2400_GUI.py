@@ -7,7 +7,7 @@ Purpose: GUI module for IV K2400 GUI v5.
 # Name:           Keithley 2400 I-V Measurement GUI
 # Purpose:        Perform an automated I-V sweep using a Keithley 2400.
 #                 (Grid-based layout for stability)
-# Author:         Prathamesh (Modified by Gemini)
+# Author:         Prathamesh K. Deshmukh
 # Created:        10/09/2025
 # Version:        12.2 (Added GPIB Scanner Utility)
 # -------------------------------------------------------------------------------

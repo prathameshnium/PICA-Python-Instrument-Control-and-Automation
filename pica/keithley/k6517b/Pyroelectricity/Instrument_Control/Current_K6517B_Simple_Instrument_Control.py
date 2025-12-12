@@ -6,7 +6,7 @@ Purpose: GUI module for Current K6517B Simple Backend v10.
 # -------------------------------------------------------------------------------
 # Name:        Keithley 6517B electrometer
 # Purpose:     Current Measurement Backend
-# Author:      Prathamesh K Deshmukh
+# Author:      Prathamesh K. Deshmukh
 # -------------------------------------------------------------------------------
 
 import time
