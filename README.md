@@ -185,13 +185,14 @@ If you use this software in your research, please cite it:
 ```
 
 ## Authors & Acknowledgments
+
+This project is led by [**Prathamesh Deshmukh**](https://prathameshdeshmukh.site/) under the supervision of [**Dr. Sudip Mukherjee**](https://www.csr.res.in/Sudip-Mukherjee) at the [*UGC-DAE Consortium for Scientific Research, Mumbai Centre*](https://www.csr.res.in/Mumbai_Centre).
+
+Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
+
 <p align="center">
   <img src="pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
-- **Lead Developer:** [**Prathamesh Deshmukh**](https://prathameshdeshmukh.site/)
-- **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)
-- **Affiliation:** [*UGC-DAE Consortium for Scientific Research, Mumbai Centre*](https://www.csr.res.in/Mumbai_Centre)
-- **Funding:** Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
 
 ## License
 
