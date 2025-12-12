@@ -158,7 +158,7 @@ PICA is designed to be as versatile as possible, while being optimized for speci
 ### 5.2 General Transport (Standard I-V & R-T)
 
 **Target Hardware:** Keithley 2400 SourceMeter (or compatible SMU).
-**Typical Range:** 100 uOhm to 200 MOhm.
+**Typical Range:** 100 µOhm to 200 MOhm.
 
   * **Scientific Objective:** General transport characterization for semiconductors, oxides, and devices.
   * **Capabilities:**
@@ -184,7 +184,7 @@ PICA is designed to be as versatile as possible, while being optimized for speci
 ### 5.3 High Precision Transport
 
 **Target Hardware:** Keithley 2400 (Source) + K2182 (Nanovoltmeter).
-**Typical Range:** 1 uOhm to 100 MOhm.
+**Typical Range:** 1 µOhm to 100 MOhm.
 
   * **Scientific Objective:** Detects subtle phase transitions in semiconductors and oxides where standard SMU resolution is insufficient.
   * **Advantage:** Combines the stable sourcing of the SMU with the nanovolt-level sensitivity of a dedicated voltmeter, utilizing a true 4-wire configuration to eliminate lead resistance errors.

@@ -78,8 +78,8 @@ PICA includes built-in support for the following instrument configurations, cove
 | Module | Configuration / Instrument | Use Case | Range |
 | :--- | :--- | :--- | :--- |
 | **Low-Resistance (Delta)** | **Keithley 6221** + **K2182** | Superconductors & metallic films; cancels thermal EMFs via AC Delta method. | 10 nOhm - 100 MOhm |
-| **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter | Semiconductors, oxides, general transport. | 100 uOhm - 200 MOhm |
-| **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** | Detecting subtle phase transitions. | 1 uOhm - 100 MOhm |
+| **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter | Semiconductors, oxides, general transport. | 100 µOhm - 200 MOhm |
+| **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** | Detecting subtle phase transitions. | 1 µOhm - 100 MOhm |
 | **High-Resistance** | **Keithley 6517B** Electrometer | Dielectrics, polymers, & ceramics. | 1 Ohm - 10 POhm |
 | **Dielectric** | **Keysight E4980A** | C-V Analysis. | 20 Hz - 2 MHz |
 | **Pyroelectric** | **K6517B** + **Temp Controller** | Current vs Temp (detecting Curie temperature). | pA - nA range |
