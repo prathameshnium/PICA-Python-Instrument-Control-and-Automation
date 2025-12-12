@@ -77,7 +77,7 @@ This script demonstrates how to interface with a Keithley 2400 to source current
 `2400_current_check.py`
 ```python
 # Name: Interfacing Keithley 2400 (current source)
-# Author: Prathamesh
+# Author: Prathamesh K. Deshmukh
 # Created: 27/10/2022
 # Copyright: (c) Instrument-DSL 2022
 

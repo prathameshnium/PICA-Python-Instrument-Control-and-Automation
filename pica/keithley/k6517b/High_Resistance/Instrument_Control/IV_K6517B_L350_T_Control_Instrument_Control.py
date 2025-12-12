@@ -16,7 +16,7 @@
                feedback. The script ensures a safe shutdown of all instruments
                upon completion, error, or user interruption.
 
- AUTHOR:       Prathamesh Deshmukh
+ AUTHOR:       Prathamesh K. Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
 

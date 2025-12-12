@@ -10,7 +10,7 @@
                visualize the C-V curve in real-time, and save the data
                automatically.
 
- AUTHOR:       Prathamesh Deshmukh
+ AUTHOR:       Prathamesh K. Deshmukh
 
  VERSION:      1.0
  LAST EDITED:  05/10/2025

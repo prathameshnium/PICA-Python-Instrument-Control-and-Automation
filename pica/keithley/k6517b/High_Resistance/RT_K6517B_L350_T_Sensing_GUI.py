@@ -8,7 +8,7 @@ Purpose: GUI module for RT K6517B L350 T Sensing GUI v14.
 # Purpose:          Provide a GUI to passively measure and record Resistance vs.
 #                   Temperature from a Lakeshore 350 and Keithley 6517B.
 #                   This version DOES NOT control the temperature.
-# Author:           Prathamesh Deshmukh
+# Author:           Prathamesh K. Deshmukh
 # Created:          26/09/2025
 # Version:          V: 4.2 (Performance & UI Update)
 # -------------------------------------------------------------------------------

@@ -9,7 +9,7 @@ Purpose: GUI module for Delta RT K6221 K2182 L350 Sensing GUI v5.
 #                Keithley 6221/2182 while passively monitoring temperature
 #                from a Lakeshore 350.
 #
-# Author:        Prathamesh Deshmukh
+# Author:        Prathamesh K. Deshmukh
 #
 # Created:       03/10/2025
 #

@@ -6,7 +6,7 @@ Purpose: GUI module for Poling K6517B Backend v10.
 # -------------------------------------------------------------------------------
 # Name:        Keithley 6517B Poling
 # Purpose:     Apply a poling voltage to a sample.
-# Author:      Prathamesh K Deshmukh
+# Author:      Prathamesh K. Deshmukh
 # Created:     03-03-2024
 # Updated:     22-11-2025 (Refactored for robustness)
 # -------------------------------------------------------------------------------

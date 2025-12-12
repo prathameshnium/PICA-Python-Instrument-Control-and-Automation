@@ -8,7 +8,7 @@ Purpose: GUI module for T Sensing L350 GUI v4.
 # Purpose:        Provide a GUI to passively monitor and record temperature
 #                 from a Lakeshore 350 controller. This version DOES NOT
 #                 control the temperature.
-# Author:         Prathamesh Deshmukh
+# Author:         Prathamesh K. Deshmukh
 # Created:        28/09/2025
 # Version:        V: 2.0 (Professional UI Refresh)
 # -------------------------------------------------------------------------------
