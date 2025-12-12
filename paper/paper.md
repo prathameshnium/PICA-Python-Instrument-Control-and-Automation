@@ -1,5 +1,5 @@
 ---
-title: 'PICA: A Python-based Instrument Control and Automation Suite for High Precision Low Noise Transport Measurement/ Advanced Python Suite for Precision Instrumentation and Transport Measurement Automation'
+title: 'PICA: Advanced Python Suite for Precision Instrumentation and Transport Measurement Automation'
 tags:
   - python
   - hardware control
