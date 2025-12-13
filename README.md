@@ -1,11 +1,8 @@
-# PICA: Python-based Instrument Control and Automation
+# PICA: Advanced Python Suite for High Precision Instrumentation and Transport Measurement Automation
 
 <p align="center">
   <img src="pica/assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="250">
 </p>
-
-
-**A modular, open-source framework for automating laboratory measurements in physics research.**
 
 <p align="center">
   <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/ci.yml"><img src="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/ci.yml/badge.svg" alt="CI Build Status"></a>
@@ -29,11 +26,17 @@
 
 ---
 
-## Overview
+## Summary
 
-PICA (Python-based Instrument Control and Automation) is a modular software suite designed to democratize access to advanced experimental automation. It replaces expensive, rigid proprietary software with a flexible, open-source framework capable of orchestrating diverse laboratory instruments.
+High-precision measurements are essential for advancing research in spintronics and materials characterization. **PICA (Python-based Instrument Control and Automation)** is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and chemical samples. It operates as a versatile framework capable of running on any standard laboratory workstation.
 
-While originally developed for cryogenic transport characterization, PICA's architecture is highly **versatile**, providing a centralized dashboard - the **PICA Launcher** - that allows researchers in any facility to configure and execute complex measurement sequences without writing code.
+PICA provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analyzers, and temperature controllers. Built on the robust Python scientific ecosystem, PICA ensures that the entire hardware ecosystem functions seamlessly as a cohesive unit.
+
+The suite performs automated protocols including:
+* Temperature-dependent wide-range resistance measurement ($10^{-8}$ - $10^{16}$ Ω).
+* Current-voltage (I-V) characterization.
+* Capacitance characterization and magnetodielectric studies (20 Hz - 2 MHz).
+* Pyroelectric current measurement (resolution ~$10^{-15}$ A).
 
 <p align="center">
   <img src="pica/assets/Images/screenshots/00_PICA_Launcher.png" alt="PICA Launcher" width="800">
@@ -44,36 +47,63 @@ While originally developed for cryogenic transport characterization, PICA's arch
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Why PICA?](#why-pica)
-- [Architecture & Design](#architecture--design)
+- [Summary](#summary)
+- [Statement of Need](#statement-of-need)
+- [Key Features](#key-features)
+- [Design and Implementation](#design-and-implementation)
 - [Supported Hardware Modules](#supported-hardware-modules)
 - [Getting Started](#getting-started)
 - [Running the Software](#running-the-software)
-- [Running Tests](#running-tests)
-- [Project History](#project-history)
 - [Resources & Documentation](#resources--documentation)
 - [Citation](#citation)
 - [Authors & Acknowledgments](#authors--acknowledgments)
 - [License](#license)
 
-## Why PICA?
+---
 
-* **Open & Adaptable:** Unlike "black box" commercial tools, PICA is fully transparent. Researchers can inspect, modify, and extend the underlying Python code to suit unique experimental needs.
-* **Unified Workflow:** It unifies control for instruments from different vendors (Keithley, Lake Shore, Keysight) into a single, cohesive interface.
-* **Data Integrity:** Automated protocols ensure reproducibility, reducing human error associated with manual data logging.
+## Statement of Need
 
-## Architecture & Design
+Advancements in experimental physics and device manufacturing depend on the precise characterization of material properties under extreme physical conditions. Researchers often face a binary choice: purchase expensive proprietary software or develop custom measurement scripts from scratch.
 
-PICA is built on a philosophy of **robustness, modularity, and accessibility**.
+While libraries such as **PyVISA** and **PyMeasure** provide foundational drivers, they require the user to write and maintain code. **PICA addresses this gap by functioning as a turnkey application.** It offers a "ready-to-run" graphical interface that abstracts underlying control logic, allowing experimentalists to focus on data acquisition without software development overhead.
 
-* **Tech Stack:** Python 3.9+ serves as the core, utilizing `Tkinter` for GUIs, `PyVISA` for instrument communication, `Matplotlib` for real-time visualization, and `Multiprocessing` for concurrency.
-* **Operational Transparency:** Every GUI includes an **Embedded Console Log** that streams real-time SCPI commands and status updates, allowing researchers to verify exactly what the hardware is doing.
-* **Process Isolation:** Each measurement runs in a discrete process. If a specific instrument driver crashes or times out, the main launcher remains stable.
+PICA enables continuous operation across the full range from Delta-mode low-resistance measurements (removing constant offsets) to high-impedance electrometric measurements using a single unified framework.
+
+## Key Features
+
+* **Accessibility:** A professional GUI dashboard allows researchers without coding experience to configure and run complex measurement protocols immediately using pre-packaged measurement modules.
+* **Operational Validation:** Validated via cryogenic transport measurements using a custom-designed probe in conjunction with a **Physical Property Measurement System (PPMS)** (5-380 K, up to 14 Tesla) at the UGC DAE Consortium for Scientific Research, Mumbai Centre.
+* **Fault Tolerance:** Control logic is isolated from the user interface. Hardware timeouts or driver crashes are prevented from freezing the main dashboard.
+* **Modular CLI Architecture:** Measurement modules contain CLI counterparts, allowing researchers to utilize PICA's protocol logic for headless automation or integration into other workflows without GUI overhead.
+* **Operational Transparency:** PICA rejects the "black box" paradigm by exposing real-time, time-stamped command logs (e.g., `[10:05:25] Keithley 6221: Ramping current to 10 mA`). This aids debugging, ensures scientific reproducibility, and allows verification of measurement protocols.
+* **Open Source Extensibility:** Researchers can integrate new instrument drivers or experimental protocols by subclassing existing templates, fostering a community-driven ecosystem.
+
+---
+
+## Design and Implementation
+
+PICA is built on a modular architecture characterized by self-contained modules, ensuring future extensibility without impacting core system stability.
+
+### Process Isolation and Concurrency
+Unlike simple script-based automation, PICA decouples the User Interface (UI) from the instrumentation control logic using Python's standard `multiprocessing` libraries.
+* **Stability:** If an instrument hangs, the isolated process can be terminated safely without freezing the main GUI or losing previous data.
+* **Responsiveness:** The `tkinter`-based frontend remains responsive for live data plotting (using `matplotlib` with blitting) even while the backend waits for hardware triggers.
+* **Data Integrity:** A "write on acquisition" strategy using `pandas` saves data to CSV immediately after every acquisition point, preventing data loss during power failures.
+
+### Hardware Abstraction Layer
+PICA utilizes **PyVISA** to abstract low-level communication protocols (GPIB, USB, Ethernet). The software implements a strict initialization routine:
+1.  **Connection Verification:** A built-in "VISA Instrument Scanner" queries the bus (`*IDN?`) to map instrument addresses.
+2.  **Instrument Reset Protocol:** Explicitly resets all stored data and buffers to provide a clean initial state.
+3.  **Graceful Shutdown:** Ensures sources are ramped down and heaters disabled safely, even if the software is interrupted.
+
+### Testing and Simulation
+PICA includes a testing suite using `pytest` and `unittest.mock` to simulate VISA resources, allowing verification of backend logic streams and command sequences without constant access to physical instruments.
+
+---
 
 ## Supported Hardware Modules
 
-PICA includes built-in support for the following instrument configurations, covering a resistance range spanning 24 orders of magnitude.
+The system is currently validated with industry-standard hardware, covering a resistance range spanning 24 orders of magnitude.
 
 | Module | Configuration / Instrument | Use Case | Range |
 | :--- | :--- | :--- | :--- |
@@ -81,32 +111,33 @@ PICA includes built-in support for the following instrument configurations, cove
 | **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter | Semiconductors, oxides, general transport. | 100 µΩ - 200 MΩ |
 | **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** | Detecting subtle phase transitions. | 1 µΩ - 100 MΩ |
 | **High-Resistance** | **Keithley 6517B** Electrometer | Dielectrics, polymers, & ceramics. | 1 Ω - 10 PΩ |
-| **Dielectric** | **Keysight E4980A** | C-V Analysis. | 20 Hz - 2 MHz |
-| **Pyroelectric** | **K6517B** + **Temp Controller** | Current vs Temp (detecting Curie temperature). | pA - nA range |
+| **Dielectric Analysis** | **Keysight E4980A** | C-V Analysis and Magnetodielectric characterization. | 20 Hz - 2 MHz |
+| **Pyroelectric** | **K6517B** + **Temp Controller** | Current vs Temp (detecting Curie temperature). | $10^{-15}$ A Resolution |
 
-## Module Previews
+*While the current implementation drives specific instruments, the underlying framework is hardware agnostic. Researchers need only replace specific SCPI commands to utilize the suite with different models.*
 
-Here are a few examples of the measurement modules available in PICA:
+### Module Previews
 
 <p align="center">
   <img src="pica/assets/Images/screenshots/K6221_RT_Control.png" alt="K6221 RT Control" width="600">
   <br>
-  <em>K6221 RT Control</em>
+  <em>K6221 RT Control Interface</em>
 </p>
 <p align="center">
   <img src="pica/assets/Images/screenshots/K6517B_IV.png" alt="K6517B IV" width="600">
   <br>
-  <em>K6517B IV</em>
+  <em>K6517B IV Characterization Interface</em>
 </p>
 
 ---
+
 ## Getting Started
 
-PICA is structured as a standard Python package. 
+PICA is structured as a standard Python package.
 
 1.  **Clone the Repository**
     ```bash
-    git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
+    git clone [https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git)
     cd PICA-Python-Instrument-Control-and-Automation
     ```
 
@@ -163,8 +194,9 @@ PICA evolved from simple offline scripts in 2022 to a full-stack automated suite
 
 ## Resources & Documentation
 
-  * **User Manual:** Detailed physics and usage guides are available in the [User Manual](docs/User_Manual.md).
-  * **Instrument Manuals:** A list of instrument manuals is available in [docs/Instruments_Manuals_Lists.md](docs/Instruments_Manuals_Lists.md).
+* **User Manual:** Detailed physics and usage guides are available in the [User Manual](docs/User_Manual.md).
+* **Quick Interfacing Guide:** See [docs/python_instrument_interfacing.md](docs/python_instrument_interfacing.md).
+* **Instrument Manuals:** A list of instrument manuals is available in [docs/Instruments_Manuals_Lists.md](docs/Instruments_Manuals_Lists.md).
 
 ---
 
@@ -175,20 +207,21 @@ If you use this software in your research, please cite it:
 ```bibtex
 @software{Deshmukh_PICA_2025,
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
-  title        = {{PICA: Python-based Instrument Control and Automation Software Suite}},
+  title        = {{PICA: Advanced Python Suite for High Precision Instrumentation and Transport Measurement Automation}},
   month        = dec,
   year         = 2025,
   publisher    = {GitHub},
   version      = {17.0},
-  url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
+  url          = {[https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation)}
 }
-```
+````
 
 ## Authors & Acknowledgments
 
 This project is led by [**Prathamesh K. Deshmukh**](https://prathameshdeshmukh.site/) under the supervision of [**Dr. Sudip Mukherjee**](https://www.csr.res.in/Sudip-Mukherjee) at the [*UGC-DAE Consortium for Scientific Research, Mumbai Centre*](https://www.csr.res.in/Mumbai_Centre).
 
-Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
+We acknowledge the financial support provided under the **SERB-CRG project grant No. CRG/2022/005676** from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science and Technology (DST), Government of India.
+
 
 <p align="center">
   <img src="pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
