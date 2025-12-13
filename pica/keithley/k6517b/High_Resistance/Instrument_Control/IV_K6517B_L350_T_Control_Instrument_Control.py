@@ -29,7 +29,6 @@ except ImportError:
     exit()
 
 # --- Configuration Constants ---
-# TODO: Change these to your instruments' actual VISA addresses
 LAKESHORE_VISA = "GPIB1::15::INSTR"
 KEITHLEY_VISA = "GPIB1::27::INSTR"
 
