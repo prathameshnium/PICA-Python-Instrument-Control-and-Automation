@@ -117,9 +117,9 @@ This script shows how to use a Keithley 2400 as a current source and a Keithley 
 `combine-2400-2182-Updated.py`
 ```python
 # Name: Interfacing Keithley 2400 (current source) and Keithley 2182 (nanovoltmeter)
-# Author: Instrument-DSL
+# Author: Prathamesh K. Deshmukh
 # Created: 27/10/2022
-# Copyright: (c) Instrument-DSL 2022
+# Copyright: (c) Prathamesh K. Deshmukh 2022
 
 import pymeasure
 import numpy as np
