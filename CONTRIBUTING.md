@@ -20,10 +20,10 @@ If you've noticed a bug or have a feature request, [make one](https://github.com
 
 If this is something you think you can fix, then [fork PICA](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/fork) and create a branch with a descriptive name.
 
-A good branch name would be (where issue #325 is the ticket you're working on):
+A good branch name would be (where issue #101 is the ticket you're working on):
 
 ```sh
-git checkout -b 325-add-ac-resistivity-module
+git checkout -b 101-add-new-instrument
 ```
 
 ### Get the test suite running
