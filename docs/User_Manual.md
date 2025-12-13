@@ -35,11 +35,9 @@
 
 ## 1. Overview
 
-PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to democratize advanced instrument automation in experimental physics and materials science.
-
-While commercial solutions (e.g., LabVIEW) are powerful, they are often cost-prohibitive, closed-source, and difficult to customize for unique experimental setups. PICA bridges this gap by providing a **unified, adaptable framework** for orchestrating diverse instruments - such as SourceMeters, Nanovoltmeters, and Temperature Controllers.
-
-Although originally developed for cryogenic transport systems, PICA's modular architecture allows it to be deployed in **any laboratory environment** utilizing supported VISA-compatible instruments. The suite is managed via a centralized **PICA Launcher**, an intuitive dashboard that enables researchers to configure and execute complex characterization experiments without writing a single line of code.
+High-precision measurements are essential for advancing research in spintronics and materials characterization. To enable such progress, highly precise and accurate automation software is required.PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and chemical samples. PICA is designed as a versatile framework capable of operating on any standard laboratory workstation. 
+It provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analyser, and temperature controllers. Built on the robust Python scientific ecosystem, PICA leverages community standard libraries as an alternative to licenced commercial software for instrument control.
+By utilising `threading` and `multiprocessing` capabilities, PICA ensures that the entire hardware ecosystem functions seamlessly and as a single cohesive unit. This allows the system to perform automated protocols, including temperature-dependent wide range resistance measurement ($10^{-8}$ - $10^{16}$ Ω), current voltage (I-V) characterisation,  capacitance characterisation, and pyroelectric current measurement, and orchestrates measurements under varying magnetic fields and temperatures without requiring physical reconfiguration of the measurement setups.
 
 ## 2. Design Philosophy & Architecture
 
