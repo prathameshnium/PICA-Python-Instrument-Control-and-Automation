@@ -28,7 +28,7 @@ def mock_app_dependencies():
     with patch('PIL.Image.open', MagicMock()), \
          patch('PIL.ImageTk.PhotoImage', MagicMock()), \
          patch('subprocess.Popen', MagicMock()), \
-         patch('tkinter.font.Font', MagicMock()):  # <--- FIX: Mock Font creation
+         patch('tkinter.font.Font', MagicMock()):  # Mocking Font to prevent segfaults in headless environments.
         yield
 
 def test_pica_launcher_initialization(mock_app_dependencies):
