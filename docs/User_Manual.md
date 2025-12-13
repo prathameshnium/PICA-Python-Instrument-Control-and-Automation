@@ -108,7 +108,7 @@ Automatically launched upon startup (and accessible within modules), this utilit
 <p align="center">
   <img src="../pica/assets/Images/screenshots/01_GPIB_Scanner.png" alt="GPIB Scanner" width="300">
   <br>
-  <em>GPIB Scanner</em>
+  <em>The PICA Instrument Scanner utility, which automatically detects and identifies connected instruments.</em>
 </p>
 
 ### 4.2 PICA Plotter Utility
@@ -124,7 +124,7 @@ A standalone, multiprocessing-enabled tool for detailed data analysis. Unlike th
 <p align="center">
   <img src="../pica/assets/Images/screenshots/02_Plotter_Utility.png" alt="Plotter Utility" width="600">
   <br>
-  <em>Plotter Utility</em>
+  <em>The PICA Plotter Utility, a tool for data visualization and comparative analysis of multiple datasets including live plotting.</em>
 </p>
 
 ### 4.3 Embedded Document Viewer
@@ -150,7 +150,7 @@ PICA is designed to be as versatile as possible, while being optimized for speci
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K6221_IV_Sweep.png" alt="Delta Mode IV Sweep" width="600">
   <br>
-  <em>K6221 IV Sweep</em>
+  <em>I-V sweep measurement using the Sweep Mode, designed for low-resistance measurements with a Keithley 6221 and 2182.</em>
 </p>
 
 ### 5.2 General Transport (Standard I-V & R-T)
@@ -166,17 +166,17 @@ PICA is designed to be as versatile as possible, while being optimized for speci
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K2400_IV_Sweep.png" alt="K2400 IV Sweep" width="600">
   <br>
-  <em>K2400 IV Sweep</em>
+  <em>A standard I-V sweep performed with a Keithley 2400 SourceMeter, suitable for general-purpose device and sample characterization.</em>
 </p>
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K2400_RT_Control.png" alt="K2400 RT Control" width="600">
   <br>
-  <em>K2400 RT Control</em>
+  <em>Resistance-Temperature (R-T) measurement with active temperature control, using a Keithley 2400 and a Lakeshore 350 controller.</em>
 </p>
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K2400_RT_Sensing.png" alt="K2400 RT Sensing" width="600">
   <br>
-  <em>K2400 RT Sensing</em>
+  <em>Resistance-Temperature (R-T) measurement in sensing mode, where the system logs resistance and temprature while an external system/controller manages temperature.</em>
 </p>
 
 ### 5.3 High Precision Transport
@@ -190,17 +190,17 @@ PICA is designed to be as versatile as possible, while being optimized for speci
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K2400_2182_IV.png" alt="K2400_2182 IV" width="600">
   <br>
-  <em>K2400_2182 IV</em>
+  <em>High-precision I-V characterization using a Keithley 2400 as a current source and a Keithley 2182 nanovoltmeter for sensitive mid range resistance measurements.</em>
 </p>
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K2400_2182_RT_Control.png" alt="K2400 2182 RT Control" width="600">
   <br>
-  <em>K2400 2182 RT Control</em>
+  <em>High-precision R-T measurement with active temperature control, combining the K2400, K2182, and a L350 temperature controller.</em>
 </p>
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K2400_2182_RT_Sensing.png" alt="K2400 2182 RT Sensing" width="600">
   <br>
-  <em>K2400 2182 RT Sensing</em>
+  <em>High-precision R-T measurement in sensing mode, leveraging the K2400 and K2182 for enhanced accuracy for mid range resistance measurements.</em>
 </p>
 
 ### 5.4 Electrometry & High Resistance
@@ -215,17 +215,17 @@ PICA is designed to be as versatile as possible, while being optimized for speci
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K6517B_IV.png" alt="K6517B IV" width="600">
   <br>
-  <em>K6517B IV</em>
+  <em>High-resistance I-V measurement performed with a Keithley 6517B Electrometer, designed for characterizing insulating materials.</em>
 </p>
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K6517B_RT_Control.png" alt="K6517B RT Control" width="600">
   <br>
-  <em>K6517B RT Control</em>
+  <em>High-resistance R-T measurement with active temperature control using a Keithley 6517B.</em>
 </p>
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K6517B_RT_Sensing.png" alt="K6517B RT Sensing" width="600">
   <br>
-  <em>K6517B RT Sensing</em>
+  <em>High-resistance R-T measurement in passive sensing mode using a Keithley 6517B.</em>
 </p>
 
 ### 5.5 Pyroelectric Current Measurements
@@ -244,7 +244,7 @@ This module automates the measurement of pyroelectric currents (Ip) as a functio
 <p align="center">
   <img src="../pica/assets/Images/screenshots/Pyroelectric_Current.png" alt="Pyroelectric Current" width="600">
   <br>
-  <em>Pyroelectric Current</em>
+  <em>Pyroelectric current measurement as a function of temperature, captured with a Keithley 6517B to identify ferroelectric phase transitions via measuring pyroelectric current.</em>
 </p>
 
 ### 5.6 High Voltage Poling
@@ -270,7 +270,7 @@ This utility provides a dedicated interface for **In-situ and ex-situ electrical
 
     <img src="../pica/assets/Images/screenshots/Keysight_CV.png" alt="Keysight CV" width="600">
     <br>
-    <em>Keysight CV</em>
+    <em>Capacitance-Voltage (C-V) characterization of a device or a sample using a Keysight E4980A LCR meter.</em>
   </p>
 
 ### 5.8 Standalone Temperature Utilities
@@ -285,12 +285,12 @@ PICA also includes standalone utilities for monitoring and controlling temperatu
 <p align="center">
   <img src="../pica/assets/Images/screenshots/Lakeshore_Temp_Monitor.png" alt="Lakeshore Temp Monitor" width="600">
   <br>
-  <em>Lakeshore Temp Monitor</em>
+  <em>The standalone Temperature Monitor utility, used for logging data from a Lakeshore 350 controller.</em>
 </p>
 <p align="center">
   <img src="../pica/assets/Images/screenshots/Lakeshore_Temp_Control.png" alt="Lakeshore Temp Control" width="600">
   <br>
-  <em>Lakeshore Temp Control</em>
+  <em>The standalone Temperature Control utility, providing a dedicated interface for managing temperature ramps and heater outputs on a Lakeshore 350.</em>
 </p>
 
 ## 6\. Technical Reference
