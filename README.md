@@ -169,9 +169,12 @@ PICA is structured as a standard Python package.
 ---
 ## Running Tests
 
-To run the test suite locally:
+To run the test suite locally, first install the development dependencies:
 ```bash
-pip install pytest pytest-cov flake8
+pip install -r requirements-dev.txt
+```
+Then, you can run the tests:
+```bash
 python -m pytest
 ```
 

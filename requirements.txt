@@ -6,6 +6,3 @@ pyvisa>=1.12.0
 pyvisa-py>=0.5.3
 gpib-ctypes>=0.3.0
 pillow>=10.3.0
-freezegun
-pytest
-pytest-cov
