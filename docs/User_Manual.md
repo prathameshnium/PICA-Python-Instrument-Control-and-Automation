@@ -97,6 +97,11 @@ Launch the main dashboard:
 python run_pica.py
 ```
 
+## Safety Precautions
+
+> [!WARNING]
+> **Safety Instructions:** Always switch off the instrument and verify that the output current, voltage, and any other relevant parameters are set to zero before modifying the connections to the Device Under Test (DUT). Failure to follow appropriate safety procedures may result in electric shock or other hazards. Adopt a safety-first approach at all times, and ensure that all instrument parameters remain within the specified safe operating limits defined either by the instrument manufacturer or by your measurement setup.
+
 ## 4\. Core Utilities
 
 ### 4.1 VISA Instrument Scanner
