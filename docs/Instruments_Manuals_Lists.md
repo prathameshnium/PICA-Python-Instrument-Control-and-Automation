@@ -72,3 +72,9 @@ combined list of all manuals and documents relevenet to PICA
     * **Context:** A guide on using SCPI commands with a Keithley 2000 multimeter, including initializing the instrument and reading voltages. 
     ***Version Note:** The document notes that "1.12.0 is the latest version available" at the time of its creation.
 
+### **Keysight Technologies**
+
+* **E4980A Precision LCR Meter 20 Hz to 2 MHz, E4980AL Precision LCR Meter 20 Hz to 300 kHz/500 kHz/1 MHz – Data Sheet**
+    * **Creator:** Keysight Technologies
+    * **Type:** Data Sheet
+
