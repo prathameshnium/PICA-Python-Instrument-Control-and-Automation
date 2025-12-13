@@ -3,15 +3,6 @@ Module: Pyroelectric_K6517B_Working_Backend_v10.py
 Purpose: GUI module for Pyroelectric K6517B Working Backend v10.
 """
 
-# -----------------------------------------------------------------------
-# Name:       Pyroelectricity measurement
-# Purpose:    Interface with Lakeshore 350 Temperature Controller and
-#             Keithley 6517B electrometer for pyroelectric measurements.
-# Author:      Prathamesh K. Deshmukh
-# Created:    03/03/2024
-# Updated:    22/11/2025 (Refactored for robustness and structure)
-# -----------------------------------------------------------------------
-
 import pyvisa
 import time
 from pymeasure.instruments.keithley import Keithley6517B

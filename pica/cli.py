@@ -1,3 +1,7 @@
+"""
+Module: PICA CLI
+Purpose: CLI interface for Instrumenet Control modules in PICA (OLD SCRIPTS).
+"""
 import os
 import sys
 import subprocess

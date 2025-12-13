@@ -1,7 +1,7 @@
 """
 Purpose: Basic code health checks.
 
-What it does: Compiles every Python file to catch syntax errors and checks if every file has a top-level docstring (a JOSS requirement).
+Task Compiles every Python file to catch syntax errors and checks if every file has a top-level docstring (a JOSS requirement).
 """
 import pytest
 import os

@@ -3,9 +3,6 @@ Module: CV_KE4980A_Simple_Backend_v10.py
 Purpose: GUI module for CV KE4980A Simple Backend v10.
 """
 
-# prg for LCR Keysight E 4980 A
-# supplimentry stuff 20-6-23
-
 import pyvisa
 from pymeasure.instruments.agilent import AgilentE4980
 import time
