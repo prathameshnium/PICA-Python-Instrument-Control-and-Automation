@@ -40,6 +40,8 @@ The suite performs automated protocols including:
 
 <p align="center">
   <img src="pica/assets/Images/screenshots/00_PICA_Launcher.png" alt="PICA Launcher" width="800">
+  <br>
+  <em>PICA Launcher Interface for accessing all measurement modules.</em>
 </p>
 
 > **More details here:**
@@ -121,12 +123,12 @@ The system is currently validated with industry-standard hardware, covering a re
 <p align="center">
   <img src="pica/assets/Images/screenshots/K6221_RT_Control.png" alt="K6221 RT Control" width="600">
   <br>
-  <em>K6221 RT Control Interface</em>
+  <em>Automated R-T measurement interface using the K6221/2182 for low-resistance samples, employing the Delta Mode to cancel thermal EMFs.</em>
 </p>
 <p align="center">
   <img src="pica/assets/Images/screenshots/K6517B_IV.png" alt="K6517B IV" width="600">
   <br>
-  <em>K6517B IV Characterization Interface</em>
+  <em>Interface for current-voltage (I-V) characterization of high-impedance materials using the Keithley 6517B Electrometer.</em>
 </p>
 
 ---
