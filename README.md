@@ -36,7 +36,7 @@ The suite performs automated protocols including:
 * Temperature-dependent wide-range resistance measurement ($10^{-8}$ - $10^{16}$ Ω).
 * Current-voltage (I-V) characterization.
 * Capacitance characterization and magnetodielectric studies (20 Hz - 2 MHz).
-* Pyroelectric current measurement (resolution ~$10^{-15}$ A).
+* Pyroelectric current measurement (resolution $10^{-15}$ A).
 
 <p align="center">
   <img src="pica/assets/Images/screenshots/00_PICA_Launcher.png" alt="PICA Launcher" width="800">
