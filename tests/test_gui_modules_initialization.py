@@ -9,11 +9,7 @@ from pica.cli import ALL_GUI_MODULES
 @pytest.mark.usefixtures("mock_tkinter", "safe_matplotlib")
 @pytest.mark.parametrize("module_path", ALL_GUI_MODULES)
 def test_gui_module_initialization(module_path, safe_matplotlib):
-    """
-    Attempts to import and instantiate the main application class.
-    Includes fixes for 'log' side effects and improved class discovery.
-    Patches 'create_widgets' to avoid deep GUI instantiation issues.
-    """
+
     try:
         # 1. Import the module
         gui_module = importlib.import_module(module_path)
