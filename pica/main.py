@@ -919,7 +919,7 @@ class PICALauncherApp:
                         text_area.insert('end', part, "list_l1")
                 text_area.insert('end', '\n')
             elif stripped in ('---', '***', '___'):
-                text_area.insert('end', f"{'─'*120}\n", "hr")
+                text_area.insert('end', f"{'-'*120}\n", "hr")
             else:
                 parts = re.split(r'(\*\*.*?\*\*)', line)
                 for part in parts:
@@ -1001,8 +1001,7 @@ class GPIBScannerWindow(Toplevel):
             text="Close",
             style='App.TButton',
             command=self.destroy).grid(
-            row=2,
-            column=0,
+            row=2, column=0,
             sticky='ew',
             pady=(
                 15,
@@ -1051,7 +1050,7 @@ Nanovoltmeters, LCR Meters & Amplifiers
   • SRS SR830 Lock-in:  GPIB0::8::INSTR
   • Stanford PS365 HV:  GPIB0::14::INSTR
 
-\n---------------------------------------------
+---------------------------------------------
 """
         self.log_to_scanner(guide_text, add_timestamp=False)
 

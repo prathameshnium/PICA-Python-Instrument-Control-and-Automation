@@ -1,11 +1,3 @@
-"""
-PICA Command Line Interface (CLI)
-
-This module handles the parsing of command-line arguments to launch
-specific instrument control GUIs and utility scripts.
-"""
-# pica/cli.py
-
 import os
 import sys
 import subprocess
@@ -33,7 +25,6 @@ ALL_GUI_MODULES = [
     "pica.utils.PlotterUtil_GUI",
 ]
 
-# Metadata & Terms
 APP_NAME = "PICA Command Line Interface"
 VERSION = "17.0"
 AUTHORS = "Prathamesh K. Deshmukh, Sudip Mukherjee"
@@ -50,8 +41,7 @@ Always verify safety limits (Compliance, Max Voltage) before execution.
 """
 
 def print_banner():
-    """Prints the professional header."""
-    print("\033[H\033[J")  # Clear screen
+    print("\033[H\033[J")
     print("="*60)
     print(f"   {APP_NAME} (v{VERSION})")
     print(f"   {AFFILIATION}")
@@ -65,14 +55,10 @@ def print_banner():
 
 
 def find_scripts(base_path):
-    """
-    Recursively finds all python files ending with 'Instrument_Control.py'.
-    Returns a list of tuples: (Display Name, Full Path)
-    """
     scripts = []
     base = Path(base_path)
 
-    # Exclude development/utility scripts that are not main measurement modules
+    # Exclude non-main measurement scripts.
     exclude_list = [
         "BasicTest_S830_Instrument_Control.py",
         "GPIB_InterfaceTest_Simple_Instrument_Control.py",
@@ -82,18 +68,16 @@ def find_scripts(base_path):
         if path.name in exclude_list:
             continue
 
-        # Create a readable name from the filename
-        # e.g., 'IV_K2400_Loop_Instrument_Control.py' -> 'IV K2400 Loop'
+        # Create readable name from filename.
         name = path.stem.replace("_Instrument_Control", "").replace("_", " ")
 
-        # Get path relative to the run location for clarity, or absolute
+        # Get relative or absolute path.
         scripts.append((name, str(path)))
 
     return sorted(scripts)
 
 
 def run_script(script_path):
-    """Runs the selected script using the current python interpreter."""
     print(f"\n[INFO] Module: {os.path.basename(script_path)}")
     print("[INFO] Enter arguments below, or press ENTER for defaults.")
 
@@ -116,7 +100,6 @@ def run_script(script_path):
 
 
 def main():
-    # Detect where the 'pica' package is located
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
     while True:
