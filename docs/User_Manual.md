@@ -102,6 +102,14 @@ Launch the main dashboard:
 python run_pica.py
 ```
 
+### 3.4 Development Dependencies (Optional)
+
+If you plan to contribute to PICA or run the test suite, you will need to install the development dependencies:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
 ## Safety Precautions
 
 > [!WARNING]
