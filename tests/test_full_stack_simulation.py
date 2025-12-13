@@ -92,37 +92,40 @@ class TestDeepSimulation(unittest.TestCase):
 
             # Patch matplotlib.pyplot.subplots
             with patch('matplotlib.pyplot.subplots', return_value=(mock_fig, mock_ax)):
+                # 1. Mock Responses (IDN, then temperature readings)
+                spy_instr.query.side_effect = [
+                    "LSCI,MODEL350,123456,1.0",  # Response to *IDN?
+                    "10.0",                      # Initial temp
+                    "10.0",                      # Stability check 1
+                    "10.1,50.0",                 # Loop 1
+                    "10.1",                      # Stability check 2
+                    "10.2,55.0",                 # Loop 2
+                    "10.2",                      # Stability check 3
+                    Exception("Force Test Exit") # Force exit
+                ]
 
+                # 2. Mock Inputs and File Dialog
+                fake_inputs = ['10', '300', '10', '350']
+                mock_file_dialog = MagicMock(return_value="dummy.csv")
 
-            spy_instr.query.side_effect = [
-                "LSCI,MODEL350,123456,1.0",  # Response to *IDN?
-                "10.0",                      # Initial temp
-                "10.0",                      # Stability check 1
-                "10.1,50.0",                 # Loop 1
-                "10.1",                      # Stability check 2
-                "10.2,55.0",                 # Loop 2
-                "10.2",                      # Stability check 3
-                Exception("Force Test Exit") # Force exit
-            ]
+                # 3. Run It
+                with patch('builtins.input', side_effect=fake_inputs), \
+                     patch('builtins.open', mock_open()), \
+                     patch('time.sleep', MagicMock()), \
+                     patch('tkinter.filedialog.asksaveasfilename', mock_file_dialog):
 
+                    self.run_module_safely(
+                        "pica.lakeshore.Instrument_Control.T_Control_L350_Simple_Instrument_Control")
 
-            fake_inputs = ['10', '300', '10', '350']
-            mock_file_dialog = MagicMock(return_value="dummy.csv")
+                
+                write_calls = [str(c) for c in spy_instr.write.mock_calls]
 
+                self.assertTrue(any("HTRSET" in c for c in write_calls), "HTRSET command not found")
+                print("   -> Verified: Heater Configured (HTRSET)")
 
-            with patch('builtins.input', side_effect=fake_inputs), \
-                 patch('builtins.open', mock_open()), \
-                 patch('time.sleep', MagicMock()), \
-                 patch('tkinter.filedialog.asksaveasfilename', mock_file_dialog):
-
-                self.run_module_safely(
-                    "pica.lakeshore.Instrument_Control.T_Control_L350_Simple_Instrument_Control")
-
-            # --- ASSERTIONS ---
-            # Now that the script runs fully without crashing on .plot(), 
-            # the cleanup code (RANGE 0) should finally execute.
-            
-            write_calls = [str(c) for c in spy_instr.write.mock_calls]
+                self.assertTrue(any("RANGE 1,0" in c for c in write_calls) or spy_instr.close.called,
+                                "Safety Shutdown Failed: Heater not off and connection not closed.")
+                print("   -> Verified: Safety Shutdown (Heater Off or Connection Closed)")
 
 
 
