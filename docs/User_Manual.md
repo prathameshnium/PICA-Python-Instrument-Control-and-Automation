@@ -66,6 +66,11 @@ PICA employs a multiprocess architecture using Python's `multiprocessing` librar
 * **Backend (Logic):** Executes in a **separate, isolated process**.
 This ensures that if a measurement script hangs due to a hardware timeout, it does not crash the main application, preserving the stability of the suite and other concurrent tasks.
 
+### 2.5 Self-Contained and Modular Programs
+In PICA, each program is designed to be self-contained. This architectural choice reduces dependency chains and mitigates the excessive abstraction layers that can make other projects difficult to understand or modify. Each program (i.e., each Python file or module) can operate independently, thereby facilitating debugging and maintenance.
+
+This approach, however, leads to a considerable degree of code repetition because there are relatively few abstractions. Nevertheless, this trade-off can be advantageous in experimental environments, where the primary objectives are comprehensibility, maintainability, usability, and stability over extended periods, rather than strict adherence to principles of code elegance or minimal redundancy. In such contexts, scripts may remain functional without requiring updates for many years.
+
 ## 3. Installation & Setup
 
 ### 3.1 System Prerequisites
