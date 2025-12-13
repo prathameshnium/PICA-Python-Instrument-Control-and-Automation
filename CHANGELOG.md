@@ -11,7 +11,7 @@ Research & Documentation
 
     Paper Draft: Completed and presented the first draft of the research paper to Dr. Sudip Mukherjee.
 
-    Feedback: Received critical feedback regarding the inclusion of ATMS (Advanced Trasport Measuremenet Systems).
+    Feedback: Received critical feedback regarding the inclusion of ATMS (Advanced Transport Measuremenet Systems).
 
 [Community] - 2025-12-01
 
