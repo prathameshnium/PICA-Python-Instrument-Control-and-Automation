@@ -1,7 +1,6 @@
 """
 Purpose: Logic checks for helper tools.
-
-What it does: Verifies that formatting utilities define the correct fonts/styles.
+Verifies that formatting utilities define the correct fonts/styles.
 """
 import pytest
 from unittest.mock import MagicMock, patch
