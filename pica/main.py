@@ -4,16 +4,7 @@
  PROGRAM:      PICA Launcher
 
  PURPOSE:      A graphical dashboard for launching PICA measurement scripts.
-
- DESCRIPTION:  This application serves as the central graphical user interface (GUI)
-               for the Python Instrument Control & Automation (PICA) suite. It
-               provides a styled, user-friendly dashboard to launch various
-               instrument automation scripts in isolated, stable processes using
-               Python's multiprocessing library. Key features include a utility
-               to test GPIB/VISA instrument connections, viewers for project
-               documentation (README, LICENSE), quick access to script folders
-               and instrument manuals, and a real-time logging console.
-
+ 
  AUTHOR:       Prathamesh K. Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre

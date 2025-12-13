@@ -1,29 +1,5 @@
 """
-Summary
--------
-This script provides a graphical user interface (GUI) for performing current-voltage (I-V) sweeps
-using a Keithley 6221 Current Source and a Keithley 2182A Nanovoltmeter. The K6221 acts as a
-GPIB-to-serial bridge to control the K2182A, enabling precise, software-timed measurements.
-
-Description
------------
-The application allows users to define a linear or logarithmic current sweep, set compliance
-voltage, and configure timing parameters. It plots the resulting I-V curve and Resistance-Current
-curve in real-time. Data is saved to a CSV file for later analysis.
-
-The backend communication has been optimized to use the K2182A's continuous measurement
-("free-running") mode, with data retrieved via 'FETC?' commands. This approach provides a more
-robust and reliable data acquisition loop compared to trigger-based methods, minimizing the
-risk of timing errors or buffer overflows during the sweep.
-
-Features
---------
-- Intuitive GUI for setting up and running I-V sweeps.
-- Real-time plotting of Voltage vs. Current and Resistance vs. Current.
-- Linear and logarithmic sweep modes.
-- Automatic scanning for connected GPIB instruments.
-- Data export to a timestamped `.dat` (CSV) file.
-- Packaged with utility launchers for data plotting and GPIB scanning.
+Purpose: GUI for performing current-voltage (I-V) sweeps using a Keithley 6221 Current Source and a Keithley 2182A Nanovoltmeter. 
 
 Author: Prathamesh K. Deshmukh
 Date: October 2025
