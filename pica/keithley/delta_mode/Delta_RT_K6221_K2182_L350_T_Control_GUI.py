@@ -3,19 +3,6 @@ Module: Delta_RT_K6221_K2182_L350_T_Control_GUI.py
 Purpose: GUI module for Delta RT K6221 K2182 L350 T Control GUI v5.
 """
 
-# -------------------------------------------------------------------------------
-# Name:         Advanced Delta Mode R-T Measurement
-# Purpose:      Perform a temperature-dependent Delta mode measurement with a
-#               Keithley 6221/2182 and Lakeshore 350, using an advanced GUI
-#               and temperature control logic.
-#
-# Author:       Prathamesh K. Deshmukh
-# Created:      03/10/2025
-#
-# Version:      2.1 (JOSS Cleaned)
-# -------------------------------------------------------------------------------
-
-# --- Packages ---
 import tkinter as tk
 from tkinter import ttk, Label, Entry, LabelFrame, messagebox, scrolledtext, Canvas, filedialog
 import os
@@ -46,10 +33,7 @@ except ImportError:
 
 
 def run_script_process(script_path):
-    """
-    Wrapper function to execute a script using runpy in its own directory.
-    This becomes the target for the new, isolated process.
-    """
+
     try:
         os.chdir(os.path.dirname(script_path))
         runpy.run_path(script_path, run_name="__main__")
@@ -60,9 +44,7 @@ def run_script_process(script_path):
 
 
 def launch_plotter_utility():
-    """Finds and launches the plotter utility script in a new process."""
     try:
-        # Assumes the plotter is in a standard location relative to this script
         script_dir = os.path.dirname(os.path.abspath(__file__))
         plotter_path = os.path.join(
             script_dir,
@@ -81,9 +63,7 @@ def launch_plotter_utility():
 
 
 def launch_gpib_scanner():
-    """Finds and launches the GPIB scanner utility in a new process."""
     try:
-        # Assumes the scanner is in a standard location relative to this script
         script_dir = os.path.dirname(os.path.abspath(__file__))
         scanner_path = os.path.join(
             script_dir,
@@ -103,7 +83,6 @@ def launch_gpib_scanner():
 
 
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
         base_path = sys._MEIPASS
     except Exception:
@@ -116,7 +95,6 @@ def resource_path(relative_path):
 # -------------------------------------------------------------------------------
 
 class Active_Delta_Backend:
-    """ Manages both Keithley 6221 and Lakeshore 350 for active measurements. """
 
     def __init__(self):
         self.keithley = None
@@ -195,7 +173,6 @@ class Active_Delta_Backend:
         return voltage
 
     def close_instruments(self):
-        """ CRITICAL: Turns off heater and closes all connections. """
         print("--- [Backend] Closing instrument connections. ---")
         try:
             if self.lakeshore:
@@ -226,7 +203,6 @@ class Advanced_Delta_GUI:
     PROGRAM_VERSION = "2.1"
     LOGO_SIZE = 110
     try:
-        # Robust path finding for assets relative to the script's location
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
         LOGO_FILE_PATH = os.path.join(
             SCRIPT_DIR,
@@ -878,7 +854,6 @@ class Advanced_Delta_GUI:
         self.start_time = time.time()
         self.root.after(1000, self._update_measurement_loop)
 
-        # --- Performance Improvement: Capture static background for blitting ---
         self.canvas.draw()
         self.plot_backgrounds = [
             self.canvas.copy_from_bbox(
@@ -911,7 +886,6 @@ class Advanced_Delta_GUI:
             self.data_storage['voltage'].append(voltage)
             self.data_storage['resistance'].append(res)
 
-            # --- Performance Improvement: Use blitting for fast graph updates if background is captured ---
             if self.plot_backgrounds:
                 # Restore the clean background
                 self.canvas.restore_region(self.plot_backgrounds[0])
@@ -995,8 +969,7 @@ class Advanced_Delta_GUI:
             self.scan_button.config(state='normal')
 
         except queue.Empty:
-            # If the queue is empty, it means the worker is still running.
-            # We schedule another check.
+
             self.root.after(100, self._process_visa_queue)
 
     def _browse_file_location(self):

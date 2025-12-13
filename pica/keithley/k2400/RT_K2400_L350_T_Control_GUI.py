@@ -3,16 +3,6 @@ Module: RT_K2400_L350_T_Control_GUI.py
 Purpose: GUI module for RT K2400 L350 T Control GUI v3.
 """
 
-# -------------------------------------------------------------------------------
-# Name:         Active R-T Measurement for Keithley 2400
-# Purpose:      Provide a GUI for automated R-T sweeps using a K2400 and LS350
-#               with active temperature control (stabilize then ramp).
-# Author:       Prathamesh K. Deshmukh (Adapted from 6517B & 2400 scripts)
-# Created:      05/10/2025
-# Version:      1.0
-# -------------------------------------------------------------------------------
-
-# --- GUI and Plotting Packages ---
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext, Canvas
 import os

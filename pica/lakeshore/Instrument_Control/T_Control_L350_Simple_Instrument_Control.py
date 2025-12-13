@@ -1,38 +1,7 @@
 '''
-File:         lakeshore_350_ramp_control.py
-Author:       Prathamesh K. Deshmukh
-Date:         10/09/2025
-Version:      2.0
-
-Description:
-This script provides a robust framework for automating a linear temperature ramp
-experiment using a Lakeshore Model 350 Temperature Controller.
-
-The program connects to the instrument via its VISA address and interactively
-prompts the user for all experiment parameters, including start/end temperatures,
-ramp rate, and a safety cutoff. It uses the instrument's built-in setpoint
-ramping feature to ensure a smooth, linear temperature rise.
-
-During the experiment, it continuously logs the timestamp, elapsed time, and
-temperature from a specified sensor to a user-selected CSV file. A live,
-updating plot provides immediate visual feedback of the ramp's progress.
-
-The experiment terminates safely under all conditions (completion, safety cutoff,
-user interruption, or error), guaranteeing that the heater is turned off and the
-instrument connection is properly closed.
-
-Dependencies:
-- pyvisa: For instrument communication.
-- matplotlib: For live data plotting.
-- tkinter: For the graphical file-save dialog.
-- A VISA backend (e.g., NI-VISA) must be installed.
-'''
-# -------------------------------------------------------------------------------
 # Name:         Interfacing Lakeshore 350 Temperature Controller
 # Purpose:      Automate and log a linear temperature ramp with live plotting.
-# Changes_done: V2.0 - Complete restructure for robustness and usability.
-# -------------------------------------------------------------------------------
-
+'''
 import pyvisa
 import time
 import csv
