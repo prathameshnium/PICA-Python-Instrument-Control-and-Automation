@@ -11,7 +11,6 @@ from tkinter import filedialog
 from datetime import datetime
 
 # --- Configuration Constants ---
-# TODO: Change this to your instrument's actual VISA address
 VISA_ADDRESS = "GPIB0::13::INSTR"
 SENSOR_INPUT = 'A'        # Sensor input to monitor (A, B, C, or D)
 HEATER_OUTPUT = 1         # Control output loop for the heater (1 or 2)
