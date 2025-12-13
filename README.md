@@ -175,7 +175,7 @@ pip install -r requirements-dev.txt
 ```
 Then, you can run the tests:
 ```bash
-python -m pytest
+python -B -m pytest -p no:cacheprovider
 ```
 
 ---
