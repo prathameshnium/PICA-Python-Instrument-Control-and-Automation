@@ -1,20 +1,8 @@
 '''
-===============================================================================
  PROGRAM:      Keysight E4980A C-V Measurement GUI
 
  PURPOSE:      Provide a user-friendly interface for automating C-V sweeps.
 
- DESCRIPTION:  This program provides a graphical user interface (GUI) for
-               automating a Capacitance-Voltage (C-V) sweep using a Keysight
-               E4980A LCR Meter. It allows users to define sweep parameters,
-               visualize the C-V curve in real-time, and save the data
-               automatically.
-
- AUTHOR:       Prathamesh K. Deshmukh
-
- VERSION:      1.0
- LAST EDITED:  05/10/2025
-===============================================================================
 '''
 
 # --- Packages for Front end ---

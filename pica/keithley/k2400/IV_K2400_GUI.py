@@ -3,16 +3,6 @@ Module: IV_K2400_GUI.py
 Purpose: GUI module for IV K2400 GUI v5.
 """
 
-# -------------------------------------------------------------------------------
-# Name:           Keithley 2400 I-V Measurement GUI
-# Purpose:        Perform an automated I-V sweep using a Keithley 2400.
-#                 (Grid-based layout for stability)
-# Author:         Prathamesh K. Deshmukh
-# Created:        10/09/2025
-# Version:        12.2 (Added GPIB Scanner Utility)
-# -------------------------------------------------------------------------------
-
-# --- Packages for Front end ---
 import tkinter as tk
 from tkinter import ttk, Label, Entry, LabelFrame, filedialog, messagebox, scrolledtext, Canvas
 import numpy as np

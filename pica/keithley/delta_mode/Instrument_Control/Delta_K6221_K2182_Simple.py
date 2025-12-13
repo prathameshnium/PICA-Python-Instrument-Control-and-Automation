@@ -2,13 +2,7 @@
 Backend module for Delta Mode measurements using Keithley 6221 and 2182.
 Handles simplified communication protocols.
 """
-# -------------------------------------------------------------------------------
-# Name:         Delta Mode Measurement (Improved)
-# Purpose:      Perform a Delta mode measurement with robust error handling
-#               and a guaranteed graceful shutdown.
-# Author:       Prathamesh K. Deshmukh
-# Created:      01/09/2024
-# -------------------------------------------------------------------------------
+
 import pyvisa
 import time
 
