@@ -6,7 +6,7 @@ Handles simplified communication protocols.
 # Name:         Delta Mode Measurement (Improved)
 # Purpose:      Perform a Delta mode measurement with robust error handling
 #               and a guaranteed graceful shutdown.
-# Author:       keithley_6221-DSL
+# Author:       Prathamesh K. Deshmukh
 # Created:      01/09/2024
 # -------------------------------------------------------------------------------
 import pyvisa
