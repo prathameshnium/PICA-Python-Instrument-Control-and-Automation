@@ -368,7 +368,7 @@ The following modules and features are currently under active development and ar
 
 ### 8.2 Standalone Executables
 
-In the future, I also plan to develop executable (`.exe`) versions of the PICA software suite. This will remove the need for users to manage Python environments and dependencies, further simplifying the setup process and facilitating rapid adoption in laboratories with strict IT policies or offline computers.
+In the future, We also plan to develop executable (`.exe`) versions of the PICA software suite. This will remove the need for users to manage Python environments and dependencies, further simplifying the setup process and facilitating rapid adoption in laboratories with strict IT policies or offline computers.
 
 
 ## Authors & Acknowledgments
