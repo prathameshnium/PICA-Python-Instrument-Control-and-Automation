@@ -4,18 +4,11 @@
  PROGRAM:      PICA Launcher
 
  PURPOSE:      A graphical dashboard for launching PICA measurement scripts.
- 
+
  AUTHOR:       Prathamesh K. Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
-
- VERSION HISTORY:
-   17.0 (06/12/2025): Updated launcher version to match project metadata.
-   13.3 (05/10/2025): Added distinct launchers for Active and Passive R-T modes.
-   13.2 (05/10/2025): Integrated new K2400/2182 frontend GUIs.
-   13.1 (04/10/2025): Resolved duplicate script paths and validated Delta Mode scripts.
-
-===============================================================================
+=========================================================================
 '''
 import tkinter as tk
 from tkinter import ttk, messagebox, Toplevel, Canvas, scrolledtext, font

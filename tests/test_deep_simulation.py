@@ -1,7 +1,7 @@
 """
 Purpose: Robustness and loop safety (Circuit Breakers).
 
-What it does: Runs full measurement scripts while mocking time.sleep to prevent infinite loops. It acts as a "watchdog," forcing scripts to exit if they run too long, ensuring your while True loops don't freeze the test server.
+Task Runs full measurement scripts while mocking time.sleep to prevent infinite loops. It acts as a "watchdog," forcing scripts to exit if they run too long, ensuring your while True loops don't freeze the test server.
 """
 import unittest
 import sys

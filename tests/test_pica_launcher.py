@@ -1,7 +1,7 @@
 """
 Purpose: Entry-point testing.
 
-What it does: Tests the main PICALauncherApp, mocking heavy dependencies like Pillow (images) and fonts to ensure the main menu launches correctly.
+Task Tests the main PICALauncherApp, mocking heavy dependencies like Pillow (images) and fonts to ensure the main menu launches correctly.
 """
 import pytest
 import os

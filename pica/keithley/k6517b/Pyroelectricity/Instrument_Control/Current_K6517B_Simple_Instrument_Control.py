@@ -3,12 +3,6 @@ Module: Current_K6517B_Simple_Backend_v10.py
 Purpose: GUI module for Current K6517B Simple Backend v10.
 """
 
-# -------------------------------------------------------------------------------
-# Name:        Keithley 6517B electrometer
-# Purpose:     Current Measurement Backend
-# Author:      Prathamesh K. Deshmukh
-# -------------------------------------------------------------------------------
-
 import time
 import pandas as pd
 from pymeasure.instruments.keithley import Keithley6517B

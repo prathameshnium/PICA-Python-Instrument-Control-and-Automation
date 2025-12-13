@@ -1,7 +1,7 @@
 """
 Purpose: Structure verification for control scripts.
 
-What it does: Analyzes your backend files to determine if they are classes, procedural scripts, or functions, and attempts to run them in a "dry" mode to verify their logic structure.
+Task Analyzes your backend files to determine if they are classes, procedural scripts, or functions, and attempts to run them in a "dry" mode to verify their logic structure.
 """
 
 import pytest
