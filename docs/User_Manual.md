@@ -280,7 +280,8 @@ This utility provides a dedicated interface for **In-situ and ex-situ electrical
 ### 5.7 Dielectric Spectroscopy
 
 **Target Hardware:** Keysight E4980A Precision LCR Meter.
-**Frequency Range:** Instrument dependent (typically 20 Hz to 2 MHz).
+**Frequency Range:** 20 Hz to 2 MHz
+  * **Temperature Range:** 5 K – 380 K
 
   *   **Scientific Objective:** Measures Capacitance (C) and Loss Tangent (tan delta) as a function of frequency or DC bias voltage (C-V Analysis).
 
