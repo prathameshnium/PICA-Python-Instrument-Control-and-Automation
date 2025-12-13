@@ -112,3 +112,4 @@ env.bak/
 venv.bak/
 
 capture_screenshots.py
+pica/lockin/BasicTest_S830_Instrument_Control.py
