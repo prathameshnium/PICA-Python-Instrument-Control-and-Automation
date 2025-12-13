@@ -5,14 +5,14 @@ Here is a meticulously verified summary of the key measurement specifications fo
 ---
 
 ### Pyroelectric Current Measurement
-* **Temperature Range:** 80 K to 320 K
+* **Temperature Range:** 5 K to 380 K
 * **Current Sensitivity:** 1 fA ($10^{-15}A$)
 * **Maximum Current:** 20 mA
 * **In-Situ Poling Voltage:** Up to +10 kV
 
 ### Advanced Cryogenic Transport Measurement System
 **Global System Specifications**
-* **Temperature Range:** 80 K to 320 K
+* **Temperature Range:** 5 K to 380 K
 * **Total Resistance Range:** 10 nΩ to 10 PΩ (spanning 24 orders of magnitude)
 
 **Module-Specific Resistance Ranges**
@@ -26,3 +26,8 @@ Here is a meticulously verified summary of the key measurement specifications fo
     * Range: 1 $\mu\Omega$ to 100 MΩ
 * **Module 5: High-Resistance**
     * Range: 1 $\Omega$ to 10 PΩ ($10^{16}\Omega$)
+
+### Keysight Technologies E4980A Precision LCR Meter
+
+*   **Temperature Range (T-range):** 5 K – 380 K
+*   **Frequency Range (f-range):** 20 Hz – 2 MHz
