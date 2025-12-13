@@ -74,19 +74,24 @@ class TestDeepSimulation(unittest.TestCase):
     def test_lakeshore_visa_communication(self):
         print("\n[SIMULATION] Testing Lakeshore 350 SCPI Commands...")
 
-        # We tell the mock axis that when .plot() is called, it returns a list with 1 item
-        mock_ax.plot.return_value = [MagicMock()] 
-        
-        # Handle "ax1, ax2 = fig.subplots()" (expected 2)
-        mock_fig.subplots.return_value = (mock_ax, mock_ax)
-
-        # Patch ResourceManager AND pyplot
-        with patch('pyvisa.ResourceManager') as MockResourceManager, \
-             patch('matplotlib.pyplot.subplots', return_value=(mock_fig, mock_ax)):
-
+        with patch('pyvisa.ResourceManager') as MockResourceManager:
             mock_rm_instance = MockResourceManager.return_value
             spy_instr = MagicMock()
             mock_rm_instance.open_resource.return_value = spy_instr
+
+            # FIX 1: Create mocks for Figure and Axes
+            mock_fig = MagicMock()
+            mock_ax = MagicMock()
+            
+            # FIX 2: Handle "line, = ax.plot()" failure (expected 1, got 0)
+            # We tell the mock axis that when .plot() is called, it returns a list with 1 item
+            mock_ax.plot.return_value = [MagicMock()] 
+            
+            # FIX 3: Handle "ax1, ax2 = fig.subplots()" (expected 2)
+            mock_fig.subplots.return_value = (mock_ax, mock_ax)
+
+            # Patch matplotlib.pyplot.subplots
+            with patch('matplotlib.pyplot.subplots', return_value=(mock_fig, mock_ax)):
 
 
             spy_instr.query.side_effect = [
