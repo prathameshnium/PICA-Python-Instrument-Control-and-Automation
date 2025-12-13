@@ -5,17 +5,6 @@
  PURPOSE:      Automate and log a Resistance vs. Temperature (R-T) measurement
                using a command-line interface.
 
- DESCRIPTION:  This script provides a command-line framework for automating an
-               R-T characterization by integrating a Lakeshore 350 Temperature
-               Controller and a Keithley 6517B Electrometer. The program
-               prompts the user for all experiment parameters (temperature
-               range, ramp rate, source voltage), performs a robust temperature
-               stabilization, and then executes a linear temperature ramp.
-               During the ramp, it continuously measures resistance and logs
-               all data to a CSV file, while providing a live plot for visual
-               feedback. The script ensures a safe shutdown of all instruments
-               upon completion, error, or user interruption.
-
  AUTHOR:       Prathamesh K. Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
