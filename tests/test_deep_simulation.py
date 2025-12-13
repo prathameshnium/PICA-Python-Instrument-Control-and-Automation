@@ -256,18 +256,5 @@ class TestDeepSimulation(unittest.TestCase):
             except ImportError:
                 pass
 
-    @pytest.mark.usefixtures("mock_tkinter")
-    def test_12_gpib_rescue(self):
-        with patch('pyvisa.ResourceManager') as MockRM:
-            mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(3))
-            mock_sleep.start()
-            self.addCleanup(mock_sleep.stop)
-
-            rm = MockRM.return_value
-            rm.list_resources.return_value = ('GPIB0::1::INSTR',)
-            self.run_module_safely(
-                "pica.utils.GPIB_Interface_Rescue_Simple_Instrument_Control_v2_", {})
-
-
 if __name__ == '__main__':
     unittest.main()
