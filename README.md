@@ -67,7 +67,7 @@ The suite performs automated protocols including:
 
 Advancements in experimental physics and device manufacturing depend on the precise characterization of material properties under extreme physical conditions. Researchers often face a binary choice: purchase expensive proprietary software or develop custom measurement scripts from scratch.
 
-While libraries such as **PyVISA** and **PyMeasure** provide foundational drivers, they require the user to write and maintain code. **PICA addresses this gap by functioning as a turnkey application.** It offers a "ready-to-run" graphical interface that abstracts underlying control logic, allowing experimentalists to focus on data acquisition without software development overhead.
+While libraries such as **PyVISA** and **PyMeasure** provide foundational drivers, requiring users to write and maintain low-level code, **PICA builds upon these powerful libraries** to offer a turnkey application. It provides a ready-to-run graphical interface that abstracts the underlying control logic, allowing experimentalists to focus on data acquisition without extensive software development overhead. It offers a "ready-to-run" graphical interface that abstracts underlying control logic, allowing experimentalists to focus on data acquisition without software development overhead.
 
 PICA enables continuous operation across the full range from Delta-mode low-resistance measurements (removing constant offsets) to high-impedance electrometric measurements using a single unified framework.
 
