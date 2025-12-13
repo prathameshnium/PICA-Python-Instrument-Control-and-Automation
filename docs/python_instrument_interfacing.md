@@ -1,4 +1,4 @@
-> This was a mini guide for those who want to try starting interfacing instruments, from Feb 15, 2024.
+> This is a modern markdown version of the mini guide for someone new to interfacing instruments, created on Feb 15, 2024.
 
 # Python Instrument Interfacing: A Beginner's Guide
 
