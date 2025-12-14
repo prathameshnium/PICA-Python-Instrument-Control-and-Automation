@@ -116,7 +116,7 @@ The system is currently validated with industry-standard hardware, covering a re
 | **Dielectric Analysis** | **Keysight E4980A** | C-V Analysis and Magnetodielectric characterization. | 20 Hz - 2 MHz |
 | **Pyroelectric** | **K6517B** + **Temp Controller** | Current vs Temp (detecting Curie temperature). | $10^{-15}$ A Resolution |
 
-*While the current implementation drives specific instruments, the underlying framework is hardware agnostic. Researchers need only replace specific SCPI commands to utilize the suite with different models.*
+*While the current implementation drives specific instruments, the underlying framework is highly customizable. Researchers need only replace specific SCPI commands to utilize the suite with different models.*
 
 ### Module Previews
 
@@ -133,7 +133,7 @@ The system is currently validated with industry-standard hardware, covering a re
 
 ---
 
-## Pre-requisites: The VISA Driver "Catch-22"
+## Pre-requisites: The VISA Driver
 
 > [!WARNING]
 > **A VISA Backend is Required:** `PyVISA` is a Python wrapper, not a driver. For PICA to communicate with hardware, you **must** install a VISA backend on your system first. If you attempt to run the software on a clean machine without a VISA implementation, it will fail to find the instruments. This is the most common failure point for new instrument control setups.
@@ -163,11 +163,6 @@ PICA is structured as a standard Python package.
     pip install .
     ```
 
-    *Note: The base installation of PICA does not include `gpib-ctypes`, which is only required for specific GPIB hardware on Linux systems (e.g., linux-gpib). If you need this functionality, install it separately:*
-    ```bash
-    pip install .[gpib]
-    ```
-
     *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow `PyVISA` to communicate with the hardware.*
 
 ## Running the Software
@@ -183,29 +178,6 @@ PICA is structured as a standard Python package.
     ```bash
     pica-cli
     ```
-
----
-## Common Issues & Troubleshooting
-
-This section covers the most common issues encountered when using PICA.
-
-### 1. VISA Timeout Error or Resource Not Found
-
-This is the most frequent issue and usually indicates a problem with the connection between the computer and the instrument. Follow these steps to resolve it:
-
-1.  **Check Physical Connections:** Ensure all cables (GPIB, USB, Ethernet) are securely connected to both the instrument and the computer.
-2.  **Use the VISA Scanner:** Run the **VISA Instrument Scanner** utility from the PICA launcher.
-    *   If the instrument appears in the list, the connection is working. Note the correct VISA address.
-    *   If the instrument does **not** appear, PICA cannot see it. Proceed to the next steps.
-3.  **Power Cycle the Instrument:** Turn the instrument off, wait a few seconds, and turn it back on. This can often resolve temporary communication hangs.
-4.  **Restart the Computer:** If the problem persists, a full restart can resolve driver or backend issues.
-    *   Shut down the computer completely, leaving the instrument turned off.
-    *   Start the computer.
-    *   Once the system is fully booted, run the PICA VISA scanner.
-    *   Turn on the instrument.
-5.  **Check Drivers and Communication Mode:**
-    *   Ensure you have the correct VISA backend installed (see [Pre-requisites](#pre-requisites-the-visa-driver-catch-22)).
-    *   If using a different communication interface (e.g., switching from GPIB to USB), verify that the necessary drivers are installed and that the instrument is configured for that mode.
 
 ---
 ## Running Tests
