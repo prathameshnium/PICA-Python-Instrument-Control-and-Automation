@@ -197,7 +197,8 @@ python -B -m pytest -p no:cacheprovider
 
 PICA evolved from simple offline scripts in 2022 to a full-stack automated suite.
 
-  * **v17.0 (Current):** Professional directory restructuring, Semantic Versioning, and documentation overhaul.
+  * **v1.0.0 (Initial Public Release):** Version numbering has been reset from legacy development builds (v17.0) to v1.0.0 to standardize the package for public distribution and citation.
+  * **v17.0:** Professional directory restructuring, Semantic Versioning, and documentation overhaul.
   * **v15.0:** JOSS submission preparation, CI/CD integration.
   * **v13.0:** Transition to Multiprocessing and standardized GUI themes.
 
@@ -229,7 +230,7 @@ If you use this software in your research, please cite it:
   month        = dec,
   year         = 2025,
   publisher    = {GitHub},
-  version      = {17.0},
+  version      = {1.0.0},
   url          = {[https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation)}
 }
 ````
