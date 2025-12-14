@@ -56,6 +56,10 @@ def print_banner():
     print(TERMS)
     print("="*60)
     print("\n")
+    print("*"*80)
+    print("**CLI Deprecation Notice:** The PICA CLI is comprised of old, deprecated scripts from the early stages of development. It is **strongly recommended to use the PICA GUI** for all interactions. The CLI scripts are considered legacy code, contain minimal functionality for performing set protocols, and are not recommended for general use.")
+    print("*"*80)
+    print("\n")
 
 
 def find_scripts(base_path):
