@@ -30,7 +30,7 @@ ALL_GUI_MODULES = [
 ]
 
 APP_NAME = "PICA Command Line Interface"
-VERSION = "17.0"
+VERSION = "1.0.0"
 AUTHORS = "Prathamesh K. Deshmukh, Sudip Mukherjee"
 AFFILIATION = "UGC-DAE Consortium for Scientific Research, Mumbai Centre"
 LICENSE = "MIT License"
