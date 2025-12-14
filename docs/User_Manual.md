@@ -137,11 +137,11 @@ pip install -r requirements-dev.txt
 
 ## 5. Core Utilities
 
-### 4.1 VISA Instrument Scanner
+### 5.1 VISA Instrument Scanner
 
 *File Reference: `pica/utils/GPIB_Instrument_Scanner_GUI.py`*
 
-Automatically launched upon startup (and accessible within modules), this utility scans for connected hardware. It uses `ResourceManager.list_resources()` to find devices and sends a standard ``*IDN?`` query to verify communication. This allows users to verify their hardware configuration before starting any experiment.
+Automatically launched upon startup (and accessible within modules), this utility scans for connected hardware. It uses `ResourceManager.list_resources()` to find devices and sends a standard `*IDN?` query to verify communication. This allows users to verify their hardware configuration before starting any experiment.
 
 In the main PICA launcher, the VISA/GPIB scanner is configured to execute automatically at application startup. This design choice is motivated by the fact that initiating a measurement without first verifying the instrument connection is highly likely to fail and may result in non-informative error messages, such as a VISA connection timeout.
 
@@ -151,7 +151,7 @@ In the main PICA launcher, the VISA/GPIB scanner is configured to execute automa
   <em>The PICA Instrument Scanner utility, which automatically detects and identifies connected instruments.</em>
 </p>
 
-### 4.2 PICA Plotter Utility
+### 5.2 PICA Plotter Utility
 
 *File Reference: `pica/utils/PlotterUtil_GUI.py`*
 
@@ -167,11 +167,11 @@ A standalone, multiprocessing-enabled tool for detailed data analysis. Unlike th
   <em>The PICA Plotter Utility, a tool for data visualization and comparative analysis of multiple datasets including live plotting.</em>
 </p>
 
-### 4.3 Embedded Document Viewer
+### 5.3 Embedded Document Viewer
 
 To ensure the software is self-contained (useful for offline lab computers), PICA includes an in-app viewer for project documentation, including this User Manual, the License, and the Changelog.
 
-### 4.4 Measurement Module Interface
+### 5.4 Measurement Module Interface
 
 Each measurement module consists of two primary windows: the control window on the left and the plotter window on the right. The dimensions of both windows are resizable. Upon launching a measurement module, it is recommended to first enlarge the control window, as it is required for configuring all experimental parameters. Typical settings include specifying the sample file name, selecting the file storage location, choosing the instrument address via a selection box, and defining voltage and temperature step sizes, delays, and other experimental parameters.
 
@@ -179,7 +179,7 @@ The control window also contains a console located below the parameter settings.
 
 Above the plot area, there are two buttons providing access to the [VISA Instrument Scanner](#41-visa-instrument-scanner) and [PICA Plotter Utility](#42-pica-plotter-utility). These utilities are accessible from all modules to facilitate rapid testing and diagnostics. The VISA/GPIB scanner allows the user to quickly verify whether instruments are properly connected and recognized by the system, while the plotter utility offers additional plotting capabilities beyond those available in the default plot window.
 
-## 5. Supported Measurement Modules
+## 6. Supported Measurement Modules
 
 PICA is designed to be as versatile as possible, while being optimized for specific classes of instruments. The following modules represent the core capabilities of the suite, supporting a resistance scale spanning **24 orders of magnitude** (10 nOhm to 10 POhm) depending on the hardware used.
 
