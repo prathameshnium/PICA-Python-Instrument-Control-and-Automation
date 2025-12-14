@@ -86,33 +86,39 @@ This approach, however, leads to a considerable degree of code repetition becaus
 > - **PyVISA-py:** A backend written in pure Python that is installed automatically with PICA. It can be used as a fallback but may have limitations compared to vendor-specific drivers like NI-VISA.
 >
 > **Before proceeding, verify your VISA installation.**
- 
-### 3.2 Installation Procedure
-```bash
-# Clone the repository
-git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
-cd PICA-Python-Instrument-Control-and-Automation
 
-# Create virtual environment (Recommended)
-python -m venv venv
-# Activate: venv\Scripts\activate (Windows) or source venv/bin/activate (Linux/Mac)
+### 3.2 Getting Started
 
-# Install Python dependencies
-pip install -r requirements.txt
+PICA is structured as a standard Python package.
 
-# The base installation does not include gpib-ctypes, which is only required for 
-# specific GPIB hardware on Linux systems (e.g., linux-gpib). 
-# If you need this functionality, install it separately:
-pip install .[gpib]
-```
+1.  **Clone the Repository**
+    ```bash
+    git clone [https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git)
+    cd PICA-Python-Instrument-Control-and-Automation
+    ```
 
-### 3.3 Execution
+2.  **Create Virtual Environment & Install**
+    ```bash
+    python -m venv venv
+    # Activate venv (Windows: venv\Scripts\activate, Linux/Mac: source venv/bin/activate)
+    pip install .
+    ```
 
-Launch the main dashboard:
+    *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow `PyVISA` to communicate with the hardware.*
 
-```bash
-python run_pica.py
-```
+### 3.3 Running the Software
+
+1.  **Graphical Launcher (Recommended)**
+    The central dashboard for accessing all modules, the plotter, and the scanner.
+    ```bash
+    pica-gui
+    ```
+
+2.  **Command Line Interface (CLI)**
+    For headless operation (e.g., Raspberry Pi).
+    ```bash
+    pica-cli
+    ```
 > [!WARNING]
 > **CLI Deprecation Notice:** The PICA CLI is comprised of old, deprecated scripts from the early stages of development. It is **strongly recommended to use the PICA GUI** for all interactions. The CLI scripts are considered legacy code, contain minimal functionality for performing set protocols, and are not recommended for general use.
 
@@ -124,12 +130,12 @@ If you plan to contribute to PICA or run the test suite, you will need to instal
 pip install -r requirements-dev.txt
 ```
 
-## Safety Precautions
+## 4. Safety Precautions
 
 > [!WARNING]
 > **Safety Instructions:** Always switch off the instrument and verify that the output current, voltage, and any other relevant parameters are set to zero before modifying the connections to the Device Under Test (DUT). Failure to follow appropriate safety procedures may result in electric shock or other hazards. Adopt a safety-first approach at all times, and ensure that all instrument parameters remain within the specified safe operating limits defined either by the instrument manufacturer or by your measurement setup.
 
-## 4. Core Utilities
+## 5. Core Utilities
 
 ### 4.1 VISA Instrument Scanner
 
