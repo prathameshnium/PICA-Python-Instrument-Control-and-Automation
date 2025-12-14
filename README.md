@@ -45,7 +45,7 @@ The suite performs automated protocols including:
 </p>
 
 > **More details here:**
-> For more information, go through the [User Manual](docs/User_Manual.md) and the [Quick Interfacing Guide](docs/python_instrument_interfacing.md).
+> For more information, go through the [User Manual](docs/User_Manual.md).
 
 ## Table of Contents
 
@@ -218,7 +218,6 @@ PICA evolved from simple offline scripts in 2022 to a full-stack automated suite
 ## Resources & Documentation
 
 * **User Manual:** Detailed physics and usage guides are available in the [User Manual](docs/User_Manual.md).
-* **Quick Interfacing Guide:** See [docs/python_instrument_interfacing.md](docs/python_instrument_interfacing.md).
 * **Instrument Manuals:** A list of instrument manuals is available in [docs/Instruments_Manuals_Lists.md](docs/Instruments_Manuals_Lists.md).
 
 ---
