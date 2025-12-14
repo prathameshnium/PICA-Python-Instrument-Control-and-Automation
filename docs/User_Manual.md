@@ -113,6 +113,8 @@ Launch the main dashboard:
 ```bash
 python run_pica.py
 ```
+> [!WARNING]
+> **CLI Deprecation Notice:** The PICA CLI is comprised of old, deprecated scripts from the early stages of development. It is **strongly recommended to use the PICA GUI** for all interactions. The CLI scripts are considered legacy code, contain minimal functionality for performing set protocols, and are not recommended for general use.
 
 ### 3.4 Development Dependencies (Optional)
 
