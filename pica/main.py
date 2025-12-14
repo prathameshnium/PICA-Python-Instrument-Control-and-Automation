@@ -1,4 +1,4 @@
-# BUILD VERSION: 17.0
+# BUILD VERSION: 1.0.0
 '''
 ===============================================================================
  PROGRAM:      PICA Launcher
@@ -79,7 +79,7 @@ def resource_path(relative_path):
 
 class PICALauncherApp:
 
-    PROGRAM_VERSION = "17.0"
+    PROGRAM_VERSION = "1.0.0"
     CLR_BG_DARK = '#2B3D4F'
     CLR_FRAME_BG = '#3A506B'
     CLR_ACCENT_GOLD = '#FFC107'
