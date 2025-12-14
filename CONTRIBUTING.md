@@ -20,10 +20,10 @@ If you've noticed a bug or have a feature request, [make one](https://github.com
 
 If this is something you think you can fix, then [fork PICA](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/fork) and create a branch with a descriptive name.
 
-A good branch name would be (where issue #101 is the ticket you're working on):
+A good branch name would be:
 
 ```sh
-git checkout -b 101-add-new-instrument
+git checkout -b feature/add-new-instrument
 ```
 
 ### Get the test suite running
@@ -47,9 +47,9 @@ git pull upstream main
 Then update your feature branch from your local copy of main, and push it!
 
 ```sh
-git checkout 101-add-new-instrument
+git checkout feature/add-new-instrument
 git rebase main
-git push --force-with-lease origin 325-add-ac-resistivity-module
+git push --force-with-lease origin feature/add-new-instrument
 ```
 
 Finally, go to GitHub and [make a Pull Request](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare)
