@@ -26,10 +26,11 @@
    * [High Voltage Poling](#56-high-voltage-poling)
    * [Dielectric Spectroscopy](#57-dielectric-spectroscopy)
    * [Standalone Temperature Utilities](#58-standalone-temperature-utilities)
-6. [Technical Reference](#6-technical-reference)
-7. [Citation & Funding](#7-citation--funding)
-8. [Future Development](#8-future-development)
-9. [Appendix A: Project File Structure](#9-appendix-a-project-file-structure)
+6. [Common Issues & Troubleshooting](#6-common-issues--troubleshooting)
+7. [Technical Reference](#7-technical-reference)
+8. [Citation & Funding](#8-citation--funding)
+9. [Future Development](#9-future-development)
+10. [Appendix A: Project File Structure](#10-appendix-a-project-file-structure)
 
 <hr />
 
@@ -121,7 +122,29 @@ pip install -r requirements-dev.txt
 > [!WARNING]
 > **Safety Instructions:** Always switch off the instrument and verify that the output current, voltage, and any other relevant parameters are set to zero before modifying the connections to the Device Under Test (DUT). Failure to follow appropriate safety procedures may result in electric shock or other hazards. Adopt a safety-first approach at all times, and ensure that all instrument parameters remain within the specified safe operating limits defined either by the instrument manufacturer or by your measurement setup.
 
-## 4\. Core Utilities
+## 6\. Common Issues & Troubleshooting
+
+This section covers the most common issues encountered when using PICA.
+
+### 6.1 VISA Timeout Error or Resource Not Found
+
+This is the most frequent issue and usually indicates a problem with the connection between the computer and the instrument. Follow these steps to resolve it:
+
+1.  **Check Physical Connections:** Ensure all cables (GPIB, USB, Ethernet) are securely connected to both the instrument and the computer.
+2.  **Use the VISA Scanner:** Run the **VISA Instrument Scanner** utility from the PICA launcher.
+    *   If the instrument appears in the list, the connection is working. Note the correct VISA address.
+    *   If the instrument does **not** appear, PICA cannot see it. Proceed to the next steps.
+3.  **Power Cycle the Instrument:** Turn the instrument off, wait a few seconds, and turn it back on. This can often resolve temporary communication hangs.
+4.  **Restart the Computer:** If the problem persists, a full restart can resolve driver or backend issues.
+    *   Shut down the computer completely, leaving the instrument turned off.
+    *   Start the computer.
+    *   Once the system is fully booted, run the PICA VISA scanner.
+    *   Turn on the instrument.
+5.  **Check Drivers and Communication Mode:**
+    *   Ensure you have the correct VISA backend installed (see the `A VISA Backend is Required` warning in the [Installation & Setup](#3-installation--setup) section).
+    *   If using a different communication interface (e.g., switching from GPIB to USB).
+
+## 4. Core Utilities
 
 ### 4.1 VISA Instrument Scanner
 
@@ -328,7 +351,7 @@ PICA also includes standalone utilities for monitoring and controlling temperatu
   <em>The standalone Temperature Control utility, providing a dedicated interface for managing temperature ramps and heater outputs on a Lakeshore 350.</em>
 </p>
 
-## 6\. Technical Reference
+## 7. Technical Reference
 
 ### File Naming Convention
 
@@ -348,7 +371,7 @@ PICA uses standard VISA resource strings. While the defaults below are common, u
   * **Keysight E4980A:** `GPIB0::17::INSTR`
   * **SRS SR830:** `GPIB0::8::INSTR`
 
-## 7\. Citation & Funding
+## 8. Citation & Funding
 
 **Collaborative Ecosystem:**
 PICA is open-source (MIT License) to foster transparency. By providing the source code, the measurement protocols become auditable, ensuring that experimental conditions are reproducible and not hidden behind a proprietary "black box." We encourage other research groups to adapt these scripts for their specific hardware configurations.
@@ -366,7 +389,7 @@ PICA is open-source (MIT License) to foster transparency. By providing the sourc
 }
 ```
 
-## 8\. Future Development
+## 9. Future Development
 
 The following modules and features are currently under active development and are slated for upcoming releases.
 
@@ -399,7 +422,7 @@ Financial support for this work was provided under SERB-CRG project grant No. CR
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-## 9\. Appendix A: Project File Structure
+## 10. Appendix A: Project File Structure
 
 For developers and advanced users, the following reference outlines the PICA directory structure (v17.0).
 
