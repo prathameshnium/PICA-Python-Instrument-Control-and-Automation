@@ -37,6 +37,9 @@ gpib = ["gpib-ctypes>=0.3.0"]
 "Bug Tracker" = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues"
 
 # This finds the new 'pica' folder automatically
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["pica*"]
