@@ -133,6 +133,19 @@ The system is currently validated with industry-standard hardware, covering a re
 
 ---
 
+## Pre-requisites: The VISA Driver "Catch-22"
+
+> [!WARNING]
+> **A VISA Backend is Required:** `PyVISA` is a Python wrapper, not a driver. For PICA to communicate with hardware, you **must** install a VISA backend on your system first. If you attempt to run the software on a clean machine without a VISA implementation, it will fail to find the instruments. This is the most common failure point for new instrument control setups.
+>
+> Choose one of the following:
+> - **NI-VISA:** The industry standard from National Instruments. Download and install it from the [NI website](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html#575764).
+> - **PyVISA-py:** A backend written in pure Python that is installed automatically with PICA. It can be used as a fallback but may have limitations compared to vendor-specific drivers like NI-VISA.
+>
+> **Before proceeding, verify your VISA installation.**
+
+---
+
 ## Getting Started
 
 PICA is structured as a standard Python package.
