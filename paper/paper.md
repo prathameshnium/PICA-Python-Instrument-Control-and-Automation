@@ -37,7 +37,7 @@ By utilising `threading` and `multiprocessing` capabilities, PICA ensures that t
 
 # Statement of need
 
-Advancements in experimental physics and device manufacturing depend on the precise characterisation of material properties under extreme physical conditions (low temperature and high magnetic/electric fields). For automating experiments, researchers have to choose between expensive proprietary programming software or developing a custom measurement script from scratch.
+Advancements in experimental physics and device manufacturing depend on the precise characterisation of material properties under extreme physical conditions (low temperature and high magnetic/electric fields). For automating experiments, researchers have to choose between expensive proprietary graphical programming environments or developing a custom measurement script from scratch.
 While powerful ecosystem libraries such as PyVISA [@grecco2023pyvisa] and PyMeasure [@pymeasure_2025] provide the foundational drivers for instrumental communication, they are fundamentally software libraries that require the user to write and maintain code, which creates a barrier to entry for researchers requiring direct data acquisition without the overhead of developing and maintaining a custom codebase.
 
 PICA addresses this gap by functioning as a turnkey application rather than as a library. It offers a "ready-to-run" graphical interface that abstracts the underlying control logic, allowing experimentalists to focus on data acquisition without needing to develop custom software scripts for the supported hardware configurations.
