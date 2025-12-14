@@ -122,28 +122,6 @@ pip install -r requirements-dev.txt
 > [!WARNING]
 > **Safety Instructions:** Always switch off the instrument and verify that the output current, voltage, and any other relevant parameters are set to zero before modifying the connections to the Device Under Test (DUT). Failure to follow appropriate safety procedures may result in electric shock or other hazards. Adopt a safety-first approach at all times, and ensure that all instrument parameters remain within the specified safe operating limits defined either by the instrument manufacturer or by your measurement setup.
 
-## 6\. Common Issues & Troubleshooting
-
-This section covers the most common issues encountered when using PICA.
-
-### 6.1 VISA Timeout Error or Resource Not Found
-
-This is the most frequent issue and usually indicates a problem with the connection between the computer and the instrument. Follow these steps to resolve it:
-
-1.  **Check Physical Connections:** Ensure all cables (GPIB, USB, Ethernet) are securely connected to both the instrument and the computer.
-2.  **Use the VISA Scanner:** Run the **VISA Instrument Scanner** utility from the PICA launcher.
-    *   If the instrument appears in the list, the connection is working. Note the correct VISA address.
-    *   If the instrument does **not** appear, PICA cannot see it. Proceed to the next steps.
-3.  **Power Cycle the Instrument:** Turn the instrument off, wait a few seconds, and turn it back on. This can often resolve temporary communication hangs.
-4.  **Restart the Computer:** If the problem persists, a full restart can resolve driver or backend issues.
-    *   Shut down the computer completely, leaving the instrument turned off.
-    *   Start the computer.
-    *   Once the system is fully booted, run the PICA VISA scanner.
-    *   Turn on the instrument.
-5.  **Check Drivers and Communication Mode:**
-    *   Ensure you have the correct VISA backend installed (see the `A VISA Backend is Required` warning in the [Installation & Setup](#3-installation--setup) section).
-    *   If using a different communication interface (e.g., switching from GPIB to USB).
-
 ## 4. Core Utilities
 
 ### 4.1 VISA Instrument Scanner
@@ -188,7 +166,7 @@ The control window also contains a console located below the parameter settings.
 
 Above the plot area, there are two buttons providing access to the [VISA Instrument Scanner](#41-visa-instrument-scanner) and [PICA Plotter Utility](#42-pica-plotter-utility). These utilities are accessible from all modules to facilitate rapid testing and diagnostics. The VISA/GPIB scanner allows the user to quickly verify whether instruments are properly connected and recognized by the system, while the plotter utility offers additional plotting capabilities beyond those available in the default plot window.
 
-## 5\. Supported Measurement Modules
+## 5. Supported Measurement Modules
 
 PICA is designed to be as versatile as possible, while being optimized for specific classes of instruments. The following modules represent the core capabilities of the suite, supporting a resistance scale spanning **24 orders of magnitude** (10 nOhm to 10 POhm) depending on the hardware used.
 
@@ -351,15 +329,37 @@ PICA also includes standalone utilities for monitoring and controlling temperatu
   <em>The standalone Temperature Control utility, providing a dedicated interface for managing temperature ramps and heater outputs on a Lakeshore 350.</em>
 </p>
 
+## 6. Common Issues & Troubleshooting
+
+This section covers the most common issues encountered when using PICA.
+
+### 6.1 VISA Timeout Error or Resource Not Found
+
+This is the most frequent issue and usually indicates a problem with the connection between the computer and the instrument. Follow these steps to resolve it:
+
+1.  **Check Physical Connections:** Ensure all cables (GPIB, USB, Ethernet) are securely connected to both the instrument and the computer.
+2.  **Use the VISA Scanner:** Run the **VISA Instrument Scanner** utility from the PICA launcher.
+    *   If the instrument appears in the list, the connection is working. Note the correct VISA address.
+    *   If the instrument does **not** appear, PICA cannot see it. Proceed to the next steps.
+3.  **Power Cycle the Instrument:** Turn the instrument off, wait a few seconds, and turn it back on. This can often resolve temporary communication hangs.
+4.  **Restart the Computer:** If the problem persists, a full restart can resolve driver or backend issues.
+    *   Shut down the computer completely, leaving the instrument turned off.
+    *   Start the computer.
+    *   Once the system is fully booted, run the PICA VISA scanner.
+    *   Turn on the instrument.
+5.  **Check Drivers and Communication Mode:**
+    *   Ensure you have the correct VISA backend installed (see the `A VISA Backend is Required` warning in the [Installation & Setup](#3-installation--setup) section).
+    *   If using a different communication interface (e.g., switching from GPIB to USB), verify that the necessary drivers are installed and that the instrument is configured for that mode.
+
 ## 7. Technical Reference
 
-### File Naming Convention
+### 7.1 File Naming Convention
 
 To ensure data integrity and easy sorting, PICA automatically generates filenames using a standardized format. This allows for easier parsing by external analysis tools.
 Format: `[SampleName]_[Timestamp]_[Identifier].dat`
 Example: `SampleA_2025-12-04_1430_IV_Sweep.dat`
 
-### GPIB Address Guide
+### 7.2 GPIB Address Guide
 
 PICA uses standard VISA resource strings. While the defaults below are common, users should verify their specific instrument addresses using the built-in **Instrument Scanner** or front-panel settings.
 
@@ -391,9 +391,7 @@ PICA is open-source (MIT License) to foster transparency. By providing the sourc
 
 ## 9. Future Development
 
-The following modules and features are currently under active development and are slated for upcoming releases.
-
-### 8.1 AC Resistivity (Lock-In)
+### 9.1 AC Resistivity (Lock-In)
 
 *Status: Under Development*
 
@@ -403,12 +401,12 @@ The following modules and features are currently under active development and ar
   * **Use Case:** Useful for distinguishing between different conduction mechanisms by analyzing the frequency response of the sample's resistance.
   * **Workflow:** The Keithley 6221 provides a precise AC excitation current, while the Lock-In Amplifier (SR830) extracts the signal amplitude and phase with high noise rejection, allowing for measurements in high-noise environments.
 
-### 8.2 Standalone Executables
+### 9.2 Standalone Executables
 
 In the future, We also plan to develop executable (`.exe`) versions of the PICA software suite. This will remove the need for users to manage Python environments and dependencies, further simplifying the setup process and facilitating rapid adoption in laboratories with strict IT policies or offline computers.
 
 
-## Authors & Acknowledgments
+## 10. Authors & Acknowledgments
 <p align="center">
   <img src="../pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
@@ -419,10 +417,10 @@ In the future, We also plan to develop executable (`.exe`) versions of the PICA 
 **Funding:**
 Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
 
-## License
+## 11. License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-## 10. Appendix A: Project File Structure
+## 12. Appendix A: Project File Structure
 
 For developers and advanced users, the following reference outlines the PICA directory structure (v17.0).
 
