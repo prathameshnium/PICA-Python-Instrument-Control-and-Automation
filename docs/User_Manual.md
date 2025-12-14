@@ -119,8 +119,10 @@ PICA is structured as a standard Python package.
     ```bash
     pica-cli
     ```
-> [!WARNING]
-> **CLI Deprecation Notice:** The PICA CLI is comprised of old, deprecated scripts from the early stages of development. It is **strongly recommended to use the PICA GUI** for all interactions. The CLI scripts are considered legacy code, contain minimal functionality for performing set protocols, and are not recommended for general use.
+> [!NOTE]
+> **Legacy CLI Notice:** The PICA CLI (`pica-cli`) is retained to support legacy headless workflows. While fully functional for specific protocols, this interface is **no longer actively maintained** and may not support recent features available in the GUI. 
+>
+> We **strongly recommend** new users utilize the PICA GUI for the most complete and supported experience.
 
 ### 3.4 Development Dependencies (Optional)
 
