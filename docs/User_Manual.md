@@ -7,7 +7,7 @@
 
 **Python-based Instrument Control and Automation Software Suite**
 
-*Comprehensive Guide for Version 17.0*
+*Comprehensive Guide for Version 1.0.0*
 
 <hr />
 
@@ -389,7 +389,7 @@ PICA is open-source (MIT License) to foster transparency. By providing the sourc
   title        = {{PICA: Python-based Instrument Control and Automation Software Suite}},
   year         = 2025,
   publisher    = {GitHub},
-  version      = {17.0},
+  version      = {1.0.0},
   url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
 }
 ```
@@ -427,7 +427,7 @@ Financial support for this work was provided under SERB-CRG project grant No. CR
 This project is licensed under the MIT License - see the LICENSE file for details.
 ## 12. Appendix A: Project File Structure
 
-For developers and advanced users, the following reference outlines the PICA directory structure (v17.0).
+For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.0).
 
 > [!NOTE]
 > Adding a new module to the main launcher into the GUI requires modifying `pica/main.py`.
