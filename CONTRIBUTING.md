@@ -36,19 +36,19 @@ At this point, you're ready to make your changes! Feel free to ask for help; eve
 
 ### Make a Pull Request
 
-At this point, you should switch back to your master branch and make sure it's up to date with the latest upstream version of PICA.
+At this point, you should switch back to your main branch and make sure it's up to date with the latest upstream version of PICA.
 
 ```sh
 git remote add upstream git@github.com:prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
-git checkout master
-git pull upstream master
+git checkout main
+git pull upstream main
 ```
 
-Then update your feature branch from your local copy of master, and push it!
+Then update your feature branch from your local copy of main, and push it!
 
 ```sh
 git checkout 101-add-new-instrument
-git rebase master
+git rebase main
 git push --force-with-lease origin 325-add-ac-resistivity-module
 ```
 
