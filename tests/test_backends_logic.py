@@ -86,6 +86,43 @@ def test_delta_backend_structure():
             print("\n[Delta] Flat script verified (ran on import).")
 
 # ---------------------------------------------------------------------------
+# 4. Data Parsing Test
+# ---------------------------------------------------------------------------
+def test_keithley_data_parser():
+    """
+    Tests the utility function that parses comma-separated scientific notation strings.
+    This is a functional test, not just a structural one.
+    """
+    try:
+        from pica.utils.parser import parse_keithley_output
+    except ImportError:
+        pytest.skip("Could not import the parser module.")
+
+    # Test case 1: Standard scientific notation
+    raw_string_1 = "+1.2345E-06,+2.5000E+00"
+    expected_1 = [1.2345e-6, 2.5]
+    assert parse_keithley_output(raw_string_1) == expected_1, "Failed on standard scientific notation."
+    print(f"\n[Parser] Verified: '{raw_string_1}' -> {expected_1}")
+
+    # Test case 2: Negative values and different spacing
+    raw_string_2 = "-5.0E-03, -1.0E+01"
+    expected_2 = [-0.005, -10.0]
+    assert parse_keithley_output(raw_string_2) == expected_2, "Failed on negative values."
+    print(f"[Parser] Verified: '{raw_string_2}' -> {expected_2}")
+
+    # Test case 3: Single value
+    raw_string_3 = "+3.14159E+00"
+    expected_3 = [3.14159]
+    assert parse_keithley_output(raw_string_3) == expected_3, "Failed on single value."
+    print(f"[Parser] Verified: '{raw_string_3}' -> {expected_3}")
+
+    # Test case 4: Malformed string (should raise ValueError)
+    with pytest.raises(ValueError):
+        parse_keithley_output("1.23, NOT_A_NUMBER")
+    print("[Parser] Verified: Correctly raises ValueError on malformed string.")
+
+
+# ---------------------------------------------------------------------------
 # 3. Keithley 2400 Test
 # ---------------------------------------------------------------------------
 def test_k2400_backend_structure():

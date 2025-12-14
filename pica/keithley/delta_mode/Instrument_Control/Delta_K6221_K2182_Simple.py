@@ -5,6 +5,7 @@ Handles simplified communication protocols.
 
 import pyvisa
 import time
+from pica.utils.parser import parse_keithley_output
 
 # --- Configuration ---
 # Use constants for easier changes later.
@@ -64,11 +65,11 @@ def run_delta_measurement():
             # The 6221 in delta mode returns a string like "Voltage,Resistance"
             raw_data = keithley_6221.query('SENSe:DATA:FRESh?')
 
-            # Split the string at the comma to get a list of values
-            data_points = raw_data.strip().split(',')
+            # Use the new parsing function
+            data_points = parse_keithley_output(raw_data)
 
-            # The first item is Voltage, the second is Resistance
-            voltage = float(data_points[0])
+            # The first item is Voltage
+            voltage = data_points[0]
             # Use the resistance calculated by the keithley_6221
             resistance = float(voltage / DELTA_CURRENT)
 
