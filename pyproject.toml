@@ -25,10 +25,12 @@ dependencies = [ # Pinned to match requirements.txt for stability
     "PyVISA>=1.12.0",
     "PyMeasure>=0.10.0",
     "pyvisa-py>=0.5.3",
-    "gpib-ctypes>=0.3.0",
     "scipy",
     "Pillow>=10.3.0"
 ]
+
+[project.optional-dependencies]
+gpib = ["gpib-ctypes>=0.3.0"]
 
 [project.urls]
 "Homepage" = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"

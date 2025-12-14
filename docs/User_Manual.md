@@ -99,6 +99,11 @@ python -m venv venv
 
 # Install Python dependencies
 pip install -r requirements.txt
+
+# The base installation does not include gpib-ctypes, which is only required for 
+# specific GPIB hardware on Linux systems (e.g., linux-gpib). 
+# If you need this functionality, install it separately:
+pip install .[gpib]
 ```
 
 ### 3.3 Execution

@@ -163,6 +163,11 @@ PICA is structured as a standard Python package.
     pip install .
     ```
 
+    *Note: The base installation of PICA does not include `gpib-ctypes`, which is only required for specific GPIB hardware on Linux systems (e.g., linux-gpib). If you need this functionality, install it separately:*
+    ```bash
+    pip install .[gpib]
+    ```
+
     *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow `PyVISA` to communicate with the hardware.*
 
 ## Running the Software

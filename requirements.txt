@@ -4,6 +4,5 @@ matplotlib>=3.5.2
 pymeasure>=0.10.0
 pyvisa>=1.12.0
 pyvisa-py>=0.5.3
-gpib-ctypes>=0.3.0
 pillow>=10.3.0
 scipy
