@@ -6,3 +6,5 @@ pyvisa>=1.12.0
 pyvisa-py>=0.5.3
 Pillow>=10.3.0
 scipy
+psutil>=5.9.8
+zeroconf>=0.113.0
