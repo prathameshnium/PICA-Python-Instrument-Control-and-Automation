@@ -5,7 +5,7 @@
  PURPOSE:      Perform a voltage sweep and measure current to generate an I-V
                curve using a Keithley 6517B.
 
- AUTHOR:       Prathamesh K. Deshmukh
+ AUTHOR:       Prathamesh Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
 

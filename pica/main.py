@@ -5,7 +5,7 @@
 
  PURPOSE:      A graphical dashboard for launching PICA measurement scripts.
 
- AUTHOR:       Prathamesh K. Deshmukh
+ AUTHOR:       Prathamesh Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
 =========================================================================
@@ -298,7 +298,7 @@ class PICALauncherApp:
 
         ttk.Label(
             info_frame,
-            text="Developed by Prathamesh K. Deshmukh",
+            text="Developed by Prathamesh Deshmukh",
             font=bold_font,
             justify='center',
             anchor='center').pack(

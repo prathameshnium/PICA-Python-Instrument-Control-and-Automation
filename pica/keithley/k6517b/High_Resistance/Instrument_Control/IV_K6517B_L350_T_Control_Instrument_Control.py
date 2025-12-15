@@ -5,7 +5,7 @@
  PURPOSE:      Automate and log a Resistance vs. Temperature (R-T) measurement
                using a command-line interface.
 
- AUTHOR:       Prathamesh K. Deshmukh
+ AUTHOR:       Prathamesh Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
 

@@ -8,7 +8,7 @@ Purpose: GUI module for IV K2400 K2182 GUI v3.
 # Purpose:      Provide a professional GUI for performing I-V sweeps using a
 #               Keithley 2400 as a current source and a Keithley 2182
 #               as a nanovoltmeter.
-# Author:       Prathamesh K. Deshmukh
+# Author:       Prathamesh Deshmukh
 # Created:      04/10/2025
 # Version:      1.0
 # -------------------------------------------------------------------------------

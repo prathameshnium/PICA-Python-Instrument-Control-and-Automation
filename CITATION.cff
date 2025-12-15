@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use this software in your work, please cite it as below."
 authors:
   - family-names: "Deshmukh"
-    given-names: "Prathamesh Keshao"
+    given-names: "Prathamesh"
     orcid: "https://orcid.org/0009-0008-3278-0837"
     affiliation: "UGC-DAE Consortium for Scientific Research, Mumbai Centre"
   - family-names: "Mukherjee"

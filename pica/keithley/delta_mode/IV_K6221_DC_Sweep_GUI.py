@@ -1,7 +1,7 @@
 """
 Purpose: GUI for performing current-voltage (I-V) sweeps using a Keithley 6221 Current Source and a Keithley 2182A Nanovoltmeter. 
 
-Author: Prathamesh K. Deshmukh
+Author: Prathamesh Deshmukh
 Date: October 2025
 Version: 1.6
 """

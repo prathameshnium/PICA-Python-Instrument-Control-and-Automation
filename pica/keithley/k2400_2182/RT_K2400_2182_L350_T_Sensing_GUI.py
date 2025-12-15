@@ -7,7 +7,7 @@ Purpose: GUI module for RT K2400 2182 L350 T Sensing GUI v2.
 # Name:         R-T Sweep Passive GUI for K2400/2182 & LS350
 # Purpose:      Provide a professional GUI for passively logging R vs T data.
 #               This version does not control temperature.
-# Author:       Prathamesh K. Deshmukh
+# Author:       Prathamesh Deshmukh
 # Created:      05/10/2025
 # Version:      1.1
 # -------------------------------------------------------------------------------

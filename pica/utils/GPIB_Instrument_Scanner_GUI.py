@@ -7,7 +7,7 @@ Purpose: GUI module for GPIB Instrument Scanner GUI v4.
 # Name:         GPIB/VISA Instrument Scanner GUI
 # Purpose:      A graphical user interface to find all connected instruments
 #               and display their identification strings. (Updated to match PICA Launcher)
-# Author:       Prathamesh K. Deshmukh
+# Author:       Prathamesh Deshmukh
 # Created:      17/09/2025
 # Version:      V: 2.0
 # -------------------------------------------------------------------------------

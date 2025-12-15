@@ -6,7 +6,7 @@ Purpose: GUI module for PlotterUtil GUI v3.
 # -------------------------------------------------------------------------------
 # Name:         PICA Plotter Utility
 # Purpose:      A general-purpose CSV/DAT file plotter for the PICA suite.
-# Author:       Prathamesh K. Deshmukh
+# Author:       Prathamesh Deshmukh
 # Created:      06/10/2025
 # Version:      2.1 (Multi-file & Multi-instance support)
 # -------------------------------------------------------------------------------
