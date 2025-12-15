@@ -1,6 +1,6 @@
 """
 Module: PICA CLI
-Purpose: CLI interface for Instrumenet Control modules in PICA (OLD SCRIPTS).
+Purpose: CLI interface for Instrument Control modules in PICA (OLD SCRIPTS).
 """
 import os
 import sys
@@ -112,7 +112,7 @@ def main():
 
     while True:
         print_banner()
-        print("Scannning for available measurement modules...\n")
+        print("Scanning for available measurement modules...\n")
 
         scripts = find_scripts(current_dir)
 
