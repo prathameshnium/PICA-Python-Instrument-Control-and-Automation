@@ -12,9 +12,23 @@ We designed PICA with a modular architecture specifically to make this process s
 
 Beyond practical utility, making PICA open source is a statement of scientific integrity. Unlike proprietary "black box" software that obscures experimental methodology, PICA ensures complete transparency. By accessing the full source code, researchers can audit the exact SCPI command sequences, timing delays, and data handling procedures used in an experiment. This methodological clarity is essential for rigorous validation and reproducibility in modern experimental science.
 
-## Where do I go from here?
+## How to Report Bugs
 
-If you've noticed a bug or have a feature request, [make one](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues/new)! It's generally best if you get confirmation of your bug or approval for your feature request this way before starting to code.
+If you encounter a bug, please help us by reporting it. A well-reported bug significantly speeds up the resolution process. Before opening a new issue, please check if a similar issue already exists.
+
+When reporting a bug, please include as much detail as possible:
+
+*   **Steps to reproduce:** Clearly describe how to trigger the bug.
+*   **Expected behavior:** What did you expect to happen?
+*   **Actual behavior:** What actually happened?
+*   **PICA version:** Specify the version of PICA you are using.
+*   **Operating system:** Your OS and version (e.g., Windows 10, Ubuntu 20.04).
+*   **Hardware setup:** Briefly describe your instrument setup if relevant.
+*   **Error messages/logs:** Include any relevant error messages or console output.
+
+You can use the [bug report issue template](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues/new?assignees=&labels=bug&projects=&template=bug_report.md&title=%5BBUG%5D) to ensure you provide all necessary information.
+
+## How to get in touch
 
 ### Fork & create a branch
 
@@ -30,11 +44,22 @@ git checkout -b feature/add-new-instrument
 
 Make sure you're running the test suite locally. It's a good idea to do this before you start making changes to ensure that everything is working correctly.
 
+### Coding Style Guide
+
+PICA adheres to [PEP 8](https://www.python.org/dev/peps/pep-0008/) for Python code style. Please ensure your contributions follow these guidelines. You can use tools like `flake8` or `black` to help format your code.
+
 ### Implement your fix or feature
 
 At this point, you're ready to make your changes! Feel free to ask for help; everyone is a beginner at first:
 
 ### Make a Pull Request
+
+Once you've made your changes and tested them locally, you're ready to create a Pull Request (PR). A good PR makes it easy for maintainers to understand and review your changes. Please include:
+
+*   **A clear and concise title:** Summarize the main purpose of your PR.
+*   **Detailed description:** Explain the problem your PR solves, how you solved it, and any significant design decisions.
+*   **References to issues:** Link to any related issues (e.g., "Fixes #123" or "Closes #456").
+*   **Testing done:** Describe how you tested your changes.
 
 At this point, you should switch back to your main branch and make sure it's up to date with the latest upstream version of PICA.
 
