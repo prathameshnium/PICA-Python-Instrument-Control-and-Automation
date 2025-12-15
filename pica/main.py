@@ -32,6 +32,7 @@ except ImportError:
 
 try:
     import pyvisa
+    import pyvisa.errors # Import pyvisa.errors
     PYVISA_AVAILABLE = True
 except ImportError:
     PYVISA_AVAILABLE = False
@@ -1058,6 +1059,11 @@ Nanovoltmeters, LCR Meters & Amplifiers
                     except Exception as e:
                         result = f"Address: {address}\n    Error: Could not get ID. {e}\n\n"
                         self.result_queue.put(result)
+        except pyvisa.errors.VisaIOError:
+            error_msg = (
+                "PICA could not find a VISA backend. Please install NI-VISA or run pip install pyvisa-py.\n"
+                "Refer to the 'Troubleshooting Installation' section in the documentation for more details.\n")
+            self.result_queue.put(error_msg)
         except Exception as e:
             error_msg = (
                 f"A critical VISA error occurred: {e}\n"
