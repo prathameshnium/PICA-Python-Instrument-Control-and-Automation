@@ -433,8 +433,8 @@ In the future, We also plan to develop executable (`.exe`) versions of the PICA 
 <p align="center">
   <img src="../pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
-- **Lead Developer:** [**Prathamesh K. Deshmukh**](https://prathameshdeshmukh.site/)
-- **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.google.com/search?q=https://www.researchgate.net/lab/Sudip-Mukherjee-Lab)
+- **Lead Developer:** [**Prathamesh K. Deshmukh**](https://www.researchgate.net/profile/Prathamesh-Deshmukh-6)
+- **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.csr.res.in/Faculty/profile/889/893/Dr.SudipMukherjee)
 - **Affiliation:** [*UGC-DAE Consortium for Scientific Research, Mumbai Centre*](https://www.csr.res.in/Mumbai_Centre)
 
 **Funding:**
