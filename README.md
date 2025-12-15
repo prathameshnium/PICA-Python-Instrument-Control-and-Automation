@@ -195,9 +195,28 @@ PICA is structured as a standard Python package.
     pica-cli
     ```
     > [!NOTE]
-    > **Legacy CLI Notice:** The PICA CLI (`pica-cli`) is retained to support legacy headless workflows. While fully functional for specific protocols, this interface is **no longer actively maintained** and may not support recent features available in the GUI. 
+    > **Legacy CLI Notice:** The PICA CLI (`pica-cli`) is retained to support legacy headless workflows. While fully functional for specific protocols, this interface is **less frequently maintained** and may not support recent features available in the GUI. 
     >
     > We **strongly recommend** new users utilize the PICA GUI for the most complete and supported experience.
+
+## Example Usage: Running a Measurement
+
+Upon launching PICA (`pica-gui`), select your desired measurement module from the main dashboard. Each module opens as a unified interface divided into two primary sections:
+
+1.  **Configuration (Control Window - Left):**
+    * **Setup:** Enlarge this window first to view all experimental parameters.
+    * **Parameters:** Specify the `Sample Name`, select the `File Storage Location`, and choose the `Instrument Address` (GPIB/VISA) via the dropdown selection box.
+    * **Protocol:** Define measurement specific settings such as voltage/current limits, temperature step sizes, and delay times.
+    * **Console:** A scrollable log at the bottom provides a continuous, time-stamped stream of all operations and SCPI commands sent to the instruments.
+
+2.  **Visualization (Plotter Window - Right):**
+    * **Real-Time Monitoring:** Displays up to three simultaneous plots (e.g., Resistance vs. Temperature, Voltage vs. Current) updated in real-time.
+    * **Data Analysis:** Includes options to switch axes to logarithmic scales for better visualization of wide-range data.
+    * **Utilities:** Two buttons above the plot area provide instant access to:
+        * **VISA Instrument Scanner:** To verify instrument connections and addresses.
+        * **PICA Plotter Utility:** For post-measurement comparison and detailed analysis.
+
+*The interface is designed to be minimalistic to reduce unnecessary user interaction during active high-precision measurements.*
 
 ---
 ## Running Tests

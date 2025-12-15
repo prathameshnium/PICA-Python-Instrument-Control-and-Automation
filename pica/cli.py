@@ -57,7 +57,7 @@ def print_banner():
     print("="*60)
     print("\n")
     print("*"*80)
-    print("**Legacy CLI Notice:** The PICA CLI (`pica-cli`) is retained to support legacy headless workflows. While fully functional for specific protocols, this interface is **no longer actively maintained** and may not support recent features available in the GUI. We **strongly recommend** new users utilize the PICA GUI for the most complete and supported experience.")
+    print("**Legacy CLI Notice:** The PICA CLI (`pica-cli`) is retained to support legacy headless workflows. While fully functional for specific protocols, this interface is **less frequently maintained** and may not support recent features available in the GUI. We **strongly recommend** new users utilize the PICA GUI for the most complete and supported experience.")
     print("*"*80)
     print("\n")
 
