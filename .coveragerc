@@ -11,3 +11,4 @@ omit =
     docs/*
     paper/*
     Untracked_Stuff/*
+    */__init__.py
