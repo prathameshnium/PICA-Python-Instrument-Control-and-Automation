@@ -101,7 +101,6 @@ class PICALauncherApp:
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
     FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
     LOGO_FILE = resource_path("assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
-    # This path is correct as it points to a directory
     MANUAL_FILE = resource_path("../docs/Instruments_Manuals_Lists.md")
     README_FILE = resource_path("../README.md")
     LICENSE_FILE = resource_path("../LICENSE")
