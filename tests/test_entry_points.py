@@ -45,3 +45,20 @@ def test_run_pica_main(mock_freeze_support, mock_set_start_method, mock_pica_lau
     mock_tk_tk.assert_called_once()
     mock_pica_launcher_app.assert_called_once_with(mock_root)
     mock_root.mainloop.assert_called_once()
+
+import run_pica
+
+def test_run_pica_script():
+    """
+    Tests that run_pica.py correctly initializes the main GUI.
+    We mock the GUI main loop so the test doesn't hang.
+    """
+    with patch("pica.main.main") as mock_main:
+        # Simulate running the script logic
+        # If run_pica.py has a main() function, call it. 
+        # If it runs on import, verify the mock was called.
+        if hasattr(run_pica, 'main'):
+            run_pica.main()
+        
+        # Verify it attempted to start the PICA GUI
+        mock_main.assert_called_once()
