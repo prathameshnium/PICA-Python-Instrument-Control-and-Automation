@@ -23,27 +23,31 @@
 
 import pyvisa
 
-# Initialize the tool to find connected instruments
-rm = pyvisa.ResourceManager()
-instrument_addresses = rm.list_resources()
+def main():
+    # Initialize the tool to find connected instruments
+    rm = pyvisa.ResourceManager()
+    instrument_addresses = rm.list_resources()
 
-# Check if any instruments were found
-if not instrument_addresses:
-    print("No instruments found. Check connections and VISA installation.")
-else:
-    print(
-        f"Found {len(instrument_addresses)} instrument(s). Checking them now...\n")
+    # Check if any instruments were found
+    if not instrument_addresses:
+        print("No instruments found. Check connections and VISA installation.")
+    else:
+        print(
+            f"Found {len(instrument_addresses)} instrument(s). Checking them now...\n")
 
-    # Loop through each instrument and try to get its ID
-    for address in instrument_addresses:
-        try:
-            # Connect to the instrument (connection closes automatically)
-            with rm.open_resource(address) as instrument:
-                instrument.timeout = 2000  # Set a 2-second timeout
-                idn = instrument.query('*IDN?')
-                print(f"Address: {address}\n  ID: {idn.strip()}\n")
-        except Exception as e:
-            # If something goes wrong, print an error and continue
-            print(f"Address: {address}\n  Error: Could not get ID. {e}\n")
+        # Loop through each instrument and try to get its ID
+        for address in instrument_addresses:
+            try:
+                # Connect to the instrument (connection closes automatically)
+                with rm.open_resource(address) as instrument:
+                    instrument.timeout = 2000  # Set a 2-second timeout
+                    idn = instrument.query('*IDN?')
+                    print(f"Address: {address}\n  ID: {idn.strip()}\n")
+            except Exception as e:
+                # If something goes wrong, print an error and continue
+                print(f"Address: {address}\n  Error: Could not get ID. {e}\n")
 
-print("Scan complete.")
+    print("Scan complete.")
+
+if __name__ == "__main__":
+    main()
