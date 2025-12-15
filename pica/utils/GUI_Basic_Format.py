@@ -1,4 +1,5 @@
 """
+Template file for developers. Demonstrates GUI layout and data handling structure using simulated sine wave data.
 Module: GUI_Basic_Format.py
 Purpose: GUI module for GUI Basic Format v2.
 """
