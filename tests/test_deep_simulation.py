@@ -207,6 +207,7 @@ class TestDeepSimulation(unittest.TestCase):
             k2182_spy = MagicMock()
             k2182_spy.assert_trigger = MagicMock()
             rm.open_resource.return_value = k2182_spy
+            k2182_spy.query.return_value = "1.234E-06, 0.000E+00"
 
             # Add extra inputs just in case the script asks for more than expected
             inputs = ['10', '1', 'test_file', 'y', 'y', 'y', 'y']
