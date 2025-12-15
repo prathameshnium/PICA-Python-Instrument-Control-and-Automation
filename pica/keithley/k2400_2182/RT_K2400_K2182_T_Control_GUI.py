@@ -7,7 +7,7 @@ Purpose: GUI module for RT K2400 K2182 T Control GUI v3.
 # Name:         V-T Sweep Active GUI for K2400/2182 & LS350
 # Purpose:      Provide a professional GUI for performing automated V vs T sweeps
 #               with active temperature control (stabilize then ramp).
-# Author:       Prathamesh K. Deshmukh
+# Author:       Prathamesh Deshmukh
 # Created:      05/10/2025
 # Version:      2.2 (JOSS Cleaned)
 # -------------------------------------------------------------------------------
