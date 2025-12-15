@@ -1,8 +1,13 @@
 [run]
+concurrency = multiprocessing
+parallel = true
 omit = 
-    # Omit the tests directory
     tests/*
-    # Omit virtual environment (if any)
     venv/*
-    # Omit the PICA Launcher main entry point if you want to focus on logic
-    # PICA_v6.py
+    build/*
+    pica_suite.egg-info/*
+    .github/*
+    data/*
+    docs/*
+    paper/*
+    Untracked_Stuff/*
