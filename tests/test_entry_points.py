@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 import sys
 import os
+import runpy
 
 sys.path.insert(0, os.path.abspath('.'))
 
@@ -51,14 +52,16 @@ import run_pica
 def test_run_pica_script():
     """
     Tests that run_pica.py correctly initializes the main GUI.
-    We mock the GUI main loop so the test doesn't hang.
+    We use runpy to execute the script file while patching the main function.
     """
+    # Get the absolute path to run_pica.py
+    # Assuming tests/ is one level deep, so we go up one level
+    script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'run_pica.py'))
+
+    # Patch pica.main.main to prevent the real GUI from launching
     with patch("pica.main.main") as mock_main:
-        # Simulate running the script logic
-        # If run_pica.py has a main() function, call it. 
-        # If it runs on import, verify the mock was called.
-        if hasattr(run_pica, 'main'):
-            run_pica.main()
+        # Execute the script as __main__
+        runpy.run_path(script_path, run_name="__main__")
         
         # Verify it attempted to start the PICA GUI
         mock_main.assert_called_once()
