@@ -83,9 +83,9 @@ This approach, however, leads to a considerable degree of code repetition becaus
 >
 > Choose one of the following:
 > - **NI-VISA:** The industry standard from National Instruments. Download and install it from the [NI website](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html#575764).
-> - **PyVISA-py:** A backend written in pure Python that is installed automatically with PICA. It can be used as a fallback but may have limitations compared to vendor-specific drivers like NI-VISA.
+> - **PyVISA-py:** A backend written in pure Python. Install it using `pip install pyvisa-py`. It can be used as a fallback but may have limitations compared to vendor-specific drivers like NI-VISA.
 >
-> **Before proceeding, verify your VISA installation.**
+> **Before proceeding, verify your VISA installation.** For more details and troubleshooting, refer to the "[Common Issues & Troubleshooting](#6-common-issues--troubleshooting)" section.
 
 ### 3.2 Getting Started
 
