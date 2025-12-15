@@ -146,6 +146,22 @@ The system is currently validated with industry-standard hardware, covering a re
 
 ---
 
+## System Requirements
+
+### Linux Users: Tkinter Dependency
+
+If you are running PICA on Linux, you need to ensure that `tkinter` is installed on your system. `tkinter` is a standard Python interface to the Tk GUI toolkit, and it is often not included by default in minimal Python installations.
+
+To install `tkinter` on Debian/Ubuntu-based distributions, use the following command:
+
+```bash
+sudo apt-get install python3-tk
+```
+
+For other Linux distributions, please consult your package manager's documentation for the equivalent command to install `python3-tk` or `tkinter`.
+
+---
+
 ## Getting Started
 
 PICA is structured as a standard Python package.
