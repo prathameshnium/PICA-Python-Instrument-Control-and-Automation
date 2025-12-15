@@ -195,6 +195,14 @@ Then, you can run the tests:
 python -B -m pytest -p no:cacheprovider
 ```
 
+How to Check Coverage Locally
+
+To see the coverage percentage on your local machine, run this command instead:
+
+```powershell
+python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
+```
+
 ---
 
 ## Project History
