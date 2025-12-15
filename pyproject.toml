@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "pica-suite"
 version = "1.0.0"
 authors = [
-  { name="Prathamesh K. Deshmukh", email="prathameshnium@duck.com" },
+  { name="Prathamesh Deshmukh", email="prathameshnium@duck.com" },
   { name="Sudip Mukherjee", email="sudipm@csr.res.in" },
 ]
 description = "PICA: A Python-based Instrument Control and Automation Suite for Material Characterisation"
