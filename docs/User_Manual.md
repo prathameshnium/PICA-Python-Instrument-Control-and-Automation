@@ -132,6 +132,14 @@ If you plan to contribute to PICA or run the test suite, you will need to instal
 pip install -r requirements-dev.txt
 ```
 
+How to Check Coverage Locally
+
+To see the coverage percentage on your local machine, run this command instead:
+
+```powershell
+python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
+```
+
 ## 4. Safety Precautions
 
 > [!WARNING]
