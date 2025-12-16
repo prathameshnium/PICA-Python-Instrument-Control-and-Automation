@@ -1,32 +1,37 @@
 ## Instrument & Software Update Log
 ---
-[1.0.0] - 2025-12-15 (Initial Public Release)
+### [1.0.0] - 2025-12-15 (Initial Public Release)
 
-    Versioning: Version numbering has been reset from legacy development builds (v17.0) to v1.0.0 to standardize the package for public distribution and citation. This version will be updated soon, possibly this week.
+- **Versioning**: Version numbering has been reset from legacy development builds (v17.0) to v1.0.0 to standardize the package for public distribution and citation. This version will be updated soon, possibly this week.
+
 ---
-[17.0] - 2025-12-02 (Current)
-Changed
 
-    Directory Structure: Refactored codebase into a professional project structure; moved numerous files to appropriate subdirectories for better organization.
+### [17.0] - 2025-12-02 (Current)
 
-    Versioning: Standardized version naming conventions. Adopted Semantic Versioning (v17.0).
+**Changed**
 
-Research & Documentation
+- **Directory Structure**: Refactored codebase into a professional project structure; moved numerous files to appropriate subdirectories for better organization.
+- **Versioning**: Standardized version naming conventions. Adopted Semantic Versioning (v17.0).
 
-    Paper Draft: Completed and presented the first draft of the research paper to Dr. Sudip Mukherjee.
+**Research & Documentation**
 
-    Feedback: Received critical feedback regarding the inclusion of ATMS (Advanced Transport Measurement Systems).
+- **Paper Draft**: Completed and presented the first draft of the research paper to Dr. Sudip Mukherjee.
+- **Feedback**: Received critical feedback regarding the inclusion of ATMS (Advanced Transport Measurement Systems).
 
-[Community] - 2025-12-01
+### [Community] - 2025-12-01
 
-    Launch: PICA project posted on Hacker News.
+- **Launch**: PICA project posted on Hacker News.
 ---
 ### Version 15.0 
 *Released: November 22, 2025*
 *Status: Tested and operational. Minor cosmetic updates pending.*
+
 **JOSS Submission & Professionalization**
--   **Code Cleanup:** Comprehensive refactoring and cleanup of the codebase to meet professional standards for JOSS submission.
-**A Note on Recent Updates and Testing:**
+
+-   **Code Cleanup**: Comprehensive refactoring and cleanup of the codebase to meet professional standards for JOSS submission.
+
+**A Note on Recent Updates and Testing**:
+
 > This software suite is actively used for daily laboratory measurements and is regularly tested on the physical instruments. Recently, a suite of automated tests has been integrated to improve code quality and stability. While these tests validate the core logic, the changes made to support them require a new round of thorough manual testing on the hardware to identify and resolve any practical bugs that may have been introduced. This process is currently underway, and further updates will be provided upon its completion.
 
 ---
