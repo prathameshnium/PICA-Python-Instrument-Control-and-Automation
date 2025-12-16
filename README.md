@@ -54,6 +54,7 @@ The suite performs automated protocols including:
 - [Key Features](#key-features)
 - [Design and Implementation](#design-and-implementation)
 - [Supported Hardware Modules](#supported-hardware-modules)
+- [Demonstration of PICA (Screencast)](#demonstration-of-pica-screencast)
 - [Getting Started](#getting-started)
 - [Running the Software](#running-the-software)
 - [Resources & Documentation](#resources--documentation)
@@ -128,8 +129,13 @@ The system is currently validated with industry-standard hardware, covering a re
 <p align="center">
   <img src="pica/assets/Images/screenshots/K6517B_IV.png" alt="K6517B IV" width="600">
   <br>
-  <em>Interface for current-voltage (I-V) characterization of high-impedance materials using the Keithley 6517B Electrometer.</em>
-</p>
+  <em>Interface for current-voltage (I-V) characterization of high-impedance materials using the Keithley 6517B Electrometer.</p>
+
+---
+
+## Demonstration of PICA (Screencast)
+
+A screencast demonstrating the high resistance IV module is available at [000].
 
 ---
 
