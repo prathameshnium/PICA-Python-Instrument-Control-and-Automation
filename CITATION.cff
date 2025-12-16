@@ -4,11 +4,13 @@ authors:
   - family-names: "Deshmukh"
     given-names: "Prathamesh"
     orcid: "https://orcid.org/0009-0008-3278-0837"
-    affiliation: "UGC-DAE Consortium for Scientific Research, Mumbai Centre"
+    affiliation: "UGC-DAE Consortium for Scientific Research, Mumbai Centre, India; Savitribai Phule Pune University, Pune, India"
   - family-names: "Mukherjee"
     given-names: "Sudip"
-    affiliation: "UGC-DAE Consortium for Scientific Research, Mumbai Centre"
-title: "PICA: A Python-based Instrument Control and Automation Suite for Material Characterisation"
+    orcid: "0000-0003-4734-9157"
+    affiliation: "UGC-DAE Consortium for Scientific Research, Mumbai Centre, India; Savitribai Phule Pune University, Pune, India"
+    email: "sudipm@csr.res.in"
+title: "PICA: Advanced Python Suite for High Precision Instrumentation and Transport Measurement Automation"
 version: 1.0.0
 date-released: 2025-12-15
 url: "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
