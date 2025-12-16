@@ -237,6 +237,18 @@ impedance analyzer enables the characterization of dielectric anomalies over the
   <em>I-V sweep measurement using the Sweep Mode, designed for low-resistance measurements with a Keithley 6221 and 2182.</em>
 </p>
 
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/K6221_RT_Control.png" alt="Delta Mode RT Control" width="600">
+  <br>
+  <em>Delta mode R-T measurement with active temperature control, using a Keithley 6221, K2182, and a temperature controller.</em>
+</p>
+
+<p align="center">
+  <img src="../pica/assets/Images/screenshots/K6221_RT_Sensing.png" alt="Delta Mode RT Sensing" width="600">
+  <br>
+  <em>Delta mode R-T measurement in sensing mode, where the system logs resistance and temperature while an external system manages temperature.</em>
+</p>
+
 ### 5.2 General Transport (Standard I-V & R-T)
 
 **Target Hardware:** Keithley 2400 SourceMeter (SMU).
@@ -294,7 +306,7 @@ impedance analyzer enables the characterization of dielectric anomalies over the
 
   * **Scientific Objective:** Characterization of dielectrics, polymers, and ceramics (Electrometry).
   * **Principle (Voltage Driven):** Applies a high voltage and measures the resulting leakage current (pA/fA range).
-  * **Note:** PICA manages settling times to account for the capacitive nature of high-impedance setups, ensuring steady-state ohmic currents are recorded.
+  * **Note:** PICA manages instrument settling times, allowing for a necessary initial delay for the system to stabilize. This is crucial in high-impedance setups to ensure steady-state ohmic currents are accurately recorded.
 
 A screencast demonstrating the high resistance IV module is available at [this link](https://drive.google.com/file/d/13W-Z4N-08t9m0xxuR30sjTLmUVG1VyQd/view?usp=sharing).
 
