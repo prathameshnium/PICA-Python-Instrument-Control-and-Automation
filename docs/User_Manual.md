@@ -1,13 +1,20 @@
+<p align="center">
 # PICA User Manual
+</p>
+
+**Manual Version:** 1.0.0
+**Last Updated:** December 16, 2025
 
 <p align="center">
   <img src="../pica/assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="250">
 </p>
 
-
+<p align="center">
 **Python-based Instrument Control and Automation Software Suite**
-
+</p>
+<p align="center">
 *Comprehensive Guide for Version 1.0.0*
+</p>
 
 <hr />
 
@@ -83,7 +90,7 @@ This approach, however, leads to a considerable degree of code repetition becaus
 >
 > Choose one of the following:
 > - **NI-VISA:** The industry standard from National Instruments. Download and install it from the [NI website](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html#575764).
-> - **PyVISA-py:** A backend written in pure Python. Install it using `pip install pyvisa-py`. To enhance `pyvisa-py`'s capabilities and avoid warnings related to resource discovery (e.g., for TCPIP or HiSLIP instruments), it is highly recommended to also install `psutil` and `zeroconf`: `pip install psutil zeroconf`. It can be used as a fallback but may have limitations compared to vendor-specific drivers like NI-VISA. Note that for direct GPIB communication via `pyvisa-py`, a separate GPIB library (e.g., from your GPIB adapter vendor) might still be required.
+> - **PyVISA-py:** A backend written in pure Python. It can be used as a fallback but may have limitations compared to vendor-specific drivers like NI-VISA. For `pyvisa-py` to discover all resources and avoid warnings (e.g., for TCPIP or HiSLIP instruments), `psutil` and `zeroconf` might be needed. These packages are already included in PICA's dependencies (`requirements.txt`). Note that for direct GPIB communication via `pyvisa-py`, a separate GPIB library (e.g., from your GPIB adapter vendor) might still be required.
 >
 > **Before proceeding, verify your VISA installation.** For more details and troubleshooting, refer to the "[Common Issues & Troubleshooting](#6-common-issues--troubleshooting)" section.
 
@@ -151,7 +158,7 @@ python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
 
 *File Reference: `pica/utils/GPIB_Instrument_Scanner_GUI.py`*
 
-Automatically launched upon startup (and accessible within modules), this utility scans for connected hardware. It uses `ResourceManager.list_resources()` to find devices and sends a standard `*IDN?` query to verify communication. This allows users to verify their hardware configuration before starting any experiment.
+Automatically launched upon startup (and accessible within modules), this utility scans for connected hardware. It uses `ResourceManager.list_resources()` to find devices and sends a standard `*IDN?` query to verify communication. This allows users to verify their hardware configuration before starting any experiment. The VISA scanner also includes an address guide, which can be edited by the user for quick reference.
 
 In the main PICA launcher, the VISA/GPIB scanner is configured to execute automatically at application startup. This design choice is motivated by the fact that initiating a measurement without first verifying the instrument connection is highly likely to fail and may result in non-informative error messages, such as a VISA connection timeout.
 
@@ -179,7 +186,7 @@ A standalone, multiprocessing-enabled tool for detailed data analysis. Unlike th
 
 ### 5.3 Embedded Document Viewer
 
-To ensure the software is self-contained (useful for offline lab computers), PICA includes an in-app viewer for project documentation, including this User Manual, the License, and the Changelog.
+To ensure the software is self-contained (useful for offline lab computers), PICA includes an in-app viewer for project documentation, including this User Manual, the Instrument Manuals List, the License, and the Changelog.
 
 ### 5.4 Measurement Module Interface
 
@@ -191,7 +198,9 @@ Above the plot area, there are two buttons providing access to the [VISA Instrum
 
 ## 6. Supported Measurement Modules
 
-PICA is designed to be as versatile as possible, while being optimized for specific classes of instruments. The following modules represent the core capabilities of the suite, supporting a resistance scale spanning **24 orders of magnitude** (10 nOhm to 10 POhm) depending on the hardware used.
+PICA is designed to be as versatile, while being optimized for specific classes of instruments. The following modules represent the core capabilities of the suite, supporting a resistance scale spanning **24 orders of magnitude** (10 nOhm to 10 POhm) depending on the hardware used.
+Pyroelectric measurement performed using an electrometer enables highly sensitive characterization of ferroelectric phase transitions by detecting extremely small pyroelectric currents, with a resolution on the order of 10−15 A. A.The
+impedance analyzer enables the characterization of dielectric anomalies over the frequency range from 20 Hz to 2 MHz and is utilized for magnetodielectric and photoinduced characterization across a wide variety of multiferroic systems. 
 
 ### 5.1 Low Resistance (Delta Mode)
 
@@ -213,7 +222,7 @@ PICA is designed to be as versatile as possible, while being optimized for speci
 
 ### 5.2 General Transport (Standard I-V & R-T)
 
-**Target Hardware:** Keithley 2400 SourceMeter (or compatible SMU).
+**Target Hardware:** Keithley 2400 SourceMeter (SMU).
 **Typical Range:** 100 µOhm to 200 MOhm.
 
   * **Scientific Objective:** General transport characterization for semiconductors, oxides, and devices.
@@ -237,7 +246,7 @@ PICA is designed to be as versatile as possible, while being optimized for speci
   <em>Resistance-Temperature (R-T) measurement in sensing mode, where the system logs resistance and temprature while an external system/controller manages temperature.</em>
 </p>
 
-### 5.3 High Precision Transport
+### 5.3 High Precision Transport (mid resistance range)
 
 **Target Hardware:** Keithley 2400 (Source) + K2182 (Nanovoltmeter).
 **Typical Range:** 1 µOhm to 100 MOhm.
@@ -326,11 +335,10 @@ This utility provides a dedicated interface for **In-situ and ex-situ electrical
   
 
   <p align="center">
-
-    <img src="../pica/assets/Images/screenshots/Keysight_CV.png" alt="Keysight CV" width="600">
-    <br>
-    <em>Capacitance-Voltage (C-V) characterization of a device or a sample using a Keysight E4980A LCR meter.</em>
-  </p>
+  <img src="../pica/assets/Images/screenshots/Keysight_CV.png" alt="Keysight CV" width="600">
+  <br>
+  <em>Capacitance-Voltage (C-V) characterization of a device or a sample using a Keysight E4980A LCR meter.</em>
+</p>
 
 ### 5.8 Standalone Temperature Utilities
 
@@ -338,7 +346,7 @@ This utility provides a dedicated interface for **In-situ and ex-situ electrical
 
 PICA also includes standalone utilities for monitoring and controlling temperature, independent of other measurement modules.
 
-  * **Temperature Monitor:** A simple interface for logging temperature from multiple sensors.
+  * **Temperature Monitor:** A simple interface for logging temperature from multiple types of sensors.
   * **Temperature Control:** A dedicated module for setting temperature ramps, controlling heater outputs, and managing control loops.
 
 <p align="center">
