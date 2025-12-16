@@ -270,6 +270,7 @@ The project's earlier history and foundational development are outlined below:
 
 * **User Manual:** Details on the project and usage guides are available in the [User Manual](docs/User_Manual.md).
 * **Instrument Manuals:** A list of instrument manuals is available in [docs/Instruments_Manuals_Lists.md](docs/Instruments_Manuals_Lists.md).
+* **GitLab Backup:** This project is manually backed up weekly to a [GitLab repository](https://gitlab.com/prathameshnium/pica-python-instrument-control-and-automation).
 
 ---
 

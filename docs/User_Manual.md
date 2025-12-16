@@ -420,6 +420,10 @@ PICA uses standard VISA resource strings. While the defaults below are common, u
   * **Keysight E4980A:** `GPIB0::17::INSTR`
   * **SRS SR830:** `GPIB0::8::INSTR`
 
+### 7.3 Repository Mirroring
+
+This project is manually backed up weekly to a [GitLab repository](https://gitlab.com/prathameshnium/pica-python-instrument-control-and-automation).
+
 ## 8. Citation & Open source
 
 **Collaborative Ecosystem:**
