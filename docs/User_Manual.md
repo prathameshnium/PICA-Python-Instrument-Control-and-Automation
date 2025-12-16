@@ -45,7 +45,7 @@
 
 High-precision measurements are essential for advancing research in spintronics and materials characterization. To enable such progress, highly precise and accurate automation software is required.PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and chemical samples. PICA is designed as a versatile framework capable of operating on any standard laboratory workstation. 
 It provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analyser, and temperature controllers. Built on the robust Python scientific ecosystem, PICA leverages community standard libraries as an alternative to licenced commercial software for instrument control.
-By utilising `threading` and `multiprocessing` capabilities, PICA ensures that the entire hardware ecosystem functions seamlessly and as a single cohesive unit. This allows the system to perform automated protocols, including temperature-dependent wide range resistance measurement ($10^{-8}$ - $10^{16}$ Ω), current voltage (I-V) characterisation,  capacitance characterisation, and pyroelectric current measurement, and orchestrates measurements under varying magnetic fields and temperatures without requiring physical reconfiguration of the measurement setups.
+By utilising `threading` and `multiprocessing` capabilities, PICA ensures that the entire hardware ecosystem functions seamlessly and as a single cohesive unit. This allows the system to perform automated protocols, including temperature-dependent wide range resistance measurement (10<sup>-8</sup> - 10<sup>16</sup> Ω), characterization,  capacitance characterisation, and pyroelectric current measurement, and orchestrates measurements under varying magnetic fields and temperatures without requiring physical reconfiguration of the measurement setups.
 
 ## 2. Design Philosophy & Architecture
 
@@ -196,16 +196,32 @@ The control window also contains a console located below the parameter settings.
 
 Above the plot area, there are two buttons providing access to the [VISA Instrument Scanner](#41-visa-instrument-scanner) and [PICA Plotter Utility](#42-pica-plotter-utility). These utilities are accessible from all modules to facilitate rapid testing and diagnostics. The VISA/GPIB scanner allows the user to quickly verify whether instruments are properly connected and recognized by the system, while the plotter utility offers additional plotting capabilities beyond those available in the default plot window.
 
+
+## Supported Hardware Modules
+
+The system is currently validated with industry-standard hardware, covering a resistance range spanning 24 orders of magnitude.
+
+| Module | Configuration / Instrument | Use Case | Range |
+| :--- | :--- | :--- | :--- |
+| **Low-Resistance (Delta)** | **Keithley 6221** + **K2182** | Superconductors & metallic films; cancels thermal EMFs via AC Delta method. | 10 nΩ - 100 MΩ |
+| **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter | Semiconductors, oxides, general transport. | 100 µΩ - 200 MΩ |
+| **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** | Detecting subtle phase transitions. | 1 µΩ - 100 MΩ |
+| **High-Resistance** | **Keithley 6517B** Electrometer | Dielectrics, polymers, & ceramics. | 1 Ω - 10 PΩ |
+| **Dielectric Analysis** | **Keysight E4980A** | C-V Analysis and Magnetodielectric characterization. | 20 Hz - 2 MHz |
+| **Pyroelectric** | **K6517B** + **Temp Controller** | Current vs Temp (detecting Curie temperature). | 10<sup>-15</sup> A Resolution |
+
+*While the current implementation drives specific instruments, the underlying framework is highly customizable. Researchers need only replace specific SCPI commands to utilize the suite with different models.*
+
 ## 6. Supported Measurement Modules
 
-PICA is designed to be as versatile, while being optimized for specific classes of instruments. The following modules represent the core capabilities of the suite, supporting a resistance scale spanning **24 orders of magnitude** (10 nOhm to 10 POhm) depending on the hardware used.
+PICA is designed to be as versatile, while being optimized for specific classes of instruments. The following modules represent the core capabilities of the suite, supporting a resistance scale spanning **24 orders of magnitude** (10 nΩ to 10 PΩ) depending on the hardware used.
 Pyroelectric measurement performed using an electrometer enables highly sensitive characterization of ferroelectric phase transitions by detecting extremely small pyroelectric currents, with a resolution on the order of 10−15 A. A.The
 impedance analyzer enables the characterization of dielectric anomalies over the frequency range from 20 Hz to 2 MHz and is utilized for magnetodielectric and photoinduced characterization across a wide variety of multiferroic systems. 
 
 ### 5.1 Low Resistance (Delta Mode)
 
 **Target Hardware:** Keithley 6221 (Current Source) + K2182 (Nanovoltmeter).
-**Typical Range:** 10 nOhm to 100 MOhm.
+**Typical Range:** 10 nΩ to 100 MΩ.
 
   * **Scientific Objective:** Ideal for superconductors, metallic films, and low-impedance devices. It actively cancels thermal offsets (Seebeck EMFs) generated in leads and contacts.
   * **Principle:** Uses the **AC Delta Method**.
@@ -223,7 +239,7 @@ impedance analyzer enables the characterization of dielectric anomalies over the
 ### 5.2 General Transport (Standard I-V & R-T)
 
 **Target Hardware:** Keithley 2400 SourceMeter (SMU).
-**Typical Range:** 100 µOhm to 200 MOhm.
+**Typical Range:** 100 µΩ to 200 MΩ.
 
   * **Scientific Objective:** General transport characterization for semiconductors, oxides, and devices.
   * **Capabilities:**
@@ -249,7 +265,7 @@ impedance analyzer enables the characterization of dielectric anomalies over the
 ### 5.3 High Precision Transport (mid resistance range)
 
 **Target Hardware:** Keithley 2400 (Source) + K2182 (Nanovoltmeter).
-**Typical Range:** 1 µOhm to 100 MOhm.
+**Typical Range:** 1 µΩ to 100 MΩ.
 
   * **Scientific Objective:** Detects subtle phase transitions in semiconductors and oxides where standard SMU resolution is insufficient.
   * **Advantage:** Combines the stable sourcing of the SMU with the nanovolt-level sensitivity of a dedicated voltmeter, utilizing a true 4-wire configuration to eliminate lead resistance errors.
@@ -273,7 +289,7 @@ impedance analyzer enables the characterization of dielectric anomalies over the
 ### 5.4 Electrometry & High Resistance
 
 **Target Hardware:** Keithley 6517B Electrometer (or compatible High-R meter).
-**Typical Range:** 1 Ohm to 10 POhm (10^16 Ohm).
+**Typical Range:** 1 Ω to 10 PΩ (10<sup>16</sup> Ω).
 
   * **Scientific Objective:** Characterization of dielectrics, polymers, and ceramics (Electrometry).
   * **Principle (Voltage Driven):** Applies a high voltage and measures the resulting leakage current (pA/fA range).
@@ -298,7 +314,7 @@ impedance analyzer enables the characterization of dielectric anomalies over the
 ### 5.5 Pyroelectric Current Measurements
 
 **Target Hardware:** Keithley 6517B Electrometer + Temperature Controller.
-**Sensitivity:** Down to 1 fA (10^-15 A).
+**Sensitivity:** Down to 1 fA (10<sup>-15</sup> A).
 
 This module automates the measurement of pyroelectric currents (Ip) as a function of temperature, commonly used to characterize ferroelectric phase transitions and identify **Curie Temperatures** (Tc).
 
@@ -402,10 +418,10 @@ PICA uses standard VISA resource strings. While the defaults below are common, u
   * **Keysight E4980A:** `GPIB0::17::INSTR`
   * **SRS SR830:** `GPIB0::8::INSTR`
 
-## 8. Citation & Funding
+## 8. Citation & Open source
 
 **Collaborative Ecosystem:**
-PICA is open-source (MIT License) to foster transparency. By providing the source code, the measurement protocols become auditable, ensuring that experimental conditions are reproducible and not hidden behind a proprietary "black box." We encourage other research groups to adapt these scripts for their specific hardware configurations.
+PICA is open-source ([MIT License](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/LICENSE)) to foster transparency. By providing the source code, the measurement protocols become auditable, ensuring that experimental conditions are reproducible and not hidden behind a proprietary "black box." We encourage other research groups to adapt these scripts for their specific hardware configurations.
 
 **Citation:**
 
@@ -427,30 +443,31 @@ PICA is open-source (MIT License) to foster transparency. By providing the sourc
 *Status: Under Development*
 
   * **Instruments:** Keithley 6221 (AC Source) + SRS SR830 (DSP Lock-In Amplifier).
-  * **Resistance Range:** \~ 20 nOhm to 1 MOhm.
+  * **Resistance Range:** \~ 20 nΩ to 1 MΩ.
   * **Scientific Objective:** Probes frequency-dependent transport phenomena.
   * **Use Case:** Useful for distinguishing between different conduction mechanisms by analyzing the frequency response of the sample's resistance.
-  * **Workflow:** The Keithley 6221 provides a precise AC excitation current, while the Lock-In Amplifier (SR830) extracts the signal amplitude and phase with high noise rejection, allowing for measurements in high-noise environments.
+  * **Workflow:** The Keithley 6221 provides a precise AC excitation current, while the Lock-In Amplifier (SR830) extracts the signal amplitude and phase with high noise rejection, allowing for accurate ac resistivity measurements.
 
 ### 9.2 Standalone Executables
 
-In the future, We also plan to develop executable (`.exe`) versions of the PICA software suite. This will remove the need for users to manage Python environments and dependencies, further simplifying the setup process and facilitating rapid adoption in laboratories with strict IT policies or offline computers.
+In the future, We also plan to develop executable (`.exe`) versions of the PICA software suite. This will remove the need for users to manage Python environments and dependencies, further simplifying the setup process and facilitating rapid adoption in laboratories.
 
 
 ## 10. Authors & Acknowledgments
 <p align="center">
   <img src="../pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
-- **Lead Developer:** [**Prathamesh Deshmukh**](https://www.researchgate.net/profile/Prathamesh-Deshmukh-6)
+
+- **Lead Developer:** [**Prathamesh Deshmukh**](httpshttps://www.researchgate.net/profile/Prathamesh-Deshmukh-6)
 - **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.csr.res.in/Faculty/profile/889/893/Dr.SudipMukherjee)
 - **Affiliation:** [*UGC-DAE Consortium for Scientific Research, Mumbai Centre*](https://www.csr.res.in/Mumbai_Centre)
 
-**Funding:**
+### Funding
 Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
 
 ## 11. License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/LICENSE) file for details.
 ## 12. Appendix A: Project File Structure
 
 For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.0).
