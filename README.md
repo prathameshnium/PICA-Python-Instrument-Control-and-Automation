@@ -26,7 +26,7 @@
 
 ---
 
-## Summary
+## Overview
 
 High-precision measurements are essential for advancing research in spintronics and materials characterization. **PICA (Python-based Instrument Control and Automation)** is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and chemical samples. It operates as a versatile framework capable of running on any standard laboratory workstation.
 
@@ -49,8 +49,8 @@ The suite performs automated protocols including:
 
 ## Table of Contents
 
-- [Summary](#summary)
-- [Statement of Need](#statement-of-need)
+- [Overview](#overview)
+- [Motivation](#motivation)
 - [Key Features](#key-features)
 - [Design and Implementation](#design-and-implementation)
 - [Supported Hardware Modules](#supported-hardware-modules)
@@ -63,13 +63,13 @@ The suite performs automated protocols including:
 
 ---
 
-## Statement of Need
+## Motivation
 
 Advancements in experimental physics and device manufacturing depend on the precise characterization of material properties under extreme physical conditions. Researchers often face a binary choice: purchase expensive proprietary software or develop custom measurement scripts from scratch.
 
-While libraries such as **PyVISA** and **PyMeasure** provide foundational drivers, requiring users to write and maintain low-level code, **PICA builds upon these powerful libraries** to offer a turnkey application. It provides a ready-to-run graphical interface that abstracts the underlying control logic, allowing experimentalists to focus on data acquisition without extensive software development overhead.
+While libraries such as [**PyVISA**](https://github.com/pyvisa/pyvisa) and [**PyMeasure**](https://github.com/pymeasure/pymeasure) provide foundational drivers, requiring users to write and maintain low-level code, **PICA builds upon these powerful libraries** to offer a turnkey application. It provides a ready-to-run graphical interface that abstracts the underlying control logic, allowing experimentalists to focus on data acquisition without extensive software development overhead.
 
-PICA enables continuous operation across the full range from Delta-mode low-resistance measurements (removing constant offsets) to high-impedance electrometric measurements using a single unified framework.
+PICA enables continuous operation across a full range of measurements, from Delta-mode low-resistance (removing constant offsets) to high-impedance, electrometric, pyroelectric, and capacitance measurements, all within a single, unified framework.
 
 ## Key Features
 
@@ -93,7 +93,7 @@ Unlike simple script-based automation, PICA decouples the User Interface (UI) fr
 * **Data Integrity:** A "write on acquisition" strategy using `pandas` saves data to CSV immediately after every acquisition point, preventing data loss during power failures.
 
 ### Hardware Abstraction Layer
-PICA utilizes **PyVISA** to abstract low-level communication protocols (GPIB, USB, Ethernet). The software implements a strict initialization routine:
+PICA utilizes [**PyVISA**](https://github.com/pyvisa/pyvisa) to abstract low-level communication protocols (GPIB, USB, Ethernet). The software implements a strict initialization routine:
 1.  **Connection Verification:** A built-in "VISA Instrument Scanner" queries the bus (`*IDN?`) to map instrument addresses.
 2.  **Instrument Reset Protocol:** Explicitly resets all stored data and buffers to provide a clean initial state.
 3.  **Graceful Shutdown:** Ensures sources are ramped down and heaters disabled safely, even if the software is interrupted.
@@ -136,7 +136,7 @@ The system is currently validated with industry-standard hardware, covering a re
 ## Pre-requisites: The VISA Driver
 
 > [!WARNING]
-> **A VISA Backend is Required:** `PyVISA` is a Python wrapper, not a driver. For PICA to communicate with hardware, you **must** install a VISA backend on your system first. If you attempt to run the software on a clean machine without a VISA implementation, it will fail to find the instruments. This is the most common failure point for new instrument control setups.
+> **A VISA Backend is Required:** [`PyVISA`](https://github.com/pyvisa/pyvisa) is a Python wrapper, not a driver. For PICA to communicate with hardware, you **must** install a VISA backend on your system first. If you attempt to run the software on a clean machine without a VISA implementation, it will fail to find the instruments. This is the most common failure point for new instrument control setups.
 >
 > Choose one of the following:
 > - **NI-VISA:** The industry standard from National Instruments. Download and install it from the [NI website](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html#575764).
@@ -179,7 +179,7 @@ PICA is structured as a standard Python package.
     pip install .
     ```
 
-    *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow `PyVISA` to communicate with the hardware.*
+    *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow [`PyVISA`](https://github.com/pyvisa/pyvisa) to communicate with the hardware.*
 
 ## Running the Software
 
@@ -214,7 +214,7 @@ Upon launching PICA (`pica-gui`), select your desired measurement module from th
     * **Data Analysis:** Includes options to switch axes to logarithmic scales for better visualization of wide-range data.
     * **Utilities:** Two buttons above the plot area provide instant access to:
         * **VISA Instrument Scanner:** To verify instrument connections and addresses.
-        * **PICA Plotter Utility:** For post-measurement comparison and detailed analysis.
+        * **PICA Plotter Utility:** For post or during measurements comparison and detailed analysis.
 
 *The interface is designed to be minimalistic to reduce unnecessary user interaction during active high-precision measurements.*
 
@@ -249,6 +249,8 @@ PICA evolved from simple offline scripts in 2022 to a full-stack automated suite
   * **v15.0:** JOSS submission preparation, CI/CD integration.
   * **v13.0:** Transition to Multiprocessing and standardized GUI themes.
 
+The project's earlier history and foundational development are outlined below:
+
 ### 2022 - 2023: Inception & Prototyping
 
   - **2023 (Migration):** Moved from offline lab systems to GitHub; organized scripts into instrument modules (Keithley/Lake Shore).
@@ -260,7 +262,7 @@ PICA evolved from simple offline scripts in 2022 to a full-stack automated suite
 
 ## Resources & Documentation
 
-* **User Manual:** Detailed physics and usage guides are available in the [User Manual](docs/User_Manual.md).
+* **User Manual:** Details on the project and usage guides are available in the [User Manual](docs/User_Manual.md).
 * **Instrument Manuals:** A list of instrument manuals is available in [docs/Instruments_Manuals_Lists.md](docs/Instruments_Manuals_Lists.md).
 
 ---
@@ -281,7 +283,7 @@ If you use this software in your research, please cite it:
 }
 ````
 
-## Authors & Acknowledgments
+## Authors & Funding
 
 This project is led by [**Prathamesh Deshmukh**](https://www.researchgate.net/profile/Prathamesh-Deshmukh-6) under the supervision of [**Dr. Sudip Mukherjee**](https://www.csr.res.in/Faculty/profile/889/893/Dr.SudipMukherjee) at the [*UGC-DAE Consortium for Scientific Research, Mumbai Centre*](https://www.csr.res.in/Mumbai_Centre).
 
