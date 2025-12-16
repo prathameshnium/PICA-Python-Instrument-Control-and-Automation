@@ -45,7 +45,7 @@
 
 High-precision measurements are essential for advancing research in spintronics and materials characterization. To enable such progress, highly precise and accurate automation software is required.PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and chemical samples. PICA is designed as a versatile framework capable of operating on any standard laboratory workstation. 
 It provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analyser, and temperature controllers. Built on the robust Python scientific ecosystem, PICA leverages community standard libraries as an alternative to licenced commercial software for instrument control.
-By utilising `threading` and `multiprocessing` capabilities, PICA ensures that the entire hardware ecosystem functions seamlessly and as a single cohesive unit. This allows the system to perform automated protocols, including temperature-dependent wide range resistance measurement (10<sup>-8</sup> - 10<sup>16</sup> Ω), characterization,  capacitance characterisation, and pyroelectric current measurement, and orchestrates measurements under varying magnetic fields and temperatures without requiring physical reconfiguration of the measurement setups.
+By utilising `threading` and `multiprocessing` capabilities, PICA ensures that the entire hardware ecosystem functions seamlessly and as a single cohesive unit. This allows the system to perform automated protocols, including temperature-dependent wide range resistance measurement (10<sup>-8</sup> - 10<sup>16</sup> Ω), current voltage (I-V) characterisation,  capacitance characterisation, and pyroelectric current measurement, and orchestrates measurements under varying magnetic fields and temperatures without requiring physical reconfiguration of the measurement setups.
 
 ## 2. Design Philosophy & Architecture
 
@@ -199,7 +199,7 @@ Above the plot area, there are two buttons providing access to the [VISA Instrum
 
 ## Supported Hardware Modules
 
-The system is currently validated with industry-standard hardware, covering a resistance range spanning 24 orders of magnitude.
+The system is currently validated with industry-standard hardware, covering a resistance range spanning 24 orders of magnitude, 10<sup>-15 < / sup> resolution pyroelectric current measurements, and capacitance characterisation from 20 Hz - 2 MHz.
 
 | Module | Configuration / Instrument | Use Case | Range |
 | :--- | :--- | :--- | :--- |
@@ -294,6 +294,8 @@ impedance analyzer enables the characterization of dielectric anomalies over the
   * **Scientific Objective:** Characterization of dielectrics, polymers, and ceramics (Electrometry).
   * **Principle (Voltage Driven):** Applies a high voltage and measures the resulting leakage current (pA/fA range).
   * **Note:** PICA manages settling times to account for the capacitive nature of high-impedance setups, ensuring steady-state ohmic currents are recorded.
+
+A screencast demonstrating the high resistance IV module is available at [000].
 
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K6517B_IV.png" alt="K6517B IV" width="600">
