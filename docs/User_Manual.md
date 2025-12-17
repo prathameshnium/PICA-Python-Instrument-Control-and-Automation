@@ -89,7 +89,7 @@ PICA is structured as a standard Python package.
 
 1.  **Clone the Repository**
     ```bash
-    git clone [https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git)
+    git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
     cd PICA-Python-Instrument-Control-and-Automation
     ```
 
