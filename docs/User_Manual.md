@@ -71,7 +71,7 @@ This approach, however, leads to a considerable degree of code repetition becaus
 ## 3. Installation & Setup
 
 ### 3.1 System Prerequisites
-1.  **Python 3.9+**: The core execution environment.
+1.  **Python 3.10+**: The core execution environment.
 2.  **Dependencies:** Install via `pip install -r requirements.txt`.
 
 > [!WARNING]
