@@ -200,6 +200,11 @@ PICA is structured as a standard Python package.
     ```bash
     pica-gui
     ```
+    > You can also run any of the individual GUI measurement modules independently. This is useful for quickly accessing a specific measurement without opening the main launcher. To do this, simply run the Python script for the desired module.
+    > For example:
+    > ```bash
+    > python pica/keithley/k6517b/High_Resistance/IV_K6517B_GUI.py
+    > ```
 
 2.  **Command Line Interface (CLI)**
     For headless operation (e.g., Raspberry Pi).
