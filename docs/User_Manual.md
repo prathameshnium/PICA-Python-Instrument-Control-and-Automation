@@ -32,7 +32,7 @@
    * [Electrometry & High Resistance](#54-electrometry--high-resistance)
    * [Pyroelectric Measurements](#55-pyroelectric-measurements)
    * [High Voltage Poling](#56-high-voltage-poling)
-   * [Dielectric Spectroscopy](#57-dielectric-spectroscopy)
+   * [Capacitance Spectroscopy](#57-capacitance-spectroscopy)
    * [Standalone Temperature Utilities](#58-standalone-temperature-utilities)
 6. [Common Issues & Troubleshooting](#6-common-issues--troubleshooting)
 7. [Technical Reference](#7-technical-reference)
@@ -207,8 +207,8 @@ The system is currently validated with industry-standard hardware, covering a re
 | **Low-Resistance (Delta)** | **Keithley 6221** + **K2182** | Superconductors & metallic films; cancels thermal EMFs via AC Delta method. | 10 nΩ - 100 MΩ |
 | **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter | Semiconductors, oxides, general transport. | 100 µΩ - 200 MΩ |
 | **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** | Detecting subtle phase transitions. | 1 µΩ - 100 MΩ |
-| **High-Resistance** | **Keithley 6517B** Electrometer | Dielectrics, polymers, & ceramics. | 1 Ω - 10 PΩ |
-| **Dielectric Analysis** | **Keysight E4980A** | C-V Analysis and Magnetodielectric characterization. | 20 Hz - 2 MHz |
+| **High-Resistance** | **Keithley 6517B** Electrometer | Capacitances, polymers, & ceramics. | 1 Ω - 10 PΩ |
+| **Capacitance Analysis** | **Keysight E4980A** | C-V Analysis and Magnetocapacitance characterization. | 20 Hz - 2 MHz |
 | **Pyroelectric** | **K6517B** + **Temp Controller** | Current vs Temp (detecting Curie temperature). | 10<sup>-15</sup> A Resolution |
 
 *While the current implementation drives specific instruments, the underlying framework is highly customizable. Researchers need only replace specific SCPI commands to utilize the suite with different models.*
@@ -217,7 +217,7 @@ The system is currently validated with industry-standard hardware, covering a re
 
 PICA is designed to be as versatile, while being optimized for specific classes of instruments. The following modules represent the core capabilities of the suite, supporting a resistance scale spanning **24 orders of magnitude** (10 nΩ to 10 PΩ) depending on the hardware used.
 Pyroelectric measurement performed using an electrometer enables highly sensitive characterization of ferroelectric phase transitions by detecting extremely small pyroelectric currents, with a resolution on the order of 10−15 A. A.The
-impedance analyzer enables the characterization of dielectric anomalies over the frequency range from 20 Hz to 2 MHz and is utilized for magnetodielectric and photoinduced characterization across a wide variety of multiferroic systems. 
+impedance analyzer enables the characterization of capacitance anomalies over the frequency range from 20 Hz to 2 MHz and is utilized for magnetocapacitance and photoinduced characterization across a wide variety of multiferroic systems. 
 
 ### 5.1 Low Resistance (Delta Mode)
 
@@ -304,7 +304,7 @@ impedance analyzer enables the characterization of dielectric anomalies over the
 **Target Hardware:** Keithley 6517B Electrometer (or compatible High-R meter).
 **Typical Range:** 1 Ω to 10 PΩ (10<sup>16</sup> Ω).
 
-  * **Scientific Objective:** Characterization of dielectrics, polymers, and ceramics (Electrometry).
+  * **Scientific Objective:** Characterization of capacitances, polymers, and ceramics (Electrometry).
   * **Principle (Voltage Driven):** Applies a high voltage and measures the resulting leakage current (pA/fA range).
   * **Note:** PICA manages instrument settling times, allowing for a necessary initial delay for the system to stabilize. This is crucial in high-impedance setups to ensure steady-state ohmic currents are accurately recorded.
 
@@ -544,7 +544,7 @@ PICA (Root Directory)/
                     RT_K6517B_L350_T_Control_GUI.py
                 Pyroelectricity/
                     Pyroelectric_K6517B_L350_GUI.py
-        keysight/               <-- Dielectric (E4980A)
+        keysight/               <-- Capacitance (E4980A)
             CV_KE4980A_GUI.py
         lakeshore/              <-- Temperature Control
             T_Control_L350_RangeControl_GUI.py
