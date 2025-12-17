@@ -73,7 +73,7 @@ Advancements in experimental physics and device manufacturing depend on the prec
 
 While libraries such as [**PyVISA**](https://github.com/pyvisa/pyvisa) and [**PyMeasure**](https://github.com/pymeasure/pymeasure) provide foundational drivers, requiring users to write and maintain low-level code, **PICA builds upon these powerful libraries** to offer a turnkey application. It provides a ready-to-run graphical interface that abstracts the underlying control logic, allowing experimentalists to focus on data acquisition without extensive software development overhead.
 
-PICA enables continuous operation across a full range of measurements, from Delta-mode low-resistance (removing constant offsets) to high-impedance, electrometric, pyroelectric, and capacitance measurements, all within a single, unified framework.
+PICA enables continuous operation across a full range of measurements, from ultra low resistance measurements (removing constant offsets) to high-impedance, electrometric, pyroelectric, and capacitance measurements, all within a single, unified framework.
 
 ## Key Features
 
@@ -113,7 +113,10 @@ The system is currently validated with industry-standard hardware, covering a re
 
 | Module | Configuration / Instrument | Use Case | Range |
 | :--- | :--- | :--- | :--- |
-| **Low-Resistance (Delta)** | **Keithley 6221** + **K2182** | Superconductors & metallic films; cancels thermal EMFs via AC Delta method. | 10 nΩ - 100 MΩ |
+| **Ultra Low Resistance Measurements** | **Keithley 6221** + **K2182** | Superconductors & metallic films; cancels thermal EMFs via AC Delta method. | 10 nΩ - 100 MΩ |
+
+> [!NOTE]
+> **Understanding "Delta Mode":** The term "Delta Mode" refers specifically to a technique used by Keithley Models 6220 and 6221 Current Sources in conjunction with the Model 2182A Nanovoltmeter for very low resistance measurements. This method is described in detail in the [Keithley Low Level Measurements Handbook](https://www.tek.com/en/documents/product-article/keithley-low-level-measurements-handbook---7th-edition). In this documentation, "Ultra Low Resistance Measurements" is used as the general scientific term, while "Delta Mode" may appear when specifically referencing the Keithley-specific method or program files.
 | **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter | Semiconductors, oxides, general transport. | 100 µΩ - 200 MΩ |
 | **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** | Detecting subtle phase transitions. | 1 µΩ - 100 MΩ |
 | **High-Resistance** | **Keithley 6517B** Electrometer | Capacitances, polymers, & ceramics. | 1 Ω - 10 PΩ |
@@ -127,7 +130,7 @@ The system is currently validated with industry-standard hardware, covering a re
 <p align="center">
   <img src="pica/assets/Images/screenshots/K6221_RT_Control.png" alt="K6221 RT Control" width="600">
   <br>
-  <em>R-T measurement interface using the K6221/2182 for low-resistance samples, employing the Delta Mode to cancel thermal EMFs.</em>
+  <em>R-T measurement interface using the K6221/2182 for low-resistance samples, employing the Ultra Low Resistance Measurement technique to cancel thermal EMFs.</em>
 </p>
 <p align="center">
   <img src="pica/assets/Images/screenshots/K6517B_IV.png" alt="K6517B IV" width="600">

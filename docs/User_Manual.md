@@ -14,7 +14,7 @@
 3. [Installation & Setup](#3-installation--setup)
 4. [Core Utilities](#4-core-utilities)
 5. [Supported Measurement Modules](#5-supported-measurement-modules)
-   * [Low Resistance (Delta Mode)](#51-low-resistance-delta-mode)
+   * [Ultra Low Resistance Measurements](#51-ultra-low-resistance-measurements)
    * [General Transport (Standard I-V & R-T)](#52-general-transport-standard-i-v--r-t)
    * [High Precision Transport](#53-high-precision-transport)
    * [Electrometry & High Resistance](#54-electrometry--high-resistance)
@@ -192,7 +192,7 @@ The system is currently validated with industry-standard hardware, covering a re
 
 | Module | Configuration / Instrument | Use Case | Range |
 | :--- | :--- | :--- | :--- |
-| **Low-Resistance (Delta)** | **Keithley 6221** + **K2182** | Superconductors & metallic films; cancels thermal EMFs via AC Delta method. | 10 nΩ - 100 MΩ |
+| **Ultra Low Resistance Measurements** | **Keithley 6221** + **K2182** | Superconductors & metallic films; cancels thermal EMFs via AC Delta method. | 10 nΩ - 100 MΩ |
 | **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter | Semiconductors, oxides, general transport. | 100 µΩ - 200 MΩ |
 | **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** | Detecting subtle phase transitions. | 1 µΩ - 100 MΩ |
 | **High-Resistance** | **Keithley 6517B** Electrometer | Capacitances, polymers, & ceramics. | 1 Ω - 10 PΩ |
@@ -207,13 +207,15 @@ PICA is designed to be as versatile, while being optimized for specific classes 
 Pyroelectric measurement performed using an electrometer enables highly sensitive characterization of ferroelectric phase transitions by detecting extremely small pyroelectric currents, with a resolution on the order of 10−15 A. A.The
 impedance analyzer enables the characterization of capacitance anomalies over the frequency range from 20 Hz to 2 MHz and is utilized for magnetocapacitance and photoinduced characterization across a wide variety of multiferroic systems. 
 
-### 5.1 Low Resistance (Delta Mode)
+### 5.1 Ultra Low Resistance Measurements
 
 **Target Hardware:** Keithley 6221 (Current Source) + K2182 (Nanovoltmeter).
 **Typical Range:** 10 nΩ to 100 MΩ.
 
   * **Scientific Objective:** Ideal for superconductors, metallic films, and low-impedance devices. It actively cancels thermal offsets (Seebeck EMFs) generated in leads and contacts.
   * **Principle:** Uses the **AC Delta Method**.
+    > [!NOTE]
+    > **Understanding "Delta Mode":** The term "Delta Mode" refers specifically to a technique used by Keithley Models 6220 and 6221 Current Sources in conjunction with the Model 2182A Nanovoltmeter for very low resistance measurements. This method is described in detail in the [Keithley Low Level Measurements Handbook](https://www.tek.com/en/documents/product-article/keithley-low-level-measurements-handbook---7th-edition). In this documentation, "Ultra Low Resistance Measurements" is used as the general scientific term, while "Delta Mode" may appear when specifically referencing the Keithley-specific method or program files.
     1.  Source +I, measure V1.
     2.  Source -I, measure V2.
     3.  Compute V\_corr = (V1 - V2) / 2.
@@ -228,13 +230,13 @@ impedance analyzer enables the characterization of capacitance anomalies over th
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K6221_RT_Control.png" alt="Delta Mode RT Control" width="600">
   <br>
-  <em>Delta mode R-T measurement with active temperature control, using a Keithley 6221, K2182, and a temperature controller.</em>
+  <em>Ultra Low Resistance Measurement R-T measurement with active temperature control, using a Keithley 6221, K2182, and a temperature controller.</em>
 </p>
 
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K6221_RT_Sensing.png" alt="Delta Mode RT Sensing" width="600">
   <br>
-  <em>Delta mode R-T measurement in sensing mode, where the system logs resistance and temperature while an external system manages temperature.</em>
+  <em>Ultra Low Resistance Measurement R-T measurement in sensing mode, where the system logs resistance and temperature while an external system manages temperature.</em>
 </p>
 
 ### 5.2 General Transport (Standard I-V & R-T)
