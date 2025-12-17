@@ -38,7 +38,7 @@ PICA provides an extensible, unified graphical user interface (GUI) for orchestr
 The suite performs automated protocols including:
 * Temperature-dependent wide-range resistance measurement ($10^{-8}$ - $10^{16}$ Ω).
 * Current-voltage (I-V) characterization.
-* Capacitance characterization and magnetodielectric studies (20 Hz - 2 MHz).
+* Capacitance characterization and magnetocapacitance studies (20 Hz - 2 MHz).
 * Pyroelectric current measurement (resolution $10^{-15}$ A).
 
 <p align="center">
@@ -116,8 +116,8 @@ The system is currently validated with industry-standard hardware, covering a re
 | **Low-Resistance (Delta)** | **Keithley 6221** + **K2182** | Superconductors & metallic films; cancels thermal EMFs via AC Delta method. | 10 nΩ - 100 MΩ |
 | **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter | Semiconductors, oxides, general transport. | 100 µΩ - 200 MΩ |
 | **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** | Detecting subtle phase transitions. | 1 µΩ - 100 MΩ |
-| **High-Resistance** | **Keithley 6517B** Electrometer | Dielectrics, polymers, & ceramics. | 1 Ω - 10 PΩ |
-| **Dielectric Analysis** | **Keysight E4980A** | C-V Analysis and Magnetodielectric characterization. | 20 Hz - 2 MHz |
+| **High-Resistance** | **Keithley 6517B** Electrometer | Capacitances, polymers, & ceramics. | 1 Ω - 10 PΩ |
+| **Capacitance Analysis** | **Keysight E4980A** | C-V Analysis and Magnetocapacitance characterization. | 20 Hz - 2 MHz |
 | **Pyroelectric** | **K6517B** + **Temp Controller** | Current vs Temp (detecting Curie temperature). | $10^{-15}$ A Resolution |
 
 *While the current implementation drives specific instruments, the underlying framework is highly customizable. Researchers need only replace specific SCPI commands to utilize the suite with different models.*
