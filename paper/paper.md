@@ -19,14 +19,14 @@ authors:
     corresponding: true
     email: sudipm@csr.res.in
 affiliations:
- - name: UGC-DAE Consortium for Scientific Research, Mumbai Centre, Bhabha Atomic Research Centre, Mumbai, 400 085, Maharashtra, India
-   index: 1
-   ror: 04cmez398
- - name: Savitribai Phule Pune University, Ganeshkhind Road, Pune, 411 007, Maharashtra, India
-   index: 2
-   ror: 044g6d731
-date: 17 December 2025
-bibliography: paper.bib
+  -index: 1
+  name: UGC-DAE Consortium for Scientific Research, Mumbai Centre, Bhabha Atomic Research Centre, Mumbai, 400 085, Maharashtra, India
+  ror: 04cmez398
+  -index: 2
+  name: Savitribai Phule Pune University, Ganeshkhind Road, Pune, 411 007, Maharashtra, India
+  ror: 044g6d731
+  date: 17 December 2025
+  bibliography: paper.bib
 
 ---
 
