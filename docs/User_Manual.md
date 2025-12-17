@@ -421,7 +421,6 @@ PICA uses standard VISA resource strings. While the defaults below are common, u
   * **Keithley 2182:** `GPIB0::7::INSTR`
   * **Keithley 6517B:** `GPIB1::27::INSTR`
   * **Keysight E4980A:** `GPIB0::17::INSTR`
-  * **SRS SR830:** `GPIB0::8::INSTR`
 
 ### 7.3 Repository Mirroring
 
