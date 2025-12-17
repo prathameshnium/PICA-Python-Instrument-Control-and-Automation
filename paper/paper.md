@@ -25,8 +25,8 @@ affiliations:
   -index: 2
   name: Savitribai Phule Pune University, Ganeshkhind Road, Pune, 411 007, Maharashtra, India
   ror: 044g6d731
-  date: 17 December 2025
-  bibliography: paper.bib
+date: 17 December 2025
+bibliography: paper/paper.bib
 
 ---
 
