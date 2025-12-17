@@ -43,7 +43,7 @@ def main():
 
     keithley_2400.source_mode = 'current'
     keithley_2400.source_current_range = 1e-6
-    keithley_2400.compliance_voltage = 210
+    keithley_2400.compliance_voltage = 20
     keithley_2400.source_current = 0
     keithley_2400.enable_source()
     keithley_2400.measure_voltage()
