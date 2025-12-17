@@ -26,7 +26,7 @@ affiliations:
     index: 2
     ror: 044g6d731
 date: 17 December 2025
-bibliography: paper/paper.bib
+bibliography: paper.bib
 
 ---
 
