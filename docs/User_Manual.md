@@ -1,17 +1,5 @@
 <p align="center">
-# PICA User Manual
-</p>
-
-
-**Manual Version:** 1.0.0
-**Last Updated:** December 16, 2025
-
-<p align="center">
-  <img src="../pica/assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="250">
-</p>
-
-<p align="center">
-**Python-based Instrument Control and Automation Software Suite**
+# PICA: Advanced High-Precision Transport Measurement Automation with Python
 </p>
 <p align="center">
 *Comprehensive Guide for Version 1.0.0*
@@ -479,7 +467,7 @@ In the future, We also plan to develop executable (`.exe`) versions of the PICA 
 
 - **Lead Developer:** [**Prathamesh Deshmukh**](httpshttps://www.researchgate.net/profile/Prathamesh-Deshmukh-6)
 - **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.csr.res.in/Faculty/profile/889/893/Dr.SudipMukherjee)
-- **Affiliation:** [*UGC-DAE Consortium for Scientific Research, Mumbai Centre*](https://www.csr.res.in/Mumbai_Centre)
+- **Affiliation:** UGC-DAE Consortium for Scientific Research, Mumbai Centre, Bhabha Atomic Research Centre, Mumbai, 400 085, Maharashtra, India
 
 ### Funding
 Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
