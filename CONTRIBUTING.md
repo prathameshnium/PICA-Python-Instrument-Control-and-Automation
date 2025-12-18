@@ -84,9 +84,9 @@ If a maintainer asks you to "rebase" your PR, they're saying that a lot of code 
 To learn more about rebasing and merging, check out this guide from Atlassian:
 [https://www.atlassian.com/git/tutorials/merging-vs-rebasing](https://www.atlassian.com/git/tutorials/merging-vs-rebasing)
 
-## How to get in touch
+## Support
 
-You can reach out to the maintainers of PICA by creating an issue.
+For any questions, support, or assistance, please open a GitHub Issue in the main repository. This is the preferred and primary method for getting in touch with the development team and community for support.
 
 ## Code of Conduct
 
