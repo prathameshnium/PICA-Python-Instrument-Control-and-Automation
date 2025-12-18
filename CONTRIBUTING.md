@@ -28,9 +28,7 @@ When reporting a bug, please include as much detail as possible:
 
 You can use the [bug report issue template](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues/new?assignees=&labels=bug&projects=&template=bug_report.md&title=%5BBUG%5D) to ensure you provide all necessary information.
 
-## How to get in touch
-
-### Fork & create a branch
+## Contributing Code
 
 If this is something you think you can fix, then [fork PICA](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/fork) and create a branch with a descriptive name.
 
