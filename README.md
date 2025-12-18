@@ -295,7 +295,7 @@ If you use this software in your research, please cite it:
 ```bibtex
 @software{Deshmukh_PICA_2025,
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
-  title        = {{PICA: Advanced Python Suite for High Precision Instrumentation and Transport Measurement Automation}},
+  title        = {{PICA: Advanced High-Precision Transport Measurement Automation with Python}},
   month        = dec,
   year         = 2025,
   publisher    = {GitHub},
