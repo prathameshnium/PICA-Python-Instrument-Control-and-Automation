@@ -10,7 +10,7 @@ authors:
     orcid: "0000-0003-4734-9157"
     affiliation: "UGC-DAE Consortium for Scientific Research, Mumbai Centre, India; Savitribai Phule Pune University, Pune, India"
     email: "sudipm@csr.res.in"
-title: "PICA: Advanced Python Suite for High Precision Instrumentation and Transport Measurement Automation"
+title: "PICA: Advanced High-Precision Transport Measurement Automation with Python"
 version: 1.0.0
 date-released: 2025-12-15
 url: "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"

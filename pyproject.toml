@@ -9,7 +9,7 @@ authors = [
   { name="Prathamesh Deshmukh", email="pdeshmukh@csr.res.in" },
   { name="Sudip Mukherjee", email="sudipm@csr.res.in" },
 ]
-description = "PICA: A Python-based Instrument Control and Automation Suite for Material Characterisation"
+description = "PICA: Advanced High-Precision Transport Measurement Automation with Python"
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
