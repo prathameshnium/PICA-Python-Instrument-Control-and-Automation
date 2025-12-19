@@ -418,6 +418,9 @@ This is the most frequent issue and usually indicates a problem with the connect
     *   Ensure you have the correct VISA backend installed (see the `A VISA Backend is Required` warning in the [Installation & Setup](#3-installation--setup) section).
     *   If using a different communication interface (e.g., switching from GPIB to USB), verify that the necessary drivers are installed and that the instrument is configured for that mode.
 
+### 7.2 Instrument Control and Delays
+An important parameter to consider during concurrent control of instruments is the delay. The time between each step should be sufficient to ensure that all instruments (whether two or three) have completed their commanded actions. Sending a new command before an instrument has had time to process the previous one will definitely cause errors. It is also important to introduce proper delays for the system to reach equilibrium. Furthermore, during the initial setup, instruments should be given adequate delay time for all their internal components to stabilize and enter a ready state. In PICA, sufficient internal delays are provided in all modules. However, it was observed that some systems might need more delay time. Therefore, a parameter for initial delay is available in those module's GUI. Users should provide an appropriate initial delay time. This initial delay time parameter is in addition to the basic delay already contained in the module.
+
 ## 8. Technical Reference
 
 ### 8.1 File Naming Convention
@@ -474,6 +477,9 @@ PICA is open-source ([MIT License](https://github.com/prathameshnium/PICA-Python
 ### 10.2 Standalone Executables
 
 In the future, We also plan to develop executable (`.exe`) versions of the PICA software suite. This will remove the need for users to manage Python environments and dependencies, further simplifying the setup process and facilitating rapid adoption in laboratories.
+
+### 10.3 New Utilities and Analysis Modules
+We plan to add more utility modules, such as a PID simulator for temperature controller PID values calibration and various simple data analysis modules. These additions will help to streamline the entire process from measurement to analysis, making PICA a more self-contained ecosystem.
 
 
 ## 11. Authors & Acknowledgments
