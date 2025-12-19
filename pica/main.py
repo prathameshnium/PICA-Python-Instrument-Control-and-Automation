@@ -324,7 +324,7 @@ class PICALauncherApp:
         util_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
         ttk.Button(
             util_frame,
-            text="GPIB Utils",
+            text="VISA/GPIB Utils",
             style='App.TButton',
             command=self.run_gpib_test).grid(
             row=0,
