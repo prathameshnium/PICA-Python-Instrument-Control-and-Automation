@@ -24,6 +24,8 @@ import runpy
 import multiprocessing
 from multiprocessing import Process
 
+from pica.utils.GPIB_Instrument_Scanner_GUI import GPIB_Instrument_Scanner_GUI
+
 try:
     from PIL import Image, ImageTk
     PIL_AVAILABLE = True
@@ -779,8 +781,9 @@ class PICALauncherApp:
                 "Dependency Missing",
                 "The 'pyvisa' library is required.\n\nInstall via pip:\npip install pyvisa pyvisa-py")
             return
-        # The GPIB scanner is now its own class
-        GPIBScannerWindow(self.root, self)
+        # The GPIB scanner is now its own class, create a new window for it
+        scanner_window = Toplevel(self.root)
+        GPIB_Instrument_Scanner_GUI(scanner_window)
 
     def _pre_cache_markdown_files(self):
         """
@@ -914,175 +917,6 @@ class PICALauncherApp:
                 text_area.insert('end', '\n')
 
 
-class GPIBScannerWindow(Toplevel):
-    def __init__(self, parent, app_ref):
-        super().__init__(parent)
-        self.app = app_ref  # Reference to the main app for styling and logging
-
-        self.title("GPIB/VISA Instrument Scanner")
-        self.configure(bg=self.app.CLR_BG_DARK)
-        self.transient(parent)
-
-        # --- Position the window to the top-right of the screen ---
-        win_width, win_height = 500, 400
-        self.update_idletasks()
-        screen_width = self.winfo_screenwidth()
-        x_pos = screen_width - win_width - 50
-        y_pos = 50
-        self.geometry(f"{win_width}x{win_height}+{x_pos}+{y_pos}")
-        self.minsize(500, 350)
-
-        self.result_queue = queue.Queue()
-        self.create_widgets()
-
-        self.app.log(
-            "GPIB/VISA scanner window opened. Auto-scan will begin shortly.")
-        self.after(100, self._process_gpib_queue)  # Start the queue processor
-        # Auto-start the scan after 1 second
-        self.after(1000, self.start_scan)
-
-    def create_widgets(self):
-        main_frame = ttk.Frame(self, padding=15)
-        main_frame.pack(fill='both', expand=True)
-        main_frame.rowconfigure(1, weight=1)
-        main_frame.columnconfigure(0, weight=1)
-
-        controls_frame = ttk.Frame(main_frame)
-        controls_frame.grid(row=0, column=0, sticky='ew', pady=(0, 15))
-        controls_frame.columnconfigure((0, 1, 2), weight=1)
-
-        self.console_area = scrolledtext.ScrolledText(
-            main_frame,
-            state='disabled',
-            bg=self.app.CLR_CONSOLE_BG,
-            fg=self.app.CLR_TEXT,
-            font=self.app.FONT_CONSOLE,
-            wrap='word',
-            bd=0)
-        self.console_area.grid(row=1, column=0, sticky='nsew')
-
-        self.scan_button = ttk.Button(
-            controls_frame,
-            text="Scan Instruments",
-            command=self.start_scan,
-            style='Scan.TButton')
-        self.scan_button.grid(row=0, column=0, padx=(0, 5), sticky='ew')
-        guide_button = ttk.Button(
-            controls_frame,
-            text="Address Guide",
-            command=self.show_address_guide,
-            style='App.TButton')
-        guide_button.grid(row=0, column=1, padx=5, sticky='ew')
-        clear_button = ttk.Button(
-            controls_frame,
-            text="Clear Log",
-            command=self.clear_log,
-            style='App.TButton')
-        clear_button.grid(row=0, column=2, padx=(5, 0), sticky='ew')
-
-        ttk.Button(
-            main_frame,
-            text="Close",
-            style='App.TButton',
-            command=self.destroy).grid(
-            row=2, column=0,
-            sticky='ew',
-            pady=(
-                15,
-                0))
-        self.log_to_scanner("Welcome to the GPIB/VISA Instrument Scanner.")
-        self.log_to_scanner("Auto-scanning for instruments in 1 second...")
-
-    def log_to_scanner(self, message, add_timestamp=True):
-        self.console_area.config(state='normal')
-        if add_timestamp:
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            self.console_area.insert('end', f"[{timestamp}] {message}\n")
-        else:
-            self.console_area.insert('end', message)
-        self.console_area.see('end')
-        self.console_area.config(state='disabled')
-
-    def start_scan(self):
-        self.scan_button.config(state='disabled')
-        self.log_to_scanner("Starting scan...")
-        threading.Thread(target=self._gpib_scan_worker, daemon=True).start()
-
-    def clear_log(self):
-        self.console_area.config(state='normal')
-        self.console_area.delete(1.0, 'end')
-        self.console_area.config(state='disabled')
-        self.log_to_scanner("Log cleared.")
-
-    def show_address_guide(self):
-        guide_text = """
---- PICA Instrument Address Guide ---
-Note: These are typical addresses. Use the scan results for exact values.
-
-Temperature Controllers
-  • Lakeshore 340:      GPIB0::12::INSTR
-  • Lakeshore 350:      GPIB1::15::INSTR
-
-Source-Measure Units (SMU) & Electrometers
-  • Keithley 2400:      GPIB1::4::INSTR
-  • Keithley 6221:      GPIB0::13::INSTR
-  • Keithley 6517B:     GPIB1::27::INSTR
-
-Nanovoltmeters, LCR Meters & Amplifiers
-  • Keithley 2182:      GPIB0::7::INSTR
-  • Keysight E4980A:    GPIB0::17::INSTR
-  • SRS SR830 Lock-in:  GPIB0::8::INSTR
-  • Stanford PS365 HV:  GPIB0::14::INSTR
-
----------------------------------------------
-"""
-        self.log_to_scanner(guide_text, add_timestamp=False)
-
-    def _gpib_scan_worker(self):
-        try:
-            rm = pyvisa.ResourceManager()
-            resources = rm.list_resources()
-            if not resources:
-                self.result_queue.put(
-                    "-> No instruments found. Check connections and retry.\n")
-            else:
-                self.result_queue.put(
-                    f"-> Found {len(resources)} instrument(s). Querying...\n\n")
-                for address in resources:
-                    try:
-                        with rm.open_resource(address) as instrument:
-                            instrument.timeout = 2000
-                            idn = instrument.query('*IDN?').strip()
-                            result = f"Address: {address}\n    ID: {idn}\n\n"
-                            self.result_queue.put(result)
-                    except Exception as e:
-                        result = f"Address: {address}\n    Error: Could not get ID. {e}\n\n"
-                        self.result_queue.put(result)
-        except pyvisa.errors.VisaIOError:
-            error_msg = (
-                "PICA could not find a VISA backend. Please install NI-VISA or run pip install pyvisa-py.\n"
-                "Refer to the 'Troubleshooting Installation' section in the documentation for more details.\n")
-            self.result_queue.put(error_msg)
-        except Exception as e:
-            error_msg = (
-                f"A critical VISA error occurred: {e}\n"
-                "Please ensure a VISA backend (e.g., NI-VISA) is installed correctly.\n")
-            self.result_queue.put(error_msg)
-        finally:
-            self.result_queue.put("SCAN_COMPLETE")
-
-    def _process_gpib_queue(self):
-        try:
-            message = self.result_queue.get_nowait()
-            if message == "SCAN_COMPLETE":
-                self.scan_button.config(state='normal')
-                self.log_to_scanner("Scan complete.")
-            else:
-                self.log_to_scanner(message, add_timestamp=False)
-        except queue.Empty:
-            pass
-        finally:
-            self.after(100, self._process_gpib_queue)
 
 
 def main():
