@@ -4,7 +4,7 @@ First off, thank you for considering contributing to PICA! It's people like you 
 
 # Building a Collaborative Ecosystem
 
-PICA is distributed under the permissive MIT License because we believe scientific software should be a dynamic, living project rather than a static tool. Our goal is to foster a community-driven ecosystem where researchers are free to modify and extend the codebase to support their specific instruments.
+PICA is distributed under the permissive [MIT License](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/LICENSE) because we believe scientific software should be a dynamic, living project rather than a static tool. Our goal is to foster a community-driven ecosystem where researchers are free to modify and extend the codebase to support their specific instruments.
 
 We designed PICA with a modular architecture specifically to make this process straightforward preventing the redundant effort of rewriting automation scripts from scratch. By contributing your custom drivers or experimental protocols back to the project via GitHub Pull Requests, you help create a more robust and versatile tool for the entire scientific community. Additionally, we rely on community feedback via GitHub Issues to identify edge cases and resolve bugs across diverse hardware setups, accelerating development far beyond what a single team could achieve.
 
@@ -21,7 +21,7 @@ When reporting a bug, please include as much detail as possible:
 *   **Steps to reproduce:** Clearly describe how to trigger the bug.
 *   **Expected behavior:** What did you expect to happen?
 *   **Actual behavior:** What actually happened?
-*   **PICA version:** Specify the version of PICA you are using.
+*   **PICA version:** Specify the [version](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases) of PICA you are using.
 *   **Operating system:** Your OS and version (e.g., Windows 10, Ubuntu 20.04).
 *   **Hardware setup:** Briefly describe your instrument setup if relevant.
 *   **Error messages/logs:** Include any relevant error messages or console output.
