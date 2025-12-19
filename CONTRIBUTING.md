@@ -84,6 +84,51 @@ If a maintainer asks you to "rebase" your PR, they're saying that a lot of code 
 To learn more about rebasing and merging, check out this guide from Atlassian:
 [https://www.atlassian.com/git/tutorials/merging-vs-rebasing](https://www.atlassian.com/git/tutorials/merging-vs-rebasing)
 
+### Adding a New Instrument Module
+
+One of the most important contributions you can make is to add support for new instruments. The architecture was designed to make this process straightforward by following a set of well-defined steps. Essentially, these are the same steps the original developers followed when adding new modules.
+
+#### Understanding the Architecture
+Code duplication is considered acceptable to avoid over-abstraction, which can make the project harder to maintain.
+
+#### Start with a Template
+
+The easiest way to start is to copy an existing module that is closest to your task or has the functionality you need.
+
+#### 1. Create New Files
+
+1.  Create a new directory for your instrument under the appropriate vendor (e.g., `pica/new_vendor/my_instrument/`).
+2.  Paste the copied files into this new directory.
+3.  Rename the files to reflect your new module (e.g., `IV_ABC_Instrument_GUI.py` and `IV_ABC_Instrument_Control.py`).
+
+#### 2. Implement the Instrument Control Logic
+
+Start with the basic instrument communication, then add measurement protocols, data saving, and plotting. Ensure that instrument communication (handled by `PyVISA` or `pymeasure`) uses the correct SCPI commands. Your instrument's programming manual is the definitive source for these commands.
+
+1.  Open your new `...Instrument_Control.py` file.
+2.  **Consult your instrument's programming manual.** This is essential for finding the correct SCPI commands.
+3.  Modify the `PyVISA` sections of the script. Replace the existing SCPI commands (e.g., `*IDN?`, `:SOUR:VOLT`, `:MEAS:CURR?`) with the commands specific to your instrument.
+4.  Adjust the data parsing logic to handle the output format of your instrument.
+
+#### 3. Modify the GUI (`..._GUI.py`)
+
+1.  Open your new `..._GUI.py` file.
+2.  Update the `Tkinter` widgets (labels, entry boxes, dropdowns) to match the parameters required for your instrument (e.g., voltage range, compliance, measurement speed).
+3.  Ensure the "Start" button calls your new control logic script, passing the necessary parameters from the GUI.
+
+#### 4. Integrate into the PICA Launcher
+
+To make your new module accessible from the main dashboard:
+
+1.  Open `pica/main.py`.
+2.  Find the section where the instrument buttons are created (search for a `tk.Button` that launches an existing module).
+3.  Add a new `tk.Button` for your module. The button's `command` should be a function that launches your new `..._GUI.py` script. You can model this on the existing launcher functions.
+
+#### 5. Test and Document
+
+- Run your new module standalone and from the PICA launcher to ensure it works as expected. Test edge cases. It's often helpful to have a new user try it, as they can often find bugs you might have missed.
+- Consider adding a section for your new instrument in `docs/User_Manual.md` and adding a screenshot to `pica/assets/Images/screenshots/`.
+
 ## Support
 
 For any questions, support, or assistance, please open a GitHub Issue in the main repository. This is the preferred and primary method for getting in touch with the development team and community for support.
