@@ -466,7 +466,7 @@ PICA is open-source ([MIT License](https://github.com/prathameshnium/PICA-Python
 *Status: Under Development*
 
   * **Instruments:** Keithley 6221 (AC Source) + SRS SR830 (DSP Lock-In Amplifier).
-  * **Resistance Range:** \~ 20 nΩ to 1 MΩ.
+  * **Predicted resistance Range:** \~ 20 nΩ to 1 MΩ.
   * **Scientific Objective:** Probes frequency-dependent transport phenomena.
   * **Use Case:** Useful for distinguishing between different conduction mechanisms by analyzing the frequency response of the sample's resistance.
   * **Workflow:** The Keithley 6221 provides a precise AC excitation current, while the Lock-In Amplifier (SR830) extracts the signal amplitude and phase with high noise rejection, allowing for accurate ac resistivity measurements.
@@ -481,7 +481,7 @@ In the future, We also plan to develop executable (`.exe`) versions of the PICA 
   <img src="../pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
 
-- **Lead Developer:** [**Prathamesh Deshmukh**](httpshttps://www.researchgate.net/profile/Prathamesh-Deshmukh-6)
+- **Lead Developer:** [**Prathamesh Deshmukh**](https://www.researchgate.net/profile/Prathamesh-Deshmukh-6)
 - **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.csr.res.in/Faculty/profile/889/893/Dr.SudipMukherjee)
 - **Affiliation:** UGC-DAE Consortium for Scientific Research, Mumbai Centre, Bhabha Atomic Research Centre, Mumbai, 400 085, Maharashtra, India
 
