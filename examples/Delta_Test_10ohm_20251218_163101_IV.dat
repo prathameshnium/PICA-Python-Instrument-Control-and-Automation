@@ -1,4 +1,4 @@
-# Sample: Test_10ohm
+# Sample: Delta_Test_10ohm
 Set Current (A),Measured Voltage (V),Resistance (Ohm)
 -1.000000e-05,-1.037917e-04,1.037917e+01
 -9.797980e-06,-1.017006e-04,1.037975e+01
