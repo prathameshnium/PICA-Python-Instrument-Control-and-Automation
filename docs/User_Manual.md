@@ -22,11 +22,14 @@
    * [High Voltage Poling](#56-high-voltage-poling)
    * [Capacitance Spectroscopy](#57-capacitance-spectroscopy)
    * [Standalone Temperature Utilities](#58-standalone-temperature-utilities)
-6. [Common Issues & Troubleshooting](#6-common-issues--troubleshooting)
-7. [Technical Reference](#7-technical-reference)
-8. [Citation & Funding](#8-citation--funding)
-9. [Future Development](#9-future-development)
-10. [Appendix A: Project File Structure](#10-appendix-a-project-file-structure)
+6. [Releases and Versions](#6-releases-and-versions)
+7. [Common Issues & Troubleshooting](#7-common-issues--troubleshooting)
+8. [Technical Reference](#8-technical-reference)
+9. [Citation & Funding](#9-citation--funding)
+10. [Future Development](#10-future-development)
+11. [Authors & Acknowledgments](#11-authors--acknowledgments)
+12. [License](#12-license)
+13. [Appendix A: Project File Structure](#13-appendix-a-project-file-structure)
 
 <hr />
 
@@ -389,11 +392,15 @@ PICA also includes standalone utilities for monitoring and controlling temperatu
   <em>The standalone Temperature Control utility, providing a dedicated interface for managing temperature ramps and heater outputs on a Lakeshore 350.</em>
 </p>
 
-## 6. Common Issues & Troubleshooting
+## 6. Releases and Versions
+
+go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases) and [tags](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tags), for the finalised released versions
+
+## 7. Common Issues & Troubleshooting
 
 This section covers the most common issues encountered when using PICA.
 
-### 6.1 VISA Timeout Error or Resource Not Found
+### 7.1 VISA Timeout Error or Resource Not Found
 
 This is the most frequent issue and usually indicates a problem with the connection between the computer and the instrument. Follow these steps to resolve it:
 
@@ -411,15 +418,15 @@ This is the most frequent issue and usually indicates a problem with the connect
     *   Ensure you have the correct VISA backend installed (see the `A VISA Backend is Required` warning in the [Installation & Setup](#3-installation--setup) section).
     *   If using a different communication interface (e.g., switching from GPIB to USB), verify that the necessary drivers are installed and that the instrument is configured for that mode.
 
-## 7. Technical Reference
+## 8. Technical Reference
 
-### 7.1 File Naming Convention
+### 8.1 File Naming Convention
 
 To ensure data integrity and easy sorting, PICA automatically generates filenames using a standardized format. This allows for easier parsing by external analysis tools.
 Format: `[SampleName]_[Timestamp]_[Identifier].dat`
 Example: `SampleA_2025-12-04_1430_IV_Sweep.dat`
 
-### 7.2 GPIB Address Guide
+### 8.2 GPIB Address Guide
 
 PICA uses standard VISA resource strings. While the defaults below are common, users should verify their specific instrument addresses using the built-in **Instrument Scanner** or front-panel settings.
 
@@ -430,11 +437,11 @@ PICA uses standard VISA resource strings. While the defaults below are common, u
   * **Keithley 6517B:** `GPIB1::27::INSTR`
   * **Keysight E4980A:** `GPIB0::17::INSTR`
 
-### 7.3 Repository Mirroring
+### 8.3 Repository Mirroring
 
 This project is manually backed up weekly to a [GitLab repository](https://gitlab.com/prathameshnium/pica-python-instrument-control-and-automation).
 
-## 8. Citation & Open source
+## 9. Citation & Open source
 
 **Collaborative Ecosystem:**
 PICA is open-source ([MIT License](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/LICENSE)) to foster transparency. By providing the source code, the measurement protocols become auditable, ensuring that experimental conditions are reproducible and not hidden behind a proprietary "black box." We encourage other research groups to adapt these scripts for their specific hardware configurations.
@@ -452,9 +459,9 @@ PICA is open-source ([MIT License](https://github.com/prathameshnium/PICA-Python
 }
 ```
 
-## 9. Future Development
+## 10. Future Development
 
-### 9.1 AC Resistivity (Lock-In)
+### 10.1 AC Resistivity (Lock-In)
 
 *Status: Under Development*
 
@@ -464,12 +471,12 @@ PICA is open-source ([MIT License](https://github.com/prathameshnium/PICA-Python
   * **Use Case:** Useful for distinguishing between different conduction mechanisms by analyzing the frequency response of the sample's resistance.
   * **Workflow:** The Keithley 6221 provides a precise AC excitation current, while the Lock-In Amplifier (SR830) extracts the signal amplitude and phase with high noise rejection, allowing for accurate ac resistivity measurements.
 
-### 9.2 Standalone Executables
+### 10.2 Standalone Executables
 
 In the future, We also plan to develop executable (`.exe`) versions of the PICA software suite. This will remove the need for users to manage Python environments and dependencies, further simplifying the setup process and facilitating rapid adoption in laboratories.
 
 
-## 10. Authors & Acknowledgments
+## 11. Authors & Acknowledgments
 <p align="center">
   <img src="../pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
@@ -481,10 +488,10 @@ In the future, We also plan to develop executable (`.exe`) versions of the PICA 
 ### Funding
 Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
 
-## 11. License
+## 12. License
 
 This project is licensed under the MIT License - see the [LICENSE](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/LICENSE) file for details.
-## 12. Appendix A: Project File Structure
+## 13. Appendix A: Project File Structure
 
 For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.0).
 
