@@ -131,7 +131,7 @@ PICA is structured as a standard Python package.
 >
 > We **strongly recommend** new users utilize the PICA GUI for the most complete and supported experience.
 
-### 3.4 Development Dependencies (Optional)
+### 3.4 Development Dependencies for Testing (Optional)
 
 If you plan to contribute to PICA or run the test suite, you will need to install the development dependencies:
 

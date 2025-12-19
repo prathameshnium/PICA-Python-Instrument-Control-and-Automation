@@ -1,6 +1,6 @@
 # Contributing to PICA
 
-First off, thank you for considering contributing to PICA! It's people like you that make PICA such a great tool.
+First of all, thank you for considering contributing to PICA. With support from the community, we can create an open-source tool for scientific measurement and instrument automation to use instead of costly proprietary licensed software.
 
 # Building a Collaborative Ecosystem
 
