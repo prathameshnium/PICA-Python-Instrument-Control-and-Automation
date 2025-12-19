@@ -199,7 +199,7 @@ Above the plot area, there are two buttons providing access to the [VISA Instrum
 
 ## Supported Hardware Modules
 
-The system is currently validated with industry-standard hardware, covering a resistance range spanning 24 orders of magnitude, 10<sup>-15 < / sup> resolution pyroelectric current measurements, and capacitance characterisation from 20 Hz - 2 MHz.
+The system is currently validated with industry-standard hardware, covering a resistance range spanning 24 orders of magnitude, 10<sup>-15</sup> resolution pyroelectric current measurements, and capacitance characterisation from 20 Hz - 2 MHz.
 
 | Module | Configuration / Instrument | Use Case | Range |
 | :--- | :--- | :--- | :--- |
