@@ -40,7 +40,7 @@ git checkout -b feature/add-new-instrument
 
 ### Get the test suite running
 
-Make sure you're running the test suite locally. It's a good idea to do this before you start making changes to ensure that everything is working correctly.
+Make sure you're running the [test suite locally](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/docs/User_Manual.md#34-development-dependencies-for-testing-optional). It's a good idea to do this before you start making changes to ensure that everything is working correctly.
 
 ### Coding Style Guide
 
