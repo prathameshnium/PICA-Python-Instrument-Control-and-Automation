@@ -27,9 +27,10 @@
 8. [Technical Reference](#8-technical-reference)
 9. [Citation & Funding](#9-citation--funding)
 10. [Future Development](#10-future-development)
-11. [Authors & Acknowledgments](#11-authors--acknowledgments)
-12. [License](#12-license)
-13. [Appendix A: Project File Structure](#13-appendix-a-project-file-structure)
+11. [Adding a New Instrument](#11-adding-a-new-instrument)
+12. [Authors & Acknowledgments](#12-authors--acknowledgments)
+13. [License](#13-license)
+14. [Appendix A: Project File Structure](#14-appendix-a-project-file-structure)
 
 <hr />
 
@@ -498,7 +499,12 @@ In the future, We also plan to develop executable (`.exe`) versions of the PICA 
 We plan to add more utility modules, such as a PID simulator for temperature controller PID values calibration and various simple data analysis modules. These additions will help to streamline the entire process from measurement to analysis, making PICA a more self-contained ecosystem.
 
 
-## 11. Authors & Acknowledgments
+## 11. Adding a New Instrument
+
+The procedure for adding a new instrument module to PICA is described in the [CONTRIBUTING.md](../CONTRIBUTING.md#adding-a-new-instrument-module) file. Please refer to that guide for detailed, step-by-step instructions.
+
+
+## 12. Authors & Acknowledgments
 <p align="center">
   <img src="../pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
@@ -510,10 +516,10 @@ We plan to add more utility modules, such as a PID simulator for temperature con
 ### Funding
 Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
 
-## 12. License
+## 13. License
 
 This project is licensed under the MIT License - see the [LICENSE](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/LICENSE) file for details.
-## 13. Appendix A: Project File Structure
+## 14. Appendix A: Project File Structure
 
 For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.0).
 
