@@ -3,14 +3,11 @@ from setuptools.command.build_py import build_py as build_py_orig
 import os
 import shutil
 
-# --- Configuration ---
-# Get the directory where setup.py is located
+
 SETUP_DIR = os.path.dirname(os.path.abspath(__file__))
 PICA_PKG_DIR = 'pica'
 
-# Define files to be copied, relative to the project root
 DATA_FILES_TO_COPY = {
-    # Destination subdir in package: list of source files
     '': [
         'README.md',
         'LICENSE',

@@ -76,6 +76,19 @@ This approach, however, leads to a considerable degree of code repetition becaus
 ## 3. Installation & Setup
 
 ### 3.1 System Prerequisites
+
+#### System Requirements & Compatibility
+
+**Supported Platform:** Windows 10 / 11
+**Architecture:** x86_64
+
+> [!IMPORTANT]
+> **Windows Only**
+> PICA is currently designed and validated exclusively for Windows environments.
+> Linux and macOS are **not currently supported** due to dependencies on Windows-specific GUI libraries and font rendering.
+> Attempting to run this software on non-Windows platforms may result in crashes or UI failures. Linux support is experimental for now.
+
+#### Software Dependencies
 1.  **Python 3.10+**: The core execution environment.
 2.  **Dependencies:** Install via `pip install -r requirements.txt`.
 
@@ -104,9 +117,6 @@ PICA is structured as a standard Python package.
     # Activate venv (Windows: venv\Scripts\activate, Linux/Mac: source venv/bin/activate)
     pip install .
     ```
-
-    > **Linux Users: Tkinter Dependency**
-    > If you are running PICA on Linux, you may need to install `tkinter`, as it is not always included in default Python installations. To install it on Debian/Ubuntu, run: `sudo apt-get install python3-tk`. For other distributions, consult your package manager.
 
     *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow [`PyVISA`](https://github.com/pyvisa/pyvisa) to communicate with the hardware.*
 
