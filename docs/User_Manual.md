@@ -117,6 +117,9 @@ PICA is structured as a standard Python package.
     ```bash
     pica-gui
     ```
+
+    The PICA Launcher provides a centralized dashboard for all measurement suites. While each module can be launched directly from its card, the launcher also provides a quick way to access the underlying scripts for editing. For developer convenience, each measurement suite card includes a folder icon (📁) in the top-right corner. Clicking this provides a shortcut to the module's Python scripts, allowing for rapid modifications.
+
     > You can also run any of the individual GUI measurement modules independently. This is useful for quickly accessing a specific measurement without opening the main launcher. To do this, simply run the Python script for the desired module.
     > For example:
     > ```bash
