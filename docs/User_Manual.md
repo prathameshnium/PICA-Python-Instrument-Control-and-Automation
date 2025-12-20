@@ -12,25 +12,26 @@
 1. [Overview](#1-overview)
 2. [Design Philosophy & Architecture](#2-design-philosophy--architecture)
 3. [Installation & Setup](#3-installation--setup)
-4. [Core Utilities](#4-core-utilities)
-5. [Supported Measurement Modules](#5-supported-measurement-modules)
-   * [Ultra Low Resistance Measurements](#51-ultra-low-resistance-measurements)
-   * [General Transport (Standard I-V & R-T)](#52-general-transport-standard-i-v--r-t)
-   * [High Precision Transport](#53-high-precision-transport)
-   * [Electrometry & High Resistance](#54-electrometry--high-resistance)
-   * [Pyroelectric Measurements](#55-pyroelectric-measurements)
-   * [High Voltage Poling](#56-high-voltage-poling)
-   * [Capacitance Spectroscopy](#57-capacitance-spectroscopy)
-   * [Standalone Temperature Utilities](#58-standalone-temperature-utilities)
-6. [Releases and Versions](#6-releases-and-versions)
-7. [Common Issues & Troubleshooting](#7-common-issues--troubleshooting)
-8. [Technical Reference](#8-technical-reference)
-9. [Citation & Funding](#9-citation--funding)
-10. [Future Development](#10-future-development)
-11. [Adding a New Instrument](#11-adding-a-new-instrument)
-12. [Authors & Acknowledgments](#12-authors--acknowledgments)
-13. [License](#13-license)
-14. [Appendix A: Project File Structure](#14-appendix-a-project-file-structure)
+4. [Safety Precautions](#4-safety-precautions)
+5. [Core Utilities](#5-core-utilities)
+6. [Supported Measurement Modules](#6-supported-measurement-modules)
+   * [Ultra Low Resistance Measurements](#61-ultra-low-resistance-measurements)
+   * [General Transport (Standard I-V & R-T)](#62-general-transport-standard-i-v--r-t)
+   * [High Precision Transport](#63-high-precision-transport)
+   * [Electrometry & High Resistance](#64-electrometry--high-resistance)
+   * [Pyroelectric Measurements](#65-pyroelectric-measurements)
+   * [High Voltage Poling](#66-high-voltage-poling)
+   * [Capacitance Spectroscopy](#67-capacitance-spectroscopy)
+   * [Standalone Temperature Utilities](#68-standalone-temperature-utilities)
+7. [Releases and Versions](#7-releases-and-versions)
+8. [Common Issues & Troubleshooting](#8-common-issues--troubleshooting)
+9. [Technical Reference](#9-technical-reference)
+10. [Citation & Open Source](#10-citation--open-source)
+11. [Future Development](#11-future-development)
+12. [Adding a New Instrument](#12-adding-a-new-instrument)
+13. [Authors & Acknowledgments](#13-authors--acknowledgments)
+14. [License](#14-license)
+15. [Appendix A: Project File Structure](#15-appendix-a-project-file-structure)
 
 <hr />
 
@@ -201,7 +202,7 @@ The control window also contains a console located below the parameter settings.
 Above the plot area, there are two buttons providing access to the [VISA Instrument Scanner](#41-visa-instrument-scanner) and [PICA Plotter Utility](#42-pica-plotter-utility). These utilities are accessible from all modules to facilitate rapid testing and diagnostics. The VISA/GPIB scanner allows the user to quickly verify whether instruments are properly connected and recognized by the system, while the plotter utility offers additional plotting capabilities beyond those available in the default plot window.
 
 
-## Supported Hardware Modules
+## 6. Supported Measurement Modules
 
 The system is currently validated with industry-standard hardware, covering a resistance range spanning 24 orders of magnitude, 10<sup>-15</sup> resolution pyroelectric current measurements, and capacitance characterisation from 20 Hz - 2 MHz.
 
@@ -216,13 +217,11 @@ The system is currently validated with industry-standard hardware, covering a re
 
 *While the current implementation drives specific instruments, the underlying framework is highly customizable. Researchers need only replace specific SCPI commands to utilize the suite with different models.*
 
-## 6. Supported Measurement Modules
-
 PICA is designed to be as versatile, while being optimized for specific classes of instruments. The following modules represent the core capabilities of the suite, supporting a resistance scale spanning **24 orders of magnitude** (10 nΩ to 10 PΩ) depending on the hardware used.
 Pyroelectric measurement performed using an electrometer enables highly sensitive characterization of ferroelectric phase transitions by detecting extremely small pyroelectric currents, with a resolution on the order of 10<sup>-15</sup> A. The
 impedance analyzer enables the characterization of capacitance anomalies over the frequency range from 20 Hz to 2 MHz and is utilized for magnetocapacitance and photoinduced characterization across a wide variety of multiferroic systems. 
 
-### 5.1 Ultra Low Resistance Measurements
+### 6.1 Ultra Low Resistance Measurements
 
 **Target Hardware:** Keithley 6221 (Current Source) + K2182 (Nanovoltmeter).
 **Typical Range:** 10 nΩ to 100 MΩ.
@@ -254,7 +253,7 @@ impedance analyzer enables the characterization of capacitance anomalies over th
   <em>Ultra Low Resistance Measurement R-T measurement in sensing mode, where the system logs resistance and temperature while an external system manages temperature.</em>
 </p>
 
-### 5.2 General Transport (Standard I-V & R-T)
+### 6.2 General Transport (Standard I-V & R-T)
 
 **Target Hardware:** Keithley 2400 SourceMeter (SMU).
 **Typical Range:** 100 µΩ to 200 MΩ.
@@ -280,7 +279,7 @@ impedance analyzer enables the characterization of capacitance anomalies over th
   <em>Resistance-Temperature (R-T) measurement in sensing mode, where the system logs resistance and temperature while an external system/controller manages temperature.</em>
 </p>
 
-### 5.3 High Precision Transport (mid resistance range)
+### 6.3 High Precision Transport (mid resistance range)
 
 **Target Hardware:** Keithley 2400 (Source) + K2182 (Nanovoltmeter).
 **Typical Range:** 1 µΩ to 100 MΩ.
@@ -304,7 +303,7 @@ impedance analyzer enables the characterization of capacitance anomalies over th
   <em>High-precision R-T measurement in sensing mode, leveraging the K2400 and K2182 for enhanced accuracy for mid-range resistance measurements.</em>
 </p>
 
-### 5.4 Electrometry & High Resistance
+### 6.4 Electrometry & High Resistance
 
 **Target Hardware:** Keithley 6517B Electrometer (or compatible High-R meter).
 **Typical Range:** 1 Ω to 10 PΩ (10<sup>16</sup> Ω).
@@ -331,7 +330,7 @@ A screencast demonstrating the high resistance IV module is available at [this l
   <em>High-resistance R-T measurement in passive sensing mode using a Keithley 6517B.</em>
 </p>
 
-### 5.5 Pyroelectric Current Measurements
+### 6.5 Pyroelectric Current Measurements
 
 **Target Hardware:** Keithley 6517B Electrometer + Temperature Controller.
 **Sensitivity:** Down to 1 fA (10<sup>-15</sup> A).
@@ -350,7 +349,7 @@ This module automates the measurement of pyroelectric currents (Ip) as a functio
   <em>Pyroelectric current measurement as a function of temperature, captured with a Keithley 6517B to identify ferroelectric phase transitions via measuring pyroelectric current.</em>
 </p>
 
-### 5.6 High Voltage Poling
+### 6.6 High Voltage Poling
 
 **Target Hardware:** Keithley 6517B (Voltage Source).
 **Capabilities:** High Voltage Sourcing.
@@ -360,7 +359,7 @@ This utility provides a dedicated interface for **In-situ and ex-situ electrical
   * **Objective:** Establish a uniform ferroelectric polarization state in samples before characterization.
   * **Applications:** Preparing samples for pyroelectric current measurements, converse magnetoelectric studies, and ex-situ neutron diffraction studies on poled materials.
 
-### 5.7 Dielectric Spectroscopy
+### 6.7 Dielectric Spectroscopy
 
 **Target Hardware:** Keysight E4980A Precision LCR Meter.
 **Frequency Range:** 20 Hz to 2 MHz
@@ -376,7 +375,7 @@ This utility provides a dedicated interface for **In-situ and ex-situ electrical
   <em>Capacitance-Voltage (C-V) characterization of a device or a sample using a Keysight E4980A LCR meter.</em>
 </p>
 
-### 5.8 Standalone Temperature Utilities
+### 6.8 Standalone Temperature Utilities
 
 **Target Hardware:** Lake Shore 350 Temperature Controller.
 
@@ -396,11 +395,11 @@ PICA also includes standalone utilities for monitoring and controlling temperatu
   <em>The standalone Temperature Control utility, providing a dedicated interface for managing temperature ramps and heater outputs on a Lakeshore 350.</em>
 </p>
 
-## 6. Releases and Versions
+## 7. Releases and Versions
 
 go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases) and [tags](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tags), for the finalised released versions
 
-## 7. Common Issues & Troubleshooting
+## 8. Common Issues & Troubleshooting
 
 This section covers the most common issues encountered when using PICA.
 
@@ -425,7 +424,7 @@ This is the most frequent issue and usually indicates a problem with the connect
 ### 7.2 Instrument Control and Delays
 An important parameter to consider during concurrent control of instruments is the delay. The time between each step should be sufficient to ensure that all instruments (whether two or three) have completed their commanded actions. Sending a new command before an instrument has had time to process the previous one will definitely cause errors. It is also important to introduce proper delays for the system to reach equilibrium. Furthermore, during the initial setup, instruments should be given adequate delay time for all their internal components to stabilize and enter a ready state. In PICA, sufficient internal delays are provided in all modules. However, it was observed that some systems might need more delay time. Therefore, a parameter for initial delay is available in those modules' GUI. Users should provide an appropriate initial delay time. This initial delay time parameter is in addition to the basic delay already contained in the module.
 
-## 8. Technical Reference
+## 9. Technical Reference
 
 ### 8.1 File Naming Convention
 
@@ -464,7 +463,7 @@ Set Current (A),Measured Voltage (V),Resistance (Ohm)
 ```
 Most other data files generated by PICA follow a similar structure.
 
-## 9. Citation & Open source
+## 10. Citation & Open Source
 
 **Collaborative Ecosystem:**
 PICA is open-source ([MIT License](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/LICENSE)) to foster transparency. By providing the source code, the measurement protocols become auditable, ensuring that experimental conditions are reproducible and not hidden behind a proprietary "black box." We encourage other research groups to adapt these scripts for their specific hardware configurations.
@@ -482,7 +481,7 @@ PICA is open-source ([MIT License](https://github.com/prathameshnium/PICA-Python
 }
 ```
 
-## 10. Future Development
+## 11. Future Development
 
 ### 10.1 AC Resistivity (Lock-In)
 
@@ -502,12 +501,12 @@ In the future, We also plan to develop executable (`.exe`) versions of the PICA 
 We plan to add more utility modules, such as a PID simulator for temperature controller PID values calibration and various simple data analysis modules. These additions will help to streamline the entire process from measurement to analysis, making PICA a more self-contained ecosystem.
 
 
-## 11. Adding a New Instrument
+## 12. Adding a New Instrument
 
 The procedure for adding a new instrument module to PICA is described in the [CONTRIBUTING.md](../CONTRIBUTING.md#adding-a-new-instrument-module) file. Please refer to that guide for detailed, step-by-step instructions.
 
 
-## 12. Authors & Acknowledgments
+## 13. Authors & Acknowledgments
 <p align="center">
   <img src="../pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
 </p>
@@ -519,10 +518,10 @@ The procedure for adding a new instrument module to PICA is described in the [CO
 ### Funding
 Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
 
-## 13. License
+## 14. License
 
 This project is licensed under the MIT License - see the [LICENSE](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/LICENSE) file for details.
-## 14. Appendix A: Project File Structure
+## 15. Appendix A: Project File Structure
 
 For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.0).
 
