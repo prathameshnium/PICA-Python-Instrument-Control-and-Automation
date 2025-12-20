@@ -158,7 +158,20 @@ A screencast demonstrating the high resistance IV module is available at [this l
 
 ---
 
-## System Requirements
+## System Requirements & Compatibility
+
+**Supported Platform:** Windows 10 / 11
+**Architecture:** x86_64
+
+> [!IMPORTANT]
+> **Windows Only**
+> PICA is currently designed and validated exclusively for Windows environments.
+> Linux and macOS are **not currently supported** due to dependencies on Windows-specific GUI libraries and font rendering.
+> Attempting to run this software on non-Windows platforms may result in crashes or UI failures. Linux support is experimental for now.
+
+---
+
+## Software Dependencies
 
 ### Linux Users: Tkinter Dependency
 
