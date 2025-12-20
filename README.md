@@ -262,7 +262,7 @@ python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
 
 ## Project History
 
-go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases) and [tags](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tags), for the finalised released versions
+For downloadable release builds, please visit the [releases page](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases).
 
 PICA evolved from simple offline scripts in 2022 to a full-stack automated suite.
 
