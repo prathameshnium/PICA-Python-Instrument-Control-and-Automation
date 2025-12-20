@@ -31,7 +31,7 @@
 
 ## Overview
 
-High precision low noise transport measurements are essential for advancing research in spintronics and materials characterisation. **PICA (Python-based Instrument Control and Automation)** is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and chemical samples. It operates as a versatile framework capable of running on any standard laboratory workstation.
+High-precision, low-noise transport measurements are essential for advancing research in spintronics and materials characterisation. **PICA (Python-based Instrument Control and Automation)** is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and chemical samples. It operates as a versatile framework capable of running on any standard laboratory workstation.
 
 PICA provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analyser, and temperature controllers. Built on the robust Python scientific ecosystem, PICA ensures that the entire hardware ecosystem functions seamlessly as a cohesive unit.
 
@@ -236,7 +236,7 @@ Upon launching PICA (`pica-gui`), select your desired measurement module from th
         * **VISA Instrument Scanner:** To verify instrument connections and addresses.
         * **PICA Plotter Utility:** For post or during measurements comparison and detailed analysis.
 
-*The interface is designed to be minimalistic to reduce unnecessary user interaction during active high precision low noise transport measurements.*
+*The interface is designed to be minimalistic to reduce unnecessary user interaction during active high-precision, low-noise transport measurements.*
 
 ---
 ## Running Tests
@@ -303,7 +303,7 @@ If you use this software in your research, please cite it:
   year         = 2025,
   publisher    = {GitHub},
   version      = {1.0.0},
-  url          = {[https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation)}
+  url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
 }
 ````
 
