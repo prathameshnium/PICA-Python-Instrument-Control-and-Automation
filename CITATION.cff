@@ -12,7 +12,7 @@ authors:
     email: "sudipm@csr.res.in"
 title: "PICA: Advanced High-Precision Transport Measurement Automation with Python"
 version: 1.0.0
-date-released: 2025-12-15
+date-released: 2025-12-22
 url: "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
 repository-code: "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
 license: MIT
