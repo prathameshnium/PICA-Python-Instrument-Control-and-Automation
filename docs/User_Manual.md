@@ -104,6 +104,9 @@ PICA is structured as a standard Python package.
     pip install .
     ```
 
+    > **Linux Users: Tkinter Dependency**
+    > If you are running PICA on Linux, you may need to install `tkinter`, as it is not always included in default Python installations. To install it on Debian/Ubuntu, run: `sudo apt-get install python3-tk`. For other distributions, consult your package manager.
+
     *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow [`PyVISA`](https://github.com/pyvisa/pyvisa) to communicate with the hardware.*
 
 ### 3.3 Running the Software
