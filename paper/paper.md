@@ -52,7 +52,7 @@ It differentiates itself through the following unique features:
 
 * **Accessibility:** A user-friendly GUI dashboard that allows researchers without coding experience to configure and run a complex measurement protocol immediately using the suite's pre-packaged measurement modules.
 
-* **Operational Validation:** PICA's protocols are actively used for transport measurements at cryogenic temperature using a laboratory-built, custom-designed, multifunctional cryostatic probe in-conjunction with the Physical Property Measurement System (PPMS, DynaCool, Quantum Design) (temperature range: 5-380 K, magnetic field: up to 14 tesla) at the UGC DAE Consortium for Scientific Research, Mumbai Centre, validating the software's core architecture in a real-world research environment and providing a stable, tested foundation for the university and researchers to build upon.
+* **Operational Validation:** PICA's protocols are actively used for transport measurements at cryogenic temperature using a laboratory-built, custom-designed, multifunctional cryostatic probe in-conjunction with the Physical Property Measurement System (PPMS, DynaCool, Quantum Design) (temperature range: 5-380 K, magnetic field: up to 14 T) at the UGC DAE Consortium for Scientific Research, Mumbai Centre, validating the software's core architecture in a real-world research environment and providing a stable, tested foundation for the university and researchers to build upon.
 
 * **Fault Tolerance:** PICA prevents hardware timeouts or driver crashes from freezing the main dashboard by isolating control logic from the user interface, which is a critical advantage over single-threaded scripts.
 
