@@ -31,14 +31,14 @@
 
 ## Overview
 
-High precision low noise transport measurements are essential for advancing research in spintronics and materials characterization. **PICA (Python-based Instrument Control and Automation)** is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and chemical samples. It operates as a versatile framework capable of running on any standard laboratory workstation.
+High precision low noise transport measurements are essential for advancing research in spintronics and materials characterisation. **PICA (Python-based Instrument Control and Automation)** is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and chemical samples. It operates as a versatile framework capable of running on any standard laboratory workstation.
 
-PICA provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analyzers, and temperature controllers. Built on the robust Python scientific ecosystem, PICA ensures that the entire hardware ecosystem functions seamlessly as a cohesive unit.
+PICA provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analyser, and temperature controllers. Built on the robust Python scientific ecosystem, PICA ensures that the entire hardware ecosystem functions seamlessly as a cohesive unit.
 
 The suite performs automated protocols including:
 * Temperature-dependent wide-range resistance measurement ($10^{-8}$ - $10^{16}$ Ω).
-* Current-voltage (I-V) characterization.
-* Capacitance characterization and magnetocapacitance studies (20 Hz - 2 MHz).
+* Current-voltage (I-V) characterisation.
+* Capacitance characterisation and magnetocapacitance studies (20 Hz - 2 MHz).
 * Pyroelectric current measurement (resolution $10^{-15}$ A).
 
 <p align="center">
@@ -69,7 +69,7 @@ The suite performs automated protocols including:
 
 ## Motivation
 
-Advancements in experimental physics and device manufacturing depend on the precise characterization of material properties under extreme physical conditions. Researchers often face a binary choice: purchase expensive proprietary software or develop custom measurement scripts from scratch.
+Advancements in experimental physics and device manufacturing depend on the precise characterisation of material properties under extreme physical conditions. Researchers often face a binary choice: purchase expensive proprietary software or develop custom measurement scripts from scratch.
 
 While libraries such as [**PyVISA**](https://github.com/pyvisa/pyvisa) and [**PyMeasure**](https://github.com/pymeasure/pymeasure) provide foundational drivers, requiring users to write and maintain low-level code, **PICA builds upon these powerful libraries** to offer a turnkey application. It provides a ready-to-run graphical interface that abstracts the underlying control logic, allowing experimentalists to focus on data acquisition without extensive software development overhead.
 
@@ -117,7 +117,7 @@ The system is currently validated with industry-standard hardware, covering a re
 | **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter | Semiconductors, oxides, general transport. | 100 µΩ - 200 MΩ |
 | **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** | Detecting subtle phase transitions. | 1 µΩ - 100 MΩ |
 | **High-Resistance** | **Keithley 6517B** Electrometer | Capacitances, polymers, & ceramics. | 1 Ω - 10 PΩ |
-| **Capacitance Analysis** | **Keysight E4980A** | C-V Analysis and Magnetocapacitance characterization. | 20 Hz - 2 MHz |
+| **Capacitance Analysis** | **Keysight E4980A** | C-V Analysis and Magnetocapacitance characterisation. | 20 Hz - 2 MHz |
 | **Pyroelectric** | **K6517B** + **Temp Controller** | Current vs Temp (detecting Curie temperature). | $10^{-15}$ A Resolution |
 
 *While the current implementation drives specific instruments, the underlying framework is highly customizable. Researchers need only replace specific SCPI commands to utilize the suite with different models.*
@@ -135,7 +135,7 @@ The system is currently validated with industry-standard hardware, covering a re
 <p align="center">
   <img src="pica/assets/Images/screenshots/K6517B_IV.png" alt="K6517B IV" width="600">
   <br>
-  <em>Interface for current-voltage (I-V) characterization of high-impedance materials using the Keithley 6517B Electrometer.</p>
+  <em>Interface for current-voltage (I-V) characterisation of high-impedance materials using the Keithley 6517B Electrometer.</p>
 
 ---
 
@@ -277,7 +277,7 @@ The project's earlier history and foundational development are outlined below:
 
   - **2023 (Migration):** Moved from offline lab systems to GitHub; organized scripts into instrument modules (Keithley/Lake Shore).
   - **2022 (Origins):** Started in an air-gapped lab with `pyvisa` scripts replacing manual logging.
-      - *Concept:* Proposed by Dr. Sudip Mukherjee to automate characterization workflows.
+      - *Concept:* Proposed by Dr. Sudip Mukherjee to automate characterisation workflows.
       - *Prototypes:* Built alongside hardware upgrades and cryogenic probe work at UGC-DAE CSR.
 
 > **Background:** For a detailed chronological log, see [`CHANGELOG.md`](CHANGELOG.md).
