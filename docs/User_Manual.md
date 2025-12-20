@@ -37,7 +37,7 @@
 
 ## 1. Overview
 
-High-precision, low-noise transport measurements are essential for advancing research in spintronics and materials characterization. To enable such progress, highly precise and accurate automation software is required.PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and chemical samples. PICA is designed as a versatile framework capable of operating on any standard laboratory workstation. 
+High-precision, low-noise transport measurements are essential for advancing research in spintronics and materials characterization. To enable such progress, highly precise and accurate automation software is required. PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and chemical samples. PICA is designed as a versatile framework capable of operating on any standard laboratory workstation. 
 It provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analyser, and temperature controllers. Built on the robust Python scientific ecosystem, PICA leverages community standard libraries as an alternative to licensed commercial software for instrument control.
 By utilising `threading` and `multiprocessing` capabilities, PICA ensures that the entire hardware ecosystem functions seamlessly and as a single cohesive unit. This allows the system to perform automated protocols, including temperature-dependent wide range resistance measurement (10<sup>-8</sup> - 10<sup>16</sup> Ω), current voltage (I-V) characterisation,  capacitance characterisation, and pyroelectric current measurement, and orchestrates measurements under varying magnetic fields and temperatures without requiring physical reconfiguration of the measurement setups.
 
@@ -403,7 +403,7 @@ For downloadable release builds, please visit the [Releases page](https://github
 
 This section covers the most common issues encountered when using PICA.
 
-### 7.1 VISA Timeout Error or Resource Not Found
+### 8.1 VISA Timeout Error or Resource Not Found
 
 This is the most frequent issue and usually indicates a problem with the connection between the computer and the instrument. Follow these steps to resolve it:
 
@@ -421,18 +421,18 @@ This is the most frequent issue and usually indicates a problem with the connect
     *   Ensure you have the correct VISA backend installed (see the `A VISA Backend is Required` warning in the [Installation & Setup](#3-installation--setup) section).
     *   If using a different communication interface (e.g., switching from GPIB to USB), verify that the necessary drivers are installed and that the instrument is configured for that mode.
 
-### 7.2 Instrument Control and Delays
+### 8.2 Instrument Control and Delays
 An important parameter to consider during concurrent control of instruments is the delay. The time between each step should be sufficient to ensure that all instruments (whether two or three) have completed their commanded actions. Sending a new command before an instrument has had time to process the previous one will definitely cause errors. It is also important to introduce proper delays for the system to reach equilibrium. Furthermore, during the initial setup, instruments should be given adequate delay time for all their internal components to stabilize and enter a ready state. In PICA, sufficient internal delays are provided in all modules. However, it was observed that some systems might need more delay time. Therefore, a parameter for initial delay is available in those modules' GUI. Users should provide an appropriate initial delay time. This initial delay time parameter is in addition to the basic delay already contained in the module.
 
 ## 9. Technical Reference
 
-### 8.1 File Naming Convention
+### 9.1 File Naming Convention
 
 To ensure data integrity and easy sorting, PICA automatically generates filenames using a standardized format. This allows for easier parsing by external analysis tools.
 Format: `[SampleName]_[Timestamp]_[Identifier].dat`
 Example: `SampleA_2025-12-04_1430_IV_Sweep.dat`
 
-### 8.2 GPIB Address Guide
+### 9.2 GPIB Address Guide
 
 PICA uses standard VISA resource strings. While the defaults below are common, users should verify their specific instrument addresses using the built-in **Instrument Scanner** or front-panel settings.
 
@@ -443,11 +443,11 @@ PICA uses standard VISA resource strings. While the defaults below are common, u
   * **Keithley 6517B:** `GPIB1::27::INSTR`
   * **Keysight E4980A:** `GPIB0::17::INSTR`
 
-### 8.3 Repository Mirroring
+### 9.3 Repository Mirroring
 
 This project is manually backed up weekly to a [GitLab repository](https://gitlab.com/prathameshnium/pica-python-instrument-control-and-automation).
 
-### 8.4 Data File Format
+### 9.4 Data File Format
 
 The data file includes a commented header line (starting with `#`) that contains metadata, such as the sample name. This is followed by a header row with column names and then the data rows.
 
@@ -483,7 +483,7 @@ PICA is open-source ([MIT License](https://github.com/prathameshnium/PICA-Python
 
 ## 11. Future Development
 
-### 10.1 AC Resistivity (Lock-In)
+### 11.1 AC Resistivity (Lock-In)
 
 *Status: Under Development*
 
@@ -493,11 +493,11 @@ PICA is open-source ([MIT License](https://github.com/prathameshnium/PICA-Python
   * **Use Case:** Useful for distinguishing between different conduction mechanisms by analyzing the frequency response of the sample's resistance.
   * **Workflow:** The Keithley 6221 provides a precise AC excitation current, while the Lock-In Amplifier (SR830) extracts the signal amplitude and phase with high noise rejection, allowing for accurate ac resistivity measurements.
 
-### 10.2 Standalone Executables
+### 11.2 Standalone Executables
 
-In the future, We also plan to develop executable (`.exe`) versions of the PICA software suite. This will remove the need for users to manage Python environments and dependencies, further simplifying the setup process and facilitating rapid adoption in laboratories.
+In the future, we also plan to develop executable (`.exe`) versions of the PICA software suite. This will remove the need for users to manage Python environments and dependencies, further simplifying the setup process and facilitating rapid adoption in laboratories.
 
-### 10.3 New Utilities and Analysis Modules
+### 11.3 New Utilities and Analysis Modules
 We plan to add more utility modules, such as a PID simulator for temperature controller PID values calibration and various simple data analysis modules. These additions will help to streamline the entire process from measurement to analysis, making PICA a more self-contained ecosystem.
 
 
