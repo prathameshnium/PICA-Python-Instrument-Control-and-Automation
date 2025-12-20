@@ -36,8 +36,8 @@
 
 ## 1. Overview
 
-high precision low noise transport measurements are essential for advancing research in spintronics and materials characterization. To enable such progress, highly precise and accurate automation software is required.PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and chemical samples. PICA is designed as a versatile framework capable of operating on any standard laboratory workstation. 
-It provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analyser, and temperature controllers. Built on the robust Python scientific ecosystem, PICA leverages community standard libraries as an alternative to licenced commercial software for instrument control.
+High-precision, low-noise transport measurements are essential for advancing research in spintronics and materials characterization. To enable such progress, highly precise and accurate automation software is required.PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and chemical samples. PICA is designed as a versatile framework capable of operating on any standard laboratory workstation. 
+It provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analyser, and temperature controllers. Built on the robust Python scientific ecosystem, PICA leverages community standard libraries as an alternative to licensed commercial software for instrument control.
 By utilising `threading` and `multiprocessing` capabilities, PICA ensures that the entire hardware ecosystem functions seamlessly and as a single cohesive unit. This allows the system to perform automated protocols, including temperature-dependent wide range resistance measurement (10<sup>-8</sup> - 10<sup>16</sup> Ω), current voltage (I-V) characterisation,  capacitance characterisation, and pyroelectric current measurement, and orchestrates measurements under varying magnetic fields and temperatures without requiring physical reconfiguration of the measurement setups.
 
 ## 2. Design Philosophy & Architecture
@@ -216,7 +216,7 @@ The system is currently validated with industry-standard hardware, covering a re
 ## 6. Supported Measurement Modules
 
 PICA is designed to be as versatile, while being optimized for specific classes of instruments. The following modules represent the core capabilities of the suite, supporting a resistance scale spanning **24 orders of magnitude** (10 nΩ to 10 PΩ) depending on the hardware used.
-Pyroelectric measurement performed using an electrometer enables highly sensitive characterization of ferroelectric phase transitions by detecting extremely small pyroelectric currents, with a resolution on the order of 10−15 A. A.The
+Pyroelectric measurement performed using an electrometer enables highly sensitive characterization of ferroelectric phase transitions by detecting extremely small pyroelectric currents, with a resolution on the order of 10<sup>-15</sup> A. The
 impedance analyzer enables the characterization of capacitance anomalies over the frequency range from 20 Hz to 2 MHz and is utilized for magnetocapacitance and photoinduced characterization across a wide variety of multiferroic systems. 
 
 ### 5.1 Ultra Low Resistance Measurements
@@ -274,7 +274,7 @@ impedance analyzer enables the characterization of capacitance anomalies over th
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K2400_RT_Sensing.png" alt="K2400 RT Sensing" width="600">
   <br>
-  <em>Resistance-Temperature (R-T) measurement in sensing mode, where the system logs resistance and temprature while an external system/controller manages temperature.</em>
+  <em>Resistance-Temperature (R-T) measurement in sensing mode, where the system logs resistance and temperature while an external system/controller manages temperature.</em>
 </p>
 
 ### 5.3 High Precision Transport (mid resistance range)
@@ -288,7 +288,7 @@ impedance analyzer enables the characterization of capacitance anomalies over th
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K2400_2182_IV.png" alt="K2400_2182 IV" width="600">
   <br>
-  <em>High-precision I-V characterization using a Keithley 2400 as a current source and a Keithley 2182 nanovoltmeter for sensitive mid range resistance measurements.</em>
+  <em>High-precision I-V characterization using a Keithley 2400 as a current source and a Keithley 2182 nanovoltmeter for sensitive mid-range resistance measurements.</em>
 </p>
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K2400_2182_RT_Control.png" alt="K2400 2182 RT Control" width="600">
@@ -298,7 +298,7 @@ impedance analyzer enables the characterization of capacitance anomalies over th
 <p align="center">
   <img src="../pica/assets/Images/screenshots/K2400_2182_RT_Sensing.png" alt="K2400 2182 RT Sensing" width="600">
   <br>
-  <em>High-precision R-T measurement in sensing mode, leveraging the K2400 and K2182 for enhanced accuracy for mid range resistance measurements.</em>
+  <em>High-precision R-T measurement in sensing mode, leveraging the K2400 and K2182 for enhanced accuracy for mid-range resistance measurements.</em>
 </p>
 
 ### 5.4 Electrometry & High Resistance
@@ -420,7 +420,7 @@ This is the most frequent issue and usually indicates a problem with the connect
     *   If using a different communication interface (e.g., switching from GPIB to USB), verify that the necessary drivers are installed and that the instrument is configured for that mode.
 
 ### 7.2 Instrument Control and Delays
-An important parameter to consider during concurrent control of instruments is the delay. The time between each step should be sufficient to ensure that all instruments (whether two or three) have completed their commanded actions. Sending a new command before an instrument has had time to process the previous one will definitely cause errors. It is also important to introduce proper delays for the system to reach equilibrium. Furthermore, during the initial setup, instruments should be given adequate delay time for all their internal components to stabilize and enter a ready state. In PICA, sufficient internal delays are provided in all modules. However, it was observed that some systems might need more delay time. Therefore, a parameter for initial delay is available in those module's GUI. Users should provide an appropriate initial delay time. This initial delay time parameter is in addition to the basic delay already contained in the module.
+An important parameter to consider during concurrent control of instruments is the delay. The time between each step should be sufficient to ensure that all instruments (whether two or three) have completed their commanded actions. Sending a new command before an instrument has had time to process the previous one will definitely cause errors. It is also important to introduce proper delays for the system to reach equilibrium. Furthermore, during the initial setup, instruments should be given adequate delay time for all their internal components to stabilize and enter a ready state. In PICA, sufficient internal delays are provided in all modules. However, it was observed that some systems might need more delay time. Therefore, a parameter for initial delay is available in those modules' GUI. Users should provide an appropriate initial delay time. This initial delay time parameter is in addition to the basic delay already contained in the module.
 
 ## 8. Technical Reference
 
