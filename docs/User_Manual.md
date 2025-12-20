@@ -537,21 +537,24 @@ PICA (Root Directory)/
     CODE_OF_CONDUCT.md
     CONTRIBUTING.md
     LICENSE
+    MANIFEST.in
     README.md
-    path.py
     pica_cli.py
     pyproject.toml
+    requirements-dev.txt
     requirements.txt
     run_pica.py
     .github/
         workflows/
-            build_pdf.yml
             codeql.yml
-            joss_tests.yml
-            python-app.yml
+            draft-pdf.yml
+            lint.yml
+            test.yml
     docs/
-        Ranges_for_Measurements.md
+        Instruments_Manuals_Lists.md
         User_Manual.md
+    examples/
+        examples.md
     paper/
         paper.bib
         paper.md
@@ -559,34 +562,57 @@ PICA (Root Directory)/
         __init__.py
         cli.py
         main.py
-        assets/                 <-- Images, Logos
+        assets/                 <-- Images, Logos, Icons
+            Images/
+            LOGO/
         keithley/
             delta_mode/         <-- Low Resistance (K6221 + K2182)
                 Delta_RT_K6221_K2182_L350_Sensing_GUI.py
                 Delta_RT_K6221_K2182_L350_T_Control_GUI.py
                 IV_K6221_DC_Sweep_GUI.py
+                Instrument_Control/
             k2400/              <-- Mid Resistance (K2400 Standard)
                 IV_K2400_GUI.py
                 RT_K2400_L350_T_Control_GUI.py
                 RT_K2400_L350_T_Sensing_GUI.py
+                Instrument_Control/
             k2400_2182/         <-- Mid Resistance (High Precision)
                 IV_K2400_K2182_GUI.py
+                RT_K2400_2182_L350_T_Sensing_GUI.py
                 RT_K2400_K2182_T_Control_GUI.py
+                Instrument_Control/
             k6517b/             <-- High Resistance & Pyroelectric
                 High_Resistance/
                     IV_K6517B_GUI.py
                     RT_K6517B_L350_T_Control_GUI.py
+                    RT_K6517B_L350_T_Sensing_GUI.py
+                    Instrument_Control/
                 Pyroelectricity/
                     Pyroelectric_K6517B_L350_GUI.py
+                    Instrument_Control/
         keysight/               <-- Capacitance (E4980A)
             CV_KE4980A_GUI.py
+            Instrument_Control/
         lakeshore/              <-- Temperature Control
             T_Control_L350_RangeControl_GUI.py
             T_Sensing_L350_GUI.py
+            Instrument_Control/
         lockin/                 <-- Lock-in Amplifiers (Experimental)
             BasicTest_S830_Instrument_Control.py
         utils/                  <-- Core Utilities
             GPIB_Instrument_Scanner_GUI.py
+            GUI_Basic_Format.py
             PlotterUtil_GUI.py
+            parser.py
     tests/                      <-- Automated Test Suite
+        conftest.py
+        test_backends_logic.py
+        test_deep_simulation.py
+        test_entry_points.py
+        test_full_stack_simulation.py
+        test_gui_layouts.py
+        test_gui_modules_initialization.py
+        test_package_integrity.py
+        test_pica_launcher.py
+        test_utilities_logic.py
 ```

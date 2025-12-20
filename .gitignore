@@ -114,3 +114,4 @@ venv.bak/
 capture_screenshots.py
 pica/lockin
 paper/JOSS_submition_supplimentory.md
+print_tree.py
