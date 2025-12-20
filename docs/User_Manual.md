@@ -427,6 +427,14 @@ This is the most frequent issue and usually indicates a problem with the connect
 ### 8.2 Instrument Control and Delays
 An important parameter to consider during concurrent control of instruments is the delay. The time between each step should be sufficient to ensure that all instruments (whether two or three) have completed their commanded actions. Sending a new command before an instrument has had time to process the previous one will definitely cause errors. It is also important to introduce proper delays for the system to reach equilibrium. Furthermore, during the initial setup, instruments should be given adequate delay time for all their internal components to stabilize and enter a ready state. In PICA, sufficient internal delays are provided in all modules. However, it was observed that some systems might need more delay time. Therefore, a parameter for initial delay is available in those modules' GUI. Users should provide an appropriate initial delay time. This initial delay time parameter is in addition to the basic delay already contained in the module.
 
+### 8.3 Forcing a Re-installation for Debugging
+You can force a clean re-installation of the package from the source directory.
+
+This command removes the old installation and replaces it with a fresh build.
+```bash
+pip install . --force-reinstall
+```
+
 ## 9. Technical Reference
 
 ### 9.1 File Naming Convention
