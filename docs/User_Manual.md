@@ -397,7 +397,7 @@ PICA also includes standalone utilities for monitoring and controlling temperatu
 
 ## 7. Releases and Versions
 
-go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases) and [tags](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tags), for the finalised released versions
+For downloadable release builds, please visit the [Releases page](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases).
 
 ## 8. Common Issues & Troubleshooting
 
