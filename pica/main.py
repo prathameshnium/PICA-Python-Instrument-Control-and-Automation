@@ -103,7 +103,7 @@ class PICALauncherApp:
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
     FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
     LOGO_FILE = resource_path("assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
-    MANUAL_FILE = resource_path("docs/Instruments_Manuals_Lists.md")
+    MANUAL_FILE = resource_path("docs/User_Manual.md")
     README_FILE = resource_path("README.md")
     LICENSE_FILE = resource_path("LICENSE")
     UPDATES_FILE = resource_path("CHANGELOG.md")
@@ -745,7 +745,7 @@ class PICALauncherApp:
         self._show_file_in_window(self.UPDATES_FILE, "Change Log")
 
     def open_manual_file(self):
-        self._show_file_in_window(self.MANUAL_FILE, "Instrument Manuals")
+        self._show_file_in_window(self.MANUAL_FILE, "User Manual")
 
     def open_license(self):
         self._show_file_in_window(self.LICENSE_FILE, "MIT License")
