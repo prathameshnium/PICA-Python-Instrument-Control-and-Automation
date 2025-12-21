@@ -53,27 +53,32 @@ def run_script_process(script_path):
 def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    # Path is two directories up from the script location to reach project root
+    # Go up 3 levels: Pyroelectricity -> k6517b -> keithley -> pica
     plotter_path = os.path.join(
         script_dir,
-        "..",
-        "..",
-        "Utilities",
-        "PlotterUtil_GUI.py")
+        "..", "..", "..", "utils", "PlotterUtil_GUI.py") 
+    
+    if not os.path.exists(plotter_path):
+        messagebox.showerror(
+            "File Not Found",
+            f"Plotter utility not found at expected path:\n{plotter_path}")
+        return
     Process(target=run_script_process, args=(plotter_path,)).start()
 
 
 def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    # Path is three directories up from the script location to reach project
-    # root
+    # Go up 3 levels: Pyroelectricity -> k6517b -> keithley -> pica
     scanner_path = os.path.join(
         script_dir,
-        "..",
-        "..",
-        "Utilities",
-        "GPIB_Instrument_Scanner_GUI.py")
+        "..", "..", "..", "utils", "GPIB_Instrument_Scanner_GUI.py")
+
+    if not os.path.exists(scanner_path):
+        messagebox.showerror(
+            "File Not Found",
+            f"GPIB Scanner not found at expected path:\n{scanner_path}")
+        return
     Process(target=run_script_process, args=(scanner_path,)).start()
 
 
