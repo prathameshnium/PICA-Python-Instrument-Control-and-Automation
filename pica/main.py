@@ -23,8 +23,13 @@ import runpy
 import multiprocessing
 from multiprocessing import Process
 
-# Ensure this import exists in your project structure
-from pica.utils.GPIB_Instrument_Scanner_GUI import GPIB_Instrument_Scanner_GUI
+# IMPORT THE UTILS MODULE TO FIND ITS PATH AUTOMATICALLY
+try:
+    import pica.utils.GPIB_Instrument_Scanner_GUI as gpib_scanner_module
+    import pica.utils.PlotterUtil_GUI as plotter_module
+    UTILS_AVAILABLE = True
+except ImportError:
+    UTILS_AVAILABLE = False
 
 try:
     from PIL import Image, ImageTk
@@ -54,16 +59,44 @@ def run_script_process(script_path):
         print("-------------------------")
 
 
-def launch_plotter_utility():
-    """
-    Finds and launches the plotter utility script in a new process.
-    """
+def launch_gpib_scanner():
+    """Finds and launches the GPIB scanner utility using the package path."""
+    if not UTILS_AVAILABLE:
+        messagebox.showerror("Import Error", "Could not import pica.utils. Is the package installed?")
+        return
+
     try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        plotter_path = os.path.join(script_dir, "utils", "PlotterUtil_GUI.py")
+        # Get the absolute path directly from the imported module
+        scanner_path = os.path.abspath(gpib_scanner_module.__file__)
+        
+        if not os.path.exists(scanner_path):
+            messagebox.showerror("File Not Found", f"Scanner not found at:\n{scanner_path}")
+            return
+            
+        # Run it
+        Process(target=run_script_process, args=(scanner_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
+
+
+def launch_plotter_utility():
+    """Finds and launches the plotter utility using the package path."""
+    if not UTILS_AVAILABLE:
+        messagebox.showerror("Import Error", "Could not import pica.utils. Is the package installed?")
+        return
+
+    try:
+        # Get the absolute path directly from the imported module
+        plotter_path = os.path.abspath(plotter_module.__file__)
+        
+        if not os.path.exists(plotter_path):
+            messagebox.showerror("File Not Found", f"Plotter not found at:\n{plotter_path}")
+            return
+            
+        # Run it
         Process(target=run_script_process, args=(plotter_path,)).start()
     except Exception as e:
-        print(f"Failed to launch plotter: {e}")
+        messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
 
 
 def resource_path(relative_path):
@@ -747,9 +780,7 @@ class PICALauncherApp:
                 "Dependency Missing",
                 "The 'pyvisa' library is required.\n\nInstall via pip:\npip install pyvisa pyvisa-py")
             return
-        # The GPIB scanner is now its own class, create a new window for it
-        scanner_window = Toplevel(self.root)
-        GPIB_Instrument_Scanner_GUI(scanner_window)
+        launch_gpib_scanner()
 
     def _pre_cache_markdown_files(self):
         """
