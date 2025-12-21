@@ -103,7 +103,7 @@ The easiest way to start is to copy an existing module that is closest to your t
 
 #### 2. Implement the Instrument Control Logic
 
-Start with the basic instrument communication, then add measurement protocols, data saving, and plotting. Ensure that instrument communication (handled by `PyVISA` or `pymeasure`) uses the correct SCPI commands,  Replace the existing SCPI commands (e.g., `*IDN?`, `:SOUR:VOLT`, `:MEAS:CURR?`) with the commands specific to your instrument.. Your instrument's programming manual is the definitive source for these commands.Adjust the data parsing logic to handle the output format of your instrument.
+Start with the basic instrument communication, then add measurement protocols, data saving, and plotting. Ensure that instrument communication (handled by `PyVISA` or `pymeasure`) uses the correct SCPI commands,  Replace the existing SCPI commands (e.g. `:SOUR:VOLT`, `:MEAS:CURR?`) with the commands specific to your instrument.. Your instrument's programming manual is the definitive source for these commands.Adjust the data parsing logic to handle the output format of your instrument.
 
 #### 3. Modify the GUI (`..._GUI.py`)
 
