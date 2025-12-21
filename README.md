@@ -256,7 +256,7 @@ Upon launching PICA (`pica-gui`), select your desired measurement module from th
 
 
 
-**Running Tests Locally**
+## Running Tests Locally
 
 To run the test suite locally, first install the development dependencies:
 ```bash
