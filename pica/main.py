@@ -539,7 +539,7 @@ class PICALauncherApp:
                                       "K2400 R-T (T_Sensing)"),
                                   ])
         self._create_suite_frame(left_col,
-                                 'Mid Resistance, High Precision (1 µΩ to 100 MΩ)',
+                                 'Mid Resistance (Precision) (1 µΩ to 100 MΩ)',
                                  "Current Driven",
                                  "Instruments: Keithley 2400/2182, Lakeshore 350",
                                  [("I-V Sweep",
