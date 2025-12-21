@@ -1,5 +1,5 @@
 """
-Module: RT_K2400_K2182_L350_T_Sensing_GUII.py
+Module: RT_K2400_K2182_L350_T_Sensing_GUI.py
 Purpose: GUI module for RT K2400 2182 L350 T Sensing GUI v2.
 """
 

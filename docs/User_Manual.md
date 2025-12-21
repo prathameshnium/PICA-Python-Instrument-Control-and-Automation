@@ -626,7 +626,7 @@ PICA (Root Directory)/
                 Instrument_Control/
             k2400_2182/         <-- Mid Resistance (High Precision)
                 IV_K2400_K2182_GUI.py
-                RT_K2400_K2182_L350_T_Sensing_GUII.py
+                RT_K2400_K2182_L350_T_Sensing_GUI.py
                 RT_K2400_K2182_T_Control_GUI.py
                 Instrument_Control/
             k6517b/             <-- High Resistance & Pyroelectric
