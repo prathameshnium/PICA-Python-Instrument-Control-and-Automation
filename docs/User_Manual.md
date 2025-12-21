@@ -103,7 +103,7 @@ This approach, however, leads to a considerable degree of code repetition becaus
 
 ### 3.2 Getting Started
 
-PICA is structured as a standard Python package.
+PICA is structured as a standard Python package. The following instructions are for the supported Windows platform.
 
 1.  **Clone the Repository**
     ```bash
@@ -113,9 +113,17 @@ PICA is structured as a standard Python package.
 
 2.  **Create Virtual Environment & Install**
     ```bash
+    # Create and activate a virtual environment
     python -m venv venv
-    # Activate venv (Windows: venv\Scripts\activate, Linux/Mac: source venv/bin/activate)
+    venv\Scripts\activate
+    
+    # Install the package and its dependencies
     pip install .
+    ```
+
+    To update PICA to the latest version, run the following command in the project directory:
+    ```bash
+    pip install --upgrade .
     ```
 
     *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow [`PyVISA`](https://github.com/pyvisa/pyvisa) to communicate with the hardware.*
@@ -164,6 +172,25 @@ To see the coverage percentage on your local machine, run this command instead:
 ```powershell
 python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
 ```
+
+#### Experimental Linux Instructions
+
+> [!WARNING]
+> **Experimental Support:** The following instructions are for experimental purposes only. PICA is not officially supported on Linux, and you will likely encounter functional or UI-related issues.
+
+For users who wish to experiment with PICA on Linux, please be aware of the following:
+
+1.  **Prerequisites:**
+    *   **Tkinter Dependency:** On Linux, you must ensure `tkinter` is installed, as it is often not included by default.
+        -   On Debian/Ubuntu: `sudo apt-get install python3-tk`
+        -   For other distributions, use your package manager to install `python3-tk`.
+    *   **Virtual Environment Activation:** To activate the virtual environment, use:
+        ```bash
+        source venv/bin/activate
+        ```
+
+2.  **Installation:**
+    Follow the standard installation steps outlined in section [3.2 Getting Started](#32-getting-started). While the commands should run, be aware that the application may not function correctly.
 
 ## 4. Safety Precautions
 
