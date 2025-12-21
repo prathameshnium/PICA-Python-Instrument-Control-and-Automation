@@ -553,7 +553,7 @@ PICA is open-source ([MIT License](https://github.com/prathameshnium/PICA-Python
 *Status: Under Development*
 
   * **Instruments:** Keithley 6221 (AC Source) + SRS SR830 (DSP Lock-In Amplifier).
-  * **Predicted resistance Range:** \~ 20 nΩ to 1 MΩ.
+  * **Predicted Resistance Range:** \~ 20 nΩ to 1 MΩ.
   * **Scientific Objective:** Probes frequency-dependent transport phenomena.
   * **Use Case:** Useful for distinguishing between different conduction mechanisms by analyzing the frequency response of the sample's resistance.
   * **Workflow:** The Keithley 6221 provides a precise AC excitation current, while the Lock-In Amplifier (SR830) extracts the signal amplitude and phase with high noise rejection, allowing for accurate ac resistivity measurements.
