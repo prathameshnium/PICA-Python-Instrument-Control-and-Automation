@@ -178,6 +178,11 @@ PICA is structured as a standard Python package. The following instructions are 
     pip install .
     ```
 
+    To update PICA to the latest version, run the following command in the project directory:
+    ```bash
+    pip install --upgrade .
+    ```
+
     *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow [`PyVISA`](https://github.com/pyvisa/pyvisa) to communicate with the hardware.*
 
 ---
@@ -260,18 +265,22 @@ python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
 
 ### Experimental Linux Instructions
 
+> [!WARNING]
+> **Experimental Support:** The following instructions are for experimental purposes only. PICA is not officially supported on Linux (for now), and you will likely encounter functional or UI-related issues.
+
 For users who wish to experiment with PICA on Linux, please be aware of the following:
 
-1.  **Tkinter Dependency (Linux):**
-    On Linux, you must ensure `tkinter` is installed. It is often not included by default.
-    -   On Debian/Ubuntu: `sudo apt-get install python3-tk`
-    -   For other distributions, use your package manager to install `python3-tk`.
+1.  **Prerequisites:**
+    *   **Tkinter Dependency:** On Linux, you must ensure `tkinter` is installed, as it is often not included by default.
+        -   On Debian/Ubuntu: `sudo apt-get install python3-tk`
+        -   For other distributions, use your package manager to install `python3-tk`.
+    *   **Virtual Environment Activation:** To activate the virtual environment, use:
+        ```bash
+        source venv/bin/activate
+        ```
 
-2.  **Virtual Environment Activation (Linux):**
-    To activate the virtual environment, use the following command:
-    ```bash
-    source venv/bin/activate
-    ```
+2.  **Installation:**
+    Follow the standard installation steps outlined in the [Getting Started](#getting-started) section. While the commands should run, be aware that the application GUI may not function correctly.
 
 ---
 
