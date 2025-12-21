@@ -162,7 +162,7 @@ The system is currently validated with industry-standard hardware, covering a re
 
 ## Demonstration of PICA (Screencast)
 
-A screencast demonstrating the high resistance IV module is available at [this link](https://drive.google.com/file/d/13W-Z4N-08t9m0xxuR30sjTLmUVG1VyQd/view?usp=sharing).
+**A screencast demonstrating the high resistance IV module is available at [this link](https://drive.google.com/file/d/13W-Z4N-08t9m0xxuR30sjTLmUVG1VyQd/view?usp=sharing).**
 
 ---
 
