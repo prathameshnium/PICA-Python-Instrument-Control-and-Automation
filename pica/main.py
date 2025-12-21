@@ -1,4 +1,3 @@
-# BUILD VERSION: 1.0.0
 '''
 ===============================================================================
  PROGRAM:      PICA Launcher
@@ -24,6 +23,7 @@ import runpy
 import multiprocessing
 from multiprocessing import Process
 
+# Ensure this import exists in your project structure
 from pica.utils.GPIB_Instrument_Scanner_GUI import GPIB_Instrument_Scanner_GUI
 
 try:
@@ -34,7 +34,7 @@ except ImportError:
 
 try:
     import pyvisa
-    import pyvisa.errors # Import pyvisa.errors
+    import pyvisa.errors
     PYVISA_AVAILABLE = True
 except ImportError:
     PYVISA_AVAILABLE = False
@@ -57,14 +57,10 @@ def run_script_process(script_path):
 def launch_plotter_utility():
     """
     Finds and launches the plotter utility script in a new process.
-    This function is designed to be imported and used by other frontends.
     """
     try:
-        # Assuming the plotter is in a standard location relative to other
-        # scripts
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        plotter_path = os.path.join(
-            script_dir, "utils", "PlotterUtil_GUI.py")
+        plotter_path = os.path.join(script_dir, "utils", "PlotterUtil_GUI.py")
         Process(target=run_script_process, args=(plotter_path,)).start()
     except Exception as e:
         print(f"Failed to launch plotter: {e}")
@@ -73,8 +69,6 @@ def launch_plotter_utility():
 def resource_path(relative_path):
     """
     Get absolute path to resource, works for dev and for PyInstaller.
-    It checks for resources in the application's root directory when running
-    from source, and within the package directory when installed.
     """
     try:
         base_path = sys._MEIPASS
@@ -107,14 +101,12 @@ class PICALauncherApp:
     FONT_SIZE_BASE = 12
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 10, 'bold')
-    FONT_SUBTITLE = ('Segoe UI', FONT_SIZE_BASE + 1, 'bold')  # Reduced size from +2
-    FONT_INSTITUTE = (
-        'Segoe UI',
-        FONT_SIZE_BASE + 6,
-        'bold')  # New font for institute
+    FONT_SUBTITLE = ('Segoe UI', FONT_SIZE_BASE + 1, 'bold')
+    FONT_INSTITUTE = ('Segoe UI', FONT_SIZE_BASE + 6, 'bold')
     FONT_CONSOLE = ('Consolas', 10)
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
     FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
+    
     LOGO_FILE = resource_path("assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
     MANUAL_FILE = resource_path("docs/User_Manual.md")
     README_FILE = resource_path("README.md")
@@ -127,15 +119,13 @@ class PICALauncherApp:
         # Based on Updates.md, using the latest versions of scripts.
         "Delta Mode I-V Sweep": resource_path("keithley/delta_mode/IV_K6221_DC_Sweep_GUI.py"),
         "Delta Mode R-T": resource_path("keithley/delta_mode/Delta_RT_K6221_K2182_L350_T_Control_GUI.py"),
-        "Delta Mode R-T (T_Sensing)": resource_path(
-            "keithley/delta_mode/Delta_RT_K6221_K2182_L350_Sensing_GUI.py"),
+        "Delta Mode R-T (T_Sensing)": resource_path("keithley/delta_mode/Delta_RT_K6221_K2182_L350_Sensing_GUI.py"),
         "K2400 I-V": resource_path("keithley/k2400/IV_K2400_GUI.py"),
         "K2400 R-T": resource_path("keithley/k2400/RT_K2400_L350_T_Control_GUI.py"),
         "K2400 R-T (T_Sensing)": resource_path("keithley/k2400/RT_K2400_L350_T_Sensing_GUI.py"),
         "K2400_2182 I-V": resource_path("keithley/k2400_2182/IV_K2400_K2182_GUI.py"),
         "K2400_2182 R-T": resource_path("keithley/k2400_2182/RT_K2400_K2182_T_Control_GUI.py"),
-        "K2400_2182 R-T (T_Sensing)": resource_path(
-            "keithley/k2400_2182/RT_K2400_K2182_L350_T_Sensing_GUI.py"),
+        "K2400_2182 R-T (T_Sensing)": resource_path("keithley/k2400_2182/RT_K2400_K2182_L350_T_Sensing_GUI.py"),
         "K6517B I-V": resource_path("keithley/k6517b/High_Resistance/IV_K6517B_GUI.py"),
         "K6517B R-T": resource_path("keithley/k6517b/High_Resistance/RT_K6517B_L350_T_Control_GUI.py"),
         "K6517B R-T (T_Sensing)": resource_path("keithley/k6517b/High_Resistance/RT_K6517B_L350_T_Sensing_GUI.py"),
@@ -143,76 +133,31 @@ class PICALauncherApp:
         "Lakeshore Temp Control": resource_path("lakeshore/T_Control_L350_RangeControl_GUI.py"),
         "Lakeshore Temp Monitor": resource_path("lakeshore/T_Sensing_L350_GUI.py"),
         "LCR C-V Measurement": resource_path("keysight/CV_KE4980A_GUI.py"),
-                "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
-                "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
-                "PICA Help": resource_path("README.md"),
-            }
-            
-            
-            def launch_pica_script(script_key):
-                """
-                Globally accessible function to launch PICA scripts by their key.
-                This uses the same resource_path and Process logic as PICALauncherApp
-                to ensure consistency and correct path resolution for installed packages.
-                """
-                if script_key not in PICALauncherApp.SCRIPT_PATHS:
-                    print(f"ERROR: Script key '{script_key}' not found in PICA SCRIPT_PATHS.")
-                    messagebox.showwarning(
-                        "Script Not Found",
-                        f"The script key '{script_key}' is not defined in the main application's script paths.")
-                    return
-            
-                script_path = PICALauncherApp.SCRIPT_PATHS[script_key]
-                print(f"Launching external script: {os.path.basename(script_path)}")
-                abs_path = os.path.abspath(script_path)
-            
-                if not os.path.exists(abs_path):
-                    print(f"ERROR: Script not found at {abs_path}")
-                    messagebox.showerror(
-                        "File Not Found",
-                        f"Script not found:\n\n{abs_path}")
-                    return
-            
-                try:
-                    proc = Process(target=run_script_process, args=(abs_path,))
-                    proc.start()
-                    print(f"Successfully launched '{os.path.basename(script_path)}' in a new process.")
-                except Exception as e:
-                    print(f"ERROR: Failed to launch script '{script_key}'. Reason: {e}")
-                    messagebox.showerror(
-                        "Launch Error",
-                        f"An error occurred while launching the script '{script_key}':\n\n{e}")
-            
-            
-            class PICALauncherApp:
-            
-                PROGRAM_VERSION = "1.0.0"
-                CLR_BG_DARK = '#2B3D4F'
-                CLR_FRAME_BG = '#3A506B'
-                CLR_ACCENT_GOLD = '#FFC107'
-                CLR_ACCENT_GREEN = '#A7C957'
-                CLR_TEXT = '#EDF2F4'
-                CLR_TEXT_DARK = '#1A1A1A'
-                CLR_CONSOLE_BG = '#1E2B38'
-                CLR_LINK = '#87CEEB'  # Sky Blue, for better contrast
-                FONT_SIZE_BASE = 12
-                FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
-                FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 10, 'bold')
-                FONT_SUBTITLE = ('Segoe UI', FONT_SIZE_BASE + 1, 'bold')  # Reduced size from +2
-                FONT_INSTITUTE = (
-                    'Segoe UI',
-                    FONT_SIZE_BASE + 6,
-                    'bold')  # New font for institute
-                FONT_CONSOLE = ('Consolas', 10)
-                FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
-                FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
-                LOGO_FILE = resource_path("assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
-                MANUAL_FILE = resource_path("docs/User_Manual.md")
-                README_FILE = resource_path("README.md")
-                LICENSE_FILE = resource_path("LICENSE")
-                UPDATES_FILE = resource_path("CHANGELOG.md")
-                REPO_URL = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tree/main"
-                LOGO_SIZE = 140
+        "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
+        "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
+        "PICA Help": resource_path("README.md"),
+    }
+
+    def __init__(self, root):
+        """Constructor to initialize the main application window."""
+        self.root = root
+        self.root.title(f"PICA Launcher - v{self.PROGRAM_VERSION}")
+        self.root.geometry("1100x750")
+        self.root.configure(bg=self.CLR_BG_DARK)
+        
+        # Initialize internal variables
+        self.logo_image = None
+        self.console_widget = None
+        self._md_cache = {}
+        
+        # Setup UI
+        self.setup_styles()
+        self.create_widgets()
+        
+        # Background tasks
+        self._pre_cache_markdown_files()
+        self.log(f"PICA Launcher initialized (v{self.PROGRAM_VERSION})")
+
     def setup_styles(self):
         style = ttk.Style(self.root)
         style.theme_use('clam')
@@ -241,9 +186,7 @@ class PICALauncherApp:
         style.configure(
             'App.TButton',
             font=self.FONT_BASE,
-            padding=(
-                10,
-                5),
+            padding=(10, 5),
             foreground=self.CLR_ACCENT_GOLD,
             background=self.CLR_FRAME_BG,
             borderwidth=0,
@@ -256,9 +199,7 @@ class PICALauncherApp:
         style.configure(
             'Scan.TButton',
             font=self.FONT_BASE,
-            padding=(
-                10,
-                9),
+            padding=(10, 9),
             foreground=self.CLR_TEXT_DARK,
             background=self.CLR_ACCENT_GREEN)
         style.map(
@@ -266,12 +207,8 @@ class PICALauncherApp:
                 ('active', '#8AB845'), ('hover', '#8AB845')])
         style.configure(
             'Icon.TButton',
-            font=(
-                'Segoe UI',
-                12),
-            padding=(
-                5,
-                9),
+            font=('Segoe UI', 12),
+            padding=(5, 9),
             foreground=self.CLR_ACCENT_GOLD,
             background=self.CLR_FRAME_BG,
             borderwidth=0)
@@ -320,9 +257,7 @@ class PICALauncherApp:
             font=self.FONT_INSTITUTE,
             justify='center',
             anchor='center').pack(
-            pady=(
-                0,
-                15))
+            pady=(0, 15))
 
         ttk.Label(
             info_frame,
@@ -331,9 +266,7 @@ class PICALauncherApp:
             foreground=self.CLR_ACCENT_GOLD,
             justify='center',
             anchor='center').pack(
-            pady=(
-                0,
-                15))
+            pady=(0, 15))
 
         desc_text = "A modular software suite for automating laboratory measurements in physics research."
         ttk.Label(
@@ -343,9 +276,7 @@ class PICALauncherApp:
             wraplength=360,
             justify='center',
             anchor='center').pack(
-            pady=(
-                0,
-                10))
+            pady=(0, 10))
 
         # --- Create a bold font for names ---
         bold_font = font.Font(
@@ -359,18 +290,14 @@ class PICALauncherApp:
             font=bold_font,
             justify='center',
             anchor='center').pack(
-            pady=(
-                5,
-                0))
+            pady=(5, 0))
         ttk.Label(
             info_frame,
             text="Vision & Guidance by Dr. Sudip Mukherjee",
             font=bold_font,
             justify='center',
             anchor='center').pack(
-            pady=(
-                0,
-                15))
+            pady=(0, 15))
 
         ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=10)
         util_frame = ttk.Frame(info_frame)
@@ -527,13 +454,10 @@ class PICALauncherApp:
 
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        # Bind scrolling only to relevant widgets for better performance and to
-        # enable it
-        # For Windows and some Linux
+        
+        # Bind scrolling
         canvas.bind("<MouseWheel>", _on_mousewheel_windows)
-        # For Linux and macOS
         canvas.bind("<Button-4>", _on_mousewheel_linux_macos)
-        # For Linux and macOS
         canvas.bind("<Button-5>", _on_mousewheel_linux_macos)
 
         canvas.grid(row=0, column=0, sticky='nsew', pady=10)
@@ -633,7 +557,6 @@ class PICALauncherApp:
             instruments_text,
             buttons):
         """Helper to create a measurement suite frame, reducing code duplication."""
-        # Reduce vertical padding to make the card smaller
         frame = ttk.LabelFrame(parent, text=title, style='TLabelframe')
         frame.pack(fill='x', expand=True, pady=5)
         frame.columnconfigure(0, weight=1)
@@ -661,9 +584,6 @@ class PICALauncherApp:
             badge.pack(side='left', anchor='w')
 
         if instruments_text:
-            # Use a Label that can wrap text to prevent truncation.
-            # The wraplength is an estimate; it will wrap if the text exceeds
-            # this width.
             instrument_label = ttk.Label(
                 left_header,
                 text=instruments_text,
@@ -728,19 +648,10 @@ class PICALauncherApp:
             messagebox.showerror(
                 "Error", f"Could not open path: {path}\n\nError: {e}")
 
-    # =========================================================================
-    # === THIS FUNCTION IS NOW UPDATED WITH THE MARKDOWN PARSER ==============
-    # =========================================================================
     def _parse_markdown(self, content):
         """
         Parses markdown content into a list of (text, tags) for rendering.
-        This is a placeholder for a more sophisticated parser if needed.
-        For now, we just split by lines as the original did.
-        The key is that this runs only once per file.
         """
-        # This is a placeholder for a more sophisticated parser if needed.
-        # For now, we just split by lines as the original did.
-        # The key is that this runs only once per file.
         return content.split('\n')
 
     def _show_file_in_window(self, file_path, title):
@@ -842,8 +753,7 @@ class PICALauncherApp:
 
     def _pre_cache_markdown_files(self):
         """
-        Reads and parses key markdown/text files in the background to make
-        the documentation windows open instantly.
+        Reads and parses key markdown/text files in the background.
         """
         files_to_cache = [
             (self.README_FILE, "README"),
@@ -972,8 +882,6 @@ class PICALauncherApp:
                 text_area.insert('end', '\n')
 
 
-
-
 def main():
     """Initializes and runs the main application."""
     root = tk.Tk()
@@ -983,9 +891,6 @@ def main():
 
 if __name__ == '__main__':
     # This is ESSENTIAL for multiprocessing to work in a bundled executable
-    # and ensures a consistent, stable process creation method across platforms.
-    # 'spawn' is the most robust method for GUI apps, though it is the default
-    # on Windows and macOS.
     multiprocessing.set_start_method('spawn', force=True)
     multiprocessing.freeze_support()
 
