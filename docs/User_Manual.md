@@ -176,7 +176,7 @@ python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
 #### Experimental Linux Instructions
 
 > [!WARNING]
-> **Experimental Support:** The following instructions are for experimental purposes only. PICA is not officially supported on Linux, and you will likely encounter functional or UI-related issues.
+> **Experimental Support:** The following instructions are for experimental purposes only. PICA is not officially supported on Linux (for now), and you will likely encounter functional or UI-related issues.
 
 For users who wish to experiment with PICA on Linux, please be aware of the following:
 
@@ -190,7 +190,7 @@ For users who wish to experiment with PICA on Linux, please be aware of the foll
         ```
 
 2.  **Installation:**
-    Follow the standard installation steps outlined in section [3.2 Getting Started](#32-getting-started). While the commands should run, be aware that the application may not function correctly.
+    Follow the standard installation steps outlined in section [3.2 Getting Started](#32-getting-started). While the commands should run, be aware that the application GUI may not function correctly.
 
 ## 4. Safety Precautions
 
@@ -626,7 +626,7 @@ PICA (Root Directory)/
                 Instrument_Control/
             k2400_2182/         <-- Mid Resistance (High Precision)
                 IV_K2400_K2182_GUI.py
-                RT_K2400_2182_L350_T_Sensing_GUI.py
+                RT_K2400_K2182_L350_T_Sensing_GUII.py
                 RT_K2400_K2182_T_Control_GUI.py
                 Instrument_Control/
             k6517b/             <-- High Resistance & Pyroelectric
