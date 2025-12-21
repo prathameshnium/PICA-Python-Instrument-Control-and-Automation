@@ -82,6 +82,8 @@ This approach, however, leads to a considerable degree of code repetition becaus
 **Supported Platform:** Windows 10 / 11
 **Architecture:** x86_64
 
+
+
 > [!IMPORTANT]
 > **Windows Only**
 > PICA is currently designed and validated exclusively for Windows environments.
@@ -91,6 +93,8 @@ This approach, however, leads to a considerable degree of code repetition becaus
 #### Software Dependencies
 1.  **Python 3.10+**: The core execution environment.
 2.  **Dependencies:** Install via `pip install -r requirements.txt`.
+
+
 
 > [!WARNING]
 > **A VISA Backend is Required:** [`PyVISA`](https://github.com/pyvisa/pyvisa) is a Python wrapper, not a driver. For PICA to communicate with hardware, you **must** install a VISA backend on your system first. If you attempt to run the software on a clean machine without a VISA implementation, it will fail to find the instruments. This is the most common failure point for new instrument control setups.
@@ -153,8 +157,12 @@ PICA is structured as a standard Python package. The following instructions are 
     ```bash
     pica-cli
     ```
+
+
 > [!IMPORTANT]
 > **Template Scripts:** The instrument control modules (CLI's) provided are designed as **template scripts**. Users are expected to modify these scripts programmatically to adapt them to their specific experimental requirements and custom workflows. They are also excellent for developing **custom measurement protocols, sequences, and for learning instrument automation**. These scripts are typically named with an 'Instrument_Control' suffix to denote their programmatic nature. This approach ensures maximum flexibility and customization for advanced research applications.
+
+
 
 > [!NOTE]
 > **Legacy CLI Notice:** The PICA CLI (`pica-cli`) is retained to support legacy headless workflows. While fully functional for specific protocols, this interface is **less frequently maintained** and may not support recent features available in the GUI. 
@@ -179,6 +187,8 @@ python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
 
 #### Experimental Linux Instructions
 
+
+
 > [!WARNING]
 > **Experimental Support:** The following instructions are for experimental purposes only. PICA is not officially supported on Linux (for now), and you will likely encounter functional or UI-related issues.
 
@@ -197,6 +207,8 @@ For users who wish to experiment with PICA on Linux, please be aware of the foll
     Follow the standard installation steps outlined in section [3.2 Getting Started](#32-getting-started). While the commands should run, be aware that the application GUI may not function correctly.
 
 ## 4. Safety Precautions
+
+
 
 > [!WARNING]
 > **Safety Instructions:** Always switch off the instrument and verify that the output current, voltage, and any other relevant parameters are set to zero before modifying the connections to the Device Under Test (DUT). Failure to follow appropriate safety procedures may result in electric shock or other hazards. Adopt a safety-first approach at all times, and ensure that all instrument parameters remain within the specified safe operating limits defined either by the instrument manufacturer or by your measurement setup.
@@ -272,9 +284,10 @@ impedance analyzer enables the characterization of capacitance anomalies over th
 
   * **Scientific Objective:** Ideal for superconductors, metallic films, and low-impedance devices. It actively cancels thermal offsets (Seebeck EMFs) generated in leads and contacts.
   * **Principle:** Uses the **AC Delta Method**.
+    
+    
     > [!NOTE]
-    > **Understanding "Delta Mode":** The term "Delta Mode" refers specifically to a technique used by Keithley Models 6220 and 6221 Current Sources in conjunction with the Model 2182/2182A Nanovoltmeter for very low resistance measurements. This method is described in detail in the [Keithley Low Level Measurements Handbook](https://www.tek.com/en/documents/product-article/keithley-low-level-measurements-handbook---7th-edition). In this documentation, "Ultra Low Resistance Measurements" is used as the general scientific term, while "Delta Mode" may appear when specifically referencing the Keithley-specific method or program files.
-    1.  Source +I, measure V1.
+    > **Understanding "Delta Mode":** The term "Delta Mode" refers specifically to a technique used by Keithley Models 6220 and 6221 Current Sources in conjunction with the Model 2182/2182A Nanovoltmeter for very low resistance measurements. This method is described in detail in the [Keithley Low Level Measurements Handbook](https://www.tek.com/en/documents/product-article/keithley-low-level-measurements-handbook---7th-edition). In this documentation, "Ultra Low Resistance Measurements" is used as the general scientific term, while "Delta Mode" may appear when specifically referencing the Keithley-specific method or program files.    1.  Source +I, measure V1.
     2.  Source -I, measure V2.
     3.  Compute V\_corr = (V1 - V2) / 2.
         The software synchronizes the source and voltmeter via a **hardware trigger link (RS-232)** for microsecond-level timing.
@@ -576,6 +589,8 @@ This project is licensed under the MIT License - see the [LICENSE](https://githu
 ## 15. Appendix A: Project File Structure
 
 For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.0).
+
+
 
 > [!NOTE]
 > Adding a new module to the main launcher into the GUI requires modifying `pica/main.py`.
