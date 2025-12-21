@@ -103,10 +103,10 @@ class PICALauncherApp:
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
     FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
     LOGO_FILE = resource_path("assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
-    MANUAL_FILE = resource_path("docs/User_Manual.md")
-    README_FILE = resource_path("README.md")
-    LICENSE_FILE = resource_path("LICENSE")
-    UPDATES_FILE = resource_path("CHANGELOG.md")
+    MANUAL_FILE = resource_path("../docs/User_Manual.md")
+    README_FILE = resource_path("../README.md")
+    LICENSE_FILE = resource_path("../LICENSE")
+    UPDATES_FILE = resource_path("../CHANGELOG.md")
     REPO_URL = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tree/main"
     LOGO_SIZE = 140
 
@@ -131,7 +131,7 @@ class PICALauncherApp:
         "Lakeshore Temp Monitor": resource_path("lakeshore/T_Sensing_L350_GUI.py"),
         "LCR C-V Measurement": resource_path("keysight/CV_KE4980A_GUI.py"),
         "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
-        "PICA Help": resource_path("README.md"),
+        "PICA Help": resource_path("../README.md"),
     }
 
     def __init__(self, root):
