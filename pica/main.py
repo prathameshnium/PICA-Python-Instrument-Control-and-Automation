@@ -143,69 +143,76 @@ class PICALauncherApp:
         "Lakeshore Temp Control": resource_path("lakeshore/T_Control_L350_RangeControl_GUI.py"),
         "Lakeshore Temp Monitor": resource_path("lakeshore/T_Sensing_L350_GUI.py"),
         "LCR C-V Measurement": resource_path("keysight/CV_KE4980A_GUI.py"),
-            "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
-            "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
-            "PICA Help": resource_path("README.md"),
-        }
-        
-        
-        def launch_pica_script(script_key):
-            """
-            Globally accessible function to launch PICA scripts by their key.
-            This uses the same resource_path and Process logic as PICALauncherApp
-            to ensure consistency and correct path resolution for installed packages.
-            """
-            if script_key not in PICALauncherApp.SCRIPT_PATHS:
-                print(f"ERROR: Script key '{script_key}' not found in PICA SCRIPT_PATHS.")
-                messagebox.showwarning(
-                    "Script Not Found",
-                    f"The script key '{script_key}' is not defined in the main application's script paths.")
-                return
-        
-            script_path = PICALauncherApp.SCRIPT_PATHS[script_key]
-            print(f"Launching external script: {os.path.basename(script_path)}")
-            abs_path = os.path.abspath(script_path)
-        
-            if not os.path.exists(abs_path):
-                print(f"ERROR: Script not found at {abs_path}")
-                messagebox.showerror(
-                    "File Not Found",
-                    f"Script not found:\n\n{abs_path}")
-                return
-        
-            try:
-                proc = Process(target=run_script_process, args=(abs_path,))
-                proc.start()
-                print(f"Successfully launched '{os.path.basename(script_path)}' in a new process.")
-            except Exception as e:
-                print(f"ERROR: Failed to launch script '{script_key}'. Reason: {e}")
-                messagebox.showerror(
-                    "Launch Error",
-                    f"An error occurred while launching the script '{script_key}':\n\n{e}")
-    def __init__(self, root):
-        self.root = root
-        self.root.title(f"PICA Launcher v{self.PROGRAM_VERSION}")
-        self.root.state('zoomed')  # Launch in maximized/fullscreen state
-        self.root.configure(bg=self.CLR_BG_DARK)
-        self.root.minsize(1200, 780)
-        self.logo_image = None
-        self.console_widget = None
-        self._md_cache = {}  # Cache for parsed markdown files
-        self.setup_styles()
-        self.create_widgets()
-        self.log(f"PICA Launcher v{self.PROGRAM_VERSION} initialized.")
-        self.log(
-            f"PIL/Pillow (logo): {'Available' if PIL_AVAILABLE else 'Not found'}")
-        self.log(
-            f"PyVISA (GPIB test): {'Available' if PYVISA_AVAILABLE else 'Not found'}")
-        self.log(
-            "Welcome to PICA. Check connections and run a GPIB test before starting.")
-
-        # Auto-launch GPIB scanner after 1 second
-        self.root.after(1000, self.run_gpib_test)
-        # Pre-cache markdown files in the background for faster window opening
-        self.root.after(1500, self._pre_cache_markdown_files)
-
+                "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
+                "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
+                "PICA Help": resource_path("README.md"),
+            }
+            
+            
+            def launch_pica_script(script_key):
+                """
+                Globally accessible function to launch PICA scripts by their key.
+                This uses the same resource_path and Process logic as PICALauncherApp
+                to ensure consistency and correct path resolution for installed packages.
+                """
+                if script_key not in PICALauncherApp.SCRIPT_PATHS:
+                    print(f"ERROR: Script key '{script_key}' not found in PICA SCRIPT_PATHS.")
+                    messagebox.showwarning(
+                        "Script Not Found",
+                        f"The script key '{script_key}' is not defined in the main application's script paths.")
+                    return
+            
+                script_path = PICALauncherApp.SCRIPT_PATHS[script_key]
+                print(f"Launching external script: {os.path.basename(script_path)}")
+                abs_path = os.path.abspath(script_path)
+            
+                if not os.path.exists(abs_path):
+                    print(f"ERROR: Script not found at {abs_path}")
+                    messagebox.showerror(
+                        "File Not Found",
+                        f"Script not found:\n\n{abs_path}")
+                    return
+            
+                try:
+                    proc = Process(target=run_script_process, args=(abs_path,))
+                    proc.start()
+                    print(f"Successfully launched '{os.path.basename(script_path)}' in a new process.")
+                except Exception as e:
+                    print(f"ERROR: Failed to launch script '{script_key}'. Reason: {e}")
+                    messagebox.showerror(
+                        "Launch Error",
+                        f"An error occurred while launching the script '{script_key}':\n\n{e}")
+            
+            
+            class PICALauncherApp:
+            
+                PROGRAM_VERSION = "1.0.0"
+                CLR_BG_DARK = '#2B3D4F'
+                CLR_FRAME_BG = '#3A506B'
+                CLR_ACCENT_GOLD = '#FFC107'
+                CLR_ACCENT_GREEN = '#A7C957'
+                CLR_TEXT = '#EDF2F4'
+                CLR_TEXT_DARK = '#1A1A1A'
+                CLR_CONSOLE_BG = '#1E2B38'
+                CLR_LINK = '#87CEEB'  # Sky Blue, for better contrast
+                FONT_SIZE_BASE = 12
+                FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
+                FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 10, 'bold')
+                FONT_SUBTITLE = ('Segoe UI', FONT_SIZE_BASE + 1, 'bold')  # Reduced size from +2
+                FONT_INSTITUTE = (
+                    'Segoe UI',
+                    FONT_SIZE_BASE + 6,
+                    'bold')  # New font for institute
+                FONT_CONSOLE = ('Consolas', 10)
+                FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)
+                FONT_INFO_ITALIC = ('Segoe UI', FONT_SIZE_BASE, 'italic')
+                LOGO_FILE = resource_path("assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
+                MANUAL_FILE = resource_path("docs/User_Manual.md")
+                README_FILE = resource_path("README.md")
+                LICENSE_FILE = resource_path("LICENSE")
+                UPDATES_FILE = resource_path("CHANGELOG.md")
+                REPO_URL = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tree/main"
+                LOGO_SIZE = 140
     def setup_styles(self):
         style = ttk.Style(self.root)
         style.theme_use('clam')
