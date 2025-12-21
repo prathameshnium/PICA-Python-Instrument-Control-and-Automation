@@ -103,18 +103,13 @@ The easiest way to start is to copy an existing module that is closest to your t
 
 #### 2. Implement the Instrument Control Logic
 
-Start with the basic instrument communication, then add measurement protocols, data saving, and plotting. Ensure that instrument communication (handled by `PyVISA` or `pymeasure`) uses the correct SCPI commands. Your instrument's programming manual is the definitive source for these commands.
-
-1.  Open your new `...Instrument_Control.py` file.
-2.  **Consult your instrument's programming manual.** This is essential for finding the correct SCPI commands.
-3.  Modify the `PyVISA` sections of the script. Replace the existing SCPI commands (e.g., `*IDN?`, `:SOUR:VOLT`, `:MEAS:CURR?`) with the commands specific to your instrument.
-4.  Adjust the data parsing logic to handle the output format of your instrument.
+Start with the basic instrument communication, then add measurement protocols, data saving, and plotting. Ensure that instrument communication (handled by `PyVISA` or `pymeasure`) uses the correct SCPI commands,  Replace the existing SCPI commands (e.g., `*IDN?`, `:SOUR:VOLT`, `:MEAS:CURR?`) with the commands specific to your instrument.. Your instrument's programming manual is the definitive source for these commands.Adjust the data parsing logic to handle the output format of your instrument.
 
 #### 3. Modify the GUI (`..._GUI.py`)
 
 1.  Open your new `..._GUI.py` file.
 2.  Update the `Tkinter` widgets (labels, entry boxes, dropdowns) to match the parameters required for your instrument (e.g., voltage range, compliance, measurement speed).
-3.  Ensure the "Start" button calls your new control logic script, passing the necessary parameters from the GUI.
+3.  Ensure the "Start" button calls your new control logic (copy the logic from Instrument_Control file to here), passing the necessary parameters from the GUI.
 
 #### 4. Integrate into the PICA Launcher
 
