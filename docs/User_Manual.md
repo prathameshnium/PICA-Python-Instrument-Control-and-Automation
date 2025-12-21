@@ -252,12 +252,12 @@ The system is currently validated with industry-standard hardware, covering a re
 
 | Module | Configuration / Instrument | Use Case | Range |
 | :--- | :--- | :--- | :--- |
-| **Ultra Low Resistance Measurements** | **Keithley 6221** + **K2182** + Temp Controller (Lakeshore 350/340) | Superconductors & metallic films; cancels thermal EMFs via AC Delta method. | 10 nΩ - 100 MΩ |
-| **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter + Temp Controller (Lakeshore 350/340) | Semiconductors, oxides, general transport. | 100 µΩ - 200 MΩ |
-| **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** + Temp Controller (Lakeshore 350/340) | Detecting subtle phase transitions. | 1 µΩ - 100 MΩ |
-| **High-Resistance** | **Keithley 6517B** Electrometer + Temp Controller (Lakeshore 350/340) | Capacitances, polymers, & ceramics. | 1 Ω - 10 PΩ |
-| **Capacitance Analysis** | **Keysight E4980A** + Temp Controller (Lakeshore 350/340) | C-V Analysis and Magnetocapacitance characterization. | 20 Hz - 2 MHz |
-| **Pyroelectric** | **K6517B** + Temp Controller (Lakeshore 350/340) | Current vs Temp (detecting Curie temperature). | 10<sup>-15</sup> A Resolution |
+| **Ultra Low Resistance Measurements** | **Keithley 6221** + **K2182** + Lakeshore 350/340 | Superconductors & metallic films; cancels thermal EMFs via AC Delta method. | 10 nΩ - 100 MΩ |
+| **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter + Lakeshore 350/340 | Semiconductors, oxides, general transport. | 100 µΩ - 200 MΩ |
+| **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** + Lakeshore 350/340 | Detecting subtle phase transitions. | 1 µΩ - 100 MΩ |
+| **High-Resistance** | **Keithley 6517B** Electrometer + Lakeshore 350/340 | High bandgap materials, polymers, & ceramics. | 1 Ω - 10 PΩ |
+| **Capacitance Analysis** | **Keysight E4980A** + Lakeshore 350/340 | C-V Analysis and Magnetocapacitance characterization. | 20 Hz - 2 MHz |
+| **Pyroelectric** | **K6517B** + Lakeshore 350/340 | Current vs Temp (detecting Curie temperature). | 10<sup>-15</sup> A Resolution |
 
 *While the current implementation drives specific instruments, the underlying framework is highly customizable. Researchers need only replace specific SCPI commands to utilize the suite with different models.*
 
