@@ -58,13 +58,11 @@ def run_script_process(script_path):
 def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
     try:
-        # Assumes the plotter is in a standard location relative to this script
         script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Go up 2 levels: k2400_2182 -> keithley -> pica
         plotter_path = os.path.join(
             script_dir,
-            "..",
-            "Utilities",
-            "PlotterUtil_GUI.py")
+            "..", "..", "utils", "PlotterUtil_GUI.py")
         if not os.path.exists(plotter_path):
             messagebox.showerror(
                 "File Not Found",
@@ -72,19 +70,24 @@ def launch_plotter_utility():
             return
         Process(target=run_script_process, args=(plotter_path,)).start()
     except Exception as e:
-        messagebox.showerror("Launch Error",
-                             f"Failed to launch Plotter Utility: {e}")
-
+        messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
 
 def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
-    base_path = os.path.dirname(os.path.abspath(__file__))
-    scanner_path = os.path.join(
-        base_path,
-        "..",
-        "Utilities",
-        "GPIB_Instrument_Scanner_GUI.py")
-    Process(target=run_script_process, args=(scanner_path,)).start()
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Go up 2 levels: k2400_2182 -> keithley -> pica
+        scanner_path = os.path.join(
+            script_dir,
+            "..", "..", "utils", "GPIB_Instrument_Scanner_GUI.py")
+        if not os.path.exists(scanner_path):
+            messagebox.showerror(
+                "File Not Found",
+                f"GPIB Scanner not found at expected path:\n{scanner_path}")
+            return
+        Process(target=run_script_process, args=(scanner_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
 
 
 # -------------------------------------------------------------------------------
