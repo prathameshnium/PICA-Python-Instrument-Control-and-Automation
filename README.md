@@ -232,14 +232,14 @@ PICA is structured as a standard Python package. The following instructions are 
     ```bash
     pica-cli
     ```
+    
     > [!IMPORTANT]
     > **Template Scripts:** The instrument control modules (CLI's) provided are designed as **template scripts**. Users are expected to modify these scripts programmatically to adapt them to their specific experimental requirements and custom workflows. They are also excellent for developing **custom measurement protocols, sequences, and for learning instrument automation**. These scripts are typically named with an 'Instrument_Control' suffix to denote their programmatic nature. This approach ensures maximum flexibility and customization for advanced research applications.
-
+    
     > [!NOTE]
     > **Legacy CLI Notice:** The PICA CLI (`pica-cli`) is retained to support legacy headless workflows. While fully functional for specific protocols, this interface is **less frequently maintained** and may not support recent features available in the GUI. 
     >
     > We **strongly recommend** new users utilize the PICA GUI for the most complete and supported experience.
-
 ## System Requirements & Compatibility
 
 **Supported Platform:** Windows 10 / 11
