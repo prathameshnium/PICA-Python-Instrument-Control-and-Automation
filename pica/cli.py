@@ -1,6 +1,6 @@
 """
 Module: PICA CLI
-Purpose: CLI interface for Instrument Control modules in PICA (OLD SCRIPTS).
+Purpose: CLI interface for instrument control modules (CLI's) in PICA (OLD SCRIPTS).
 """
 import os
 import sys

@@ -58,7 +58,7 @@ While early automation scripts often rely on Command Line Interfaces (CLIs), the
 * **Workflow Visualization:** A visual interface helps new users and students mentally map the experimental workflow, reducing the learning curve.
 
 ### 2.3 Operational Transparency (No "Black Box")
-To foster trust and reproducibility, PICA rejects the opaque nature of proprietary software. Each measurement module features an **Embedded Console Log**:
+To foster trust and reproducibility, PICA rejects the opaque nature of proprietary software. measurement module features an **Embedded Console Log**:
 * **Status Streaming:** Displays a real-time stream of operations, such as "Ramping temperature to 300 K" or "Connecting to GPIB0::4::INSTR".
 * **Immediate Diagnostics:** Instantly reports VISA timeouts or command errors, providing exact context for hardware failures rather than generic error codes.
 
@@ -97,7 +97,7 @@ This approach, however, leads to a considerable degree of code repetition becaus
 >
 > Choose one of the following:
 > - **NI-VISA:** The industry standard from National Instruments. Download and install it from the [NI website](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html#575764).
-> - **PyVISA-py:** A backend written in pure Python. It can be used as a fallback but may have limitations compared to vendor-specific drivers like NI-VISA. For `pyvisa-py` to discover all resources and avoid warnings (e.g., for TCPIP or HiSLIP instruments), `psutil` and `zeroconf` might be needed. These packages are already included in PICA's dependencies (`requirements.txt`). Note that for direct GPIB communication via `pyvisa-py`, a separate GPIB library (e.g., from your GPIB adapter vendor) might still be required.
+> - **PyVISA-py:** A backend written in pure Python. It can be used as a fallback but may have limitations compared to vendor-specific drivers like NI-VISA. For `pyvisa-py` to discover all resources and avoid warnings (e.g., for TCPIP or HiSLIP instruments), `psutil` and `zeroconf` might be needed. These packages are already included in PICA's dependencies (`requirements.txt`). Note that for direct GPIB communication via `pyvisa-py`, a separate GPIB library (e.g., from your GPIB adapter vendor) might still be required. [PyVISA-py GitHub](https://github.com/pyvisa/pyvisa-py)
 >
 > **Before proceeding, verify your VISA installation.** For more details and troubleshooting, refer to the "[Common Issues & Troubleshooting](#6-common-issues--troubleshooting)" section.
 
@@ -154,7 +154,7 @@ PICA is structured as a standard Python package. The following instructions are 
     pica-cli
     ```
 > [!IMPORTANT]
-> **Template Scripts:** The instrument control modules provided are designed as **template scripts**. Users are expected to modify these scripts programmatically to adapt them to their specific experimental requirements and custom workflows. They are also excellent for developing **custom measurement protocols, sequences, and for learning instrument automation**. These scripts are typically named with an 'Instrument_Control' suffix to denote their programmatic nature. This approach ensures maximum flexibility and customization for advanced research applications.
+> **Template Scripts:** The instrument control modules (CLI's) provided are designed as **template scripts**. Users are expected to modify these scripts programmatically to adapt them to their specific experimental requirements and custom workflows. They are also excellent for developing **custom measurement protocols, sequences, and for learning instrument automation**. These scripts are typically named with an 'Instrument_Control' suffix to denote their programmatic nature. This approach ensures maximum flexibility and customization for advanced research applications.
 
 > [!NOTE]
 > **Legacy CLI Notice:** The PICA CLI (`pica-cli`) is retained to support legacy headless workflows. While fully functional for specific protocols, this interface is **less frequently maintained** and may not support recent features available in the GUI. 
