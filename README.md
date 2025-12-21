@@ -31,7 +31,7 @@
 
 ## Overview
 
-High-precision, low-noise transport measurements are essential for advancing research in spintronics and materials characterisation. **PICA (Python-based Instrument Control and Automation)** is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and chemical samples. It operates as a versatile framework capable of running on any standard laboratory workstation.
+High-precision, low-noise transport measurements are essential for advancing research in spintronics and materials characterisation. **PICA (Python-based Instrument Control and Automation)** is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and material samples. It operates as a versatile framework capable of running on any standard laboratory workstation.
 
 PICA provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analyser, and temperature controllers. Built on the robust Python scientific ecosystem, PICA ensures that the entire hardware ecosystem functions seamlessly as a cohesive unit.
 
@@ -78,7 +78,7 @@ PICA enables continuous operation across a full range of measurements, from ultr
 ## Key Features
 
 * **Accessibility:** A professional GUI dashboard allows researchers without coding experience to configure and run complex measurement protocols immediately using pre-packaged measurement modules.
-* **Operational Validation:** Validated via cryogenic transport measurements using a custom-designed probe in conjunction with a **Physical Property Measurement System (PPMS)** (5-380 K, up to 14 Tesla) at the UGC DAE Consortium for Scientific Research, Mumbai Centre.
+* **Operational Validation:** Validated via cryogenic transport measurements using a custom-designed probe in conjunction with a **Physical Property Measurement System (PPMS)** (5-380 K, up to 14 Tesla) at the [UGC DAE Consortium for Scientific Research, Mumbai Centre](https://www.csr.res.in/Mumbai_Centre).
 * **Fault Tolerance:** Control logic is isolated from the user interface. Hardware timeouts or driver crashes are prevented from freezing the main dashboard.
 * **Modular CLI Architecture:** Measurement modules contain CLI counterparts, allowing researchers to utilize PICA's protocol logic for headless automation or integration into other workflows without GUI overhead.
 * **Operational Transparency:** PICA rejects the "black box" paradigm by exposing real-time, time-stamped command logs (e.g., `[10:05:25] Keithley 6221: Ramping current to 10 mA`). This aids debugging, ensures scientific reproducibility, and allows verification of measurement protocols.
@@ -104,6 +104,25 @@ PICA utilizes [**PyVISA**](https://github.com/pyvisa/pyvisa) to abstract low-lev
 
 ### Testing and Simulation
 PICA includes a testing suite using `pytest` and `unittest.mock` to simulate VISA resources, allowing verification of backend logic streams and command sequences without constant access to physical instruments.
+
+**Running Tests Locally**
+
+To run the test suite locally, first install the development dependencies:
+```bash
+pip install -r requirements-dev.txt
+```
+Then, you can run the tests:
+```bash
+python -B -m pytest -p no:cacheprovider
+```
+
+**How to Check Coverage Locally**
+
+To see the coverage percentage on your local machine, run this command instead:
+
+```powershell
+python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
+```
 
 ---
 
@@ -247,25 +266,7 @@ Upon launching PICA (`pica-gui`), select your desired measurement module from th
 
 *The interface is designed to be minimalistic to reduce unnecessary user interaction during active high-precision, low-noise transport measurements.*
 
----
-## Running Tests
 
-To run the test suite locally, first install the development dependencies:
-```bash
-pip install -r requirements-dev.txt
-```
-Then, you can run the tests:
-```bash
-python -B -m pytest -p no:cacheprovider
-```
-
-How to Check Coverage Locally
-
-To see the coverage percentage on your local machine, run this command instead:
-
-```powershell
-python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
-```
 
 ### Experimental Linux Instructions
 
