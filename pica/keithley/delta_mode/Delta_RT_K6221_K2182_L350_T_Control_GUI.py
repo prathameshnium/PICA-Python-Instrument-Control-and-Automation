@@ -44,13 +44,13 @@ def run_script_process(script_path):
 
 
 def launch_plotter_utility():
+    """Finds and launches the plotter utility script in a new process."""
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Go up 2 levels: delta_mode -> keithley -> pica
         plotter_path = os.path.join(
             script_dir,
-            "..",
-            "Utilities",
-            "PlotterUtil_GUI.py")
+            "..", "..", "utils", "PlotterUtil_GUI.py")
         if not os.path.exists(plotter_path):
             messagebox.showerror(
                 "File Not Found",
@@ -58,18 +58,17 @@ def launch_plotter_utility():
             return
         Process(target=run_script_process, args=(plotter_path,)).start()
     except Exception as e:
-        messagebox.showerror("Launch Error",
-                             f"Failed to launch Plotter Utility: {e}")
+        messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
 
 
 def launch_gpib_scanner():
+    """Finds and launches the GPIB scanner utility in a new process."""
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Go up 2 levels: delta_mode -> keithley -> pica
         scanner_path = os.path.join(
             script_dir,
-            "..",
-            "Utilities",
-            "GPIB_Instrument_Scanner_GUI.py")
+            "..", "..", "utils", "GPIB_Instrument_Scanner_GUI.py")
         if not os.path.exists(scanner_path):
             messagebox.showerror(
                 "File Not Found",
@@ -77,9 +76,7 @@ def launch_gpib_scanner():
             return
         Process(target=run_script_process, args=(scanner_path,)).start()
     except Exception as e:
-        messagebox.showerror(
-            "Launch Error",
-            f"Failed to launch GPIB Scanner: {e}")
+        messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
 
 
 def resource_path(relative_path):
