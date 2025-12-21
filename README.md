@@ -182,6 +182,10 @@ PICA is structured as a standard Python package. The following instructions are 
     ```bash
     pip install --upgrade .
     ```
+    If you are already in your virtual environment and want to force Python to reinstall the package (overwriting the old one), run this in your root project folder:
+    ```bash
+    pip install --force-reinstall .
+    ```
 
     *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow [`PyVISA`](https://github.com/pyvisa/pyvisa) to communicate with the hardware.*
 
