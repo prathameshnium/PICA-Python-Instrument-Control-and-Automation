@@ -1,9 +1,9 @@
 recursive-include pica/assets *
 recursive-include pica *.py
 
-# Include top-level documentation and legal files
-include README.md
-include LICENSE
-include CHANGELOG.md
-include docs/User_Manual.md
-include docs/Instruments_Manuals_Lists.md
+# Include top-level documentation and legal files that are copied into the pica package
+include pica/README.md
+include pica/LICENSE
+include pica/CHANGELOG.md
+include pica/CONTRIBUTING.md
+recursive-include pica/docs *
