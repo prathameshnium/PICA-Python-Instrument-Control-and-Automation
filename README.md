@@ -156,40 +156,11 @@ A screencast demonstrating the high resistance IV module is available at [this l
 >
 > **Before proceeding, verify your VISA installation.**
 
----
-
-## System Requirements & Compatibility
-
-**Supported Platform:** Windows 10 / 11
-**Architecture:** x86_64
-
-> [!IMPORTANT]
-> **Windows Only**
-> PICA is currently designed and validated exclusively for Windows environments.
-> Linux and macOS are **not currently supported** due to dependencies on Windows-specific GUI libraries and font rendering.
-> Attempting to run this software on non-Windows platforms may result in crashes or UI failures. Linux support is experimental for now.
-
----
-
-## Software Dependencies
-
-### Linux Users: Tkinter Dependency
-
-If you are running PICA on Linux, you need to ensure that `tkinter` is installed on your system. `tkinter` is a standard Python interface to the Tk GUI toolkit, and it is often not included by default in minimal Python installations.
-
-To install `tkinter` on Debian/Ubuntu-based distributions, use the following command:
-
-```bash
-sudo apt-get install python3-tk
-```
-
-For other Linux distributions, please consult your package manager's documentation for the equivalent command to install `python3-tk` or `tkinter`.
-
----
+--- 
 
 ## Getting Started
 
-PICA is structured as a standard Python package.
+PICA is structured as a standard Python package. The following instructions are for the supported Windows platform.
 
 1.  **Clone the Repository**
     ```bash
@@ -199,12 +170,17 @@ PICA is structured as a standard Python package.
 
 2.  **Create Virtual Environment & Install**
     ```bash
+    # Create and activate a virtual environment
     python -m venv venv
-    # Activate venv (Windows: venv\Scripts\activate, Linux/Mac: source venv/bin/activate)
+    venv\Scripts\activate
+    
+    # Install the package and its dependencies
     pip install .
     ```
 
     *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow [`PyVISA`](https://github.com/pyvisa/pyvisa) to communicate with the hardware.*
+
+---
 
 ## Running the Software
 
@@ -231,6 +207,17 @@ PICA is structured as a standard Python package.
     > **Legacy CLI Notice:** The PICA CLI (`pica-cli`) is retained to support legacy headless workflows. While fully functional for specific protocols, this interface is **less frequently maintained** and may not support recent features available in the GUI. 
     >
     > We **strongly recommend** new users utilize the PICA GUI for the most complete and supported experience.
+
+## System Requirements & Compatibility
+
+**Supported Platform:** Windows 10 / 11
+**Architecture:** x86_64
+
+> [!IMPORTANT]
+> **Windows Only**
+> PICA is currently designed and validated exclusively for Windows environments.
+> Linux and macOS are **not currently supported** due to dependencies on Windows-specific GUI libraries and font rendering.
+> Attempting to run this software on non-Windows platforms may result in crashes or UI failures. Linux support is experimental for now.
 
 ## Example Usage: Running a Measurement
 
@@ -270,6 +257,21 @@ To see the coverage percentage on your local machine, run this command instead:
 ```powershell
 python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
 ```
+
+### Experimental Linux Instructions
+
+For users who wish to experiment with PICA on Linux, please be aware of the following:
+
+1.  **Tkinter Dependency (Linux):**
+    On Linux, you must ensure `tkinter` is installed. It is often not included by default.
+    -   On Debian/Ubuntu: `sudo apt-get install python3-tk`
+    -   For other distributions, use your package manager to install `python3-tk`.
+
+2.  **Virtual Environment Activation (Linux):**
+    To activate the virtual environment, use the following command:
+    ```bash
+    source venv/bin/activate
+    ```
 
 ---
 
