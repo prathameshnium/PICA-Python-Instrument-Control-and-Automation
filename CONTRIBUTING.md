@@ -75,7 +75,7 @@ git rebase main
 git push --force-with-lease origin feature/add-new-instrument
 ```
 
-Finally, go to GitHub and [make a Pull Request](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare)
+Finally, go to GitHub and [make a Pull Request](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/pulls)
 
 ### Keeping your Pull Request updated
 
