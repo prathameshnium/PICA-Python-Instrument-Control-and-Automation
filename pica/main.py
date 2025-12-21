@@ -143,10 +143,45 @@ class PICALauncherApp:
         "Lakeshore Temp Control": resource_path("lakeshore/T_Control_L350_RangeControl_GUI.py"),
         "Lakeshore Temp Monitor": resource_path("lakeshore/T_Sensing_L350_GUI.py"),
         "LCR C-V Measurement": resource_path("keysight/CV_KE4980A_GUI.py"),
-        "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
-        "PICA Help": resource_path("README.md"),
-    }
-
+            "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
+            "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
+            "PICA Help": resource_path("README.md"),
+        }
+        
+        
+        def launch_pica_script(script_key):
+            """
+            Globally accessible function to launch PICA scripts by their key.
+            This uses the same resource_path and Process logic as PICALauncherApp
+            to ensure consistency and correct path resolution for installed packages.
+            """
+            if script_key not in PICALauncherApp.SCRIPT_PATHS:
+                print(f"ERROR: Script key '{script_key}' not found in PICA SCRIPT_PATHS.")
+                messagebox.showwarning(
+                    "Script Not Found",
+                    f"The script key '{script_key}' is not defined in the main application's script paths.")
+                return
+        
+            script_path = PICALauncherApp.SCRIPT_PATHS[script_key]
+            print(f"Launching external script: {os.path.basename(script_path)}")
+            abs_path = os.path.abspath(script_path)
+        
+            if not os.path.exists(abs_path):
+                print(f"ERROR: Script not found at {abs_path}")
+                messagebox.showerror(
+                    "File Not Found",
+                    f"Script not found:\n\n{abs_path}")
+                return
+        
+            try:
+                proc = Process(target=run_script_process, args=(abs_path,))
+                proc.start()
+                print(f"Successfully launched '{os.path.basename(script_path)}' in a new process.")
+            except Exception as e:
+                print(f"ERROR: Failed to launch script '{script_key}'. Reason: {e}")
+                messagebox.showerror(
+                    "Launch Error",
+                    f"An error occurred while launching the script '{script_key}':\n\n{e}")
     def __init__(self, root):
         self.root = root
         self.root.title(f"PICA Launcher v{self.PROGRAM_VERSION}")
