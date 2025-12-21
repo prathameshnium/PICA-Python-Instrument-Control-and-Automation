@@ -16,7 +16,7 @@ ALL_GUI_MODULES = [
     "pica.keithley.k2400.RT_K2400_L350_T_Control_GUI",
     "pica.keithley.k2400.RT_K2400_L350_T_Sensing_GUI",
     "pica.keithley.k2400_2182.IV_K2400_K2182_GUI",
-    "pica.keithley.k2400_2182.RT_K2400_K2182_L350_T_Sensing_GUII",
+    "pica.keithley.k2400_2182.RT_K2400_K2182_L350_T_Sensing_GUI",
     "pica.keithley.k2400_2182.RT_K2400_K2182_T_Control_GUI",
     "pica.keithley.k6517b.High_Resistance.IV_K6517B_GUI",
     "pica.keithley.k6517b.High_Resistance.RT_K6517B_L350_T_Control_GUI",
