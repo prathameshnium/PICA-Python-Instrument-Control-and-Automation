@@ -56,11 +56,11 @@ def run_script_process(script_path):
 def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Go up 2 levels: k2400 -> keithley -> pica
     plotter_path = os.path.join(
         script_dir,
-        "..",
-        "Utilities",
-        "PlotterUtil_GUI.py")
+        "..", "..", "utils", "PlotterUtil_GUI.py")
+        
     if not os.path.exists(plotter_path):
         messagebox.showerror("File Not Found",
                              f"Plotter Utility not found at:\n{plotter_path}")
@@ -73,12 +73,11 @@ def launch_plotter_utility():
 def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    # Assuming the standard PICA project structure
+    # Go up 2 levels: k2400 -> keithley -> pica
     scanner_path = os.path.join(
         script_dir,
-        "..",
-        "Utilities",
-        "GPIB_Instrument_Scanner_GUI.py")
+        "..", "..", "utils", "GPIB_Instrument_Scanner_GUI.py")
+        
     if not os.path.exists(scanner_path):
         messagebox.showerror("File Not Found",
                              f"GPIB Scanner not found at:\n{scanner_path}")
