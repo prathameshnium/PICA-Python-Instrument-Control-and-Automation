@@ -42,6 +42,8 @@ By utilising `threading` and `multiprocessing` capabilities, PICA ensures that t
 Advancements in experimental physics and device manufacturing depend on the precise characterisation of material properties under extreme physical conditions (e.g. low temperature and high magnetic/electric fields). For automating experiments, researchers have to choose between expensive proprietary graphical programming environments or developing a custom measurement script from scratch.
 While powerful ecosystem libraries such as PyVISA [@grecco2023pyvisa] and PyMeasure [@pymeasure_2025] provide the foundational drivers for instrument communication, they are fundamentally software libraries that require the user to write and maintain code, creating a barrier to entry for researchers requiring direct data acquisition without the overhead of developing and maintaining a custom codebase.
 
+## Research impact
+
 PICA addresses this gap by functioning as a turnkey application rather than as a library. It offers a "ready-to-run" graphical interface that abstracts the underlying control logic, allowing experimentalists to focus on data acquisition without needing to develop custom software scripts for the supported hardware configurations.
 PICA’s architecture is designed to be highly configurable, enabling users to readily adapt it to their specific requirements and to implement user‑defined protocols in addition to the standard measurement protocols already provided. It eliminates the need for reconfiguring the measurement setup to achieve comprehensive characterisation, enabling continuous operation across the full range from ultra-low-resistance measurements (with the current reversal technique effectively removing constant offsets and improving the signal-to-noise ratio) for superconductors to high-impedance electrometric measurements for high-band gap insulators (covering 24 orders of magnitude in resistance), using a single unified framework.
 Pyroelectric measurement performed using an electrometer enables a highly sensitive characterisation of ferroelectric phase transitions by detecting extremely small pyroelectric currents, with a resolution on the order of $10^{-15}$ A. The impedance analyser enables the characterisation of capacitance anomalies over the frequency range from 20 Hz to 2 MHz and is utilised for magnetocapacitance and photoinduced characterisation across a wide variety of multiferroic systems. Thus, the primary objective of PICA is to serve as a robust software platform that enables advanced high‑precision characterisation of materials.
@@ -64,7 +66,7 @@ It differentiates itself through the following unique features:
 
 
 
-# Design and Implementation
+# Software design
 
 PICA is built on a modular architecture characterised by self-contained modules, ensuring future extensibility. This design allows individual measurement protocols to be modified independently or added without impacting the core system stability.
 
@@ -93,6 +95,10 @@ PICA utilises **PyVISA** [@grecco2023pyvisa] to abstract the low-level communica
 
 To ensure measurement reliability, all of these modules were thoroughly tested with the corresponding hardware. Additionally, to facilitate development without constant access to physical instruments, PICA includes a testing suite that uses `pytest`. The suite employs `unittest.mock` to simulate VISA resources, allowing verification of backend logic streams, class structure, and command sequences in a continuous integration environment.
 
+# AI usage disclosure
+
+The core instrument control algorithms, measurement logic, and primary programs were developed by the authors prior to the use of AI-based assistance. The Gemini (model: gemini-2.5-pro) was employed in the later phases of development exclusively to refine exception-handling mechanisms, improve overall code robustness, professionalism, and accelerate the implementation of Tkinter-based GUI layouts.
+For this manuscript and the documentation, Gemini was used exclusively for linguistic and grammatical refinement. All AI-generated content was rigorously reviewed and validated by the authors, who retain full responsibility for the accuracy and integrity of this work.
 
 # Acknowledgements
 
