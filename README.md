@@ -12,6 +12,7 @@
   <a href="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation"><img src="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation/branch/main/graph/badge.svg" alt="Code Coverage"></a>
   <img src="https://img.shields.io/badge/Python-3.10+-brightgreen.svg?logo=python&logoColor=white&style=flat-square" alt="Python Version">
   <a href="https://doi.org/10.5281/zenodo.18377217"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.18377217.svg" alt="DOI"></a>
+  <a href="https://joss.theoj.org/papers/444957f999023680f8abbbf0e75687fa"><img src="https://joss.theoj.org/papers/444957f999023680f8abbbf0e75687fa/status.svg"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License: MIT"></a>
   <br />
   <a href="docs/User_Manual.md"><img src="https://img.shields.io/badge/Docs-User_Manual-blue.svg?logo=markdown&style=flat-square" alt="Documentation"></a>
