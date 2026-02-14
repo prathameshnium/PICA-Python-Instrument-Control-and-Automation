@@ -335,14 +335,16 @@ The project's earlier history and foundational development are outlined below:
 If you use this software in your research, please cite it:
 
 ```bibtex
-@software{Deshmukh_PICA_2025,
+@software{Deshmukh_PICA_2026,
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
   title        = {{PICA: Advanced High-Precision Transport Measurement Automation with Python}},
-  month        = dec,
-  year         = 2025,
-  publisher    = {GitHub},
-  version      = {1.0.0},
-  url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
+  month        = jan,
+  day          = 26,
+  year         = 2026,
+  publisher    = {Zenodo},
+  version      = {1.0.1},
+  doi          = {10.5281/zenodo.18377217},
+  url          = {https://doi.org/10.5281/zenodo.18377217}
 }
 ````
 
