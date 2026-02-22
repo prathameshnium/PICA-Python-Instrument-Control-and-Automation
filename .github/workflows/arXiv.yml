@@ -10,10 +10,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Pandoc and TeX Live
-        # Installs Pandoc for conversion and TeX Live to generate the PDF
+        # Added texlive-xetex for robust Unicode character support (like the Ω symbol)
         run: |
           sudo apt-get update
-          sudo apt-get install -y pandoc texlive texlive-latex-extra texlive-fonts-recommended zip
+          sudo apt-get install -y pandoc texlive texlive-latex-extra texlive-fonts-recommended texlive-xetex zip
 
       - name: Generate LaTeX, PDF, and arXiv Zip
         run: |
@@ -22,11 +22,11 @@ jobs:
           # 1. Generate the arXiv-compatible LaTeX file (.tex)
           pandoc paper.md -o paper.tex --standalone --citeproc --bibliography=paper.bib
           
-          # 2. Generate the viewable PDF file (.pdf)
-          pandoc paper.md -o paper.pdf --standalone --citeproc --bibliography=paper.bib
+          # 2. Generate the viewable PDF file (.pdf) using XeLaTeX for Unicode support
+          pandoc paper.md -o paper.pdf --standalone --citeproc --bibliography=paper.bib --pdf-engine=xelatex
           
           # 3. Create the ZIP package for arXiv submission
-          # If you have an images/assets folder referenced in your paper, add it to the end of this line (e.g., zip -r arxiv_submission.zip paper.tex paper.bib ../pica/assets/Images)
+          # Note: If your paper includes images, append their path here (e.g., zip arxiv_submission.zip paper.tex paper.bib ../pica/assets/Images)
           zip arxiv_submission.zip paper.tex paper.bib
 
       - name: Upload PDF Artifact
