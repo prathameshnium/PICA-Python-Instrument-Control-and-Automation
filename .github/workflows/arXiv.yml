@@ -1,0 +1,42 @@
+name: Draft PDF and arXiv Package
+on: [push]
+
+jobs:
+  build-paper:
+    runs-on: ubuntu-latest
+    name: Build Paper and arXiv Package
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Pandoc and TeX Live
+        # Installs Pandoc for conversion and TeX Live to generate the PDF
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc texlive texlive-latex-extra texlive-fonts-recommended zip
+
+      - name: Generate LaTeX, PDF, and arXiv Zip
+        run: |
+          cd paper
+          
+          # 1. Generate the arXiv-compatible LaTeX file (.tex)
+          pandoc paper.md -o paper.tex --standalone --citeproc --bibliography=paper.bib
+          
+          # 2. Generate the viewable PDF file (.pdf)
+          pandoc paper.md -o paper.pdf --standalone --citeproc --bibliography=paper.bib
+          
+          # 3. Create the ZIP package for arXiv submission
+          # If you have an images/assets folder referenced in your paper, add it to the end of this line (e.g., zip -r arxiv_submission.zip paper.tex paper.bib ../pica/assets/Images)
+          zip arxiv_submission.zip paper.tex paper.bib
+
+      - name: Upload PDF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-pdf
+          path: paper/paper.pdf
+
+      - name: Upload arXiv Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: arxiv-package
+          path: paper/arxiv_submission.zip
