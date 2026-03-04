@@ -189,9 +189,9 @@ class Keithley2400_IV_Backend:
 
 class MeasurementAppGUI:
     PROGRAM_VERSION = "12.2"  # Updated Version
-    CLR_BG_DARK, CLR_HEADER, CLR_FG_LIGHT = '#2B3D4F', '#3A506B', '#EDF2F4'
-    CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_GOLD = '#A7C957', '#EF233C', '#FFC107'
-    CLR_CONSOLE_BG = '#1E2B38'
+    CLR_BG_DARK, CLR_HEADER, CLR_FG_LIGHT = '#B8A392', '#E5DCD3', '#2C2825'
+    CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_GOLD = '#B68B6E', '#EF233C', '#BA6B5E'
+    CLR_CONSOLE_BG = '#E5DCD3'
     FONT_SIZE_BASE = 12
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
@@ -243,8 +243,8 @@ class MeasurementAppGUI:
         style.configure('TButton', font=self.FONT_BASE, padding=(10, 8))
         style.map(
             'TButton', foreground=[
-                ('!active', '#2B3D4F'), ('active', '#EDF2F4')], background=[
-                ('!active', '#8D99AE'), ('active', '#2B3D4F')])
+                ('!active', '#B8A392'), ('active', '#2C2825')], background=[
+                ('!active', '#BA6B5E'), ('active', '#B8A392')])
         style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN)
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED)
         style.configure(

@@ -68,16 +68,16 @@ def run_script_process(script_path):
 
 class PlotterAppGUI:
     PROGRAM_VERSION = "2.1"
-    CLR_BG = '#2B3D4F'
-    CLR_HEADER = '#3A506B'
-    CLR_FG = '#EDF2F4'
-    CLR_FRAME_BG = '#3A506B'
-    CLR_INPUT_BG = '#4C566A'
-    CLR_ACCENT_GREEN = '#A7C957'
-    CLR_ACCENT_RED = '#E74C3C'
-    CLR_ACCENT_BLUE = '#8D99AE'
-    CLR_ACCENT_GOLD = '#FFC107'
-    CLR_CONSOLE_BG = '#1E2B38'
+    CLR_BG = '#B8A392'
+    CLR_HEADER = '#E5DCD3'
+    CLR_FG = '#2C2825'
+    CLR_FRAME_BG = '#E5DCD3'
+    CLR_INPUT_BG = '#F4EFEA'
+    CLR_ACCENT_GREEN = '#B68B6E'
+    CLR_ACCENT_RED = '#BA6B5E'
+    CLR_ACCENT_BLUE = '#BA6B5E'
+    CLR_ACCENT_GOLD = '#BA6B5E'
+    CLR_CONSOLE_BG = '#E5DCD3'
     FONT_BASE = ('Segoe UI', 11)
     FONT_TITLE = ('Segoe UI', 13, 'bold')
     FONT_TITLE_ITALIC = ('Segoe UI', 13, 'bold italic')
@@ -191,7 +191,7 @@ class PlotterAppGUI:
         mpl.rcParams.update({
             'font.family': 'Segoe UI', 'font.size': 11,
             'axes.titlesize': 15, 'axes.labelsize': 13,
-            'figure.facecolor': self.CLR_BG, 'axes.facecolor': '#FFFFFF',
+            'figure.facecolor': self.CLR_BG, 'axes.facecolor': '#F4EFEA',
             'axes.edgecolor': self.CLR_FG, 'axes.labelcolor': self.CLR_FG,
             'xtick.color': self.CLR_FG, 'ytick.color': self.CLR_FG,
             'text.color': self.CLR_FG,

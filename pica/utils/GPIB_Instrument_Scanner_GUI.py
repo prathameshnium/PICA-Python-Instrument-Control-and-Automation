@@ -35,12 +35,12 @@ class GPIB_Instrument_Scanner_GUI:
     """The main GUI application class for scanning VISA instruments."""
     PROGRAM_VERSION = "2.0"
     # --- Styling constants from PICA Launcher ---
-    CLR_BG_DARK = '#2B3D4F'
-    CLR_HEADER = '#3A506B'
-    CLR_FG_LIGHT = '#EDF2F4'
-    CLR_ACCENT_GOLD = '#FFC107'
-    CLR_ACCENT_GREEN = '#A7C957'
-    CLR_CONSOLE_BG = '#1E2B38'
+    CLR_BG_DARK = '#B8A392'
+    CLR_HEADER = '#E5DCD3'
+    CLR_FG_LIGHT = '#2C2825'
+    CLR_ACCENT_GOLD = '#BA6B5E'
+    CLR_ACCENT_GREEN = '#B68B6E'
+    CLR_CONSOLE_BG = '#E5DCD3'
     CLR_TEXT_DARK = '#1A1A1A'
     FONT_SIZE_BASE = 11
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)

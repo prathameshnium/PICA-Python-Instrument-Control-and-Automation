@@ -173,9 +173,9 @@ class Passthrough_IV_GUI:
     PROGRAM_VERSION = "1.6"
     LOGO_SIZE = 110
     LOGO_FILE_PATH = resource_path("../../assets/LOGO/UGC_DAE_CSR_NBG.jpeg") # Path to your logo image
-    CLR_BG_DARK = '#2B3D4F'; CLR_HEADER = '#3A506B'; CLR_FG_LIGHT = '#EDF2F4'; CLR_TEXT_DARK = '#1A1A1A' # Base colors
-    CLR_ACCENT_GOLD = '#FFC107'; CLR_ACCENT_GREEN = '#A7C957'; CLR_ACCENT_RED = '#E74C3C' # Accent colors
-    CLR_CONSOLE_BG = '#1E2B38'; CLR_GRAPH_BG = '#FFFFFF' # Specific component colors
+    CLR_BG_DARK = '#B8A392'; CLR_HEADER = '#E5DCD3'; CLR_FG_LIGHT = '#2C2825'; CLR_TEXT_DARK = '#1A1A1A' # Base colors
+    CLR_ACCENT_GOLD = '#BA6B5E'; CLR_ACCENT_GREEN = '#B68B6E'; CLR_ACCENT_RED = '#BA6B5E' # Accent colors
+    CLR_CONSOLE_BG = '#E5DCD3'; CLR_GRAPH_BG = '#F4EFEA' # Specific component colors
     FONT_BASE = ('Segoe UI', 11); FONT_TITLE = ('Segoe UI', 13, 'bold'); FONT_CONSOLE = ('Consolas', 10) # Fonts
 
     def __init__(self, root):

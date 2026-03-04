@@ -31,8 +31,8 @@ class IVMeasurementApp:
             self.root,
             text='Input',
             bd=4,
-            bg='#2C3E50',
-            fg='#ECF0F1',
+            bg='#B8A392',
+            fg='#2C2825',
             font=(
                 'Helvetica',
                 14,
@@ -46,8 +46,8 @@ class IVMeasurementApp:
                 'Helvetica',
                 18,
                 'bold'),
-            fg='#ECF0F1',
-            bg='#2C3E50').grid(
+            fg='#2C2825',
+            bg='#B8A392').grid(
             row=0,
             column=0,
             columnspan=4,
@@ -60,8 +60,8 @@ class IVMeasurementApp:
             font=(
                 'Helvetica',
                 12),
-            fg='#ECF0F1',
-            bg='#2C3E50').grid(
+            fg='#2C2825',
+            bg='#B8A392').grid(
             row=1,
             column=0,
             padx=10,
@@ -77,8 +77,8 @@ class IVMeasurementApp:
             font=(
                 'Helvetica',
                 12),
-            fg='#ECF0F1',
-            bg='#2C3E50').grid(
+            fg='#2C2825',
+            bg='#B8A392').grid(
             row=2,
             column=0,
             padx=10,
@@ -94,8 +94,8 @@ class IVMeasurementApp:
             font=(
                 'Helvetica',
                 12),
-            fg='#ECF0F1',
-            bg='#2C3E50').grid(
+            fg='#2C2825',
+            bg='#B8A392').grid(
             row=3,
             column=0,
             padx=10,
@@ -107,8 +107,8 @@ class IVMeasurementApp:
             font=(
                 'Helvetica',
                 12),
-            bg='#3498DB',
-            fg='#ECF0F1')
+            bg='#B68B6E',
+            fg='#2C2825')
         self.file_location_button.grid(row=3, column=1, padx=20, pady=10)
 
         Button(
@@ -120,8 +120,8 @@ class IVMeasurementApp:
             font=(
                 'Helvetica',
                 12),
-            bg='#E74C3C',
-            fg='#ECF0F1').grid(
+            bg='#BA6B5E',
+            fg='#2C2825').grid(
             row=5,
             column=1,
             columnspan=1,
@@ -137,8 +137,8 @@ class IVMeasurementApp:
             self.root,
             text='Data Entered',
             bd=4,
-            bg='#2C3E50',
-            fg='#ECF0F1',
+            bg='#B8A392',
+            fg='#2C2825',
             font=(
                 'Helvetica',
                 14,
@@ -150,8 +150,8 @@ class IVMeasurementApp:
             self.root,
             text='Current        Voltage',
             bd=4,
-            bg='#2C3E50',
-            fg='#ECF0F1',
+            bg='#B8A392',
+            fg='#2C2825',
             font=(
                 'Helvetica',
                 14,
@@ -164,8 +164,8 @@ class IVMeasurementApp:
             self.root,
             text='Graph',
             bd=4,
-            bg='#2C3E50',
-            fg='#ECF0F1',
+            bg='#B8A392',
+            fg='#2C2825',
             font=(
                 'Helvetica',
                 14,
@@ -184,8 +184,8 @@ class IVMeasurementApp:
                 font=(
                     'Helvetica',
                     12),
-                fg='#ECF0F1',
-                bg='#2C3E50').grid(
+                fg='#2C2825',
+                bg='#B8A392').grid(
                 row=7,
                 column=0,
                 columnspan=3)
@@ -199,7 +199,7 @@ class IVMeasurementApp:
                 font=(
                     'Helvetica',
                     12),
-                bg='#ECF0F1')
+                bg='#2C2825')
             for i in range(int(I_value)):
                 list_current.insert(tk.END, f"{i}                         {i}")
 
