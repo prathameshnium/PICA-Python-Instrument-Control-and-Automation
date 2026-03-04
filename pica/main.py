@@ -123,14 +123,14 @@ def resource_path(relative_path):
 class PICALauncherApp:
 
     PROGRAM_VERSION = "1.0.0"
-    CLR_BG_DARK = '#2B3D4F'
-    CLR_FRAME_BG = '#3A506B'
-    CLR_ACCENT_GOLD = '#FFC107'
-    CLR_ACCENT_GREEN = '#A7C957'
-    CLR_TEXT = '#EDF2F4'
+    CLR_BG_DARK = '#B8A392'
+    CLR_FRAME_BG = '#E5DCD3'
+    CLR_ACCENT_GOLD = '#BA6B5E'
+    CLR_ACCENT_GREEN = '#B68B6E'
+    CLR_TEXT = '#2C2825'
     CLR_TEXT_DARK = '#1A1A1A'
-    CLR_CONSOLE_BG = '#1E2B38'
-    CLR_LINK = '#87CEEB'  # Sky Blue, for better contrast
+    CLR_CONSOLE_BG = '#E5DCD3'
+    CLR_LINK = '#2E5266'  # Sky Blue, for better contrast
     FONT_SIZE_BASE = 12
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 10, 'bold')
