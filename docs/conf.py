@@ -16,3 +16,9 @@ source_suffix = {
 
 # Utilize the standard Read the Docs visual theme
 html_theme = 'sphinx_rtd_theme'
+
+myst_enable_extensions = [
+    "html_image",       # Allows raw HTML <img> tags to render
+    "html_admonition",  # Allows raw HTML blocks
+    "colon_fence",      # Enables ::: fenced directives
+]
