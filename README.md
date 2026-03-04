@@ -13,13 +13,16 @@
   <img src="https://img.shields.io/badge/Python-3.10+-brightgreen.svg?logo=python&logoColor=white&style=flat-square" alt="Python Version">
   <a href="https://doi.org/10.5281/zenodo.18377217"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.18377217.svg" alt="DOI"></a>
   <a href="https://joss.theoj.org/papers/444957f999023680f8abbbf0e75687fa"><img src="https://joss.theoj.org/papers/444957f999023680f8abbbf0e75687fa/status.svg"></a>
+  <a href="https://pypi.org/project/pica-suite/"><img src="https://img.shields.io/pypi/v/pica-suite.svg?style=flat-square&label=PyPI&color=blue" alt="PyPI Version"></a>
+  <a href="https://pypi.org/project/pica-suite/"><img src="https://img.shields.io/pypi/dm/pica-suite?style=flat-square&label=PyPI%20Downloads" alt="PyPI Downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License: MIT"></a>
   <br />
+  <a href="https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/"><img src="https://img.shields.io/badge/Docs-Online%20Documentation-blue.svg?logo=readthedocs&style=flat-square" alt="Online Documentation"></a>
   <a href="docs/User_Manual.md"><img src="https://img.shields.io/badge/Docs-User_Manual-blue.svg?logo=markdown&style=flat-square" alt="Documentation"></a>
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/Contributing-Guidelines-orange.svg?style=flat-square" alt="Contributing Guidelines"></a>
   <a href="CODE_OF_CONDUCT.md"><img src="https://img.shields.io/badge/Code%20of%20Conduct-Contributor%20Covenant-ff69b4.svg?style=flat-square" alt="Code of Conduct"></a>
   <br />
-  <img src="https://img.shields.io/badge/Project_Inception-June%202022-orange?style=flat-square&logo=calendar" alt="Project_Inception Date">
+  <img src="https://img.shields.io/badge/Project_Inception-June%202022-orange?style=flat-square&logo=calendar" alt="Project Inception Date">
   <img src="https://img.shields.io/badge/Project%20Age-3%2B%20Years-blueviolet?style=flat-square" alt="Project Age">
   <img src="https://img.shields.io/github/created-at/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square" alt="GitHub created-at">
   <img src="https://img.shields.io/github/downloads/prathameshnium/PICA-Python-Instrument-Control-and-Automation/total?style=flat-square&color=blue" alt="Total Downloads">
@@ -28,6 +31,10 @@
   <img src="https://img.shields.io/github/languages/code-size/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=blue" alt="Code Size">
   <img src="https://img.shields.io/github/last-commit/prathameshnium/PICA-Python-Instrument-Control-and-Automation?style=flat-square&color=critical" alt="Last Commit">
 </p>
+
+---
+
+> 🎉 **v1.0.3 is now live!** The GUI has been refreshed with a new **Latte** theme — lighter, warmer, and easier on the eyes during long measurement sessions. Install or upgrade via pip: `pip install --upgrade pica-suite`
 
 ---
 
@@ -46,15 +53,17 @@ The suite performs automated protocols including:
 <p align="center">
   <img src="pica/assets/Images/screenshots/00_PICA_Launcher.png" alt="PICA Launcher" width="800">
   <br>
-  <em>PICA Launcher Interface for accessing all measurement modules.</em>
+  <em>PICA Launcher Interface (v1.0.3, Latte theme) for accessing all measurement modules.</em>
 </p>
 
 > **More details here:**
-> For more information, go through the [User Manual](docs/User_Manual.md).
+> Full online documentation is available at [https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/).
+> For usage guides, see the [User Manual](docs/User_Manual.md).
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [What's New in v1.0.3](#whats-new-in-v103)
 - [Motivation](#motivation)
 - [Key Features](#key-features)
 - [Design and Implementation](#design-and-implementation)
@@ -69,6 +78,28 @@ The suite performs automated protocols including:
 
 ---
 
+## What's New in v1.0.3
+
+**v1.0.3** is the latest release and is available on [PyPI](https://pypi.org/project/pica-suite/) and [GitHub Releases](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases).
+
+```bash
+pip install pica-suite==1.0.3
+# or upgrade from a previous version:
+pip install --upgrade pica-suite
+```
+
+### 🎨 Latte GUI Theme
+The GUI has been redesigned with a **Latte** theme — a lighter, warmer colour palette that replaces the previous darker interface. This makes PICA more comfortable for extended lab sessions and improves readability under typical laboratory lighting conditions.
+
+Key visual changes:
+* Lighter background and widget colours throughout all measurement modules.
+* Improved contrast for console log text.
+* Softer colour scheme for real-time plot backgrounds.
+
+For the full changelog, see [`CHANGELOG.md`](CHANGELOG.md).
+
+---
+
 ## Motivation
 
 Advancements in experimental physics and device manufacturing depend on the precise characterisation of material properties under extreme physical conditions. Researchers often face a binary choice: purchase expensive proprietary software or develop custom measurement scripts from scratch.
@@ -79,7 +110,7 @@ PICA enables continuous operation across a full range of measurements, from ultr
 
 ## Key Features
 
-* **Accessibility:** A professional GUI dashboard allows researchers without coding experience to configure and run complex measurement protocols immediately using pre-packaged measurement modules.
+* **Accessibility:** A professional GUI dashboard (now with the Latte theme) allows researchers without coding experience to configure and run complex measurement protocols immediately using pre-packaged measurement modules.
 * **Operational Validation:** Validated via cryogenic transport measurements using a custom-designed probe in conjunction with a **Physical Property Measurement System (PPMS)** (5-380 K, up to 14 Tesla) at the [UGC DAE Consortium for Scientific Research, Mumbai Centre](https://www.csr.res.in/Mumbai_Centre).
 * **Fault Tolerance:** Control logic is isolated from the user interface. Hardware timeouts or driver crashes are prevented from freezing the main dashboard.
 * **Modular CLI Architecture:** Measurement modules contain CLI counterparts, allowing researchers to utilize PICA's protocol logic for headless automation or integration into other workflows without GUI overhead.
@@ -124,8 +155,6 @@ The system is currently validated with industry-standard hardware, covering a re
 
 *While the current implementation drives specific instruments, the underlying framework is highly customizable. Researchers need only replace specific SCPI commands to utilize the suite with different models.*
 
-
-
 > [!NOTE]
 > **Understanding "Delta Mode":** The term "Delta Mode" refers specifically to a technique used by Keithley Models 6220 and 6221 Current Sources in conjunction with the Model 2182/2182A Nanovoltmeter for very low resistance measurements. This method is described in detail in the [Keithley Low Level Measurements Handbook](https://www.tek.com/en/documents/product-article/keithley-low-level-measurements-handbook---7th-edition). In this documentation, "Ultra Low Resistance Measurements" is used as the general scientific term, while "Delta Mode" may appear when specifically referencing the Keithley-specific method or program files.
 
@@ -139,7 +168,8 @@ The system is currently validated with industry-standard hardware, covering a re
 <p align="center">
   <img src="pica/assets/Images/screenshots/K6517B_IV.png" alt="K6517B IV" width="600">
   <br>
-  <em>Interface for current-voltage (I-V) characterisation of high-impedance materials using the Keithley 6517B Electrometer.</p>
+  <em>Interface for current-voltage (I-V) characterisation of high-impedance materials using the Keithley 6517B Electrometer.</em>
+</p>
 
 ---
 
@@ -151,8 +181,6 @@ The system is currently validated with industry-standard hardware, covering a re
 
 ## Pre-requisites: The VISA Driver
 
-
-
 > [!WARNING]
 > **A VISA Backend is Required:** [`PyVISA`](https://github.com/pyvisa/pyvisa) is a Python wrapper, not a driver. For PICA to communicate with hardware, you **must** install a VISA backend on your system first. If you attempt to run the software on a clean machine without a VISA implementation, it will fail to find the instruments. This is the most common failure point for new instrument control setups.
 >
@@ -162,11 +190,25 @@ The system is currently validated with industry-standard hardware, covering a re
 >
 > **Before proceeding, verify your VISA installation.**
 
---- 
+---
 
 ## Getting Started
 
-PICA is structured as a standard Python package. The following instructions are for the supported Windows platform.
+PICA is available on [PyPI](https://pypi.org/project/pica-suite/) and structured as a standard Python package. The following instructions are for the supported Windows platform.
+
+### Option 1: Install from PyPI (Recommended)
+
+```bash
+pip install pica-suite
+```
+
+To upgrade to the latest version (currently **v1.0.3**):
+
+```bash
+pip install --upgrade pica-suite
+```
+
+### Option 2: Install from Source
 
 1.  **Clone the Repository**
     ```bash
@@ -179,7 +221,7 @@ PICA is structured as a standard Python package. The following instructions are 
     # Create and activate a virtual environment
     python -m venv venv
     venv\Scripts\activate
-    
+
     # Install the package and its dependencies
     pip install .
     ```
@@ -215,20 +257,19 @@ PICA is structured as a standard Python package. The following instructions are 
     ```bash
     pica-cli
     ```
-    
+
     > [!IMPORTANT]
     > **Template Scripts:** The instrument control modules (CLI's) provided are designed as **template scripts**. Users are expected to modify these scripts programmatically to adapt them to their specific experimental requirements and custom workflows. They are also excellent for developing **custom measurement protocols, sequences, and for learning instrument automation**. These scripts are typically named with an 'Instrument_Control' suffix to denote their programmatic nature. This approach ensures maximum flexibility and customization for advanced research applications.
-    
+
     > [!NOTE]
-    > **Legacy CLI Notice:** The PICA CLI (`pica-cli`) is retained to support legacy headless workflows. While fully functional for specific protocols, this interface is **less frequently maintained** and may not support recent features available in the GUI. 
+    > **Legacy CLI Notice:** The PICA CLI (`pica-cli`) is retained to support legacy headless workflows. While fully functional for specific protocols, this interface is **less frequently maintained** and may not support recent features available in the GUI.
     >
     > We **strongly recommend** new users utilize the PICA GUI for the most complete and supported experience.
+
 ## System Requirements & Compatibility
 
 **Supported Platform:** Windows 10 / 11
 **Architecture:** x86_64
-
-
 
 > [!IMPORTANT]
 > **Windows Only**
@@ -255,8 +296,7 @@ Upon launching PICA (`pica-gui`), select your desired measurement module from th
 
 *The interface is designed to be minimalistic to reduce unnecessary user interaction during active high-precision, low-noise transport measurements.*
 
-
-
+---
 
 ## Running Tests Locally
 
@@ -278,8 +318,6 @@ python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
 ```
 
 ### Experimental Linux Instructions
-
-
 
 > [!WARNING]
 > **Experimental Support:** The following instructions are for experimental purposes only. PICA is not officially supported on Linux (for now), and you will likely encounter functional or UI-related issues.
@@ -306,7 +344,8 @@ For downloadable release builds, please visit the [releases page](https://github
 
 PICA evolved from simple offline scripts in 2022 to a full-stack automated suite.
 
-  * **v1.0.0 (Initial Public Release):** Version numbering has been reset from legacy development builds (v17.0) to v1.0.0 to standardize the package for public distribution and citation.
+  * **v1.0.3 (Latest):** GUI refreshed with the **Latte** theme — lighter, warmer, and less dark. Available on [PyPI](https://pypi.org/project/pica-suite/).
+  * **v1.0.1 / v1.0.0 (Initial Public Release):** Version numbering was reset from legacy development builds (v17.0) to v1.0.0 to standardize the package for public distribution and citation.
   * **v17.0:** Professional directory restructuring, Semantic Versioning, and documentation overhaul.
   * **v15.0:** JOSS submission preparation, CI/CD integration.
   * **v13.0:** Transition to Multiprocessing and standardized GUI themes.
@@ -324,11 +363,13 @@ The project's earlier history and foundational development are outlined below:
 
 ## Resources & Documentation
 
-
+* **Online Documentation:** Full documentation site at [https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/).
+* **PyPI Package:** Install directly via [https://pypi.org/project/pica-suite/](https://pypi.org/project/pica-suite/).
 * **User Manual:** Details on the project and usage guides are available in the [User Manual](docs/User_Manual.md).
 * **Instrument Manuals:** A list of instrument manuals is available in [docs/Instruments_Manuals_Lists.md](docs/Instruments_Manuals_Lists.md).
 * **GitLab Backup:** This project is manually backed up weekly to a [GitLab repository](https://gitlab.com/prathameshnium/pica-python-instrument-control-and-automation).
 * **Project Web Page:** [https://prathameshdeshmukh.site/pages/project-pica.html](https://prathameshdeshmukh.site/pages/project-pica.html).
+
 ---
 
 ## Citation
@@ -343,18 +384,17 @@ If you use this software in your research, please cite it:
   day          = 26,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {1.0.1},
+  version      = {1.0.3},
   doi          = {10.5281/zenodo.18377217},
   url          = {https://doi.org/10.5281/zenodo.18377217}
 }
-````
+```
 
 ## Authors & Funding
 
 This project is led by [**Prathamesh Deshmukh**](https://www.researchgate.net/profile/Prathamesh-Deshmukh-6) under the supervision of [**Dr. Sudip Mukherjee**](https://www.csr.res.in/Faculty/profile/889/893/Dr.SudipMukherjee) at the UGC-DAE Consortium for Scientific Research, Mumbai Centre, Bhabha Atomic Research Centre, Mumbai, 400 085, Maharashtra, India.
 
 We acknowledge the financial support provided under the **SERB-CRG project grant No. CRG/2022/005676** from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science and Technology (DST), Government of India.
-
 
 <p align="center">
   <img src="pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
