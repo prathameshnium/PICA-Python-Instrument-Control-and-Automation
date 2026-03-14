@@ -24,8 +24,15 @@ jobs:
         run: |
           python3 - << 'PYEOF'
           import yaml
+          import os
 
-          with open('paper/paper.md', 'r') as f:
+          # Ensure we are reading the correct path
+          file_path = 'paper/paper.md'
+          if not os.path.exists(file_path):
+              # Fallback for different repo structures
+              file_path = 'paper.md'
+
+          with open(file_path, 'r') as f:
               content = f.read()
 
           parts = content.split('---\n')
@@ -50,11 +57,11 @@ jobs:
 
           # 2. Build LaTeX Title Block
           lines = [r'\begin{center}']
-          lines.append(r'{\LARGE\bfseries ' + fm.get('title','') + r'}\\[1.2em]')
+          lines.append(r'{\LARGE\bfseries ' + fm.get('title','').replace('&', r'\&') + r'}\\[1.2em]')
 
           auth_line = []
           for a in authors:
-              name = a['name']
+              name = a['name'].replace('&', r'\&')
               aff_indices = str(a.get('affiliation', '')).split(',')
               marker = ",".join([idx.strip() for idx in aff_indices])
               if a.get('corresponding'):
@@ -62,17 +69,18 @@ jobs:
               auth_line.append(rf'{name}$^{{{marker}}}$')
           lines.append(r'\large ' + r', '.join(auth_line) + r'\\[0.8em]')
 
-          for idx, aff in aff_map.items():
+          for idx, aff in sorted(aff_map.items()):
+              name = aff['name'].replace('&', r'\&')
               ror_id = aff.get('ror', '')
-              # Link ROR IDs for professional institutional verification
               ror_link = rf" \small (ROR: \href{{https://ror.org/{ror_id}}}{{{ror_id}}})" if ror_id else ""
-              lines.append(rf'$^{{{idx}}}$\small {aff["name"]}{ror_link}\\[0.2em]')
+              lines.append(rf'$^{{{idx}}}$\small {name}{ror_link}\\[0.2em]')
 
-          corres = [a['email'] for a in authors if a.get('corresponding') and a.get('email')]
+          corres = [a for a in authors if a.get('corresponding') and a.get('email')]
           if corres:
-              lines.append(rf'\small $^*$Corresponding author: \href{{mailto:{corres[0]}}}{{{corres[0]}}}\\[0.2em]')
+              email = corres[0]['email']
+              lines.append(rf'\small $^*$Corresponding author: \href{{mailto:{email}}}{{{email}}}\\[0.2em]')
           
-          # Explicit Zenodo DOI for the PICA suite
+          # Zenodo DOI Integration
           lines.append(r'\small DOI: \href{https://doi.org/10.5281/zenodo.18377216}{10.5281/zenodo.18377216}\\[0.2em]')
           lines.append(r'\small ' + str(fm.get('date','')))
           lines.append(r'\end{center}')
@@ -85,6 +93,7 @@ jobs:
       - name: Create Professional Header
         run: |
           cat > /tmp/header.tex << 'EOF'
+          \usepackage{hyperref}
           \usepackage{xurl}
           \usepackage{fontspec}
           \setmainfont{TeX Gyre Termes}
@@ -92,26 +101,34 @@ jobs:
           \setmathfont{TeX Gyre Termes Math}
           \usepackage{fancyhdr}
           \usepackage{xcolor}
+
+          \hypersetup{
+            breaklinks=true,
+            colorlinks=true,
+            linkcolor=blue,
+            urlcolor=blue,
+            citecolor=blue,
+            pdfauthor={Deshmukh and Mukherjee},
+            pdftitle={PICA: High-Precision Automation}
+          }
+          
           \pagestyle{fancy}
           \fancyhf{}
-          
-          % Clear identification as a preprint while maintaining professional style
           \fancyhead[L]{\small \textbf{\textcolor{gray}{PREPRINT -- NOT PEER REVIEWED}}}
           \fancyhead[R]{\small \textit{PICA: Advanced Transport Automation}}
           \fancyfoot[C]{\thepage}
           \renewcommand{\headrulewidth}{0.4pt}
           
           \renewcommand{\maketitle}{}
-          \hypersetup{
-            breaklinks=true,
-            pdfauthor={Deshmukh and Mukherjee},
-            pdftitle={PICA: High-Precision Automation}
-          }
           EOF
 
       - name: Generate Publication-Ready PDF
         run: |
-          cd paper
+          # Detect directory
+          TARGET_DIR="paper"
+          if [ ! -d "$TARGET_DIR" ]; then TARGET_DIR="."; fi
+          cd $TARGET_DIR
+
           pandoc paper.md -o paper.pdf \
             --standalone \
             --citeproc \
@@ -125,4 +142,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: professional-preprint
-          path: paper/paper.pdf
+          path: |
+             paper/paper.pdf
+             paper.pdf
