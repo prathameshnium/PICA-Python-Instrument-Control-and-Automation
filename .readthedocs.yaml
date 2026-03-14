@@ -7,13 +7,12 @@ build:
   jobs:
     # This runs AFTER sphinx-build finishes
     post_build:
+      # Use || true to prevent the build from failing if a folder is missing
       - mkdir -p $READTHEDOCS_OUTPUT/html/pica
-      - cp -r pica/assets/ $READTHEDOCS_OUTPUT/html/pica/
+      - cp -r pica/assets/ $READTHEDOCS_OUTPUT/html/pica/ || echo "Assets not found"
       - mkdir -p $READTHEDOCS_OUTPUT/html/publications
-      - cp -r publications/ $READTHEDOCS_OUTPUT/html/publications/ || true
+      - cp -r publications/ $READTHEDOCS_OUTPUT/html/publications/ || echo "Pubs not found"
 
 python:
   install:
-    - method: pip
-      path: .
     - requirements: docs/requirements.txt
