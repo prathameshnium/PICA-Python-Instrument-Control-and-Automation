@@ -5,7 +5,7 @@
 ---
 
 :::{note}
-🎉 **v1.0.4 is now live!** The GUI has been refreshed with a new Latte theme  lighter, warmer, and easier on the eyes during long measurement sessions. Install or upgrade via pip:
+ **v1.0.4 is now live!** The GUI has been refreshed with a new Latte theme  lighter, warmer, and easier on the eyes during long measurement sessions. Install or upgrade via pip:
 
 ```bash
 pip install --upgrade pica-suite
@@ -226,7 +226,7 @@ Automatically launched upon startup (and accessible within modules), this utilit
 
 In the main PICA launcher, the VISA/GPIB scanner is configured to execute automatically at application startup. This design choice is motivated by the fact that initiating a measurement without first verifying the instrument connection is highly likely to fail and may result in non-informative error messages, such as a VISA connection timeout.
 
-:::{figure} ../pica/assets/Images/screenshots/01_GPIB_Scanner.png
+:::{figure} Images/screenshots/01_GPIB_Scanner.png
 :alt: GPIB Scanner
 :width: 300px
 :align: center
@@ -244,7 +244,7 @@ A standalone, multiprocessing-enabled tool for detailed data analysis. Unlike th
   * **Live Updates:** Monitoring active experiments by auto-refreshing data from disk.
   * **Flexible Axis Control:** Toggling linear/log scales to analyze data spanning orders of magnitude.
 
-:::{figure} ../pica/assets/Images/screenshots/02_Plotter_Utility.png
+:::{figure} Images/screenshots/02_Plotter_Utility.png
 :alt: Plotter Utility
 :width: 600px
 :align: center
@@ -302,7 +302,7 @@ impedance analyzer enables the characterization of capacitance anomalies over th
 The software synchronizes the source and voltmeter via a **hardware trigger link (RS-232)** for microsecond-level timing.
 :::
 
-:::{figure} ../pica/assets/Images/screenshots/K6221_IV_Sweep.png
+:::{figure} Images/screenshots/K6221_IV_Sweep.png
 :alt: Delta Mode IV Sweep
 :width: 600px
 :align: center
@@ -310,7 +310,7 @@ The software synchronizes the source and voltmeter via a **hardware trigger link
 I-V sweep measurement using the Sweep Mode, designed for low-resistance measurements with a Keithley 6221 and 2182.
 :::
 
-:::{figure} ../pica/assets/Images/screenshots/K6221_RT_Control.png
+:::{figure} Images/screenshots/K6221_RT_Control.png
 :alt: Delta Mode RT Control
 :width: 600px
 :align: center
@@ -318,7 +318,7 @@ I-V sweep measurement using the Sweep Mode, designed for low-resistance measurem
 Ultra Low Resistance Measurement R-T measurement with active temperature control, using a Keithley 6221, K2182, and a temperature controller.
 :::
 
-:::{figure} ../pica/assets/Images/screenshots/K6221_RT_Sensing.png
+:::{figure} Images/screenshots/K6221_RT_Sensing.png
 :alt: Delta Mode RT Sensing
 :width: 600px
 :align: center
@@ -336,7 +336,7 @@ Ultra Low Resistance Measurement R-T measurement in sensing mode, where the syst
       * **I-V Sweep:** Linear sweeps, hysteresis loops, or custom current lists.
       * **R-T Active Control:** Applies constant DC current while coordinating with a temperature controller (e.g., Lake Shore 350) to ramp temperature.
 
-:::{figure} ../pica/assets/Images/screenshots/K2400_IV_Sweep.png
+:::{figure} Images/screenshots/K2400_IV_Sweep.png
 :alt: K2400 IV Sweep
 :width: 600px
 :align: center
@@ -344,7 +344,7 @@ Ultra Low Resistance Measurement R-T measurement in sensing mode, where the syst
 A standard I-V sweep performed with a Keithley 2400 SourceMeter, suitable for general-purpose device and sample characterization.
 :::
 
-:::{figure} ../pica/assets/Images/screenshots/K2400_RT_Control.png
+:::{figure} Images/screenshots/K2400_RT_Control.png
 :alt: K2400 RT Control
 :width: 600px
 :align: center
@@ -352,7 +352,7 @@ A standard I-V sweep performed with a Keithley 2400 SourceMeter, suitable for ge
 Resistance-Temperature (R-T) measurement with active temperature control, using a Keithley 2400 and a Lakeshore 350 controller.
 :::
 
-:::{figure} ../pica/assets/Images/screenshots/K2400_RT_Sensing.png
+:::{figure} Images/screenshots/K2400_RT_Sensing.png
 :alt: K2400 RT Sensing
 :width: 600px
 :align: center
@@ -368,7 +368,7 @@ Resistance-Temperature (R-T) measurement in sensing mode, where the system logs 
   * **Scientific Objective:** Detects subtle phase transitions in semiconductors and oxides where standard SMU resolution is insufficient.
   * **Advantage:** Combines the stable sourcing of the SMU with the nanovolt-level sensitivity of a dedicated voltmeter, utilizing a true 4-wire configuration to eliminate lead resistance errors.
 
-:::{figure} ../pica/assets/Images/screenshots/K2400_2182_IV.png
+:::{figure} Images/screenshots/K2400_2182_IV.png
 :alt: K2400_2182 IV
 :width: 600px
 :align: center
@@ -376,7 +376,7 @@ Resistance-Temperature (R-T) measurement in sensing mode, where the system logs 
 High-precision I-V characterization using a Keithley 2400 as a current source and a Keithley 2182 nanovoltmeter for sensitive mid-range resistance measurements.
 :::
 
-:::{figure} ../pica/assets/Images/screenshots/K2400_2182_RT_Control.png
+:::{figure} Images/screenshots/K2400_2182_RT_Control.png
 :alt: K2400 2182 RT Control
 :width: 600px
 :align: center
@@ -384,7 +384,7 @@ High-precision I-V characterization using a Keithley 2400 as a current source an
 High-precision R-T measurement with active temperature control, combining the K2400, K2182, and a L350 temperature controller.
 :::
 
-:::{figure} ../pica/assets/Images/screenshots/K2400_2182_RT_Sensing.png
+:::{figure} Images/screenshots/K2400_2182_RT_Sensing.png
 :alt: K2400 2182 RT Sensing
 :width: 600px
 :align: center
@@ -403,7 +403,7 @@ High-precision R-T measurement in sensing mode, leveraging the K2400 and K2182 f
 
 **A screencast demonstrating the high resistance IV module is available at [this link](https://drive.google.com/file/d/13W-Z4N-08t9m0xxuR30sjTLmUVG1VyQd/view?usp=sharing).**
 
-:::{figure} ../pica/assets/Images/screenshots/K6517B_IV.png
+:::{figure} Images/screenshots/K6517B_IV.png
 :alt: K6517B IV
 :width: 600px
 :align: center
@@ -411,7 +411,7 @@ High-precision R-T measurement in sensing mode, leveraging the K2400 and K2182 f
 High-resistance I-V measurement performed with a Keithley 6517B Electrometer, designed for characterizing insulating materials.
 :::
 
-:::{figure} ../pica/assets/Images/screenshots/K6517B_RT_Control.png
+:::{figure} Images/screenshots/K6517B_RT_Control.png
 :alt: K6517B RT Control
 :width: 600px
 :align: center
@@ -419,7 +419,7 @@ High-resistance I-V measurement performed with a Keithley 6517B Electrometer, de
 High-resistance R-T measurement with active temperature control using a Keithley 6517B.
 :::
 
-:::{figure} ../pica/assets/Images/screenshots/K6517B_RT_Sensing.png
+:::{figure} Images/screenshots/K6517B_RT_Sensing.png
 :alt: K6517B RT Sensing
 :width: 600px
 :align: center
@@ -440,7 +440,7 @@ This module automates the measurement of pyroelectric currents (Ip) as a functio
     3.  **Measurement:** Record the depolarization current peak indicative of phase transition.
   * **Best Practice:** For measurements in the fA range, ensure your setup utilises proper shielding (e.g., double-layer Faraday cage).
 
-:::{figure} ../pica/assets/Images/screenshots/Pyroelectric_Current.png
+:::{figure} Images/screenshots/Pyroelectric_Current.png
 :alt: Pyroelectric Current
 :width: 600px
 :align: center
@@ -466,7 +466,7 @@ This utility provides a dedicated interface for **In-situ and ex-situ electrical
 
   *   **Scientific Objective:** Measures Capacitance (C) and Loss Tangent (tan delta) as a function of frequency or DC bias voltage (C-V Analysis).
 
-:::{figure} ../pica/assets/Images/screenshots/Keysight_CV.png
+:::{figure} Images/screenshots/Keysight_CV.png
 :alt: Keysight CV
 :width: 600px
 :align: center
@@ -483,7 +483,7 @@ PICA also includes standalone utilities for monitoring and controlling temperatu
   * **Temperature Monitor:** A simple interface for logging temperature from multiple types of sensors.
   * **Temperature Control:** A dedicated module for setting temperature ramps, controlling heater outputs, and managing control loops.
 
-:::{figure} ../pica/assets/Images/screenshots/Lakeshore_Temp_Monitor.png
+:::{figure} Images/screenshots/Lakeshore_Temp_Monitor.png
 :alt: Lakeshore Temp Monitor
 :width: 600px
 :align: center
@@ -491,7 +491,7 @@ PICA also includes standalone utilities for monitoring and controlling temperatu
 The standalone Temperature Monitor utility, used for logging data from a Lakeshore 350 controller.
 :::
 
-:::{figure} ../pica/assets/Images/screenshots/Lakeshore_Temp_Control.png
+:::{figure} Images/screenshots/Lakeshore_Temp_Control.png
 :alt: Lakeshore Temp Control
 :width: 600px
 :align: center
@@ -632,7 +632,7 @@ The procedure for adding a new instrument module to PICA is described in the [CO
 
 ## 13. Authors & Acknowledgments
 
-:::{figure} ../pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg
+:::{figure} LOGO/UGC_DAE_CSR_NBG.jpeg
 :alt: UGC DAE CSR Logo
 :width: 150px
 :align: center
