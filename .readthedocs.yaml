@@ -4,14 +4,16 @@ build:
   os: ubuntu-22.04
   tools:
     python: "3.10"
-  # This mimics your GitHub Action logic by running custom commands
-  post_build:
-    - mkdir -p $READTHEDOCS_OUTPUT/html/pica
-    - cp -r pica/assets $READTHEDOCS_OUTPUT/html/pica/
-    - cp -r publications/ $READTHEDOCS_OUTPUT/html/publications/ || true
+  jobs:
+    # This runs AFTER sphinx-build finishes
+    post_build:
+      - mkdir -p $READTHEDOCS_OUTPUT/html/pica
+      - cp -r pica/assets/ $READTHEDOCS_OUTPUT/html/pica/
+      - mkdir -p $READTHEDOCS_OUTPUT/html/publications
+      - cp -r publications/ $READTHEDOCS_OUTPUT/html/publications/ || true
 
 python:
   install:
     - method: pip
       path: .
-    - requirements: docs/requirements.txt # Ensure these exist or list them here
+    - requirements: docs/requirements.txt
