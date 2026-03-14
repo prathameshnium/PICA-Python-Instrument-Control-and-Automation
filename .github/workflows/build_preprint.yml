@@ -1,4 +1,26 @@
-- name: Extract Metadata and Build LaTeX Title
+name: Build Professional Preprint
+
+on:
+  push:
+    branches: [main]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-paper:
+    runs-on: ubuntu-latest
+    name: Build Preprint PDF
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install apt packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc texlive texlive-latex-extra texlive-fonts-recommended texlive-xetex texlive-fonts-extra zip python3-yaml
+
+      - name: Extract Metadata and Build LaTeX Title
         run: |
           python3 - << 'PYEOF'
           import yaml
@@ -13,7 +35,7 @@
           affiliations = fm.get('affiliations', [])
           aff_map = {str(a['index']): a for a in affiliations}
 
-          # ── Pandoc Metadata ─────────────────────────────────────────────────
+          # 1. Generate Pandoc Metadata
           meta = {
               'title': fm.get('title', ''),
               'date': str(fm.get('date', '')),
@@ -26,7 +48,7 @@
           with open('/tmp/pandoc_meta.yaml', 'w') as f:
               yaml.dump(meta, f)
 
-          # ── Title Block Construction ────────────────────────────────────────
+          # 2. Build LaTeX Title Block
           lines = [r'\begin{center}']
           lines.append(r'{\LARGE\bfseries ' + fm.get('title','') + r'}\\[1.2em]')
 
@@ -42,6 +64,7 @@
 
           for idx, aff in aff_map.items():
               ror_id = aff.get('ror', '')
+              # Link ROR IDs for professional institutional verification
               ror_link = rf" \small (ROR: \href{{https://ror.org/{ror_id}}}{{{ror_id}}})" if ror_id else ""
               lines.append(rf'$^{{{idx}}}$\small {aff["name"]}{ror_link}\\[0.2em]')
 
@@ -49,6 +72,7 @@
           if corres:
               lines.append(rf'\small $^*$Corresponding author: \href{{mailto:{corres[0]}}}{{{corres[0]}}}\\[0.2em]')
           
+          # Explicit Zenodo DOI for the PICA suite
           lines.append(r'\small DOI: \href{https://doi.org/10.5281/zenodo.18377216}{10.5281/zenodo.18377216}\\[0.2em]')
           lines.append(r'\small ' + str(fm.get('date','')))
           lines.append(r'\end{center}')
@@ -58,7 +82,7 @@
               f.write('\n'.join(lines))
           PYEOF
 
-      - name: Create Header
+      - name: Create Professional Header
         run: |
           cat > /tmp/header.tex << 'EOF'
           \usepackage{xurl}
@@ -71,13 +95,12 @@
           \pagestyle{fancy}
           \fancyhf{}
           
-          % ── Clear Preprint Identification ───────────────────────────────────
+          % Clear identification as a preprint while maintaining professional style
           \fancyhead[L]{\small \textbf{\textcolor{gray}{PREPRINT -- NOT PEER REVIEWED}}}
           \fancyhead[R]{\small \textit{PICA: Advanced Transport Automation}}
           \fancyfoot[C]{\thepage}
           \renewcommand{\headrulewidth}{0.4pt}
           
-          % ── Internal Reference Logic ────────────────────────────────────────
           \renewcommand{\maketitle}{}
           \hypersetup{
             breaklinks=true,
@@ -85,3 +108,21 @@
             pdftitle={PICA: High-Precision Automation}
           }
           EOF
+
+      - name: Generate Publication-Ready PDF
+        run: |
+          cd paper
+          pandoc paper.md -o paper.pdf \
+            --standalone \
+            --citeproc \
+            --pdf-engine=xelatex \
+            --metadata-file=/tmp/pandoc_meta.yaml \
+            --include-in-header=/tmp/header.tex \
+            --include-before-body=/tmp/title_block.tex \
+            --variable=link-citations=true
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: professional-preprint
+          path: paper/paper.pdf
