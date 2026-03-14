@@ -5,7 +5,6 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
-# Force GitHub Actions to use Node.js 24 for all steps
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -37,21 +36,22 @@ jobs:
           
       - name: Build HTML documentation
         run: |
-          # Build the documentation into the standard output folder
+          # 1. Build the documentation
           sphinx-build -b html docs/ docs/_build/html
 
-      - name: Fix Image Paths and Assets
+      - name: Mirror Structure for Images
         run: |
-          # 1. Create the expected directory structure in the output
-          # Since your MD uses "../pica/assets", we create a 'pica' folder 
-          # at the same level as your HTML files.
+          # This step makes "../pica/assets" work without changing your manual.
+          # We create a folder structure inside the build output that matches 
+          # your relative paths.
+          
           mkdir -p docs/_build/html/pica
           cp -r pica/assets docs/_build/html/pica/
-
-          # 2. Copy the publications folder as you did before
+          
+          # Copy publications folder
           cp -r publications/ docs/_build/html/publications/ || true
-
-          # 3. CRITICAL: Add .nojekyll to ensure GitHub Pages serves underscore folders
+          
+          # CRITICAL: Prevent GitHub from hiding folders starting with underscores
           touch docs/_build/html/.nojekyll
           
       - name: Upload GitHub Pages artifact
