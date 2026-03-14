@@ -16,12 +16,36 @@ jobs:
       - name: Cache apt packages
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: pandoc texlive texlive-latex-extra texlive-fonts-recommended texlive-xetex zip
+          packages: pandoc texlive texlive-latex-extra texlive-fonts-recommended texlive-xetex zip python3-yaml
           version: 1.0
 
-      - name: Create preprint watermark header
+      - name: Extract author names from JOSS frontmatter
+        run: |
+          python3 - << 'EOF'
+          import yaml
+
+          with open('paper/paper.md', 'r') as f:
+              content = f.read()
+
+          # YAML frontmatter is between the first two '---' delimiters
+          parts = content.split('---\n')
+          frontmatter = yaml.safe_load(parts[1])
+
+          authors = frontmatter.get('authors', [])
+          author_names = [a['name'] for a in authors]
+
+          metadata = {'author': author_names}
+
+          with open('/tmp/pandoc_meta.yaml', 'w') as f:
+              yaml.dump(metadata, f, allow_unicode=True)
+
+          print("Authors found:", author_names)
+          EOF
+
+      - name: Create LaTeX header (preprint watermark + URL fix)
         run: |
           cat > /tmp/preprint-header.tex << 'EOF'
+          \usepackage{xurl}
           \usepackage{fancyhdr}
           \usepackage{xcolor}
           \pagestyle{fancy}
@@ -35,22 +59,24 @@ jobs:
         run: |
           cd paper
 
-          # 1. Generate preprint PDF with watermark header
+          # 1. Generate preprint PDF
           pandoc paper.md -o paper.pdf \
             --standalone \
             --citeproc \
             --pdf-engine=xelatex \
+            --metadata-file=/tmp/pandoc_meta.yaml \
             --include-in-header=/tmp/preprint-header.tex
 
           # 2. Generate LaTeX source for preprint submission
-          # --citeproc embeds bibliography directly into the .tex file
           pandoc paper.md -o paper.tex \
             --standalone \
             --citeproc \
-            --pdf-engine=xelatex
+            --pdf-engine=xelatex \
+            --metadata-file=/tmp/pandoc_meta.yaml \
+            --include-in-header=/tmp/preprint-header.tex
 
           # 3. Create preprint submission ZIP
-          # Add any figures here, e.g.: figures/fig1.png
+          # Add figures here if needed, e.g.: figures/fig1.png
           zip preprint_submission.zip paper.tex
 
       - name: Upload Preprint PDF Artifact
