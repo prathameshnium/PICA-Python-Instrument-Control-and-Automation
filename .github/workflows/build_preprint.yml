@@ -35,23 +35,31 @@ jobs:
           parts = content.split('---\n')
           fm = yaml.safe_load(parts[1])
 
-          authors    = fm.get('authors', [])
+          authors      = fm.get('authors', [])
           affiliations = {a['index']: a['name'] for a in fm.get('affiliations', [])}
 
-          # ── Pandoc metadata (title + date only; authors handled in title block) ──
+          # ── Pandoc metadata ───────────────────────────────────────────────────
+          # Pass hyperref colours and geometry as Pandoc variables so they reach
+          # the template *before* \usepackage{hyperref} is emitted — avoids the
+          # option-clash that occurs when loading hyperref a second time in
+          # --include-in-header.
           meta = {
-              'title': fm.get('title', ''),
-              'date':  str(fm.get('date', '')),
+              'title':       fm.get('title', ''),
+              'date':        str(fm.get('date', '')),
+              'colorlinks':  True,
+              'linkcolor':   'blue',
+              'urlcolor':    'blue',
+              'citecolor':   'blue',
+              'geometry':    'a4paper, margin=2.5cm',
           }
           with open('/tmp/pandoc_meta.yaml', 'w') as f:
               yaml.dump(meta, f, allow_unicode=True)
 
-          # ── Build LaTeX title block ──
+          # ── LaTeX title block ─────────────────────────────────────────────────
           lines = []
           lines.append(r'\begin{center}')
           lines.append(r'{\LARGE\bfseries ' + fm.get('title','').replace('&', r'\&') + r'}\\[0.8em]')
 
-          # Authors with superscript affiliation numbers
           author_parts = []
           for a in authors:
               affs = a.get('affiliation', '')
@@ -65,11 +73,9 @@ jobs:
 
           lines.append(r'\large ' + r',\quad '.join(author_parts) + r'\\[0.5em]')
 
-          # Affiliation list
           for idx, name in sorted(affiliations.items()):
               lines.append(rf'$^{{{idx}}}$\small {name.replace("&", r"&")}\\[0.2em]')
 
-          # Corresponding author email
           for a in authors:
               if a.get('corresponding') and a.get('email'):
                   lines.append(r'\small $^{*}$Corresponding author: \href{mailto:'
@@ -90,19 +96,8 @@ jobs:
       - name: Create LaTeX header
         run: |
           cat > /tmp/header.tex << 'EOF'
-          % ── URL / hyperlink handling ──────────────────────────────────────────
-          \PassOptionsToPackage{hyphens}{url}
+          % ── URL breaking (loaded AFTER hyperref by Pandoc's template) ─────────
           \usepackage{xurl}
-          \usepackage[
-            colorlinks=true,
-            linkcolor=blue,
-            citecolor=blue,
-            urlcolor=blue,
-            breaklinks=true
-          ]{hyperref}
-
-          % ── Page geometry ─────────────────────────────────────────────────────
-          \usepackage[a4paper, margin=2.5cm]{geometry}
 
           % ── Fonts ─────────────────────────────────────────────────────────────
           \usepackage{fontspec}
@@ -128,7 +123,6 @@ jobs:
         run: |
           cd paper
 
-          # ── Preprint PDF ──────────────────────────────────────────────────────
           pandoc paper.md -o paper.pdf \
             --standalone \
             --citeproc \
@@ -137,7 +131,6 @@ jobs:
             --include-in-header=/tmp/header.tex \
             --include-before-body=/tmp/title_block.tex
 
-          # ── LaTeX source (self-contained, bibliography embedded) ──────────────
           pandoc paper.md -o paper.tex \
             --standalone \
             --citeproc \
@@ -146,18 +139,16 @@ jobs:
             --include-in-header=/tmp/header.tex \
             --include-before-body=/tmp/title_block.tex
 
-          # ── Preprint submission ZIP ───────────────────────────────────────────
-          # Append figure paths here if needed, e.g.: figures/fig1.pdf
           zip preprint_submission.zip paper.tex
 
       - name: Upload Preprint PDF
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: preprint-pdf
           path: paper/paper.pdf
 
       - name: Upload Preprint Package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: preprint-package
           path: paper/preprint_submission.zip
