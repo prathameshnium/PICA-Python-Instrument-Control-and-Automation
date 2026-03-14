@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath('..'))
 project = 'PICA'
 copyright = '2026, Prathamesh Deshmukh'
 author = 'Prathamesh Deshmukh'
-release = '1.0.3'
+release = '1.0.4'
 
 # -- General configuration ---------------------------------------------------
 extensions = [
@@ -43,4 +43,4 @@ html_extra_path = ["../pica/assets"]
 
 # This ensures Sphinx doesn't complain about the pica folder 
 # we manually move in the workflow
-suppress_warnings = ['image.not_readable']
+suppress_warnings = ["etoc.toctree"]
