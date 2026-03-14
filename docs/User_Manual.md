@@ -539,6 +539,8 @@ PICA is open-source ([MIT License](https://github.com/prathameshnium/PICA-Python
 @software{Deshmukh_PICA_2026,
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
   title        = {{PICA: Advanced High-Precision Transport Measurement Automation with Python}},
+  month        = jan,
+  day          = 26,
   year         = 2026,
   publisher    = {Zenodo},
   version      = {1.0.3},
@@ -588,7 +590,7 @@ Financial support for this work was provided under SERB-CRG project grant No. CR
 This project is licensed under the MIT License - see the [LICENSE](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/LICENSE) file for details.
 ## 15. Appendix A: Project File Structure
 
-For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.0).
+For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.3).
 
 
 
