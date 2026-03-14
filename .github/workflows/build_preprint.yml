@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-paper:
     runs-on: ubuntu-latest
@@ -11,82 +14,150 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Cache apt packages
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: pandoc texlive texlive-latex-extra texlive-fonts-recommended texlive-xetex zip python3-yaml
+          packages: >
+            pandoc texlive texlive-latex-extra texlive-fonts-recommended
+            texlive-xetex texlive-fonts-extra zip python3-yaml
           version: 1.0
 
-      - name: Extract author names from JOSS frontmatter
+      - name: Extract JOSS frontmatter and build LaTeX assets
         run: |
-          python3 - << 'EOF'
-          import yaml
+          python3 - << 'PYEOF'
+          import yaml, re
 
           with open('paper/paper.md', 'r') as f:
               content = f.read()
 
-          # YAML frontmatter is between the first two '---' delimiters
           parts = content.split('---\n')
-          frontmatter = yaml.safe_load(parts[1])
+          fm = yaml.safe_load(parts[1])
 
-          authors = frontmatter.get('authors', [])
-          author_names = [a['name'] for a in authors]
+          authors    = fm.get('authors', [])
+          affiliations = {a['index']: a['name'] for a in fm.get('affiliations', [])}
 
-          metadata = {'author': author_names}
-
+          # ── Pandoc metadata (title + date only; authors handled in title block) ──
+          meta = {
+              'title': fm.get('title', ''),
+              'date':  str(fm.get('date', '')),
+          }
           with open('/tmp/pandoc_meta.yaml', 'w') as f:
-              yaml.dump(metadata, f, allow_unicode=True)
+              yaml.dump(meta, f, allow_unicode=True)
 
-          print("Authors found:", author_names)
-          EOF
+          # ── Build LaTeX title block ──
+          lines = []
+          lines.append(r'\begin{center}')
+          lines.append(r'{\LARGE\bfseries ' + fm.get('title','').replace('&', r'\&') + r'}\\[0.8em]')
 
-      - name: Create LaTeX header (preprint watermark + URL fix)
+          # Authors with superscript affiliation numbers
+          author_parts = []
+          for a in authors:
+              affs = a.get('affiliation', '')
+              nums = [s.strip() for s in str(affs).split(',')]
+              sup  = ','.join(nums)
+              name = a['name'].replace('&', r'\&')
+              if a.get('corresponding'):
+                  author_parts.append(rf'{name}$^{{{sup},*}}$')
+              else:
+                  author_parts.append(rf'{name}$^{{{sup}}}$')
+
+          lines.append(r'\large ' + r',\quad '.join(author_parts) + r'\\[0.5em]')
+
+          # Affiliation list
+          for idx, name in sorted(affiliations.items()):
+              lines.append(rf'$^{{{idx}}}$\small {name.replace("&", r"&")}\\[0.2em]')
+
+          # Corresponding author email
+          for a in authors:
+              if a.get('corresponding') and a.get('email'):
+                  lines.append(r'\small $^{*}$Corresponding author: \href{mailto:'
+                               + a['email'] + r'}{' + a['email'] + r'}\\[0.3em]')
+
+          lines.append(r'\small ' + str(fm.get('date','')) + r'\\')
+          lines.append(r'\end{center}')
+          lines.append(r'\vspace{1em}')
+          lines.append(r'\noindent\rule{\textwidth}{0.4pt}')
+          lines.append(r'\vspace{0.5em}')
+
+          with open('/tmp/title_block.tex', 'w') as f:
+              f.write('\n'.join(lines))
+
+          print("Done. Authors:", [a['name'] for a in authors])
+          PYEOF
+
+      - name: Create LaTeX header
         run: |
-          cat > /tmp/preprint-header.tex << 'EOF'
+          cat > /tmp/header.tex << 'EOF'
+          % ── URL / hyperlink handling ──────────────────────────────────────────
+          \PassOptionsToPackage{hyphens}{url}
           \usepackage{xurl}
+          \usepackage[
+            colorlinks=true,
+            linkcolor=blue,
+            citecolor=blue,
+            urlcolor=blue,
+            breaklinks=true
+          ]{hyperref}
+
+          % ── Page geometry ─────────────────────────────────────────────────────
+          \usepackage[a4paper, margin=2.5cm]{geometry}
+
+          % ── Fonts ─────────────────────────────────────────────────────────────
+          \usepackage{fontspec}
+          \setmainfont{TeX Gyre Termes}
+          \usepackage{microtype}
+
+          % ── Preprint watermark header ─────────────────────────────────────────
           \usepackage{fancyhdr}
           \usepackage{xcolor}
           \pagestyle{fancy}
           \fancyhf{}
-          \fancyhead[C]{\textcolor{red}{\textbf{PREPRINT --- NOT PEER REVIEWED}}}
+          \fancyhead[C]{%
+            \textcolor{red}{\textbf{PREPRINT\,---\,NOT PEER REVIEWED}}%
+          }
           \fancyfoot[C]{\thepage}
           \renewcommand{\headrulewidth}{0.4pt}
+
+          % ── Suppress Pandoc's auto title block (we use our own) ───────────────
+          \renewcommand{\maketitle}{}
           EOF
 
-      - name: Generate PDF and Preprint Package
+      - name: Generate Preprint PDF and LaTeX source
         run: |
           cd paper
 
-          # 1. Generate preprint PDF
+          # ── Preprint PDF ──────────────────────────────────────────────────────
           pandoc paper.md -o paper.pdf \
             --standalone \
             --citeproc \
             --pdf-engine=xelatex \
             --metadata-file=/tmp/pandoc_meta.yaml \
-            --include-in-header=/tmp/preprint-header.tex
+            --include-in-header=/tmp/header.tex \
+            --include-before-body=/tmp/title_block.tex
 
-          # 2. Generate LaTeX source for preprint submission
+          # ── LaTeX source (self-contained, bibliography embedded) ──────────────
           pandoc paper.md -o paper.tex \
             --standalone \
             --citeproc \
             --pdf-engine=xelatex \
             --metadata-file=/tmp/pandoc_meta.yaml \
-            --include-in-header=/tmp/preprint-header.tex
+            --include-in-header=/tmp/header.tex \
+            --include-before-body=/tmp/title_block.tex
 
-          # 3. Create preprint submission ZIP
-          # Add figures here if needed, e.g.: figures/fig1.png
+          # ── Preprint submission ZIP ───────────────────────────────────────────
+          # Append figure paths here if needed, e.g.: figures/fig1.pdf
           zip preprint_submission.zip paper.tex
 
-      - name: Upload Preprint PDF Artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload Preprint PDF
+        uses: actions/upload-artifact@v6
         with:
           name: preprint-pdf
           path: paper/paper.pdf
 
-      - name: Upload Preprint Package Artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload Preprint Package
+        uses: actions/upload-artifact@v6
         with:
           name: preprint-package
           path: paper/preprint_submission.zip
