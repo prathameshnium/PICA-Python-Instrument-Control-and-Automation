@@ -122,7 +122,7 @@ def resource_path(relative_path):
 
 class PICALauncherApp:
 
-    PROGRAM_VERSION = "1.0.0"
+    PROGRAM_VERSION = "1.0.3"
     CLR_BG_DARK = '#B8A392'
     CLR_FRAME_BG = '#E5DCD3'
     CLR_ACCENT_GOLD = '#BA6B5E'

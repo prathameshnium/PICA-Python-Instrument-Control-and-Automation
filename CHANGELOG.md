@@ -12,7 +12,7 @@ go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-C
 
 ### [1.0.0] - 2025-12-15 (Initial Public Release)
 
-- **Versioning**: Version numbering has been reset from legacy development builds (v17.0) to v1.0.0 to standardize the package for public distribution and citation. This version will be updated soon, possibly this week.
+- **Versioning**: Version numbering has been reset from legacy development builds (v17.0) to v1.0.0 to standardize the package for public distribution and citation.
 - **JOSS Submission**: Cleaned up documentation, performed fresh install tests, and completed other proofreading in preparation for submission to the Journal of Open Source Software (JOSS).
 
 ---

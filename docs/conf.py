@@ -2,9 +2,9 @@
 
 # -- Project information -----------------------------------------------------
 project = 'PICA'
-copyright = '2025, Prathamesh Deshmukh'
+copyright = '2026, Prathamesh Deshmukh'
 author = 'Prathamesh Deshmukh'
-release = '1.0.0'
+release = '1.0.3'
 
 # -- General configuration ---------------------------------------------------
 extensions = [

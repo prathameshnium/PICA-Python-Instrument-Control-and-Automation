@@ -129,7 +129,10 @@ jobs:
           if [ ! -d "$TARGET_DIR" ]; then TARGET_DIR="."; fi
           cd $TARGET_DIR
 
-          pandoc paper.md -o paper.pdf \
+          # Dynamically filter out the AI usage disclosure section into a temporary file
+          awk '/^# AI usage disclosure/{skip=1} /^# / && !/^# AI usage disclosure/{skip=0} !skip' paper.md > paper_cleaned.md
+
+          pandoc paper_cleaned.md -o paper.pdf \
             --standalone \
             --citeproc \
             --pdf-engine=xelatex \
@@ -137,6 +140,9 @@ jobs:
             --include-in-header=/tmp/header.tex \
             --include-before-body=/tmp/title_block.tex \
             --variable=link-citations=true
+          
+          # Clean up the temporary file
+          rm paper_cleaned.md
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
