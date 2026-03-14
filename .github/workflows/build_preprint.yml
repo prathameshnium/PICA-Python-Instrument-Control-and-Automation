@@ -1,30 +1,7 @@
-name: Draft PDF and Preprint Package
-
-on:
-  push:
-    branches: [main]
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-jobs:
-  build-paper:
-    runs-on: ubuntu-latest
-    name: Build Preprint PDF and Package
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Install apt packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pandoc texlive texlive-latex-extra texlive-fonts-recommended texlive-xetex texlive-fonts-extra zip python3-yaml
-
-      - name: Extract JOSS frontmatter and build LaTeX assets
+- name: Extract Metadata and Build LaTeX Title
         run: |
           python3 - << 'PYEOF'
-          import yaml, re
+          import yaml
 
           with open('paper/paper.md', 'r') as f:
               content = f.read()
@@ -32,120 +9,79 @@ jobs:
           parts = content.split('---\n')
           fm = yaml.safe_load(parts[1])
 
-          authors      = fm.get('authors', [])
-          affiliations = {a['index']: a['name'] for a in fm.get('affiliations', [])}
+          authors = fm.get('authors', [])
+          affiliations = fm.get('affiliations', [])
+          aff_map = {str(a['index']): a for a in affiliations}
 
-          # ── Pandoc metadata ───────────────────────────────────────────────────
-          # Pass hyperref colours and geometry as Pandoc variables so they reach
-          # the template *before* \usepackage{hyperref} is emitted — avoids the
-          # option-clash that occurs when loading hyperref a second time in
-          # --include-in-header.
+          # ── Pandoc Metadata ─────────────────────────────────────────────────
           meta = {
-              'title':       fm.get('title', ''),
-              'date':        str(fm.get('date', '')),
-              'colorlinks':  True,
-              'linkcolor':   'blue',
-              'urlcolor':    'blue',
-              'citecolor':   'blue',
-              'geometry':    'a4paper, margin=2.5cm',
+              'title': fm.get('title', ''),
+              'date': str(fm.get('date', '')),
+              'colorlinks': True,
+              'linkcolor': 'blue',
+              'urlcolor': 'blue',
+              'citecolor': 'blue',
+              'geometry': 'a4paper, margin=2.5cm',
           }
           with open('/tmp/pandoc_meta.yaml', 'w') as f:
-              yaml.dump(meta, f, allow_unicode=True)
+              yaml.dump(meta, f)
 
-          # ── LaTeX title block ─────────────────────────────────────────────────
-          lines = []
-          lines.append(r'\begin{center}')
-          lines.append(r'{\LARGE\bfseries ' + fm.get('title','').replace('&', r'\&') + r'}\\[0.8em]')
+          # ── Title Block Construction ────────────────────────────────────────
+          lines = [r'\begin{center}']
+          lines.append(r'{\LARGE\bfseries ' + fm.get('title','') + r'}\\[1.2em]')
 
-          author_parts = []
+          auth_line = []
           for a in authors:
-              affs = a.get('affiliation', '')
-              nums = [s.strip() for s in str(affs).split(',')]
-              sup  = ','.join(nums)
-              name = a['name'].replace('&', r'\&')
+              name = a['name']
+              aff_indices = str(a.get('affiliation', '')).split(',')
+              marker = ",".join([idx.strip() for idx in aff_indices])
               if a.get('corresponding'):
-                  author_parts.append(rf'{name}$^{{{sup},*}}$')
-              else:
-                  author_parts.append(rf'{name}$^{{{sup}}}$')
+                  marker += r",*"
+              auth_line.append(rf'{name}$^{{{marker}}}$')
+          lines.append(r'\large ' + r', '.join(auth_line) + r'\\[0.8em]')
 
-          lines.append(r'\large ' + r',\quad '.join(author_parts) + r'\\[0.5em]')
+          for idx, aff in aff_map.items():
+              ror_id = aff.get('ror', '')
+              ror_link = rf" \small (ROR: \href{{https://ror.org/{ror_id}}}{{{ror_id}}})" if ror_id else ""
+              lines.append(rf'$^{{{idx}}}$\small {aff["name"]}{ror_link}\\[0.2em]')
 
-          for idx, name in sorted(affiliations.items()):
-              lines.append(rf'$^{{{idx}}}$\small {name.replace("&", r"&")}\\[0.2em]')
-
-          for a in authors:
-              if a.get('corresponding') and a.get('email'):
-                  lines.append(r'\small $^{*}$Corresponding author: \href{mailto:'
-                               + a['email'] + r'}{' + a['email'] + r'}\\[0.3em]')
-
-          lines.append(r'\small ' + str(fm.get('date','')) + r'\\')
+          corres = [a['email'] for a in authors if a.get('corresponding') and a.get('email')]
+          if corres:
+              lines.append(rf'\small $^*$Corresponding author: \href{{mailto:{corres[0]}}}{{{corres[0]}}}\\[0.2em]')
+          
+          lines.append(r'\small DOI: \href{https://doi.org/10.5281/zenodo.18377216}{10.5281/zenodo.18377216}\\[0.2em]')
+          lines.append(r'\small ' + str(fm.get('date','')))
           lines.append(r'\end{center}')
-          lines.append(r'\vspace{1em}')
-          lines.append(r'\noindent\rule{\textwidth}{0.4pt}')
-          lines.append(r'\vspace{0.5em}')
+          lines.append(r'\vspace{0.5em}\noindent\rule{\textwidth}{0.6pt}\vspace{1.5em}')
 
           with open('/tmp/title_block.tex', 'w') as f:
               f.write('\n'.join(lines))
-
-          print("Done. Authors:", [a['name'] for a in authors])
           PYEOF
 
-      - name: Create LaTeX header
+      - name: Create Header
         run: |
           cat > /tmp/header.tex << 'EOF'
-          % ── URL breaking (loaded AFTER hyperref by Pandoc's template) ─────────
           \usepackage{xurl}
-
-          % ── Fonts ─────────────────────────────────────────────────────────────
           \usepackage{fontspec}
           \setmainfont{TeX Gyre Termes}
-          \usepackage{microtype}
-
-          % ── Preprint watermark header ─────────────────────────────────────────
+          \usepackage{unicode-math}
+          \setmathfont{TeX Gyre Termes Math}
           \usepackage{fancyhdr}
           \usepackage{xcolor}
           \pagestyle{fancy}
           \fancyhf{}
-          \fancyhead[C]{%
-            \textcolor{red}{\textbf{PREPRINT\,---\,NOT PEER REVIEWED}}%
-          }
+          
+          % ── Clear Preprint Identification ───────────────────────────────────
+          \fancyhead[L]{\small \textbf{\textcolor{gray}{PREPRINT -- NOT PEER REVIEWED}}}
+          \fancyhead[R]{\small \textit{PICA: Advanced Transport Automation}}
           \fancyfoot[C]{\thepage}
           \renewcommand{\headrulewidth}{0.4pt}
-
-          % ── Suppress Pandoc's auto title block (we use our own) ───────────────
+          
+          % ── Internal Reference Logic ────────────────────────────────────────
           \renewcommand{\maketitle}{}
+          \hypersetup{
+            breaklinks=true,
+            pdfauthor={Deshmukh and Mukherjee},
+            pdftitle={PICA: High-Precision Automation}
+          }
           EOF
-
-      - name: Generate Preprint PDF and LaTeX source
-        run: |
-          cd paper
-
-          pandoc paper.md -o paper.pdf \
-            --standalone \
-            --citeproc \
-            --pdf-engine=xelatex \
-            --metadata-file=/tmp/pandoc_meta.yaml \
-            --include-in-header=/tmp/header.tex \
-            --include-before-body=/tmp/title_block.tex
-
-          pandoc paper.md -o paper.tex \
-            --standalone \
-            --citeproc \
-            --pdf-engine=xelatex \
-            --metadata-file=/tmp/pandoc_meta.yaml \
-            --include-in-header=/tmp/header.tex \
-            --include-before-body=/tmp/title_block.tex
-
-          zip preprint_submission.zip paper.tex
-
-      - name: Upload Preprint PDF
-        uses: actions/upload-artifact@v7
-        with:
-          name: preprint-pdf
-          path: paper/paper.pdf
-
-      - name: Upload Preprint Package
-        uses: actions/upload-artifact@v7
-        with:
-          name: preprint-package
-          path: paper/preprint_submission.zip
