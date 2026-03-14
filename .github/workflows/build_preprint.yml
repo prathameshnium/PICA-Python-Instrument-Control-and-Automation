@@ -16,13 +16,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Cache apt packages
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: >
-            pandoc texlive texlive-latex-extra texlive-fonts-recommended
-            texlive-xetex texlive-fonts-extra zip python3-yaml
-          version: 1.0
+      - name: Install apt packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc texlive texlive-latex-extra texlive-fonts-recommended texlive-xetex texlive-fonts-extra zip python3-yaml
 
       - name: Extract JOSS frontmatter and build LaTeX assets
         run: |
