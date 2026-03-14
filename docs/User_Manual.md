@@ -2,7 +2,7 @@
 # PICA: Advanced High-Precision Transport Measurement Automation with Python
 </p>
 <p align="center">
-*Comprehensive Guide for Version 1.0.0*
+*Comprehensive Guide for Version 1.0.3*
 </p>
 
 <hr />
@@ -536,13 +536,13 @@ PICA is open-source ([MIT License](https://github.com/prathameshnium/PICA-Python
 **Citation:**
 
 ```bibtex
-@software{Deshmukh_PICA_2025,
+@software{Deshmukh_PICA_2026,
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
-  title        = {{PICA: Python-based Instrument Control and Automation Software Suite}},
-  year         = 2025,
-  publisher    = {GitHub},
-  version      = {1.0.0},
-  url          = {https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation}
+  title        = {{PICA: Advanced High-Precision Transport Measurement Automation with Python}},
+  year         = 2026,
+  publisher    = {Zenodo},
+  version      = {1.0.3},
+  url          = {https://doi.org/10.5281/zenodo.18377217}
 }
 ```
 
