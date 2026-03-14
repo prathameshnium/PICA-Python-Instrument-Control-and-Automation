@@ -5,6 +5,7 @@ on:
     branches: [main]
 
 env:
+  # Opting into Node.js 24 as per GitHub's 2025 deprecation roadmap
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -29,7 +30,6 @@ jobs:
           # Ensure we are reading the correct path
           file_path = 'paper/paper.md'
           if not os.path.exists(file_path):
-              # Fallback for different repo structures
               file_path = 'paper.md'
 
           with open(file_path, 'r') as f:
@@ -80,7 +80,6 @@ jobs:
               email = corres[0]['email']
               lines.append(rf'\small $^*$Corresponding author: \href{{mailto:{email}}}{{{email}}}\\[0.2em]')
           
-          # Zenodo DOI Integration
           lines.append(r'\small DOI: \href{https://doi.org/10.5281/zenodo.18377216}{10.5281/zenodo.18377216}\\[0.2em]')
           lines.append(r'\small ' + str(fm.get('date','')))
           lines.append(r'\end{center}')
@@ -115,7 +114,7 @@ jobs:
           \pagestyle{fancy}
           \fancyhf{}
           \fancyhead[L]{\small \textbf{\textcolor{gray}{PREPRINT -- NOT PEER REVIEWED}}}
-          \fancyhead[R]{\small \textit{PICA: Advanced Transport Automation}}
+          \fancyhead[R]{\small \textit{PICA: Python-based Instrument Control and Automation}}
           \fancyfoot[C]{\thepage}
           \renewcommand{\headrulewidth}{0.4pt}
           
@@ -124,12 +123,10 @@ jobs:
 
       - name: Generate Publication-Ready PDF
         run: |
-          # Detect directory
           TARGET_DIR="paper"
           if [ ! -d "$TARGET_DIR" ]; then TARGET_DIR="."; fi
           cd $TARGET_DIR
 
-          # Dynamically filter out the AI usage disclosure section into a temporary file
           awk '/^# AI usage disclosure/{skip=1} /^# / && !/^# AI usage disclosure/{skip=0} !skip' paper.md > paper_cleaned.md
 
           pandoc paper_cleaned.md -o paper.pdf \
@@ -141,13 +138,12 @@ jobs:
             --include-before-body=/tmp/title_block.tex \
             --variable=link-citations=true
           
-          # Clean up the temporary file
           rm paper_cleaned.md
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: professional-preprint
           path: |
-             paper/paper.pdf
-             paper.pdf
+              paper/paper.pdf
+              paper.pdf
