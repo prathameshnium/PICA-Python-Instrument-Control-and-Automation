@@ -541,7 +541,7 @@ For the full preprint, please refer to the [Preprint section](#101-preprint).
 The full preprint of the PICA software suite, detailing its design, implementation, and applications, is available for review.
 
 *   **Preprint Page:** [https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/publications/](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/publications/)
-*   **Direct PDF Download:** [https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/publications/pica-paper.pdf](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/publications/pica-paper.pdf)
+*   **Direct PDF Download:** [https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/publications/pica-paper.pdf](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/publications/pica-paper.pdf) (alternate link at [Academia.edu](https://www.academia.edu/165176821/PICA_Advanced_High_Precision_Transport_Measurement_Automation_with_Python))
 
 
 **Citation:**
