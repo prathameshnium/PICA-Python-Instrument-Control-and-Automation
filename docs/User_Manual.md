@@ -1,11 +1,8 @@
-<p align="center">
 # PICA: Advanced High-Precision Transport Measurement Automation with Python
-</p>
-<p align="center">
-*Comprehensive Guide for Version 1.0.3*
-</p>
 
-<hr />
+*Comprehensive Guide for Version 1.0.3*
+
+---
 
 ## Table of Contents
 
@@ -34,7 +31,7 @@
 14. [License](#14-license)
 15. [Appendix A: Project File Structure](#15-appendix-a-project-file-structure)
 
-<hr />
+---
 
 ## 1. Overview
 
@@ -83,28 +80,26 @@ This approach, however, leads to a considerable degree of code repetition becaus
 **Supported Platform:** Windows 10 / 11
 **Architecture:** x86_64
 
-
-
-> [!IMPORTANT]
-> **Windows Only**
-> PICA is currently designed and validated exclusively for Windows environments.
-> Linux and macOS are **not currently supported** due to dependencies on Windows-specific GUI libraries and font rendering.
-> Attempting to run this software on non-Windows platforms may result in crashes or UI failures. Linux support is experimental for now.
+:::{important}
+**Windows Only**
+PICA is currently designed and validated exclusively for Windows environments.
+Linux and macOS are **not currently supported** due to dependencies on Windows-specific GUI libraries and font rendering.
+Attempting to run this software on non-Windows platforms may result in crashes or UI failures. Linux support is experimental for now.
+:::
 
 #### Software Dependencies
 1.  **Python 3.10+**: The core execution environment.
 2.  **Dependencies:** Install via `pip install -r requirements.txt`.
 
+:::{warning}
+**A VISA Backend is Required:** [`PyVISA`](https://github.com/pyvisa/pyvisa) is a Python wrapper, not a driver. For PICA to communicate with hardware, you **must** install a VISA backend on your system first. If you attempt to run the software on a clean machine without a VISA implementation, it will fail to find the instruments. This is the most common failure point for new instrument control setups.
 
+Choose one of the following:
+- **NI-VISA:** The industry standard from National Instruments. Download and install it from the [NI website](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html#575764).
+- **PyVISA-py:** A backend written in pure Python. It can be used as a fallback but may have limitations compared to vendor-specific drivers like NI-VISA. For `pyvisa-py` to discover all resources and avoid warnings (e.g., for TCPIP or HiSLIP instruments), `psutil` and `zeroconf` might be needed. These packages are already included in PICA's dependencies (`requirements.txt`). Note that for direct GPIB communication via `pyvisa-py`, a separate GPIB library (e.g., from your GPIB adapter vendor) might still be required. [PyVISA-py GitHub](https://github.com/pyvisa/pyvisa-py)
 
-> [!WARNING]
-> **A VISA Backend is Required:** [`PyVISA`](https://github.com/pyvisa/pyvisa) is a Python wrapper, not a driver. For PICA to communicate with hardware, you **must** install a VISA backend on your system first. If you attempt to run the software on a clean machine without a VISA implementation, it will fail to find the instruments. This is the most common failure point for new instrument control setups.
->
-> Choose one of the following:
-> - **NI-VISA:** The industry standard from National Instruments. Download and install it from the [NI website](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html#575764).
-> - **PyVISA-py:** A backend written in pure Python. It can be used as a fallback but may have limitations compared to vendor-specific drivers like NI-VISA. For `pyvisa-py` to discover all resources and avoid warnings (e.g., for TCPIP or HiSLIP instruments), `psutil` and `zeroconf` might be needed. These packages are already included in PICA's dependencies (`requirements.txt`). Note that for direct GPIB communication via `pyvisa-py`, a separate GPIB library (e.g., from your GPIB adapter vendor) might still be required. [PyVISA-py GitHub](https://github.com/pyvisa/pyvisa-py)
->
-> **Before proceeding, verify your VISA installation.** For more details and troubleshooting, refer to the "[Common Issues & Troubleshooting](#6-common-issues--troubleshooting)" section.
+**Before proceeding, verify your VISA installation.** For more details and troubleshooting, refer to the "[Common Issues & Troubleshooting](#8-common-issues--troubleshooting)" section.
+:::
 
 ### 3.2 Getting Started
 
@@ -159,16 +154,15 @@ PICA is structured as a standard Python package. The following instructions are 
     pica-cli
     ```
 
+:::{important}
+**Template Scripts:** The instrument control modules (CLI's) provided are designed as **template scripts**. Users are expected to modify these scripts programmatically to adapt them to their specific experimental requirements and custom workflows. They are also excellent for developing **custom measurement protocols, sequences, and for learning instrument automation**. These scripts are typically named with an 'Instrument_Control' suffix to denote their programmatic nature. This approach ensures maximum flexibility and customization for advanced research applications.
+:::
 
-> [!IMPORTANT]
-> **Template Scripts:** The instrument control modules (CLI's) provided are designed as **template scripts**. Users are expected to modify these scripts programmatically to adapt them to their specific experimental requirements and custom workflows. They are also excellent for developing **custom measurement protocols, sequences, and for learning instrument automation**. These scripts are typically named with an 'Instrument_Control' suffix to denote their programmatic nature. This approach ensures maximum flexibility and customization for advanced research applications.
+:::{note}
+**Legacy CLI Notice:** The PICA CLI (`pica-cli`) is retained to support legacy headless workflows. While fully functional for specific protocols, this interface is **less frequently maintained** and may not support recent features available in the GUI.
 
-
-
-> [!NOTE]
-> **Legacy CLI Notice:** The PICA CLI (`pica-cli`) is retained to support legacy headless workflows. While fully functional for specific protocols, this interface is **less frequently maintained** and may not support recent features available in the GUI. 
->
-> We **strongly recommend** new users utilize the PICA GUI for the most complete and supported experience.
+We **strongly recommend** new users utilize the PICA GUI for the most complete and supported experience.
+:::
 
 ### 3.4 Development Dependencies for Testing (Optional)
 
@@ -188,10 +182,9 @@ python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
 
 #### Experimental Linux Instructions
 
-
-
-> [!WARNING]
-> **Experimental Support:** The following instructions are for experimental purposes only. PICA is not officially supported on Linux (for now), and you will likely encounter functional or UI-related issues.
+:::{warning}
+**Experimental Support:** The following instructions are for experimental purposes only. PICA is not officially supported on Linux (for now), and you will likely encounter functional or UI-related issues.
+:::
 
 For users who wish to experiment with PICA on Linux, please be aware of the following:
 
@@ -209,10 +202,9 @@ For users who wish to experiment with PICA on Linux, please be aware of the foll
 
 ## 4. Safety Precautions
 
-
-
-> [!WARNING]
-> **Safety Instructions:** Always switch off the instrument and verify that the output current, voltage, and any other relevant parameters are set to zero before modifying the connections to the Device Under Test (DUT). Failure to follow appropriate safety procedures may result in electric shock or other hazards. Adopt a safety-first approach at all times, and ensure that all instrument parameters remain within the specified safe operating limits defined either by the instrument manufacturer or by your measurement setup.
+:::{warning}
+**Safety Instructions:** Always switch off the instrument and verify that the output current, voltage, and any other relevant parameters are set to zero before modifying the connections to the Device Under Test (DUT). Failure to follow appropriate safety procedures may result in electric shock or other hazards. Adopt a safety-first approach at all times, and ensure that all instrument parameters remain within the specified safe operating limits defined either by the instrument manufacturer or by your measurement setup.
+:::
 
 ## 5. Core Utilities
 
@@ -224,11 +216,13 @@ Automatically launched upon startup (and accessible within modules), this utilit
 
 In the main PICA launcher, the VISA/GPIB scanner is configured to execute automatically at application startup. This design choice is motivated by the fact that initiating a measurement without first verifying the instrument connection is highly likely to fail and may result in non-informative error messages, such as a VISA connection timeout.
 
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/01_GPIB_Scanner.png" alt="GPIB Scanner" width="300">
-  <br>
-  <em>The PICA Instrument Scanner utility, which automatically detects and identifies connected instruments.</em>
-</p>
+:::{figure} ../pica/assets/Images/screenshots/01_GPIB_Scanner.png
+:alt: GPIB Scanner
+:width: 300px
+:align: center
+
+The PICA Instrument Scanner utility, which automatically detects and identifies connected instruments.
+:::
 
 ### 5.2 PICA Plotter Utility
 
@@ -240,11 +234,13 @@ A standalone, multiprocessing-enabled tool for detailed data analysis. Unlike th
   * **Live Updates:** Monitoring active experiments by auto-refreshing data from disk.
   * **Flexible Axis Control:** Toggling linear/log scales to analyze data spanning orders of magnitude.
 
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/02_Plotter_Utility.png" alt="Plotter Utility" width="600">
-  <br>
-  <em>The PICA Plotter Utility, a tool for data visualization and comparative analysis of multiple datasets including live plotting.</em>
-</p>
+:::{figure} ../pica/assets/Images/screenshots/02_Plotter_Utility.png
+:alt: Plotter Utility
+:width: 600px
+:align: center
+
+The PICA Plotter Utility, a tool for data visualization and comparative analysis of multiple datasets including live plotting.
+:::
 
 ### 5.3 Embedded Document Viewer
 
@@ -256,7 +252,7 @@ Each measurement module consists of two primary windows: the control window on t
 
 The control window also contains a console located below the parameter settings. This console can be scrolled and provides a continuous log of all operations executed by the software. The right-hand plot window is a simplified plotting interface that can display one, two, or three plots, depending on the specific module. The plots are updated in real time, and some modules allow switching the axes to a logarithmic scale to improve data visualization. The plotting interface is intentionally kept minimalistic, with limited functionality, to reduce unnecessary user interaction with the measurement setup, and maintaining the measurement program in a simplified form by omitting nonessential features.
 
-Above the plot area, there are two buttons providing access to the [VISA Instrument Scanner](#41-visa-instrument-scanner) and [PICA Plotter Utility](#42-pica-plotter-utility). These utilities are accessible from all modules to facilitate rapid testing and diagnostics. The VISA/GPIB scanner allows the user to quickly verify whether instruments are properly connected and recognized by the system, while the plotter utility offers additional plotting capabilities beyond those available in the default plot window.
+Above the plot area, there are two buttons providing access to the [VISA Instrument Scanner](#51-visa-instrument-scanner) and [PICA Plotter Utility](#52-pica-plotter-utility). These utilities are accessible from all modules to facilitate rapid testing and diagnostics. The VISA/GPIB scanner allows the user to quickly verify whether instruments are properly connected and recognized by the system, while the plotter utility offers additional plotting capabilities beyond those available in the default plot window.
 
 
 ## 6. Supported Measurement Modules
@@ -285,31 +281,40 @@ impedance analyzer enables the characterization of capacitance anomalies over th
 
   * **Scientific Objective:** Ideal for superconductors, metallic films, and low-impedance devices. It actively cancels thermal offsets (Seebeck EMFs) generated in leads and contacts.
   * **Principle:** Uses the **AC Delta Method**.
-    
-    
-    > [!NOTE]
-    > **Understanding "Delta Mode":** The term "Delta Mode" refers specifically to a technique used by Keithley Models 6220 and 6221 Current Sources in conjunction with the Model 2182/2182A Nanovoltmeter for very low resistance measurements. This method is described in detail in the [Keithley Low Level Measurements Handbook](https://www.tek.com/en/documents/product-article/keithley-low-level-measurements-handbook---7th-edition). In this documentation, "Ultra Low Resistance Measurements" is used as the general scientific term, while "Delta Mode" may appear when specifically referencing the Keithley-specific method or program files.    1.  Source +I, measure V1.
-    2.  Source -I, measure V2.
-    3.  Compute V\_corr = (V1 - V2) / 2.
-        The software synchronizes the source and voltmeter via a **hardware trigger link (RS-232)** for microsecond-level timing.
 
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/K6221_IV_Sweep.png" alt="Delta Mode IV Sweep" width="600">
-  <br>
-  <em>I-V sweep measurement using the Sweep Mode, designed for low-resistance measurements with a Keithley 6221 and 2182.</em>
-</p>
+:::{note}
+**Understanding "Delta Mode":** The term "Delta Mode" refers specifically to a technique used by Keithley Models 6220 and 6221 Current Sources in conjunction with the Model 2182/2182A Nanovoltmeter for very low resistance measurements. This method is described in detail in the [Keithley Low Level Measurements Handbook](https://www.tek.com/en/documents/product-article/keithley-low-level-measurements-handbook---7th-edition). In this documentation, "Ultra Low Resistance Measurements" is used as the general scientific term, while "Delta Mode" may appear when specifically referencing the Keithley-specific method or program files.
 
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/K6221_RT_Control.png" alt="Delta Mode RT Control" width="600">
-  <br>
-  <em>Ultra Low Resistance Measurement R-T measurement with active temperature control, using a Keithley 6221, K2182, and a temperature controller.</em>
-</p>
+1. Source +I, measure V1.
+2. Source -I, measure V2.
+3. Compute V\_corr = (V1 - V2) / 2.
 
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/K6221_RT_Sensing.png" alt="Delta Mode RT Sensing" width="600">
-  <br>
-  <em>Ultra Low Resistance Measurement R-T measurement in sensing mode, where the system logs resistance and temperature while an external system manages temperature.</em>
-</p>
+The software synchronizes the source and voltmeter via a **hardware trigger link (RS-232)** for microsecond-level timing.
+:::
+
+:::{figure} ../pica/assets/Images/screenshots/K6221_IV_Sweep.png
+:alt: Delta Mode IV Sweep
+:width: 600px
+:align: center
+
+I-V sweep measurement using the Sweep Mode, designed for low-resistance measurements with a Keithley 6221 and 2182.
+:::
+
+:::{figure} ../pica/assets/Images/screenshots/K6221_RT_Control.png
+:alt: Delta Mode RT Control
+:width: 600px
+:align: center
+
+Ultra Low Resistance Measurement R-T measurement with active temperature control, using a Keithley 6221, K2182, and a temperature controller.
+:::
+
+:::{figure} ../pica/assets/Images/screenshots/K6221_RT_Sensing.png
+:alt: Delta Mode RT Sensing
+:width: 600px
+:align: center
+
+Ultra Low Resistance Measurement R-T measurement in sensing mode, where the system logs resistance and temperature while an external system manages temperature.
+:::
 
 ### 6.2 General Transport (Standard I-V & R-T)
 
@@ -321,21 +326,29 @@ impedance analyzer enables the characterization of capacitance anomalies over th
       * **I-V Sweep:** Linear sweeps, hysteresis loops, or custom current lists.
       * **R-T Active Control:** Applies constant DC current while coordinating with a temperature controller (e.g., Lake Shore 350) to ramp temperature.
 
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/K2400_IV_Sweep.png" alt="K2400 IV Sweep" width="600">
-  <br>
-  <em>A standard I-V sweep performed with a Keithley 2400 SourceMeter, suitable for general-purpose device and sample characterization.</em>
-</p>
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/K2400_RT_Control.png" alt="K2400 RT Control" width="600">
-  <br>
-  <em>Resistance-Temperature (R-T) measurement with active temperature control, using a Keithley 2400 and a Lakeshore 350 controller.</em>
-</p>
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/K2400_RT_Sensing.png" alt="K2400 RT Sensing" width="600">
-  <br>
-  <em>Resistance-Temperature (R-T) measurement in sensing mode, where the system logs resistance and temperature while an external system/controller manages temperature.</em>
-</p>
+:::{figure} ../pica/assets/Images/screenshots/K2400_IV_Sweep.png
+:alt: K2400 IV Sweep
+:width: 600px
+:align: center
+
+A standard I-V sweep performed with a Keithley 2400 SourceMeter, suitable for general-purpose device and sample characterization.
+:::
+
+:::{figure} ../pica/assets/Images/screenshots/K2400_RT_Control.png
+:alt: K2400 RT Control
+:width: 600px
+:align: center
+
+Resistance-Temperature (R-T) measurement with active temperature control, using a Keithley 2400 and a Lakeshore 350 controller.
+:::
+
+:::{figure} ../pica/assets/Images/screenshots/K2400_RT_Sensing.png
+:alt: K2400 RT Sensing
+:width: 600px
+:align: center
+
+Resistance-Temperature (R-T) measurement in sensing mode, where the system logs resistance and temperature while an external system/controller manages temperature.
+:::
 
 ### 6.3 High Precision Transport (mid resistance range)
 
@@ -345,21 +358,29 @@ impedance analyzer enables the characterization of capacitance anomalies over th
   * **Scientific Objective:** Detects subtle phase transitions in semiconductors and oxides where standard SMU resolution is insufficient.
   * **Advantage:** Combines the stable sourcing of the SMU with the nanovolt-level sensitivity of a dedicated voltmeter, utilizing a true 4-wire configuration to eliminate lead resistance errors.
 
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/K2400_2182_IV.png" alt="K2400_2182 IV" width="600">
-  <br>
-  <em>High-precision I-V characterization using a Keithley 2400 as a current source and a Keithley 2182 nanovoltmeter for sensitive mid-range resistance measurements.</em>
-</p>
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/K2400_2182_RT_Control.png" alt="K2400 2182 RT Control" width="600">
-  <br>
-  <em>High-precision R-T measurement with active temperature control, combining the K2400, K2182, and a L350 temperature controller.</em>
-</p>
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/K2400_2182_RT_Sensing.png" alt="K2400 2182 RT Sensing" width="600">
-  <br>
-  <em>High-precision R-T measurement in sensing mode, leveraging the K2400 and K2182 for enhanced accuracy for mid-range resistance measurements.</em>
-</p>
+:::{figure} ../pica/assets/Images/screenshots/K2400_2182_IV.png
+:alt: K2400_2182 IV
+:width: 600px
+:align: center
+
+High-precision I-V characterization using a Keithley 2400 as a current source and a Keithley 2182 nanovoltmeter for sensitive mid-range resistance measurements.
+:::
+
+:::{figure} ../pica/assets/Images/screenshots/K2400_2182_RT_Control.png
+:alt: K2400 2182 RT Control
+:width: 600px
+:align: center
+
+High-precision R-T measurement with active temperature control, combining the K2400, K2182, and a L350 temperature controller.
+:::
+
+:::{figure} ../pica/assets/Images/screenshots/K2400_2182_RT_Sensing.png
+:alt: K2400 2182 RT Sensing
+:width: 600px
+:align: center
+
+High-precision R-T measurement in sensing mode, leveraging the K2400 and K2182 for enhanced accuracy for mid-range resistance measurements.
+:::
 
 ### 6.4 Electrometry & High Resistance
 
@@ -372,21 +393,29 @@ impedance analyzer enables the characterization of capacitance anomalies over th
 
 **A screencast demonstrating the high resistance IV module is available at [this link](https://drive.google.com/file/d/13W-Z4N-08t9m0xxuR30sjTLmUVG1VyQd/view?usp=sharing).**
 
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/K6517B_IV.png" alt="K6517B IV" width="600">
-  <br>
-  <em>High-resistance I-V measurement performed with a Keithley 6517B Electrometer, designed for characterizing insulating materials.</em>
-</p>
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/K6517B_RT_Control.png" alt="K6517B RT Control" width="600">
-  <br>
-  <em>High-resistance R-T measurement with active temperature control using a Keithley 6517B.</em>
-</p>
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/K6517B_RT_Sensing.png" alt="K6517B RT Sensing" width="600">
-  <br>
-  <em>High-resistance R-T measurement in passive sensing mode using a Keithley 6517B.</em>
-</p>
+:::{figure} ../pica/assets/Images/screenshots/K6517B_IV.png
+:alt: K6517B IV
+:width: 600px
+:align: center
+
+High-resistance I-V measurement performed with a Keithley 6517B Electrometer, designed for characterizing insulating materials.
+:::
+
+:::{figure} ../pica/assets/Images/screenshots/K6517B_RT_Control.png
+:alt: K6517B RT Control
+:width: 600px
+:align: center
+
+High-resistance R-T measurement with active temperature control using a Keithley 6517B.
+:::
+
+:::{figure} ../pica/assets/Images/screenshots/K6517B_RT_Sensing.png
+:alt: K6517B RT Sensing
+:width: 600px
+:align: center
+
+High-resistance R-T measurement in passive sensing mode using a Keithley 6517B.
+:::
 
 ### 6.5 Pyroelectric Current Measurements
 
@@ -399,13 +428,15 @@ This module automates the measurement of pyroelectric currents (Ip) as a functio
     1.  **Poling (Optional):** Apply bias field while cooling.
     2.  **Heating:** Remove bias; heat sample at a linear rate.
     3.  **Measurement:** Record the depolarization current peak indicative of phase transition.
-  * **Best Practice:** For measurements in the fA range, ensure your setup utilizes proper shielding (e.g., double-layer Faraday cage).
+  * **Best Practice:** For measurements in the fA range, ensure your setup utilises proper shielding (e.g., double-layer Faraday cage).
 
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/Pyroelectric_Current.png" alt="Pyroelectric Current" width="600">
-  <br>
-  <em>Pyroelectric current measurement as a function of temperature, captured with a Keithley 6517B to identify ferroelectric phase transitions via measuring pyroelectric current.</em>
-</p>
+:::{figure} ../pica/assets/Images/screenshots/Pyroelectric_Current.png
+:alt: Pyroelectric Current
+:width: 600px
+:align: center
+
+Pyroelectric current measurement as a function of temperature, captured with a Keithley 6517B to identify ferroelectric phase transitions via measuring pyroelectric current.
+:::
 
 ### 6.6 High Voltage Poling
 
@@ -425,13 +456,13 @@ This utility provides a dedicated interface for **In-situ and ex-situ electrical
 
   *   **Scientific Objective:** Measures Capacitance (C) and Loss Tangent (tan delta) as a function of frequency or DC bias voltage (C-V Analysis).
 
-  
+:::{figure} ../pica/assets/Images/screenshots/Keysight_CV.png
+:alt: Keysight CV
+:width: 600px
+:align: center
 
-  <p align="center">
-  <img src="../pica/assets/Images/screenshots/Keysight_CV.png" alt="Keysight CV" width="600">
-  <br>
-  <em>Capacitance-Voltage (C-V) characterization of a device or a sample using a Keysight E4980A LCR meter.</em>
-</p>
+Capacitance-Voltage (C-V) characterization of a device or a sample using a Keysight E4980A LCR meter.
+:::
 
 ### 6.8 Standalone Temperature Utilities
 
@@ -442,16 +473,21 @@ PICA also includes standalone utilities for monitoring and controlling temperatu
   * **Temperature Monitor:** A simple interface for logging temperature from multiple types of sensors.
   * **Temperature Control:** A dedicated module for setting temperature ramps, controlling heater outputs, and managing control loops.
 
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/Lakeshore_Temp_Monitor.png" alt="Lakeshore Temp Monitor" width="600">
-  <br>
-  <em>The standalone Temperature Monitor utility, used for logging data from a Lakeshore 350 controller.</em>
-</p>
-<p align="center">
-  <img src="../pica/assets/Images/screenshots/Lakeshore_Temp_Control.png" alt="Lakeshore Temp Control" width="600">
-  <br>
-  <em>The standalone Temperature Control utility, providing a dedicated interface for managing temperature ramps and heater outputs on a Lakeshore 350.</em>
-</p>
+:::{figure} ../pica/assets/Images/screenshots/Lakeshore_Temp_Monitor.png
+:alt: Lakeshore Temp Monitor
+:width: 600px
+:align: center
+
+The standalone Temperature Monitor utility, used for logging data from a Lakeshore 350 controller.
+:::
+
+:::{figure} ../pica/assets/Images/screenshots/Lakeshore_Temp_Control.png
+:alt: Lakeshore Temp Control
+:width: 600px
+:align: center
+
+The standalone Temperature Control utility, providing a dedicated interface for managing temperature ramps and heater outputs on a Lakeshore 350.
+:::
 
 ## 7. Releases and Versions
 
@@ -521,7 +557,7 @@ This structure makes it easy to import the data into various analysis programs l
 
 **Example: Ultra Low Resistance (I-V) Module**
 
-```
+```text
 # Sample: Delta_Test_10ohm
 Set Current (A),Measured Voltage (V),Resistance (Ohm)
 -1.000000e-05,-1.037917e-04,1.037917e+01
@@ -585,9 +621,12 @@ The procedure for adding a new instrument module to PICA is described in the [CO
 
 
 ## 13. Authors & Acknowledgments
-<p align="center">
-  <img src="../pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg" alt="UGC DAE CSR Logo" width="150">
-</p>
+
+:::{figure} ../pica/assets/LOGO/UGC_DAE_CSR_NBG.jpeg
+:alt: UGC DAE CSR Logo
+:width: 150px
+:align: center
+:::
 
 - **Lead Developer:** [**Prathamesh Deshmukh**](https://www.researchgate.net/profile/Prathamesh-Deshmukh-6)
 - **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.csr.res.in/Faculty/profile/889/893/Dr.SudipMukherjee)
@@ -599,14 +638,14 @@ Financial support for this work was provided under SERB-CRG project grant No. CR
 ## 14. License
 
 This project is licensed under the MIT License - see the [LICENSE](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/LICENSE) file for details.
+
 ## 15. Appendix A: Project File Structure
 
 For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.3).
 
-
-
-> [!NOTE]
-> Adding a new module to the main launcher into the GUI requires modifying `pica/main.py`.
+:::{note}
+Adding a new module to the main launcher into the GUI requires modifying `pica/main.py`.
+:::
 
 ```text
 PICA (Root Directory)/
