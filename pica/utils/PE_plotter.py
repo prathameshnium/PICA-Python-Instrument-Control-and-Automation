@@ -1,10 +1,10 @@
 """
 Module: PE_Plotter_GUI.py
-Purpose: A customized P-E Data Plotter extracting specific metadata and overlaying plots.
+Purpose: PE Hysteresis Plotter Utility (Part of PICA suite).
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from tkinter import ttk, filedialog, messagebox, scrolledtext, Canvas
 import os
 import io
 import pandas as pd
@@ -14,10 +14,17 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib as mpl
 
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
+
 class PEPlotterAppGUI:
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "2.2"
     
-    # --- Styling to match your template ---
+    # --- PICA Styling ---
     CLR_BG = '#B8A392'
     CLR_HEADER = '#E5DCD3'
     CLR_FG = '#2C2825'
@@ -30,21 +37,28 @@ class PEPlotterAppGUI:
     FONT_BASE = ('Segoe UI', 10)
     FONT_TITLE = ('Segoe UI', 12, 'bold')
 
+    try:
+        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+    except NameError:
+        LOGO_FILE_PATH = "../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
+
     def __init__(self, root):
         self.root = root
-        self.root.title(f"P-E Data Plotter v{self.PROGRAM_VERSION}")
-        self.root.geometry("1300x800")
-        self.root.minsize(1000, 600)
+        self.root.title(f"PICA PE Plotter Utility v{self.PROGRAM_VERSION}")
+        self.root.geometry("1400x900")
+        self.root.minsize(1100, 700)
         self.root.configure(bg=self.CLR_BG)
 
         self.active_filepath = None
         self.file_data_cache = {}  # {filepath: {'df': dataframe, 'metadata': dict}}
         self.file_ui_elements = {} # {filepath: {'var': boolVar, 'chk': checkbutton, 'lbl': label, 'frame': frame}}
+        self.logo_image = None
 
         self.setup_styles()
         self.create_widgets()
-        self.log("Welcome to the P-E Plotter Utility.")
-        self.log("Click 'Add File(s)...' to load your .txt or .csv files.")
+        self.log("Welcome to the PICA PE Hysteresis Plotter Utility.")
+        self.log("Click 'Add File(s)...' to load your .txt or .csv measurement files.")
 
     def setup_styles(self):
         self.style = ttk.Style(self.root)
@@ -55,25 +69,58 @@ class PEPlotterAppGUI:
         self.style.configure('TLabel', background=self.CLR_FRAME_BG, foreground=self.CLR_FG)
         self.style.configure('Header.TLabel', background=self.CLR_HEADER)
         self.style.configure('TButton', font=self.FONT_BASE, padding=(8, 5), foreground=self.CLR_ACCENT_GOLD, background=self.CLR_HEADER)
-        self.style.configure('Plot.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_BG)
+        self.style.map('TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], 
+                                  foreground=[('active', self.CLR_BG), ('hover', self.CLR_BG)])
         self.style.map('TCombobox', fieldbackground=[('readonly', self.CLR_INPUT_BG)])
         self.style.configure('TLabelframe', background=self.CLR_FRAME_BG, bordercolor=self.CLR_ACCENT_BLUE)
         self.style.configure('TLabelframe.Label', background=self.CLR_FRAME_BG, foreground=self.CLR_FG, font=self.FONT_TITLE)
         self.style.configure('Input.TFrame', background=self.CLR_INPUT_BG)
 
         mpl.rcParams.update({
-            'font.family': 'Segoe UI', 'font.size': 10,
+            'font.family': 'Segoe UI', 'font.size': 11,
+            'axes.titlesize': 14, 'axes.labelsize': 12,
             'figure.facecolor': self.CLR_BG, 'axes.facecolor': '#F4EFEA',
             'axes.edgecolor': self.CLR_FG, 'axes.labelcolor': self.CLR_FG,
-            'text.color': self.CLR_FG,
+            'text.color': self.CLR_FG, 'xtick.color': self.CLR_FG, 'ytick.color': self.CLR_FG
         })
 
     def create_widgets(self):
-        # --- Header ---
+        # --- Header (PICA Style with Logo and Institute Name) ---
         header = tk.Frame(self.root, bg=self.CLR_HEADER)
         header.pack(side='top', fill='x', padx=1, pady=1)
-        ttk.Label(header, text="P-E Hysteresis Plotter", style='Header.TLabel', font=('Segoe UI', 16, 'bold')).pack(side='left', padx=20, pady=15)
+        header.grid_columnconfigure(1, weight=1)
 
+        left_header_frame = tk.Frame(header, bg=self.CLR_HEADER)
+        left_header_frame.grid(row=0, column=0, sticky='w')
+        font_title_main = ('Segoe UI', 14, 'bold')
+        
+        ttk.Label(left_header_frame, text="PE Hysteresis Plotter Utility", style='Header.TLabel', 
+                  font=font_title_main, foreground=self.CLR_ACCENT_GOLD).pack(side='top', anchor='w', padx=20, pady=(10, 0))
+        ttk.Label(left_header_frame, text="(Part of the PICA Suite)", style='Header.TLabel', 
+                  font=('Segoe UI', 10, 'italic'), foreground=self.CLR_FG).pack(side='top', anchor='w', padx=20, pady=(0, 10))
+
+        center_header_frame = tk.Frame(header, bg=self.CLR_HEADER)
+        center_header_frame.grid(row=0, column=1, sticky='ew')
+        
+        logo_canvas = Canvas(center_header_frame, width=60, height=60, bg=self.CLR_HEADER, highlightthickness=0)
+        logo_canvas.pack(side='left', pady=10)
+        
+        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
+            try:
+                img = Image.open(self.LOGO_FILE_PATH).resize((60, 60), Image.Resampling.LANCZOS)
+                self.logo_image = ImageTk.PhotoImage(img)
+                logo_canvas.create_image(30, 30, image=self.logo_image)
+            except Exception as e:
+                self.log(f"Warning: Could not load logo. {e}")
+                
+        institute_frame = tk.Frame(center_header_frame, bg=self.CLR_HEADER)
+        institute_frame.pack(side='left', padx=15)
+        ttk.Label(institute_frame, text="UGC-DAE Consortium for Scientific Research", 
+                  style='Header.TLabel', font=('Segoe UI', 16, 'bold')).pack(anchor='w')
+        ttk.Label(institute_frame, text="Mumbai Centre", 
+                  style='Header.TLabel', font=('Segoe UI', 14)).pack(anchor='w')
+
+        # --- Main Layout ---
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
@@ -81,7 +128,7 @@ class PEPlotterAppGUI:
         main_pane.add(left_panel, weight=1)
 
         right_panel = self._create_right_panel(main_pane)
-        main_pane.add(right_panel, weight=3)
+        main_pane.add(right_panel, weight=4) # Higher weight to ensure plot takes most space
 
     def _create_left_panel(self, parent):
         panel = ttk.Frame(parent, width=350)
@@ -102,7 +149,7 @@ class PEPlotterAppGUI:
         list_container = ttk.Frame(file_frame, style='TFrame')
         list_container.grid(row=1, column=0, sticky='nsew', padx=10, pady=(0, 10))
         
-        file_canvas = tk.Canvas(list_container, bg=self.CLR_INPUT_BG, highlightthickness=0, height=120)
+        file_canvas = tk.Canvas(list_container, bg=self.CLR_INPUT_BG, highlightthickness=0, height=150)
         scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=file_canvas.yview)
         self.file_list_frame = ttk.Frame(file_canvas, style='Input.TFrame')
         
@@ -137,6 +184,7 @@ class PEPlotterAppGUI:
 
     def _create_right_panel(self, parent):
         panel = ttk.Frame(parent)
+        # Using pack to make sure it fills the complete right side seamlessly
         container = ttk.LabelFrame(panel, text='Visualization')
         container.pack(fill='both', expand=True)
 
@@ -186,7 +234,6 @@ class PEPlotterAppGUI:
                 line_clean = line.strip()
                 if not line_clean: continue
                 
-                # Extract Metadata
                 if 'Sample Area' in line_clean:
                     metadata['Sample Area'] = line_clean.split(':')[-1].strip()
                 elif 'Sample Thickness' in line_clean:
@@ -204,21 +251,18 @@ class PEPlotterAppGUI:
                 elif 'Stored:' in line_clean and metadata['Measurement Date'] == 'Unknown':
                     metadata['Measurement Date'] = line_clean.split('Stored:')[-1].strip()
                 
-                # Identify Headers
                 if 'Point' in line_clean and ('Time' in line_clean or 'Drive' in line_clean):
                     sep = ',' if ',' in line_clean else '\t'
                     headers = [h.strip() for h in line_clean.split(sep)]
                     is_data = True
                     continue
                 
-                # Collect Data
                 if is_data:
                     sep = ',' if ',' in line_clean else '\t'
                     parts = line_clean.split(sep)
                     if len(parts) >= 3:
                         data_lines.append(line_clean)
 
-        # Build DataFrame
         if data_lines:
             sep = ',' if filepath.lower().endswith('.csv') else '\t'
             df = pd.read_csv(io.StringIO('\n'.join(data_lines)), sep=sep, header=None)
@@ -247,11 +291,10 @@ class PEPlotterAppGUI:
                     self.file_data_cache[fp] = {'df': df, 'metadata': metadata}
                     self._add_file_to_ui(fp)
                     
-                    # Print metadata to console
                     self.log(f"Loaded: {os.path.basename(fp)}")
                     self.log(f"  Date: {metadata['Measurement Date']}")
-                    self.log(f"  Area: {metadata['Sample Area']} cm2 | Thickness: {metadata['Sample Thickness']} um")
-                    self.log(f"  Voltage: {metadata['Applied Voltage']} V | Frequency: {metadata['Frequency (Hz)']} Hz\n")
+                    self.log(f"  Area: {metadata['Sample Area']} cm2 | Thick: {metadata['Sample Thickness']} um")
+                    self.log(f"  Voltage: {metadata['Applied Voltage']} V | Freq: {metadata['Frequency (Hz)']} Hz\n")
 
                     self._update_dropdowns(df.columns.tolist())
                     
@@ -290,7 +333,6 @@ class PEPlotterAppGUI:
         self.x_col_cb['values'] = columns
         self.y_col_cb['values'] = columns
 
-        # Intelligent Defaults for P-E loop
         if not current_x:
             default_x = next((c for c in columns if 'Voltage' in c or 'Field' in c), columns[0])
             self.x_col_cb.set(default_x)
@@ -320,14 +362,18 @@ class PEPlotterAppGUI:
 
         self.ax_main.set_xlabel(x_col, fontweight='bold')
         self.ax_main.set_ylabel(y_col, fontweight='bold')
-        self.ax_main.set_title("Overlay P-E Hysteresis Plot", fontweight='bold')
+        self.ax_main.set_title("PE Hysteresis Overlay", fontweight='bold')
         
-        # Legend
-        self.ax_main.legend(title="Sample Files", bbox_to_anchor=(1.01, 1), loc='upper left')
+        # Placing legend *inside* the plot area (loc='best' finds the clearest corner automatically)
+        self.ax_main.legend(title="Sample Files", loc='best')
+        
         self.figure.tight_layout()
         self.canvas.draw_idle()
 
+
 if __name__ == '__main__':
+    import multiprocessing
+    multiprocessing.freeze_support()
     root = tk.Tk()
     app = PEPlotterAppGUI(root)
     root.mainloop()
