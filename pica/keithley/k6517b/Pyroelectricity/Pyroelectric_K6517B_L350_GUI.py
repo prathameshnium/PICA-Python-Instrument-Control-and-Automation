@@ -146,9 +146,9 @@ class PyroelectricBackend:
         """Begins moving to the start temperature for stabilization."""
         print(f"  Moving to start temperature: {self.params['start_temp']} K")
         self.lakeshore.write(f"SETP 1,{self.params['start_temp']}")
-        # Use 'medium' range for stabilization
-        self.lakeshore.write("RANGE 1,4")
-        print("  Heater range set to 'Medium' for stabilization.")
+        # Use 'high' range for stabilization
+        self.lakeshore.write("RANGE 1,5")
+        print("  Heater range set to 'High' (5) for stabilization.")
 
     def start_ramp(self):
         """Configures and starts the temperature ramp."""
@@ -158,7 +158,7 @@ class PyroelectricBackend:
         self.lakeshore.write(f"RAMP 1,1,{self.params['rate']}")
         self.lakeshore.write(f"SETP 1,{self.params['end_temp']}")
         # Ensure heater range is sufficient for ramp
-        self.lakeshore.write("RANGE 1,4")  # 'Medium' is often a good choice
+        self.lakeshore.write("RANGE 1,5")  # 'High' (5) is often a good choice
         print("  Ramp configured and setpoint updated.")
 
     def get_measurement(self):
@@ -451,7 +451,8 @@ class PyroelectricAppGUI:
 
         details_text = ("Program Name: Pyroelectric Current vs. T\n"
                         "Instruments: Keithley 6517B, Lakeshore 350\n"
-                        "Measurement Range: 1 fA to 20 mA")
+                        "Measurement Range: 1 fA to 20 mA\n"
+                        "Temperature Controller Range: 5 (High)")
         ttk.Label(
             frame,
             text=details_text,
@@ -728,7 +729,7 @@ class PyroelectricAppGUI:
     def _process_stabilizing_state(self, current_temp, params):
         self.log(
             f"Stabilizing... Current Temp: {current_temp:.4f} K (Target: {params['start_temp']} K)")
-        if abs(current_temp - params['start_temp']) < 0.1:
+        if abs(current_temp - params['start_temp']) < 5:
             self.log(f"Stabilized at {params['start_temp']} K. Starting ramp.")
             self.experiment_state = 'ramping'
             self.backend.start_ramp()
