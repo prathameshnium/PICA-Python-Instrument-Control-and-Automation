@@ -492,7 +492,7 @@ class Integrated_RT_GUI:
             pady=8)
 
         # Program details
-        details_text = ("Program Name: R vs. T (T-Control)\n"
+        details_text = ("Program Name: R vs. T (T-Control) - range 5\n"
                         "Instruments: Lakeshore 350, Keithley 6517B\n"
                         "Measurement Range: <10 Ω to >10 PΩ")
         ttk.Label(
@@ -929,14 +929,14 @@ class Integrated_RT_GUI:
                 self.data_queue.put(
                     f"LOG:Stabilizing... Current: {current_temp:.4f} K (Target: {params['start_temp']} K)")
 
-                if current_temp > params['start_temp'] + 0.2:
+                if current_temp > params['start_temp'] + 5.0:
                     self.backend.lakeshore.set_heater_range(1, 'off')
                 else:
-                    self.backend.lakeshore.set_heater_range(1, 'medium')
+                    self.backend.lakeshore.set_heater_range(1, 'high')
                     self.backend.lakeshore.set_setpoint(
                         1, params['start_temp'])
 
-                if abs(current_temp - params['start_temp']) < 0.1:
+                if abs(current_temp - params['start_temp']) < 5.0:
                     self.data_queue.put(
                         f"LOG:Stabilized at {current_temp:.4f} K. Waiting 5s before ramp...")
                     time.sleep(5)
