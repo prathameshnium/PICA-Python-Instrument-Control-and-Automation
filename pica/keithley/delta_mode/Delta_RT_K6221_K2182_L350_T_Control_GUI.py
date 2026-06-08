@@ -228,7 +228,7 @@ class Advanced_Delta_GUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("K6221/2182 & L350: Delta Mode R-T (T-Control)")
+        self.root.title("K6221/2182 & L350: Delta Mode R-T (T-Control) - range 5")
         self.root.geometry("1550x950")
         self.root.minsize(1200, 850)
         self.root.configure(bg=self.CLR_BG_DARK)
@@ -346,7 +346,7 @@ class Advanced_Delta_GUI:
 
         Label(
             header_frame,
-            text="K6221/2182 & L350: Delta Mode R-T (T-Control)",
+            text="K6221/2182 & L350: Delta Mode R-T (T-Control) - range 5",
             bg=self.CLR_HEADER,
             fg=self.CLR_ACCENT_GOLD,
             font=font_title_italic).pack(
@@ -423,7 +423,7 @@ class Advanced_Delta_GUI:
             padx=10,
             pady=8)
 
-        details_text = ("Program Name: Delta Mode R vs. T (T-Control)\n"
+        details_text = ("Program Name: Delta Mode R vs. T (T-Control) - range 5\n"
                         "Instruments: Keithley 6221/2182, Lakeshore 350\n"
                         "Measurement Range: 10 nΩ to 100 MΩ")
         ttk.Label(
@@ -825,10 +825,10 @@ class Advanced_Delta_GUI:
             else:
                 self.log(
                     f"Stabilizing (Heating)... Current: {current_temp:.4f} K <= Target: {self.params['start_temp']} K")
-                self.backend.set_heater_range(1, 'medium')
+                self.backend.set_heater_range(1, 'high')
                 self.backend.set_setpoint(1, self.params['start_temp'])
 
-            if abs(current_temp - self.params['start_temp']) < 0.1:
+            if abs(current_temp - self.params['start_temp']) < 5.0:
                 self.log(
                     f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
                 self.is_stabilizing = False
