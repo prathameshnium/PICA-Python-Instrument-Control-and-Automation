@@ -428,7 +428,7 @@ class VT_GUI_Active:
             sticky='ew',
             padx=10,
             pady=8)
-        details_text = ("Program Name: R vs. T (T-Control)\n"
+        details_text = ("Program Name: R vs. T (T-Control) - [range 5]\n"
                         "Instruments: K2400, K2182, L350\n"
                         "Measurement Range: 10⁻⁶ Ω to 10⁹ Ω")
         ttk.Label(
@@ -614,10 +614,10 @@ class VT_GUI_Active:
             else:
                 self.log(
                     f"Heating... Current: {current_temp:.4f} K <= Target: {start_temp} K")
-                self.backend.set_heater_range(1, 'medium')
+                self.backend.set_heater_range(1, 'high')
                 self.backend.set_setpoint(1, start_temp)
 
-            if abs(current_temp - start_temp) < 0.1:
+            if abs(current_temp - start_temp) < 5:
                 self.log(
                     f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
                 self.experiment_state = 'ramping_setup'
