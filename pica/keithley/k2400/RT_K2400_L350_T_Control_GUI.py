@@ -430,7 +430,8 @@ class RT_GUI_Active:
             pady=8)
         details_text = ("Program Name: R vs. T (T-Control)\n"
                         "Instruments: Keithley 2400, Lakeshore 350\n"
-                        "Measurement Range: 100 µΩ to 200 MΩ")
+                        "Measurement Range: 100 µΩ to 200 MΩ\n"
+                        "Heater Range: 5 (Active)")
         ttk.Label(
             frame,
             text=details_text,
@@ -621,17 +622,17 @@ class RT_GUI_Active:
             current_temp = self.backend.get_temperature()
             start_temp = self.params['start_temp']
 
-            if current_temp > start_temp + 0.2:
+            if current_temp > start_temp + 5.0:
                 self.log(
                     f"Cooling... Current: {current_temp:.4f} K > Target: {start_temp} K")
                 self.backend.set_heater_range(1, 'off')
             else:
                 self.log(
                     f"Heating... Current: {current_temp:.4f} K <= Target: {start_temp} K")
-                self.backend.set_heater_range(1, 'medium')
+                self.backend.set_heater_range(1, 'high')
                 self.backend.set_setpoint(1, start_temp)
 
-            if abs(current_temp - start_temp) < 0.1:
+            if abs(current_temp - start_temp) < 5.0:
                 self.log(
                     f"Stabilized at {current_temp:.4f} K. Waiting 5s before starting ramp...")
                 self.experiment_state = 'ramping_setup'
