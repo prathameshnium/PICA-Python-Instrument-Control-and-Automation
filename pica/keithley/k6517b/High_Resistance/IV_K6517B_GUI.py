@@ -757,10 +757,9 @@ class HighResistanceIV_GUI:
                 self.file_location_path, file_name)
 
             with open(self.data_filepath, 'w', newline='') as f:
+                f.write(f"# Sample Name: {params['sample_name']}\n")
+                f.write(f"# Voltage Sweep: {start_v}V to {stop_v}V, {steps} steps, {self.delay_ms/1000}s delay\n")
                 writer = csv.writer(f)
-                writer.writerow([f"# Sample Name: {params['sample_name']}"])
-                writer.writerow(
-                    [f"# Voltage Sweep: {start_v}V to {stop_v}V, {steps} steps, {self.delay_ms/1000}s delay"])
                 writer.writerow(["Time (s)",
                                  "Applied Voltage (V)",
                                  "Measured Current (A)",
