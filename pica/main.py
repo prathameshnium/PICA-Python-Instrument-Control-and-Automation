@@ -15,8 +15,6 @@ import os
 import sys
 import subprocess
 import platform
-import threading
-import queue
 import re
 from datetime import datetime
 import runpy
@@ -49,6 +47,8 @@ def run_script_process(script_path):
     """
     Wrapper function to execute a script using runpy in its own directory.
     This becomes the target for the new, isolated process.
+    Note: os.chdir is acceptable here because this runs in a separate spawned process
+    and does not affect the launcher's working directory.
     """
     try:
         os.chdir(os.path.dirname(script_path))
@@ -190,6 +190,8 @@ class PICALauncherApp:
         # Background tasks
         self._pre_cache_markdown_files()
         self.log(f"PICA Launcher initialized (v{self.PROGRAM_VERSION})")
+        # Auto-launch the GPIB/VISA scanner ~0.5 s after startup
+        self.root.after(500, self._auto_launch_gpib)
 
     def setup_styles(self):
         style = ttk.Style(self.root)
@@ -352,8 +354,7 @@ class PICALauncherApp:
             util_frame,
             text="Plotter",
             style='App.TButton',
-            command=lambda: self.launch_script(
-                self.SCRIPT_PATHS["Plotter Utility"])).grid(
+            command=launch_plotter_utility).grid(
             row=0,
             column=1,
             sticky='ew',
@@ -474,11 +475,6 @@ class PICALauncherApp:
             command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
 
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-
         def _on_mousewheel_windows(event):
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
@@ -499,9 +495,8 @@ class PICALauncherApp:
         # --- Make the scrollable frame expand to the width of the canvas ---
         def _configure_scrollable_frame(event):
             canvas.itemconfig('frame', width=event.width)
+            canvas.configure(scrollregion=canvas.bbox("all"))
 
-        canvas.create_window(
-            (0, 0), window=scrollable_frame, anchor="nw", tags="frame")
         canvas.bind("<Configure>", _configure_scrollable_frame)
 
         # --- Container for the two columns inside the scrollable frame ---
@@ -723,11 +718,6 @@ class PICALauncherApp:
                 f"The script key '{script_key}' is not defined.")
             return
 
-        # Special case for plotter utility which is in its own top-level folder
-        if script_key == "Plotter Utility":
-            self._open_path(os.path.dirname(os.path.abspath(script_path)))
-            return
-
         folder_path = os.path.dirname(os.path.abspath(script_path))
         if os.path.exists(folder_path):
             self._open_path(folder_path)
@@ -781,6 +771,11 @@ class PICALauncherApp:
                 "The 'pyvisa' library is required.\n\nInstall via pip:\npip install pyvisa pyvisa-py")
             return
         launch_gpib_scanner()
+
+    def _auto_launch_gpib(self):
+        """Automatically opens the VISA/GPIB Utils module shortly after startup."""
+        self.log("Auto-launching VISA/GPIB Utils...")
+        self.run_gpib_test()
 
     def _pre_cache_markdown_files(self):
         """
