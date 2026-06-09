@@ -28,18 +28,6 @@ from multiprocessing import Process
 import multiprocessing
 import subprocess
 
-try:
-    from PIL import Image, ImageTk
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
-
-
-def _dummy_process_target():
-    """A picklable top-level function to satisfy multiprocessing on Windows."""
-    pass
-
-
 def launch_new_instance():
     """
     Launches a new instance of the plotter application in a separate process.
@@ -48,6 +36,12 @@ def launch_new_instance():
     # This function is no longer needed, as the logic is handled directly
     # in the button command for clarity and robustness.
     pass
+
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 
 def run_script_process(script_path):
@@ -68,6 +62,7 @@ def run_script_process(script_path):
 
 class PlotterAppGUI:
     PROGRAM_VERSION = "2.1"
+    MAX_HEADER_SCAN_LINES = 100
     CLR_BG = '#B8A392'
     CLR_HEADER = '#E5DCD3'
     CLR_FG = '#2C2825'
@@ -107,7 +102,7 @@ class PlotterAppGUI:
 
         self.active_filepath = None
         # New data structure to hold data for multiple files
-        # Format: { "filepath": {"headers": [...], "data": {...}, "mod_time": ..., "size": ...} }
+        # Format: { "filepath": {"headers": [...], "data": {...}, "mod_time": ..., "size": ..., "delimiter": ...} }
         # --- Checkbox UI Change ---
         self.file_data_cache = {}
         # Stores {filepath: {'var': tk.BooleanVar, 'chk': ttk.Checkbutton,
@@ -802,10 +797,30 @@ class PlotterAppGUI:
         self.stop_file_watcher()
 
         try:
-            header_line_index = self._find_header_row(filepath)
-            data_array = self._read_data_from_file(filepath, header_line_index)
-            self._update_cache_and_ui(filepath, data_array)
+            h_idx, delim, comments = self._analyze_file_structure(filepath)
+            
+            if comments:
+                self.log(f"--- Comments in {os.path.basename(filepath)} ---")
+                for c in comments:
+                    self.log(f"  {c}")
+                self.log("--- end of comments ---")
 
+            headers, data = self._read_data_from_file(filepath, h_idx, delim)
+            
+            file_info = self.file_data_cache[filepath]
+            file_info['headers'] = headers
+            file_info['delimiter'] = delim
+            file_info['data'] = {h: data[:, j] for j, h in enumerate(headers)}
+            file_info['mod_time'] = os.path.getmtime(filepath)
+            file_info['size'] = os.path.getsize(filepath)
+
+            self.x_col_cb['values'] = headers
+            self.y_col_cb['values'] = headers
+            if len(headers) > 1:
+                self.x_col_cb.set(headers[0]); self.y_col_cb.set(headers[1])
+            elif headers:
+                self.x_col_cb.set(headers[0])
+            self.log(f"Loaded {data.shape[0]} points from '{os.path.basename(filepath)}'.")
         except Exception as e:
             self._handle_load_error(filepath, e)
         finally:
@@ -820,24 +835,19 @@ class PlotterAppGUI:
             return
 
         self.stop_file_watcher()
-        file_info = self.file_data_cache.get(self.active_filepath)
-
-        if not file_info or 'size' not in file_info:
-            self.log(
-                "Cannot append data: file information is incomplete. Performing full reload.")
-            self.load_file_data(self.active_filepath)
-            return
+        f_info = self.file_data_cache.get(self.active_filepath)
+        if not f_info or 'size' not in f_info:
+            self.load_file_data(self.active_filepath); return
 
         try:
-            new_lines = self._read_new_lines(self.active_filepath, file_info)
-            appended_count = self._parse_and_append_new_data(new_lines, file_info)
+            new_lines = self._read_new_lines(self.active_filepath, f_info)
+            appended_count = self._parse_and_append_new_data(new_lines, f_info)
 
             if appended_count > 0:
-                file_info['mod_time'] = os.path.getmtime(self.active_filepath)
-                file_info['size'] = os.path.getsize(self.active_filepath)
+                f_info['mod_time'] = os.path.getmtime(self.active_filepath)
+                f_info['size'] = os.path.getsize(self.active_filepath)
                 self.log(f"Appended {appended_count} new data points.")
                 self.plot_data()
-                
         except Exception:
             self.log(f"Error appending data: {traceback.format_exc()}")
             # Fallback to a full reload in case of parsing error
@@ -848,7 +858,7 @@ class PlotterAppGUI:
     def _read_new_lines(self, filepath, file_info):
         """Reads new lines from a file since the last known size."""
         try:
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(filepath, 'r', encoding='utf-8-sig', errors='ignore') as f:
                 f.seek(file_info.get('size', 0))
                 new_text = f.read()
             
@@ -870,23 +880,23 @@ class PlotterAppGUI:
         if not new_lines:
             return 0
 
-        reader = csv.reader(new_lines)
-        new_data = {h: [] for h in file_info['headers']}
+        delim = file_info.get('delimiter', ',')
+        headers = file_info['headers']
+        new_data = {h: [] for h in headers}
         appended_count = 0
-        for row in reader:
-            if len(row) != len(file_info['headers']):
+        for line in new_lines:
+            fields = self._split_line(line.strip(), delim)
+            if len(fields) != len(headers):
                 continue
-            for i, header in enumerate(file_info['headers']):
+            for h, val in zip(headers, fields):
                 try:
-                    new_data[header].append(float(row[i]))
+                    new_data[h].append(float(val))
                 except (ValueError, TypeError):
-                    new_data[header].append(np.nan)
+                    new_data[h].append(np.nan)
             appended_count += 1
 
-        for header in file_info['headers']:
-            file_info['data'][header] = np.concatenate(
-                (file_info['data'][header], np.array(new_data[header], dtype=float)))
-        
+        for h in headers:
+            file_info['data'][h] = np.concatenate((file_info['data'][h], np.array(new_data[h], dtype=float)))
         return appended_count
 
     def plot_data(self, event=None):
@@ -964,6 +974,8 @@ class PlotterAppGUI:
                 linestyle='-',
                 label=label_text)
             return True
+        else:
+            self.log(f"Warning: All values in '{y_col}' vs '{x_col}' for '{filename}' are non-finite (inf/NaN) — nothing to plot.")
         return False
 
     def _finalize_plot(self, x_col, y_col, selected_filepaths):
