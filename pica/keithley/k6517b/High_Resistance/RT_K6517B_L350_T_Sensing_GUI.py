@@ -256,7 +256,7 @@ class Integrated_RT_GUI:
         self.logo_image = None  # Attribute to hold the logo image reference
         self.data_queue = queue.Queue()
         self.measurement_thread = None
-        self.plot_backgrounds = None  # For blitting
+        self._plot_dirty = False
 
         self.setup_styles()
         self.create_widgets()
@@ -694,7 +694,7 @@ class Integrated_RT_GUI:
         self.ax_sub2 = self.figure.add_subplot(
             gs[1, 1])  # Temp vs Time has its own X-axis
         self.line_main, = self.ax_main.plot(
-            [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-', animated=True)
+            [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-')
         self.ax_main.set_title("Resistance vs. Temperature", fontweight='bold')
         self.ax_main.set_ylabel("Resistance (Ω)")
         if self.log_scale_var.get():
@@ -703,12 +703,12 @@ class Integrated_RT_GUI:
             self.ax_main.set_yscale('linear')
         self.ax_main.grid(True, which="both", linestyle='--', alpha=0.6)
         self.line_sub1, = self.ax_sub1.plot(
-            [], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=3, linestyle='-', animated=True)
+            [], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=3, linestyle='-')
         self.ax_sub1.set_xlabel("Temperature (K)")
         self.ax_sub1.set_ylabel("Current (A)")
         self.ax_sub1.grid(True, linestyle='--', alpha=0.6)
         self.line_sub2, = self.ax_sub2.plot(
-            [], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=3, linestyle='-', animated=True)
+            [], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=3, linestyle='-')
         self.ax_sub2.set_xlabel("Time (s)")
         self.ax_sub2.set_ylabel("Temperature (K)")
         self.ax_sub2.grid(True, linestyle='--', alpha=0.6)
@@ -716,22 +716,9 @@ class Integrated_RT_GUI:
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
     def _update_y_scale(self):
-        if self.log_scale_var.get():
-            self.ax_main.set_yscale('log')
-        else:
-            self.ax_main.set_yscale('linear')
-        # If the measurement is running, we need to redraw and recapture the
-        # background
-        if self.is_running and self.plot_backgrounds:
-            self.canvas.draw()
-            self.plot_backgrounds = [
-                self.canvas.copy_from_bbox(
-                    ax.bbox) for ax in [
-                    self.ax_main,
-                    self.ax_sub1,
-                    self.ax_sub2]]
-        else:
-            self.canvas.draw_idle()
+        self.ax_main.set_yscale('log' if self.log_scale_var.get() else 'linear')
+        self._plot_dirty = True       # force a rescale on next refresh
+        self.canvas.draw_idle()
 
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -789,17 +776,7 @@ class Integrated_RT_GUI:
                 f"R-T Curve: {params['sample_name']}",
                 fontweight='bold')
 
-            # --- MODIFIED: Setup for blitting ---
-            self.canvas.draw()  # Full draw to prepare background
-            self.plot_backgrounds = [
-                self.canvas.copy_from_bbox(
-                    ax.bbox) for ax in [
-                    self.ax_main,
-                    self.ax_sub1,
-                    self.ax_sub2]]
-            for line in [self.line_main, self.line_sub1, self.line_sub2]:
-                line.set_animated(True)
-            self.log("Blitting enabled for fast graph updates.")
+            self.canvas.draw_idle()
 
             self.log("Starting passive data logging...")
             self.start_time = time.time()
@@ -808,6 +785,7 @@ class Integrated_RT_GUI:
                 target=self._measurement_worker, daemon=True)
             self.measurement_thread.start()
             self.root.after(100, self._process_data_queue)
+            self.root.after(250, self._refresh_plot)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
@@ -819,10 +797,6 @@ class Integrated_RT_GUI:
         if self.is_running:
             self.is_running = False
             self.log("Measurement stopped by user.")
-            # --- MODIFIED: Disable blitting on stop ---
-            for line in [self.line_main, self.line_sub1, self.line_sub2]:
-                line.set_animated(False)
-            self.plot_backgrounds = None
             self.canvas.draw_idle()
             self.start_button.config(state='normal')
             self.stop_button.config(state='disabled')
@@ -872,44 +846,75 @@ class Integrated_RT_GUI:
                 self.data_storage['temperature'].append(temp)
                 self.data_storage['current'].append(cur)
                 self.data_storage['resistance'].append(res)
-
-                # --- MODIFIED: Use blitting for fast graph updates ---
-                if self.plot_backgrounds:
-                    # Restore the clean backgrounds
-                    for bg in self.plot_backgrounds:
-                        self.canvas.restore_region(bg)
-
-                    # Update data for all lines
-                    self.line_main.set_data(
-                        self.data_storage['temperature'],
-                        self.data_storage['resistance'])
-                    self.line_sub1.set_data(
-                        self.data_storage['temperature'],
-                        self.data_storage['current'])
-                    self.line_sub2.set_data(
-                        self.data_storage['time'],
-                        self.data_storage['temperature'])
-
-                    # Redraw only the artists and blit the changes
-                    for ax, line in zip([self.ax_main, self.ax_sub1, self.ax_sub2], [
-                                        self.line_main, self.line_sub1, self.line_sub2]):
-                        ax.relim()
-                        ax.autoscale_view()
-                        ax.draw_artist(line)
-
-                    self.canvas.blit(self.figure.bbox)
-                else:  # Fallback to full redraw if blitting isn't ready
-                    for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
-                        ax.relim()
-                        ax.autoscale_view()
-                    self.figure.tight_layout(pad=3.0)
-                    self.canvas.draw_idle()
+                # Mark that the plot needs a refresh; actual redraw is
+                # decoupled and throttled (see _refresh_plot).
+                self._plot_dirty = True
 
         except queue.Empty:
             pass
 
         if self.is_running:
             self.root.after(200, self._process_data_queue)
+
+    def _refresh_plot(self):
+        """Redraws the plots at a fixed cadence, independent of data rate.
+
+        A normal (non-blitted) draw is used so that the axes — ticks,
+        limits, gridlines and scale — always stay in sync with the data.
+        """
+        if self._plot_dirty:
+            self._plot_dirty = False
+
+            temps = self.data_storage['temperature']
+            res = self.data_storage['resistance']
+            cur = self.data_storage['current']
+            t = self.data_storage['time']
+
+            self.line_main.set_data(temps, res)
+            self.line_sub1.set_data(temps, cur)
+            self.line_sub2.set_data(t, temps)
+
+            # Recompute and apply limits on every axis.
+            self._autoscale_axis(self.ax_main, x=temps, y=res,
+                                 log_y=self.log_scale_var.get())
+            self._autoscale_axis(self.ax_sub1, x=temps, y=cur)
+            self._autoscale_axis(self.ax_sub2, x=t, y=temps)
+
+            # Full redraw keeps ticks/labels/gridlines correct and is
+            # resize-proof. draw_idle() coalesces redraws efficiently.
+            self.canvas.draw_idle()
+
+        if self.is_running:
+            self.root.after(250, self._refresh_plot)
+
+    def _autoscale_axis(self, ax, x, y, log_y=False, margin=0.05):
+        """Rescale an axis, ignoring non-finite and (for log) non-positive
+        values so the axis never collapses or freezes."""
+        import math
+
+        xs = [v for v in x if v is not None and math.isfinite(v)]
+        if log_y:
+            ys = [v for v in y if v is not None and math.isfinite(v) and v > 0]
+        else:
+            ys = [v for v in y if v is not None and math.isfinite(v)]
+
+        if not xs or not ys:
+            return
+
+        xmin, xmax = min(xs), max(xs)
+        ymin, ymax = min(ys), max(ys)
+
+        # X padding (linear)
+        xpad = (xmax - xmin) * margin or 0.5
+        ax.set_xlim(xmin - xpad, xmax + xpad)
+
+        # Y padding
+        if log_y:
+            # pad multiplicatively in log space
+            ax.set_ylim(ymin / (1 + margin), ymax * (1 + margin))
+        else:
+            ypad = (ymax - ymin) * margin or abs(ymax) * margin or 1e-12
+            ax.set_ylim(ymin - ypad, ymax + ypad)
 
     def _scan_for_visa_instruments(self):
         if not pyvisa:
