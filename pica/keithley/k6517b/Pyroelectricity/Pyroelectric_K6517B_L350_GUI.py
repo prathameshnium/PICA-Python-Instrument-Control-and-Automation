@@ -227,7 +227,7 @@ class PyroelectricAppGUI:
         self.data_storage = {'time': [], 'temperature': [], 'current': []}
         self.data_queue = queue.Queue()
         self.measurement_thread = None
-        self.plot_backgrounds = None  # For blitting
+        # self.plot_backgrounds = None  # For blitting - REMOVED
 
         self.setup_styles()
         self.create_widgets()
@@ -757,27 +757,25 @@ class PyroelectricAppGUI:
         self.data_storage['temperature'].append(current_temp)
         self.data_storage['current'].append(current_val)
 
-        if self.plot_backgrounds:
-            for bg in self.plot_backgrounds:
-                self.canvas.restore_region(bg)
-            self.line_main.set_data(
-                self.data_storage['temperature'],
-                self.data_storage['current'])
-            self.line_sub1.set_data(
-                self.data_storage['time'],
-                self.data_storage['temperature'])
-            self.line_sub2.set_data(
-                self.data_storage['time'], self.data_storage['current'])
-            for ax, line in zip(
-                self.axes, [
-                    self.line_main, self.line_sub1, self.line_sub2]):
-                ax.relim()
-                ax.autoscale_view()
-                ax.draw_artist(line)
-            self.canvas.blit(self.figure.bbox)
-        else:
-            self.figure.tight_layout(pad=3.0)
-            self.canvas.draw_idle()
+        # Skip plotting points where the instrument returned NaN so the
+        # autoscaler is not fed invalid limits.
+        temp = self.data_storage['temperature']
+        curr = self.data_storage['current']
+        t = self.data_storage['time']
+
+        self.line_main.set_data(temp, curr)
+        self.line_sub1.set_data(t, temp)
+        self.line_sub2.set_data(t, curr)
+
+        # Recompute data limits and rescale. Because this is a FULL redraw,
+        # the ticks, labels, gridlines and sci-notation offset update too.
+        for ax in self.axes:
+            ax.relim()
+            ax.autoscale_view()
+
+        # draw_idle() coalesces multiple requests and is the correct call from
+        # the Tk main loop. At a 2 s sample rate this is plenty fast.
+        self.canvas.draw_idle()
 
     def _check_ramping_completion_conditions(self, current_temp, params):
         if current_temp >= params['safety_cutoff']:
@@ -843,15 +841,13 @@ class PyroelectricAppGUI:
                 f"I vs T | Sample: {params['sample_name']}",
                 fontweight='bold')
 
-            # --- Performance Improvement: Capture static background for blitting ---
-            for line in [self.line_main, self.line_sub1, self.line_sub2]:
-                line.set_animated(True)
-            self.canvas.draw()
-            self.plot_backgrounds = [
-                self.canvas.copy_from_bbox(
-                    ax.bbox) for ax in self.axes]
-            self.log("Blitting enabled for fast graph updates.")
-            # --- End of performance improvement ---
+            # Reset axes and do a single clean full redraw before the run.
+            for ax in self.axes:
+                ax.relim()
+                ax.autoscale_view()
+            self.figure.tight_layout(pad=3.0)
+            self.canvas.draw_idle()
+            self.log("Live graphs initialized.")
 
             self.log("Moving to start temperature for stabilization...")
             self.experiment_state = 'stabilizing'
@@ -876,10 +872,12 @@ class PyroelectricAppGUI:
             self.log(f"Measurement loop {reason}.")
             self.start_button.config(state='normal')
             self.stop_button.config(state='disabled')
-            # Turn off animation for any final redraws
-            for line in [self.line_main, self.line_sub1, self.line_sub2]:
-                line.set_animated(False)
-            self.plot_backgrounds = None
+            # Let the worker thread finish its current iteration before we
+            # tear down the VISA sessions, to avoid a read-during-close race.
+            if (self.measurement_thread is not None
+                    and self.measurement_thread.is_alive()
+                    and threading.current_thread() is not self.measurement_thread):
+                self.measurement_thread.join(timeout=3.0)
             self.backend.close_instruments()
             self.log("Instrument connections closed.")
             messagebox.showinfo(
