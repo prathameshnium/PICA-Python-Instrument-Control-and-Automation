@@ -214,7 +214,7 @@ class Keithley6517B_Backend:
 
 class HighResistanceIV_GUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "4.4"  # Performance and UI update
+    PROGRAM_VERSION = "4.4.1"  # Updated version for plot fix
     LOGO_SIZE = 110
     try:
         # Robust path finding for assets
@@ -275,7 +275,7 @@ class HighResistanceIV_GUI:
         self.voltage_list = []
         self.data_queue = queue.Queue()
         self.measurement_thread = None
-        self.plot_backgrounds = None  # For blitting
+        
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -694,23 +694,20 @@ class HighResistanceIV_GUI:
 
         # --- Configure Top Plot: I-V Curve ---
         self.line_iv, = self.ax_iv.plot(
-            [], [], color=self.CLR_ACCENT_BLUE, marker='o', markersize=5, linestyle='-', animated=False)
+            [], [], color=self.CLR_ACCENT_BLUE, marker='o', markersize=5, linestyle='-')
         self.ax_iv.set_title("Current vs. Voltage", fontweight='bold')
         self.ax_iv.set_ylabel("Measured Current (A)")
         self.ax_iv.grid(True, linestyle='--', alpha=0.6)
 
         # --- Configure Bottom Plot: R-V Curve ---
         self.line_rv, = self.ax_rv.plot(
-            [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=5, linestyle='-', animated=False)
+            [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=5, linestyle='-')
         self.ax_rv.set_title("Resistance vs. Voltage", fontweight='bold')
         self.ax_rv.set_xlabel("Applied Voltage (V)")
         self.ax_rv.set_ylabel("Resistance (Ω)")
 
-        # --- COSMETIC CHANGE HERE ---
-        # The y-axis is now logarithmic for better visualization of high
-        # resistance changes.
+        # The y-axis is now logarithmic for better visualization of high resistance changes.
         self.ax_rv.set_yscale('log')
-
         self.ax_rv.grid(True, which="both", linestyle='--', alpha=0.6)
 
         self.figure.tight_layout(pad=3.0)
@@ -793,16 +790,6 @@ class HighResistanceIV_GUI:
             self.canvas.draw()
             self.log("Measurement sweep started.")
 
-            # --- Performance Improvement: Capture static background for blitting ---
-            for line in [self.line_iv, self.line_rv]:
-                line.set_animated(True)
-            self.canvas.draw()
-            self.plot_backgrounds = [
-                self.canvas.copy_from_bbox(
-                    ax.bbox) for ax in [
-                    self.ax_iv, self.ax_rv]]
-            self.log("Blitting enabled for fast graph updates.")
-
             # Start the worker thread and the queue processor
             self.measurement_thread = threading.Thread(
                 target=self._measurement_worker, args=(
@@ -822,10 +809,7 @@ class HighResistanceIV_GUI:
             self.log("Measurement loop stopped by user.")
             self.start_button.config(state='normal')
             self.stop_button.config(state='disabled')
-            # Turn off animation for any final redraws
-            for line in [self.line_iv, self.line_rv]:
-                line.set_animated(False)
-            self.plot_backgrounds = None
+            
             if self.backend:
                 self.backend.close_instruments()
             self.log("Instrument connection closed.")
@@ -851,6 +835,29 @@ class HighResistanceIV_GUI:
                 self.data_queue.put(e)
                 break
         self.data_queue.put("SWEEP_COMPLETE")
+
+    def _update_plots(self):
+        """Safely updates plots discarding non-finite values to prevent crashes on log scales."""
+        v_data = np.array(self.data_storage['voltage_applied'], dtype=float)
+        i_data = np.array(self.data_storage['current_measured'], dtype=float)
+        r_data = np.array(self.data_storage['resistance'], dtype=float)
+
+        # --- Update I-V Plot ---
+        # Filter out NaN/Inf that might result from math errors (like zero division)
+        valid_iv = np.isfinite(v_data) & np.isfinite(i_data)
+        self.line_iv.set_data(v_data[valid_iv], i_data[valid_iv])
+        self.ax_iv.relim()
+        self.ax_iv.autoscale_view()
+
+        # --- Update R-V Plot ---
+        # Because R-V has a log y-axis, we must also filter out zero and negative values
+        valid_rv = np.isfinite(v_data) & np.isfinite(r_data) & (r_data > 0)
+        self.line_rv.set_data(v_data[valid_rv], r_data[valid_rv])
+        self.ax_rv.relim()
+        self.ax_rv.autoscale_view()
+
+        # Trigger a full redraw of the canvas to ensure ticks/labels update
+        self.canvas.draw_idle()
 
     def _process_data_queue(self):
         """Processes data from the queue to update the GUI. Runs in the main thread."""
@@ -885,29 +892,8 @@ class HighResistanceIV_GUI:
                     self.data_storage['current_measured'].append(cur)
                     self.data_storage['resistance'].append(res)
 
-                    # --- Performance Improvement: Use blitting for fast graph updates ---
-                    if self.plot_backgrounds:
-                        # Restore the clean background
-                        self.canvas.restore_region(self.plot_backgrounds[0])
-                        self.canvas.restore_region(self.plot_backgrounds[1])
-
-                        # Update data and redraw only the artists
-                        self.line_iv.set_data(
-                            self.data_storage['voltage_applied'],
-                            self.data_storage['current_measured'])
-                        self.line_rv.set_data(
-                            self.data_storage['voltage_applied'],
-                            self.data_storage['resistance'])
-                        for ax in [self.ax_iv, self.ax_rv]:
-                            ax.relim()
-                            ax.autoscale_view()
-
-                        self.ax_iv.draw_artist(self.line_iv)
-                        self.ax_rv.draw_artist(self.line_rv)
-                        self.canvas.blit(self.figure.bbox)
-                    else:
-                        # Fallback to a full redraw if blitting isn't ready
-                        self.canvas.draw_idle()
+                    # Safely redraw the plots
+                    self._update_plots()
 
         except queue.Empty:
             pass  # No data to process, which is normal
