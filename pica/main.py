@@ -176,6 +176,10 @@ class PICALauncherApp:
         self.root = root
         self.root.title(f"PICA Launcher - v{self.PROGRAM_VERSION}")
         self.root.geometry("1100x750")
+        try:
+            self.root.state('zoomed')
+        except tk.TclError:
+            pass
         self.root.configure(bg=self.CLR_BG_DARK)
         
         # Initialize internal variables
