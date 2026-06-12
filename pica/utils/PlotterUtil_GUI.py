@@ -34,22 +34,6 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
 
-
-def _dummy_process_target():
-    """A picklable top-level function to satisfy multiprocessing on Windows."""
-    pass
-
-
-def launch_new_instance():
-    """
-    Launches a new instance of the plotter application in a separate process.
-    This is necessary for creating independent windows.
-    """
-    # This function is no longer needed, as the logic is handled directly
-    # in the button command for clarity and robustness.
-    pass
-
-
 def run_script_process(script_path):
     """
     Wrapper function to execute a script in a new process.
@@ -325,18 +309,6 @@ class PlotterAppGUI:
                 0,
                 10))
         list_container.rowconfigure(0, weight=1)
-
-        # --- Checkbox UI: Create a scrollable frame for file checkboxes ---
-        list_container = ttk.Frame(file_frame, style='TFrame')
-        list_container.grid(
-            row=1,
-            column=0,
-            sticky='nsew',
-            padx=10,
-            pady=(
-                0,
-                10))
-        list_container.rowconfigure(0, weight=1)
         list_container.columnconfigure(0, weight=1)
 
         file_canvas = tk.Canvas(
@@ -361,6 +333,8 @@ class PlotterAppGUI:
         self.file_list_frame.bind(
             "<Configure>", lambda e: file_canvas.configure(
                 scrollregion=file_canvas.bbox("all")))
+        # Bind mousewheel for easier navigation
+        file_canvas.bind_all("<MouseWheel>", lambda e: file_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
         self.column_source_var = tk.StringVar(
             value="Columns from: (no file selected)")
@@ -531,6 +505,30 @@ class PlotterAppGUI:
         self.console.see('end')
         self.console.config(state='disabled')
 
+    @staticmethod
+    def _detect_delimiter(line):
+        """Infer delimiter from a header/data line. None means whitespace."""
+        if '\t' in line:
+            return '\t'
+        if ',' in line:
+            return ','
+        if ';' in line:
+            return ';'
+        return None
+
+    @staticmethod
+    def _dedupe_headers(headers):
+        """Cp, Cp'' -> stays distinct; true duplicates get _2, _3 suffixes."""
+        seen, out = {}, []
+        for h in headers:
+            if h in seen:
+                seen[h] += 1
+                out.append(f"{h}_{seen[h]}")
+            else:
+                seen[h] = 0
+                out.append(h)
+        return out
+
     def launch_new_instance_handler(self):
         """
         Handles launching a new instance of the plotter. This logic correctly
@@ -553,7 +551,7 @@ class PlotterAppGUI:
     def browse_files(self):
         filepaths = filedialog.askopenfilenames(
             title="Select a data file",
-            filetypes=(("Data Files", "*.csv *.dat"), ("All files", "*.*"))
+            filetypes=(("Data Files", "*.csv *.dat *.txt"), ("All files", "*.*"))
         )
         if not filepaths:
             return
@@ -663,154 +661,107 @@ class PlotterAppGUI:
             self.load_file_data(filepath)
 
     def _load_file_data_into_cache(self, filepath):
-        """Loads file data into the cache without affecting the UI state (e.g., active file)."""
+        """Loads file data into the cache using the positional parser."""
         if not filepath or not os.path.exists(filepath):
             return False
 
         try:
-            # Find the header row
-            header_line_index = -1
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                for i, line in enumerate(f):
-                    line = line.strip()
-                    if line and not line.startswith('#') and (
-                            ',' in line or '\t' in line):
-                        header_line_index = i
-                        break
-
-            if header_line_index == -1:
-                raise ValueError("No valid data header row found.")
-
-            # Use genfromtxt to parse the data
-            data_array = np.genfromtxt(
-                filepath,
-                delimiter=',',
-                names=True,
-                comments='#',
-                autostrip=True,
-                invalid_raise=False,
-                skip_header=header_line_index)
-
-            if not isinstance(
-                    data_array,
-                    np.ndarray) or data_array.dtype is None or data_array.dtype.names is None:
-                raise ValueError("Could not parse data from file.")
-
-            if data_array.size == 0:
-                self.log(
-                    f"Warning: File '{os.path.basename(filepath)}' contains no valid data rows.")
-
-            headers = [name.strip() for name in data_array.dtype.names]
-
-            # Store data in our cache
+            headers, delim, data_array = self._read_data_from_file(filepath)
             file_info = self.file_data_cache[filepath]
             file_info['headers'] = headers
-            file_info['data'] = {name: data_array[name] for name in headers}
+            file_info['delimiter'] = delim
+            file_info['data'] = {h: data_array[:, j] for j, h in enumerate(headers)}
             file_info['mod_time'] = os.path.getmtime(filepath)
             file_info['size'] = os.path.getsize(filepath)
 
-            self.log(
-                f"Cached {len(data_array)} data points from '{os.path.basename(filepath)}'.")
+            self.log(f"Cached {data_array.shape[0]} data points from '{os.path.basename(filepath)}'.")
             return True
-
         except Exception as e:
-            # If loading fails, create an empty but valid cache entry to
-            # prevent errors.
             if filepath in self.file_data_cache:
                 self.file_data_cache[filepath].update(
                     {"headers": [], "data": {}})
-
             self.log(f"Error caching file '{os.path.basename(filepath)}': {e}")
-            # We don't show a messagebox here to avoid spamming the user if they select multiple bad files.
-            # The log message is sufficient.
             return False
 
     def _find_header_row(self, filepath):
-        """Finds the header row index in a file."""
-        header_line_index = -1
+        """Returns (header_index, delimiter, headers). Raises on failure."""
+        def is_num(tok):
+            try:
+                float(tok)
+                return True
+            except ValueError:
+                return False
+
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
             for i, line in enumerate(f):
-                line = line.strip()
-                if line and not line.startswith('#') and (',' in line or '\t' in line):
-                    header_line_index = i
-                    break
-        return header_line_index
+                s = line.strip()
+                if not s or s.startswith('#'):
+                    continue
+                delim = self._detect_delimiter(s)
+                tokens = [t.strip() for t in (s.split(delim) if delim else s.split()) if t.strip()]
+                if len(tokens) < 2:
+                    continue
+                if not all(is_num(t) for t in tokens):
+                    return i, delim, self._dedupe_headers(tokens)
+                # First real line is numeric -> headerless file
+                return i - 1, delim, [f"Col{j + 1}" for j in range(len(tokens))]
+        raise ValueError("No valid data header row found.")
 
-    def _read_data_from_file(self, filepath, header_line_index):
-        """Reads data from a file using numpy.genfromtxt."""
-        if header_line_index == -1:
-            raise ValueError(
-                "No valid data header row found. Ensure the file has a "
-                "non-commented header with comma or tab-separated columns.")
-
+    def _read_data_from_file(self, filepath):
+        """Reads data by column index preserving special characters in headers."""
+        header_idx, delim, headers = self._find_header_row(filepath)
         data_array = np.genfromtxt(
             filepath,
-            delimiter=',',
-            names=True,
+            delimiter=delim,
             comments='#',
             autostrip=True,
             invalid_raise=False,
-            skip_header=header_line_index)
+            skip_header=header_idx + 1)
 
-        if (not isinstance(data_array, np.ndarray) or 
-                data_array.dtype is None or 
-                data_array.dtype.names is None):
-            raise ValueError(
-                "Could not parse data. The file may be empty, have an invalid format, or contain only comments.")
-        
-        return data_array
-
-    def _update_cache_and_ui(self, filepath, data_array):
-        """Updates the file data cache and UI elements with new data."""
+        data_array = np.atleast_2d(np.asarray(data_array, dtype=float))
         if data_array.size == 0:
-            self.log(
-                f"Warning: File '{os.path.basename(filepath)}' was loaded, but contains no valid data rows.")
-            if filepath in self.file_data_cache:
-                file_info = self.file_data_cache[filepath]
-                file_info['headers'] = [
-                    name.strip() for name in data_array.dtype.names] if data_array.dtype.names else []
-                file_info['data'] = {h: np.array(
-                    []) for h in file_info['headers']}
-            data_array = np.array([])
+            data_array = np.empty((0, len(headers)))
+        # Tolerate trailing-delimiter ghost columns
+        if data_array.shape[1] > len(headers):
+            data_array = data_array[:, :len(headers)]
+        elif data_array.shape[1] < len(headers):
+            raise ValueError(f"Found {data_array.shape[1]} data columns but {len(headers)} headers.")
+        return headers, delim, data_array
 
-        headers = [name.strip() for name in data_array.dtype.names]
-
+    def _update_cache_and_ui(self, filepath, headers, delim, data_array):
+        """Updates the file data cache and UI elements with new data."""
         file_info = self.file_data_cache[filepath]
         file_info['headers'] = headers
-        file_info['data'] = {name: data_array[name] for name in headers}
+        file_info['delimiter'] = delim
+        file_info['data'] = {h: data_array[:, j] for j, h in enumerate(headers)}
         file_info['mod_time'] = os.path.getmtime(filepath)
         file_info['size'] = os.path.getsize(filepath)
 
         self.x_col_cb['values'] = headers
         self.y_col_cb['values'] = headers
-
         if len(headers) > 1:
-            self.x_col_cb.set(headers[0])
-            self.y_col_cb.set(headers[1])
+            if not self.x_col_cb.get(): self.x_col_cb.set(headers[0])
+            if not self.y_col_cb.get(): self.y_col_cb.set(headers[1])
         elif headers:
-            self.x_col_cb.set(headers[0])
-
-        num_points = len(data_array)
-        self.log(
-            f"Loaded {num_points} data points from '{os.path.basename(filepath)}'.")
+            if not self.x_col_cb.get(): self.x_col_cb.set(headers[0])
+        self.log(f"Loaded {data_array.shape[0]} data points from '{os.path.basename(filepath)}'.")
 
     def load_file_data(self, filepath):
         if not filepath:
             self.log("Cannot load data: No file selected.")
             return
 
-        self.stop_file_watcher()
+        self.stop_file_watcher(log_message=False)
 
         try:
-            header_line_index = self._find_header_row(filepath)
-            data_array = self._read_data_from_file(filepath, header_line_index)
-            self._update_cache_and_ui(filepath, data_array)
+            headers, delim, data_array = self._read_data_from_file(filepath)
+            self._update_cache_and_ui(filepath, headers, delim, data_array)
 
         except Exception as e:
             self._handle_load_error(filepath, e)
         finally:
             if self.active_filepath == filepath:
-                self.start_file_watcher()
+                self.start_file_watcher(log_message=False)
             self.plot_data()
 
     def append_file_data(self):
@@ -819,7 +770,7 @@ class PlotterAppGUI:
                 self.active_filepath):
             return
 
-        self.stop_file_watcher()
+        self.stop_file_watcher(log_message=False)
         file_info = self.file_data_cache.get(self.active_filepath)
 
         if not file_info or 'size' not in file_info:
@@ -870,10 +821,11 @@ class PlotterAppGUI:
         if not new_lines:
             return 0
 
-        reader = csv.reader(new_lines)
+        delim = file_info.get('delimiter')
         new_data = {h: [] for h in file_info['headers']}
         appended_count = 0
-        for row in reader:
+        for line in new_lines:
+            row = [t.strip() for t in (line.split(delim) if delim else line.split()) if t.strip()]
             if len(row) != len(file_info['headers']):
                 continue
             for i, header in enumerate(file_info['headers']):
@@ -982,6 +934,12 @@ class PlotterAppGUI:
         self.ax_main.set_xlabel(x_col)
         self.ax_main.set_ylabel(y_col)
 
+        # Log-scale with non-positive data warnings
+        if self.x_log_var.get() and np.any(raw_x <= 0):
+            self.log(f"Warning: X log-scale active for '{os.path.basename(filepath)}', but non-positive data exists.")
+        if self.y_log_var.get() and np.any(raw_y <= 0):
+            self.log(f"Warning: Y log-scale active for '{os.path.basename(filepath)}', but non-positive data exists.")
+
         if len(selected_filepaths) == 1:
             self.ax_main.set_title(
                 os.path.basename(
@@ -991,7 +949,6 @@ class PlotterAppGUI:
             self.ax_main.set_title(
                 f"{y_col} vs. {x_col}",
                 fontweight='bold')
-        self.figure.tight_layout()
 
     def _handle_load_error(self, filepath, e):
         """Handles errors during file loading."""
@@ -1000,7 +957,6 @@ class PlotterAppGUI:
                 "path": filepath, "headers": [], "data": {}}
         self.column_source_var.set("Columns from: (no file selected)")
         self.active_filepath = None
-        self.plot_data()
         self.x_col_cb.set('')
         self.y_col_cb.set('')
         self.x_col_cb['values'] = []
@@ -1018,18 +974,20 @@ class PlotterAppGUI:
         else:
             self.stop_file_watcher()
 
-    def start_file_watcher(self):
-        self.stop_file_watcher()  # Ensure no multiple watchers are running
+    def start_file_watcher(self, log_message=True):
+        self.stop_file_watcher(log_message=False)
         if self.live_update_var.get() and self.active_filepath:
-            self.log("Live update enabled. Watching for file changes...")
+            if log_message:
+                self.log("Live update enabled. Watching for file changes...")
             self.file_watcher_job = self.root.after(
                 1000, self.check_for_updates)
 
-    def stop_file_watcher(self):
+    def stop_file_watcher(self, log_message=True):
         if self.file_watcher_job:
             self.root.after_cancel(self.file_watcher_job)
             self.file_watcher_job = None
-            self.log("Live update disabled.")
+            if log_message:
+                self.log("Live update disabled.")
 
     def check_for_updates(self):
         if not self.active_filepath or not self.live_update_var.get(
