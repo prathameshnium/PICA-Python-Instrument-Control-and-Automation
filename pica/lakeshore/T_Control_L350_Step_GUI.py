@@ -1,6 +1,6 @@
 """
-Module: T_Control_L350_RangeControl_GUI.py
-Purpose: GUI module for T Control L350 Sequence Control GUI (Threaded).
+Module: T_Control_L350_Step_GUI.py
+Purpose: GUI module for T Control L350 Step Measurement GUI (Threaded).
 """
 
 import tkinter as tk
@@ -32,10 +32,7 @@ except ImportError:
 
 
 def run_script_process(script_path):
-    """
-    Wrapper function to execute a script using runpy in its own directory.
-    This becomes the target for the new, isolated process.
-    """
+    """Wrapper function to execute a script using runpy in its own directory."""
     try:
         os.chdir(os.path.dirname(script_path))
         runpy.run_path(script_path, run_name="__main__")
@@ -46,7 +43,6 @@ def run_script_process(script_path):
 
 
 def launch_plotter_utility():
-    """Finds and launches the plotter utility script in a new process."""
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         plotter_path = os.path.join(script_dir, "..", "utils", "PlotterUtil_GUI.py")
@@ -59,7 +55,6 @@ def launch_plotter_utility():
 
 
 def launch_gpib_scanner():
-    """Finds and launches the GPIB scanner utility in a new process."""
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         scanner_path = os.path.join(script_dir, "..", "utils", "GPIB_Instrument_Scanner_GUI.py")
@@ -102,7 +97,7 @@ class Lakeshore_Backend:
         self.lakeshore.write('*CLS')
         self.set_heater_range(1, heater_range)
         self.lakeshore.write(f'SETP 1,{setpoint}')
-        self.lakeshore.write(f'RAMP 1,1,{rate}')  # Ramp ON
+        self.lakeshore.write(f'RAMP 1,1,{rate}')
 
     def set_heater_range(self, output, heater_range):
         range_map = {'off': 0, 'low': 2, 'medium': 4, 'high': 5}
@@ -119,7 +114,7 @@ class Lakeshore_Backend:
     def stop_ramp(self):
         if self.lakeshore:
             try:
-                self.lakeshore.write('RAMP 1,0,0')  # Ramp OFF
+                self.lakeshore.write('RAMP 1,0,0')
                 self.set_heater_range(1, 'off')
                 print("  Lakeshore ramp stopped and heater turned off.")
             except Exception as e:
@@ -135,12 +130,13 @@ class Lakeshore_Backend:
             finally:
                 self.lakeshore = None
 
+
 # -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 
 class TempControlGUI:
-    PROGRAM_VERSION = "9.0-Seq"
+    PROGRAM_VERSION = "9.1-Step"
     CLR_BG_DARK = '#B8A392'
     CLR_HEADER = '#E5DCD3'
     CLR_FG_LIGHT = '#2C2825'
@@ -159,7 +155,7 @@ class TempControlGUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title(f"Lakeshore 350 Sequence Control v{self.PROGRAM_VERSION}")
+        self.root.title(f"Lakeshore 350 Step Sequence Control v{self.PROGRAM_VERSION}")
         self.root.geometry("1450x850")
         self.root.minsize(1200, 750)
         self.root.configure(bg=self.CLR_BG_DARK)
@@ -223,7 +219,7 @@ class TempControlGUI:
 
     def _populate_left_panel(self, panel):
         panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(3, weight=1)  # Console expands
+        panel.grid_rowconfigure(3, weight=1) 
         
         self._create_info_panel(panel, 0)
         self._create_sequence_panel(panel, 1)
@@ -247,16 +243,18 @@ class TempControlGUI:
                 self.logo_image = ImageTk.PhotoImage(img)
                 logo_canvas.create_image(LOGO_SIZE / 2, LOGO_SIZE / 2, image=self.logo_image)
         except Exception:
-            pass # Silently fail if logo not present to keep console clean
+            pass
 
-        institute_font = ('Segoe UI', self.FONT_BASE[1] + 2, 'bold')
-        ttk.Label(frame, text="UGC-DAE Consortium", font=institute_font).grid(row=0, column=1, padx=5, pady=(15,0), sticky='sw')
+        institute_font = ('Segoe UI', self.FONT_BASE[1] + 1, 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for\nScientific Research", font=institute_font, justify='left').grid(row=0, column=1, padx=5, pady=(15,0), sticky='sw')
         ttk.Label(frame, text="Mumbai Centre", font=institute_font).grid(row=1, column=1, padx=5, sticky='nw')
 
     def _create_sequence_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Measurement Sequence Builder')
         frame.grid(row=grid_row, column=0, sticky='new', pady=5, padx=5)
         frame.grid_columnconfigure(1, weight=1)
+        frame.grid_columnconfigure(2, weight=1)
+        frame.grid_columnconfigure(3, weight=1)
 
         # Listbox for Temperatures
         self.listbox = tk.Listbox(frame, height=6, font=self.FONT_BASE, bg=self.CLR_INPUT_BG, fg=self.CLR_TEXT_DARK)
@@ -277,15 +275,24 @@ class TempControlGUI:
         
         ttk.Button(frame, text="Generate Steps", command=self._generate_steps).grid(row=2, column=2, columnspan=2, sticky='ew', padx=5, pady=2)
 
-        # Manual Addition
+        # Sort Order & Clear All
         ttk.Separator(frame, orient='horizontal').grid(row=3, column=0, columnspan=4, sticky='ew', pady=5, padx=10)
         
-        ttk.Label(frame, text="Manual(K):").grid(row=4, column=0, sticky='e', padx=2)
+        ttk.Label(frame, text="Order:").grid(row=4, column=0, sticky='e', padx=2)
+        self.sort_var = tk.StringVar(value='Ascending')
+        sort_cb = ttk.Combobox(frame, textvariable=self.sort_var, values=['Ascending', 'Descending'], state='readonly', width=12)
+        sort_cb.grid(row=4, column=1, columnspan=2, sticky='w', padx=2)
+        sort_cb.bind('<<ComboboxSelected>>', lambda e: self._sort_listbox())
+
+        ttk.Button(frame, text="Clear All", command=self._clear_listbox).grid(row=4, column=3, sticky='ew', padx=2)
+
+        # Manual Addition
+        ttk.Label(frame, text="Manual(K):").grid(row=5, column=0, sticky='e', padx=2, pady=5)
         self.entry_manual = ttk.Entry(frame, width=6)
-        self.entry_manual.grid(row=4, column=1, sticky='w', padx=2)
+        self.entry_manual.grid(row=5, column=1, sticky='w', padx=2, pady=5)
         
-        ttk.Button(frame, text="Add", command=self._add_manual_step).grid(row=4, column=2, sticky='ew', padx=2)
-        ttk.Button(frame, text="Remove", command=self._remove_step).grid(row=4, column=3, sticky='ew', padx=2)
+        ttk.Button(frame, text="Add", command=self._add_manual_step).grid(row=5, column=2, sticky='ew', padx=2, pady=5)
+        ttk.Button(frame, text="Remove", command=self._remove_step).grid(row=5, column=3, sticky='ew', padx=2, pady=5)
 
     def _create_settings_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Instrument & Stability Settings')
@@ -345,7 +352,7 @@ class TempControlGUI:
         status_frame.grid(row=0, column=0, sticky='ew', pady=(0, 10))
         status_frame.grid_columnconfigure(0, weight=1)
         
-        self.lbl_status = tk.Label(status_frame, text="SYSTEM IDLE", font=('Segoe UI', 16, 'bold'), bg=self.CLR_FRAME_BG, fg=self.CLR_TEXT_DARK, pady=10)
+        self.lbl_status = tk.Label(status_frame, text="READY TO START", font=('Segoe UI', 16, 'bold'), bg=self.CLR_FRAME_BG, fg=self.CLR_TEXT_DARK, pady=10)
         self.lbl_status.grid(row=0, column=0, sticky='ew')
         
         self.btn_proceed = ttk.Button(status_frame, text="Measurement Complete - Proceed ➔", style='Proceed.TButton', state='disabled', command=self._on_proceed)
@@ -383,6 +390,20 @@ class TempControlGUI:
         entry.insert(0, default_value)
         self.entries[label_text] = entry
 
+    def _sort_listbox(self):
+        """Sorts the current listbox contents based on the selected order."""
+        items = list(self.listbox.get(0, tk.END))
+        if not items: return
+        try:
+            floats = [float(x) for x in items]
+            is_desc = (self.sort_var.get() == 'Descending')
+            floats.sort(reverse=is_desc)
+            self.listbox.delete(0, tk.END)
+            for val in floats:
+                self.listbox.insert(tk.END, f"{val:.2f}")
+        except Exception:
+            pass # Ignore malformed data quietly
+
     def _generate_steps(self):
         try:
             start = float(self.entry_start.get())
@@ -399,6 +420,7 @@ class TempControlGUI:
                 while current >= end:
                     self.listbox.insert(tk.END, f"{current:.2f}")
                     current -= step
+            self._sort_listbox() # Auto-sort after generation
         except ValueError:
             messagebox.showerror("Input Error", "Please enter valid numeric values for Start, End, and Step.")
 
@@ -407,6 +429,7 @@ class TempControlGUI:
             val = float(self.entry_manual.get())
             self.listbox.insert(tk.END, f"{val:.2f}")
             self.entry_manual.delete(0, tk.END)
+            self._sort_listbox() # Auto-sort upon addition
         except ValueError:
             messagebox.showerror("Input Error", "Enter a valid numeric temperature.")
 
@@ -414,6 +437,9 @@ class TempControlGUI:
         selection = self.listbox.curselection()
         if selection:
             self.listbox.delete(selection[0])
+
+    def _clear_listbox(self):
+        self.listbox.delete(0, tk.END)
 
     def log(self, message):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -430,7 +456,7 @@ class TempControlGUI:
         self.log("User confirmed measurement. Moving to next setpoint.")
         self.btn_proceed.config(state='disabled')
         self._update_status_ui("INITIATING NEXT RAMP...", self.CLR_HEADER)
-        self.proceed_event.set() # Unlocks the wait() in the thread
+        self.proceed_event.set()
 
     # --- MAIN LOGIC ---
     def start_sequence(self):
@@ -449,7 +475,6 @@ class TempControlGUI:
         self.set_ui_state(running=True)
         self.is_running = True
         
-        # Clear Plot
         for key in self.data_storage:
             self.data_storage[key].clear()
         self.line_temp[0].set_data([], [])
@@ -459,10 +484,8 @@ class TempControlGUI:
         self.start_time = time.time()
         self.proceed_event.clear()
 
-        # Start GUI Queue Monitor
         self.root.after(100, self._process_gui_queue)
 
-        # Launch Background Thread
         self.measurement_thread = threading.Thread(target=self._hardware_worker_loop, daemon=True)
         self.measurement_thread.start()
 
@@ -470,7 +493,7 @@ class TempControlGUI:
         if not self.is_running: return
         self.log("ABORT INITIATED BY USER.")
         self.is_running = False
-        self.proceed_event.set() # Unblock thread if it's waiting for user
+        self.proceed_event.set()
         self.backend.stop_ramp()
         self.set_ui_state(running=False)
         self._update_status_ui("SEQUENCE ABORTED", self.CLR_ACCENT_RED)
@@ -499,8 +522,9 @@ class TempControlGUI:
         self.entry_end.config(state=state)
         self.entry_step.config(state=state)
         self.entry_manual.config(state=state)
+        self.sort_var.set(self.sort_var.get()) # Keeps combobox visible but we disable the widget below
         self.ls_cb.config(state=state if state == 'normal' else 'readonly')
-        self.btn_proceed.config(state='disabled') # Explicitly disable until thread enables it
+        self.btn_proceed.config(state='disabled')
 
     def _scan_for_visa(self):
         if self.backend.rm is None:
@@ -520,13 +544,11 @@ class TempControlGUI:
 
     # --- THREADING COMPONENTS ---
     def _put_gui_msg(self, msg_type, **kwargs):
-        """Helper to safely send commands to the Tkinter thread."""
         payload = {'type': msg_type}
         payload.update(kwargs)
         self.gui_queue.put(payload)
 
     def _process_gui_queue(self):
-        """Tkinter Main Thread loop. Processes UI update requests from the hardware thread."""
         try:
             while True:
                 msg = self.gui_queue.get_nowait()
@@ -548,7 +570,7 @@ class TempControlGUI:
                 
                 elif msg_type == 'handshake_ready':
                     self.btn_proceed.config(state='normal')
-                    winsound.Beep(1000, 500) # Audio Alert
+                    winsound.Beep(1000, 500) 
                 
                 elif msg_type == 'sequence_complete':
                     self.set_ui_state(running=False)
@@ -561,7 +583,6 @@ class TempControlGUI:
             self.root.after(100, self._process_gui_queue)
 
     def _hardware_worker_loop(self):
-        """Background Thread. Controls VISA, monitors stability, and blocks on user handshake."""
         try:
             self._put_gui_msg('log', text="Connecting to Lakeshore...")
             self.backend.connect(self.params['ls_visa'])
@@ -572,10 +593,8 @@ class TempControlGUI:
                 self._put_gui_msg('log', text=f"--- Sequence Step {i+1}/{len(self.setpoint_floats)}: Target {target} K ---")
                 self._put_gui_msg('status', text=f"RAMPING TO {target} K", color=self.CLR_ACCENT_RED)
                 
-                # Command Lakeshore
                 self.backend.configure_ramp(target, self.params['rate'], self.params['heater_range'])
                 
-                # Monitoring & Soak Window Logic
                 stable_start_time = None
                 
                 while self.is_running:
@@ -585,7 +604,6 @@ class TempControlGUI:
                     self.data_storage['heater'].append(htr)
                     self._put_gui_msg('plot')
                     
-                    # Check Tolerance Band
                     if abs(temp - target) <= self.params['tolerance']:
                         if stable_start_time is None:
                             stable_start_time = time.time()
@@ -594,7 +612,7 @@ class TempControlGUI:
                             
                         elif time.time() - stable_start_time >= self.params['soak_time']:
                             self._put_gui_msg('log', text=f"Stable inside window for {self.params['soak_time']}s.")
-                            break # Exits the monitoring while loop, moves to handshake
+                            break 
                     else:
                         if stable_start_time is not None:
                             self._put_gui_msg('log', text="Drifted outside tolerance band. Restarting soak timer.")
@@ -603,35 +621,32 @@ class TempControlGUI:
                         
                     time.sleep(self.params['delay_s'])
                 
-                if not self.is_running: break # Sequence aborted
+                if not self.is_running: break
                 
-                # --- The Handshake ---
                 self._put_gui_msg('status', text=f"STABLE AT {target} K | AWAITING MEASUREMENT", color=self.CLR_ACCENT_GREEN)
                 self._put_gui_msg('log', text="READY FOR EXTERNAL MEASUREMENT. Waiting for user acknowledgement.")
                 self._put_gui_msg('handshake_ready')
                 
-                # Freeze this background thread until GUI calls self.proceed_event.set()
                 self.proceed_event.clear()
                 self.proceed_event.wait() 
                 
-            # Sequence Over
             if self.is_running:
                 self.is_running = False
                 self._put_gui_msg('log', text="Measurement Sequence Complete.")
-                self._put_gui_msg('status', text="SEQUENCE COMPLETE", color=self.CLR_HEADER)
+                self._put_gui_msg('status', text="READY TO START", color=self.CLR_HEADER)
                 self._put_gui_msg('sequence_complete')
                 self.backend.stop_ramp()
 
         except Exception as e:
             self._put_gui_msg('log', text=f"CRITICAL ERROR IN HARDWARE THREAD: {e}\n{traceback.format_exc()}")
             self.is_running = False
-            self._put_gui_msg('sequence_complete') # Resets UI
+            self._put_gui_msg('sequence_complete') 
             self.backend.stop_ramp()
 
     def _on_closing(self):
         if self.is_running and messagebox.askyesno("Exit", "A sequence is active. Stop hardware and exit?"):
             self.stop_ramp()
-            time.sleep(0.5) # Give the thread a moment to shut down cleanly
+            time.sleep(0.5) 
             self.root.destroy()
         elif not self.is_running:
             self.root.destroy()
