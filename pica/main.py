@@ -165,6 +165,7 @@ class PICALauncherApp:
         "Pyroelectric Current": resource_path("keithley/k6517b/Pyroelectricity/Pyroelectric_K6517B_L350_GUI.py"),
         "K6517B Polling (Bias)": resource_path("keithley/k6517b/Pyroelectricity/Polling_K6517B_GUI.py"),
         "Lakeshore Temp Control": resource_path("lakeshore/T_Control_L350_RangeControl_GUI.py"),
+        "Lakeshore Step Control": resource_path("lakeshore/T_Control_L350_Step_GUI.py"),
         "Lakeshore Temp Monitor": resource_path("lakeshore/T_Sensing_L350_GUI.py"),
         "LCR C-V Measurement": resource_path("keysight/CV_KE4980A_GUI.py"),
         "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
@@ -572,6 +573,8 @@ class PICALauncherApp:
                                  None,
                                  [("Temperature Ramp",
                                    "Lakeshore Temp Control"),
+                                  ("Step-wise Control",
+                                   "Lakeshore Step Control"),
                                   ("Temperature Monitor",
                                    "Lakeshore Temp Monitor")])
         self._create_suite_frame(right_col,
