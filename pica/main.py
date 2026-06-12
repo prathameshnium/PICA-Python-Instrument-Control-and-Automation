@@ -171,6 +171,7 @@ class PICALauncherApp:
         "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
         "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
         "PICA Help": resource_path("README.md"),
+        "PE Plotter": resource_path("utils/PE_plotter.py"),
     }
 
     def __init__(self, root):
@@ -343,48 +344,40 @@ class PICALauncherApp:
         ttk.Separator(info_frame, orient='horizontal').pack(fill='x', pady=10)
         util_frame = ttk.Frame(info_frame)
         util_frame.pack(fill='x', expand=False, pady=5)
-        # --- Make the README button bigger by spanning two columns ---
-        util_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        
+        # --- Adjusted to span 5 columns ---
+        util_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
+        
         ttk.Button(
             util_frame,
-            text="VISA/GPIB Utils",
+            text="VISA/GPIB",
             style='App.TButton',
-            command=self.run_gpib_test).grid(
-            row=0,
-            column=0,
-            sticky='ew',
-            padx=(
-                0,
-                4))
+            command=self.run_gpib_test).grid(row=0, column=0, sticky='ew', padx=(0, 2))
+            
         ttk.Button(
             util_frame,
             text="Plotter",
             style='App.TButton',
-            command=launch_plotter_utility).grid(
-            row=0,
-            column=1,
-            sticky='ew',
-            padx=4)
+            command=launch_plotter_utility).grid(row=0, column=1, sticky='ew', padx=2)
+            
+        # --- NEW Tools Button ---
+        ttk.Button(
+            util_frame,
+            text="Tools",
+            style='App.TButton',
+            command=self.open_tools_popup).grid(row=0, column=2, sticky='ew', padx=2)
+            
         ttk.Button(
             util_frame,
             text="README",
             style='App.TButton',
-            command=self.open_readme).grid(
-            row=0,
-            column=2,
-            sticky='ew',
-            padx=4)
+            command=self.open_readme).grid(row=0, column=3, sticky='ew', padx=2)
+            
         ttk.Button(
             util_frame,
             text="Manuals",
             style='App.TButton',
-            command=self.open_manual_file).grid(
-            row=0,
-            column=3,
-            sticky='ew',
-            padx=(
-                4,
-                0))
+            command=self.open_manual_file).grid(row=0, column=4, sticky='ew', padx=(2, 0))
 
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', fill='x', pady=(15, 0))
@@ -747,6 +740,45 @@ class PICALauncherApp:
 
     def open_license(self):
         self._show_file_in_window(self.LICENSE_FILE, "MIT License")
+
+    def open_tools_popup(self):
+        """Creates a small pop-up window for additional tools."""
+        tools_win = Toplevel(self.root)
+        tools_win.title("Tools")
+        tools_win.geometry("300x180")
+        tools_win.configure(bg=self.CLR_BG_DARK)
+        tools_win.transient(self.root)
+        tools_win.grab_set()
+
+        # Center the pop-up over the main window
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 150
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 90
+        tools_win.geometry(f"+{x}+{y}")
+
+        ttk.Label(
+            tools_win,
+            text="Additional Tools",
+            font=self.FONT_TITLE,
+            foreground=self.CLR_ACCENT_GOLD,
+            background=self.CLR_BG_DARK,
+            justify='center'
+        ).pack(pady=(20, 15))
+
+        # Launch PE Plotter Button
+        ttk.Button(
+            tools_win,
+            text="PE Plotter",
+            style='App.TButton',
+            command=lambda: self.launch_script(self.SCRIPT_PATHS["PE Plotter"])
+        ).pack(fill='x', padx=30, pady=5)
+
+        # Close Button
+        ttk.Button(
+            tools_win,
+            text="Close",
+            style='App.TButton',
+            command=tools_win.destroy
+        ).pack(fill='x', padx=30, pady=5)
 
     def open_repo(self, event=None):
         import webbrowser
