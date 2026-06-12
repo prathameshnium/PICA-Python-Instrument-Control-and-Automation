@@ -1,6 +1,6 @@
 """
 Module: T_Control_L350_Step_GUI.py
-Purpose: GUI module for T Control L350 Step Measurement GUI (Threaded).
+Purpose: GUI module for T Control L350 Step Measurement GUI (Threaded & Multi-plot).
 """
 
 import tkinter as tk
@@ -136,7 +136,7 @@ class Lakeshore_Backend:
 # -------------------------------------------------------------------------------
 
 class TempControlGUI:
-    PROGRAM_VERSION = "9.1-Step"
+    PROGRAM_VERSION = "9.2-Step"
     CLR_BG_DARK = '#B8A392'
     CLR_HEADER = '#E5DCD3'
     CLR_FG_LIGHT = '#2C2825'
@@ -167,7 +167,9 @@ class TempControlGUI:
         
         self.logo_image = None
         self.backend = Lakeshore_Backend()
-        self.data_storage = {'time': [], 'temperature': [], 'heater': []}
+        
+        # Added 'target' to data storage for plotting expectations
+        self.data_storage = {'time': [], 'temperature': [], 'target': [], 'heater': []}
 
         self.setup_styles()
         self.create_widgets()
@@ -209,7 +211,7 @@ class TempControlGUI:
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
-        left_panel = ttk.Frame(main_pane, width=420)
+        left_panel = ttk.Frame(main_pane, width=440)
         main_pane.add(left_panel, weight=0)
         right_panel = ttk.Frame(main_pane)
         main_pane.add(right_panel, weight=1)
@@ -245,20 +247,28 @@ class TempControlGUI:
         except Exception:
             pass
 
+        # Institute Name forced into exactly 2 lines
         institute_font = ('Segoe UI', self.FONT_BASE[1] + 1, 'bold')
-        ttk.Label(frame, text="UGC-DAE Consortium for\nScientific Research", font=institute_font, justify='left').grid(row=0, column=1, padx=5, pady=(15,0), sticky='sw')
-        ttk.Label(frame, text="Mumbai Centre", font=institute_font).grid(row=1, column=1, padx=5, sticky='nw')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research\nMumbai Centre", 
+                  font=institute_font, justify='left').grid(row=0, column=1, rowspan=2, padx=5, pady=10, sticky='w')
 
     def _create_sequence_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Measurement Sequence Builder')
         frame.grid(row=grid_row, column=0, sticky='new', pady=5, padx=5)
-        frame.grid_columnconfigure(1, weight=1)
-        frame.grid_columnconfigure(2, weight=1)
-        frame.grid_columnconfigure(3, weight=1)
+        for i in range(4): frame.grid_columnconfigure(i, weight=1)
 
-        # Listbox for Temperatures
-        self.listbox = tk.Listbox(frame, height=6, font=self.FONT_BASE, bg=self.CLR_INPUT_BG, fg=self.CLR_TEXT_DARK)
-        self.listbox.grid(row=0, column=0, columnspan=4, sticky='ew', padx=10, pady=5)
+        # Listbox with Scrollbar
+        list_frame = ttk.Frame(frame)
+        list_frame.grid(row=0, column=0, columnspan=4, sticky='nsew', padx=10, pady=5)
+        
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical")
+        self.listbox = tk.Listbox(list_frame, height=6, selectmode=tk.EXTENDED, 
+                                  font=self.FONT_BASE, bg=self.CLR_INPUT_BG, fg=self.CLR_TEXT_DARK, 
+                                  yscrollcommand=scrollbar.set)
+        scrollbar.config(command=self.listbox.yview)
+        
+        self.listbox.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
 
         # Auto Generator
         ttk.Label(frame, text="Start(K):").grid(row=1, column=0, sticky='e', padx=2)
@@ -275,24 +285,31 @@ class TempControlGUI:
         
         ttk.Button(frame, text="Generate Steps", command=self._generate_steps).grid(row=2, column=2, columnspan=2, sticky='ew', padx=5, pady=2)
 
-        # Sort Order & Clear All
         ttk.Separator(frame, orient='horizontal').grid(row=3, column=0, columnspan=4, sticky='ew', pady=5, padx=10)
         
+        # Sort Order & List Size
         ttk.Label(frame, text="Order:").grid(row=4, column=0, sticky='e', padx=2)
         self.sort_var = tk.StringVar(value='Ascending')
-        sort_cb = ttk.Combobox(frame, textvariable=self.sort_var, values=['Ascending', 'Descending'], state='readonly', width=12)
-        sort_cb.grid(row=4, column=1, columnspan=2, sticky='w', padx=2)
+        sort_cb = ttk.Combobox(frame, textvariable=self.sort_var, values=['Ascending', 'Descending'], state='readonly', width=10)
+        sort_cb.grid(row=4, column=1, sticky='w', padx=2)
         sort_cb.bind('<<ComboboxSelected>>', lambda e: self._sort_listbox())
 
-        ttk.Button(frame, text="Clear All", command=self._clear_listbox).grid(row=4, column=3, sticky='ew', padx=2)
+        ttk.Label(frame, text="Rows:").grid(row=4, column=2, sticky='e', padx=2)
+        self.list_size_var = tk.IntVar(value=6)
+        size_spin = ttk.Spinbox(frame, from_=3, to=25, textvariable=self.list_size_var, width=5, command=self._update_list_size)
+        size_spin.grid(row=4, column=3, sticky='w', padx=2)
+        size_spin.bind('<Return>', self._update_list_size)
+        size_spin.bind('<FocusOut>', self._update_list_size)
 
-        # Manual Addition
+        # Manual Addition & Clear
         ttk.Label(frame, text="Manual(K):").grid(row=5, column=0, sticky='e', padx=2, pady=5)
         self.entry_manual = ttk.Entry(frame, width=6)
         self.entry_manual.grid(row=5, column=1, sticky='w', padx=2, pady=5)
         
         ttk.Button(frame, text="Add", command=self._add_manual_step).grid(row=5, column=2, sticky='ew', padx=2, pady=5)
         ttk.Button(frame, text="Remove", command=self._remove_step).grid(row=5, column=3, sticky='ew', padx=2, pady=5)
+        
+        ttk.Button(frame, text="Clear All", command=self._clear_listbox).grid(row=6, column=0, columnspan=4, sticky='ew', padx=10, pady=(0, 5))
 
     def _create_settings_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Instrument & Stability Settings')
@@ -302,15 +319,11 @@ class TempControlGUI:
 
         self.entries = {}
         
-        # Stability Settings
         self._create_grid_entry(frame, "Tolerance (±K)", "0.5", 0, 0)
         self._create_grid_entry(frame, "Soak Time (s)", "60", 0, 2)
-        
-        # Ramp Settings
         self._create_grid_entry(frame, "Ramp Rate (K/min)", "2", 1, 0)
         self._create_grid_entry(frame, "Poll Delay (s)", "1", 1, 2)
 
-        # Dropdowns
         ttk.Label(frame, text="Heater Range:").grid(row=2, column=0, sticky='w', padx=10, pady=5)
         self.heater_range_var = tk.StringVar(value='High')
         heater_cb = ttk.Combobox(frame, textvariable=self.heater_range_var, values=['Off', 'Low', 'Medium', 'High'], state='readonly', width=10)
@@ -320,7 +333,6 @@ class TempControlGUI:
         self.ls_cb = ttk.Combobox(frame, state='readonly', width=15)
         self.ls_cb.grid(row=2, column=3, sticky='ew', padx=5)
 
-        # Run Controls
         button_frame = ttk.Frame(frame)
         button_frame.grid(row=3, column=0, columnspan=4, sticky='ew', pady=10, padx=10)
         button_frame.grid_columnconfigure((0, 1, 2), weight=1)
@@ -368,12 +380,15 @@ class TempControlGUI:
         self.ax_temp = self.figure.add_subplot(211)
         self.ax_heater = self.figure.add_subplot(212, sharex=self.ax_temp)
 
-        self.line_temp = self.ax_temp.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-')
+        # Dual Plots for Temperature
+        self.line_target = self.ax_temp.plot([], [], color=self.CLR_ACCENT_GREEN, marker='', linestyle='--', label='Target Setpoint')[0]
+        self.line_temp = self.ax_temp.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-', label='Actual Temp')[0]
         self.ax_temp.set_ylabel("Temperature (K)")
         self.ax_temp.grid(True, linestyle='--', alpha=0.6)
+        self.ax_temp.legend(loc='best', frameon=True, facecolor=self.CLR_GRAPH_BG)
         self.ax_temp.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
 
-        self.line_heater = self.ax_heater.plot([], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=3, linestyle='-')
+        self.line_heater = self.ax_heater.plot([], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=3, linestyle='-')[0]
         self.ax_heater.set_xlabel("Time (s)")
         self.ax_heater.set_ylabel("Heater Output (%)")
         self.ax_heater.grid(True, linestyle='--', alpha=0.6)
@@ -390,8 +405,15 @@ class TempControlGUI:
         entry.insert(0, default_value)
         self.entries[label_text] = entry
 
+    def _update_list_size(self, event=None):
+        try:
+            val = self.list_size_var.get()
+            if 3 <= val <= 25:
+                self.listbox.config(height=val)
+        except Exception:
+            pass
+
     def _sort_listbox(self):
-        """Sorts the current listbox contents based on the selected order."""
         items = list(self.listbox.get(0, tk.END))
         if not items: return
         try:
@@ -402,7 +424,7 @@ class TempControlGUI:
             for val in floats:
                 self.listbox.insert(tk.END, f"{val:.2f}")
         except Exception:
-            pass # Ignore malformed data quietly
+            pass 
 
     def _generate_steps(self):
         try:
@@ -420,7 +442,7 @@ class TempControlGUI:
                 while current >= end:
                     self.listbox.insert(tk.END, f"{current:.2f}")
                     current -= step
-            self._sort_listbox() # Auto-sort after generation
+            self._sort_listbox() 
         except ValueError:
             messagebox.showerror("Input Error", "Please enter valid numeric values for Start, End, and Step.")
 
@@ -429,14 +451,15 @@ class TempControlGUI:
             val = float(self.entry_manual.get())
             self.listbox.insert(tk.END, f"{val:.2f}")
             self.entry_manual.delete(0, tk.END)
-            self._sort_listbox() # Auto-sort upon addition
+            self._sort_listbox() 
         except ValueError:
             messagebox.showerror("Input Error", "Enter a valid numeric temperature.")
 
     def _remove_step(self):
+        # Reverse iteration ensures index deletion doesn't shift remaining targets incorrectly
         selection = self.listbox.curselection()
-        if selection:
-            self.listbox.delete(selection[0])
+        for index in reversed(selection):
+            self.listbox.delete(index)
 
     def _clear_listbox(self):
         self.listbox.delete(0, tk.END)
@@ -452,7 +475,6 @@ class TempControlGUI:
         self.lbl_status.config(text=text, bg=color)
 
     def _on_proceed(self):
-        """User clicked proceed. Unblock the background thread."""
         self.log("User confirmed measurement. Moving to next setpoint.")
         self.btn_proceed.config(state='disabled')
         self._update_status_ui("INITIATING NEXT RAMP...", self.CLR_HEADER)
@@ -477,8 +499,9 @@ class TempControlGUI:
         
         for key in self.data_storage:
             self.data_storage[key].clear()
-        self.line_temp[0].set_data([], [])
-        self.line_heater[0].set_data([], [])
+        self.line_target.set_data([], [])
+        self.line_temp.set_data([], [])
+        self.line_heater.set_data([], [])
         self.canvas.draw()
         
         self.start_time = time.time()
@@ -522,7 +545,7 @@ class TempControlGUI:
         self.entry_end.config(state=state)
         self.entry_step.config(state=state)
         self.entry_manual.config(state=state)
-        self.sort_var.set(self.sort_var.get()) # Keeps combobox visible but we disable the widget below
+        self.sort_var.set(self.sort_var.get()) 
         self.ls_cb.config(state=state if state == 'normal' else 'readonly')
         self.btn_proceed.config(state='disabled')
 
@@ -561,8 +584,9 @@ class TempControlGUI:
                     self._update_status_ui(msg['text'], msg['color'])
                 
                 elif msg_type == 'plot':
-                    self.line_temp[0].set_data(self.data_storage['time'], self.data_storage['temperature'])
-                    self.line_heater[0].set_data(self.data_storage['time'], self.data_storage['heater'])
+                    self.line_target.set_data(self.data_storage['time'], self.data_storage['target'])
+                    self.line_temp.set_data(self.data_storage['time'], self.data_storage['temperature'])
+                    self.line_heater.set_data(self.data_storage['time'], self.data_storage['heater'])
                     for ax in [self.ax_temp, self.ax_heater]:
                         ax.relim()
                         ax.autoscale_view()
@@ -601,7 +625,9 @@ class TempControlGUI:
                     temp, htr = self.backend.get_status()
                     self.data_storage['time'].append(time.time() - self.start_time)
                     self.data_storage['temperature'].append(temp)
+                    self.data_storage['target'].append(target) # Track target for graph
                     self.data_storage['heater'].append(htr)
+                    
                     self._put_gui_msg('plot')
                     
                     if abs(temp - target) <= self.params['tolerance']:
