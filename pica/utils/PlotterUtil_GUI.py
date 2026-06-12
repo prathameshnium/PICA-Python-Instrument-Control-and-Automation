@@ -900,6 +900,12 @@ class PlotterAppGUI:
         raw_x = file_info['data'][x_col]
         raw_y = file_info['data'][y_col]
 
+        # Log-scale with non-positive data warnings
+        if self.x_log_var.get() and np.any(raw_x <= 0):
+            self.log(f"Warning: X log-scale active for '{os.path.basename(filepath)}', but non-positive data exists.")
+        if self.y_log_var.get() and np.any(raw_y <= 0):
+            self.log(f"Warning: Y log-scale active for '{os.path.basename(filepath)}', but non-positive data exists.")
+
         finite_mask = np.isfinite(raw_x) & np.isfinite(raw_y)
         plot_x = raw_x[finite_mask]
         plot_y = raw_y[finite_mask]
@@ -933,12 +939,6 @@ class PlotterAppGUI:
         self.ax_main.set_yscale('log' if self.y_log_var.get() else 'linear')
         self.ax_main.set_xlabel(x_col)
         self.ax_main.set_ylabel(y_col)
-
-        # Log-scale with non-positive data warnings
-        if self.x_log_var.get() and np.any(raw_x <= 0):
-            self.log(f"Warning: X log-scale active for '{os.path.basename(filepath)}', but non-positive data exists.")
-        if self.y_log_var.get() and np.any(raw_y <= 0):
-            self.log(f"Warning: Y log-scale active for '{os.path.basename(filepath)}', but non-positive data exists.")
 
         if len(selected_filepaths) == 1:
             self.ax_main.set_title(
