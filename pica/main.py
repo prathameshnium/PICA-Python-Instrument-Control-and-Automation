@@ -172,6 +172,9 @@ class PICALauncherApp:
         "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
         "PICA Help": resource_path("README.md"),
         "PE Plotter": resource_path("utils/PE_plotter.py"),
+        "Quick Calc": resource_path("utils/Quick_Calc_GUI.py"),
+        "Time Utility": resource_path("utils/Time_Utility_GUI.py"),
+        "Unit Converter": resource_path("utils/Unit_Converter_GUI.py"),
     }
 
     def __init__(self, root):
@@ -745,14 +748,14 @@ class PICALauncherApp:
         """Creates a small pop-up window for additional tools."""
         tools_win = Toplevel(self.root)
         tools_win.title("Tools")
-        tools_win.geometry("300x180")
+        tools_win.geometry("300x320")
         tools_win.configure(bg=self.CLR_BG_DARK)
         tools_win.transient(self.root)
         tools_win.grab_set()
 
         # Center the pop-up over the main window
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 150
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 90
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 160
         tools_win.geometry(f"+{x}+{y}")
 
         ttk.Label(
@@ -770,6 +773,30 @@ class PICALauncherApp:
             text="PE Plotter",
             style='App.TButton',
             command=lambda: self.launch_script(self.SCRIPT_PATHS["PE Plotter"])
+        ).pack(fill='x', padx=30, pady=5)
+
+        # Launch Quick Calc Button
+        ttk.Button(
+            tools_win,
+            text="Quick Calc",
+            style='App.TButton',
+            command=lambda: self.launch_script(self.SCRIPT_PATHS["Quick Calc"])
+        ).pack(fill='x', padx=30, pady=5)
+
+        # Launch Time Utility Button
+        ttk.Button(
+            tools_win,
+            text="Time Utility",
+            style='App.TButton',
+            command=lambda: self.launch_script(self.SCRIPT_PATHS["Time Utility"])
+        ).pack(fill='x', padx=30, pady=5)
+
+        # Launch Unit Converter Button
+        ttk.Button(
+            tools_win,
+            text="Unit Converter",
+            style='App.TButton',
+            command=lambda: self.launch_script(self.SCRIPT_PATHS["Unit Converter"])
         ).pack(fill='x', padx=30, pady=5)
 
         # Close Button
