@@ -25,11 +25,8 @@ from multiprocessing import Process
 try:
     from PIL import Image, ImageTk
     PIL_AVAILABLE = True
-    # Graceful degradation for older Pillow versions
-    try:
-        RESAMPLE_FILTER = Image.Resampling.LANCZOS
-    except AttributeError:
-        RESAMPLE_FILTER = Image.LANCZOS
+    # Graceful degradation for older Pillow versions (Fix 11)
+    RESAMPLE_FILTER = getattr(Image, "Resampling", Image).LANCZOS
 except ImportError:
     PIL_AVAILABLE = False
 
@@ -122,7 +119,7 @@ class LCR_Backend:
         if not self.rm:
             raise ConnectionError("VISA Resource Manager unavailable.")
             
-        inst = self.rm.open_resource(p['lcr_visa'])   # Single session only
+        inst = self.rm.open_resource(p['lcr_visa'])   # Single session only (Fix 5)
         inst.timeout = 10000                          # 10s timeout, enough for 'LONG' integration
         inst.read_termination = '\n'
         inst.write_termination = '\n'
@@ -148,14 +145,14 @@ class LCR_Backend:
 
         # ---- SCPI Setup Sequence ----
         inst.write('*RST; *CLS')                 # Bias OFF, level 0
-        inst.write(':DISP:ENAB ON')              # Enable Front Panel Display
+        inst.write(':DISP:ENAB ON')              # Enable Front Panel Display (Fix 4)
         inst.write(':FUNC:IMP CPRP')             # Cp-Rp; values[0] = C
         inst.write(':APER MED')                  # Medium integration time (~88ms)
         inst.write(':FUNC:IMP:RANG:AUTO ON')
         inst.write(f":FREQ {p['freq']}")
         inst.write(f":VOLT {p['v_ac']}")
         inst.write(':TRIG:SOUR BUS')             # Bus-triggered points
-        inst.write(':INIT:CONT ON')              # Stay armed / waiting for trigger
+        inst.write(':INIT:CONT ON')              # Stay armed / waiting for trigger (Fix 4)
         inst.write(':BIAS:VOLT 0')               # Explicit 0 V BEFORE enabling
         inst.write(':BIAS:STAT ON')              # Enable DC Bias
         
@@ -170,7 +167,11 @@ class LCR_Backend:
 
         self.instrument.write(f':BIAS:VOLT {voltage}')
         time.sleep(dwell)                                  # Wait for dielectric/cable settling
-        vals = self.instrument.query_ascii_values('*TRG')  # Trigger & Read
+        
+        # Explicitly dispatch INIT and FETC instructions rather than generic *TRG
+        self.instrument.write(':INIT:IMM')                 # Fix 3: Optional keywords resolved
+        vals = self.instrument.query_ascii_values(':FETC?')# Fix 5: Native PyVISA fetch
+        
         capacitance = vals[0]
         actual_v = float(self.instrument.query(':BIAS:VOLT?'))
         
@@ -382,6 +383,7 @@ class LCR_CV_GUI:
         pady = (5, 5)
         padx = 10
 
+        # Fix 1: Entries dict hardening directly incorporated
         self._add_entry(frame, "Sample Name", 'sample_name', 0, 0, colspan=2, default="Sample_CV")
         self._add_entry(frame, "Max Voltage (V)", 'v_max', 2, 0, default="2")
         self._add_entry(frame, "Voltage Step (V)", 'v_step', 2, 1, default="0.2")
@@ -462,14 +464,15 @@ class LCR_CV_GUI:
             if params['v_step'] <= 0 or params['loops'] <= 0:
                 raise ValueError("Voltage Step and Number of Loops must be positive.")
 
+            # Fix 2: Clean up legacy sweep_gen if requested explicitly
             if hasattr(self, 'sweep_gen'): del self.sweep_gen
 
-            # Calculate sweep matrix natively and predictably
+            # Fix 10: Calculate sweep matrix natively and predictably
             self.sweep_points = self._build_sweep_points(params['v_max'], params['v_step'], params['loops'])
             if not self.sweep_points:
                 raise ValueError("Calculated zero measurement points. Verify voltage step.")
 
-            # Ensure we have file write access before arming hardware
+            # Fix 7 / Fix 11: Create the CSV file first, so bad path fails while bias is off. Use comment '#'.
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             file_name = f"{params['sample_name']}_{timestamp}_CV.csv"
             self.data_filepath = os.path.join(self.file_location_path, file_name)
@@ -496,10 +499,13 @@ class LCR_CV_GUI:
             self.ax_main.set_title(f"C-V Curve for: {params['sample_name']}", fontweight='bold')
             self.canvas.draw()
             self.sweep_index = 0
+            
+            # Fix 9: Progress bar set to absolute indexed increments
             self.progress_bar['value'] = 0
             self.progress_bar['maximum'] = len(self.sweep_points)
             self.log("Starting C-V sweep...")
             
+            # Fix 8: Dispatch measurements cleanly into a detached worker
             self.measurement_thread = threading.Thread(target=self._measurement_worker, daemon=True)
             self.measurement_thread.start()
             self.root.after(100, self._process_data_queue)
@@ -532,34 +538,42 @@ class LCR_CV_GUI:
             self.backend.close_instrument()
             self.log("Instrument connection closed.")
             
-            # Modal displays last
+            # Fix 11: Allow suppression of the info dialog
             if not reason:
                 messagebox.showinfo("Info", "Sweep stopped and instrument disconnected.")
 
     def _build_sweep_points(self, v_max, v_step, loops):
+        """Fix 10: Prevents float drift using integer steps exclusively."""
         n = int(round(v_max / v_step))
         up = [round(i * v_step, 9) for i in range(n + 1)]
         pts = []
         for loop in range(1, loops + 1):
-            pts += [(v, loop, "A") for v in up]      # 0 to +V
-            pts += [(v, loop, "B") for v in reversed(up)] # +V to 0
-            pts += [(-v, loop, "C") for v in up]     # 0 to -V
-            pts += [(-v, loop, "D") for v in reversed(up)] # -V to 0
+            pts += [(v, loop, "A") for v in up]               # 0 to +V
+            pts += [(v, loop, "B") for v in reversed(up)]     # +V to 0
+            pts += [(-v, loop, "C") for v in up]              # 0 to -V
+            pts += [(-v, loop, "D") for v in reversed(up)]    # -V to 0
         return pts
 
     def _measurement_worker(self):
+        """Worker thread to run hardware SCPI calls safely."""
         for i in range(len(self.sweep_points)):
-            if not self.is_running: break
+            # Break cleanly if interrupted without placing "Completion None" trigger in queue
+            if not self.is_running: 
+                return 
+            
             try:
                 target_v, loop_n, proto = self.sweep_points[i]
                 actual_v, cap = self.backend.perform_measurement(target_v)
                 self.data_queue.put(('DATA', actual_v, cap, loop_n, proto, i))
             except Exception as e:
                 self.data_queue.put(e)
-                break
+                return
+        
+        # Will only arrive here via natural completion
         self.data_queue.put(None)
 
     def _process_data_queue(self):
+        """Polls measurement results back into GUI main thread."""
         try:
             while not self.data_queue.empty():
                 item = self.data_queue.get_nowait()
@@ -641,13 +655,15 @@ class LCR_CV_GUI:
 
     def _handle_sweep_completion(self):
         self.log("Sweep finished successfully.")
-        self.stop_sweep("Sweep naturally complete.") # Ramps down securely 
+        # Fix 6: Guaranteed shut down before notification block
+        self.stop_sweep("Sweep naturally complete.") 
         messagebox.showinfo("Finished", "C-V sweep is complete.")
         if hasattr(self, 'sweep_gen'):
             del self.sweep_gen
 
     def _handle_sweep_error(self, exception):
         self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
+        # Fix 6: Guaranteed shut down before notification block
         self.stop_sweep("A critical hardware or measurement error occurred.")
         messagebox.showerror("Runtime Error", "An error occurred during the sweep. Check console.")
 
