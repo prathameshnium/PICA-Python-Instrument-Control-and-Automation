@@ -241,6 +241,13 @@ class Temperature_Scan_GUI:
     PROGRAM_VERSION = "1.0 (Cp-G)"
     LOGO_SIZE = 110
     
+    try:
+        # Robust path finding for assets
+        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+    except NameError:
+        LOGO_FILE_PATH = "../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
+
     # Standard UI Colors
     CLR_BG_DARK = '#B8A392'
     CLR_HEADER = '#E5DCD3'
@@ -274,6 +281,7 @@ class Temperature_Scan_GUI:
         self.run_folder = ""
         self.file_handles = {}
         
+        self.logo_image = None
         self.freq_list = []
         self.data_storage = { 'temp': [] }  # will hold { 'temp': [], f1_cp: [], f1_g: [], ... }
         
@@ -324,6 +332,9 @@ class Temperature_Scan_GUI:
         canvas.pack(side="top", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
+        info_frame = self.create_info_frame(scrollable_frame)
+        info_frame.pack(fill='x', expand=True, padx=10, pady=5)
+
         self.create_input_frame(scrollable_frame)
         
         console_frame = LabelFrame(left_panel, text='Console', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
@@ -335,6 +346,27 @@ class Temperature_Scan_GUI:
         right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
         main_pane.add(right_panel, weight=1)
         self.create_graph_frame(right_panel)
+
+    def create_info_frame(self, parent):
+        frame = ttk.LabelFrame(parent, text='Information')
+        frame.grid_columnconfigure(1, weight=1)
+
+        logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
+        logo_canvas.grid(row=0, column=0, rowspan=3, padx=(15, 10), pady=10)
+
+        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
+            try:
+                img = Image.open(self.LOGO_FILE_PATH).resize((self.LOGO_SIZE, self.LOGO_SIZE), RESAMPLE_FILTER)
+                self.logo_image = ImageTk.PhotoImage(img)
+                logo_canvas.create_image(self.LOGO_SIZE / 2, self.LOGO_SIZE / 2, image=self.logo_image)
+            except Exception:
+                pass
+
+        institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10, 0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
+
+        return frame
 
     def create_input_frame(self, parent):
         f_temp = LabelFrame(parent, text='Temperature & Instrument Parameters', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
