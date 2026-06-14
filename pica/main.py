@@ -583,10 +583,10 @@ class PICALauncherApp:
                                  "Instrument: Keysight E4980A",
                                  [("C-V Measurement",
                                    "LCR C-V Measurement"),
-                                  ("Frequency Scan", "LCR Frequency Scan"),
-                                  ("Step Freq. Scan", "LCR Temp. Step Freq. Scan (T_Control)"),
-                                  ("Temp. Scan (Active)", "LCR Temp. Scan (T_Control)"),
-                                  ("Temp. Scan (Passive)", "LCR Temp. Scan (T_Sensing)"),
+                                  ("Dielectric Frequency Scan", "LCR Frequency Scan"),
+                                  ("Temp. Step Freq. Scan (T_Control)", "LCR Temp. Step Freq. Scan (T_Control)"),
+                                  ("Dielectric Temp. Scan (T_Control)", "LCR Temp. Scan (T_Control)"),
+                                  ("Dielectric Temp. Scan (T_Sensing)", "LCR Temp. Scan (T_Sensing)"),
                                   ])
 
         return main_container
