@@ -126,7 +126,7 @@ class LCR_Backend:
             raise ConnectionError("VISA Resource Manager unavailable.")
             
         inst = self.rm.open_resource(p['lcr_visa'])   
-        inst.timeout = 15000 
+        inst.timeout = 60000   # 60 s; low-freq + LONG + autorange can be slow
         inst.read_termination = '\n'
         inst.write_termination = '\n'
         self.instrument = inst
@@ -150,6 +150,7 @@ class LCR_Backend:
         inst.write(':FUNC:IMP CPG')              
         inst.write(f":APER {p['aper']}")         
         inst.write(':FUNC:IMP:RANG:AUTO ON')     
+        inst.write(':FORM:ASC')   # ensure ASCII so query_ascii_values parses correctly
         
         if p['alc_enabled']:
             inst.write(':AMPL:ALC ON')
@@ -176,14 +177,20 @@ class LCR_Backend:
         print(f"  Connected & configured: {idn}")
 
     def perform_measurement(self, freq, delay):
+        """Set frequency, settle, trigger one measurement, fetch Cp, G, status."""
         if not self.instrument:
             raise ConnectionError("Instrument is not connected.")
 
         self.instrument.write(f':FREQ {freq}')
-        time.sleep(delay) 
-        
-        vals = self.instrument.query_ascii_values('*TRG')
-        return vals[0], vals[1]  # Cp, G
+        time.sleep(delay)                     # settle at the new frequency
+
+        self.instrument.write(':TRIG:IMM')    # trigger one measurement (BUS armed)
+        self.instrument.query('*OPC?')        # block until measurement completes
+        vals = self.instrument.query_ascii_values(':FETCh:IMPedance:FORMatted?')
+
+        # E4980A returns: <primary Cp>, <secondary G>, <status>
+        cp, g, status = vals[0], vals[1], int(vals[2]) if len(vals) > 2 else 0
+        return cp, g, status
 
     def close_instrument(self):
         print("--- [Backend] Closing instrument connection. ---")
@@ -246,10 +253,14 @@ class LCR_Freq_GUI:
         self.is_running = False
         self.backend = LCR_Backend()
         self.file_location_path = ""
+
         self.data_storage = {
             'freq': [],
             'cp': [],
-            'g': []
+            'g': [],
+            'rs': [],
+            'rp': [],
+            'status': []
         }
         self.logo_image = None
         self.sweep_index = 0
@@ -408,7 +419,7 @@ class LCR_Freq_GUI:
         frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         self.console_widget = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0, height=8)
         self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
-        self.log("Frequency Scan Initialized. Spanning 40 Hz to 2 MHz.")
+        self.log("Frequency Scan Initialized. Spanning 20 Hz to 2 MHz.")
         return frame
 
     def create_graph_frame(self, parent):
@@ -575,8 +586,8 @@ class LCR_Freq_GUI:
             self.lbl_current_freq.config(text=f"Measuring: {target_f:,.0f} Hz")
             
             delay_sec = float(self.entries['delay'].get())
-            cp, g = self.backend.perform_measurement(target_f, delay_sec)
-            self._process_sweep_point(target_f, cp, g)
+            cp, g, status = self.backend.perform_measurement(target_f, delay_sec)
+            self._process_sweep_point(target_f, cp, g, status)
             
             self.sweep_index += 1
             self._update_sweep_plot()
@@ -627,21 +638,36 @@ class LCR_Freq_GUI:
         else:
             self.root.destroy()
 
-    def _process_sweep_point(self, f, cp, g):
-        self.log(f"f: {f} Hz | Cp: {cp:.4e} F | G: {g:.4e} S")
+    def _process_sweep_point(self, f, cp, g, status=0):
+        if status != 0:
+            self.log(f"WARNING: f={f} Hz returned status {status} "
+                     f"(0=normal, non-zero=overload/ALC issue).")
+
+        self.log(f"f: {f} Hz | Cp: {cp:.4e} F | G: {g:.4e} S | st: {status}")
+
+        # Compute full parameter set (guard against math errors)
+        try:
+            calc_vals = self.calculate_impedance_parameters(f, cp, g)
+        except Exception as calc_err:
+            self.log(f"Calc error at {f} Hz: {calc_err}. Saving raw Cp/G only.")
+            calc_vals = [float('nan')] * 18
+
+        row_vals = [f] + calc_vals
+        row_str = "\t".join(f"{v:.6E}" for v in row_vals)
+
+        # Write to disk immediately and flush so a crash never loses the point
+        with open(self.data_filepath, 'a', encoding='utf-8') as file:
+            file.write(row_str + "\n")
+            file.flush()
+            os.fsync(file.fileno())
+
+        # Store in memory (Rs is index 11, Rp is index 13 of calc_vals)
         self.data_storage['freq'].append(f)
         self.data_storage['cp'].append(cp)
         self.data_storage['g'].append(g)
-        
-        # Calculate full impedance parameters
-        calc_vals = self.calculate_impedance_parameters(f, cp, g)
-        row_vals = [f] + calc_vals
-        
-        # Format matching: 40.000000E+0	14.013077E+0
-        row_str = "\t".join([f"{v:.6E}" for v in row_vals])
-        
-        with open(self.data_filepath, 'a', encoding='utf-8') as file:
-            file.write(row_str + "\n")
+        self.data_storage['rs'].append(calc_vals[11])
+        self.data_storage['rp'].append(calc_vals[13])
+        self.data_storage['status'].append(status)
 
     def _update_sweep_plot(self):
         self.line_cp.set_data(self.data_storage['freq'], self.data_storage['cp'])
@@ -651,9 +677,8 @@ class LCR_Freq_GUI:
         self.ax_cp.autoscale_view()
         self.ax_g.relim()
         self.ax_g.autoscale_view()
-        
-        self.figure.tight_layout(pad=2.5)
-        self.canvas.draw()
+
+        self.canvas.draw_idle()
         self.progress_bar['value'] = self.sweep_index
 
     def _handle_sweep_completion(self):
