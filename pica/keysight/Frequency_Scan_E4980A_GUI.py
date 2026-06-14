@@ -1,7 +1,7 @@
 '''
  PROGRAM:      Keysight E4980A Frequency Scan (Cp-G) GUI
  PURPOSE:      Provide a robust interface for automating Frequency sweeps with ALC, 
-               Aperture control, and Open/Short corrections.
+               Aperture control, Open/Short corrections, and Full Impedance calculations.
 '''
 
 import tkinter as tk
@@ -11,13 +11,12 @@ import time
 import math
 import traceback
 from datetime import datetime
-import csv
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
-import runpy
 from multiprocessing import Process
+import runpy
 
 # --- Pillow for Logo Image ---
 try:
@@ -75,9 +74,8 @@ class LCR_Backend:
             return
 
         direction = 1 if target_v > current_v else -1
-        # Generate ramp points
         ramp_points = np.arange(current_v, target_v, direction * step)
-        ramp_points = np.append(ramp_points, target_v) # Ensure target is reached
+        ramp_points = np.append(ramp_points, target_v)
 
         for v in ramp_points:
             self.instrument.write(f':BIAS:VOLT {v:.3f}')
@@ -91,7 +89,7 @@ class LCR_Backend:
             raise ConnectionError("VISA Resource Manager unavailable.")
             
         inst = self.rm.open_resource(p['lcr_visa'])   
-        inst.timeout = 15000 # 15s timeout to allow for LONG integration & auto-ranging
+        inst.timeout = 15000 
         inst.read_termination = '\n'
         inst.write_termination = '\n'
         self.instrument = inst
@@ -103,7 +101,6 @@ class LCR_Backend:
         
         self.has_opt001 = '001' in inst.query('*OPT?')
 
-        # ---- Safety Limits ----
         v_bias_max = 40.0 if self.has_opt001 else 2.0
         v_ac_max = 20.0 if self.has_opt001 else 2.0
         if abs(p['dc_bias']) > v_bias_max:
@@ -111,20 +108,17 @@ class LCR_Backend:
         if not (0 < p['ac_bias'] <= v_ac_max):
             raise ValueError(f"AC level outside 0–{v_ac_max} Vrms.")
 
-        # ---- SCPI Setup Sequence ----
         inst.write('*RST; *CLS')                 
         inst.write(':DISP:ENAB ON')              
-        inst.write(':FUNC:IMP CPG')              # Cp-G (Parallel Capacitance & Conductance)
-        inst.write(f":APER {p['aper']}")         # Aperture: SHOR, MED, or LONG
-        inst.write(':FUNC:IMP:RANG:AUTO ON')     # Enable Auto-ranging
+        inst.write(':FUNC:IMP CPG')              
+        inst.write(f":APER {p['aper']}")         
+        inst.write(':FUNC:IMP:RANG:AUTO ON')     
         
-        # ALC Control
         if p['alc_enabled']:
             inst.write(':AMPL:ALC ON')
         else:
             inst.write(':AMPL:ALC OFF')
 
-        # Open/Short Corrections
         if p['corr_enabled']:
             inst.write(':CORR:OPEN:STAT ON')
             inst.write(':CORR:SHOR:STAT ON')
@@ -136,7 +130,6 @@ class LCR_Backend:
         inst.write(':TRIG:SOUR BUS')             
         inst.write(':INIT:CONT ON')              
         
-        # Enable bias and safely ramp to the requested DC voltage
         inst.write(':BIAS:VOLT 0')               
         inst.write(':BIAS:STAT ON')
         print(f"  Ramping DC Bias to {p['dc_bias']} V...")
@@ -146,22 +139,16 @@ class LCR_Backend:
         print(f"  Connected & configured: {idn}")
 
     def perform_measurement(self, freq, delay):
-        """Changes frequency, waits for ranging, and performs a triggered read."""
         if not self.instrument:
             raise ConnectionError("Instrument is not connected.")
 
         self.instrument.write(f':FREQ {freq}')
-        time.sleep(delay)  # Dwell time for auto-ranging and stabilization
+        time.sleep(delay) 
         
-        # E4980A returns DataA, DataB, Status. 
         vals = self.instrument.query_ascii_values('*TRG')
-        cp_val = vals[0] # Farads
-        g_val = vals[1]  # Siemens
-        
-        return cp_val, g_val
+        return vals[0], vals[1]  # Cp, G
 
     def close_instrument(self):
-        """Ramps down safely and shuts down the instrument connection."""
         print("--- [Backend] Closing instrument connection. ---")
         if not self.instrument:
             return
@@ -209,6 +196,9 @@ class LCR_Freq_GUI:
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
     FONT_CONSOLE = ('Consolas', 10)
 
+    # Required output format string
+    DATA_HEADER = "Frequency\tQ\tD\tG(1/Rp)\tB\tCp\tLp\tCs\tLs\tlZl\ttheta\tchi\tR(Rs)\ttheta(deg.)\tRp\t1/lZl\tOmega\tCp''\tCs''"
+
     def __init__(self, root):
         self.root = root
         self.root.title("Keysight E4980A Frequency Scan (Cp-G)")
@@ -227,13 +217,12 @@ class LCR_Freq_GUI:
         self.logo_image = None
         self.sweep_index = 0
         
-        # Generation of the standard array
         self.sweep_frequencies = np.concatenate([
-            np.arange(40, 1000, 10),           # 40 to 990
-            np.arange(1000, 10000, 100),       # 1k to 9.9k
-            np.arange(10000, 100000, 1000),    # 10k to 99k
-            np.arange(100000, 1000000, 10000), # 100k to 990k
-            np.arange(1000000, 2000001, 100000)# 1M to 2M
+            np.arange(40, 1000, 10),           
+            np.arange(1000, 10000, 100),       
+            np.arange(10000, 100000, 1000),    
+            np.arange(100000, 1000000, 10000), 
+            np.arange(1000000, 2000001, 100000)
         ])
 
         self.setup_styles()
@@ -348,7 +337,6 @@ class LCR_Freq_GUI:
         self.aper_combobox.set('MED')
         self.aper_combobox.grid(row=5, column=1, padx=padx, pady=(0, 10), sticky='ew')
 
-        # Checkboxes for ALC and Correction
         self.var_alc = tk.BooleanVar(value=True)
         self.var_corr = tk.BooleanVar(value=False)
         ttk.Checkbutton(frame, text="Enable Auto Level Control (ALC)", variable=self.var_alc).grid(row=6, column=0, columnspan=2, padx=padx, pady=2, sticky='w')
@@ -367,7 +355,6 @@ class LCR_Freq_GUI:
         self.stop_button = ttk.Button(frame, text="Stop", command=self.stop_sweep, style='Stop.TButton', state='disabled')
         self.stop_button.grid(row=11, column=1, padx=(5, padx), pady=15, sticky='ew')
 
-        # Current Frequency Display
         self.lbl_current_freq = ttk.Label(frame, text="Measuring: -- Hz", font=('Segoe UI', 12, 'bold'), foreground=self.CLR_ACCENT_RED)
         self.lbl_current_freq.grid(row=12, column=0, columnspan=2, pady=5)
 
@@ -386,7 +373,6 @@ class LCR_Freq_GUI:
     def create_graph_frame(self, parent):
         self.figure = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
         
-        # Plot 1: Cp vs Freq
         self.ax_cp = self.figure.add_subplot(2, 1, 1)
         self.line_cp, = self.ax_cp.plot([], [], color='#C00000', marker='o', markersize=3, linestyle='-')
         self.ax_cp.set_ylabel("Capacitance, Cp (F)")
@@ -394,7 +380,6 @@ class LCR_Freq_GUI:
         self.ax_cp.set_xscale('log')
         self.ax_cp.grid(True, linestyle='--', alpha=0.7)
 
-        # Plot 2: G vs Freq
         self.ax_g = self.figure.add_subplot(2, 1, 2)
         self.line_g, = self.ax_g.plot([], [], color='#2A6B3A', marker='s', markersize=3, linestyle='-')
         self.ax_g.set_xlabel("Frequency (Hz)")
@@ -422,6 +407,43 @@ class LCR_Freq_GUI:
         entry.insert(0, default)
         self.entries[dict_key] = entry 
 
+    def calculate_impedance_parameters(self, f, cp, g):
+        """Calculates all 18 parameters requested based on Cp, G, and frequency."""
+        omega = 2 * np.pi * f
+        
+        # Avoid division by zero
+        G_safe = g if g != 0 else 1e-20
+        omega_safe = omega if omega != 0 else 1e-20
+
+        Rp = 1.0 / G_safe
+        B = omega * cp
+        B_safe = B if B != 0 else 1e-20
+        
+        D = G_safe / B_safe
+        Q = 1.0 / D if D != 0 else 0.0
+
+        Y_mag = np.sqrt(g**2 + B**2)
+        Y_mag_safe = Y_mag if Y_mag != 0 else 1e-20
+        Z_mag = 1.0 / Y_mag_safe
+
+        Rs = g / (Y_mag_safe**2)
+        Xs = -B / (Y_mag_safe**2)
+        Xs_safe = Xs if Xs != 0 else 1e-20
+
+        theta_rad = math.atan2(Xs, Rs)
+        theta_deg = math.degrees(theta_rad)
+
+        chi = Xs
+        Cs = -1.0 / (omega_safe * Xs_safe)
+        Ls = Xs / omega_safe
+        Lp = -1.0 / (omega_safe * B_safe)
+
+        # Complex capacitance C* = C' - jC''
+        Cp_double_prime = g / omega_safe
+        Cs_double_prime = Cp_double_prime
+
+        return [Q, D, g, B, cp, Lp, Cs, Ls, Z_mag, theta_rad, chi, Rs, theta_deg, Rp, Y_mag, omega, Cp_double_prime, Cs_double_prime]
+
     def start_sweep(self):
         try:
             params = {
@@ -438,15 +460,14 @@ class LCR_Freq_GUI:
                 raise ValueError("Sample Name, VISA address, and Save Location are required.")
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            file_name = f"{params['sample_name']}_{timestamp}_FreqScan.csv"
+            file_name = f"{params['sample_name']}_{timestamp}_FreqScan.txt"
             self.data_filepath = os.path.join(self.file_location_path, file_name)
             
-            with open(self.data_filepath, 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([f"# Sample: {params['sample_name']}"])
-                writer.writerow([f"# AC: {params['ac_bias']} V, DC: {params['dc_bias']} V, APER: {params['aper']}"])
-                writer.writerow([f"# ALC: {params['alc_enabled']}, Corrections: {params['corr_enabled']}"])
-                writer.writerow(["Frequency (Hz)", "Cp (F)", "G (S)"])
+            # Format output file matching request
+            with open(self.data_filepath, 'w', encoding='utf-8') as f:
+                f.write(f"# Sample: {params['sample_name']} | AC: {params['ac_bias']}V | DC: {params['dc_bias']}V | APER: {params['aper']}\n")
+                f.write(f"# ALC: {params['alc_enabled']} | Corrections: {params['corr_enabled']}\n")
+                f.write(self.DATA_HEADER + "\n")
 
             self.log(f"Output file created: {os.path.basename(self.data_filepath)}")
             
@@ -571,8 +592,15 @@ class LCR_Freq_GUI:
         self.data_storage['cp'].append(cp)
         self.data_storage['g'].append(g)
         
-        with open(self.data_filepath, 'a', newline='') as file:
-            csv.writer(file).writerow([f"{f:.1f}", f"{cp:.8e}", f"{g:.8e}"])
+        # Calculate full impedance parameters
+        calc_vals = self.calculate_impedance_parameters(f, cp, g)
+        row_vals = [f] + calc_vals
+        
+        # Format matching: 40.000000E+0	14.013077E+0
+        row_str = "\t".join([f"{v:.6E}" for v in row_vals])
+        
+        with open(self.data_filepath, 'a', encoding='utf-8') as file:
+            file.write(row_str + "\n")
 
     def _update_sweep_plot(self):
         self.line_cp.set_data(self.data_storage['freq'], self.data_storage['cp'])
