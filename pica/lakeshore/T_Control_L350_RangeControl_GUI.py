@@ -316,7 +316,7 @@ class TempControlGUI:
         except Exception as e:
             self.log(f"Warning: Could not load logo. {e}")
 
-        institute_font = ('Segoe UI', self.FONT_BASE[1] + 6, 'bold')
+        institute_font = ('Segoe UI', self.FONT_BASE[1] + 2, 'bold')
         ttk.Label(
             frame,
             text="UGC-DAE Consortium for Scientific Research",
