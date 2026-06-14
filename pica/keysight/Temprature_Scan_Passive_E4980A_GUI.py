@@ -19,6 +19,45 @@ import numpy as np
 import matplotlib as mpl
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import runpy
+from multiprocessing import Process
+
+def run_script_process(script_path):
+    """
+    Wrapper function to execute a script using runpy in its own directory.
+    This becomes the target for the new, isolated process.
+    """
+    try:
+        os.chdir(os.path.dirname(script_path))
+        runpy.run_path(script_path, run_name="__main__")
+    except Exception as e:
+        print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
+        print(e)
+        print("-------------------------")
+
+def launch_plotter_utility():
+    """Finds and launches the plotter utility script in a new process."""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        plotter_path = os.path.join(script_dir, "..", "utils", "PlotterUtil_GUI.py")
+        if not os.path.exists(plotter_path):
+            messagebox.showerror("File Not Found", f"Plotter utility not found at expected path:\n{plotter_path}")
+            return
+        Process(target=run_script_process, args=(plotter_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
+
+def launch_gpib_scanner():
+    """Finds and launches the GPIB scanner utility in a new process."""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        scanner_path = os.path.join(script_dir, "..", "utils", "GPIB_Instrument_Scanner_GUI.py")
+        if not os.path.exists(scanner_path):
+            messagebox.showerror("File Not Found", f"GPIB Scanner not found at expected path:\n{scanner_path}")
+            return
+        Process(target=run_script_process, args=(scanner_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
 
 try:
     from PIL import Image, ImageTk
@@ -239,6 +278,10 @@ class Passive_Dielectric_GUI:
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
         Label(header_frame, text="Passive T-Sensing & Impedance Spectroscopy", bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD, font=('Segoe UI', 14, 'bold')).pack(side='left', padx=20, pady=10)
+
+        # --- Utility Launch Buttons ---
+        ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3).pack(side='right', padx=10, pady=5)
+        ttk.Button(header_frame, text="📟", command=launch_gpib_scanner, width=3).pack(side='right', padx=(0, 5), pady=5)
 
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)

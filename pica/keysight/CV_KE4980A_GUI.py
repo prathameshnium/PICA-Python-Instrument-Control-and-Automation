@@ -305,10 +305,8 @@ class LCR_CV_GUI:
         header_frame.pack(side='top', fill='x')
 
         # --- Utility Launch Buttons ---
-        plotter_button = ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3)
-        plotter_button.pack(side='right', padx=10, pady=5)
-        gpib_button = ttk.Button(header_frame, text="📟", command=launch_gpib_scanner, width=3)
-        gpib_button.pack(side='right', padx=(0, 5), pady=5)
+        ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3).pack(side='right', padx=10, pady=5)
+        ttk.Button(header_frame, text="📟", command=launch_gpib_scanner, width=3).pack(side='right', padx=(0, 5), pady=5)
 
         Label(header_frame, text="Keysight E4980A: C-V Measurement", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=font_title_italic).pack(side='left', padx=20, pady=10)
 
