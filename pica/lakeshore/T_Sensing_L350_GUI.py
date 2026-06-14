@@ -388,7 +388,7 @@ class TempMonitorGUI:
                 justify='center')
 
         # Institute Name (larger font)
-        institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 6, 'bold')
+        institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold')
         ttk.Label(
             frame,
             text="UGC-DAE Consortium for Scientific Research",

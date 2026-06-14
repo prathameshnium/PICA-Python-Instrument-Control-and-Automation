@@ -247,10 +247,11 @@ class TempControlGUI:
         except Exception:
             pass
 
-        # Institute Name forced into exactly 2 lines
-        institute_font = ('Segoe UI', self.FONT_BASE[1] + 1, 'bold')
-        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research\nMumbai Centre", 
-                  font=institute_font, justify='left').grid(row=0, column=1, rowspan=2, padx=5, pady=10, sticky='w')
+        institute_font = ('Segoe UI', self.FONT_BASE[1] + 2, 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, 
+                  background=self.CLR_FRAME_BG).grid(row=0, column=1, padx=5, pady=(15, 0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, 
+                  background=self.CLR_FRAME_BG).grid(row=1, column=1, padx=5, sticky='nw')
 
     def _create_sequence_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Measurement Sequence Builder')

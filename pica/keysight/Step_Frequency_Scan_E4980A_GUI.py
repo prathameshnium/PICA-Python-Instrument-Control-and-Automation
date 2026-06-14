@@ -18,6 +18,29 @@ import numpy as np
 import runpy
 from multiprocessing import Process
 
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib as mpl
+
+# --- Optional Packages & Logo Resampling ---
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+    try:
+        RESAMPLE_FILTER = Image.Resampling.LANCZOS
+    except AttributeError:
+        RESAMPLE_FILTER = Image.LANCZOS
+except ImportError:
+    PIL_AVAILABLE = False
+
+try:
+    import pyvisa
+    PYVISA_AVAILABLE = True
+except ImportError:
+    pyvisa = None
+    PYVISA_AVAILABLE = False
+
+
 def run_script_process(script_path):
     """
     Wrapper function to execute a script using runpy in its own directory.
@@ -31,6 +54,7 @@ def run_script_process(script_path):
         print(e)
         print("-------------------------")
 
+
 def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
     try:
@@ -43,6 +67,7 @@ def launch_plotter_utility():
     except Exception as e:
         messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
 
+
 def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
     try:
@@ -54,24 +79,6 @@ def launch_gpib_scanner():
         Process(target=run_script_process, args=(scanner_path,)).start()
     except Exception as e:
         messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
-
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import matplotlib as mpl
-
-# --- Optional Packages ---
-try:
-    from PIL import Image, ImageTk
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
-
-try:
-    import pyvisa
-    PYVISA_AVAILABLE = True
-except ImportError:
-    pyvisa = None
-    PYVISA_AVAILABLE = False
 
 
 # ===============================================================================
@@ -213,7 +220,15 @@ class LCR_Backend:
 # FRONTEND: MASTER GUI
 # ===============================================================================
 class MasterControlGUI:
-    PROGRAM_VERSION = "1.0-Master"
+    PROGRAM_VERSION = "1.2-Master"
+    LOGO_SIZE = 110
+    
+    try:
+        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+    except NameError:
+        LOGO_FILE_PATH = "../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
+
     CLR_BG_DARK = '#B8A392'
     CLR_HEADER = '#E5DCD3'
     CLR_FG_LIGHT = '#2C2825'
@@ -234,11 +249,13 @@ class MasterControlGUI:
     def __init__(self, root):
         self.root = root
         self.root.title(f"Master Automated LCR-Temp Scan v{self.PROGRAM_VERSION}")
-        self.root.geometry("1600x900")
+        self.root.geometry("1600x950")
         self.root.configure(bg=self.CLR_BG_DARK)
+        self.root.minsize(1300, 850)
 
         self.is_running = False
         self.gui_queue = queue.Queue()
+        self.logo_image = None
         
         # Shared Resource Manager
         self.rm = pyvisa.ResourceManager() if PYVISA_AVAILABLE else None
@@ -266,10 +283,8 @@ class MasterControlGUI:
         style = ttk.Style(self.root)
         style.theme_use('clam')
         style.configure('.', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
-        style.configure('TNotebook', background=self.CLR_BG_DARK)
-        style.configure('TNotebook.Tab', font=self.FONT_TITLE, padding=[10, 5])
-        style.map('TNotebook.Tab', background=[('selected', self.CLR_HEADER)])
         style.configure('TLabel', background=self.CLR_FRAME_BG)
+        style.configure('Dark.TLabel', background=self.CLR_BG_DARK, font=self.FONT_TITLE)
         style.configure('TButton', font=self.FONT_BASE, padding=5, background=self.CLR_HEADER)
         style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN)
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FRAME_BG)
@@ -290,59 +305,77 @@ class MasterControlGUI:
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
-        left_panel = ttk.Frame(main_pane, width=450)
-        main_pane.add(left_panel, weight=0)
+        left_panel_container = ttk.Frame(main_pane)
+        main_pane.add(left_panel_container, weight=0)
+
         right_panel = ttk.Frame(main_pane)
         main_pane.add(right_panel, weight=1)
 
-        self._populate_left_panel(left_panel)
+        # --- Setup Scrollable Left Panel ---
+        canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(left_panel_container, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=480)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        self._populate_left_panel(scrollable_frame)
         self._populate_right_panel(right_panel)
 
-    def _populate_left_panel(self, panel):
-        notebook = ttk.Notebook(panel)
-        notebook.pack(fill='both', expand=True)
+    def _populate_left_panel(self, scrollable_frame):
+        # 0. Info Frame with Logo
+        self._build_info_frame(scrollable_frame)
 
-        # Tab 1: Temperature Controls
-        tab_temp = ttk.Frame(notebook)
-        notebook.add(tab_temp, text='1. Temperature Setup')
-        self._build_sequence_panel(tab_temp)
-        self._build_temp_settings(tab_temp)
+        # 1. Temperature Control Area
+        self._build_sequence_panel(scrollable_frame)
+        self._build_temp_settings(scrollable_frame)
 
-        # Tab 2: LCR Controls
-        tab_lcr = ttk.Frame(notebook)
-        notebook.add(tab_lcr, text='2. LCR Settings')
-        self._build_lcr_settings(tab_lcr)
+        # 2. LCR Parameter Area
+        self._build_lcr_settings(scrollable_frame)
 
-        # Bottom Frame: Execution & Console
-        exec_frame = ttk.Frame(panel)
-        exec_frame.pack(fill='x', pady=5)
-        
-        btn_frame = ttk.Frame(exec_frame)
-        btn_frame.pack(fill='x', pady=5)
-        self.start_button = ttk.Button(btn_frame, text="START MASTER SEQUENCE", style='Start.TButton', command=self.start_sequence)
-        self.start_button.pack(side='left', fill='x', expand=True, padx=2)
-        self.stop_button = ttk.Button(btn_frame, text="STOP/ABORT", style='Stop.TButton', state='disabled', command=self.stop_sequence)
-        self.stop_button.pack(side='left', fill='x', expand=True, padx=2)
+        # 3. Execution & Console Area
+        self._build_exec_console(scrollable_frame)
 
-        self.lbl_status = tk.Label(exec_frame, text="READY", font=('Segoe UI', 14, 'bold'), bg=self.CLR_FRAME_BG, fg=self.CLR_TEXT_DARK, pady=5)
-        self.lbl_status.pack(fill='x', pady=5)
+    def _build_info_frame(self, parent):
+        frame = ttk.LabelFrame(parent, text='Information', style='TLabelframe')
+        frame.pack(fill='x', padx=5, pady=5)
+        frame.grid_columnconfigure(1, weight=1)
 
-        self.console = scrolledtext.ScrolledText(exec_frame, state='disabled', bg=self.CLR_HEADER, fg=self.CLR_TEXT_DARK, font=self.FONT_CONSOLE, height=12)
-        self.console.pack(fill='both', expand=True)
-        self.log("System Ready. Please configure Temperature and LCR tabs.")
+        logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_FRAME_BG, highlightthickness=0)
+        logo_canvas.grid(row=0, column=0, rowspan=3, padx=(10, 10), pady=5)
+
+        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
+            try:
+                img = Image.open(self.LOGO_FILE_PATH).resize((self.LOGO_SIZE, self.LOGO_SIZE), RESAMPLE_FILTER)
+                self.logo_image = ImageTk.PhotoImage(img)
+                logo_canvas.create_image(self.LOGO_SIZE / 2, self.LOGO_SIZE / 2, image=self.logo_image)
+            except Exception as e:
+                self._put('log', text=f"ERROR: Failed to load logo: {e}")
+
+        institute_font = ('Segoe UI', self.FONT_BASE[1] + 2, 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_FRAME_BG).grid(row=0, column=1, padx=5, pady=(10, 0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_FRAME_BG).grid(row=1, column=1, padx=5, sticky='nw')
+        ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=5, pady=5)
+
+        details_text = ("Program Name: Automated Master LCR-Temp Scan\n"
+                        "Instruments: Keysight E4980A & Lakeshore 350")
+        ttk.Label(frame, text=details_text, justify='left').grid(row=3, column=0, columnspan=2, padx=10, pady=(0, 10), sticky='w')
 
     def _build_sequence_panel(self, parent):
         frame = ttk.LabelFrame(parent, text='Temperature Steps (K)')
         frame.pack(fill='x', padx=5, pady=5)
         
-        self.listbox = tk.Listbox(frame, height=6, font=self.FONT_BASE)
+        self.listbox = tk.Listbox(frame, height=5, font=self.FONT_BASE)
         self.listbox.pack(side="left", fill="both", expand=True, padx=5, pady=5)
         
         ctrl_frame = ttk.Frame(frame)
         ctrl_frame.pack(side="right", fill="y", padx=5, pady=5)
         
         ttk.Label(ctrl_frame, text="Manual Add (K):").pack()
-        self.entry_manual_t = ttk.Entry(ctrl_frame, width=10)
+        self.entry_manual_t = ttk.Entry(ctrl_frame, width=12)
         self.entry_manual_t.pack(pady=2)
         ttk.Button(ctrl_frame, text="Add", command=lambda: self.listbox.insert(tk.END, f"{float(self.entry_manual_t.get()):.2f}")).pack(fill='x')
         ttk.Button(ctrl_frame, text="Remove Sel.", command=lambda: [self.listbox.delete(i) for i in reversed(self.listbox.curselection())]).pack(fill='x', pady=2)
@@ -355,7 +388,7 @@ class MasterControlGUI:
         self.t_entries = {}
         def add_t_entry(label, default, r, c):
             ttk.Label(frame, text=label).grid(row=r, column=c, padx=5, pady=2, sticky='e')
-            e = ttk.Entry(frame, width=8)
+            e = ttk.Entry(frame, width=10)
             e.insert(0, default)
             e.grid(row=r, column=c+1, padx=5, pady=2, sticky='w')
             self.t_entries[label] = e
@@ -365,7 +398,7 @@ class MasterControlGUI:
         add_t_entry("Ramp (K/min):", "2.0", 1, 0)
         add_t_entry("Poll Delay (s):", "1.0", 1, 2)
 
-        ttk.Label(frame, text="Heater Range:").grid(row=2, column=0, sticky='e', padx=5)
+        ttk.Label(frame, text="Heater Range:").grid(row=2, column=0, sticky='e', padx=5, pady=2)
         self.heater_var = tk.StringVar(value='High')
         ttk.Combobox(frame, textvariable=self.heater_var, values=['Off', 'Low', 'Medium', 'High'], state='readonly', width=8).grid(row=2, column=1, sticky='w', padx=5)
 
@@ -381,7 +414,7 @@ class MasterControlGUI:
         self.lcr_entries = {}
         def add_lcr_entry(label, default, r, c):
             ttk.Label(frame, text=label).grid(row=r, column=c, padx=5, pady=2, sticky='e')
-            e = ttk.Entry(frame, width=10)
+            e = ttk.Entry(frame, width=12)
             e.insert(0, default)
             e.grid(row=r, column=c+1, padx=5, pady=2, sticky='w')
             self.lcr_entries[label] = e
@@ -393,7 +426,7 @@ class MasterControlGUI:
 
         ttk.Label(frame, text="Aperture:").grid(row=2, column=2, sticky='e', padx=5)
         self.aper_var = tk.StringVar(value='MED')
-        ttk.Combobox(frame, textvariable=self.aper_var, values=['SHOR', 'MED', 'LONG'], state='readonly', width=8).grid(row=2, column=3, sticky='w', padx=5)
+        ttk.Combobox(frame, textvariable=self.aper_var, values=['SHOR', 'MED', 'LONG'], state='readonly', width=10).grid(row=2, column=3, sticky='w', padx=5)
 
         self.var_alc = tk.BooleanVar(value=True)
         self.var_corr = tk.BooleanVar(value=False)
@@ -404,7 +437,25 @@ class MasterControlGUI:
         self.lcr_cb = ttk.Combobox(frame, state='readonly', width=15)
         self.lcr_cb.grid(row=4, column=1, columnspan=2, sticky='we', padx=5)
 
-        ttk.Button(frame, text="Browse Save Directory...", command=self._browse_dir).grid(row=5, column=0, columnspan=4, sticky='we', padx=5, pady=5)
+        ttk.Button(frame, text="Browse Save Directory...", command=self._browse_dir).grid(row=5, column=0, columnspan=4, sticky='we', padx=10, pady=10)
+
+    def _build_exec_console(self, parent):
+        exec_frame = ttk.Frame(parent)
+        exec_frame.pack(fill='x', pady=5, padx=5)
+        
+        btn_frame = ttk.Frame(exec_frame)
+        btn_frame.pack(fill='x', pady=5)
+        self.start_button = ttk.Button(btn_frame, text="START MASTER SEQUENCE", style='Start.TButton', command=self.start_sequence)
+        self.start_button.pack(side='left', fill='x', expand=True, padx=2)
+        self.stop_button = ttk.Button(btn_frame, text="STOP/ABORT", style='Stop.TButton', state='disabled', command=self.stop_sequence)
+        self.stop_button.pack(side='left', fill='x', expand=True, padx=2)
+
+        self.lbl_status = tk.Label(exec_frame, text="READY", font=('Segoe UI', 14, 'bold'), bg=self.CLR_FRAME_BG, fg=self.CLR_TEXT_DARK, pady=5)
+        self.lbl_status.pack(fill='x', pady=5)
+
+        self.console = scrolledtext.ScrolledText(exec_frame, state='disabled', bg=self.CLR_HEADER, fg=self.CLR_TEXT_DARK, font=self.FONT_CONSOLE, height=12)
+        self.console.pack(fill='both', expand=True)
+        self.log("System Ready. Please configure parameters and sequence.")
 
     def _populate_right_panel(self, panel):
         # Top: Temp Graph
