@@ -168,6 +168,10 @@ class PICALauncherApp:
         "Lakeshore Step Control": resource_path("lakeshore/T_Control_L350_Step_GUI.py"),
         "Lakeshore Temp Monitor": resource_path("lakeshore/T_Sensing_L350_GUI.py"),
         "LCR C-V Measurement": resource_path("keysight/CV_KE4980A_GUI.py"),
+        "LCR Frequency Scan": resource_path("keysight/Frequency_Scan_E4980A_GUI.py"),
+        "LCR Temp. Step Freq. Scan (T_Control)": resource_path("keysight/Step_Frequency_Scan_E4980A_GUI.py"),
+        "LCR Temp. Scan (T_Control)": resource_path("keysight/Temprature_Scan_E4980A_GUI.py"),
+        "LCR Temp. Scan (T_Sensing)": resource_path("keysight/Temprature_Scan_Passive_E4980A_GUI.py"),
         "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
         "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
         "PICA Help": resource_path("README.md"),
@@ -574,11 +578,16 @@ class PICALauncherApp:
                                   ("Temperature Monitor",
                                    "Lakeshore Temp Monitor")])
         self._create_suite_frame(right_col,
-                                 'Capacitance & Impedance (20 Hz - 2 MHz)',
+                                 'Impedance Spectroscopy',
                                  "Voltage Driven",
                                  "Instrument: Keysight E4980A",
                                  [("C-V Measurement",
-                                   "LCR C-V Measurement")])
+                                   "LCR C-V Measurement"),
+                                  ("Frequency Scan", "LCR Frequency Scan"),
+                                  ("Step Freq. Scan", "LCR Step Freq. Scan"),
+                                  ("Temp. Scan (Active)", "LCR Temp. Scan (Active)"),
+                                  ("Temp. Scan (Passive)", "LCR Temp. Scan (Passive)"),
+                                  ])
 
         return main_container
 
