@@ -8,6 +8,8 @@ import tkinter as tk
 from tkinter import ttk, Label, Entry, LabelFrame, filedialog, messagebox, scrolledtext, Canvas
 import os
 import time
+import threading
+import queue
 import math
 import traceback
 from datetime import datetime
@@ -255,6 +257,8 @@ class LCR_CV_GUI:
         self.logo_image = None
         self.sweep_points = []
         self.sweep_index = 0
+        self.data_queue = queue.Queue()
+        self.measurement_thread = None
 
         self.setup_styles()
         self.create_widgets()
@@ -458,6 +462,8 @@ class LCR_CV_GUI:
             if params['v_step'] <= 0 or params['loops'] <= 0:
                 raise ValueError("Voltage Step and Number of Loops must be positive.")
 
+            if hasattr(self, 'sweep_gen'): del self.sweep_gen
+
             # Calculate sweep matrix natively and predictably
             self.sweep_points = self._build_sweep_points(params['v_max'], params['v_step'], params['loops'])
             if not self.sweep_points:
@@ -478,38 +484,36 @@ class LCR_CV_GUI:
             # Initialize backend
             self.backend.initialize_instrument(params)
             self.log(f"Backend initialized for sample: {params['sample_name']}")
-
-            # Guarantee cleanup on any failure post-initialization
-            try:
-                self.is_running = True
-                self.start_button.config(state='disabled')
-                self.stop_button.config(state='normal')
-                
-                for key in self.data_storage:
-                    self.data_storage[key].clear()
-                
-                self.line_main.set_data([], [])
-                self.ax_main.set_title(f"C-V Curve for: {params['sample_name']}", fontweight='bold')
-                self.canvas.draw()
-
-                self.sweep_index = 0
-                self.progress_bar['value'] = 0
-                self.progress_bar['maximum'] = len(self.sweep_points)
-
-                self.log("Starting C-V sweep...")
-                self.root.after(100, self._sweep_loop)
-
-            except Exception as sweep_err:
-                self.backend.close_instrument()
-                raise sweep_err
+            
+            self.is_running = True
+            self.start_button.config(state='disabled')
+            self.stop_button.config(state='normal')
+            
+            for key in self.data_storage:
+                self.data_storage[key].clear()
+            
+            self.line_main.set_data([], [])
+            self.ax_main.set_title(f"C-V Curve for: {params['sample_name']}", fontweight='bold')
+            self.canvas.draw()
+            self.sweep_index = 0
+            self.progress_bar['value'] = 0
+            self.progress_bar['maximum'] = len(self.sweep_points)
+            self.log("Starting C-V sweep...")
+            
+            self.measurement_thread = threading.Thread(target=self._measurement_worker, daemon=True)
+            self.measurement_thread.start()
+            self.root.after(100, self._process_data_queue)
 
         except Exception as e:
+            self.backend.close_instrument()
             self.log(f"ERROR during startup: {traceback.format_exc()}")
             messagebox.showerror("Initialization Error", f"Could not start sweep.\n\n{e}")
 
     def stop_sweep(self, reason=""):
         if self.is_running:
             self.is_running = False
+            if hasattr(self, 'sweep_gen'):
+                del self.sweep_gen
             
             if reason:
                 self.log(f"Sweep stopped: {reason}")
@@ -519,6 +523,11 @@ class LCR_CV_GUI:
             self.start_button.config(state='normal')
             self.stop_button.config(state='disabled')
             
+            if (self.measurement_thread is not None 
+                and self.measurement_thread.is_alive() 
+                and threading.current_thread() is not self.measurement_thread):
+                self.measurement_thread.join(timeout=3.0)
+
             # Shut down gracefully (bias ramps to 0)
             self.backend.close_instrument()
             self.log("Instrument connection closed.")
@@ -528,40 +537,48 @@ class LCR_CV_GUI:
                 messagebox.showinfo("Info", "Sweep stopped and instrument disconnected.")
 
     def _build_sweep_points(self, v_max, v_step, loops):
-        """Constructs an exact deterministic array of point coordinates."""
         n = int(round(v_max / v_step))
         up = [round(i * v_step, 9) for i in range(n + 1)]
         pts = []
         for loop in range(1, loops + 1):
-            pts += [(v, loop, "A") for v in up]
-            pts += [(v, loop, "B") for v in reversed(up)]
-            pts += [(-v, loop, "C") for v in up]
-            pts += [(-v, loop, "D") for v in reversed(up)]
+            pts += [(v, loop, "A") for v in up]      # 0 to +V
+            pts += [(v, loop, "B") for v in reversed(up)] # +V to 0
+            pts += [(-v, loop, "C") for v in up]     # 0 to -V
+            pts += [(-v, loop, "D") for v in reversed(up)] # -V to 0
         return pts
 
-    def _sweep_loop(self):
-        """Executes points sequentially via event loop to prevent thread locking."""
-        if not self.is_running:
-            return
+    def _measurement_worker(self):
+        for i in range(len(self.sweep_points)):
+            if not self.is_running: break
+            try:
+                target_v, loop_n, proto = self.sweep_points[i]
+                actual_v, cap = self.backend.perform_measurement(target_v)
+                self.data_queue.put(('DATA', actual_v, cap, loop_n, proto, i))
+            except Exception as e:
+                self.data_queue.put(e)
+                break
+        self.data_queue.put(None)
 
+    def _process_data_queue(self):
         try:
-            if self.sweep_index >= len(self.sweep_points):
-                self._handle_sweep_completion()
-                return
+            while not self.data_queue.empty():
+                item = self.data_queue.get_nowait()
+                if item is None:
+                    self._handle_sweep_completion()
+                    return
+                if isinstance(item, Exception):
+                    self._handle_sweep_error(item)
+                    return
+                
+                _, v, c, l, p, idx = item
+                self._process_sweep_point(v, c, l, p)
+                self.sweep_index = idx + 1
+                self._update_sweep_plot()
+        except queue.Empty:
+            pass
 
-            target_v, loop_n, proto = self.sweep_points[self.sweep_index]
-
-            actual_v, cap = self.backend.perform_measurement(target_v)
-            self._process_sweep_point(actual_v, cap, loop_n, proto)
-            
-            self.sweep_index += 1
-            self._update_sweep_plot()
-
-            if self.is_running:
-                self.root.after(50, self._sweep_loop)
-
-        except Exception as e:
-            self._handle_sweep_error(e)
+        if self.is_running:
+            self.root.after(100, self._process_data_queue)
 
     def _scan_for_visa(self):
         if not PYVISA_AVAILABLE:
@@ -626,6 +643,8 @@ class LCR_CV_GUI:
         self.log("Sweep finished successfully.")
         self.stop_sweep("Sweep naturally complete.") # Ramps down securely 
         messagebox.showinfo("Finished", "C-V sweep is complete.")
+        if hasattr(self, 'sweep_gen'):
+            del self.sweep_gen
 
     def _handle_sweep_error(self, exception):
         self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
