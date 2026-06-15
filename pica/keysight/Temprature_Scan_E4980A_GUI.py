@@ -2,6 +2,7 @@
  PROGRAM:      Integrated L350 & E4980A: Temperature Scan (Cp-G vs T)
  PURPOSE:      Automated temperature sweeps with multi-frequency LCR measurements.
                Outputs individual data files for each measured frequency.
+               - Includes Critical Fixes for Ramp Logic, Measurement Status, and T-Sync
 '''
 
 import tkinter as tk
@@ -98,6 +99,7 @@ class Lakeshore350_Backend:
         time.sleep(1)
 
     def setup_heater(self, output, resistance_code, max_current_code):
+        # Setup: Output 1, 25 Ohm (code 1), 1 A (code 2) = ~25 W max.
         self.instrument.write(f'HTRSET {output},{resistance_code},{max_current_code},0,1')
         time.sleep(0.5)
 
@@ -109,7 +111,8 @@ class Lakeshore350_Backend:
         self.instrument.write(f'SETP {output},{temperature_k}')
 
     def set_heater_range(self, output, heater_range):
-        range_map = {'off': 0, 'low': 2, 'medium': 4, 'high': 5}
+        # Documented Mapping: 0=Off, 1=Low, 2=Medium, 3=High. 5=Max (75W on 350)
+        range_map = {'off': 0, 'low': 1, 'medium': 2, 'high': 3, 'max': 5}
         range_code = range_map.get(heater_range.lower(), 0)
         self.instrument.write(f'RANGE {output},{range_code}')
 
@@ -143,25 +146,34 @@ class KeysightE4980A_Backend:
             return
         direction = 1 if target_v > current_v else -1
         ramp_points = np.arange(current_v, target_v, direction * step)
-        ramp_points = np.append(ramp_points, target_v) 
-        for v in ramp_points:
+        
+        # Deduplicate to prevent an almost identical final point
+        final_points = []
+        for p in ramp_points:
+            if not final_points or abs(final_points[-1] - p) > 0.001:
+                final_points.append(p)
+        if not final_points or abs(final_points[-1] - target_v) > 0.001:
+            final_points.append(target_v)
+
+        for v in final_points:
             self.instrument.write(f':BIAS:VOLT {v:.3f}')
             time.sleep(dwell)
 
     def setup_measurement(self, ac_bias, dc_bias, aper, alc_on, corr_on):
-        self.instrument.write('*RST; *CLS')                 
-        self.instrument.write(':DISP:ENAB ON')              
+        self.instrument.write('*RST; *CLS')                
+        self.instrument.write(':FORM ASC')          # FIX: ensure ASCII data output
+        self.instrument.write(':DISP:PAGE BLAN')    # FIX: Blank display for faster acquisition
         self.instrument.write(':FUNC:IMP CPG')
-        self.instrument.write(f":APER {aper}")         
-        self.instrument.write(':FUNC:IMP:RANG:AUTO ON')     
+        self.instrument.write(f":APER {aper}")        
+        self.instrument.write(':FUNC:IMP:RANG:AUTO ON')    
         
         self.instrument.write(':AMPL:ALC ON' if alc_on else ':AMPL:ALC OFF')
         self.instrument.write(':CORR:OPEN:STAT ON' if corr_on else ':CORR:OPEN:STAT OFF')
         self.instrument.write(':CORR:SHOR:STAT ON' if corr_on else ':CORR:SHOR:STAT OFF')
 
         self.instrument.write(f":VOLT {ac_bias}")
-        self.instrument.write(':TRIG:SOUR BUS')             
-        self.instrument.write(':INIT:CONT ON')              
+        self.instrument.write(':TRIG:SOUR BUS')            
+        self.instrument.write(':INIT:CONT ON')             
         
         self.instrument.write(':BIAS:VOLT 0')               
         self.instrument.write(':BIAS:STAT ON')
@@ -171,7 +183,9 @@ class KeysightE4980A_Backend:
         self.instrument.write(f':FREQ {freq}')
         time.sleep(delay)
         vals = self.instrument.query_ascii_values('*TRG')
-        return vals[0], vals[1]  # Cp, G
+        cp, g = vals[0], vals[1]
+        status = int(vals[2]) if len(vals) > 2 else 0  # FIX: Extracted status flag
+        return cp, g, status
 
     def close(self):
         if self.instrument:
@@ -219,8 +233,9 @@ class Combined_Backend:
     def measure_lcr_array(self, freqs, delay):
         results = {}
         for f in freqs:
-            cp, g = self.lcr.measure_freq(f, delay)
-            results[f] = (cp, g)
+            t_point = self.get_temperature()  # FIX: T at exact frequency
+            cp, g, status = self.lcr.measure_freq(f, delay)
+            results[f] = (t_point, cp, g, status)
         return results
 
     def close_instruments(self):
@@ -480,8 +495,10 @@ class Temperature_Scan_GUI:
         if not PYVISA_AVAILABLE:
             self.log("PyVISA not installed.")
             return
-        rm = pyvisa.ResourceManager()
-        res = rm.list_resources()
+        # FIX: PyVISA Leak - Re-use the rm instance
+        if not self.backend.rm:
+            self.backend.rm = pyvisa.ResourceManager()
+        res = self.backend.rm.list_resources()
         self.ls_visa['values'] = res
         self.lcr_visa['values'] = res
         self.log(f"VISA Scan found: {res}")
@@ -516,6 +533,7 @@ class Temperature_Scan_GUI:
         Z_mag = 1.0 / Y_mag_safe
 
         Rs = g / (Y_mag_safe**2)
+        Rs_safe = Rs if Rs != 0 else 1e-20
         Xs = -B / (Y_mag_safe**2)
         Xs_safe = Xs if Xs != 0 else 1e-20
 
@@ -529,7 +547,8 @@ class Temperature_Scan_GUI:
 
         # Complex capacitance C* = C' - jC''
         Cp_double_prime = g / omega_safe
-        Cs_double_prime = Cp_double_prime
+        # FIX: Cs'' calculation corrected
+        Cs_double_prime = -1.0 / (omega_safe * Rs_safe)
 
         return [Q, D, g, B, cp, Lp, Cs, Ls, Z_mag, theta_rad, chi, Rs, theta_deg, Rp, Y_mag, omega, Cp_double_prime, Cs_double_prime]
 
@@ -639,15 +658,26 @@ class Temperature_Scan_GUI:
         p = self.backend.params
         try:
             # 1. Stabilization Phase
+            stab_start = time.time()
+            STAB_TIMEOUT_S = 1800  # FIX: 30 min safety cutoff
+
             while self.is_stabilizing:
                 current_t = self.backend.get_temperature()
+                
+                if time.time() - stab_start > STAB_TIMEOUT_S:
+                    self.data_queue.put("LOG:Stabilization timeout — check cooling/setpoint.")
+                    self.data_queue.put("CUTOFF")
+                    break
+
                 self.data_queue.put(f"LOG:Stabilizing... T={current_t:.2f}K (Target={p['t_start']}K)")
                 
                 if current_t > p['t_start'] + 5.0:
                     self.backend.lakeshore.set_heater_range(1, 'off')
                 else:
-                    self.backend.lakeshore.set_heater_range(1, 'high')
+                    # FIX: Explicitly turn off ramp during stabilization so it snaps to t_start
+                    self.backend.lakeshore.setup_ramp(1, 0, ramp_on=False)
                     self.backend.lakeshore.set_setpoint(1, p['t_start'])
+                    self.backend.lakeshore.set_heater_range(1, 'high')
 
                 if abs(current_t - p['t_start']) < 2.0:
                     self.data_queue.put(f"LOG:Stabilized. Wait 5s before sweep...")
@@ -659,26 +689,35 @@ class Temperature_Scan_GUI:
 
             # 2. Ramp Phase
             if self.is_running:
-                self.backend.lakeshore.set_setpoint(1, p['t_end'])
-                self.backend.lakeshore.setup_ramp(1, p['rate'])
+                # FIX: Ramp ON -> Range -> then Setpoint
+                self.backend.lakeshore.setup_ramp(1, p['rate'], ramp_on=True)
                 self.backend.lakeshore.set_heater_range(1, 'high')
+                self.backend.lakeshore.set_setpoint(1, p['t_end'])             
                 self.data_queue.put(f"LOG:Ramp started to {p['t_end']}K at {p['rate']} K/min")
 
             while self.is_running:
-                t = self.backend.get_temperature()
-                if t >= p['cutoff']:
+                # Temperature monitoring for cutoff and end condition
+                t_monitor = self.backend.get_temperature()
+                if t_monitor >= p['cutoff']:
                     self.data_queue.put("CUTOFF")
                     break
-                if t >= p['t_end']:
+                if t_monitor >= p['t_end']:
                     self.data_queue.put("COMPLETE")
                     break
 
-                # Poll LCR array
+                # Poll LCR array (T is read inside per-frequency now)
                 freq_results = self.backend.measure_lcr_array(self.freq_list, p['delay'])
-                self.data_queue.put(('DATA', t, freq_results))
+                self.data_queue.put(('DATA', freq_results))
                 
         except Exception as e:
             self.data_queue.put(e)
+            self.data_queue.put("LOG:Hard crash in measurement thread.")
+        finally:
+            # FIX: Exception Safety shutdown
+            try:
+                self.backend.lakeshore.set_heater_range(1, 'off')
+            except:
+                pass
 
     def _process_data_queue(self):
         try:
@@ -701,21 +740,29 @@ class Temperature_Scan_GUI:
                     messagebox.showerror("Runtime Error", str(item))
                 
                 elif isinstance(item, tuple) and item[0] == 'DATA':
-                    _, t, results = item
-                    self.data_storage['temp'].append(t)
+                    _, results = item
                     
-                    self.log(f"T = {t:.2f} K | Freq scan block completed.")
+                    # For shared x-axis GUI plotting, we use the base temperature of the first frequency.
+                    base_t = results[self.freq_list[0]][0]
+                    self.data_storage['temp'].append(base_t)
+                    
+                    self.log(f"T (Start) = {base_t:.2f} K | Freq scan block completed.")
                     
                     # Write to respective files and update GUI arrays
                     for f in self.freq_list:
-                        cp, g = results[f]
+                        # FIX: Extract individual exact temperature and status per frequency
+                        t_point, cp, g, status = results[f]
+                        
+                        if status != 0:
+                            self.log(f"  WARNING: f={f}Hz status={status} (overload/invalid) at T={t_point:.2f}K")
+                        
                         self.data_storage[f]['cp'].append(cp)
                         self.data_storage[f]['g'].append(g)
                         
                         calc_vals = self.calculate_impedance_parameters(f, cp, g)
                         
                         # Formatting: "{:.6E}\t{:.6E}..."
-                        row_vals = [t] + calc_vals
+                        row_vals = [t_point] + calc_vals
                         row_str = "\t".join([f"{v:.6E}" for v in row_vals])
                         
                         fh = self.file_handles.get(f)
