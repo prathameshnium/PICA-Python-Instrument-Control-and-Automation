@@ -95,15 +95,17 @@ class Lakeshore_Backend:
         self.instrument = self.rm.open_resource(visa_address)
         self.instrument.timeout = 10000
         idn = self.instrument.query('*IDN?').strip()
+        self.instrument.write('*RST')
+        time.sleep(0.5)
+        self.instrument.write('*CLS')                  # clear status once at connect time
         return idn
 
     def configure_ramp(self, setpoint, rate, heater_range):
-        self.instrument.write('*RST')
-        time.sleep(0.5)
-        self.instrument.write('*CLS')
-        self.set_heater_range(1, heater_range)
+        # OUTMODE <output>,<mode=1 Closed-Loop PID>,<input=1 (A)>,<powerup_enable=0>
+        self.instrument.write('OUTMODE 1,1,1,0')
+        self.instrument.write(f'RAMP 1,1,{rate}')      # enable setpoint ramp at <rate> K/min
         self.instrument.write(f'SETP 1,{setpoint}')
-        self.instrument.write(f'RAMP 1,1,{rate}')
+        self.set_heater_range(1, heater_range)         # arm heater last
 
     def set_heater_range(self, output, heater_range):
         range_map = {'off': 0, 'low': 2, 'medium': 4, 'high': 5}
@@ -118,7 +120,7 @@ class Lakeshore_Backend:
     def stop_ramp(self):
         if self.instrument:
             try:
-                self.instrument.write('RAMP 1,0,0')
+                self.instrument.write('RAMP 1,0,1')   # ramp OFF; rate field must be >0
                 self.set_heater_range(1, 'off')
             except Exception:
                 pass
@@ -171,6 +173,7 @@ class LCR_Backend:
             raise ValueError(f"AC level outside 0–{v_ac_max} Vrms.")
 
         self.instrument.write('*RST; *CLS')
+        self.instrument.write(':FORM:DATA ASC')
         self.instrument.write(':DISP:ENAB ON')
         self.instrument.write(':FUNC:IMP CPG')
         self.instrument.write(f":APER {p['aper']}")
@@ -197,7 +200,9 @@ class LCR_Backend:
         self.instrument.write(f':FREQ {freq}')
         time.sleep(delay)
         vals = self.instrument.query_ascii_values('*TRG')
-        return vals[0], vals[1]  # Cp, G
+        cp, g = vals[0], vals[1]
+        status = int(vals[2]) if len(vals) > 2 else 0   # 0 = normal
+        return cp, g, status
 
     def turn_off_bias(self):
         if self.instrument:
@@ -208,7 +213,7 @@ class LCR_Backend:
         if self.instrument:
             try:
                 self.turn_off_bias()
-                self.instrument.write(':DISP:PAGE MEAS')
+                self.instrument.write(':DISPlay:PAGE MEASurement')
                 self.instrument.close()
             except Exception:
                 pass
@@ -254,6 +259,7 @@ class MasterControlGUI:
         self.root.minsize(1300, 850)
 
         self.is_running = False
+        self._poller_active = False
         self.gui_queue = queue.Queue()
         self.logo_image = None
         
@@ -593,10 +599,11 @@ class MasterControlGUI:
             return
 
         self.is_running = True
+        self._poller_active = True          # <-- Fixed: ensure the poller flag stays alive to finish drain
         self.start_button.config(state='disabled')
         self.stop_button.config(state='normal')
         
-        self.data_temp = {'time': [], 'temperature': [], 'target': []}
+        self.data_temp = {'time': [], 'temperature': [], 'target': [], 'heater': []}
         self.start_time = time.time()
 
         self.root.after(100, self._process_gui_queue)
@@ -634,9 +641,10 @@ class MasterControlGUI:
                     self.stop_button.config(state='disabled')
                     self._update_status("SEQUENCE COMPLETE", self.CLR_HEADER)
                     messagebox.showinfo("Done", "All steps completed.")
+                    self._poller_active = False   # stop after this drain
         except queue.Empty:
             pass
-        if self.is_running:
+        if getattr(self, "_poller_active", False):
             self.root.after(100, self._process_gui_queue)
 
     def _put(self, msg_type, **kwargs):
@@ -651,6 +659,15 @@ class MasterControlGUI:
             self.lcr_backend.connect(self.lcr_params['visa'])
             self._put('log', text="Instruments connected successfully.")
 
+            # --- Temperature profile log (added) ---
+            t_log_path = os.path.join(
+                self.file_location_path,
+                f"{self.lcr_params['sample']}_Tprofile_"
+                f"{datetime.now():%Y%m%d_%H%M%S}.txt",
+            )
+            with open(t_log_path, "w", encoding="utf-8") as tf:
+                tf.write("Elapsed_min\tT_actual_K\tT_target_K\tHeater_pct\n")
+
             for i, target in enumerate(self.setpoints_f):
                 if not self.is_running: break
 
@@ -662,10 +679,16 @@ class MasterControlGUI:
                 stable_start = None
 
                 while self.is_running:
-                    t_act, _ = self.tc_backend.get_status()
-                    self.data_temp['time'].append((time.time() - self.start_time)/60.0)
+                    t_act, htr = self.tc_backend.get_status()
+                    elapsed = (time.time() - self.start_time) / 60.0
+                    
+                    self.data_temp['time'].append(elapsed)
                     self.data_temp['temperature'].append(t_act)
                     self.data_temp['target'].append(target)
+                    self.data_temp['heater'].append(htr)
+                    
+                    with open(t_log_path, "a", encoding="utf-8") as tf:
+                        tf.write(f"{elapsed:.4f}\t{t_act:.4f}\t{target:.4f}\t{htr:.2f}\n")
                     self._put('plot_t')
 
                     if abs(t_act - target) <= self.t_params['tol']:
@@ -686,36 +709,43 @@ class MasterControlGUI:
                 # --- 2. LCR FREQUENCY SWEEP ---
                 self._put('status', text=f"MEASURING LCR AT {target} K", color=self.CLR_ACCENT_GREEN)
                 
+                # Correction compensation warning explicitly
+                if self.lcr_params['corr_enabled']:
+                    self._put('log', text="WARN: Open/Short correction enabled. Ensure compensation was previously performed on the instrument.")
+                
                 # Setup specific file for this temperature
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"{self.lcr_params['sample']}_{target}K_{ts}.txt"
                 filepath = os.path.join(self.file_location_path, filename)
 
                 with open(filepath, 'w', encoding='utf-8') as f:
-                    f.write(f"# Sample: {self.lcr_params['sample']} | Temp: {target}K | AC: {self.lcr_params['ac_bias']}V | DC: {self.lcr_params['dc_bias']}V\n")
+                    f.write(f"# Sample: {self.lcr_params['sample']} | Temp: {target}K | "
+                            f"AC: {self.lcr_params['ac_bias']}V | DC: {self.lcr_params['dc_bias']}V\n")
                     f.write(self.DATA_HEADER + "\n")
 
-                self.data_lcr = {'freq': [], 'cp': [], 'g': []}
-                self._put('plot_lcr')
-
-                self.lcr_backend.initialize_sweep_params(self.lcr_params)
-
-                for freq in self.sweep_frequencies:
-                    if not self.is_running: break
-                    
-                    cp, g = self.lcr_backend.perform_measurement(freq, self.lcr_params['delay'])
-                    
-                    self.data_lcr['freq'].append(freq)
-                    self.data_lcr['cp'].append(cp)
-                    self.data_lcr['g'].append(g)
-                    
-                    calc_vals = self.calculate_impedance(freq, cp, g)
-                    row_str = "\t".join([f"{v:.6E}" for v in ([freq] + calc_vals)])
-                    
-                    with open(filepath, 'a', encoding='utf-8') as file:
-                        file.write(row_str + "\n")
-                    
+                    self.data_lcr = {'freq': [], 'cp': [], 'g': []}
                     self._put('plot_lcr')
+                    self.lcr_backend.initialize_sweep_params(self.lcr_params)
+
+                    for freq in self.sweep_frequencies:
+                        if not self.is_running:
+                            break
+                        
+                        cp, g, status = self.lcr_backend.perform_measurement(freq, self.lcr_params['delay'])
+                        if status != 0:
+                            self._put('log', text=f"WARN: meas status={status} at {freq} Hz (over-range/invalid)")
+                        
+                        self.data_lcr['freq'].append(freq)
+                        self.data_lcr['cp'].append(cp)
+                        self.data_lcr['g'].append(g)
+                        
+                        calc_vals = self.calculate_impedance(freq, cp, g)
+                        row_str = "\t".join(f"{v:.6E}" for v in ([freq] + calc_vals))
+                        
+                        f.write(row_str + "\n")
+                        f.flush()                # data safe on abort/crash
+                        
+                        self._put('plot_lcr')
 
                 self._put('log', text=f"Sweep at {target} K saved to {filename}")
                 self.lcr_backend.turn_off_bias()
