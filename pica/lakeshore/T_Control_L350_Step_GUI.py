@@ -10,15 +10,21 @@ import time
 import traceback
 import threading
 import queue
-import winsound
 from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
 import runpy
 from multiprocessing import Process
+import csv
+import platform
 
 # --- Optional Packages ---
+try:
+    import winsound
+except ImportError:
+    pass
+
 try:
     from PIL import Image, ImageTk
     PIL_AVAILABLE = True
@@ -87,29 +93,29 @@ class Lakeshore_Backend:
             raise ConnectionError("PyVISA is not available.")
         self.lakeshore = self.rm.open_resource(visa_address)
         self.lakeshore.timeout = 10000
+        self.lakeshore.write('*CLS')          # clear status once; do NOT *RST mid-run
         idn = self.lakeshore.query('*IDN?').strip()
         print(f"  Lakeshore Connected: {idn}")
         return idn
 
     def configure_ramp(self, setpoint, rate, heater_range):
-        self.lakeshore.write('*RST')
-        time.sleep(0.5)
-        self.lakeshore.write('*CLS')
-        self.set_heater_range(1, heater_range)
-        self.lakeshore.write(f'SETP 1,{setpoint}')
-        self.lakeshore.write(f'RAMP 1,1,{rate}')
+        self.set_heater_range(1, heater_range)     # ensure heater on at desired range
+        self.lakeshore.write(f'RAMP 1,1,{rate}')   # enable ramp FIRST
+        time.sleep(0.1)
+        self.lakeshore.write(f'SETP 1,{setpoint}') # now the change is ramped
 
     def set_heater_range(self, output, heater_range):
-        range_map = {'off': 0, 'low': 2, 'medium': 4, 'high': 5}
+        range_map = {'off': 0, 'low': 1, 'medium': 3, 'high': 5}
         range_code = range_map.get(heater_range.lower())
         if range_code is None:
             raise ValueError("Invalid heater range.")
         self.lakeshore.write(f'RANGE {output},{range_code}')
 
     def get_status(self):
-        temp = float(self.lakeshore.query('KRDG? A').strip())
-        htr_output = float(self.lakeshore.query('HTR? 1').strip())
-        return temp, htr_output
+        temp = float(self.lakeshore.query('KRDG? A').strip())       # Kelvin, input A
+        resistance = float(self.lakeshore.query('SRDG? A').strip()) # sensor units (ohms)
+        htr_output = float(self.lakeshore.query('HTR? 1').strip())  # heater %, output 1
+        return temp, resistance, htr_output
 
     def stop_ramp(self):
         if self.lakeshore:
@@ -168,8 +174,9 @@ class TempControlGUI:
         self.logo_image = None
         self.backend = Lakeshore_Backend()
         
-        # Added 'target' to data storage for plotting expectations
-        self.data_storage = {'time': [], 'temperature': [], 'target': [], 'heater': []}
+        # Added 'resistance' to data storage for persistence
+        self.data_storage = {'time': [], 'temperature': [], 'target': [],
+                             'resistance': [], 'heater': []}
 
         self.setup_styles()
         self.create_widgets()
@@ -481,6 +488,30 @@ class TempControlGUI:
         self._update_status_ui("INITIATING NEXT RAMP...", self.CLR_HEADER)
         self.proceed_event.set()
 
+    def _beep(self):
+        def _ring():
+            try:
+                if platform.system() == 'Windows':
+                    import winsound
+                    winsound.Beep(1000, 500)
+                else:
+                    self.root.bell()
+            except Exception:
+                pass
+        threading.Thread(target=_ring, daemon=True).start()
+
+    def _close_data_file(self):
+        f = getattr(self, 'data_file', None)
+        if f:
+            try:
+                f.flush()
+                f.close()
+                self._put_gui_msg('log', text=f"Data file closed: {self.data_filepath}")
+            except Exception:
+                pass
+            finally:
+                self.data_file = None
+
     # --- MAIN LOGIC ---
     def start_sequence(self):
         setpoints = list(self.listbox.get(0, tk.END))
@@ -507,6 +538,18 @@ class TempControlGUI:
         
         self.start_time = time.time()
         self.proceed_event.clear()
+
+        # --- Open persistent data file (flushed every point) ---
+        os.makedirs("data", exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.data_filepath = os.path.join("data", f"TStep_{stamp}.csv")
+        self.data_file = open(self.data_filepath, 'w', newline='')
+        self.csv_writer = csv.writer(self.data_file)
+        self.csv_writer.writerow(
+            ["Timestamp", "Elapsed_s", "Target_K", "Temperature_K",
+             "Resistance_Ohm", "Heater_pct"])
+        self.data_file.flush()
+        self.log(f"Logging data to: {self.data_filepath}")
 
         self.root.after(100, self._process_gui_queue)
 
@@ -585,9 +628,14 @@ class TempControlGUI:
                     self._update_status_ui(msg['text'], msg['color'])
                 
                 elif msg_type == 'plot':
-                    self.line_target.set_data(self.data_storage['time'], self.data_storage['target'])
-                    self.line_temp.set_data(self.data_storage['time'], self.data_storage['temperature'])
-                    self.line_heater.set_data(self.data_storage['time'], self.data_storage['heater'])
+                    n = min(len(self.data_storage['time']),
+                            len(self.data_storage['temperature']),
+                            len(self.data_storage['heater']),
+                            len(self.data_storage['target']))
+                    t = self.data_storage['time'][:n]
+                    self.line_target.set_data(t, self.data_storage['target'][:n])
+                    self.line_temp.set_data(t, self.data_storage['temperature'][:n])
+                    self.line_heater.set_data(t, self.data_storage['heater'][:n])
                     for ax in [self.ax_temp, self.ax_heater]:
                         ax.relim()
                         ax.autoscale_view()
@@ -595,7 +643,7 @@ class TempControlGUI:
                 
                 elif msg_type == 'handshake_ready':
                     self.btn_proceed.config(state='normal')
-                    winsound.Beep(1000, 500) 
+                    self._beep()
                 
                 elif msg_type == 'sequence_complete':
                     self.set_ui_state(running=False)
@@ -604,7 +652,7 @@ class TempControlGUI:
         except queue.Empty:
             pass
         
-        if self.is_running:
+        if self.is_running or not self.gui_queue.empty():
             self.root.after(100, self._process_gui_queue)
 
     def _hardware_worker_loop(self):
@@ -623,11 +671,25 @@ class TempControlGUI:
                 stable_start_time = None
                 
                 while self.is_running:
-                    temp, htr = self.backend.get_status()
-                    self.data_storage['time'].append(time.time() - self.start_time)
+                    temp, resistance, htr = self.backend.get_status()
+                    elapsed = time.time() - self.start_time
+                    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                    self.data_storage['time'].append(elapsed)
                     self.data_storage['temperature'].append(temp)
-                    self.data_storage['target'].append(target) # Track target for graph
+                    self.data_storage['target'].append(target)
+                    self.data_storage['resistance'].append(resistance)
                     self.data_storage['heater'].append(htr)
+
+                    # Persist immediately so an abort/crash never loses a point
+                    try:
+                        self.csv_writer.writerow(
+                            [now_str, f"{elapsed:.2f}", f"{target:.4f}",
+                             f"{temp:.4f}", f"{resistance:.6g}", f"{htr:.2f}"])
+                        self.data_file.flush()
+                        os.fsync(self.data_file.fileno())
+                    except Exception as e:
+                        self._put_gui_msg('log', text=f"WARN: data write failed: {e}")
                     
                     self._put_gui_msg('plot')
                     
@@ -658,22 +720,26 @@ class TempControlGUI:
                 self.proceed_event.wait() 
                 
             if self.is_running:
-                self.is_running = False
                 self._put_gui_msg('log', text="Measurement Sequence Complete.")
                 self._put_gui_msg('status', text="READY TO START", color=self.CLR_HEADER)
                 self._put_gui_msg('sequence_complete')
                 self.backend.stop_ramp()
+                self.is_running = False   # flip LAST, after messages are queued
 
         except Exception as e:
             self._put_gui_msg('log', text=f"CRITICAL ERROR IN HARDWARE THREAD: {e}\n{traceback.format_exc()}")
             self.is_running = False
-            self._put_gui_msg('sequence_complete') 
+            self._put_gui_msg('sequence_complete')
             self.backend.stop_ramp()
+        finally:
+            self._close_data_file()
 
     def _on_closing(self):
         if self.is_running and messagebox.askyesno("Exit", "A sequence is active. Stop hardware and exit?"):
             self.stop_ramp()
-            time.sleep(0.5) 
+            time.sleep(0.5)
+            if self.measurement_thread and self.measurement_thread.is_alive():
+                self.measurement_thread.join(timeout=2.0)
             self.root.destroy()
         elif not self.is_running:
             self.root.destroy()
