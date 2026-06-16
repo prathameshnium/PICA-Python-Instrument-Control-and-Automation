@@ -12,7 +12,6 @@ import queue
 import os
 import time
 import math
-import traceback
 from datetime import datetime
 import numpy as np
 
@@ -94,10 +93,11 @@ class Lakeshore350_PassiveBackend:
         
         # Enforce passive mode: turn off heater and ramps
         self.instrument.write('*RST')
+        self.instrument.query('*OPC?')
         time.sleep(0.5)
         self.instrument.write('*CLS')
         self.instrument.write('RANGE 1,0')     # Heater Off
-        self.instrument.write('RAMP 1,0,0')    # Ramp Off
+        self.instrument.write('RAMP 1,0,1')    # Ramp Off (rate field must be in 0.001–100)
 
     def get_temperature(self, sensor='A'):
         return float(self.instrument.query(f'KRDG? {sensor}').strip())
@@ -129,15 +129,15 @@ class KeysightE4980A_Backend:
         current_v = float(self.instrument.query(':BIAS:VOLT?'))
         if abs(target_v - current_v) < 0.01:
             return
-        direction = 1 if target_v > current_v else -1
-        ramp_points = np.arange(current_v, target_v, direction * step)
-        ramp_points = np.append(ramp_points, target_v) 
+        n = max(int(math.ceil(abs(target_v - current_v) / step)), 1)
+        ramp_points = np.linspace(current_v, target_v, n + 1)[1:]  # exclude start, include target
         for v in ramp_points:
             self.instrument.write(f':BIAS:VOLT {v:.3f}')
             time.sleep(dwell)
 
     def setup_measurement(self, ac_bias, dc_bias, aper, alc_on, corr_on):
         self.instrument.write('*RST; *CLS')                
+        self.instrument.query('*OPC?')   # block until reset completes
         self.instrument.write(':DISP:ENAB ON')              
         self.instrument.write(':FUNC:IMP CPG')
         self.instrument.write(f":APER {aper}")         
@@ -159,7 +159,12 @@ class KeysightE4980A_Backend:
         self.instrument.write(f':FREQ {freq}')
         time.sleep(delay)
         vals = self.instrument.query_ascii_values('*TRG')
-        return vals[0], vals[1]  # Cp, G
+        if len(vals) < 2:
+            raise IOError(f"E4980A returned malformed data at {freq} Hz: {vals}")
+        cp, g = vals[0], vals[1]
+        # vals[2], if present, is the measurement status word (0 = normal).
+        status = vals[2] if len(vals) > 2 else 0
+        return cp, g, status
 
     def close(self):
         if self.instrument:
@@ -203,8 +208,8 @@ class Combined_Passive_Backend:
     def measure_lcr_array(self, freqs, delay):
         results = {}
         for f in freqs:
-            cp, g = self.lcr.measure_freq(f, delay)
-            results[f] = (cp, g)
+            cp, g, status = self.lcr.measure_freq(f, delay)
+            results[f] = (cp, g)   # status currently informational only
         return results
 
     def close_instruments(self):
@@ -252,6 +257,7 @@ class Passive_Dielectric_GUI:
         self.root.configure(bg=self.CLR_BG_DARK)
 
         self.is_running = False
+        self.worker_thread = None
         self.logo_image = None
         self.start_time = None
         self.backend = Combined_Passive_Backend()
@@ -546,10 +552,11 @@ class Passive_Dielectric_GUI:
             self.lines_cp = {}
             self.lines_g = {}
             
-            cmap = mpl.colormaps.get_cmap('viridis')
+            cmap = mpl.colormaps['viridis']
             for i, f in enumerate(self.freq_list):
                 self.data_storage[f] = {'cp': [], 'g': []}
-                c = cmap(i / len(self.freq_list))
+                denom = max(len(self.freq_list) - 1, 1)
+                c = cmap(i / denom)
                 self.lines_cp[f], = self.ax_cp.plot([], [], color=c, marker='.', markersize=3, linestyle='-', linewidth=1)
                 self.lines_g[f], = self.ax_g.plot([], [], color=c, marker='.', markersize=3, linestyle='-', linewidth=1)
 
@@ -557,22 +564,52 @@ class Passive_Dielectric_GUI:
             self.is_running = True
             self.start_time = time.time()
             
-            threading.Thread(target=self._measurement_worker, daemon=True).start()
+            self.worker_thread = threading.Thread(target=self._measurement_worker, daemon=True)
+            self.worker_thread.start()
             self.root.after(100, self._process_data_queue)
 
         except Exception as e:
             self.log(f"Startup Error: {e}")
             messagebox.showerror("Error", str(e))
 
-    def stop_measurement(self):
+    def _flush_queue_to_disk(self):
+        """Write any remaining queued measurements to disk before closing files."""
+        while not self.data_queue.empty():
+            try:
+                item = self.data_queue.get_nowait()
+            except queue.Empty:
+                break
+            if not (isinstance(item, tuple) and item and item[0] == 'DATA'):
+                continue
+            _, elapsed, t, results = item
+            for f in self.freq_list:
+                if f not in results:
+                    continue
+                cp, g = results[f]
+                calc_vals = self.calculate_impedance_parameters(f, cp, g)
+                row_str = "\t".join(f"{v:.6E}" for v in ([elapsed, t] + calc_vals))
+                fh = self.file_handles.get(f)
+                if fh and not fh.closed:
+                    fh.write(row_str + "\n")
+                    fh.flush()
+
+    def stop_measurement(self, show_info=True):
         if self.is_running:
             self.is_running = False
             self.log("Stopping Passive Measurement...")
+            # Wait for the worker to finish its current cycle so we don't
+            # tear down VISA mid-transaction (see threading fix below).
+            if self.worker_thread is not None:
+                self.worker_thread.join(timeout=self.backend.params.get('loop_delay', 5) + 20)
+                self.worker_thread = None
+            # Persist anything still queued BEFORE closing files.
+            self._flush_queue_to_disk()
             self.start_btn.config(state='normal')
             self.stop_btn.config(state='disabled')
             self.backend.close_instruments()
             self._close_data_files()
-            messagebox.showinfo("Stopped", "Measurement interrupted and files closed safely.")
+            if show_info:
+                messagebox.showinfo("Stopped", "Measurement interrupted and files closed safely.")
 
     def _measurement_worker(self):
         p = self.backend.params
@@ -609,7 +646,7 @@ class Passive_Dielectric_GUI:
                 
                 if isinstance(item, Exception):
                     self.log(f"RUNTIME ERROR: {item}")
-                    self.stop_measurement()
+                    self.stop_measurement(show_info=False)
                     messagebox.showerror("Runtime Error", str(item))
                 
                 elif isinstance(item, tuple) and item[0] == 'DATA':
@@ -644,8 +681,10 @@ class Passive_Dielectric_GUI:
     def _update_plots(self):
         temps = self.data_storage['temp']
         for f in self.freq_list:
-            self.lines_cp[f].set_data(temps, self.data_storage[f]['cp'])
-            self.lines_g[f].set_data(temps, self.data_storage[f]['g'])
+            cp = [v if v > 0 else np.nan for v in self.data_storage[f]['cp']]
+            g  = [v if v > 0 else np.nan for v in self.data_storage[f]['g']]
+            self.lines_cp[f].set_data(temps, cp)
+            self.lines_g[f].set_data(temps, g)
             
         self.ax_cp.relim()
         self.ax_cp.autoscale_view()
