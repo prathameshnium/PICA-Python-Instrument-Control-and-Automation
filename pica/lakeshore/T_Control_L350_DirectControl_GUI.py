@@ -686,19 +686,52 @@ class DirectControlGUI:
     # -- Left panel (controls) --
 
     def _populate_left_panel(self, panel):
-        panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(99, weight=1)
+        """Create a scrollable left panel containing all control sections."""
+        # Scrollable canvas setup
+        canvas = tk.Canvas(
+            panel,
+            bg=self.CLR_BG_DARK,
+            highlightthickness=0)
+        scrollbar = ttk.Scrollbar(
+            panel, orient='vertical', command=canvas.yview)
+        scroll_frame = ttk.Frame(canvas)
 
-        self._create_info_panel(panel, 0)
-        self._create_connection_panel(panel, 1)
-        self._create_pid_panel(panel, 2)
-        self._create_setpoint_panel(panel, 3)
-        self._create_range_panel(panel, 4)
-        self._create_display_panel(panel, 5)
-        self._create_input_config_panel(panel, 6)
-        self._create_manual_output_panel(panel, 7)
-        self._create_advanced_panel(panel, 8)
-        self._create_console_panel(panel, 99)
+        scroll_frame.bind(
+            '<Configure>',
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox('all')))
+        canvas.create_window((0, 0), window=scroll_frame, anchor='nw')
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+
+        # Enable mousewheel scrolling
+        def _on_mousewheel(event):
+            canvas.yview_scroll(
+                int(-1 * (event.delta / 120)), 'units')
+        canvas.bind_all('<MouseWheel>', _on_mousewheel)
+        canvas.bind(
+            '<Enter>',
+            lambda e: canvas.bind_all('<MouseWheel>', _on_mousewheel))
+        canvas.bind(
+            '<Leave>',
+            lambda e: canvas.unbind_all('<MouseWheel>'))
+
+        # Populate the scrollable frame
+        scroll_frame.grid_columnconfigure(0, weight=1)
+        scroll_frame.grid_rowconfigure(99, weight=1)
+
+        self._create_info_panel(scroll_frame, 0)
+        self._create_connection_panel(scroll_frame, 1)
+        self._create_pid_panel(scroll_frame, 2)
+        self._create_setpoint_panel(scroll_frame, 3)
+        self._create_range_panel(scroll_frame, 4)
+        self._create_display_panel(scroll_frame, 5)
+        self._create_input_config_panel(scroll_frame, 6)
+        self._create_manual_output_panel(scroll_frame, 7)
+        self._create_advanced_panel(scroll_frame, 8)
+        self._create_console_panel(scroll_frame, 99)
 
     def _create_info_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Information')
@@ -1225,7 +1258,8 @@ class DirectControlGUI:
             fg=self.CLR_FG_LIGHT,
             font=self.FONT_CONSOLE,
             wrap='word',
-            borderwidth=0)
+            borderwidth=0,
+            height=8)
         self.console.grid(row=0, column=0, sticky='nsew',
                           padx=5, pady=5)
         self.log("Console initialized. Scan for instruments, "
