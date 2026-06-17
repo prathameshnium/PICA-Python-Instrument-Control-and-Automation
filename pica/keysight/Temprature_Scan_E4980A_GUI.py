@@ -1,12 +1,24 @@
 '''
- PROGRAM:      Integrated L350 & E4980A: Temperature Scan (Cp-G vs T)
- PURPOSE:      Automated temperature sweeps with multi-frequency LCR measurements.
-               Outputs individual data files for each measured frequency.
-               - Includes Critical Fixes for Ramp Logic, Measurement Status, and T-Sync
+PROGRAM:      Integrated L350 & E4980A: Temperature Scan (Cp-G vs T)
+PURPOSE:      Automated temperature sweeps with multi-frequency LCR measurements.
+              Outputs individual data files for each measured frequency.
+VERSION:      2.0 (Cp-G)
+FIXES:        Colormap API, E4980A BUS trigger + FETCH, SCPI sync delays,
+              thread-safe shutdown, np.linspace DC ramp, file handle leaks,
+              Cs'' sign convention, full SCPI command forms
 '''
 
 import tkinter as tk
-from tkinter import ttk, Label, Entry, LabelFrame, filedialog, messagebox, scrolledtext, Canvas
+from tkinter import (
+    ttk,
+    Label,
+    Entry,
+    LabelFrame,
+    filedialog,
+    messagebox,
+    scrolledtext,
+    Canvas,
+)
 import threading
 import queue
 import os
@@ -20,49 +32,13 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import runpy
 from multiprocessing import Process
 
-def run_script_process(script_path):
-    """
-    Wrapper function to execute a script using runpy in its own directory.
-    This becomes the target for the new, isolated process.
-    """
-    try:
-        os.chdir(os.path.dirname(script_path))
-        runpy.run_path(script_path, run_name="__main__")
-    except Exception as e:
-        print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
-        print(e)
-        print("-------------------------")
-
-def launch_plotter_utility():
-    """Finds and launches the plotter utility script in a new process."""
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        plotter_path = os.path.join(script_dir, "..", "utils", "PlotterUtil_GUI.py")
-        if not os.path.exists(plotter_path):
-            messagebox.showerror("File Not Found", f"Plotter utility not found at expected path:\n{plotter_path}")
-            return
-        Process(target=run_script_process, args=(plotter_path,)).start()
-    except Exception as e:
-        messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
-
-def launch_gpib_scanner():
-    """Finds and launches the GPIB scanner utility in a new process."""
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        scanner_path = os.path.join(script_dir, "..", "utils", "GPIB_Instrument_Scanner_GUI.py")
-        if not os.path.exists(scanner_path):
-            messagebox.showerror("File Not Found", f"GPIB Scanner not found at expected path:\n{scanner_path}")
-            return
-        Process(target=run_script_process, args=(scanner_path,)).start()
-    except Exception as e:
-        messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
-
 import matplotlib.gridspec as gridspec
 import matplotlib as mpl
 
 # --- Pillow for Logo Image ---
 try:
     from PIL import Image, ImageTk
+
     PIL_AVAILABLE = True
     try:
         RESAMPLE_FILTER = Image.Resampling.LANCZOS
@@ -74,10 +50,68 @@ except ImportError:
 # --- Packages for Backend ---
 try:
     import pyvisa
+
     PYVISA_AVAILABLE = True
 except ImportError:
     pyvisa = None
     PYVISA_AVAILABLE = False
+
+
+def run_script_process(script_path):
+    """
+    Wrapper function to execute a script using runpy in its
+    own directory. This becomes the target for the new process.
+    """
+    try:
+        os.chdir(os.path.dirname(script_path))
+        runpy.run_path(script_path, run_name="__main__")
+    except Exception as e:
+        print(
+            f"--- Sub-process Error in "
+            f"{os.path.basename(script_path)} ---"
+        )
+        print(e)
+        print("-------------------------")
+
+
+def launch_plotter_utility():
+    """Finds and launches the plotter utility in a new process."""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        plotter_path = os.path.join(
+            script_dir, "..", "utils", "PlotterUtil_GUI.py"
+        )
+        if not os.path.exists(plotter_path):
+            messagebox.showerror(
+                "File Not Found",
+                f"Plotter utility not found at:\n{plotter_path}",
+            )
+            return
+        Process(target=run_script_process, args=(plotter_path,)).start()
+    except Exception as e:
+        messagebox.showerror(
+            "Launch Error", f"Failed to launch Plotter Utility: {e}"
+        )
+
+
+def launch_gpib_scanner():
+    """Finds and launches the GPIB scanner utility in a new process."""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        scanner_path = os.path.join(
+            script_dir, "..", "utils", "GPIB_Instrument_Scanner_GUI.py"
+        )
+        if not os.path.exists(scanner_path):
+            messagebox.showerror(
+                "File Not Found",
+                f"GPIB Scanner not found at:\n{scanner_path}",
+            )
+            return
+        Process(target=run_script_process, args=(scanner_path,)).start()
+    except Exception as e:
+        messagebox.showerror(
+            "Launch Error", f"Failed to launch GPIB Scanner: {e}"
+        )
 
 
 # ===============================================================================
@@ -85,44 +119,76 @@ except ImportError:
 # ===============================================================================
 
 class Lakeshore350_Backend:
+    """
+    LakeShore Model 350 Temperature Controller backend.
+
+    Heater range codes (Output 1, 25Ω setting, 75W max):
+      0=Off, 1=7.5mW, 2=75mW, 3=750mW, 4=7.5W, 5=75W
+    (decade steps in power)
+
+    References:
+      - LakeShore 350 datasheet:
+        https://www.lakeshore.com/docs/default-source/product-downloads/lstc_350_l.pdf
+    """
+
     def __init__(self, rm, visa_address):
         self.instrument = rm.open_resource(visa_address)
         self.instrument.timeout = 10000
-        self.instrument.read_termination = '\r\n'
-        self.instrument.write_termination = '\r\n'
-        print(f"Lakeshore Connected: {self.instrument.query('*IDN?').strip()}")
+        self.instrument.read_termination = "\r\n"
+        self.instrument.write_termination = "\r\n"
+        print(
+            f"Lakeshore Connected: "
+            f"{self.instrument.query('*IDN?').strip()}"
+        )
+
+    def _write_and_sync(self, command, delay=0.5):
+        """Write a command and wait for a fixed settling delay."""
+        self.instrument.write(command)
+        time.sleep(delay)
 
     def reset_and_clear(self):
-        self.instrument.write('*RST')
+        self.instrument.write("*RST")
+        self.instrument.query("*OPC?")  # Block until reset completes
         time.sleep(0.5)
-        self.instrument.write('*CLS')
-        time.sleep(1)
+        self.instrument.write("*CLS")
+        time.sleep(0.5)
 
     def setup_heater(self, output, resistance_code, max_current_code):
-        # Setup: Output 1, 25 Ohm (code 1), 1 A (code 2) = ~25 W max.
-        self.instrument.write(f'HTRSET {output},{resistance_code},{max_current_code},0,1')
-        time.sleep(0.5)
+        # Output 1, 25 Ohm (code 1), max current code 2 = 75 W max
+        self._write_and_sync(
+            f"HTRSET {output},{resistance_code},"
+            f"{max_current_code},0,1"
+        )
 
     def setup_ramp(self, output, rate_k_per_min, ramp_on=True):
-        self.instrument.write(f'RAMP {output},{1 if ramp_on else 0},{rate_k_per_min}')
-        time.sleep(0.5)
+        self._write_and_sync(
+            f"RAMP {output},{1 if ramp_on else 0},{rate_k_per_min}"
+        )
 
     def set_setpoint(self, output, temperature_k):
-        self.instrument.write(f'SETP {output},{temperature_k}')
+        self._write_and_sync(f"SETP {output},{temperature_k}")
 
     def set_heater_range(self, output, heater_range):
-        # Documented Mapping: 0=Off, 1=Low, 2=Medium, 3=High. 5=Max (75W on 350)
-        range_map = {'off': 0, 'low': 1, 'medium': 2, 'high': 3, 'max': 5}
+        # 0=Off, 1-5 = decade power steps (Range 5 = full 75 W at 25Ω)
+        range_map = {
+            "off": 0,
+            "low": 1,
+            "medium": 2,
+            "high": 3,
+            "max": 5,
+        }
         range_code = range_map.get(heater_range.lower(), 0)
-        self.instrument.write(f'RANGE {output},{range_code}')
+        self._write_and_sync(f"RANGE {output},{range_code}")
 
     def get_temperature(self, sensor):
-        return float(self.instrument.query(f'KRDG? {sensor}').strip())
+        return float(
+            self.instrument.query(f"KRDG? {sensor}").strip()
+        )
 
     def close(self):
         if self.instrument:
             try:
-                self.set_heater_range(1, 'off')
+                self.set_heater_range(1, "off")
                 time.sleep(0.5)
                 self.instrument.close()
             except Exception as e:
@@ -132,67 +198,144 @@ class Lakeshore350_Backend:
 
 
 class KeysightE4980A_Backend:
+    """
+    Keysight E4980A Precision LCR Meter backend.
+
+    Trigger model (FIXED in v2.0):
+      - :TRIG:SOUR BUS  → trigger from GPIB bus
+      - :INIT:CONT OFF  → wait for explicit *TRG (no auto-trigger)
+      - *TRG            → fire one measurement
+      - :FETCH?         → retrieve result from reading memory
+
+    References:
+      - PyMeasure E4980 driver:
+        https://pymeasure.readthedocs.io/en/latest/api/instruments/agilent/agilentE4980.html
+      - QCoDeS E4980A driver:
+        http://microsoft.github.io/Qcodes/_modules/qcodes/instrument_drivers/Keysight/keysight_e4980a.html
+      - E4980A datasheet:
+        https://www.cmc.ca/wp-content/uploads/2019/07/Keysight-E4980A-Datasheet.pdf
+    """
+
     def __init__(self, rm, visa_address):
         self.instrument = rm.open_resource(visa_address)
-        self.instrument.timeout = 15000 
-        self.instrument.read_termination = '\n'
-        self.instrument.write_termination = '\n'
-        self.has_opt001 = '001' in self.instrument.query('*OPT?')
-        print(f"E4980A Connected: {self.instrument.query('*IDN?').strip()}")
+        self.instrument.timeout = 15000
+        self.instrument.read_termination = "\n"
+        self.instrument.write_termination = "\n"
+        self.has_opt001 = "001" in self.instrument.query("*OPT?")
+        print(
+            f"E4980A Connected: "
+            f"{self.instrument.query('*IDN?').strip()}"
+        )
+
+    def _write_and_sync(self, command, delay=0.5):
+        """
+        Write a SCPI command and wait a fixed settling delay so the
+        instrument can process it and move past transients.
+        """
+        self.instrument.write(command)
+        time.sleep(delay)
 
     def safe_ramp_dc_bias(self, target_v, step=0.5, dwell=0.1):
-        current_v = float(self.instrument.query(':BIAS:VOLT?'))
+        """Ramp DC bias from current to target using np.linspace."""
+        current_v = float(self.instrument.query(":BIAS:VOLT:LEV?"))
         if abs(target_v - current_v) < 0.01:
             return
-        direction = 1 if target_v > current_v else -1
-        ramp_points = np.arange(current_v, target_v, direction * step)
-        
-        # Deduplicate to prevent an almost identical final point
-        final_points = []
-        for p in ramp_points:
-            if not final_points or abs(final_points[-1] - p) > 0.001:
-                final_points.append(p)
-        if not final_points or abs(final_points[-1] - target_v) > 0.001:
-            final_points.append(target_v)
 
-        for v in final_points:
-            self.instrument.write(f':BIAS:VOLT {v:.3f}')
+        n_steps = int(np.ceil(abs(target_v - current_v) / step))
+        if n_steps == 0:
+            n_steps = 1
+        ramp_points = np.linspace(
+            current_v, target_v, n_steps + 1
+        )
+
+        for v in ramp_points:
+            self.instrument.write(f":BIAS:VOLT:LEV {v:.3f}")
             time.sleep(dwell)
 
-    def setup_measurement(self, ac_bias, dc_bias, aper, alc_on, corr_on):
-        self.instrument.write('*RST; *CLS')                
-        self.instrument.write(':FORM ASC')          # FIX: ensure ASCII data output
-        self.instrument.write(':DISP:PAGE BLAN')    # FIX: Blank display for faster acquisition
-        self.instrument.write(':FUNC:IMP CPG')
-        self.instrument.write(f":APER {aper}")        
-        self.instrument.write(':FUNC:IMP:RANG:AUTO ON')    
-        
-        self.instrument.write(':AMPL:ALC ON' if alc_on else ':AMPL:ALC OFF')
-        self.instrument.write(':CORR:OPEN:STAT ON' if corr_on else ':CORR:OPEN:STAT OFF')
-        self.instrument.write(':CORR:SHOR:STAT ON' if corr_on else ':CORR:SHOR:STAT OFF')
+    def setup_measurement(
+        self, ac_bias, dc_bias, aper, alc_on, corr_on
+    ):
+        """
+        Configure the E4980A for Cp-G measurement with BUS trigger.
 
-        self.instrument.write(f":VOLT {ac_bias}")
-        self.instrument.write(':TRIG:SOUR BUS')            
-        self.instrument.write(':INIT:CONT ON')             
-        
-        self.instrument.write(':BIAS:VOLT 0')               
-        self.instrument.write(':BIAS:STAT ON')
+        Command order follows the legacy configuration:
+        Function → Level → Range → Meas Time → ALC → Corr → Trigger → Bias
+        """
+        # --- Reset and clear ---
+        self.instrument.write("*RST")
+        self.instrument.query("*OPC?")  # Block until reset done
+        time.sleep(0.5)
+        self.instrument.write("*CLS")
+        time.sleep(0.5)
+
+        # --- Data format and display ---
+        self._write_and_sync(":FORM ASC")
+        self._write_and_sync(":DISP:PAGE BLAN")
+
+        # --- Measurement function: Cp-G (parallel C, parallel G) ---
+        self._write_and_sync(":FUNC:IMP CPG")
+
+        # --- Aperture (integration time) ---
+        self._write_and_sync(f":APER {aper}")
+
+        # --- Auto impedance range ---
+        self._write_and_sync(":FUNC:IMP:RANG:AUTO ON")
+
+        # --- ALC (Auto Level Control) ---
+        if alc_on:
+            self._write_and_sync(":AMPL:ALC ON")
+        else:
+            self._write_and_sync(":AMPL:ALC OFF")
+
+        # --- Open/Short correction ---
+        corr_state = "ON" if corr_on else "OFF"
+        self._write_and_sync(f":CORR:OPEN:STAT {corr_state}")
+        self._write_and_sync(f":CORR:SHOR:STAT {corr_state}")
+
+        # --- AC test signal voltage ---
+        self._write_and_sync(f":VOLT:LEV {ac_bias}")
+
+        # --- Trigger: BUS source, no continuous init ---
+        # FIX: INIT:CONT OFF (was ON, which conflicted with BUS trigger
+        #   and caused dashes — instrument auto-triggered and ignored
+        #   *TRG)
+        self._write_and_sync(":TRIG:SOUR BUS")
+        self._write_and_sync(":INIT:CONT OFF")
+
+        # --- DC bias setup ---
+        self._write_and_sync(":BIAS:VOLT:LEV 0")
+        self._write_and_sync(":BIAS:STAT ON")
         self.safe_ramp_dc_bias(dc_bias)
 
     def measure_freq(self, freq, delay):
-        self.instrument.write(f':FREQ {freq}')
+        """
+        Measure Cp and G at the given frequency.
+
+        FIX: Uses *TRG (write) to trigger, then :FETCH? (query) to
+        retrieve the result. Previously used query_ascii_values('*TRG')
+        which treated *TRG as a query — this either returned stale data
+        or caused timeouts, resulting in dashes on the display.
+        """
+        self.instrument.write(f":FREQ {freq}")
         time.sleep(delay)
-        vals = self.instrument.query_ascii_values('*TRG')
+        # Trigger one measurement via bus trigger
+        self.instrument.write("*TRG")
+        # Retrieve the result from reading memory
+        vals = self.instrument.query_ascii_values(":FETCH?")
+        if len(vals) < 2:
+            raise ValueError(
+                f"Unexpected data from :FETCH?: {vals}"
+            )
         cp, g = vals[0], vals[1]
-        status = int(vals[2]) if len(vals) > 2 else 0  # FIX: Extracted status flag
+        status = int(vals[2]) if len(vals) > 2 else 0
         return cp, g, status
 
     def close(self):
         if self.instrument:
             try:
                 self.safe_ramp_dc_bias(0.0)
-                self.instrument.write(':BIAS:STAT OFF')
-                self.instrument.write(':DISP:PAGE MEAS')
+                self.instrument.write(":BIAS:STAT OFF")
+                self.instrument.write(":DISP:PAGE MEAS")
                 self.instrument.close()
             except Exception as e:
                 print(f"Warning during E4980A shutdown: {e}")
@@ -202,50 +345,62 @@ class KeysightE4980A_Backend:
 
 class Combined_Backend:
     """Manages both the Lakeshore 350 and Keysight E4980A."""
+
     def __init__(self):
         self.lakeshore = None
         self.lcr = None
         self.params = {}
-        self.rm = pyvisa.ResourceManager() if PYVISA_AVAILABLE else None
+        self.rm = (
+            pyvisa.ResourceManager() if PYVISA_AVAILABLE else None
+        )
 
     def initialize_instruments(self, parameters):
         self.params = parameters
         if not self.rm:
-            raise ConnectionError("VISA Resource Manager unavailable.")
+            raise ConnectionError(
+                "VISA Resource Manager unavailable."
+            )
 
         print("\n--- [Backend] Initializing Instruments ---")
-        self.lakeshore = Lakeshore350_Backend(self.rm, self.params['lakeshore_visa'])
+        self.lakeshore = Lakeshore350_Backend(
+            self.rm, self.params["lakeshore_visa"]
+        )
         self.lakeshore.reset_and_clear()
         self.lakeshore.setup_heater(1, 1, 2)
 
-        self.lcr = KeysightE4980A_Backend(self.rm, self.params['lcr_visa'])
+        self.lcr = KeysightE4980A_Backend(
+            self.rm, self.params["lcr_visa"]
+        )
         self.lcr.setup_measurement(
-            self.params['ac_bias'],
-            self.params['dc_bias'],
-            self.params['aper'],
-            self.params['alc_enabled'],
-            self.params['corr_enabled']
+            self.params["ac_bias"],
+            self.params["dc_bias"],
+            self.params["aper"],
+            self.params["alc_enabled"],
+            self.params["corr_enabled"],
         )
 
     def get_temperature(self):
-        return self.lakeshore.get_temperature('A')
+        return self.lakeshore.get_temperature("A")
 
     def measure_lcr_array(self, freqs, delay):
+        """Measure Cp-G at each frequency, reading T per-point."""
         results = {}
         for f in freqs:
-            t_point = self.get_temperature()  # FIX: T at exact frequency
+            t_point = self.get_temperature()
             cp, g, status = self.lcr.measure_freq(f, delay)
             results[f] = (t_point, cp, g, status)
         return results
 
     def close_instruments(self):
-        print("\n--- [Backend] Closing all instrument connections. ---")
+        print(
+            "\n--- [Backend] Closing all instrument connections. ---"
+        )
         if self.lcr:
             self.lcr.close()
-            print("  E4980A connection closed and bias 0V.")
+            print("  E4980A closed, bias → 0 V.")
         if self.lakeshore:
             self.lakeshore.close()
-            print("  Lakeshore connection closed and heater OFF.")
+            print("  Lakeshore closed, heater OFF.")
 
 
 # ===============================================================================
@@ -253,37 +408,47 @@ class Combined_Backend:
 # ===============================================================================
 
 class Temperature_Scan_GUI:
-    PROGRAM_VERSION = "1.0 (Cp-G)"
+    PROGRAM_VERSION = "2.0 (Cp-G)"
     LOGO_SIZE = 110
-    
+
     try:
-        # Robust path finding for assets
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-        LOGO_FILE_PATH = os.path.join(SCRIPT_DIR, "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+        LOGO_FILE_PATH = os.path.join(
+            SCRIPT_DIR,
+            "..",
+            "assets",
+            "LOGO",
+            "UGC_DAE_CSR_NBG.jpeg",
+        )
     except NameError:
         LOGO_FILE_PATH = "../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
 
     # Standard UI Colors
-    CLR_BG_DARK = '#B8A392'
-    CLR_HEADER = '#E5DCD3'
-    CLR_FG_LIGHT = '#2C2825'
-    CLR_TEXT_DARK = '#1A1A1A'
-    CLR_ACCENT_GOLD = '#BA6B5E'
-    CLR_ACCENT_GREEN = '#B68B6E'
-    CLR_ACCENT_RED = '#BA6B5E'
-    CLR_CONSOLE_BG = '#E5DCD3'
-    CLR_GRAPH_BG = '#F4EFEA'
+    CLR_BG_DARK = "#B8A392"
+    CLR_HEADER = "#E5DCD3"
+    CLR_FG_LIGHT = "#2C2825"
+    CLR_TEXT_DARK = "#1A1A1A"
+    CLR_ACCENT_GOLD = "#BA6B5E"
+    CLR_ACCENT_GREEN = "#B68B6E"
+    CLR_ACCENT_RED = "#BA6B5E"
+    CLR_CONSOLE_BG = "#E5DCD3"
+    CLR_GRAPH_BG = "#F4EFEA"
     FONT_SIZE_BASE = 10
-    FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
-    FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
-    FONT_CONSOLE = ('Consolas', 9)
+    FONT_BASE = ("Segoe UI", FONT_SIZE_BASE)
+    FONT_TITLE = ("Segoe UI", FONT_SIZE_BASE + 2, "bold")
+    FONT_CONSOLE = ("Consolas", 9)
 
-    # Impedance Data Headers matching prompt
-    DATA_HEADER = "Temperature\tQ\tD\tG(1/Rp)\tB\tCp\tLp\tCs\tLs\tlZl\ttheta\tchi\tR(Rs)\ttheta(deg.)\tRp\t1/lZl\tOmega\tCp''\tCs''"
+    DATA_HEADER = (
+        "Temperature\tQ\tD\tG(1/Rp)\tB\tCp\tLp\tCs\tLs\t"
+        "lZl\ttheta\tchi\tR(Rs)\ttheta(deg.)\tRp\t"
+        "1/lZl\tOmega\tCp''\tCs''"
+    )
 
     def __init__(self, root):
         self.root = root
-        self.root.title("Integrated L350 & E4980A: Temperature Scan (Cp-G)")
+        self.root.title(
+            "Integrated L350 & E4980A: Temperature Scan (Cp-G)"
+        )
         self.root.geometry("1600x950")
         self.root.configure(bg=self.CLR_BG_DARK)
 
@@ -291,17 +456,20 @@ class Temperature_Scan_GUI:
         self.is_stabilizing = False
         self.start_time = None
         self.backend = Combined_Backend()
-        
+
         self.save_directory = ""
         self.run_folder = ""
         self.file_handles = {}
-        
+
         self.logo_image = None
         self.freq_list = []
-        self.data_storage = { 'temp': [] }  # will hold { 'temp': [], f1_cp: [], f1_g: [], ... }
-        
+        self.data_storage = {"temp": []}
+
         self.data_queue = queue.Queue()
         self.measurement_thread = None
+        # FIX: Thread-safe shutdown via Event instead of direct
+        #   close_instruments() call from GUI thread
+        self.stop_event = threading.Event()
 
         self.setup_styles()
         self.create_widgets()
@@ -309,53 +477,131 @@ class Temperature_Scan_GUI:
 
     def setup_styles(self):
         style = ttk.Style(self.root)
-        style.theme_use('clam')
-        style.configure('TFrame', background=self.CLR_BG_DARK)
-        style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
-        style.configure('TLabelframe', background=self.CLR_BG_DARK, bordercolor=self.CLR_HEADER)
-        style.configure('TLabelframe.Label', background=self.CLR_BG_DARK, foreground=self.CLR_ACCENT_GOLD, font=self.FONT_TITLE)
-        style.configure('TCheckbutton', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
-
-        style.configure('TButton', font=self.FONT_BASE, padding=5, foreground=self.CLR_ACCENT_GOLD, background=self.CLR_HEADER)
-        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_TEXT_DARK)
-        style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG_LIGHT)
+        style.theme_use("clam")
+        style.configure(
+            "TFrame", background=self.CLR_BG_DARK
+        )
+        style.configure(
+            "TLabel",
+            background=self.CLR_BG_DARK,
+            foreground=self.CLR_FG_LIGHT,
+            font=self.FONT_BASE,
+        )
+        style.configure(
+            "TLabelframe",
+            background=self.CLR_BG_DARK,
+            bordercolor=self.CLR_HEADER,
+        )
+        style.configure(
+            "TLabelframe.Label",
+            background=self.CLR_BG_DARK,
+            foreground=self.CLR_ACCENT_GOLD,
+            font=self.FONT_TITLE,
+        )
+        style.configure(
+            "TCheckbutton",
+            background=self.CLR_BG_DARK,
+            foreground=self.CLR_FG_LIGHT,
+            font=self.FONT_BASE,
+        )
+        style.configure(
+            "TButton",
+            font=self.FONT_BASE,
+            padding=5,
+            foreground=self.CLR_ACCENT_GOLD,
+            background=self.CLR_HEADER,
+        )
+        style.configure(
+            "Start.TButton",
+            background=self.CLR_ACCENT_GREEN,
+            foreground=self.CLR_TEXT_DARK,
+        )
+        style.configure(
+            "Stop.TButton",
+            background=self.CLR_ACCENT_RED,
+            foreground=self.CLR_FG_LIGHT,
+        )
 
     def create_widgets(self):
         # Header
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
-        header_frame.pack(side='top', fill='x')
-        Label(header_frame, text="Temperature-Dependent Frequency Scan (Cp-G)", bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD, font=('Segoe UI', 14, 'bold', 'italic')).pack(side='left', padx=20, pady=10)
+        header_frame.pack(side="top", fill="x")
+        Label(
+            header_frame,
+            text="Temperature-Dependent Frequency Scan (Cp-G)",
+            bg=self.CLR_HEADER,
+            fg=self.CLR_ACCENT_GOLD,
+            font=("Segoe UI", 14, "bold", "italic"),
+        ).pack(side="left", padx=20, pady=10)
 
-        # --- Utility Launch Buttons ---
-        ttk.Button(header_frame, text="📈", command=launch_plotter_utility, width=3).pack(side='right', padx=10, pady=5)
-        ttk.Button(header_frame, text="📟", command=launch_gpib_scanner, width=3).pack(side='right', padx=(0, 5), pady=5)
+        ttk.Button(
+            header_frame,
+            text="📈",
+            command=launch_plotter_utility,
+            width=3,
+        ).pack(side="right", padx=10, pady=5)
+        ttk.Button(
+            header_frame,
+            text="📟",
+            command=launch_gpib_scanner,
+            width=3,
+        ).pack(side="right", padx=(0, 5), pady=5)
 
-        main_pane = ttk.PanedWindow(self.root, orient='horizontal')
-        main_pane.pack(fill='both', expand=True, padx=10, pady=10)
+        main_pane = ttk.PanedWindow(self.root, orient="horizontal")
+        main_pane.pack(fill="both", expand=True, padx=10, pady=10)
 
         # Left Panel (Controls + Console)
         left_panel = ttk.Frame(main_pane, width=450)
         main_pane.add(left_panel, weight=0)
-        
-        canvas = Canvas(left_panel, bg=self.CLR_BG_DARK, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(left_panel, orient="vertical", command=canvas.yview)
+
+        canvas = Canvas(
+            left_panel,
+            bg=self.CLR_BG_DARK,
+            highlightthickness=0,
+        )
+        scrollbar = ttk.Scrollbar(
+            left_panel, orient="vertical", command=canvas.yview
+        )
         scrollable_frame = ttk.Frame(canvas)
-        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=430)
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            ),
+        )
+        canvas.create_window(
+            (0, 0), window=scrollable_frame, anchor="nw", width=430
+        )
         canvas.configure(yscrollcommand=scrollbar.set)
-        
+
         canvas.pack(side="top", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
         info_frame = self.create_info_frame(scrollable_frame)
-        info_frame.pack(fill='x', expand=True, padx=10, pady=5)
+        info_frame.pack(fill="x", expand=True, padx=10, pady=5)
 
         self.create_input_frame(scrollable_frame)
-        
-        console_frame = LabelFrame(left_panel, text='Console', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        console_frame.pack(side="bottom", fill="both", expand=False, pady=5)
-        self.console_widget = scrolledtext.ScrolledText(console_frame, state='disabled', bg=self.CLR_CONSOLE_BG, font=self.FONT_CONSOLE, height=8)
-        self.console_widget.pack(fill='both', expand=True, padx=5, pady=5)
+
+        console_frame = LabelFrame(
+            left_panel,
+            text="Console",
+            bg=self.CLR_BG_DARK,
+            fg=self.CLR_FG_LIGHT,
+            font=self.FONT_TITLE,
+        )
+        console_frame.pack(
+            side="bottom", fill="both", expand=False, pady=5
+        )
+        self.console_widget = scrolledtext.ScrolledText(
+            console_frame,
+            state="disabled",
+            bg=self.CLR_CONSOLE_BG,
+            font=self.FONT_CONSOLE,
+            height=8,
+        )
+        self.console_widget.pack(
+            fill="both", expand=True, padx=5, pady=5
+        )
 
         # Right Panel (Graphs)
         right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
@@ -363,122 +609,249 @@ class Temperature_Scan_GUI:
         self.create_graph_frame(right_panel)
 
     def create_info_frame(self, parent):
-        frame = ttk.LabelFrame(parent, text='Information')
+        frame = ttk.LabelFrame(parent, text="Information")
         frame.grid_columnconfigure(1, weight=1)
 
-        logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
-        logo_canvas.grid(row=0, column=0, rowspan=3, padx=(15, 10), pady=10)
+        logo_canvas = Canvas(
+            frame,
+            width=self.LOGO_SIZE,
+            height=self.LOGO_SIZE,
+            bg=self.CLR_BG_DARK,
+            highlightthickness=0,
+        )
+        logo_canvas.grid(
+            row=0, column=0, rowspan=3, padx=(15, 10), pady=10
+        )
 
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
             try:
-                img = Image.open(self.LOGO_FILE_PATH).resize((self.LOGO_SIZE, self.LOGO_SIZE), RESAMPLE_FILTER)
+                img = Image.open(self.LOGO_FILE_PATH).resize(
+                    (self.LOGO_SIZE, self.LOGO_SIZE),
+                    RESAMPLE_FILTER,
+                )
                 self.logo_image = ImageTk.PhotoImage(img)
-                logo_canvas.create_image(self.LOGO_SIZE / 2, self.LOGO_SIZE / 2, image=self.logo_image)
+                logo_canvas.create_image(
+                    self.LOGO_SIZE / 2,
+                    self.LOGO_SIZE / 2,
+                    image=self.logo_image,
+                )
             except Exception:
                 pass
 
-        institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold')
-        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10, 0), sticky='sw')
-        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
+        institute_font = (
+            "Segoe UI",
+            self.FONT_SIZE_BASE + 2,
+            "bold",
+        )
+        ttk.Label(
+            frame,
+            text="UGC-DAE Consortium for Scientific Research",
+            font=institute_font,
+            background=self.CLR_BG_DARK,
+        ).grid(
+            row=0, column=1, padx=10, pady=(10, 0), sticky="sw"
+        )
+        ttk.Label(
+            frame,
+            text="Mumbai Centre",
+            font=institute_font,
+            background=self.CLR_BG_DARK,
+        ).grid(row=1, column=1, padx=10, sticky="nw")
 
         return frame
 
     def create_input_frame(self, parent):
-        f_temp = LabelFrame(parent, text='Temperature & Instrument Parameters', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        f_temp.pack(fill='x', pady=5, padx=5)
-        
+        f_temp = LabelFrame(
+            parent,
+            text="Temperature & Instrument Parameters",
+            bg=self.CLR_BG_DARK,
+            fg=self.CLR_FG_LIGHT,
+            font=self.FONT_TITLE,
+        )
+        f_temp.pack(fill="x", pady=5, padx=5)
+
         self.entries = {}
-        def add_entry(frame, label, key, r, c, default=""):
-            Label(frame, text=f"{label}:").grid(row=r, column=c, padx=5, pady=2, sticky='w')
+
+        def add_entry(
+            frame, label, key, r, c, default=""
+        ):
+            Label(frame, text=f"{label}:").grid(
+                row=r, column=c, padx=5, pady=2, sticky="w"
+            )
             e = Entry(frame, font=self.FONT_BASE, width=16)
-            e.grid(row=r+1, column=c, padx=5, pady=(0,5), sticky='w')
+            e.grid(
+                row=r + 1,
+                column=c,
+                padx=5,
+                pady=(0, 5),
+                sticky="w",
+            )
             e.insert(0, default)
             self.entries[key] = e
 
-        add_entry(f_temp, "Sample Name", 'sample', 0, 0, "Sample_01")
-        add_entry(f_temp, "Delay/freq (s)", 'delay', 0, 1, "0.2")
-        
-        add_entry(f_temp, "Start Temp (K)", 't_start', 2, 0, "300")
-        add_entry(f_temp, "End Temp (K)", 't_end', 2, 1, "350")
-        
-        add_entry(f_temp, "Ramp Rate (K/min)", 'rate', 4, 0, "2.0")
-        add_entry(f_temp, "Safety Cutoff (K)", 'cutoff', 4, 1, "380")
-        
-        add_entry(f_temp, "AC Bias (V)", 'ac_bias', 6, 0, "1.0")
-        add_entry(f_temp, "DC Bias (V)", 'dc_bias', 6, 1, "0.0")
+        add_entry(f_temp, "Sample Name", "sample", 0, 0, "Sample_01")
+        add_entry(f_temp, "Delay/freq (s)", "delay", 0, 1, "0.2")
+        add_entry(f_temp, "Start Temp (K)", "t_start", 2, 0, "300")
+        add_entry(f_temp, "End Temp (K)", "t_end", 2, 1, "350")
+        add_entry(f_temp, "Ramp Rate (K/min)", "rate", 4, 0, "2.0")
+        add_entry(f_temp, "Safety Cutoff (K)", "cutoff", 4, 1, "380")
+        add_entry(f_temp, "AC Bias (V)", "ac_bias", 6, 0, "1.0")
+        add_entry(f_temp, "DC Bias (V)", "dc_bias", 6, 1, "0.0")
 
-        Label(f_temp, text="Aperture:").grid(row=8, column=0, padx=5, sticky='w')
-        self.aper_cb = ttk.Combobox(f_temp, values=['SHOR', 'MED', 'LONG'], state='readonly', width=14)
-        self.aper_cb.set('MED')
-        self.aper_cb.grid(row=9, column=0, padx=5, pady=(0,5), sticky='w')
+        Label(f_temp, text="Aperture:").grid(
+            row=8, column=0, padx=5, sticky="w"
+        )
+        self.aper_cb = ttk.Combobox(
+            f_temp,
+            values=["SHOR", "MED", "LONG"],
+            state="readonly",
+            width=14,
+        )
+        self.aper_cb.set("MED")
+        self.aper_cb.grid(
+            row=9, column=0, padx=5, pady=(0, 5), sticky="w"
+        )
 
         self.var_alc = tk.BooleanVar(value=True)
         self.var_corr = tk.BooleanVar(value=False)
-        ttk.Checkbutton(f_temp, text="ALC ON", variable=self.var_alc).grid(row=8, column=1, sticky='w')
-        ttk.Checkbutton(f_temp, text="Open/Short Corr", variable=self.var_corr).grid(row=9, column=1, sticky='w')
+        ttk.Checkbutton(
+            f_temp, text="ALC ON", variable=self.var_alc
+        ).grid(row=8, column=1, sticky="w")
+        ttk.Checkbutton(
+            f_temp, text="Open/Short Corr", variable=self.var_corr
+        ).grid(row=9, column=1, sticky="w")
 
-        f_freq = LabelFrame(parent, text='Frequency Selection (Hz)', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        f_freq.pack(fill='x', pady=5, padx=5)
+        f_freq = LabelFrame(
+            parent,
+            text="Frequency Selection (Hz)",
+            bg=self.CLR_BG_DARK,
+            fg=self.CLR_FG_LIGHT,
+            font=self.FONT_TITLE,
+        )
+        f_freq.pack(fill="x", pady=5, padx=5)
 
-        Label(f_freq, text="Comma-separated Frequencies:").pack(anchor='w', padx=5)
-        self.freq_text = scrolledtext.ScrolledText(f_freq, height=4, width=40, font=self.FONT_BASE)
-        self.freq_text.pack(padx=5, pady=5, fill='x')
-        default_freqs = "1000, 2000, 3000, 5000, 7000, 10000, 25000, 50000, 70000, 90000, 100000, 120000, 150000, 170000, 200000, 250000, 500000, 1000000, 1500000, 2000000"
-        self.freq_text.insert('end', default_freqs)
-        self.freq_text.bind('<KeyRelease>', self._update_freq_count)
+        Label(f_freq, text="Comma-separated Frequencies:").pack(
+            anchor="w", padx=5
+        )
+        self.freq_text = scrolledtext.ScrolledText(
+            f_freq, height=4, width=40, font=self.FONT_BASE
+        )
+        self.freq_text.pack(padx=5, pady=5, fill="x")
+        default_freqs = (
+            "1000, 2000, 3000, 5000, 7000, 10000, 25000, "
+            "50000, 70000, 90000, 100000, 120000, 150000, "
+            "170000, 200000, 250000, 500000, 1000000, "
+            "1500000, 2000000"
+        )
+        self.freq_text.insert("end", default_freqs)
+        self.freq_text.bind(
+            "<KeyRelease>", self._update_freq_count
+        )
 
         frame_count = tk.Frame(f_freq, bg=self.CLR_BG_DARK)
-        frame_count.pack(fill='x', padx=5, pady=2)
-        Label(frame_count, text="Total Frequencies:").pack(side='left')
-        self.lbl_fcount = Label(frame_count, text="20", fg=self.CLR_ACCENT_GOLD, font=self.FONT_TITLE)
-        self.lbl_fcount.pack(side='left', padx=5)
+        frame_count.pack(fill="x", padx=5, pady=2)
+        Label(frame_count, text="Total Frequencies:").pack(
+            side="left"
+        )
+        self.lbl_fcount = Label(
+            frame_count,
+            text="20",
+            fg=self.CLR_ACCENT_GOLD,
+            font=self.FONT_TITLE,
+        )
+        self.lbl_fcount.pack(side="left", padx=5)
 
-        f_hw = LabelFrame(parent, text='Hardware & Execution', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        f_hw.pack(fill='x', pady=5, padx=5)
-        
-        Label(f_hw, text="Lakeshore VISA:").grid(row=0, column=0, sticky='w', padx=5)
-        self.ls_visa = ttk.Combobox(f_hw, state='readonly', width=18)
-        self.ls_visa.grid(row=1, column=0, padx=5, pady=(0,5))
-        
-        Label(f_hw, text="E4980A VISA:").grid(row=0, column=1, sticky='w', padx=5)
-        self.lcr_visa = ttk.Combobox(f_hw, state='readonly', width=18)
-        self.lcr_visa.grid(row=1, column=1, padx=5, pady=(0,5))
+        f_hw = LabelFrame(
+            parent,
+            text="Hardware & Execution",
+            bg=self.CLR_BG_DARK,
+            fg=self.CLR_FG_LIGHT,
+            font=self.FONT_TITLE,
+        )
+        f_hw.pack(fill="x", pady=5, padx=5)
 
-        ttk.Button(f_hw, text="Scan Instruments", command=self._scan_visa).grid(row=2, column=0, columnspan=2, sticky='ew', padx=5, pady=5)
-        ttk.Button(f_hw, text="Browse Save Folder", command=self._browse_dir).grid(row=3, column=0, columnspan=2, sticky='ew', padx=5, pady=5)
+        Label(f_hw, text="Lakeshore VISA:").grid(
+            row=0, column=0, sticky="w", padx=5
+        )
+        self.ls_visa = ttk.Combobox(
+            f_hw, state="readonly", width=18
+        )
+        self.ls_visa.grid(row=1, column=0, padx=5, pady=(0, 5))
 
-        self.start_btn = ttk.Button(f_hw, text="Start Measurement", command=self.start_measurement, style='Start.TButton')
-        self.start_btn.grid(row=4, column=0, padx=5, pady=10, sticky='ew')
-        self.stop_btn = ttk.Button(f_hw, text="Stop", command=self.stop_measurement, style='Stop.TButton', state='disabled')
-        self.stop_btn.grid(row=4, column=1, padx=5, pady=10, sticky='ew')
+        Label(f_hw, text="E4980A VISA:").grid(
+            row=0, column=1, sticky="w", padx=5
+        )
+        self.lcr_visa = ttk.Combobox(
+            f_hw, state="readonly", width=18
+        )
+        self.lcr_visa.grid(row=1, column=1, padx=5, pady=(0, 5))
+
+        ttk.Button(
+            f_hw,
+            text="Scan Instruments",
+            command=self._scan_visa,
+        ).grid(
+            row=2, column=0, columnspan=2, sticky="ew", padx=5, pady=5
+        )
+        ttk.Button(
+            f_hw,
+            text="Browse Save Folder",
+            command=self._browse_dir,
+        ).grid(
+            row=3, column=0, columnspan=2, sticky="ew", padx=5, pady=5
+        )
+
+        self.start_btn = ttk.Button(
+            f_hw,
+            text="Start Measurement",
+            command=self.start_measurement,
+            style="Start.TButton",
+        )
+        self.start_btn.grid(
+            row=4, column=0, padx=5, pady=10, sticky="ew"
+        )
+        self.stop_btn = ttk.Button(
+            f_hw,
+            text="Stop",
+            command=self.stop_measurement,
+            style="Stop.TButton",
+            state="disabled",
+        )
+        self.stop_btn.grid(
+            row=4, column=1, padx=5, pady=10, sticky="ew"
+        )
 
     def create_graph_frame(self, parent):
-        self.figure = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG, layout='tight')
-        
+        self.figure = Figure(
+            dpi=100, facecolor=self.CLR_GRAPH_BG, layout="tight"
+        )
+
         self.ax_cp = self.figure.add_subplot(2, 1, 1)
         self.ax_cp.set_ylabel("Capacitance, Cp (F)")
-        self.ax_cp.set_title("Cp vs. Temperature", fontweight='bold')
-        self.ax_cp.set_yscale('log')
-        self.ax_cp.grid(True, linestyle='--', alpha=0.6)
+        self.ax_cp.set_title("Cp vs. Temperature", fontweight="bold")
+        self.ax_cp.set_yscale("log")
+        self.ax_cp.grid(True, linestyle="--", alpha=0.6)
 
         self.ax_g = self.figure.add_subplot(2, 1, 2)
         self.ax_g.set_xlabel("Temperature (K)")
         self.ax_g.set_ylabel("Conductance, G (S)")
-        self.ax_g.set_title("G vs. Temperature", fontweight='bold')
-        self.ax_g.set_yscale('log')
-        self.ax_g.grid(True, linestyle='--', alpha=0.6)
-        
+        self.ax_g.set_title("G vs. Temperature", fontweight="bold")
+        self.ax_g.set_yscale("log")
+        self.ax_g.grid(True, linestyle="--", alpha=0.6)
+
         self.canvas = FigureCanvasTkAgg(self.figure, parent)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.canvas.get_tk_widget().pack(
+            fill=tk.BOTH, expand=True, padx=5, pady=5
+        )
         self.lines_cp = {}
         self.lines_g = {}
 
     def log(self, message):
         ts = datetime.now().strftime("%H:%M:%S")
-        self.console_widget.config(state='normal')
-        self.console_widget.insert('end', f"[{ts}] {message}\n")
-        self.console_widget.see('end')
-        self.console_widget.config(state='disabled')
+        self.console_widget.config(state="normal")
+        self.console_widget.insert("end", f"[{ts}] {message}\n")
+        self.console_widget.see("end")
+        self.console_widget.config(state="disabled")
 
     def _update_freq_count(self, event=None):
         raw = self.freq_text.get("1.0", "end").strip()
@@ -486,7 +859,11 @@ class Temperature_Scan_GUI:
             self.lbl_fcount.config(text="0")
             return
         try:
-            lst = [int(float(x.strip())) for x in raw.split(',') if x.strip()]
+            lst = [
+                int(float(x.strip()))
+                for x in raw.split(",")
+                if x.strip()
+            ]
             self.lbl_fcount.config(text=str(len(lst)))
         except ValueError:
             self.lbl_fcount.config(text="Err")
@@ -495,12 +872,11 @@ class Temperature_Scan_GUI:
         if not PYVISA_AVAILABLE:
             self.log("PyVISA not installed.")
             return
-        # FIX: PyVISA Leak - Re-use the rm instance
         if not self.backend.rm:
             self.backend.rm = pyvisa.ResourceManager()
         res = self.backend.rm.list_resources()
-        self.ls_visa['values'] = res
-        self.lcr_visa['values'] = res
+        self.ls_visa["values"] = res
+        self.lcr_visa["values"] = res
         self.log(f"VISA Scan found: {res}")
 
     def _browse_dir(self):
@@ -509,22 +885,31 @@ class Temperature_Scan_GUI:
             self.save_directory = d
             self.log(f"Save directory: {d}")
 
-    # ===============================================================================
+    # ===================================================================
     # CALCULATION & DATA HANDLING
-    # ===============================================================================
+    # ===================================================================
 
     def calculate_impedance_parameters(self, f, cp, g):
-        """Calculates all 18 parameters requested based on Cp, G, and frequency."""
+        """
+        Calculate all 18 impedance parameters from Cp, G, and
+        frequency.
+
+        Conventions:
+          - Complex capacitance: C* = C' - jC''
+          - Cp'' = G/omega  (parallel loss, positive)
+          - Cs'' = 1/(omega*Rs)  (series loss, positive)
+            FIX: Was -1/(omega*Rs), sign corrected to positive
+            per standard dielectric convention.
+        """
         omega = 2 * np.pi * f
-        
-        # Avoid division by zero
+
         G_safe = g if g != 0 else 1e-20
         omega_safe = omega if omega != 0 else 1e-20
 
         Rp = 1.0 / G_safe
         B = omega * cp
         B_safe = B if B != 0 else 1e-20
-        
+
         D = G_safe / B_safe
         Q = 1.0 / D if D != 0 else 0.0
 
@@ -547,243 +932,407 @@ class Temperature_Scan_GUI:
 
         # Complex capacitance C* = C' - jC''
         Cp_double_prime = g / omega_safe
-        # FIX: Cs'' calculation corrected
-        Cs_double_prime = -1.0 / (omega_safe * Rs_safe)
+        # FIX: sign corrected — Cs'' = 1/(omega*Rs), positive
+        Cs_double_prime = 1.0 / (omega_safe * Rs_safe)
 
-        return [Q, D, g, B, cp, Lp, Cs, Ls, Z_mag, theta_rad, chi, Rs, theta_deg, Rp, Y_mag, omega, Cp_double_prime, Cs_double_prime]
+        return [
+            Q,
+            D,
+            g,
+            B,
+            cp,
+            Lp,
+            Cs,
+            Ls,
+            Z_mag,
+            theta_rad,
+            chi,
+            Rs,
+            theta_deg,
+            Rp,
+            Y_mag,
+            omega,
+            Cp_double_prime,
+            Cs_double_prime,
+        ]
 
     def _open_data_files(self, sample_name, timestamp):
-        self.run_folder = os.path.join(self.save_directory, f"{sample_name}_{timestamp}")
+        self.run_folder = os.path.join(
+            self.save_directory, f"{sample_name}_{timestamp}"
+        )
         os.makedirs(self.run_folder, exist_ok=True)
         self.file_handles = {}
 
         for f in self.freq_list:
-            fname = os.path.join(self.run_folder, f"{sample_name}_{f}Hz.txt")
-            fh = open(fname, 'w', encoding='utf-8')
-            fh.write(f"# Sample: {sample_name} | Freq: {f} Hz | AC: {self.entries['ac_bias'].get()}V | DC: {self.entries['dc_bias'].get()}V\n")
+            fname = os.path.join(
+                self.run_folder, f"{sample_name}_{f}Hz.txt"
+            )
+            fh = open(fname, "w", encoding="utf-8")
+            fh.write(
+                f"# Sample: {sample_name} | Freq: {f} Hz | "
+                f"AC: {self.entries['ac_bias'].get()}V | "
+                f"DC: {self.entries['dc_bias'].get()}V\n"
+            )
             fh.write(self.DATA_HEADER + "\n")
             self.file_handles[f] = fh
-        self.log(f"Created {len(self.freq_list)} files in {os.path.basename(self.run_folder)}.")
+        self.log(
+            f"Created {len(self.freq_list)} files in "
+            f"{os.path.basename(self.run_folder)}."
+        )
 
     def _close_data_files(self):
         for fh in self.file_handles.values():
             try:
                 fh.close()
-            except:
+            except Exception:
                 pass
         self.file_handles.clear()
 
-    # ===============================================================================
+    # ===================================================================
     # MEASUREMENT EXECUTION
-    # ===============================================================================
+    # ===================================================================
 
     def start_measurement(self):
         try:
             # Parse Frequencies
             raw = self.freq_text.get("1.0", "end").strip()
-            self.freq_list = [int(float(x.strip())) for x in raw.split(',') if x.strip()]
+            self.freq_list = [
+                int(float(x.strip()))
+                for x in raw.split(",")
+                if x.strip()
+            ]
             if not self.freq_list:
-                raise ValueError("Frequency list is empty or invalid.")
+                raise ValueError(
+                    "Frequency list is empty or invalid."
+                )
 
             params = {
-                'sample': self.entries['sample'].get(),
-                't_start': float(self.entries['t_start'].get()),
-                't_end': float(self.entries['t_end'].get()),
-                'rate': float(self.entries['rate'].get()),
-                'cutoff': float(self.entries['cutoff'].get()),
-                'ac_bias': float(self.entries['ac_bias'].get()),
-                'dc_bias': float(self.entries['dc_bias'].get()),
-                'delay': float(self.entries['delay'].get()),
-                'aper': self.aper_cb.get(),
-                'alc_enabled': self.var_alc.get(),
-                'corr_enabled': self.var_corr.get(),
-                'lakeshore_visa': self.ls_visa.get(),
-                'lcr_visa': self.lcr_visa.get()
+                "sample": self.entries["sample"].get(),
+                "t_start": float(
+                    self.entries["t_start"].get()
+                ),
+                "t_end": float(
+                    self.entries["t_end"].get()
+                ),
+                "rate": float(self.entries["rate"].get()),
+                "cutoff": float(
+                    self.entries["cutoff"].get()
+                ),
+                "ac_bias": float(
+                    self.entries["ac_bias"].get()
+                ),
+                "dc_bias": float(
+                    self.entries["dc_bias"].get()
+                ),
+                "delay": float(
+                    self.entries["delay"].get()
+                ),
+                "aper": self.aper_cb.get(),
+                "alc_enabled": self.var_alc.get(),
+                "corr_enabled": self.var_corr.get(),
+                "lakeshore_visa": self.ls_visa.get(),
+                "lcr_visa": self.lcr_visa.get(),
             }
 
-            if not all([params['sample'], params['lakeshore_visa'], params['lcr_visa'], self.save_directory]):
-                raise ValueError("Missing VISA addresses or Save Directory.")
+            if not all(
+                [
+                    params["sample"],
+                    params["lakeshore_visa"],
+                    params["lcr_visa"],
+                    self.save_directory,
+                ]
+            ):
+                raise ValueError(
+                    "Missing VISA addresses or Save Directory."
+                )
 
             self.backend.initialize_instruments(params)
-            
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self._open_data_files(params['sample'], ts)
 
-            self.start_btn.config(state='disabled')
-            self.stop_btn.config(state='normal')
-            
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self._open_data_files(params["sample"], ts)
+
+            self.start_btn.config(state="disabled")
+            self.stop_btn.config(state="normal")
+
             # Setup Plotting arrays & lines
             self.ax_cp.clear()
             self.ax_g.clear()
-            self.ax_cp.set_yscale('log')
-            self.ax_g.set_yscale('log')
-            self.ax_cp.grid(True, linestyle='--', alpha=0.6)
-            self.ax_g.grid(True, linestyle='--', alpha=0.6)
+            self.ax_cp.set_yscale("log")
+            self.ax_g.set_yscale("log")
+            self.ax_cp.grid(True, linestyle="--", alpha=0.6)
+            self.ax_g.grid(True, linestyle="--", alpha=0.6)
             self.ax_cp.set_ylabel("Capacitance, Cp (F)")
             self.ax_g.set_ylabel("Conductance, G (S)")
 
-            self.data_storage = { 'temp': [] }
+            self.data_storage = {"temp": []}
             self.lines_cp = {}
             self.lines_g = {}
-            
-            # Use colormap to distinguish lines
-            cmap = mpl.colormaps.get_cmap('viridis')
+
+            # FIX: mpl.colormaps['viridis'] instead of
+            #   mpl.colormaps.get_cmap('viridis') which was removed
+            #   in matplotlib >= 3.9
+            cmap = mpl.colormaps["viridis"]
             for i, f in enumerate(self.freq_list):
-                self.data_storage[f] = {'cp': [], 'g': []}
+                self.data_storage[f] = {"cp": [], "g": []}
                 c = cmap(i / len(self.freq_list))
-                self.lines_cp[f], = self.ax_cp.plot([], [], color=c, marker='.', markersize=2, linestyle='-', linewidth=1)
-                self.lines_g[f], = self.ax_g.plot([], [], color=c, marker='.', markersize=2, linestyle='-', linewidth=1)
+                self.lines_cp[f], = self.ax_cp.plot(
+                    [],
+                    [],
+                    color=c,
+                    marker=".",
+                    markersize=2,
+                    linestyle="-",
+                    linewidth=1,
+                )
+                self.lines_g[f], = self.ax_g.plot(
+                    [],
+                    [],
+                    color=c,
+                    marker=".",
+                    markersize=2,
+                    linestyle="-",
+                    linewidth=1,
+                )
 
             self.canvas.draw()
+
+            # FIX: Clear stop_event before starting
+            self.stop_event.clear()
             self.is_stabilizing = True
-            self.measurement_thread = threading.Thread(target=self._measurement_worker, daemon=True)
+            self.measurement_thread = threading.Thread(
+                target=self._measurement_worker, daemon=True
+            )
             self.measurement_thread.start()
             self.root.after(100, self._process_data_queue)
 
         except Exception as e:
             self.log(f"Startup Error: {e}")
+            # FIX: Clean up instruments and files on startup error
+            try:
+                self.backend.close_instruments()
+            except Exception:
+                pass
+            self._close_data_files()
             messagebox.showerror("Error", str(e))
 
     def stop_measurement(self):
+        """
+        User-initiated stop. Sets the stop_event flag; the worker
+        thread detects it, exits its loop, closes instruments, and
+        sends "DONE" to the queue. The GUI then closes files and
+        resets UI.
+        """
         if self.is_running or self.is_stabilizing:
-            self.is_running, self.is_stabilizing = False, False
-            self.log("Measurement Stopping...")
-            self.start_btn.config(state='normal')
-            self.stop_btn.config(state='disabled')
-            self.backend.close_instruments()
-            self._close_data_files()
-            messagebox.showinfo("Stopped", "Measurement interrupted and instruments secured.")
+            self.is_running = False
+            self.is_stabilizing = False
+            self.stop_event.set()
+            self.log("Measurement stopping...")
+            self.start_btn.config(state="disabled")
+            self.stop_btn.config(state="disabled")
+            # Worker thread will close instruments and send "DONE"
 
     def _measurement_worker(self):
+        """
+        Worker thread: stabilization → ramp → measurement loop.
+        Checks stop_event at every iteration. Always cleans up
+        instruments in finally block.
+        """
         p = self.backend.params
         try:
-            # 1. Stabilization Phase
+            # --- 1. Stabilization Phase ---
             stab_start = time.time()
-            STAB_TIMEOUT_S = 1800  # FIX: 30 min safety cutoff
+            STAB_TIMEOUT_S = 1800  # 30 min safety cutoff
 
-            while self.is_stabilizing:
+            while not self.stop_event.is_set():
                 current_t = self.backend.get_temperature()
-                
+
                 if time.time() - stab_start > STAB_TIMEOUT_S:
-                    self.data_queue.put("LOG:Stabilization timeout — check cooling/setpoint.")
+                    self.data_queue.put(
+                        "LOG:Stabilization timeout "
+                        "— check cooling/setpoint."
+                    )
                     self.data_queue.put("CUTOFF")
                     break
 
-                self.data_queue.put(f"LOG:Stabilizing... T={current_t:.2f}K (Target={p['t_start']}K)")
-                
-                if current_t > p['t_start'] + 5.0:
-                    self.backend.lakeshore.set_heater_range(1, 'off')
-                else:
-                    # FIX: Explicitly turn off ramp during stabilization so it snaps to t_start
-                    self.backend.lakeshore.setup_ramp(1, 0, ramp_on=False)
-                    self.backend.lakeshore.set_setpoint(1, p['t_start'])
-                    self.backend.lakeshore.set_heater_range(1, 'high')
+                self.data_queue.put(
+                    f"LOG:Stabilizing... T={current_t:.2f}K "
+                    f"(Target={p['t_start']}K)"
+                )
 
-                if abs(current_t - p['t_start']) < 2.0:
-                    self.data_queue.put(f"LOG:Stabilized. Wait 5s before sweep...")
+                if current_t > p["t_start"] + 5.0:
+                    # Above target — turn off heater, wait for
+                    # passive cooling
+                    self.backend.lakeshore.set_heater_range(
+                        1, "off"
+                    )
+                else:
+                    # Below target — set setpoint, turn on heater
+                    self.backend.lakeshore.setup_ramp(
+                        1, 0, ramp_on=False
+                    )
+                    self.backend.lakeshore.set_setpoint(
+                        1, p["t_start"]
+                    )
+                    self.backend.lakeshore.set_heater_range(
+                        1, "high"
+                    )
+
+                if abs(current_t - p["t_start"]) < 2.0:
+                    self.data_queue.put(
+                        "LOG:Stabilized. Wait 5s before sweep..."
+                    )
                     time.sleep(5)
                     self.is_stabilizing = False
                     self.is_running = True
                     break
                 time.sleep(2)
 
-            # 2. Ramp Phase
-            if self.is_running:
-                # FIX: Ramp ON -> Range -> then Setpoint
-                self.backend.lakeshore.setup_ramp(1, p['rate'], ramp_on=True)
-                self.backend.lakeshore.set_heater_range(1, 'high')
-                self.backend.lakeshore.set_setpoint(1, p['t_end'])             
-                self.data_queue.put(f"LOG:Ramp started to {p['t_end']}K at {p['rate']} K/min")
+            # --- 2. Ramp Phase ---
+            if self.is_running and not self.stop_event.is_set():
+                # Ramp ON → Range → Setpoint
+                self.backend.lakeshore.setup_ramp(
+                    1, p["rate"], ramp_on=True
+                )
+                self.backend.lakeshore.set_heater_range(
+                    1, "high"
+                )
+                self.backend.lakeshore.set_setpoint(
+                    1, p["t_end"]
+                )
+                self.data_queue.put(
+                    f"LOG:Ramp started to {p['t_end']}K at "
+                    f"{p['rate']} K/min"
+                )
 
-            while self.is_running:
-                # Temperature monitoring for cutoff and end condition
+            # --- 3. Measurement Loop ---
+            while self.is_running and not self.stop_event.is_set():
                 t_monitor = self.backend.get_temperature()
-                if t_monitor >= p['cutoff']:
+
+                if t_monitor >= p["cutoff"]:
                     self.data_queue.put("CUTOFF")
                     break
-                if t_monitor >= p['t_end']:
+                if t_monitor >= p["t_end"]:
                     self.data_queue.put("COMPLETE")
                     break
 
-                # Poll LCR array (T is read inside per-frequency now)
-                freq_results = self.backend.measure_lcr_array(self.freq_list, p['delay'])
-                self.data_queue.put(('DATA', freq_results))
-                
+                freq_results = self.backend.measure_lcr_array(
+                    self.freq_list, p["delay"]
+                )
+                self.data_queue.put(("DATA", freq_results))
+
         except Exception as e:
             self.data_queue.put(e)
-            self.data_queue.put("LOG:Hard crash in measurement thread.")
+            self.data_queue.put(
+                "LOG:Hard crash in measurement thread."
+            )
         finally:
-            # FIX: Exception Safety shutdown
+            # FIX: Always close instruments from the worker thread
+            #   (never from GUI thread) to avoid race conditions
             try:
-                self.backend.lakeshore.set_heater_range(1, 'off')
-            except:
+                self.backend.close_instruments()
+            except Exception:
                 pass
+            self.data_queue.put("DONE")
 
     def _process_data_queue(self):
         try:
             while not self.data_queue.empty():
                 item = self.data_queue.get_nowait()
-                
+
                 if isinstance(item, str):
                     if item.startswith("LOG:"):
                         self.log(item[4:])
                     elif item == "CUTOFF":
                         self.log("SAFETY CUTOFF REACHED.")
-                        self.stop_measurement()
+                        self.is_running = False
+                        # Worker will send DONE after cleanup
                     elif item == "COMPLETE":
-                        self.log("Target temperature reached successfully.")
-                        self.stop_measurement()
-                
+                        self.log(
+                            "Target temperature reached "
+                            "successfully."
+                        )
+                        self.is_running = False
+                        # Worker will send DONE after cleanup
+                    elif item == "DONE":
+                        self._close_data_files()
+                        self.start_btn.config(state="normal")
+                        self.stop_btn.config(state="disabled")
+                        self.is_running = False
+                        self.is_stabilizing = False
+                        self.log(
+                            "Measurement thread finished. "
+                            "Instruments secured."
+                        )
+
                 elif isinstance(item, Exception):
                     self.log(f"RUNTIME ERROR: {item}")
-                    self.stop_measurement()
-                    messagebox.showerror("Runtime Error", str(item))
-                
-                elif isinstance(item, tuple) and item[0] == 'DATA':
+                    # Worker will send DONE after cleanup
+
+                elif (
+                    isinstance(item, tuple)
+                    and item[0] == "DATA"
+                ):
                     _, results = item
-                    
-                    # For shared x-axis GUI plotting, we use the base temperature of the first frequency.
+
                     base_t = results[self.freq_list[0]][0]
-                    self.data_storage['temp'].append(base_t)
-                    
-                    self.log(f"T (Start) = {base_t:.2f} K | Freq scan block completed.")
-                    
-                    # Write to respective files and update GUI arrays
+                    self.data_storage["temp"].append(base_t)
+
+                    self.log(
+                        f"T (Start) = {base_t:.2f} K | "
+                        f"Freq scan block completed."
+                    )
+
                     for f in self.freq_list:
-                        # FIX: Extract individual exact temperature and status per frequency
                         t_point, cp, g, status = results[f]
-                        
+
                         if status != 0:
-                            self.log(f"  WARNING: f={f}Hz status={status} (overload/invalid) at T={t_point:.2f}K")
-                        
-                        self.data_storage[f]['cp'].append(cp)
-                        self.data_storage[f]['g'].append(g)
-                        
-                        calc_vals = self.calculate_impedance_parameters(f, cp, g)
-                        
-                        # Formatting: "{:.6E}\t{:.6E}..."
+                            self.log(
+                                f"  WARNING: f={f}Hz status="
+                                f"{status} (overload/invalid) "
+                                f"at T={t_point:.2f}K"
+                            )
+
+                        self.data_storage[f]["cp"].append(cp)
+                        self.data_storage[f]["g"].append(g)
+
+                        calc_vals = (
+                            self.calculate_impedance_parameters(
+                                f, cp, g
+                            )
+                        )
+
                         row_vals = [t_point] + calc_vals
-                        row_str = "\t".join([f"{v:.6E}" for v in row_vals])
-                        
+                        row_str = "\t".join(
+                            [f"{v:.6E}" for v in row_vals]
+                        )
+
                         fh = self.file_handles.get(f)
                         if fh:
                             fh.write(row_str + "\n")
                             fh.flush()
 
                     self._update_plots()
-                    
+
         except queue.Empty:
             pass
 
-        if self.is_running or self.is_stabilizing:
+        # FIX: Keep polling while thread is alive or queue has items
+        if (
+            self.measurement_thread
+            and self.measurement_thread.is_alive()
+        ) or not self.data_queue.empty():
             self.root.after(200, self._process_data_queue)
 
     def _update_plots(self):
-        temps = self.data_storage['temp']
+        temps = self.data_storage["temp"]
         for f in self.freq_list:
-            self.lines_cp[f].set_data(temps, self.data_storage[f]['cp'])
-            self.lines_g[f].set_data(temps, self.data_storage[f]['g'])
-            
+            self.lines_cp[f].set_data(
+                temps, self.data_storage[f]["cp"]
+            )
+            self.lines_g[f].set_data(
+                temps, self.data_storage[f]["g"]
+            )
+
         self.ax_cp.relim()
         self.ax_cp.autoscale_view()
         self.ax_g.relim()
@@ -792,16 +1341,30 @@ class Temperature_Scan_GUI:
 
     def _on_closing(self):
         if self.is_running or self.is_stabilizing:
-            if messagebox.askyesno("Exit", "Measurement is running. Stop and exit?"):
-                self.stop_measurement()
+            if messagebox.askyesno(
+                "Exit", "Measurement is running. Stop and exit?"
+            ):
+                self.stop_event.set()
+                if (
+                    self.measurement_thread
+                    and self.measurement_thread.is_alive()
+                ):
+                    self.measurement_thread.join(timeout=10)
+                try:
+                    self.backend.close_instruments()
+                except Exception:
+                    pass
+                self._close_data_files()
                 self.root.destroy()
         else:
             self.root.destroy()
+
 
 def main():
     root = tk.Tk()
     Temperature_Scan_GUI(root)
     root.mainloop()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
