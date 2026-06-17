@@ -24,6 +24,8 @@ ALL_GUI_MODULES = [
     "pica.keithley.k6517b.Pyroelectricity.Pyroelectric_K6517B_L350_GUI",
     "pica.keysight.CV_KE4980A_GUI",
     "pica.lakeshore.T_Control_L350_RangeControl_GUI",
+    "pica.lakeshore.T_Control_L350_Step_GUI",
+    "pica.lakeshore.T_Control_L350_DirectControl_GUI",
     "pica.lakeshore.T_Sensing_L350_GUI",
     "pica.utils.GPIB_Instrument_Scanner_GUI",
     "pica.utils.PlotterUtil_GUI",
