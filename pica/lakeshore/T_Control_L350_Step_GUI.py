@@ -142,7 +142,7 @@ class Lakeshore_Backend:
 # -------------------------------------------------------------------------------
 
 class TempControlGUI:
-    PROGRAM_VERSION = "9.2-Step"
+    PROGRAM_VERSION = "9.3-Step"
     CLR_BG_DARK = '#B8A392'
     CLR_HEADER = '#E5DCD3'
     CLR_FG_LIGHT = '#2C2825'
@@ -171,10 +171,12 @@ class TempControlGUI:
         self.gui_queue = queue.Queue()
         self.proceed_event = threading.Event()
         
+        # Flag to safely pass live heater updates to the hardware thread
+        self.live_heater_update = None 
+        
         self.logo_image = None
         self.backend = Lakeshore_Backend()
         
-        # Added 'resistance' to data storage for persistence
         self.data_storage = {'time': [], 'temperature': [], 'target': [],
                              'resistance': [], 'heater': []}
 
@@ -265,7 +267,6 @@ class TempControlGUI:
         frame.grid(row=grid_row, column=0, sticky='new', pady=5, padx=5)
         for i in range(4): frame.grid_columnconfigure(i, weight=1)
 
-        # Listbox with Scrollbar
         list_frame = ttk.Frame(frame)
         list_frame.grid(row=0, column=0, columnspan=4, sticky='nsew', padx=10, pady=5)
         
@@ -278,7 +279,6 @@ class TempControlGUI:
         self.listbox.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # Auto Generator
         ttk.Label(frame, text="Start(K):").grid(row=1, column=0, sticky='e', padx=2)
         self.entry_start = ttk.Entry(frame, width=6)
         self.entry_start.grid(row=1, column=1, sticky='w', padx=2)
@@ -295,7 +295,6 @@ class TempControlGUI:
 
         ttk.Separator(frame, orient='horizontal').grid(row=3, column=0, columnspan=4, sticky='ew', pady=5, padx=10)
         
-        # Sort Order & List Size
         ttk.Label(frame, text="Order:").grid(row=4, column=0, sticky='e', padx=2)
         self.sort_var = tk.StringVar(value='Ascending')
         sort_cb = ttk.Combobox(frame, textvariable=self.sort_var, values=['Ascending', 'Descending'], state='readonly', width=10)
@@ -309,7 +308,6 @@ class TempControlGUI:
         size_spin.bind('<Return>', self._update_list_size)
         size_spin.bind('<FocusOut>', self._update_list_size)
 
-        # Manual Addition & Clear
         ttk.Label(frame, text="Manual(K):").grid(row=5, column=0, sticky='e', padx=2, pady=5)
         self.entry_manual = ttk.Entry(frame, width=6)
         self.entry_manual.grid(row=5, column=1, sticky='w', padx=2, pady=5)
@@ -328,14 +326,19 @@ class TempControlGUI:
         self.entries = {}
         
         self._create_grid_entry(frame, "Tolerance (±K)", "0.5", 0, 0)
-        self._create_grid_entry(frame, "Soak Time (s)", "60", 0, 2)
+        self._create_grid_entry(frame, "Soak Time (s)", "120", 0, 2) # Updated to 120s
         self._create_grid_entry(frame, "Ramp Rate (K/min)", "2", 1, 0)
         self._create_grid_entry(frame, "Poll Delay (s)", "1", 1, 2)
 
         ttk.Label(frame, text="Heater Range:").grid(row=2, column=0, sticky='w', padx=10, pady=5)
         self.heater_range_var = tk.StringVar(value='High')
-        heater_cb = ttk.Combobox(frame, textvariable=self.heater_range_var, values=['Off', 'Low', 'Medium', 'High'], state='readonly', width=10)
-        heater_cb.grid(row=2, column=1, sticky='ew', padx=5)
+        
+        # Retain as self.heater_cb so we can easily access it. 
+        self.heater_cb = ttk.Combobox(frame, textvariable=self.heater_range_var, values=['Off', 'Low', 'Medium', 'High'], state='readonly', width=10)
+        self.heater_cb.grid(row=2, column=1, sticky='ew', padx=5)
+        
+        # Bind the event to handle live changes
+        self.heater_cb.bind('<<ComboboxSelected>>', self._on_heater_range_changed)
 
         ttk.Label(frame, text="VISA Addr:").grid(row=2, column=2, sticky='w', padx=5, pady=5)
         self.ls_cb = ttk.Combobox(frame, state='readonly', width=15)
@@ -367,7 +370,6 @@ class TempControlGUI:
         panel.grid_rowconfigure(1, weight=1)
         panel.grid_columnconfigure(0, weight=1)
         
-        # STATUS HANDSHAKE BAR
         status_frame = ttk.Frame(panel)
         status_frame.grid(row=0, column=0, sticky='ew', pady=(0, 10))
         status_frame.grid_columnconfigure(0, weight=1)
@@ -378,7 +380,6 @@ class TempControlGUI:
         self.btn_proceed = ttk.Button(status_frame, text="Measurement Complete - Proceed ➔", style='Proceed.TButton', state='disabled', command=self._on_proceed)
         self.btn_proceed.grid(row=0, column=1, sticky='ew', padx=10, ipady=5)
 
-        # PLOTTER
         container = ttk.LabelFrame(panel, text='Live Temperature Monitoring')
         container.grid(row=1, column=0, sticky='nsew')
         container.grid_rowconfigure(0, weight=1)
@@ -388,7 +389,6 @@ class TempControlGUI:
         self.ax_temp = self.figure.add_subplot(211)
         self.ax_heater = self.figure.add_subplot(212, sharex=self.ax_temp)
 
-        # Dual Plots for Temperature
         self.line_target = self.ax_temp.plot([], [], color=self.CLR_ACCENT_GREEN, marker='', linestyle='--', label='Target Setpoint')[0]
         self.line_temp = self.ax_temp.plot([], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-', label='Actual Temp')[0]
         self.ax_temp.set_ylabel("Temperature (K)")
@@ -464,7 +464,6 @@ class TempControlGUI:
             messagebox.showerror("Input Error", "Enter a valid numeric temperature.")
 
     def _remove_step(self):
-        # Reverse iteration ensures index deletion doesn't shift remaining targets incorrectly
         selection = self.listbox.curselection()
         for index in reversed(selection):
             self.listbox.delete(index)
@@ -487,6 +486,13 @@ class TempControlGUI:
         self.btn_proceed.config(state='disabled')
         self._update_status_ui("INITIATING NEXT RAMP...", self.CLR_HEADER)
         self.proceed_event.set()
+
+    def _on_heater_range_changed(self, event=None):
+        """Captures mid-run updates to the heater range dropdown."""
+        if self.is_running:
+            new_range = self.heater_range_var.get()
+            self.log(f"Live heater update requested: {new_range}")
+            self.live_heater_update = new_range
 
     def _beep(self):
         def _ring():
@@ -528,6 +534,7 @@ class TempControlGUI:
 
         self.set_ui_state(running=True)
         self.is_running = True
+        self.live_heater_update = None # Reset flag
         
         for key in self.data_storage:
             self.data_storage[key].clear()
@@ -539,7 +546,6 @@ class TempControlGUI:
         self.start_time = time.time()
         self.proceed_event.clear()
 
-        # --- Open persistent data file (flushed every point) ---
         os.makedirs("data", exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.data_filepath = os.path.join("data", f"TStep_{stamp}.csv")
@@ -560,7 +566,7 @@ class TempControlGUI:
         if not self.is_running: return
         self.log("ABORT INITIATED BY USER.")
         self.is_running = False
-        self.proceed_event.set()
+        self.proceed_event.set() # Unblocks if stuck waiting for user click
         self.backend.stop_ramp()
         self.set_ui_state(running=False)
         self._update_status_ui("SEQUENCE ABORTED", self.CLR_ACCENT_RED)
@@ -592,6 +598,7 @@ class TempControlGUI:
         self.sort_var.set(self.sort_var.get()) 
         self.ls_cb.config(state=state if state == 'normal' else 'readonly')
         self.btn_proceed.config(state='disabled')
+        # Note: self.heater_cb is explicitly left as 'readonly' naturally so the user can interact mid-run.
 
     def _scan_for_visa(self):
         if self.backend.rm is None:
@@ -609,7 +616,6 @@ class TempControlGUI:
         else:
             self.log("No VISA instruments found.")
 
-    # --- THREADING COMPONENTS ---
     def _put_gui_msg(self, msg_type, **kwargs):
         payload = {'type': msg_type}
         payload.update(kwargs)
@@ -669,19 +675,33 @@ class TempControlGUI:
                 self.backend.configure_ramp(target, self.params['rate'], self.params['heater_range'])
                 
                 stable_start_time = None
+                phase = 'RAMPING' # Can be: RAMPING, SOAKING, or WAITING
+                
+                self.proceed_event.clear()
                 
                 while self.is_running:
+                    # 1. Process Live Heater Updates (Mid-Run adjustments)
+                    if self.live_heater_update is not None:
+                        new_range = self.live_heater_update
+                        self.live_heater_update = None
+                        try:
+                            self.backend.set_heater_range(1, new_range)
+                            self._put_gui_msg('log', text=f"Heater successfully switched to: {new_range}")
+                        except Exception as e:
+                            self._put_gui_msg('log', text=f"Failed to switch heater range: {e}")
+
+                    # 2. Get hardware status
                     temp, resistance, htr = self.backend.get_status()
                     elapsed = time.time() - self.start_time
                     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+                    # 3. Store and commit data
                     self.data_storage['time'].append(elapsed)
                     self.data_storage['temperature'].append(temp)
                     self.data_storage['target'].append(target)
                     self.data_storage['resistance'].append(resistance)
                     self.data_storage['heater'].append(htr)
 
-                    # Persist immediately so an abort/crash never loses a point
                     try:
                         self.csv_writer.writerow(
                             [now_str, f"{elapsed:.2f}", f"{target:.4f}",
@@ -693,38 +713,42 @@ class TempControlGUI:
                     
                     self._put_gui_msg('plot')
                     
-                    if abs(temp - target) <= self.params['tolerance']:
-                        if stable_start_time is None:
-                            stable_start_time = time.time()
-                            self._put_gui_msg('log', text=f"Entered tolerance band (±{self.params['tolerance']}K). Starting soak timer...")
-                            self._put_gui_msg('status', text=f"STABILIZING AT {target} K...", color=self.CLR_STABLE_WAIT)
-                            
-                        elif time.time() - stable_start_time >= self.params['soak_time']:
-                            self._put_gui_msg('log', text=f"Stable inside window for {self.params['soak_time']}s.")
-                            break 
-                    else:
-                        if stable_start_time is not None:
-                            self._put_gui_msg('log', text="Drifted outside tolerance band. Restarting soak timer.")
-                            self._put_gui_msg('status', text=f"RAMPING TO {target} K", color=self.CLR_ACCENT_RED)
-                        stable_start_time = None
+                    # 4. State Machine Logic (Never breaks the loop until user clicks proceed)
+                    if phase in ['RAMPING', 'SOAKING']:
+                        if abs(temp - target) <= self.params['tolerance']:
+                            if phase == 'RAMPING':
+                                stable_start_time = time.time()
+                                phase = 'SOAKING'
+                                self._put_gui_msg('log', text=f"Entered tolerance band (±{self.params['tolerance']}K). Starting soak timer...")
+                                self._put_gui_msg('status', text=f"STABILIZING AT {target} K...", color=self.CLR_STABLE_WAIT)
+                                
+                            elif phase == 'SOAKING' and (time.time() - stable_start_time >= self.params['soak_time']):
+                                self._put_gui_msg('log', text=f"Stable inside window for {self.params['soak_time']}s. Ready for external measurement.")
+                                self._put_gui_msg('status', text=f"STABLE AT {target} K | AWAITING MEASUREMENT", color=self.CLR_ACCENT_GREEN)
+                                self._put_gui_msg('handshake_ready')
+                                phase = 'WAITING'
+                        else:
+                            if phase == 'SOAKING':
+                                self._put_gui_msg('log', text="Drifted outside tolerance band. Restarting soak timer.")
+                                self._put_gui_msg('status', text=f"RAMPING TO {target} K", color=self.CLR_ACCENT_RED)
+                                stable_start_time = None
+                                phase = 'RAMPING'
+                                
+                    elif phase == 'WAITING':
+                        # While waiting, we just monitor. Check if user clicked Proceed
+                        if self.proceed_event.is_set():
+                            self.proceed_event.clear()
+                            break # Exits the while loop, moving to the next target in the sequence!
                         
+                    # 5. Delay before next poll
                     time.sleep(self.params['delay_s'])
-                
-                if not self.is_running: break
-                
-                self._put_gui_msg('status', text=f"STABLE AT {target} K | AWAITING MEASUREMENT", color=self.CLR_ACCENT_GREEN)
-                self._put_gui_msg('log', text="READY FOR EXTERNAL MEASUREMENT. Waiting for user acknowledgement.")
-                self._put_gui_msg('handshake_ready')
-                
-                self.proceed_event.clear()
-                self.proceed_event.wait() 
                 
             if self.is_running:
                 self._put_gui_msg('log', text="Measurement Sequence Complete.")
                 self._put_gui_msg('status', text="READY TO START", color=self.CLR_HEADER)
                 self._put_gui_msg('sequence_complete')
                 self.backend.stop_ramp()
-                self.is_running = False   # flip LAST, after messages are queued
+                self.is_running = False
 
         except Exception as e:
             self._put_gui_msg('log', text=f"CRITICAL ERROR IN HARDWARE THREAD: {e}\n{traceback.format_exc()}")
