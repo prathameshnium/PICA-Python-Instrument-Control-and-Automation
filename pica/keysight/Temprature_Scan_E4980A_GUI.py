@@ -1,11 +1,19 @@
 '''
-PROGRAM:      Integrated L350 & E4980A: Temperature Scan (Cp-G vs T)
+PROGRAM:      Integrated L350 & E4980A: Temperature Scan (Cp-G)
 PURPOSE:      Automated temperature sweeps with multi-frequency LCR measurements.
               Outputs individual data files for each measured frequency.
-VERSION:      2.0 (Cp-G)
+VERSION:      2.1 (Cp-G)
 FIXES:        Colormap API, E4980A BUS trigger + FETCH, SCPI sync delays,
               thread-safe shutdown, np.linspace DC ramp, file handle leaks,
               Cs'' sign convention, full SCPI command forms
+V2.1 CHANGES:  - Trigger fix: :INIT:CONT ON (was OFF, caused dashes)
+              - Cs'' formula corrected to G/omega (model-independent)
+              - Added 0.5s delays after :BIAS:STAT ON and after DC ramp
+              - :DISP:PAGE BLAN → :DISP:PAGE MEAS
+              - Log-scale plot filtering for non-positive values
+              - :SYST:ERR? check after E4980A setup
+              - try/except in safe_ramp_dc_bias initial query
+              - Heater range 4 added to range_map
 '''
 
 import tkinter as tk
@@ -169,12 +177,14 @@ class Lakeshore350_Backend:
         self._write_and_sync(f"SETP {output},{temperature_k}")
 
     def set_heater_range(self, output, heater_range):
-        # 0=Off, 1-5 = decade power steps (Range 5 = full 75 W at 25Ω)
+        # 0=Off, 1-5 = decade power steps
+        # FIX v2.1: Added range 4 (very_high = 7.5W)
         range_map = {
             "off": 0,
             "low": 1,
             "medium": 2,
             "high": 3,
+            "very_high": 4,
             "max": 5,
         }
         range_code = range_map.get(heater_range.lower(), 0)
@@ -201,11 +211,13 @@ class KeysightE4980A_Backend:
     """
     Keysight E4980A Precision LCR Meter backend.
 
-    Trigger model (FIXED in v2.0):
+    Trigger model (FIXED in v2.1):
       - :TRIG:SOUR BUS  → trigger from GPIB bus
-      - :INIT:CONT OFF  → wait for explicit *TRG (no auto-trigger)
+      - :INIT:CONT ON   → auto-arm after each measurement
+                           (FIX: was OFF, which left instrument
+                           idle and *TRG was ignored → dashes)
       - *TRG            → fire one measurement
-      - :FETCH?         → retrieve result from reading memory
+      - :FETCH?         → retrieve result (blocks until done)
 
     References:
       - PyMeasure E4980 driver:
@@ -214,6 +226,8 @@ class KeysightE4980A_Backend:
         http://microsoft.github.io/Qcodes/_modules/qcodes/instrument_drivers/Keysight/keysight_e4980a.html
       - E4980A datasheet:
         https://www.cmc.ca/wp-content/uploads/2019/07/Keysight-E4980A-Datasheet.pdf
+      - 4284A→E4980A Migration Guide:
+        https://kirkbymicrowave.co.uk/Support/Links/applications/Dielectric_Measurements/documents/Migrating-from-a-Keysight-4284A-LCR-Meter-to-a-Keysight-E4980A-Precision-LCR-Meter.pdf
     """
 
     def __init__(self, rm, visa_address):
@@ -235,9 +249,27 @@ class KeysightE4980A_Backend:
         self.instrument.write(command)
         time.sleep(delay)
 
+    def _check_errors(self, context=""):
+        """Query the E4980A error queue and print any errors."""
+        err = self.instrument.query(":SYST:ERR?")
+        if err and not err.startswith('0,"No error"'):
+            print(f"  [E4980A ERROR] {context}: {err}")
+
     def safe_ramp_dc_bias(self, target_v, step=0.5, dwell=0.1):
         """Ramp DC bias from current to target using np.linspace."""
-        current_v = float(self.instrument.query(":BIAS:VOLT:LEV?"))
+        # FIX v2.1: try/except around initial query in case bias
+        #   is not yet enabled or query fails
+        try:
+            current_v = float(
+                self.instrument.query(":BIAS:VOLT:LEV?")
+            )
+        except Exception:
+            print(
+                "  [safe_ramp] Could not read current DC bias, "
+                "assuming 0 V."
+            )
+            current_v = 0.0
+
         if abs(target_v - current_v) < 0.01:
             return
 
@@ -259,7 +291,12 @@ class KeysightE4980A_Backend:
         Configure the E4980A for Cp-G measurement with BUS trigger.
 
         Command order follows the legacy configuration:
-        Function → Level → Range → Meas Time → ALC → Corr → Trigger → Bias
+        Function → Level → Range → Meas Time → ALC → Corr →
+        Trigger → Bias
+
+        FIX v2.1: :INIT:CONT ON (was OFF) — with OFF the instrument
+        stayed idle and ignored *TRG, producing dashes on the display.
+        With ON, the instrument auto-rearms after each measurement.
         """
         # --- Reset and clear ---
         self.instrument.write("*RST")
@@ -269,8 +306,10 @@ class KeysightE4980A_Backend:
         time.sleep(0.5)
 
         # --- Data format and display ---
+        # FIX v2.1: BLAN not a valid page; MEAS is the measurement
+        #   display page
         self._write_and_sync(":FORM ASC")
-        self._write_and_sync(":DISP:PAGE BLAN")
+        self._write_and_sync(":DISP:PAGE MEAS")
 
         # --- Measurement function: Cp-G (parallel C, parallel G) ---
         self._write_and_sync(":FUNC:IMP CPG")
@@ -295,32 +334,45 @@ class KeysightE4980A_Backend:
         # --- AC test signal voltage ---
         self._write_and_sync(f":VOLT:LEV {ac_bias}")
 
-        # --- Trigger: BUS source, no continuous init ---
-        # FIX: INIT:CONT OFF (was ON, which conflicted with BUS trigger
-        #   and caused dashes — instrument auto-triggered and ignored
-        #   *TRG)
+        # --- Trigger: BUS source, continuous init ON ---
+        # FIX v2.1: INIT:CONT ON (was OFF)
+        #   With :INIT:CONT OFF, the instrument remained in idle
+        #   state after *RST. *TRG was silently ignored because the
+        #   trigger was never armed. :FETCH? then returned stale/empty
+        #   data, which appeared as dashes on the front-panel display.
+        #   With :INIT:CONT ON, the instrument auto-rearms after each
+        #   measurement completion, so every *TRG fires exactly one
+        #   new measurement.
         self._write_and_sync(":TRIG:SOUR BUS")
-        self._write_and_sync(":INIT:CONT OFF")
+        self._write_and_sync(":INIT:CONT ON")
 
         # --- DC bias setup ---
         self._write_and_sync(":BIAS:VOLT:LEV 0")
         self._write_and_sync(":BIAS:STAT ON")
+        # FIX v2.1: Add 0.5s settling delay after enabling bias
+        #   output before ramping
+        time.sleep(0.5)
         self.safe_ramp_dc_bias(dc_bias)
+        # FIX v2.1: Add 0.5s settling delay after DC ramp completes
+        time.sleep(0.5)
+
+        # FIX v2.1: Check for any SCPI errors accumulated during setup
+        self._check_errors("setup_measurement")
 
     def measure_freq(self, freq, delay):
         """
         Measure Cp and G at the given frequency.
 
-        FIX: Uses *TRG (write) to trigger, then :FETCH? (query) to
-        retrieve the result. Previously used query_ascii_values('*TRG')
-        which treated *TRG as a query — this either returned stale data
-        or caused timeouts, resulting in dashes on the display.
+        With :INIT:CONT ON, the instrument is always armed.
+        *TRG fires one measurement; :FETCH? blocks until the
+        result is ready and returns [Cp, G, status].
         """
         self.instrument.write(f":FREQ {freq}")
         time.sleep(delay)
         # Trigger one measurement via bus trigger
         self.instrument.write("*TRG")
         # Retrieve the result from reading memory
+        # (:FETCH? blocks until measurement is complete)
         vals = self.instrument.query_ascii_values(":FETCH?")
         if len(vals) < 2:
             raise ValueError(
@@ -408,7 +460,7 @@ class Combined_Backend:
 # ===============================================================================
 
 class Temperature_Scan_GUI:
-    PROGRAM_VERSION = "2.0 (Cp-G)"
+    PROGRAM_VERSION = "2.1 (Cp-G)"
     LOGO_SIZE = 110
 
     try:
@@ -897,9 +949,18 @@ class Temperature_Scan_GUI:
         Conventions:
           - Complex capacitance: C* = C' - jC''
           - Cp'' = G/omega  (parallel loss, positive)
-          - Cs'' = 1/(omega*Rs)  (series loss, positive)
-            FIX: Was -1/(omega*Rs), sign corrected to positive
-            per standard dielectric convention.
+          - Cs'' = G/omega  (series loss, positive)
+            FIX v2.1: Was 1/(omega*Rs), corrected to G/omega.
+            The complex capacitance C* is a physical property of
+            the device and is model-independent. Both Cp'' and Cs''
+            must yield the same value.
+            Source: Agilent Impedance Parameter Application Note,
+            Table 1 confirms C* is the same in series and parallel
+            models.
+
+        References:
+          - Agilent AN on series/parallel impedance parameters:
+            https://idm-instrumentos.es/wp-content/uploads/2014/09/AN-Series_and_Parallel_Impedance_Parameters_and_Equivalent_Circuits_-092007_1.pdf
         """
         omega = 2 * np.pi * f
 
@@ -931,9 +992,11 @@ class Temperature_Scan_GUI:
         Lp = -1.0 / (omega_safe * B_safe)
 
         # Complex capacitance C* = C' - jC''
+        # Both Cp'' and Cs'' equal G/omega (model-independent)
         Cp_double_prime = g / omega_safe
-        # FIX: sign corrected — Cs'' = 1/(omega*Rs), positive
-        Cs_double_prime = 1.0 / (omega_safe * Rs_safe)
+        # FIX v2.1: Was 1/(omega*Rs) — incorrect. Now G/omega,
+        #   matching Cp'' as required for model independence.
+        Cs_double_prime = g / omega_safe
 
         return [
             Q,
@@ -1062,7 +1125,14 @@ class Temperature_Scan_GUI:
             self.ax_cp.grid(True, linestyle="--", alpha=0.6)
             self.ax_g.grid(True, linestyle="--", alpha=0.6)
             self.ax_cp.set_ylabel("Capacitance, Cp (F)")
+            self.ax_cp.set_title(
+                "Cp vs. Temperature", fontweight="bold"
+            )
+            self.ax_g.set_xlabel("Temperature (K)")
             self.ax_g.set_ylabel("Conductance, G (S)")
+            self.ax_g.set_title(
+                "G vs. Temperature", fontweight="bold"
+            )
 
             self.data_storage = {"temp": []}
             self.lines_cp = {}
@@ -1324,14 +1394,27 @@ class Temperature_Scan_GUI:
             self.root.after(200, self._process_data_queue)
 
     def _update_plots(self):
-        temps = self.data_storage["temp"]
+        temps = np.array(self.data_storage["temp"])
+
         for f in self.freq_list:
-            self.lines_cp[f].set_data(
-                temps, self.data_storage[f]["cp"]
+            cp_arr = np.array(self.data_storage[f]["cp"])
+            g_arr = np.array(self.data_storage[f]["g"])
+
+            # FIX v2.1: Filter non-positive values for log-scale
+            #   plotting. Mask points where cp <= 0 or g <= 0 to
+            #   prevent matplotlib log-scale errors and broken
+            #   plots. Invalid points are masked (shown as gaps
+            #   in the line), which is the correct scientific
+            #   representation.
+            cp_masked = np.ma.masked_where(
+                cp_arr <= 0, cp_arr
             )
-            self.lines_g[f].set_data(
-                temps, self.data_storage[f]["g"]
+            g_masked = np.ma.masked_where(
+                g_arr <= 0, g_arr
             )
+
+            self.lines_cp[f].set_data(temps, cp_masked)
+            self.lines_g[f].set_data(temps, g_masked)
 
         self.ax_cp.relim()
         self.ax_cp.autoscale_view()
