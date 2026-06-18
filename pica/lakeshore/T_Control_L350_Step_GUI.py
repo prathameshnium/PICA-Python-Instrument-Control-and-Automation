@@ -95,7 +95,6 @@ class Lakeshore_Backend:
         self.lakeshore.timeout = 10000
         self.lakeshore.write('*CLS')          # clear status once; do NOT *RST mid-run
         idn = self.lakeshore.query('*IDN?').strip()
-        print(f"  Lakeshore Connected: {idn}")
         return idn
 
     def configure_ramp(self, setpoint, rate, heater_range):
@@ -105,10 +104,19 @@ class Lakeshore_Backend:
         self.lakeshore.write(f'SETP 1,{setpoint}') # now the change is ramped
 
     def set_heater_range(self, output, heater_range):
-        range_map = {'off': 0, 'low': 1, 'medium': 3, 'high': 5}
-        range_code = range_map.get(heater_range.lower())
-        if range_code is None:
-            raise ValueError("Invalid heater range.")
+        """Set heater range from string ('High') or number (5)."""
+        range_code = 0
+        try:
+            # Try to parse as a number first
+            range_code = int(heater_range)
+        except (ValueError, TypeError):
+            # Fallback to string map for legacy calls
+            range_map = {'off': 0, 'low': 1, 'medium': 3, 'high': 5}
+            range_code = range_map.get(str(heater_range).lower(), 0)
+
+        if not (0 <= range_code <= 5):
+            raise ValueError(f"Heater range must be 0-5. Got: {heater_range}")
+
         self.lakeshore.write(f'RANGE {output},{range_code}')
 
     def get_status(self):
@@ -136,6 +144,17 @@ class Lakeshore_Backend:
             finally:
                 self.lakeshore = None
 
+    def set_pid(self, output, p, i, d):
+        """Set PID values for the given output (1 or 2)."""
+        if not (0 <= p <= 9999 and 0 <= i <= 1000 and 0 <= d <= 200):
+            raise ValueError("PID values out of range.")
+        self.lakeshore.write(f"PID {output},{p},{i},{d}")
+
+    def get_pid(self, output):
+        """Query current PID values. Returns (P, I, D) as floats."""
+        resp = self.lakeshore.query(f"PID? {output}")
+        parts = resp.split(',')
+        return float(parts[0]), float(parts[1]), float(parts[2])
 
 # -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---
@@ -171,14 +190,23 @@ class TempControlGUI:
         self.gui_queue = queue.Queue()
         self.proceed_event = threading.Event()
         
-        # Flag to safely pass live heater updates to the hardware thread
-        self.live_heater_update = None 
-        
         self.logo_image = None
         self.backend = Lakeshore_Backend()
         
         self.data_storage = {'time': [], 'temperature': [], 'target': [],
                              'resistance': [], 'heater': []}
+
+        # --- Live update flags (set by GUI, consumed by worker) ---
+        self.live_heater_update = None
+        self.live_param_update = None
+        self.live_pid_update = None
+
+        # --- PID Presets ---
+        self.PID_PRESETS = {
+            'Slow (P=0.5, I=4, D=0)': (0.5, 4.0, 0),
+            'Medium (P=20, I=15, D=0)': (20.0, 15.0, 0),
+            'Fast (P=50, I=20, D=0)': (50.0, 20.0, 0),
+        }
 
         self.setup_styles()
         self.create_widgets()
@@ -229,13 +257,34 @@ class TempControlGUI:
         self._populate_right_panel(right_panel)
 
     def _populate_left_panel(self, panel):
-        panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(3, weight=1) 
+        # --- Create a scrollable area ---
+        canvas = tk.Canvas(panel, bg=self.CLR_BG_DARK, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(panel, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            )
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # --- Populate the scrollable frame ---
+        scrollable_frame.grid_columnconfigure(0, weight=1)
+        # The row containing the console (the last one) should expand
+        scrollable_frame.grid_rowconfigure(4, weight=1) 
         
-        self._create_info_panel(panel, 0)
-        self._create_sequence_panel(panel, 1)
-        self._create_settings_panel(panel, 2)
-        self._create_console_panel(panel, 3)
+        self._create_info_panel(scrollable_frame, 0)
+        self._create_sequence_panel(scrollable_frame, 1)
+        self._create_settings_panel(scrollable_frame, 2)
+        self._create_pid_panel(scrollable_frame, 3)
+        self._create_console_panel(scrollable_frame, 4)
 
     def _create_info_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Information')
@@ -320,33 +369,36 @@ class TempControlGUI:
     def _create_settings_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Instrument & Stability Settings')
         frame.grid(row=grid_row, column=0, sticky='new', pady=5, padx=5)
-        frame.grid_columnconfigure(1, weight=1)
-        frame.grid_columnconfigure(3, weight=1)
+        # Configure a 6-column grid for the new layout
+        for i in range(6):
+            frame.grid_columnconfigure(i, weight=1 if i in [1, 4] else 0)
 
         self.entries = {}
         
-        self._create_grid_entry(frame, "Tolerance (±K)", "0.5", 0, 0)
-        self._create_grid_entry(frame, "Soak Time (s)", "120", 0, 2) # Updated to 120s
-        self._create_grid_entry(frame, "Ramp Rate (K/min)", "2", 1, 0)
-        self._create_grid_entry(frame, "Poll Delay (s)", "1", 1, 2)
+        self._create_grid_entry(frame, "Tolerance (±K):", "tol", "0.5", 0, 0)
+        self._create_grid_entry(frame, "Soak Time (s):", "soak", "120", 0, 3)
+        self._create_grid_entry(frame, "Ramp Rate (K/min):", "rate", "10.0", 1, 0)
+        self._create_grid_entry(frame, "Poll Delay (s):", "delay", "1", 1, 3)
 
-        ttk.Label(frame, text="Heater Range:").grid(row=2, column=0, sticky='w', padx=10, pady=5)
-        self.heater_range_var = tk.StringVar(value='High')
-        
-        # Retain as self.heater_cb so we can easily access it. 
-        self.heater_cb = ttk.Combobox(frame, textvariable=self.heater_range_var, values=['Off', 'Low', 'Medium', 'High'], state='readonly', width=10)
-        self.heater_cb.grid(row=2, column=1, sticky='ew', padx=5)
-        
-        # Bind the event to handle live changes
+        # --- Heater and VISA selectors ---
+        ttk.Label(frame, text="Heater Range:").grid(
+            row=2, column=0, sticky='w', padx=10, pady=5)
+        self.heater_range_var = tk.StringVar(value='5')
+        self.heater_cb = ttk.Combobox(
+            frame, textvariable=self.heater_range_var,
+            values=['0 (Off)', '1', '2', '3', '4', '5 (Max)'],
+            state='readonly', width=10)
+        self.heater_cb.grid(row=2, column=1, columnspan=2, sticky='ew', padx=5)
         self.heater_cb.bind('<<ComboboxSelected>>', self._on_heater_range_changed)
 
-        ttk.Label(frame, text="VISA Addr:").grid(row=2, column=2, sticky='w', padx=5, pady=5)
+        ttk.Label(frame, text="VISA Addr:").grid(
+            row=2, column=3, sticky='w', padx=5, pady=5)
         self.ls_cb = ttk.Combobox(frame, state='readonly', width=15)
-        self.ls_cb.grid(row=2, column=3, sticky='ew', padx=5)
+        self.ls_cb.grid(row=2, column=4, columnspan=2, sticky='ew', padx=5)
 
         button_frame = ttk.Frame(frame)
-        button_frame.grid(row=3, column=0, columnspan=4, sticky='ew', pady=10, padx=10)
-        button_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        button_frame.grid(row=3, column=0, columnspan=6, sticky='ew', pady=10, padx=10)
+        button_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
         
         self.start_button = ttk.Button(button_frame, text="Start Sequence", style='Start.TButton', command=self.start_sequence)
         self.start_button.grid(row=0, column=0, sticky='ew', padx=2)
@@ -354,7 +406,42 @@ class TempControlGUI:
         self.stop_button = ttk.Button(button_frame, text="Stop All", style='Stop.TButton', state='disabled', command=self.stop_ramp)
         self.stop_button.grid(row=0, column=1, sticky='ew', padx=2)
         
-        ttk.Button(button_frame, text="Scan VISA", command=self._scan_for_visa).grid(row=0, column=2, sticky='ew', padx=2)
+        ttk.Button(button_frame, text="Scan VISA", command=self._scan_for_visa).grid(
+            row=0, column=2, sticky='ew', padx=2)
+
+        ttk.Button(button_frame, text="Send Updates", command=self._send_live_updates).grid(
+            row=0, column=3, sticky='ew', padx=2)
+
+    def _create_pid_panel(self, parent, grid_row):
+        frame = ttk.LabelFrame(parent, text='Live PID Tuning (Output 1)')
+        frame.grid(row=grid_row, column=0, sticky='new', pady=5, padx=5)
+        frame.grid_columnconfigure(1, weight=1)
+
+        # Preset selector
+        ttk.Label(frame, text="Preset:").grid(
+            row=0, column=0, sticky='w', padx=10, pady=5)
+        self.pid_preset_var = tk.StringVar()
+        pid_preset_cb = ttk.Combobox(
+            frame, textvariable=self.pid_preset_var,
+            values=list(self.PID_PRESETS.keys()) + ['Custom'],
+            state='readonly')
+        pid_preset_cb.grid(row=0, column=1, sticky='ew', padx=10, pady=5)
+        pid_preset_cb.bind('<<ComboboxSelected>>', self._on_pid_preset_change)
+
+        # P, I, D entries
+        self.pid_p_entry = self._create_grid_entry(frame, "P:", "pid_p", "50.0", 1, 0, lockable=False)
+        self.pid_i_entry = self._create_grid_entry(frame, "I:", "pid_i", "30.0", 1, 3, lockable=False)
+        self.pid_d_entry = self._create_grid_entry(frame, "D:", "pid_d", "0.0", 2, 0, lockable=False)
+
+        # Buttons
+        btn_frame = ttk.Frame(frame)
+        btn_frame.grid(row=3, column=0, columnspan=6, sticky='ew', pady=5)
+        btn_frame.grid_columnconfigure((0, 1), weight=1)
+        
+        ttk.Button(btn_frame, text="Send PID", command=self._send_pid).grid(
+            row=0, column=0, sticky='ew', padx=5)
+        ttk.Button(btn_frame, text="Read PID", command=self._read_pid).grid(
+            row=0, column=1, sticky='ew', padx=5)
 
     def _create_console_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Console Log')
@@ -406,12 +493,23 @@ class TempControlGUI:
         self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
 
     # --- UI HELPERS ---
-    def _create_grid_entry(self, parent, label_text, default_value, row, col):
-        ttk.Label(parent, text=label_text).grid(row=row, column=col, sticky='w', padx=10, pady=5)
-        entry = ttk.Entry(parent, font=self.FONT_BASE, width=8)
-        entry.grid(row=row, column=col+1, sticky='w', padx=5, pady=5)
+    def _create_grid_entry(self, parent, label, key, default_value, row, col, lockable=True):
+        """Creates a label, entry, and optional lock button."""
+        ttk.Label(parent, text=label).grid(row=row, column=col, sticky='w', padx=(10, 2), pady=2)
+        entry = ttk.Entry(parent, font=self.FONT_BASE, width=10)
+        entry.grid(row=row, column=col + 1, sticky='ew', padx=2, pady=2)
         entry.insert(0, default_value)
-        self.entries[label_text] = entry
+        
+        if lockable:
+            lock_btn = ttk.Button(parent, text="🔓", width=2,
+                                  command=lambda k=key: self._toggle_entry_lock(k))
+            lock_btn.grid(row=row, column=col + 2, sticky='w', padx=(0, 10), pady=2)
+            self.entries[key] = {'entry': entry, 'lock': lock_btn, 'locked': False}
+        else:
+            # For non-lockable entries like PID
+            self.entries[key] = {'entry': entry, 'lock': None, 'locked': False}
+        
+        return entry # Return for direct access if needed
 
     def _update_list_size(self, event=None):
         try:
@@ -506,6 +604,70 @@ class TempControlGUI:
                 pass
         threading.Thread(target=_ring, daemon=True).start()
 
+    def _toggle_entry_lock(self, key):
+        """Toggle the lock state of a single parameter entry."""
+        if key in self.entries:
+            widget_map = self.entries[key]
+            if widget_map['locked']:
+                widget_map['entry'].config(state='normal')
+                widget_map['lock'].config(text='🔓')
+                widget_map['locked'] = False
+            else:
+                widget_map['entry'].config(state='disabled')
+                widget_map['lock'].config(text='🔒')
+                widget_map['locked'] = True
+
+    def _on_pid_preset_change(self, event=None):
+        """Update P/I/D entries when a preset is selected."""
+        preset = self.pid_preset_var.get()
+        if preset in self.PID_PRESETS:
+            p, i, d = self.PID_PRESETS[preset]
+            self.pid_p_entry.delete(0, 'end'); self.pid_p_entry.insert(0, str(p))
+            self.pid_i_entry.delete(0, 'end'); self.pid_i_entry.insert(0, str(i))
+            self.pid_d_entry.delete(0, 'end'); self.pid_d_entry.insert(0, str(d))
+
+    def _send_pid(self):
+        """Queue a request to send PID values to the worker thread."""
+        if not self.is_running:
+            messagebox.showwarning("Not Running", "PID can only be sent while a sequence is active.")
+            return
+        try:
+            p = float(self.pid_p_entry.get())
+            i = float(self.pid_i_entry.get())
+            d = float(self.pid_d_entry.get())
+            self.live_pid_update = {'action': 'send', 'values': (p, i, d)}
+            self.log(f"Queued PID SEND: P={p}, I={i}, D={d}")
+        except ValueError:
+            messagebox.showerror("Invalid Input", "P, I, D must be numeric.")
+
+    def _read_pid(self):
+        """Queue a request to read PID values from the worker thread."""
+        if not self.is_running:
+            messagebox.showwarning("Not Running", "PID can only be read while a sequence is active.")
+            return
+        self.live_pid_update = {'action': 'read'}
+        self.log("Queued PID READ request.")
+
+    def _send_live_updates(self):
+        """Validate unlocked fields and queue a parameter update."""
+        if not self.is_running:
+            messagebox.showwarning("Not Running", "Parameters can only be updated while a sequence is active.")
+            return
+        
+        updates = {}
+        try:
+            for key, widgets in self.entries.items():
+                if 'lock' in widgets and widgets['lock'] and not widgets['locked']:
+                    updates[key] = float(widgets['entry'].get())
+            
+            if updates:
+                self.live_param_update = updates
+                self.log(f"Queued live parameter update: {updates}")
+            else:
+                self.log("No unlocked parameters to update.")
+        except ValueError:
+            messagebox.showerror("Invalid Input", "All unlocked parameter values must be numeric.")
+
     def _close_data_file(self):
         f = getattr(self, 'data_file', None)
         if f:
@@ -534,7 +696,7 @@ class TempControlGUI:
 
         self.set_ui_state(running=True)
         self.is_running = True
-        self.live_heater_update = None # Reset flag
+        self.live_heater_update = None # Reset flags
         
         for key in self.data_storage:
             self.data_storage[key].clear()
@@ -574,16 +736,16 @@ class TempControlGUI:
 
     def _validate_and_get_params(self):
         params = {
-            'tolerance': float(self.entries["Tolerance (±K)"].get()),
-            'soak_time': float(self.entries["Soak Time (s)"].get()),
-            'rate': float(self.entries["Ramp Rate (K/min)"].get()),
-            'delay_s': float(self.entries["Poll Delay (s)"].get()),
-            'heater_range': self.heater_range_var.get(),
+            'tol': float(self.entries["tol"]['entry'].get()),
+            'soak': float(self.entries["soak"]['entry'].get()),
+            'rate': float(self.entries["rate"]['entry'].get()),
+            'delay': float(self.entries["delay"]['entry'].get()),
+            'heater_range': self.heater_range_var.get().split()[0], # "5 (Max)" -> "5"
             'ls_visa': self.ls_cb.get()
         }
         if not params['ls_visa']: raise ValueError("Please select a VISA address.")
         if params['rate'] <= 0: raise ValueError("Ramp rate must be positive.")
-        if params['tolerance'] <= 0: raise ValueError("Tolerance must be positive.")
+        if params['tol'] <= 0: raise ValueError("Tolerance must be positive.")
         return params
 
     def set_ui_state(self, running: bool):
@@ -650,6 +812,13 @@ class TempControlGUI:
                 elif msg_type == 'handshake_ready':
                     self.btn_proceed.config(state='normal')
                     self._beep()
+
+                elif msg_type == 'pid_read_result':
+                    p, i, d = msg['values']
+                    self.pid_p_entry.delete(0, 'end'); self.pid_p_entry.insert(0, str(p))
+                    self.pid_i_entry.delete(0, 'end'); self.pid_i_entry.insert(0, str(i))
+                    self.pid_d_entry.delete(0, 'end'); self.pid_d_entry.insert(0, str(d))
+                    self.pid_preset_var.set('Custom') # Reading values implies a custom state
                 
                 elif msg_type == 'sequence_complete':
                     self.set_ui_state(running=False)
@@ -664,7 +833,8 @@ class TempControlGUI:
     def _hardware_worker_loop(self):
         try:
             self._put_gui_msg('log', text="Connecting to Lakeshore...")
-            self.backend.connect(self.params['ls_visa'])
+            idn = self.backend.connect(self.params['ls_visa'])
+            self._put_gui_msg('log', text=f"Connected: {idn}")
             
             for i, target in enumerate(self.setpoint_floats):
                 if not self.is_running: break
@@ -672,7 +842,7 @@ class TempControlGUI:
                 self._put_gui_msg('log', text=f"--- Sequence Step {i+1}/{len(self.setpoint_floats)}: Target {target} K ---")
                 self._put_gui_msg('status', text=f"RAMPING TO {target} K", color=self.CLR_ACCENT_RED)
                 
-                self.backend.configure_ramp(target, self.params['rate'], self.params['heater_range'])
+                self.backend.configure_ramp(target, self.params['rate'], self.params['heater_range'].split()[0])
                 
                 stable_start_time = None
                 phase = 'RAMPING' # Can be: RAMPING, SOAKING, or WAITING
@@ -689,6 +859,31 @@ class TempControlGUI:
                             self._put_gui_msg('log', text=f"Heater successfully switched to: {new_range}")
                         except Exception as e:
                             self._put_gui_msg('log', text=f"Failed to switch heater range: {e}")
+
+                    # 1b. Process Live Parameter Updates
+                    if self.live_param_update is not None:
+                        updates = self.live_param_update
+                        self.live_param_update = None
+                        self.params.update(updates)
+                        self._put_gui_msg('log', text=f"Live parameters applied: {updates}")
+                        if 'rate' in updates:
+                            try:
+                                self.backend.lakeshore.write(f"RAMP 1,1,{updates['rate']}")
+                                self._put_gui_msg('log', text=f"Ramp rate updated to {updates['rate']} K/min.")
+                            except Exception as e:
+                                self._put_gui_msg('log', text=f"Failed to update ramp rate: {e}")
+
+                    # 1c. Process PID Updates
+                    if self.live_pid_update is not None:
+                        req = self.live_pid_update
+                        self.live_pid_update = None
+                        if req['action'] == 'send':
+                            p, i, d = req['values']
+                            self.backend.set_pid(1, p, i, d)
+                            self._put_gui_msg('log', text=f"PID sent: P={p}, I={i}, D={d}")
+                        elif req['action'] == 'read':
+                            p, i, d = self.backend.get_pid(1)
+                            self._put_gui_msg('pid_read_result', values=(p, i, d))
 
                     # 2. Get hardware status
                     temp, resistance, htr = self.backend.get_status()
@@ -715,15 +910,15 @@ class TempControlGUI:
                     
                     # 4. State Machine Logic (Never breaks the loop until user clicks proceed)
                     if phase in ['RAMPING', 'SOAKING']:
-                        if abs(temp - target) <= self.params['tolerance']:
+                        if abs(temp - target) <= self.params['tol']:
                             if phase == 'RAMPING':
                                 stable_start_time = time.time()
                                 phase = 'SOAKING'
-                                self._put_gui_msg('log', text=f"Entered tolerance band (±{self.params['tolerance']}K). Starting soak timer...")
+                                self._put_gui_msg('log', text=f"Entered tolerance band (±{self.params['tol']}K). Starting soak timer...")
                                 self._put_gui_msg('status', text=f"STABILIZING AT {target} K...", color=self.CLR_STABLE_WAIT)
                                 
-                            elif phase == 'SOAKING' and (time.time() - stable_start_time >= self.params['soak_time']):
-                                self._put_gui_msg('log', text=f"Stable inside window for {self.params['soak_time']}s. Ready for external measurement.")
+                            elif phase == 'SOAKING' and (time.time() - stable_start_time >= self.params['soak']):
+                                self._put_gui_msg('log', text=f"Stable inside window for {self.params['soak']}s. Ready for external measurement.")
                                 self._put_gui_msg('status', text=f"STABLE AT {target} K | AWAITING MEASUREMENT", color=self.CLR_ACCENT_GREEN)
                                 self._put_gui_msg('handshake_ready')
                                 phase = 'WAITING'
@@ -741,7 +936,7 @@ class TempControlGUI:
                             break # Exits the while loop, moving to the next target in the sequence!
                         
                     # 5. Delay before next poll
-                    time.sleep(self.params['delay_s'])
+                    time.sleep(self.params['delay'])
                 
             if self.is_running:
                 self._put_gui_msg('log', text="Measurement Sequence Complete.")
