@@ -21,19 +21,6 @@ Instrument specs confirmed from manual:
   - Setpoint ramping: 0.001-100 K/min
   - Display: 1 to 8 reading displays
   - Interfaces: Ethernet, USB, IEEE-488
-
-PID / Heater-Range selection guide (operator notes):
-
-  Use Case                              | PID Mode    | Range | Notes
-  --------------------------------------|-------------|-------|----------------------------------
-  Temperature-dependent measurements    | Slow        |   5   | Best for controlled temp ramps
-  Setpoint stabilization near 200 K     | Slow-Medium |   5   | Good stability around 200 K
-  Temperature ramp below 120 K          | Slow        |   4   | Recommended for slow ramps <120 K
-  Stabilization below 200 K             | Fast        |   4   | Good for stable hold below 200 K
-  Very fast ramping                     | Fast        |   5   | Best for rapid temperature changes
-
-Temperature-Dependent PID Zone panel lets you bind a PID mode + heater
-range to user-defined temperature thresholds.
 """
 
 import tkinter as tk
@@ -597,7 +584,7 @@ class DirectControlGUI:
         self.root = root
         self.root.title(
             f"{self.PROGRAM_NAME} v{self.PROGRAM_VERSION}")
-        self.root.geometry("1500x950")
+        self.root.geometry("1600x950")
         self.root.minsize(1200, 750)
         self.root.configure(bg=self.CLR_BG_DARK)
 
@@ -1496,12 +1483,15 @@ class DirectControlGUI:
     # -- Right panel (live status monitor) --
 
     def _populate_right_panel(self, panel):
+        # One row, two columns. Give more space to the status panel.
         panel.grid_rowconfigure(0, weight=1)
-        panel.grid_columnconfigure(0, weight=1)
+        panel.grid_columnconfigure(0, weight=2)
+        panel.grid_columnconfigure(1, weight=1)
 
         container = ttk.LabelFrame(
             panel, text='Live Instrument Status')
-        container.grid(row=0, column=0, sticky='nsew',
+        container.grid(row=0, column=0,
+                       sticky='nsew',
                        padx=5, pady=5)
         container.grid_rowconfigure(0, weight=1)
         container.grid_columnconfigure(0, weight=1)
@@ -1634,6 +1624,54 @@ class DirectControlGUI:
             command=self._toggle_polling)
         self.poll_btn.grid(row=row, column=0, columnspan=2,
                            sticky='ew', padx=20, pady=5)
+
+        # --- Notes Panel ---
+        notes_frame = ttk.LabelFrame(panel, text="Notes & Guides")
+        notes_frame.grid(row=0, column=1, sticky='nsew', padx=5, pady=5)
+        notes_frame.grid_columnconfigure(0, weight=1)
+        notes_frame.grid_rowconfigure(0, weight=1)
+
+        notes_text_widget = scrolledtext.ScrolledText(
+            notes_frame,
+            wrap='word',
+            bg=self.CLR_FRAME_BG,
+            fg=self.CLR_TEXT_DARK,
+            font=('Consolas', 10),
+            borderwidth=0,
+            relief='flat'
+        )
+        notes_text_widget.pack(fill='both', expand=True, padx=5, pady=5)
+
+        notes_content = """Instrument specs confirmed from manual:
+  • 4 sensor inputs (A, B, C, D)
+  • 4 outputs: 1 & 2 = heater (75W max on Output 1), 3 & 4 = analog
+  • 5 heater ranges (0=Off, 1-5 increasing power)
+  • PID: P=0-9999, I=0-1000, D=0-200
+  • Setpoint ramping: 0.001-100 K/min
+  • Display: 1 to 8 reading displays
+  • Interfaces: Ethernet, USB, IEEE-488
+
+PID / Heater-Range selection guide (operator notes):
+
+  ┌─────────────────────────────────────┬─────────────┬───────┬──────────────────────────────────┐
+  │ Use Case                            │ PID Mode    │ Range │ Notes                            │
+  ├─────────────────────────────────────┼─────────────┼───────┼──────────────────────────────────┤
+  │ Temperature-dependent measurements  │ Slow        │   5   │ Best for controlled temp ramps   │
+  │ Setpoint stabilization near 200 K   │ Slow-Medium │   5   │ Good stability around 200 K      │
+  │ Temperature ramp below 120 K        │ Slow        │   4   │ Recommended for slow ramps <120 K │
+  │ Stabilization below 200 K           │ Fast        │   4   │ Good for stable hold below 200 K │
+  │ Very fast ramping                   │ Fast        │   5   │ Best for rapid temperature changes │
+  └─────────────────────────────────────┴─────────────┴───────┴──────────────────────────────────┘
+
+Note: "Slow-Medium" is a conceptual guide; use 'Slow' or 'Medium'
+presets and adjust as needed.
+
+The "Temperature-Dependent PID Zone" panel lets you bind a PID mode +
+heater range to user-defined temperature thresholds, automating these
+selections.
+"""
+        notes_text_widget.insert('1.0', notes_content)
+        notes_text_widget.config(state='disabled')
 
     # -----------------------------------------------------------------------
     # HELPER METHODS
