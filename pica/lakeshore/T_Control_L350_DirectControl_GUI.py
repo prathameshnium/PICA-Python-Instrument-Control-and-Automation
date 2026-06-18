@@ -17,10 +17,23 @@ Instrument specs confirmed from manual:
   - 4 sensor inputs (A, B, C, D)
   - 4 outputs: 1 & 2 = heater (75W max on Output 1), 3 & 4 = analog
   - 5 heater ranges (0=Off, 1-5 increasing power)
-  - PID: P=0-9999, I=1-1000, D=1-200
+  - PID: P=0-9999, I=0-1000, D=0-200
   - Setpoint ramping: 0.001-100 K/min
   - Display: 1 to 8 reading displays
   - Interfaces: Ethernet, USB, IEEE-488
+
+PID / Heater-Range selection guide (operator notes):
+
+  Use Case                              | PID Mode    | Range | Notes
+  --------------------------------------|-------------|-------|----------------------------------
+  Temperature-dependent measurements    | Slow        |   5   | Best for controlled temp ramps
+  Setpoint stabilization near 200 K     | Slow-Medium |   5   | Good stability around 200 K
+  Temperature ramp below 120 K          | Slow        |   4   | Recommended for slow ramps <120 K
+  Stabilization below 200 K             | Fast        |   4   | Good for stable hold below 200 K
+  Very fast ramping                     | Fast        |   5   | Best for rapid temperature changes
+
+Temperature-Dependent PID Zone panel lets you bind a PID mode + heater
+range to user-defined temperature thresholds.
 """
 
 import tkinter as tk
@@ -397,6 +410,24 @@ class Lakeshore350Backend:
         """Query output mode configuration."""
         return self._query(f"OUTMODE? {output}")
 
+    # -- Zone tuning table (Manual: ZONE command) --
+    # ZONE <output>,<zone>,<upper bound>,<P>,<I>,<D>,
+    #      <mout>,<range>,<input>,<rate>
+    # zone: 1-10, upper bound in setpoint units (K),
+    # input: 0=default,1=A,2=B,3=C,4=D, rate in K/min (0=off)
+
+    def set_zone(self, output, zone, upper_bound, p, i, d,
+                 mout=0, range_val=0, input_num=0, rate=0):
+        """Define one entry in the instrument zone table."""
+        cmd = (f"ZONE {output},{zone},{upper_bound},{p},{i},{d},"
+               f"{mout},{range_val},{input_num},{rate}")
+        self._write(cmd)
+        return cmd
+
+    def get_zone(self, output, zone):
+        """Query a single zone table entry."""
+        return self._query(f"ZONE? {output},{zone}")
+
     # -- Manual output (Manual: MOUT command) --
     # MOUT <output>,<value>
     # value: 0 to 100 (% output)
@@ -550,15 +581,23 @@ class DirectControlGUI:
     # PID presets
     PID_PRESETS = {
         'Slow (P=0.5, I=4, D=0)': (0.5, 4.0, 0),
-        'Medium (P=10, I=10, D=0)': (10.0, 10.0, 0),
+        'Medium (P=20, I=15, D=0)': (20.0, 15.0, 0),
         'Fast (P=50, I=20, D=0)': (50.0, 20.0, 0),
+    }
+
+    # Simple-name -> (P, I, D) map used by the temperature-zone panel.
+    # Kept in sync with PID_PRESETS.
+    ZONE_PID_MODES = {
+        'Slow': (0.5, 4.0, 0),
+        'Medium': (20.0, 15.0, 0),
+        'Fast': (50.0, 20.0, 0),
     }
 
     def __init__(self, root):
         self.root = root
         self.root.title(
             f"{self.PROGRAM_NAME} v{self.PROGRAM_VERSION}")
-        self.root.geometry("1500x850")
+        self.root.geometry("1500x950")
         self.root.minsize(1200, 750)
         self.root.configure(bg=self.CLR_BG_DARK)
 
@@ -725,12 +764,13 @@ class DirectControlGUI:
         self._create_info_panel(scroll_frame, 0)
         self._create_connection_panel(scroll_frame, 1)
         self._create_pid_panel(scroll_frame, 2)
-        self._create_setpoint_panel(scroll_frame, 3)
-        self._create_range_panel(scroll_frame, 4)
-        self._create_display_panel(scroll_frame, 5)
-        self._create_input_config_panel(scroll_frame, 6)
-        self._create_manual_output_panel(scroll_frame, 7)
-        self._create_advanced_panel(scroll_frame, 8)
+        self._create_temp_zone_panel(scroll_frame, 3)
+        self._create_setpoint_panel(scroll_frame, 4)
+        self._create_range_panel(scroll_frame, 5)
+        self._create_display_panel(scroll_frame, 6)
+        self._create_input_config_panel(scroll_frame, 7)
+        self._create_manual_output_panel(scroll_frame, 8)
+        self._create_advanced_panel(scroll_frame, 9)
         self._create_console_panel(scroll_frame, 99)
 
     def _create_info_panel(self, parent, grid_row):
@@ -890,6 +930,194 @@ class DirectControlGUI:
             text="Read PID",
             command=self._read_pid).grid(
             row=0, column=1, sticky='ew', padx=5)
+
+    def _create_temp_zone_panel(self, parent, grid_row):
+        """Configurable temperature-dependent PID zone table."""
+        frame = ttk.LabelFrame(
+            parent, text='Temperature-Dependent PID Zones')
+        frame.grid(row=grid_row, column=0, sticky='new',
+                   pady=5, padx=10)
+        frame.grid_columnconfigure(0, weight=1)
+
+        ttk.Label(
+            frame,
+            text=("Bind a PID mode + heater range to each zone.\n"
+                  "'Upper Bound (K)' is the top of the zone; the\n"
+                  "lowest zone starts at 0 K. Use 9999 for the top.\n"
+                  "Defaults: <120 K Slow/4, 120-200 K Medium/4,\n"
+                  ">200 K Slow/5."),
+            background=self.CLR_FRAME_BG,
+            font=('Segoe UI', 9),
+            justify='left').grid(
+            row=0, column=0, sticky='w', padx=10, pady=(5, 5))
+
+        # Output + control input
+        sel = ttk.Frame(frame)
+        sel.grid(row=1, column=0, sticky='ew', padx=10, pady=2)
+        ttk.Label(sel, text="Output:",
+                  background=self.CLR_FRAME_BG).pack(side='left')
+        self.zone_output_var = tk.StringVar(value='1')
+        ttk.Combobox(sel, textvariable=self.zone_output_var,
+                     values=['1', '2'], state='readonly',
+                     width=4).pack(side='left', padx=5)
+        ttk.Label(sel, text="Control Input:",
+                  background=self.CLR_FRAME_BG).pack(
+            side='left', padx=(10, 0))
+        self.zone_input_var = tk.StringVar(value='A')
+        ttk.Combobox(sel, textvariable=self.zone_input_var,
+                     values=['A', 'B', 'C', 'D'], state='readonly',
+                     width=4).pack(side='left', padx=5)
+
+        # Zone table (header + dynamic rows)
+        self.zone_table = ttk.Frame(frame)
+        self.zone_table.grid(row=2, column=0, sticky='ew',
+                             padx=10, pady=5)
+        for col, h in enumerate(
+                ['Upper Bound (K)', 'PID Mode', 'Heater Range']):
+            ttk.Label(self.zone_table, text=h,
+                      background=self.CLR_FRAME_BG,
+                      font=('Segoe UI', 9, 'bold')).grid(
+                row=0, column=col, padx=5, pady=2)
+
+        self.zone_rows = []
+        for ub, mode, rng in [('120', 'Slow', '4'),
+                              ('200', 'Medium', '4'),
+                              ('9999', 'Slow', '5')]:
+            self._add_zone_row(ub, mode, rng)
+
+        # Buttons
+        btns = ttk.Frame(frame)
+        btns.grid(row=3, column=0, sticky='ew', padx=10, pady=5)
+        btns.grid_columnconfigure((0, 1), weight=1)
+        ttk.Button(btns, text="+ Add Zone",
+                   command=lambda: self._add_zone_row()).grid(
+            row=0, column=0, sticky='ew', padx=5, pady=2)
+        ttk.Button(btns, text="- Remove Zone",
+                   command=self._remove_zone_row).grid(
+            row=0, column=1, sticky='ew', padx=5, pady=2)
+        ttk.Button(btns, text="Apply Zone Table (instrument Zone mode)",
+                   command=self._apply_zones).grid(
+            row=1, column=0, columnspan=2, sticky='ew',
+            padx=5, pady=2)
+        ttk.Button(btns, text="Auto-Select PID/Range for Current Temp",
+                   command=self._auto_select_zone).grid(
+            row=2, column=0, columnspan=2, sticky='ew',
+            padx=5, pady=2)
+
+    def _add_zone_row(self, upper='9999', mode='Slow', rng='5'):
+        """Append an editable zone row to the table."""
+        r = len(self.zone_rows) + 1  # +1 for header row
+        ub = ttk.Entry(self.zone_table, width=12, font=self.FONT_BASE)
+        ub.insert(0, upper)
+        ub.grid(row=r, column=0, padx=5, pady=2)
+
+        mode_var = tk.StringVar(value=mode)
+        mode_cb = ttk.Combobox(
+            self.zone_table, textvariable=mode_var,
+            values=list(self.ZONE_PID_MODES.keys()),
+            state='readonly', width=10)
+        mode_cb.grid(row=r, column=1, padx=5, pady=2)
+
+        rng_var = tk.StringVar(value=rng)
+        rng_cb = ttk.Combobox(
+            self.zone_table, textvariable=rng_var,
+            values=['0', '1', '2', '3', '4', '5'],
+            state='readonly', width=6)
+        rng_cb.grid(row=r, column=2, padx=5, pady=2)
+
+        self.zone_rows.append({
+            'ub': ub, 'mode': mode_var, 'range': rng_var,
+            'widgets': [ub, mode_cb, rng_cb]})
+
+    def _remove_zone_row(self):
+        """Remove the last zone row (at least one must remain)."""
+        if len(self.zone_rows) <= 1:
+            self.log("At least one zone is required.")
+            return
+        row = self.zone_rows.pop()
+        for w in row['widgets']:
+            w.destroy()
+
+    def _collect_zones(self):
+        """Return zones sorted by upper bound, or None on bad input."""
+        zones = []
+        for r in self.zone_rows:
+            try:
+                ub = float(r['ub'].get())
+            except ValueError:
+                self.log("ERROR: Zone upper bounds must be numeric.")
+                messagebox.showerror(
+                    "Invalid Input",
+                    "All zone upper bounds must be numeric.")
+                return None
+            zones.append((ub, r['mode'].get(), r['range'].get()))
+        zones.sort(key=lambda z: z[0])
+        return zones
+
+    def _apply_zones(self):
+        """Write the zone table to the instrument and enable Zone mode."""
+        if not self._require_connection():
+            return
+        zones = self._collect_zones()
+        if zones is None:
+            return
+        output = int(self.zone_output_var.get())
+        input_letter = self.zone_input_var.get()
+        input_num = {'A': 1, 'B': 2, 'C': 3, 'D': 4}.get(
+            input_letter, 1)
+
+        self.log(f">>> Applying {len(zones)} PID zone(s) to "
+                 f"Output {output}...")
+        for idx, (ub, mode, rng) in enumerate(zones, start=1):
+            p, i, d = self.ZONE_PID_MODES.get(mode, (0.5, 4.0, 0))
+            try:
+                cmd = self.backend.set_zone(
+                    output, idx, ub, p, i, d, 0,
+                    int(rng), input_num, 0)
+                self.log(f"    SENT: {cmd}")
+            except Exception as e:
+                self.log(f"    ERROR: {e}")
+                messagebox.showerror("Command Failed", str(e))
+                return
+        try:
+            cmd = self.backend.set_output_mode(output, 2, input_letter)
+            self.log(f"    SENT: {cmd}  (Zone mode enabled)")
+        except Exception as e:
+            self.log(f"    ERROR enabling zone mode: {e}")
+            return
+        self.log("    OK: Zone table applied; output in Zone mode.")
+
+    def _auto_select_zone(self):
+        """Read current temp and apply the matching zone's PID + range."""
+        if not self._require_connection():
+            return
+        zones = self._collect_zones()
+        if zones is None:
+            return
+        output = int(self.zone_output_var.get())
+        input_letter = self.zone_input_var.get()
+        try:
+            temp = self.backend.get_temperature(input_letter)
+        except Exception as e:
+            self.log(f"ERROR reading temperature: {e}")
+            messagebox.showerror("Read Failed", str(e))
+            return
+
+        selected = next(((ub, m, r) for ub, m, r in zones
+                         if temp <= ub), zones[-1])
+        ub, mode, rng = selected
+        p, i, d = self.ZONE_PID_MODES.get(mode, (0.5, 4.0, 0))
+        self.log(f">>> Current temp {temp:.3f} K -> zone <= {ub} K: "
+                 f"{mode} PID, range {rng}")
+        try:
+            self.backend.set_pid(output, p, i, d)
+            self.backend.set_range(output, int(rng))
+            self.log(f"    SENT: PID {output},{p},{i},{d}; "
+                     f"RANGE {output},{rng}")
+            self.log("    OK: PID and range applied for current temp.")
+        except Exception as e:
+            self.log(f"    ERROR: {e}")
+            messagebox.showerror("Command Failed", str(e))
 
     def _create_setpoint_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Setpoint Control')
