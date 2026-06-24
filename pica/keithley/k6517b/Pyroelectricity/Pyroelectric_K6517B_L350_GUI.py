@@ -53,11 +53,10 @@ def run_script_process(script_path):
 def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    # Go up 3 levels: Pyroelectricity -> k6517b -> keithley -> pica
     plotter_path = os.path.join(
         script_dir,
-        "..", "..", "..", "utils", "PlotterUtil_GUI.py") 
-    
+        "..", "..", "..", "utils", "PlotterUtil_GUI.py")
+
     if not os.path.exists(plotter_path):
         messagebox.showerror(
             "File Not Found",
@@ -69,7 +68,6 @@ def launch_plotter_utility():
 def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    # Go up 3 levels: Pyroelectricity -> k6517b -> keithley -> pica
     scanner_path = os.path.join(
         script_dir,
         "..", "..", "..", "utils", "GPIB_Instrument_Scanner_GUI.py")
@@ -103,7 +101,8 @@ class PyroelectricBackend:
             self.rm = None
 
     def initialize_instruments(self, parameters):
-        """Connects, resets, and performs initial configuration of instruments."""
+        """Connects, resets, and performs initial configuration of
+        instruments."""
         print("\n--- [Backend] Initializing Instruments ---")
         self.params = parameters
         if not self.rm:
@@ -111,40 +110,81 @@ class PyroelectricBackend:
         try:
             # --- Connect and Configure Lakeshore 350 ---
             print(
-                f"  Connecting to Lakeshore 350 via {self.params['lakeshore_visa']}...")
+                f"  Connecting to Lakeshore 350 via "
+                f"{self.params['lakeshore_visa']}...")
             self.lakeshore = self.rm.open_resource(
                 self.params['lakeshore_visa'])
             self.lakeshore.timeout = 15000
-            print(f"    Connected to: {self.lakeshore.query('*IDN?').strip()}")
+            print(
+                f"    Connected to: "
+                f"{self.lakeshore.query('*IDN?').strip()}")
 
             self.lakeshore.write('*RST')
             time.sleep(0.5)
             self.lakeshore.write('*CLS')
             time.sleep(0.5)
 
-            # HTRSET <output>,<resistance>,<max current>,<max user current>,<display>
+            # HTRSET <output>,<resistance>,<max current>,
+            # <max user current>,<display>
             # resistance=1 (25Ω), max_current=2 (1A)
             self.lakeshore.write('HTRSET 1,1,2,0,1')
             print("  Lakeshore heater configured (25Ω, 1A max).")
 
             # --- Connect and Configure Keithley 6517B ---
             print(
-                f"  Connecting to Keithley 6517B via {self.params['keithley_visa']}...")
+                f"  Connecting to Keithley 6517B via "
+                f"{self.params['keithley_visa']}...")
             self.keithley = Keithley6517B(self.params['keithley_visa'])
             time.sleep(1)
             print(f"    Connected to: {self.keithley.id}")
+
+            # Configure for current measurement
             self.keithley.measure_current()
-            print("  Keithley 6517B configured to measure current.")
-            print("--- [Backend] Instrument Initialization Complete ---")
+
+            # --- Disable Zero Check (CRITICAL) ---
+            # After *RST / power-up the 6517B input is internally
+            # disconnected (Zero Check ON), which returns the ~9.9e37
+            # overflow value.
+            # SYST:ZCH OFF reconnects the input so real current is read.
+            self.keithley.write("SYST:ZCH OFF")
+            time.sleep(0.5)
+
+            # Enable autorange so a too-low fixed range does not also
+            # trigger overflow.
+            self.keithley.write("CURR:RANG:AUTO ON")
+            time.sleep(0.5)
+
+            # --- Perform zero correction (best practice) ---
+            # 1. Re-enable zero check to acquire the zero reference.
+            self.keithley.write("SYST:ZCH ON")
+            time.sleep(0.5)
+            # 2. Acquire the zero-correction value.
+            self.keithley.write("SYST:ZCOR:ACQ")
+            time.sleep(0.5)
+            # 3. Disable zero check so real current can be measured.
+            self.keithley.write("SYST:ZCH OFF")
+            time.sleep(0.5)
+            # 4. Enable zero correction on the measurement.
+            self.keithley.write("SYST:ZCOR ON")
+            time.sleep(0.5)
+
+            print(
+                "  Keithley 6517B configured: current mode, Zero Check OFF, "
+                "autorange ON, zero correction applied.")
+            print(
+                "--- [Backend] Instrument Initialization Complete ---")
 
         except Exception as e:
-            print(f"  ERROR: Could not connect/configure an instrument. {e}")
+            print(
+                f"  ERROR: Could not connect/configure an instrument. {e}")
             self.close_instruments()
             raise e
 
     def start_stabilization(self):
         """Begins moving to the start temperature for stabilization."""
-        print(f"  Moving to start temperature: {self.params['start_temp']} K")
+        print(
+            f"  Moving to start temperature: "
+            f"{self.params['start_temp']} K")
         self.lakeshore.write(f"SETP 1,{self.params['start_temp']}")
         # Use 'high' range for stabilization
         self.lakeshore.write("RANGE 1,5")
@@ -153,7 +193,8 @@ class PyroelectricBackend:
     def start_ramp(self):
         """Configures and starts the temperature ramp."""
         print(
-            f"  Ramp starting towards {self.params['end_temp']} K at {self.params['rate']} K/min.")
+            f"  Ramp starting towards {self.params['end_temp']} K at "
+            f"{self.params['rate']} K/min.")
         # RAMP <output>,<on/off>,<rate>
         self.lakeshore.write(f"RAMP 1,1,{self.params['rate']}")
         self.lakeshore.write(f"SETP 1,{self.params['end_temp']}")
@@ -164,20 +205,23 @@ class PyroelectricBackend:
     def get_measurement(self):
         """Reads temperature and current from the instruments."""
         if not self.keithley or not self.lakeshore:
-            raise ConnectionError("One or more instruments are not connected.")
+            raise ConnectionError(
+                "One or more instruments are not connected.")
         try:
             temp_str = self.lakeshore.query('KRDG? A').strip()
             temperature = float(temp_str)
             current = self.keithley.current
             return temperature, current
         except (pyvisa.errors.VisaIOError, ValueError):
-            return float('nan'), float('nan')  # Return NaN on error
+            return float('nan'), float('nan')
 
     def close_instruments(self):
         """Safely shuts down and disconnects from all instruments."""
         print("--- [Backend] Closing instrument connections. ---")
         if self.keithley:
             try:
+                # Re-enable Zero Check to protect the input before shutdown.
+                self.keithley.write("SYST:ZCH ON")
                 self.keithley.shutdown()
                 print("  Keithley 6517B connection closed.")
             except Exception:
@@ -197,7 +241,7 @@ class PyroelectricBackend:
 
 class PyroelectricAppGUI:
     """The main GUI application class (Front End)."""
-    PROGRAM_VERSION = "3.0"  # Performance and UI update
+    PROGRAM_VERSION = "3.1"  # Added Zero Check / Zero Correction fix
     CLR_BG_DARK = '#B8A392'
     CLR_HEADER = '#E5DCD3'
     CLR_FG_LIGHT = '#2C2825'
@@ -221,13 +265,13 @@ class PyroelectricAppGUI:
         self.root.minsize(1300, 850)
 
         self.is_running, self.start_time = False, None
-        self.experiment_state = 'idle'  # States: idle, stabilizing, ramping
+        self.experiment_state = 'idle'
         self.backend = PyroelectricBackend()
         self.file_location_path = ""
-        self.data_storage = {'time': [], 'temperature': [], 'current': []}
+        self.data_storage = {
+            'time': [], 'temperature': [], 'current': []}
         self.data_queue = queue.Queue()
         self.measurement_thread = None
-        # self.plot_backgrounds = None  # For blitting - REMOVED
 
         self.setup_styles()
         self.create_widgets()
@@ -247,40 +291,40 @@ class PyroelectricAppGUI:
         style.configure(
             'TButton',
             font=self.FONT_BASE,
-            padding=(
-                10,
-                9),
+            padding=(10, 9),
             foreground=self.CLR_ACCENT_GOLD,
             background=self.CLR_HEADER,
             borderwidth=0,
             focusthickness=0,
             focuscolor='none')
         style.map(
-            'TButton', background=[
-                ('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[
-                ('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
+            'TButton',
+            background=[
+                ('active', self.CLR_ACCENT_GOLD),
+                ('hover', self.CLR_ACCENT_GOLD)],
+            foreground=[
+                ('active', self.CLR_TEXT_DARK),
+                ('hover', self.CLR_TEXT_DARK)])
         style.configure(
             'Start.TButton',
             font=self.FONT_BASE,
-            padding=(
-                10,
-                9),
+            padding=(10, 9),
             background=self.CLR_ACCENT_GREEN,
             foreground=self.CLR_TEXT_DARK)
         style.map(
-            'Start.TButton', background=[
-                ('active', '#8AB845'), ('hover', '#8AB845')])
+            'Start.TButton',
+            background=[('active', '#8AB845'),
+                        ('hover', '#8AB845')])
         style.configure(
             'Stop.TButton',
             font=self.FONT_BASE,
-            padding=(
-                10,
-                9),
+            padding=(10, 9),
             background=self.CLR_ACCENT_RED,
             foreground=self.CLR_FG_LIGHT)
         style.map(
-            'Stop.TButton', background=[
-                ('active', '#D63C2A'), ('hover', '#D63C2A')])
+            'Stop.TButton',
+            background=[('active', '#D63C2A'),
+                        ('hover', '#D63C2A')])
         style.configure(
             'TLabelframe',
             background=self.CLR_BG_DARK,
@@ -318,7 +362,8 @@ class PyroelectricAppGUI:
         scrollable_frame = ttk.Frame(canvas)
 
         scrollable_frame.bind(
-            "<Configure>", lambda e: canvas.configure(
+            "<Configure>",
+            lambda e: canvas.configure(
                 scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
@@ -403,7 +448,8 @@ class PyroelectricAppGUI:
                 "UGC_DAE_CSR_NBG.jpeg")
         except NameError:
             logo_path = "../../../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
-        self.logo_image = self._process_logo_image(logo_path, size=LOGO_SIZE)
+        self.logo_image = self._process_logo_image(
+            logo_path, size=LOGO_SIZE)
         if self.logo_image:
             logo_canvas.create_image(
                 LOGO_SIZE / 2,
@@ -426,9 +472,7 @@ class PyroelectricAppGUI:
             row=0,
             column=1,
             padx=10,
-            pady=(
-                10,
-                0),
+            pady=(10, 0),
             sticky='sw')
         ttk.Label(
             frame,
@@ -449,10 +493,11 @@ class PyroelectricAppGUI:
             padx=10,
             pady=8)
 
-        details_text = ("Program Name: Pyroelectric Current vs. T\n"
-                        "Instruments: Keithley 6517B, Lakeshore 350\n"
-                        "Measurement Range: 1 fA to 20 mA\n"
-                        "Temperature Controller Range: 5 (High)")
+        details_text = (
+            "Program Name: Pyroelectric Current vs. T\n"
+            "Instruments: Keithley 6517B, Lakeshore 350\n"
+            "Measurement Range: 1 fA to 20 mA\n"
+            "Temperature Controller Range: 5 (High)")
         ttk.Label(
             frame,
             text=details_text,
@@ -461,9 +506,7 @@ class PyroelectricAppGUI:
             column=0,
             columnspan=2,
             padx=15,
-            pady=(
-                0,
-                10),
+            pady=(0, 10),
             sticky='w')
 
     def create_input_frame(self, parent):
@@ -486,8 +529,8 @@ class PyroelectricAppGUI:
             sticky='w')
         self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE)
         self.entries["Sample Name"].grid(
-            row=1, column=0, columnspan=2, padx=10, pady=(
-                0, 10), sticky='ew')
+            row=1, column=0, columnspan=2, padx=10, pady=(0, 10),
+            sticky='ew')
 
         Label(
             frame,
@@ -499,9 +542,7 @@ class PyroelectricAppGUI:
             sticky='w')
         self.entries['Start Temp'] = Entry(frame, font=self.FONT_BASE)
         self.entries['Start Temp'].grid(
-            row=3, column=0, padx=(
-                10, 5), pady=(
-                0, 10), sticky='ew')
+            row=3, column=0, padx=(10, 5), pady=(0, 10), sticky='ew')
 
         Label(
             frame,
@@ -513,17 +554,19 @@ class PyroelectricAppGUI:
             sticky='w')
         self.entries['End Temp'] = Entry(frame, font=self.FONT_BASE)
         self.entries['End Temp'].grid(
-            row=3, column=1, padx=(
-                5, 10), pady=(
-                0, 10), sticky='ew')
+            row=3, column=1, padx=(5, 10), pady=(0, 10), sticky='ew')
 
-        Label(frame, text="Ramp Rate (K/min):").grid(row=4,
-                                                     column=0, padx=10, pady=pady_val, sticky='w')
+        Label(
+            frame,
+            text="Ramp Rate (K/min):").grid(
+            row=4,
+            column=0,
+            padx=10,
+            pady=pady_val,
+            sticky='w')
         self.entries['Ramp Rate'] = Entry(frame, font=self.FONT_BASE)
         self.entries['Ramp Rate'].grid(
-            row=5, column=0, padx=(
-                10, 5), pady=(
-                0, 15), sticky='ew')
+            row=5, column=0, padx=(10, 5), pady=(0, 15), sticky='ew')
 
         Label(
             frame,
@@ -535,9 +578,7 @@ class PyroelectricAppGUI:
             sticky='w')
         self.entries['Safety Cutoff'] = Entry(frame, font=self.FONT_BASE)
         self.entries['Safety Cutoff'].grid(
-            row=5, column=1, padx=(
-                5, 10), pady=(
-                0, 15), sticky='ew')
+            row=5, column=1, padx=(5, 10), pady=(0, 15), sticky='ew')
 
         Label(
             frame,
@@ -551,8 +592,8 @@ class PyroelectricAppGUI:
         self.lakeshore_combobox = ttk.Combobox(
             frame, font=self.FONT_BASE, state='readonly')
         self.lakeshore_combobox.grid(
-            row=7, column=0, columnspan=2, padx=10, pady=(
-                0, 5), sticky='ew')
+            row=7, column=0, columnspan=2, padx=10, pady=(0, 5),
+            sticky='ew')
 
         Label(
             frame,
@@ -566,8 +607,8 @@ class PyroelectricAppGUI:
         self.keithley_combobox = ttk.Combobox(
             frame, font=self.FONT_BASE, state='readonly')
         self.keithley_combobox.grid(
-            row=9, column=0, columnspan=2, padx=10, pady=(
-                0, 15), sticky='ew')
+            row=9, column=0, columnspan=2, padx=10, pady=(0, 15),
+            sticky='ew')
 
         self.scan_button = ttk.Button(
             frame,
@@ -581,7 +622,9 @@ class PyroelectricAppGUI:
             pady=5,
             sticky='ew')
         self.file_location_button = ttk.Button(
-            frame, text="Browse Save Location", command=self._browse_file_location)
+            frame,
+            text="Browse Save Location",
+            command=self._browse_file_location)
         self.file_location_button.grid(
             row=11,
             column=0,
@@ -606,8 +649,7 @@ class PyroelectricAppGUI:
             command=self.start_measurement,
             style='Start.TButton')
         self.start_button.grid(
-            row=0, column=0, padx=(
-                0, 5), pady=5, sticky='ew')
+            row=0, column=0, padx=(0, 5), pady=5, sticky='ew')
         self.stop_button = ttk.Button(
             button_frame,
             text="Stop",
@@ -615,8 +657,7 @@ class PyroelectricAppGUI:
             style='Stop.TButton',
             state='disabled')
         self.stop_button.grid(
-            row=0, column=1, padx=(
-                5, 0), pady=5, sticky='ew')
+            row=0, column=1, padx=(5, 0), pady=5, sticky='ew')
 
     def create_console_frame(self, parent):
         frame = ttk.LabelFrame(parent, text='Console Output')
@@ -631,39 +672,38 @@ class PyroelectricAppGUI:
             bd=0,
             relief='flat',
             height=10)
-        self.console_widget.pack(pady=10, padx=10, fill='both', expand=True)
+        self.console_widget.pack(pady=10, padx=10, fill='both',
+                                 expand=True)
         self.log("Console initialized.")
         if not PIL_AVAILABLE:
             self.log(
-                "Note: 'Pillow' not found. Logo cannot be displayed. Run 'pip install Pillow'.")
+                "Note: 'Pillow' not found. Logo cannot be displayed. "
+                "Run 'pip install Pillow'.")
         if not PYVISA_AVAILABLE:
             self.log("CRITICAL ERROR: pyvisa or pymeasure not found.")
         else:
-            self.log("Please select a save location and scan for instruments.")
+            self.log(
+                "Please select a save location and scan for instruments.")
         return frame
 
     def create_graph_frame(self, parent):
         graph_container = ttk.LabelFrame(parent, text='Live Graphs')
-        graph_container.pack(fill='both', expand=True, padx=(10, 0), pady=0)
+        graph_container.pack(fill='both', expand=True, padx=(10, 0),
+                            pady=0)
 
-        # --- FIX IMPLEMENTED HERE ---
-        # This try-except block makes the plotting style compatible with different
-        # versions of matplotlib.
         try:
-            # Use the newer style name for modern matplotlib versions
             plt.style.use('seaborn-v0_8-whitegrid')
         except OSError:
-            # Fallback to the older name for compatibility
             try:
                 plt.style.use('seaborn-whitegrid')
             except OSError:
-                # If both fail, log a warning but continue without a special
-                # style
-                self.log("Warning: Seaborn plot style not found. Using default.")
-                pass  # Continue with the default matplotlib style
+                self.log(
+                    "Warning: Seaborn plot style not found. "
+                    "Using default.")
+                pass
 
-        self.figure = Figure(figsize=(10, 8), dpi=100,
-                             facecolor=self.CLR_GRAPH_BG)
+        self.figure = Figure(
+            figsize=(10, 8), dpi=100, facecolor=self.CLR_GRAPH_BG)
         gs = self.figure.add_gridspec(2, 2, height_ratios=[2, 1.2])
         self.ax_main = self.figure.add_subplot(gs[0, :])
         self.ax_sub1 = self.figure.add_subplot(gs[1, 0])
@@ -671,30 +711,36 @@ class PyroelectricAppGUI:
         self.axes = [self.ax_main, self.ax_sub1, self.ax_sub2]
 
         self.line_main, = self.ax_main.plot(
-            [], [], color='#e63946', marker='o', markersize=4, linestyle='-', linewidth=1.5)
-        self.ax_main.set_title("Current vs. Temperature", fontweight='bold')
+            [], [], color='#e63946', marker='o', markersize=4,
+            linestyle='-', linewidth=1.5)
+        self.ax_main.set_title("Current vs. Temperature",
+                               fontweight='bold')
         self.ax_main.set_xlabel("Temperature (K)")
         self.ax_main.set_ylabel("Current (A)")
 
         self.line_sub1, = self.ax_sub1.plot(
-            [], [], color='#0077b6', marker='.', markersize=4, linestyle='-', linewidth=1)
+            [], [], color='#0077b6', marker='.', markersize=4,
+            linestyle='-', linewidth=1)
         self.ax_sub1.set_title("Temp vs. Time")
         self.ax_sub1.set_xlabel("Time (s)")
         self.ax_sub1.set_ylabel("Temperature (K)")
 
         self.line_sub2, = self.ax_sub2.plot(
-            [], [], color='#06d6a0', marker='.', markersize=4, linestyle='-', linewidth=1)
+            [], [], color='#06d6a0', marker='.', markersize=4,
+            linestyle='-', linewidth=1)
         self.ax_sub2.set_title("Current vs. Time")
         self.ax_sub2.set_xlabel("Time (s)")
         self.ax_sub2.set_ylabel("Current (A)")
 
         for ax in self.axes:
             ax.grid(True, linestyle='--', alpha=0.7)
-            ax.ticklabel_format(axis='y', style='sci',
-                                scilimits=(-2, 3), useMathText=True)
+            ax.ticklabel_format(
+                axis='y', style='sci', scilimits=(-2, 3),
+                useMathText=True)
         self.figure.tight_layout(pad=3.0)
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
-        self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
+        self.canvas.get_tk_widget().pack(
+            fill='both', expand=True, padx=5, pady=5)
 
     def _process_logo_image(self, input_path, size=100):
         if not (PIL_AVAILABLE and os.path.exists(input_path)):
@@ -706,7 +752,8 @@ class PyroelectricAppGUI:
                 return ImageTk.PhotoImage(img_resized)
         except Exception as e:
             print(
-                f"ERROR: Could not process logo image '{input_path}'. Reason: {e}")
+                f"ERROR: Could not process logo image "
+                f"'{input_path}'. Reason: {e}")
             return None
 
     def log(self, message):
@@ -717,31 +764,35 @@ class PyroelectricAppGUI:
         self.console_widget.config(state='disabled')
 
     def _handle_worker_thread_completion(self):
-        # This function is called when the worker thread sends a None sentinel.
-        # Any final cleanup or UI updates can go here if needed.
         pass
 
     def _handle_worker_thread_error(self, exception):
         self.log(f"RUNTIME ERROR in worker thread: {traceback.format_exc()}")
         self.stop_measurement("runtime error")
-        messagebox.showerror("Runtime Error", "An error occurred. Check console.")
+        messagebox.showerror(
+            "Runtime Error", "An error occurred. Check console.")
 
     def _process_stabilizing_state(self, current_temp, params):
         self.log(
-            f"Stabilizing... Current Temp: {current_temp:.4f} K (Target: {params['start_temp']} K)")
+            f"Stabilizing... Current Temp: {current_temp:.4f} K "
+            f"(Target: {params['start_temp']} K)")
         if abs(current_temp - params['start_temp']) < 5:
-            self.log(f"Stabilized at {params['start_temp']} K. Starting ramp.")
+            self.log(
+                f"Stabilized at {params['start_temp']} K. Starting ramp.")
             self.experiment_state = 'ramping'
             self.backend.start_ramp()
             self.start_time = time.time()
 
     def _process_ramping_state(self, current_temp, current_val, params):
         elapsed_time = time.time() - self.start_time
-        self._log_and_save_ramping_data(elapsed_time, current_temp, current_val)
-        self._update_data_storage_and_plots(elapsed_time, current_temp, current_val)
+        self._log_and_save_ramping_data(
+            elapsed_time, current_temp, current_val)
+        self._update_data_storage_and_plots(
+            elapsed_time, current_temp, current_val)
         self._check_ramping_completion_conditions(current_temp, params)
 
-    def _log_and_save_ramping_data(self, elapsed_time, current_temp, current_val):
+    def _log_and_save_ramping_data(
+            self, elapsed_time, current_temp, current_val):
         log_msg = (
             f"Time: {elapsed_time:.1f}s | "
             f"Temp: {current_temp:.2f}K | "
@@ -749,16 +800,14 @@ class PyroelectricAppGUI:
         )
         self.log(log_msg)
         with open(self.data_filepath, 'a', newline='') as f:
-            f.write(
-                f"{elapsed_time:.2f},{current_temp:.4f},{current_val}\n")
+            f.write(f"{elapsed_time:.2f},{current_temp:.4f},{current_val}\n")
 
-    def _update_data_storage_and_plots(self, elapsed_time, current_temp, current_val):
+    def _update_data_storage_and_plots(
+            self, elapsed_time, current_temp, current_val):
         self.data_storage['time'].append(elapsed_time)
         self.data_storage['temperature'].append(current_temp)
         self.data_storage['current'].append(current_val)
 
-        # Skip plotting points where the instrument returned NaN so the
-        # autoscaler is not fed invalid limits.
         temp = self.data_storage['temperature']
         curr = self.data_storage['current']
         t = self.data_storage['time']
@@ -767,14 +816,10 @@ class PyroelectricAppGUI:
         self.line_sub1.set_data(t, temp)
         self.line_sub2.set_data(t, curr)
 
-        # Recompute data limits and rescale. Because this is a FULL redraw,
-        # the ticks, labels, gridlines and sci-notation offset update too.
         for ax in self.axes:
             ax.relim()
             ax.autoscale_view()
 
-        # draw_idle() coalesces multiple requests and is the correct call from
-        # the Tk main loop. At a 2 s sample rate this is plenty fast.
         self.canvas.draw_idle()
 
     def _check_ramping_completion_conditions(self, current_temp, params):
@@ -794,7 +839,8 @@ class PyroelectricAppGUI:
                 'start_temp': float(self.entries["Start Temp"].get()),
                 'end_temp': float(self.entries["End Temp"].get()),
                 'rate': float(self.entries["Ramp Rate"].get()),
-                'safety_cutoff': float(self.entries["Safety Cutoff"].get()),
+                'safety_cutoff': float(
+                    self.entries["Safety Cutoff"].get()),
                 'lakeshore_visa': self.lakeshore_combobox.get(),
                 'keithley_visa': self.keithley_combobox.get()
             }
@@ -803,17 +849,20 @@ class PyroelectricAppGUI:
                         params['keithley_visa'],
                         self.file_location_path]):
                 raise ValueError(
-                    "All fields, VISA addresses, and a save location are required.")
+                    "All fields, VISA addresses, and a save location "
+                    "are required.")
             if not (params['start_temp'] < params['end_temp']
                     < params['safety_cutoff']):
                 raise ValueError(
-                    "Temperatures must be in ascending order (Start < End < Cutoff).")
+                    "Temperatures must be in ascending order "
+                    "(Start < End < Cutoff).")
             if params['rate'] <= 0:
                 raise ValueError("Ramp rate must be a positive number.")
 
             self.backend.initialize_instruments(params)
             self.log(
-                f"Backend initialized for sample: {params['sample_name']}")
+                f"Backend initialized for sample: "
+                f"{params['sample_name']}")
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             file_name = f"{params['sample_name']}_{timestamp}_Pyro.csv"
@@ -822,13 +871,15 @@ class PyroelectricAppGUI:
             with open(self.data_filepath, 'w', newline='') as f:
                 header = (
                     f"# Sample: {params['sample_name']}\n"
-                    f"# Start: {params['start_temp']} K, End: {params['end_temp']} K, "
+                    f"# Start: {params['start_temp']} K, "
+                    f"End: {params['end_temp']} K, "
                     f"Ramp: {params['rate']} K/min\n"
                 )
                 f.write(header)
                 f.write("Time (s),Temperature (K),Current (A)\n")
             self.log(
-                f"Output file created: {os.path.basename(self.data_filepath)}")
+                f"Output file created: "
+                f"{os.path.basename(self.data_filepath)}")
 
             self.is_running = True
             self.start_button.config(state='disabled')
@@ -841,7 +892,6 @@ class PyroelectricAppGUI:
                 f"I vs T | Sample: {params['sample_name']}",
                 fontweight='bold')
 
-            # Reset axes and do a single clean full redraw before the run.
             for ax in self.axes:
                 ax.relim()
                 ax.autoscale_view()
@@ -849,11 +899,11 @@ class PyroelectricAppGUI:
             self.canvas.draw_idle()
             self.log("Live graphs initialized.")
 
-            self.log("Moving to start temperature for stabilization...")
+            self.log(
+                "Moving to start temperature for stabilization...")
             self.experiment_state = 'stabilizing'
             self.backend.start_stabilization()
 
-            # Start the worker thread and the queue processor
             self.measurement_thread = threading.Thread(
                 target=self._measurement_worker, daemon=True)
             self.measurement_thread.start()
@@ -872,11 +922,10 @@ class PyroelectricAppGUI:
             self.log(f"Measurement loop {reason}.")
             self.start_button.config(state='normal')
             self.stop_button.config(state='disabled')
-            # Let the worker thread finish its current iteration before we
-            # tear down the VISA sessions, to avoid a read-during-close race.
             if (self.measurement_thread is not None
                     and self.measurement_thread.is_alive()
-                    and threading.current_thread() is not self.measurement_thread):
+                    and threading.current_thread()
+                    is not self.measurement_thread):
                 self.measurement_thread.join(timeout=3.0)
             self.backend.close_instruments()
             self.log("Instrument connections closed.")
@@ -884,10 +933,12 @@ class PyroelectricAppGUI:
                 "Info", f"Measurement stopped.\nReason: {reason}")
 
     def _measurement_worker(self):
-        """Worker thread to perform measurements and put data into a queue."""
+        """Worker thread to perform measurements and put data into a
+        queue."""
         while self.is_running:
             try:
-                current_temp, current_val = self.backend.get_measurement()
+                current_temp, current_val = \
+                    self.backend.get_measurement()
                 self.data_queue.put(
                     (current_temp, current_val, self.experiment_state))
                 time.sleep(2)  # Control the measurement frequency
@@ -897,7 +948,8 @@ class PyroelectricAppGUI:
         self.data_queue.put(None)  # Sentinel value to signal completion
 
     def _process_data_queue(self):
-        """Processes data from the queue to update the GUI. Runs in the main thread."""
+        """Processes data from the queue to update the GUI. Runs in the
+        main thread."""
         try:
             while not self.data_queue.empty():
                 data = self.data_queue.get_nowait()
@@ -914,10 +966,11 @@ class PyroelectricAppGUI:
                 if state == 'stabilizing':
                     self._process_stabilizing_state(current_temp, params)
                 elif state == 'ramping':
-                    self._process_ramping_state(current_temp, current_val, params)
+                    self._process_ramping_state(
+                        current_temp, current_val, params)
 
         except queue.Empty:
-            pass  # No data to process, which is normal
+            pass
 
         if self.is_running:
             self.root.after(200, self._process_data_queue)
@@ -946,8 +999,9 @@ class PyroelectricAppGUI:
 
     def _on_closing(self):
         if self.is_running:
-            if messagebox.askyesno("Exit",
-                                   "Measurement is running. Stop and exit?"):
+            if messagebox.askyesno(
+                    "Exit",
+                    "Measurement is running. Stop and exit?"):
                 self.stop_measurement()
                 self.root.destroy()
         else:
@@ -966,17 +1020,17 @@ class PyroelectricAppGUI:
         self.keithley_combobox['values'] = resources
         self.lakeshore_combobox['values'] = resources
         for res in resources:
-            if "GPIB1::27" in res:  # Common Keithley 6517B address
+            if "GPIB1::27" in res:
                 self.keithley_combobox.set(res)
-            if "GPIB1::15" in res:  # Common Lakeshore 350 address
+            if "GPIB1::15" in res:
                 self.lakeshore_combobox.set(res)
 
     def _set_default_combobox_values(self, resources):
         if not self.keithley_combobox.get() and resources:
             self.keithley_combobox.set(resources[0])
         if not self.lakeshore_combobox.get() and resources:
-            # Try to pick a different one if possible, or just the first
-            if len(resources) > 1 and resources[0] == self.keithley_combobox.get():
+            if (len(resources) > 1
+                    and resources[0] == self.keithley_combobox.get()):
                 self.lakeshore_combobox.set(resources[1])
             elif resources:
                 self.lakeshore_combobox.set(resources[0])
