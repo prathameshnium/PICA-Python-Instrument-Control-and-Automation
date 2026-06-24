@@ -1,11 +1,11 @@
 # PICA: Advanced High-Precision Transport Measurement Automation with Python
 
-*Comprehensive Guide for Version 1.0.4*
+*Comprehensive Guide for Version 1.0.5*
 
 ---
 
 :::{note}
- **v1.0.4 is now live!** The GUI has been refreshed with a new Latte theme  lighter, warmer, and easier on the eyes during long measurement sessions. Install or upgrade via pip:
+ **v1.0.5 is now live!** This release includes general maintenance and bug fixes. Install or upgrade via pip:
 
 ```bash
 pip install --upgrade pica-suite

@@ -1,7 +1,13 @@
 go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases) and [tags](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tags), for the finalised released versions
 ## Instrument & Software Update Log
 ---
-### [1.0.3] - 2026-01-26 (Current)
+### [1.0.5] - 2026-06-24  (Current)
+
+- **Project Version**:v1.0.5: Lakeshore Enhancements, New Utilities & Core Fixes.
+
+---
+
+### [1.0.3] - 2026-01-26
 
 - **GUI Theme**: Refreshed with the **Latte** theme — a lighter, warmer color palette for improved readability and reduced eye strain during long measurement sessions.
 - **Distribution**: Published the official package to PyPI as `pica-suite`.

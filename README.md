@@ -34,7 +34,7 @@
 
 ---
 
-> 🎉 **v1.0.3 is now live!** The GUI has been refreshed with a new **Latte** theme — lighter, warmer, and easier on the eyes during long measurement sessions. Install or upgrade via pip: `pip install --upgrade pica-suite`
+> 🎉 **v1.0.5 is now live!** This release includes general maintenance and bug fixes. Install or upgrade via pip: `pip install --upgrade pica-suite`
 
 ---
 
@@ -78,12 +78,12 @@ The suite performs automated protocols including:
 
 ---
 
-## What's New in v1.0.3
+## What's New in v1.0.5
 
-**v1.0.3** is the latest release and is available on [PyPI](https://pypi.org/project/pica-suite/) and [GitHub Releases](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases).
+**v1.0.5** is the latest release and is available on PyPI and GitHub Releases.
 
 ```bash
-pip install pica-suite==1.0.3
+pip install pica-suite==1.0.5
 # or upgrade from a previous version:
 pip install --upgrade pica-suite
 ```
