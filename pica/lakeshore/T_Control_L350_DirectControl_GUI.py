@@ -736,6 +736,7 @@ class DirectControlGUI:
         def _on_mousewheel(event):
             canvas.yview_scroll(
                 int(-1 * (event.delta / 120)), 'units')
+
         canvas.bind_all('<MouseWheel>', _on_mousewheel)
         canvas.bind(
             '<Enter>',
@@ -751,13 +752,13 @@ class DirectControlGUI:
         self._create_info_panel(scroll_frame, 0)
         self._create_connection_panel(scroll_frame, 1)
         self._create_pid_panel(scroll_frame, 2)
-        self._create_temp_zone_panel(scroll_frame, 3)
-        self._create_setpoint_panel(scroll_frame, 4)
-        self._create_range_panel(scroll_frame, 5)
-        self._create_display_panel(scroll_frame, 6)
-        self._create_input_config_panel(scroll_frame, 7)
-        self._create_manual_output_panel(scroll_frame, 8)
-        self._create_advanced_panel(scroll_frame, 9)
+        self._create_setpoint_panel(scroll_frame, 3)
+        self._create_range_panel(scroll_frame, 4)
+        self._create_display_panel(scroll_frame, 5)
+        self._create_input_config_panel(scroll_frame, 6)
+        self._create_manual_output_panel(scroll_frame, 7)
+        self._create_advanced_panel(scroll_frame, 8)
+        self._create_temp_zone_panel(scroll_frame, 9)
         self._create_console_panel(scroll_frame, 99)
 
     def _create_info_panel(self, parent, grid_row):
@@ -1642,34 +1643,97 @@ class DirectControlGUI:
         )
         notes_text_widget.pack(fill='both', expand=True, padx=5, pady=5)
 
-        notes_content = """Instrument specs confirmed from manual:
-  • 4 sensor inputs (A, B, C, D)
-  • 4 outputs: 1 & 2 = heater (75W max on Output 1), 3 & 4 = analog
-  • 5 heater ranges (0=Off, 1-5 increasing power)
-  • PID: P=0-9999, I=0-1000, D=0-200
-  • Setpoint ramping: 0.001-100 K/min
-  • Display: 1 to 8 reading displays
-  • Interfaces: Ethernet, USB, IEEE-488
+        # --- Build the PID/Range guide table with fixed-width columns ---
+        def _build_table(headers, rows, widths):
+            def fmt(cells):
+                return (
+                    "│ "
+                    + " │ ".join(
+                        c.ljust(w) for c, w in zip(cells, widths)
+                    )
+                    + " │"
+                )
 
-PID / Heater-Range selection guide (operator notes):
+            seg = ["─" * (w + 2) for w in widths]
+            top = "┌" + "┬".join(seg) + "┐"
+            mid = "├" + "┼".join(seg) + "┤"
+            bot = "└" + "┴".join(seg) + "┘"
 
-  ┌─────────────────────────────────────┬─────────────┬───────┬──────────────────────────────────┐
-  │ Use Case                            │ PID Mode    │ Range │ Notes                            │
-  ├─────────────────────────────────────┼─────────────┼───────┼──────────────────────────────────┤
-  │ Temperature-dependent measurements  │ Slow        │   5   │ Best for controlled temp ramps   │
-  │ Setpoint stabilization near 200 K   │ Slow-Medium │   5   │ Good stability around 200 K      │
-  │ Temperature ramp below 120 K        │ Slow        │   4   │ Recommended for slow ramps <120 K │
-  │ Stabilization below 200 K           │ Fast        │   4   │ Good for stable hold below 200 K │
-  │ Very fast ramping                   │ Fast        │   5   │ Best for rapid temperature changes │
-  └─────────────────────────────────────┴─────────────┴───────┴──────────────────────────────────┘
+            lines = [top, fmt(headers), mid]
+            lines += [fmt(r) for r in rows]
+            lines.append(bot)
+            return "\n".join(lines)
 
-Note: "Slow-Medium" is a conceptual guide; use 'Slow' or 'Medium'
-presets and adjust as needed.
+        guide_headers = (
+            "Use Case",
+            "PID Mode",
+            "Range",
+            "Notes",
+        )
+        guide_rows = [
+            (
+                "Temperature-dependent ramp",
+                "Slow",
+                "5",
+                "Best for controlled temp ramps",
+            ),
+            (
+                "Setpoint stabilization (Tstep)",
+                "Medium",
+                "5",
+                "Good stability at each Tstep",
+            ),
+            (
+                "Fast temperature ramp",
+                "Fast",
+                "5",
+                "Best for rapid temperature changes",
+            ),
+            (
+                "Temperature ramp below 120 K",
+                "Slow",
+                "4",
+                "Recommended for slow ramps <120 K",
+            ),
+            (
+                "Stabilization below 200 K",
+                "Fast",
+                "4",
+                "Good for stable hold below 200 K",
+            ),
+            (
+                "Stabilization near 200 K",
+                "Medium",
+                "5",
+                "Good stability around 200 K",
+            ),
+        ]
+        # Column widths (chars); cells are padded/aligned to these.
+        guide_widths = (32, 8, 5, 36)
+        guide_table = _build_table(
+            guide_headers, guide_rows, guide_widths
+        )
 
-The "Temperature-Dependent PID Zone" panel lets you bind a PID mode +
-heater range to user-defined temperature thresholds, automating these
-selections.
-"""
+        notes_content = (
+            "Instrument specs confirmed from manual:\n"
+            "  \u2022 4 sensor inputs (A, B, C, D)\n"
+            "  \u2022 4 outputs: 1 & 2 = heater (75W max on"
+            " Output 1), 3 & 4 = analog\n"
+            "  \u2022 5 heater ranges (0=Off, 1-5 increasing"
+            " power)\n"
+            "  \u2022 PID: P=0-9999, I=0-1000, D=0-200\n"
+            "  \u2022 Setpoint ramping: 0.001-100 K/min\n"
+            "  \u2022 Display: 1 to 8 reading displays\n"
+            "  \u2022 Interfaces: Ethernet, USB, IEEE-488\n\n"
+            "PID / Heater-Range selection guide (operator notes):\n\n"
+            + guide_table
+            + "\n\n"
+            "The \"Temperature-Dependent PID Zone\" panel lets you"
+            " bind\n"
+            "a PID mode + heater range to user-defined temperature\n"
+            "thresholds, automating these selections."
+        )
+
         notes_text_widget.insert('1.0', notes_content)
         notes_text_widget.config(state='disabled')
 
