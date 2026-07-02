@@ -657,9 +657,12 @@ class LCR_Freq_GUI:
         )
 
         # Row 11: Scan + Browse buttons
-        ttk.Button(
+        # MUST be assigned to self.scan_button to disable during sweeps
+        self.scan_button = ttk.Button(
             frame, text="Scan Instruments", command=self._scan_for_visa
-        ).grid(row=11, column=0, padx=padx, pady=5, sticky="ew")
+        )
+        self.scan_button.grid(row=11, column=0, padx=padx, pady=5, sticky="ew")
+        
         ttk.Button(
             frame,
             text="Browse Save Loc...",
