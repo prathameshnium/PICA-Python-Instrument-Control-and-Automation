@@ -751,7 +751,6 @@ class LCR_Freq_GUI:
             [], [], color="#C00000", marker="o", markersize=3, linestyle="-"
         )
         self.ax_cp.set_ylabel("Capacitance, Cp (F)")
-        self.ax_cp.set_title("Cp vs. Frequency", fontweight="bold")
         self.ax_cp.set_xscale("log")
         self.ax_cp.grid(True, linestyle="--", alpha=0.7)
 
@@ -761,15 +760,16 @@ class LCR_Freq_GUI:
         )
         self.ax_g.set_xlabel("Frequency (Hz)")
         self.ax_g.set_ylabel("Conductance, G (S)")
-        self.ax_g.set_title("G vs. Frequency", fontweight="bold")
         self.ax_g.set_xscale("log")
         self.ax_g.grid(True, linestyle="--", alpha=0.7)
 
-        self.figure.tight_layout(pad=2.5)
+        self.figure.subplots_adjust(
+            left=0.08, right=0.98, top=0.98, bottom=0.07, hspace=0.15
+        )
 
         self.canvas = FigureCanvasTkAgg(self.figure, parent)
         self.canvas.get_tk_widget().pack(
-            fill=tk.BOTH, expand=True, padx=5, pady=5
+            fill=tk.BOTH, expand=True, padx=0, pady=0
         )
 
     def log(self, message):
