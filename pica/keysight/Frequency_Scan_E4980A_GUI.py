@@ -806,9 +806,9 @@ class LCR_Freq_GUI:
                            G = Re(Y) = R / |Z|^2
                            B = Im(Y) = -X / |Z|^2
 
-        NOTE: Complex capacitance C* = C' - jC''. By this definition, 
+        NOTE: Complex capacitance C* = C' - jC''. By this definition,
         Cp'' = Cs'' = G/omega. This equivalence is used here.
-        
+
         Returns list of 18 values in DATA_HEADER column order:
             Q, D, G, B, Cp, Lp, Cs, Ls, |Z|, theta(rad), chi, Rs,
             theta(deg), Rp, 1/|Z|, omega, Cp'', Cs''
@@ -837,6 +837,20 @@ class LCR_Freq_GUI:
         Ls = X / omega_safe
         Lp = -1.0 / (omega_safe * B_safe)
 
+        # ------------------------------------------------------------------
+        # LEGACY COMPATIBILITY:
+        # The older LabVIEW program reports inductances (Ls and Lp) as
+        # absolute (positive) magnitudes only, regardless of whether the
+        # DUT is inductive (+X) or capacitive (-X). To keep this Python
+        # implementation drop-in compatible with that legacy data format
+        # (so downstream plotting/analysis tools can consume both files
+        # interchangeably), we force Ls and Lp to be non-negative here.
+        # NOTE: This discards the sign information. If signed inductance
+        # is ever needed, derive it back from X (Ls_signed = X/omega).
+        # ------------------------------------------------------------------
+        Ls = abs(Ls)
+        Lp = abs(Lp)
+
         D = G_safe / B_safe  # dissipation factor
         D_safe = D if D != 0 else 1e-20
         Q = 1.0 / D_safe
@@ -859,9 +873,9 @@ class LCR_Freq_GUI:
             G,                  # 2
             B,                  # 3
             Cp,                 # 4
-            Lp,                 # 5
+            Lp,                 # 5   (absolute value — legacy convention)
             Cs,                 # 6
-            Ls,                 # 7
+            Ls,                 # 7   (absolute value — legacy convention)
             Z_mag,              # 8
             theta_rad,          # 9
             chi,                # 10
