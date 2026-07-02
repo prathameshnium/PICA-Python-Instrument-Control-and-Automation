@@ -29,6 +29,9 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
 from multiprocessing import Process
 import runpy
+import threading
+import queue
+import atexit
 
 
 def run_script_process(script_path):
@@ -152,12 +155,7 @@ class LCR_Backend:
             time.sleep(dwell)
 
     def initialize_instrument(self, p):
-        """Configures the instrument for a Frequency sweep using R-X function.
-
-        Mirrors the legacy LabVIEW panel settings:
-            Funct R-X, Level 1V, Range auto, Bias 0V, Meas Time Med,
-            V_ac on, V_dc off, Corr 1m open short, ch single
-        """
+        """Configures the instrument for a Frequency sweep using R-X function."""
         print("\n--- [Backend] Initializing Keysight E4980A ---")
         self.params = p
         if not self.rm:
@@ -176,47 +174,42 @@ class LCR_Backend:
 
         self.has_opt001 = "001" in inst.query("*OPT?")
 
-        v_bias_max = 40.0 if self.has_opt001 else 2.0
-        v_ac_max = 20.0 if self.has_opt001 else 2.0
+        # Strict Safety Ceilings: Hard cap at 2.0 V regardless of options
+        v_bias_max = min(2.0, 40.0 if self.has_opt001 else 2.0)
+        v_ac_max = min(2.0, 20.0 if self.has_opt001 else 2.0)
+        
         if abs(p["dc_bias"]) > v_bias_max:
-            raise ValueError(f"|DC Bias| > {v_bias_max} V limit.")
+            raise ValueError(f"|DC Bias| > {v_bias_max} V safety limit.")
         if not (0 < p["ac_bias"] <= v_ac_max):
-            raise ValueError(f"AC level outside 0-{v_ac_max} Vrms.")
+            raise ValueError(f"AC level outside 0-{v_ac_max} Vrms safety limit.")
 
-        # ------------------------------------------------------------------
-        # Instrument configuration — mirrors legacy LabVIEW panel
-        # ------------------------------------------------------------------
+        # Instrument configuration
         inst.write("*RST; *CLS")
+        time.sleep(1.0)  # Graceful reset
         inst.write(":DISP:ENAB ON")
+        time.sleep(0.2)
 
-        # Funct R-X  (legacy panel: "Funct R-X")
         inst.write(":FUNC:IMP RX")
-
-        # Meas Time Med  (legacy panel: "Meas Time Med")
         inst.write(f":APER {p['aper']}")
-
-        # Range auto  (legacy panel: "Range auto")
         inst.write(":FUNC:IMP:RANG:AUTO ON")
+        time.sleep(0.2)
 
-        inst.write(":FORM:ASC")  # ASCII so query_ascii_values parses correctly
+        # Fix: :FORM ASC (ASC is a parameter, not a node)
+        inst.write(":FORM ASC")
 
-        # V_ac on / I_ac on  (legacy panel signal monitors)
         inst.write(":FUNC:SMON:VAC ON")
         inst.write(":FUNC:SMON:IAC ON")
+        # Fix: V_dc/I_dc monitors are valid for all models, removed Option 001 gate
+        inst.write(":FUNC:SMON:VDC OFF")
+        inst.write(":FUNC:SMON:IDC OFF")
+        time.sleep(0.2)
 
-        # V_dc off / I_dc off  (legacy panel DC monitors — off by default)
-        if self.has_opt001:
-            inst.write(":FUNC:SMON:VDC OFF")
-            inst.write(":FUNC:SMON:IDC OFF")
-
-        # ALC
         if p["alc_enabled"]:
             inst.write(":AMPL:ALC ON")
         else:
             inst.write(":AMPL:ALC OFF")
+        time.sleep(0.2)
 
-        # Corr 1 m open short  (legacy panel: "Corr 1 m open short")
-        # Cable length correction: :CORRection:LENGth <0|1|2|4>
         inst.write(f":CORR:LENG {p['cable_len']}")
         if p["corr_enabled"]:
             inst.write(":CORR:OPEN:STAT ON")
@@ -224,33 +217,40 @@ class LCR_Backend:
         else:
             inst.write(":CORR:OPEN:STAT OFF")
             inst.write(":CORR:SHOR:STAT OFF")
+        time.sleep(0.2)
 
-        # level* 1V  (legacy panel: "level* 1V")
         inst.write(f":VOLT {p['ac_bias']}")
+        time.sleep(0.5)  # Let AC level settle
 
-        # ch single  (legacy panel: "ch single" — single trigger per point)
         inst.write(":TRIG:SOUR BUS")
         inst.write(":INIT:CONT ON")
+        time.sleep(0.2)
 
-        # Bias 0 V / V_dc off  (legacy panel: "Bias 0 V", "V_dc off")
+        # Conditional DC Bias Handling
         if abs(p["dc_bias"]) < 1e-9:
             inst.write(":BIAS:VOLT 0")
             inst.write(":BIAS:STAT OFF")
         else:
             inst.write(":BIAS:VOLT 0")
             inst.write(":BIAS:STAT ON")
-            print(f"  Ramping DC Bias to {p['dc_bias']} V...")
-            self.safe_ramp_dc_bias(p["dc_bias"])
+            time.sleep(0.5)
+            
+            if self.has_opt001:
+                print(f"  Ramping DC Bias to {p['dc_bias']} V...")
+                self.safe_ramp_dc_bias(p["dc_bias"])
+            else:
+                if p["dc_bias"] not in (1.5, 2.0):
+                    raise ValueError(
+                        "Without Option 001, DC bias must be 0, 1.5 or 2 V."
+                    )
+                inst.write(f":BIAS:VOLT {p['dc_bias']}")
+                time.sleep(1.0)  # Graceful settle for discrete bias step
 
         self._check_errors("configuration")
         print(f"  Connected & configured (RX mode): {idn}")
 
     def perform_measurement(self, freq, delay):
-        """Set frequency, settle, trigger one measurement, fetch R, X, status.
-
-        With :FUNC:IMP RX, :FETCh:IMPedance:FORMatted? returns:
-            <primary R>, <secondary X>, <status>
-        """
+        """Set frequency, settle, trigger one measurement, fetch R, X, status."""
         if not self.instrument:
             raise ConnectionError("Instrument is not connected.")
 
@@ -258,10 +258,8 @@ class LCR_Backend:
         time.sleep(delay)  # settle at the new frequency
 
         self.instrument.write(":TRIG:IMM")  # trigger one measurement (BUS armed)
-        self.instrument.query("*OPC?")  # block until measurement completes
-        vals = self.instrument.query_ascii_values(
-            ":FETCh:IMPedance:FORMatted?"
-        )
+        # :FETC? blocks until the triggered measurement data is available
+        vals = self.instrument.query_ascii_values(":FETC?")
 
         R, X = vals[0], vals[1]
         status = int(vals[2]) if len(vals) > 2 else 0
@@ -272,10 +270,15 @@ class LCR_Backend:
         if not self.instrument:
             return
         try:
-            print("  Ramping bias to zero and turning off...")
-            self.safe_ramp_dc_bias(0.0)
+            if self.has_opt001:
+                print("  Ramping bias to zero and turning off...")
+                self.safe_ramp_dc_bias(0.0)
+            else:
+                self.instrument.write(":BIAS:VOLT 0")
+                time.sleep(0.5)
             self.instrument.write(":BIAS:STAT OFF")
             self.instrument.write(":DISP:PAGE MEAS")
+            time.sleep(0.2)
         except Exception as e:
             print(f"  Warning during shutdown: {e}")
         finally:
@@ -334,6 +337,14 @@ class LCR_Freq_GUI:
         self.is_running = False
         self.backend = LCR_Backend()
         self.file_location_path = ""
+
+        # Threading components
+        self.data_queue = queue.Queue()
+        self.stop_event = threading.Event()
+        self.worker_thread = None
+
+        # Forced Cleanup: register backend close on crash/exit
+        atexit.register(self.backend.close_instrument)
 
         self.data_storage = {
             "freq": [],
@@ -726,7 +737,7 @@ class LCR_Freq_GUI:
             height=8,
         )
         self.console_widget.pack(pady=5, padx=5, fill="both", expand=True)
-        self.log("Frequency Scan Initialized. Spanning 20 Hz to 2 MHz.")
+        self.log("Frequency Scan Initialized. Spanning 40 Hz to 2 MHz.")
         return frame
 
     def create_graph_frame(self, parent):
@@ -792,6 +803,9 @@ class LCR_Freq_GUI:
                            G = Re(Y) = R / |Z|^2
                            B = Im(Y) = -X / |Z|^2
 
+        NOTE: Complex capacitance C* = C' - jC''. By this definition, 
+        Cp'' = Cs'' = G/omega. This equivalence is used here.
+        
         Returns list of 18 values in DATA_HEADER column order:
             Q, D, G, B, Cp, Lp, Cs, Ls, |Z|, theta(rad), chi, Rs,
             theta(deg), Rp, 1/|Z|, omega, Cp'', Cs''
@@ -897,13 +911,8 @@ class LCR_Freq_GUI:
                 self.file_location_path, file_name
             )
 
-            # ----------------------------------------------------------
-            # Change 2: Connect & configure instrument FIRST
-            # (fails fast on wrong instrument — no orphan data files)
-            # ----------------------------------------------------------
             self.backend.initialize_instrument(params)
 
-            # Only now create the output file
             with open(self.data_filepath, "w", encoding="utf-8") as f:
                 f.write(
                     f"# Sample: {params['sample_name']} | "
@@ -935,6 +944,7 @@ class LCR_Freq_GUI:
                 self.is_running = True
                 self.start_button.config(state="disabled")
                 self.stop_button.config(state="normal")
+                self.scan_button.config(state="disabled") # Disable scan during sweep
 
                 for key in self.data_storage:
                     self.data_storage[key].clear()
@@ -950,7 +960,16 @@ class LCR_Freq_GUI:
                 )
 
                 self.log("Starting Frequency sweep (R-X mode)...")
-                self.root.after(100, self._sweep_loop)
+                
+                # Start worker thread
+                self.stop_event.clear()
+                self.worker_thread = threading.Thread(
+                    target=self._sweep_loop, daemon=True
+                )
+                self.worker_thread.start()
+                
+                # Start polling the queue
+                self.root.after(100, self._poll_queue)
 
             except Exception as sweep_err:
                 self.backend.close_instrument()
@@ -966,6 +985,7 @@ class LCR_Freq_GUI:
     def stop_sweep(self, reason=""):
         if self.is_running:
             self.is_running = False
+            self.stop_event.set() # Signal worker thread to stop
             self.lbl_current_freq.config(text="Measuring: STOPPED")
 
             if reason:
@@ -975,44 +995,61 @@ class LCR_Freq_GUI:
 
             self.start_button.config(state="normal")
             self.stop_button.config(state="disabled")
+            self.scan_button.config(state="normal") # Re-enable scan
 
             self.backend.close_instrument()
 
-            if not reason:
+            if not reason and "User closed" not in reason:
                 messagebox.showinfo(
                     "Info",
                     "Sweep stopped and instrument disconnected.",
                 )
 
     def _sweep_loop(self):
-        if not self.is_running:
-            return
-
+        """Worker thread: performs measurements and puts data in queue."""
         try:
-            if self.sweep_index >= len(self.sweep_frequencies):
-                self._handle_sweep_completion()
-                return
-
-            target_f = self.sweep_frequencies[self.sweep_index]
-            self.lbl_current_freq.config(
-                text=f"Measuring: {target_f:,.0f} Hz"
-            )
-
-            delay_sec = float(self.entries["delay"].get())
-            # perform_measurement now returns (R, X, status)
-            R, X, status = self.backend.perform_measurement(
-                target_f, delay_sec
-            )
-            self._process_sweep_point(target_f, R, X, status)
-
-            self.sweep_index += 1
-            self._update_sweep_plot()
-
-            if self.is_running:
-                self.root.after(10, self._sweep_loop)
-
+            for i, target_f in enumerate(self.sweep_frequencies):
+                if self.stop_event.is_set():
+                    break
+                
+                delay_sec = float(self.entries["delay"].get())
+                R, X, status = self.backend.perform_measurement(
+                    target_f, delay_sec
+                )
+                self.data_queue.put((target_f, R, X, status, i))
+                
+            # Signal completion
+            if not self.stop_event.is_set():
+                self.data_queue.put(("DONE", None, None, None, None))
+                
         except Exception as e:
-            self._handle_sweep_error(e)
+            self.data_queue.put(("ERROR", e, None, None, None))
+
+    def _poll_queue(self):
+        """Main thread: processes data from the worker thread."""
+        try:
+            while not self.data_queue.empty():
+                item = self.data_queue.get_nowait()
+                f, R, X, status, idx = item
+                
+                if f == "DONE":
+                    self._handle_sweep_completion()
+                    return
+                elif f == "ERROR":
+                    self._handle_sweep_error(R)
+                    return
+                else:
+                    self.sweep_index = idx
+                    self.lbl_current_freq.config(
+                        text=f"Measuring: {f:,.0f} Hz"
+                    )
+                    self._process_sweep_point(f, R, X, status)
+                    self._update_sweep_plot()
+        except queue.Empty:
+            pass
+            
+        if self.is_running:
+            self.root.after(100, self._poll_queue)
 
     def _scan_for_visa(self):
         """Identity-aware instrument scan.
@@ -1109,7 +1146,6 @@ class LCR_Freq_GUI:
         with open(self.data_filepath, "a", encoding="utf-8") as file:
             file.write(row_str + "\n")
             file.flush()
-            os.fsync(file.fileno())
 
         # Store in memory for plotting
         # calc_vals indices: Cp=4, G=2, Rs=11, Rp=13
