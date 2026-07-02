@@ -964,6 +964,9 @@ class LCR_Freq_GUI:
 
                 self.log("Starting Frequency sweep (R-X mode)...")
                 
+                # Read delay from Tk in the main thread before starting worker
+                self.sweep_delay = float(self.entries["delay"].get())
+                
                 # Start worker thread
                 self.stop_event.clear()
                 self.worker_thread = threading.Thread(
@@ -1015,9 +1018,9 @@ class LCR_Freq_GUI:
                 if self.stop_event.is_set():
                     break
                 
-                delay_sec = float(self.entries["delay"].get())
+                # Use the delay captured from the main thread
                 R, X, status = self.backend.perform_measurement(
-                    target_f, delay_sec
+                    target_f, self.sweep_delay
                 )
                 self.data_queue.put((target_f, R, X, status, i))
                 
