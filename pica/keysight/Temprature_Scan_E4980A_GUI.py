@@ -1,7 +1,9 @@
 """
-PROGRAM:       Keysight E4980A + Lakeshore 350 Temperature Dependent Dielectric GUI
-PURPOSE:       Combines continuous hardware temperature ramping (Lakeshore) with 
-               repeated dynamic frequency sweeps (Keysight LCR).
+PROGRAM:       Keysight E4980A + Lakeshore 350 Temperature Dependent Dielectric GUI (T-Control)
+PURPOSE:       Combines continuous hardware temperature ramping (Lakeshore) with
+               repeated dynamic frequency sweeps (Keysight LCR) at each temperature interval.
+               This file is the result of implementing the design instructions for
+               CT_E4980A_L350_T_Control_GUI.py.
 """
 
 import tkinter as tk
@@ -42,6 +44,43 @@ except ImportError:
     pyvisa = None
     PYVISA_AVAILABLE = False
 
+# --- Utility Launchers ---
+from multiprocessing import Process
+import runpy
+
+def run_script_process(script_path):
+    """Wrapper to execute a script using runpy in its own directory."""
+    try:
+        os.chdir(os.path.dirname(script_path))
+        runpy.run_path(script_path, run_name="__main__")
+    except Exception as e:
+        print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
+        print(e)
+        print("-------------------------")
+
+def launch_plotter_utility():
+    """Finds and launches the plotter utility script in a new process."""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        plotter_path = os.path.join(script_dir, "..", "utils", "PlotterUtil_GUI.py")
+        if not os.path.exists(plotter_path):
+            messagebox.showerror("File Not Found", f"Plotter utility not found at:\n{plotter_path}")
+            return
+        Process(target=run_script_process, args=(plotter_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
+
+def launch_gpib_scanner():
+    """Finds and launches the GPIB scanner utility in a new process."""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        scanner_path = os.path.join(script_dir, "..", "utils", "GPIB_Instrument_Scanner_GUI.py")
+        if not os.path.exists(scanner_path):
+            messagebox.showerror("File Not Found", f"GPIB Scanner not found at:\n{scanner_path}")
+            return
+        Process(target=run_script_process, args=(scanner_path,)).start()
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
 
 # ===============================================================================
 # BACKEND CLASSES
@@ -49,8 +88,10 @@ except ImportError:
 
 class Lakeshore350_Backend:
     """Controls the Lakeshore Model 350 Temperature Controller."""
-    def __init__(self, visa_address, rm):
-        self.instrument = rm.open_resource(visa_address)
+    def __init__(self, visa_address):
+        self.instrument = None
+        rm = pyvisa.ResourceManager()
+        self.instrument = rm.open_resource(visa_address, timeout=10000)
         self.instrument.timeout = 10000
         
     def reset_and_clear(self):
@@ -72,7 +113,9 @@ class Lakeshore350_Backend:
 
     def set_heater_range(self, output, heater_range):
         range_map = {'off': 0, 'low': 2, 'medium': 4, 'high': 5}
-        range_code = range_map.get(heater_range.lower(), 0)
+        range_code = range_map.get(heater_range.lower())
+        if range_code is None:
+            raise ValueError("Invalid heater range.")
         self.instrument.write(f'RANGE {output},{range_code}')
 
     def get_temperature(self, sensor):
@@ -87,16 +130,23 @@ class Lakeshore350_Backend:
                 self.set_heater_range(1, 'off')
                 time.sleep(0.5)
                 self.instrument.close()
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Warning: Issue during Lakeshore shutdown: {e}")
+            finally:
+                self.instrument = None
 
 
 class LCR_Backend:
     """Controls the Keysight E4980A LCR Meter."""
-    def __init__(self, rm):
+    def __init__(self):
         self.instrument = None
         self.has_opt001 = False
-        self.rm = rm
+        self.rm = None
+        if PYVISA_AVAILABLE:
+            try:
+                self.rm = pyvisa.ResourceManager()
+            except Exception as e:
+                print(f"VISA init failed in LCR_Backend: {e}")
 
     def safe_ramp_dc_bias(self, target_v, step=0.5, dwell=0.1):
         current_v = float(self.instrument.query(":BIAS:VOLT?"))
@@ -112,7 +162,9 @@ class LCR_Backend:
             time.sleep(dwell)
 
     def initialize_instrument(self, p):
-        inst = self.rm.open_resource(p["lcr_visa"])
+        if not self.rm:
+            self.rm = pyvisa.ResourceManager()
+        inst = self.rm.open_resource(p["lcr_visa"]) # type: ignore
         inst.timeout = 60000 
         inst.read_termination = "\n"
         inst.write_termination = "\n"
@@ -123,7 +175,7 @@ class LCR_Backend:
             inst.close()
             raise ConnectionError(f"Not an E4980A: {idn}")
 
-        self.has_opt001 = "001" in inst.query("*OPT?")
+        self.has_opt001 = "001" in inst.query("*OPT?").strip()
         v_bias_max = min(2.0, 40.0 if self.has_opt001 else 2.0)
         v_ac_max = min(2.0, 20.0 if self.has_opt001 else 2.0)
         
@@ -139,7 +191,6 @@ class LCR_Backend:
         inst.write(":FUNC:IMP RX")
         inst.write(f":APER {p['aper']}")
         inst.write(":FUNC:IMP:RANG:AUTO ON")
-        inst.write(":FORM ASC")
         inst.write(":FUNC:SMON:VAC ON")
         inst.write(":FUNC:SMON:IAC ON")
         time.sleep(0.2)
@@ -168,6 +219,15 @@ class LCR_Backend:
             inst.write(":BIAS:STAT ON")
             time.sleep(0.5)
             self.safe_ramp_dc_bias(p["dc_bias"])
+
+    def _check_errors(self, context=""):
+        """Drain SCPI error queue; raise on any error."""
+        errors = []
+        for _ in range(20):
+            err = self.instrument.query(":SYST:ERR?").strip()
+            if err.startswith("0,") or err.startswith("+0,"): break
+            errors.append(err)
+        if errors: raise RuntimeError(f"SCPI errors after {context}: {errors}")
 
     def perform_measurement(self, freq, delay):
         self.instrument.write(f":FREQ {freq}")
@@ -216,9 +276,10 @@ class LCR_Backend:
             self.instrument.write(":BIAS:STAT OFF")
             self.instrument.write(":DISP:PAGE MEAS")
             time.sleep(0.2)
-            self.instrument.close()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"  Warning during shutdown: {e}")
+        finally:
+            self.instrument.close() # type: ignore
 
 
 class Combined_Backend:
@@ -232,11 +293,11 @@ class Combined_Backend:
         if not self.rm: raise ConnectionError("VISA Resource Manager unavailable.")
         self.params = params
         
-        self.lakeshore = Lakeshore350_Backend(params['lakeshore_visa'], self.rm)
+        self.lakeshore = Lakeshore350_Backend(params['lakeshore_visa'])
         self.lakeshore.reset_and_clear()
         self.lakeshore.setup_heater(1, 1, 2)
         
-        self.lcr = LCR_Backend(self.rm)
+        self.lcr = LCR_Backend()
         self.lcr.initialize_instrument(params)
 
     def close_instruments(self):
@@ -266,7 +327,7 @@ class TD_Dielectric_GUI:
     FONT_CONSOLE = ("Consolas", 10)
     
     DATA_HEADER = (
-        "Timestamp\tElapsed Time (s)\tTemperature (K)\tFrequency (Hz)\t"
+        "Temperature\t"
         "Q\tD\tG(1/Rp)\tB\tCp\tLp\tCs\tLs\tlZl\ttheta(rad)\tchi\t"
         "Rs\ttheta(deg.)\tRp\t1/lZl\tOmega\tCp''\tCs''"
     )
@@ -284,19 +345,22 @@ class TD_Dielectric_GUI:
         self.is_running = False
         self.is_stabilizing = False
         self.start_time = None
+        self.frequencies = []
+        self.plot_freq = 0
         self.file_location_path = ""
+        self.freq_filepaths = {}
         self.data_queue = queue.Queue()
         self.worker_thread = None
         self.stop_event = threading.Event()
         
         self._last_draw_time = 0.0
-        self._redraw_interval = 0.5 
+        self._redraw_interval = 0.25
 
         # Segregated plotting data
         self.data_storage = {
             'time': [], 'temp': [],
-            'ref_temp': [], 'ref_cp': [], 'ref_g': [],
-            'current_sweep_f': [], 'current_sweep_cp': []
+            'plot_freq_data': {'temp': [], 'cp': [], 'g': []},
+            'current_sweep': {'freq': [], 'cp': []}
         }
         
         self.log_scale_var = tk.BooleanVar(value=True)
@@ -328,8 +392,16 @@ class TD_Dielectric_GUI:
     def create_widgets(self):
         header = tk.Frame(self.root, bg=self.CLR_HEADER)
         header.pack(side="top", fill="x")
-        Label(header, text="Temperature Dependent Dielectric Measurement (R-X)", bg=self.CLR_HEADER, 
+        Label(header, text="Temperature Dependent Dielectric Measurement (T-Control)", bg=self.CLR_HEADER, 
               fg=self.CLR_FG_LIGHT, font=("Segoe UI", self.FONT_SIZE_BASE + 4, "bold", "italic")).pack(side="left", padx=20, pady=10)
+
+        ttk.Button(
+            header, text="📈", command=launch_plotter_utility, width=3
+        ).pack(side="right", padx=10, pady=5)
+        ttk.Button(
+            header, text="📟", command=launch_gpib_scanner, width=3
+        ).pack(side="right", padx=(0, 5), pady=5)
+
 
         main_pane = ttk.PanedWindow(self.root, orient="horizontal")
         main_pane.pack(fill="both", expand=True, padx=10, pady=10)
@@ -361,9 +433,24 @@ class TD_Dielectric_GUI:
 
     def create_info_frame(self, parent):
         frame = ttk.LabelFrame(parent, text="Information")
-        ttk.Label(frame, text="Instruments: Lakeshore 350 & Keysight E4980A\n"
-                              "Procedure: Hardware T-Ramp w/ Continuous Freq Sweeps", 
-                  font=("Segoe UI", self.FONT_SIZE_BASE, "bold")).pack(padx=10, pady=10, anchor='w')
+        frame.grid_columnconfigure(1, weight=1)
+        logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
+        logo_canvas.grid(row=0, column=0, rowspan=3, padx=(15, 10), pady=10)
+        
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            logo_path = os.path.join(script_dir, "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+            if PIL_AVAILABLE and os.path.exists(logo_path):
+                img = Image.open(logo_path).resize((self.LOGO_SIZE, self.LOGO_SIZE), RESAMPLE_FILTER)
+                self.logo_image = ImageTk.PhotoImage(img)
+                logo_canvas.create_image(self.LOGO_SIZE / 2, self.LOGO_SIZE / 2, image=self.logo_image)
+        except Exception: pass
+
+        institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 2, 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font, background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(10, 0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
+        ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
+        ttk.Label(frame, text="Program: Temp-Dependent Dielectric Spectroscopy\nInstruments: Lakeshore 350, Keysight E4980A", justify='left').grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
         return frame
 
     def create_input_frame(self, parent):
@@ -381,27 +468,33 @@ class TD_Dielectric_GUI:
         self._add_entry(frame, "AC Bias Voltage (V)", "ac_bias", 6, 0, 1, "1.0")
         self._add_entry(frame, "DC Bias Voltage (V)", "dc_bias", 6, 1, 1, "0.0")
         
-        Label(frame, text="Frequencies to Measure (Hz, CSV):", font=self.FONT_BASE).grid(row=8, column=0, columnspan=2, padx=10, pady=(10, 0), sticky="w")
-        self.entries["frequencies"] = Entry(frame, font=self.FONT_BASE)
-        self.entries["frequencies"].insert(0, "1000, 2000, 3000, 5000, 7000, 10000, 25000, 50000, 70000, 90000, 100000, 120000, 150000, 170000, 200000, 250000, 500000, 1000000, 1500000, 2000000")
-        self.entries["frequencies"].grid(row=9, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="ew")
-
-        self._add_entry(frame, "Delay per point (s)", "delay", 10, 0, 1, "0.2")
+        self._add_entry(frame, "Delay per freq (s)", "delay", 8, 0, 1, "0.2")
         
-        Label(frame, text="Aperture (:APER):", font=self.FONT_BASE).grid(row=10, column=1, padx=10, pady=(2, 0), sticky="w")
+        Label(frame, text="Aperture:", font=self.FONT_BASE).grid(row=8, column=1, padx=10, pady=(2,0), sticky="w")
         self.aper_cb = ttk.Combobox(frame, font=self.FONT_BASE, state="readonly", values=["SHOR", "MED", "LONG"])
         self.aper_cb.set("MED")
-        self.aper_cb.grid(row=11, column=1, padx=10, pady=(0, 10), sticky="ew")
+        self.aper_cb.grid(row=9, column=1, padx=10, pady=(0, 10), sticky="ew")
 
         self.var_alc = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frame, text="Enable ALC", variable=self.var_alc).grid(row=10, column=0, padx=10, sticky="w")
         self.var_corr = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frame, text="Enable ALC", variable=self.var_alc).grid(row=12, column=0, padx=10, sticky="w")
-        ttk.Checkbutton(frame, text="Enable Open/Short Corr.", variable=self.var_corr).grid(row=12, column=1, padx=10, sticky="w")
+        ttk.Checkbutton(frame, text="Enable Open/Short Corrections", variable=self.var_corr).grid(row=10, column=1, padx=10, sticky="w")
 
-        Label(frame, text="Cable Length (m):", font=self.FONT_BASE).grid(row=13, column=0, padx=10, pady=pad, sticky="w")
+        Label(frame, text="Cable Length (m):", font=self.FONT_BASE).grid(row=11, column=0, padx=10, pady=pad, sticky="w")
         self.cable_cb = ttk.Combobox(frame, font=self.FONT_BASE, state="readonly", values=["0", "1", "2", "4"])
         self.cable_cb.set("1")
-        self.cable_cb.grid(row=13, column=1, padx=10, pady=pad, sticky="ew")
+        self.cable_cb.grid(row=11, column=1, padx=10, pady=pad, sticky="ew")
+        
+        DEFAULT_FREQS = "1000, 2000, 3000, 5000, 7000, 10000, 25000, 50000, 70000, 90000, 100000, 120000, 150000, 170000, 200000, 250000, 500000, 1000000, 1500000, 2000000"
+        Label(frame, text="Frequencies (Hz, comma-separated):").grid(row=12, column=0, columnspan=2, padx=10, pady=(10,0), sticky='w')
+        self.freq_text = tk.Text(frame, font=self.FONT_BASE, height=3, wrap='word')
+        self.freq_text.grid(row=13, column=0, columnspan=2, padx=10, pady=(0,10), sticky='ew')
+        self.freq_text.insert('1.0', DEFAULT_FREQS)
+
+        Label(frame, text="Plot Frequency:").grid(row=14, column=0, padx=10, sticky='w')
+        self.plot_freq_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly')
+        self.plot_freq_cb.grid(row=14, column=1, padx=10, pady=5, sticky='ew')
+        self.plot_freq_cb.bind("<<ComboboxSelected>>", self._on_plot_freq_change)
 
         Label(frame, text="Lakeshore VISA:", font=self.FONT_BASE).grid(row=14, column=0, padx=10, pady=pad, sticky="w")
         Label(frame, text="LCR Meter VISA:", font=self.FONT_BASE).grid(row=14, column=1, padx=10, pady=pad, sticky="w")
@@ -453,15 +546,15 @@ class TD_Dielectric_GUI:
         # Plot 2: G vs Temp (Ref Freq)
         self.ax_g_t = self.figure.add_subplot(gs[0, 1])
         self.line_g_t, = self.ax_g_t.plot([], [], color="#2A6B3A", marker="s", markersize=3, linestyle="-")
-        self.ax_g_t.set_title("Conductance vs. Temperature (Ref Freq)", fontweight='bold')
+        self.ax_g_t.set_title("Conductance vs. Temp (Plot Freq)", fontweight='bold')
         self.ax_g_t.set_ylabel("Conductance, G (S)")
         self.ax_g_t.set_xlabel("Temperature (K)")
         self.ax_g_t.grid(True, linestyle="--", alpha=0.6)
 
         # Plot 3: Cp vs Freq (Current Sweep)
         self.ax_cp_f = self.figure.add_subplot(gs[1, 0])
-        self.line_cp_f, = self.ax_cp_f.plot([], [], color="#005A9C", marker="D", markersize=3, linestyle="-")
-        self.ax_cp_f.set_title("Latest Sweep: Cp vs Frequency", fontweight='bold')
+        self.line_cp_f, = self.ax_cp_f.plot([], [], color="#005A9C", marker="D", markersize=3, linestyle="-", label="Current Sweep")
+        self.ax_cp_f.set_title("Current Sweep: Cp vs Frequency", fontweight='bold')
         self.ax_cp_f.set_ylabel("Capacitance, Cp (F)")
         self.ax_cp_f.set_xlabel("Frequency (Hz)")
         self.ax_cp_f.set_xscale("log")
@@ -469,8 +562,8 @@ class TD_Dielectric_GUI:
 
         # Plot 4: Temp vs Time (Ramp Monitoring)
         self.ax_t_time = self.figure.add_subplot(gs[1, 1])
-        self.line_t_time, = self.ax_t_time.plot([], [], color="#BA6B5E", linestyle="-")
-        self.ax_t_time.set_title("Temperature Ramp Monitoring", fontweight='bold')
+        self.line_t_time, = self.ax_t_time.plot([], [], color="#BA6B5E", linestyle="-", label="Actual Temp")
+        self.ax_t_time.set_title("Ramp Monitoring", fontweight='bold')
         self.ax_t_time.set_ylabel("Temperature (K)")
         self.ax_t_time.set_xlabel("Time (s)")
         self.ax_t_time.grid(True, linestyle="--", alpha=0.6)
@@ -527,13 +620,24 @@ class TD_Dielectric_GUI:
         self.ax_g_t.set_yscale(scale)
         self.ax_cp_f.set_yscale(scale)
         self._update_live_plots(force=True)
+    
+    def _parse_frequencies(self):
+        """Parse frequencies from the text box and update the plot combobox."""
+        freq_str = self.freq_text.get("1.0", "end-1c")
+        self.frequencies = [float(f.strip()) for f in freq_str.split(',') if f.strip()]
+        if not self.frequencies:
+            raise ValueError("Frequency list cannot be empty.")
+        
+        vals = [f"{int(f)} Hz" for f in self.frequencies]
+        self.plot_freq_cb['values'] = vals
+        mid = len(self.frequencies) // 2
+        self.plot_freq_cb.current(mid)
+        self.plot_freq = self.frequencies[mid]
+        self.log(f"Parsed {len(self.frequencies)} frequencies. Plotting {self.plot_freq} Hz.")
 
     def start_measurement(self):
         try:
-            freq_str = self.entries["frequencies"].get()
-            freq_list = [float(f.strip()) for f in freq_str.split(',') if f.strip()]
-            if not freq_list: raise ValueError("Frequency list cannot be empty.")
-
+            self._parse_frequencies()
             params = {
                 'sample_name': self.entries["sample_name"].get(),
                 'start_temp': float(self.entries["start_temp"].get()),
@@ -547,7 +651,7 @@ class TD_Dielectric_GUI:
                 'alc_enabled': self.var_alc.get(),
                 'corr_enabled': self.var_corr.get(),
                 'cable_len': self.cable_cb.get(),
-                'freq_list': freq_list,
+                'freq_list': self.frequencies,
                 'lakeshore_visa': self.lakeshore_cb.get().split("  ->  ")[0].strip(),
                 'lcr_visa': self.lcr_cb.get().split("  ->  ")[0].strip()
             }
@@ -555,20 +659,20 @@ class TD_Dielectric_GUI:
                 raise ValueError("VISA addresses and Save Location are required.")
 
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            fname = f"{params['sample_name']}_{ts}_TD_Dielectric.txt"
-            self.data_filepath = os.path.join(self.file_location_path, fname)
-            
-            with open(self.data_filepath, "w", encoding="utf-8") as f:
-                f.write(f"# Sample: {params['sample_name']} | AC: {params['ac_bias']}V | DC: {params['dc_bias']}V\n")
-                f.write(f"# T-Range: {params['start_temp']}K to {params['end_temp']}K at {params['rate']} K/min\n")
-                f.write(self.DATA_HEADER + "\n")
+            self.freq_filepaths = {}
+            for f in self.frequencies:
+                fname = f"{params['sample_name']}_{int(f)}Hz_{ts}.txt"
+                fpath = os.path.join(self.file_location_path, fname)
+                self.freq_filepaths[f] = fpath
+                with open(fpath, "w", encoding="utf-8") as file:
+                    file.write(f"# Sample: {params['sample_name']} | Freq: {f} Hz\n")
+                    file.write(self.DATA_HEADER + "\n")
+            self.log(f"{len(self.frequencies)} files created in save directory.")
 
             self.backend.initialize_instruments(params)
             
-            # Setup plots for reference frequency
-            ref_f = freq_list[0]
-            self.ax_cp_t.set_title(f"Capacitance vs. Temp (@ {ref_f} Hz)", fontweight='bold')
-            self.ax_g_t.set_title(f"Conductance vs. Temp (@ {ref_f} Hz)", fontweight='bold')
+            self.ax_cp_t.set_title(f"Cp vs. Temp (@ {self.plot_freq} Hz)", fontweight='bold')
+            self.ax_g_t.set_title(f"G vs. Temp (@ {self.plot_freq} Hz)", fontweight='bold')
             
             for key in self.data_storage: self.data_storage[key].clear()
             self._update_live_plots(force=True)
@@ -630,13 +734,13 @@ class TD_Dielectric_GUI:
             self.start_time = time.time()
             
             while self.is_running:
-                if self.stop_event.is_set(): break
+                if self.stop_event.is_set(): return
                 
-                base_t = self.backend.lakeshore.get_temperature('A')
-                if base_t >= params['cutoff']:
+                current_temp = self.backend.lakeshore.get_temperature('A')
+                if current_temp >= params['cutoff']:
                     self.data_queue.put("CUTOFF")
                     break
-                if base_t >= params['end_temp']:
+                if current_temp >= params['end_temp']:
                     self.data_queue.put("COMPLETE")
                     break
 
@@ -646,7 +750,7 @@ class TD_Dielectric_GUI:
                     t_val = self.backend.lakeshore.get_temperature('A')
                     R, X, status = self.backend.lcr.perform_measurement(f, params['delay'])
                     elap = time.time() - self.start_time
-                    self.data_queue.put((elap, t_val, f, R, X, status, i == 0))
+                    self.data_queue.put(('CYCLE', elap, t_val, {f: (R, X, status)}))
                     
         except Exception as e:
             self.data_queue.put(e)
@@ -669,49 +773,68 @@ class TD_Dielectric_GUI:
                     self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
                     self.stop_measurement()
                     return
-                else:
-                    self._handle_measurement(item)
+                elif isinstance(item, tuple) and item[0] == 'CYCLE':
+                    _, elapsed, temp, cycle_data = item
+                    self._update_data_storage(cycle_data, elapsed, temp)
+                    self._save_cycle_to_files(cycle_data, temp)
+                    self._update_live_plots()
+
         except queue.Empty: pass
         if self.is_running or self.is_stabilizing:
             self.root.after(100, self._process_data_queue)
 
-    def _handle_measurement(self, data):
-        elap, t, f, R, X, stat, is_first = data
-        calc = self.backend.lcr.calculate_impedance_parameters(f, R, X)
-        
-        # Save to disk
-        row = [datetime.now().strftime('%Y-%m-%d %H:%M:%S'), f"{elap:.2f}", f"{t:.4f}", f"{f}"] + [f"{v:.6E}" for v in calc]
-        with open(self.data_filepath, "a", encoding="utf-8") as file:
-            file.write("\t".join(row) + "\n")
-            file.flush()
-
-        # GUI Ploting Logic
-        Cp = calc[4]
-        G = calc[2]
-        
-        self.data_storage['time'].append(elap)
-        self.data_storage['temp'].append(t)
-        
-        if is_first:
-            self.data_storage['ref_temp'].append(t)
-            self.data_storage['ref_cp'].append(Cp)
-            self.data_storage['ref_g'].append(G)
-            self.data_storage['current_sweep_f'].clear()
-            self.data_storage['current_sweep_cp'].clear()
-            self.log(f"Sweep starting @ T={t:.2f}K")
+    def _save_cycle_to_files(self, cycle, temp):
+        for f, (R, X, status) in cycle.items():
+            if status != 0:
+                self.log(f"WARN: Freq {f} Hz status {status} (overload/invalid)")
             
-        self.data_storage['current_sweep_f'].append(f)
-        self.data_storage['current_sweep_cp'].append(Cp)
-        self._update_live_plots()
+            calc_vals = self.backend.lcr.calculate_impedance_parameters(f, R, X)
+            row_vals = [temp] + calc_vals
+            row_str = "\t".join(f"{v:.6E}" for v in row_vals)
+
+            filepath = self.freq_filepaths.get(f)
+            if filepath:
+                with open(filepath, "a", encoding="utf-8") as file:
+                    file.write(row_str + "\n")
+
+    def _update_data_storage(self, cycle, elapsed, temp):
+        self.data_storage['time'].append(elapsed)
+        self.data_storage['temperature'].append(temp)
+
+        # Clear current sweep data at the start of a new cycle
+        if list(cycle.keys())[0] == self.frequencies[0]:
+            self.data_storage['current_sweep']['freq'].clear()
+            self.data_storage['current_sweep']['cp'].clear()
+
+        for f, (R, X, _) in cycle.items():
+            calc = self.backend.lcr.calculate_impedance_parameters(f, R, X)
+            cp, g = calc[4], calc[2]
+            
+            self.data_storage['current_sweep']['freq'].append(f)
+            self.data_storage['current_sweep']['cp'].append(cp)
+
+            if f == self.plot_freq:
+                self.data_storage['plot_freq_data']['temp'].append(temp)
+                self.data_storage['plot_freq_data']['cp'].append(cp)
+                self.data_storage['plot_freq_data']['g'].append(g)
+
+    def _on_plot_freq_change(self, event=None):
+        try:
+            self.plot_freq = float(self.plot_freq_cb.get().split()[0])
+            self.ax_cp_t.set_title(f"Cp vs. Temp (@ {self.plot_freq} Hz)", fontweight='bold')
+            self.ax_g_t.set_title(f"G vs. Temp (@ {self.plot_freq} Hz)", fontweight='bold')
+            self.log(f"Plot frequency changed to {self.plot_freq} Hz. Data will update on next cycle.")
+        except (ValueError, IndexError):
+            self.log("Invalid plot frequency selected.")
 
     def _update_live_plots(self, force=False):
         now = time.time()
         if not force and (now - self._last_draw_time) < self._redraw_interval: return
         self._last_draw_time = now
 
-        self.line_cp_t.set_data(self.data_storage['ref_temp'], self.data_storage['ref_cp'])
-        self.line_g_t.set_data(self.data_storage['ref_temp'], self.data_storage['ref_g'])
-        self.line_cp_f.set_data(self.data_storage['current_sweep_f'], self.data_storage['current_sweep_cp'])
+        self.line_cp_t.set_data(self.data_storage['plot_freq_data']['temp'], self.data_storage['plot_freq_data']['cp'])
+        self.line_g_t.set_data(self.data_storage['plot_freq_data']['temp'], self.data_storage['plot_freq_data']['g'])
+        self.line_cp_f.set_data(self.data_storage['current_sweep']['freq'], self.data_storage['current_sweep']['cp'])
         self.line_t_time.set_data(self.data_storage['time'], self.data_storage['temp'])
 
         for ax in [self.ax_cp_t, self.ax_g_t, self.ax_cp_f, self.ax_t_time]:
@@ -730,4 +853,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = TD_Dielectric_GUI(root)
     root.mainloop()
-
