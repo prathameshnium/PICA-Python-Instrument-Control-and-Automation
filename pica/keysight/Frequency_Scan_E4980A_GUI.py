@@ -595,7 +595,7 @@ class LCR_Freq_GUI:
         )
         # Row 4-5: Delay | Aperture
         self._add_entry(
-            frame, "Delay per step (s)", "delay", 4, 0, default="0.5"
+            frame, "Delay per step (s)", "delay", 4, 0, default="0.2"
         )
 
         Label(
@@ -614,7 +614,7 @@ class LCR_Freq_GUI:
 
         # Row 6: ALC checkbox
         self.var_alc = tk.BooleanVar(value=True)
-        self.var_corr = tk.BooleanVar(value=False)
+        self.var_corr = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             frame,
             text="Enable Auto Level Control (ALC)",
