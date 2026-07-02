@@ -300,6 +300,15 @@ class Combined_Backend:
         self.lcr = LCR_Backend()
         self.lcr.initialize_instrument(params)
 
+    def measure_frequency_sweep(self):
+        """Performs one full sweep through the frequency list."""
+        cycle_data = {}
+        for f in self.params['freq_list']:
+            t_val = self.lakeshore.get_temperature('A')
+            R, X, status = self.lcr.perform_measurement(f, self.params['delay'])
+            cycle_data[f] = (t_val, R, X, status)
+        return cycle_data
+
     def close_instruments(self):
         if self.lakeshore: self.lakeshore.close()
         if self.lcr: self.lcr.close_instrument()
@@ -358,9 +367,11 @@ class TD_Dielectric_GUI:
 
         # Segregated plotting data
         self.data_storage = {
-            'time': [], 'temp': [],
-            'plot_freq_data': {'temp': [], 'cp': [], 'g': []},
-            'current_sweep': {'freq': [], 'cp': []}
+            'time': [],
+            'temperature': [],
+            'cp': {}, # type: ignore
+            'g': {},
+            'current_sweep': {'temp': [], 'cp': []}
         }
         
         self.log_scale_var = tk.BooleanVar(value=True)
@@ -674,7 +685,15 @@ class TD_Dielectric_GUI:
             self.ax_cp_t.set_title(f"Cp vs. Temp (@ {self.plot_freq} Hz)", fontweight='bold')
             self.ax_g_t.set_title(f"G vs. Temp (@ {self.plot_freq} Hz)", fontweight='bold')
             
-            for key in self.data_storage: self.data_storage[key].clear()
+            # Re-initialize data storage based on parsed frequencies
+            self.data_storage = {
+                'time': [],
+                'temperature': [],
+                'cp': {f: {'T': [], 'v': []} for f in self.frequencies},
+                'g': {f: {'T': [], 'v': []} for f in self.frequencies}, # type: ignore
+                'current_sweep': {'freq': [], 'cp': []}
+            }
+
             self._update_live_plots(force=True)
 
             self.is_stabilizing, self.is_running = True, False
@@ -744,13 +763,9 @@ class TD_Dielectric_GUI:
                     self.data_queue.put("COMPLETE")
                     break
 
-                # Freq Sweep
-                for i, f in enumerate(params['freq_list']):
-                    if self.stop_event.is_set(): break
-                    t_val = self.backend.lakeshore.get_temperature('A')
-                    R, X, status = self.backend.lcr.perform_measurement(f, params['delay'])
-                    elap = time.time() - self.start_time
-                    self.data_queue.put(('CYCLE', elap, t_val, {f: (R, X, status)}))
+                cycle_data = self.backend.measure_frequency_sweep()
+                elap = time.time() - self.start_time
+                self.data_queue.put(('CYCLE', elap, cycle_data))
                     
         except Exception as e:
             self.data_queue.put(e)
@@ -774,49 +789,50 @@ class TD_Dielectric_GUI:
                     self.stop_measurement()
                     return
                 elif isinstance(item, tuple) and item[0] == 'CYCLE':
-                    _, elapsed, temp, cycle_data = item
-                    self._update_data_storage(cycle_data, elapsed, temp)
-                    self._save_cycle_to_files(cycle_data, temp)
+                    _, elapsed, cycle_data = item
+                    self._update_data_storage(cycle_data, elapsed)
+                    self._save_cycle_to_files(cycle_data)
                     self._update_live_plots()
 
         except queue.Empty: pass
         if self.is_running or self.is_stabilizing:
             self.root.after(100, self._process_data_queue)
 
-    def _save_cycle_to_files(self, cycle, temp):
-        for f, (R, X, status) in cycle.items():
+    def _save_cycle_to_files(self, cycle):
+        for f, (temp, R, X, status) in cycle.items():
             if status != 0:
                 self.log(f"WARN: Freq {f} Hz status {status} (overload/invalid)")
             
             calc_vals = self.backend.lcr.calculate_impedance_parameters(f, R, X)
             row_vals = [temp] + calc_vals
             row_str = "\t".join(f"{v:.6E}" for v in row_vals)
-
             filepath = self.freq_filepaths.get(f)
             if filepath:
                 with open(filepath, "a", encoding="utf-8") as file:
                     file.write(row_str + "\n")
 
-    def _update_data_storage(self, cycle, elapsed, temp):
+    def _update_data_storage(self, cycle, elapsed):
+        # Use the temperature from the first frequency point as the representative temp for this cycle
+        first_freq = self.frequencies[0]
+        rep_temp = cycle[first_freq][0]
+
         self.data_storage['time'].append(elapsed)
-        self.data_storage['temperature'].append(temp)
+        self.data_storage['temperature'].append(rep_temp) # type: ignore
 
-        # Clear current sweep data at the start of a new cycle
-        if list(cycle.keys())[0] == self.frequencies[0]:
-            self.data_storage['current_sweep']['freq'].clear()
-            self.data_storage['current_sweep']['cp'].clear()
+        # Clear previous sweep data
+        self.data_storage['current_sweep']['freq'].clear() # CHANGED FROM temp
+        self.data_storage['current_sweep']['cp'].clear()
 
-        for f, (R, X, _) in cycle.items():
+        for f, (temp, R, X, _) in cycle.items():
             calc = self.backend.lcr.calculate_impedance_parameters(f, R, X)
             cp, g = calc[4], calc[2]
             
             self.data_storage['current_sweep']['freq'].append(f)
             self.data_storage['current_sweep']['cp'].append(cp)
-
-            if f == self.plot_freq:
-                self.data_storage['plot_freq_data']['temp'].append(temp)
-                self.data_storage['plot_freq_data']['cp'].append(cp)
-                self.data_storage['plot_freq_data']['g'].append(g)
+            self.data_storage['cp'][f]['T'].append(temp)
+            self.data_storage['cp'][f]['v'].append(cp)
+            self.data_storage['g'][f]['T'].append(temp)
+            self.data_storage['g'][f]['v'].append(g)
 
     def _on_plot_freq_change(self, event=None):
         try:
@@ -824,6 +840,8 @@ class TD_Dielectric_GUI:
             self.ax_cp_t.set_title(f"Cp vs. Temp (@ {self.plot_freq} Hz)", fontweight='bold')
             self.ax_g_t.set_title(f"G vs. Temp (@ {self.plot_freq} Hz)", fontweight='bold')
             self.log(f"Plot frequency changed to {self.plot_freq} Hz. Data will update on next cycle.")
+            # Force redraw with historical data for the new frequency
+            self._update_live_plots(force=True)
         except (ValueError, IndexError):
             self.log("Invalid plot frequency selected.")
 
@@ -831,9 +849,10 @@ class TD_Dielectric_GUI:
         now = time.time()
         if not force and (now - self._last_draw_time) < self._redraw_interval: return
         self._last_draw_time = now
-
-        self.line_cp_t.set_data(self.data_storage['plot_freq_data']['temp'], self.data_storage['plot_freq_data']['cp'])
-        self.line_g_t.set_data(self.data_storage['plot_freq_data']['temp'], self.data_storage['plot_freq_data']['g'])
+        
+        # Plot historical data for the selected frequency
+        self.line_cp_t.set_data(self.data_storage['cp'][self.plot_freq]['T'], self.data_storage['cp'][self.plot_freq]['v'])
+        self.line_g_t.set_data(self.data_storage['g'][self.plot_freq]['T'], self.data_storage['g'][self.plot_freq]['v'])
         self.line_cp_f.set_data(self.data_storage['current_sweep']['freq'], self.data_storage['current_sweep']['cp'])
         self.line_t_time.set_data(self.data_storage['time'], self.data_storage['temp'])
 
