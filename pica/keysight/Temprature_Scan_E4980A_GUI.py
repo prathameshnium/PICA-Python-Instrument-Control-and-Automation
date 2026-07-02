@@ -645,7 +645,7 @@ class TD_Dielectric_GUI:
         self.plot_freq_cb.current(mid)
         self.plot_freq = self.frequencies[mid]
         self.log(f"Parsed {len(self.frequencies)} frequencies. Plotting {self.plot_freq} Hz.")
-
+    
     def start_measurement(self):
         try:
             self._parse_frequencies()
@@ -668,7 +668,7 @@ class TD_Dielectric_GUI:
             }
             if not params['lakeshore_visa'] or not params['lcr_visa'] or not self.file_location_path:
                 raise ValueError("VISA addresses and Save Location are required.")
-
+    
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             self.freq_filepaths = {}
             for f in self.frequencies:
@@ -679,7 +679,7 @@ class TD_Dielectric_GUI:
                     file.write(f"# Sample: {params['sample_name']} | Freq: {f} Hz\n")
                     file.write(self.DATA_HEADER + "\n")
             self.log(f"{len(self.frequencies)} files created in save directory.")
-
+    
             self.backend.initialize_instruments(params)
             
             self.ax_cp_t.set_title(f"Cp vs. Temp (@ {self.plot_freq} Hz)", fontweight='bold')
@@ -693,7 +693,7 @@ class TD_Dielectric_GUI:
                 'g': {f: {'T': [], 'v': []} for f in self.frequencies}, # type: ignore
                 'current_sweep': {'freq': [], 'cp': []}
             }
-
+    
             self._update_live_plots(force=True)
 
             self.is_stabilizing, self.is_running = True, False
@@ -705,11 +705,11 @@ class TD_Dielectric_GUI:
             self.worker_thread = threading.Thread(target=self._measurement_worker, daemon=True)
             self.worker_thread.start()
             self.root.after(100, self._process_data_queue)
-
+    
         except Exception as e:
             self.log(f"ERROR: {e}")
             messagebox.showerror("Init Error", str(e))
-
+    
     def stop_measurement(self):
         if self.is_running or self.is_stabilizing:
             self.is_running = self.is_stabilizing = False
@@ -719,7 +719,7 @@ class TD_Dielectric_GUI:
             self.start_btn.config(state='normal')
             self.stop_btn.config(state='disabled')
             self.scan_btn.config(state='normal')
-
+    
     def _measurement_worker(self):
         params = self.backend.params
         try:
@@ -741,7 +741,7 @@ class TD_Dielectric_GUI:
                     self.is_stabilizing, self.is_running = False, True
                     break
                 time.sleep(2)
-
+    
             if not self.is_running: return
 
             # --- 2. RAMP & MEASURE ---
@@ -769,7 +769,7 @@ class TD_Dielectric_GUI:
                     
         except Exception as e:
             self.data_queue.put(e)
-
+    
     def _process_data_queue(self):
         try:
             while not self.data_queue.empty():
@@ -795,7 +795,7 @@ class TD_Dielectric_GUI:
                     self._update_live_plots()
 
         except queue.Empty: pass
-        if self.is_running or self.is_stabilizing:
+        if self.is_running or self.is_stabilizing or not self.data_queue.empty():
             self.root.after(100, self._process_data_queue)
 
     def _save_cycle_to_files(self, cycle):
@@ -810,7 +810,7 @@ class TD_Dielectric_GUI:
             if filepath:
                 with open(filepath, "a", encoding="utf-8") as file:
                     file.write(row_str + "\n")
-
+    
     def _update_data_storage(self, cycle, elapsed):
         # Use the temperature from the first frequency point as the representative temp for this cycle
         first_freq = self.frequencies[0]
@@ -833,7 +833,7 @@ class TD_Dielectric_GUI:
             self.data_storage['cp'][f]['v'].append(cp)
             self.data_storage['g'][f]['T'].append(temp)
             self.data_storage['g'][f]['v'].append(g)
-
+    
     def _on_plot_freq_change(self, event=None):
         try:
             self.plot_freq = float(self.plot_freq_cb.get().split()[0])
@@ -844,7 +844,7 @@ class TD_Dielectric_GUI:
             self._update_live_plots(force=True)
         except (ValueError, IndexError):
             self.log("Invalid plot frequency selected.")
-
+    
     def _update_live_plots(self, force=False):
         now = time.time()
         if not force and (now - self._last_draw_time) < self._redraw_interval: return
@@ -854,13 +854,13 @@ class TD_Dielectric_GUI:
         self.line_cp_t.set_data(self.data_storage['cp'][self.plot_freq]['T'], self.data_storage['cp'][self.plot_freq]['v'])
         self.line_g_t.set_data(self.data_storage['g'][self.plot_freq]['T'], self.data_storage['g'][self.plot_freq]['v'])
         self.line_cp_f.set_data(self.data_storage['current_sweep']['freq'], self.data_storage['current_sweep']['cp'])
-        self.line_t_time.set_data(self.data_storage['time'], self.data_storage['temp'])
+        self.line_t_time.set_data(self.data_storage['time'], self.data_storage['temperature'])
 
         for ax in [self.ax_cp_t, self.ax_g_t, self.ax_cp_f, self.ax_t_time]:
             ax.relim()
             ax.autoscale_view()
         self.canvas.draw_idle()
-
+    
     def _on_closing(self):
         if self.is_running or self.is_stabilizing:
             if messagebox.askyesno("Exit", "Measurement running. Stop and exit?"):
