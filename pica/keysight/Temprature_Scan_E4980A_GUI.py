@@ -1,10 +1,10 @@
 """
 Module:             CT_E4980A_L350_T_Control_GUI.py
-Purpose:            GUI module for Temperature-Dependent Dielectric
-                    Measurement (Keysight E4980A + Lakeshore 350).
-Original Authors:   Prathamesh Deshmukh (template programs)
-Integrated by:      AI-assisted merge per design specification
-Version:            V: 1.0
+Purpose:             GUI module for Temperature-Dependent Dielectric
+                     Measurement (Keysight E4980A + Lakeshore 350).
+Original Authors:    Prathamesh Deshmukh (template programs)
+Integrated by:       AI-assisted merge per design specification
+Version:             V: 1.0
 """
 
 # ===============================================================================
@@ -409,14 +409,18 @@ class Integrated_CT_GUI:
         "Cp''\tCs''"
     )
 
-    # --- Robust logo path ---
+    # --- Robust logo path finding (fixes missing logo issue) ---
     try:
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        # Try going up 3 levels first (as in R-T template)
         LOGO_FILE_PATH = os.path.join(
-            SCRIPT_DIR, "..", "..", "..",
-            "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+            SCRIPT_DIR, "..", "..", "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+        if not os.path.exists(LOGO_FILE_PATH):
+            # Fallback to 1 level up (as in Freq-scan template)
+            LOGO_FILE_PATH = os.path.join(
+                SCRIPT_DIR, "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
     except NameError:
-        LOGO_FILE_PATH = "../../../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
+        LOGO_FILE_PATH = "assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
 
     # --- Theme constants (identical to both source programs) ---
     CLR_BG_DARK     = '#B8A392'
