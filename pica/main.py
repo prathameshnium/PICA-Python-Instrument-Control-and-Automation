@@ -169,10 +169,10 @@ class PICALauncherApp:
         "Lakeshore Direct Control": resource_path("lakeshore/T_Control_L350_DirectControl_GUI.py"),
         "Lakeshore Temp Monitor": resource_path("lakeshore/T_Sensing_L350_GUI.py"),
         "LCR C-V Measurement": resource_path("keysight/CV_KE4980A_GUI.py"),
-        "LCR Frequency Scan": resource_path("keysight/Frequency_Scan_E4980A_GUI.py"),
-        "LCR Temp. Step Freq. Scan (T_Control)": resource_path("keysight/Step_Frequency_Scan_E4980A_GUI.py"),
-        "LCR Temp. Scan (T_Control)": resource_path("keysight/Temprature_Scan_E4980A_GUI.py"),
-        "LCR Temp. Scan (T_Sensing)": resource_path("keysight/Temprature_Scan_Passive_E4980A_GUI.py"),
+        "LCR Frequency Scan": resource_path("keysight/Frequency_Scan_E4980A_GUI.py"), # Already present
+        "LCR Temp. Step Freq. Scan (T_Control)": resource_path("keysight/Step_Frequency_Scan_E4980A_GUI.py"), # Already present
+        "LCR Temp. Scan (T_Control)": resource_path("keysight/Temprature_Scan_E4980A_GUI.py"), # Already present
+        "LCR Temp. Scan (T_Sensing)": resource_path("keysight/Temprature_Scan_Passive_E4980A_GUI.py"), # Already present
         "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
         "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
         "PICA Help": resource_path("README.md"),
@@ -586,10 +586,10 @@ class PICALauncherApp:
                                  "Instrument: Keysight E4980A",
                                  [("C-V Measurement",
                                    "LCR C-V Measurement"),
-                                  ("Dielectric Frequency Scan", "LCR Frequency Scan"),
-                                  ("Temp. Step Freq. Scan (T_Control)", "LCR Temp. Step Freq. Scan (T_Control)"),
-                                  ("Dielectric Temp. Scan (T_Control)", "LCR Temp. Scan (T_Control)"),
-                                  ("Dielectric Temp. Scan (T_Sensing)", "LCR Temp. Scan (T_Sensing)"),
+                                  ("Dielectric Frequency Scan", "LCR Frequency Scan"), # Already present
+                                  ("Temp. Step Freq. Scan (T_Control)", "LCR Temp. Step Freq. Scan (T_Control)"), # Already present
+                                  ("Dielectric Temp. Scan (T_Control)", "LCR Temp. Scan (T_Control)"), # Already present
+                                  ("Dielectric Temp. Scan (T_Sensing)", "LCR Temp. Scan (T_Sensing)"), # Already present
                                   ])
 
         return main_container
