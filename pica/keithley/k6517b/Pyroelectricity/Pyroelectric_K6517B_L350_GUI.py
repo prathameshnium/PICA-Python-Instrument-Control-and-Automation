@@ -257,6 +257,8 @@ class PyroelectricAppGUI:
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
     FONT_CONSOLE = ('Consolas', 10)
 
+    LEFT_PANEL_WIDTH = 500  # default sash position so the left panel starts fully visible
+
     def __init__(self, root):
         self.root = root
         self.root.title("Pyroelectric Measurement Interface")
@@ -344,12 +346,16 @@ class PyroelectricAppGUI:
     def create_widgets(self):
         """Lays out the main frames and populates them with widgets."""
         self.create_header()
-        main_pane = ttk.PanedWindow(self.root, orient='horizontal')
-        main_pane.pack(fill='both', expand=True, padx=15, pady=15)
+        self.main_pane = ttk.PanedWindow(self.root, orient='horizontal')
+        self.main_pane.pack(fill='both', expand=True, padx=15, pady=15)
 
         # --- Create a scrollable left panel ---
-        left_panel_container = ttk.Frame(main_pane, width=500)
-        main_pane.add(left_panel_container, weight=1)
+        # FIX (2b): pack_propagate(False) makes the requested width stick;
+        # weight=0 keeps the left panel from being squeezed as the window
+        # resizes, while the right (plot) panel absorbs all extra space.
+        left_panel_container = ttk.Frame(self.main_pane, width=self.LEFT_PANEL_WIDTH)
+        left_panel_container.pack_propagate(False)
+        self.main_pane.add(left_panel_container, weight=0)
 
         canvas = Canvas(
             left_panel_container,
@@ -365,21 +371,58 @@ class PyroelectricAppGUI:
             "<Configure>",
             lambda e: canvas.configure(
                 scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Keep the inner frame exactly as wide as the canvas viewport, so
+        # widgets are never clipped on the right edge (they reflow instead),
+        # and remember the frame so the sash logic can measure its true width.
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfigure(window_id, width=e.width))
+        self.left_scrollable_frame = scrollable_frame
 
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
         # --- Create the right panel for graphs ---
-        right_panel = tk.Frame(main_pane, bg=self.CLR_BG_DARK)
-        main_pane.add(right_panel, weight=3)
+        right_panel = tk.Frame(self.main_pane, bg=self.CLR_BG_DARK)
+        self.main_pane.add(right_panel, weight=3)
 
         # --- Populate the scrollable frame ---
         self.create_info_frame(scrollable_frame)
         self.create_input_frame(scrollable_frame)
         self.create_console_frame(scrollable_frame)
         self.create_graph_frame(right_panel)
+
+        # sashpos() has no effect until the PanedWindow is actually mapped and
+        # laid out — an early call fails SILENTLY. So we (a) wait for the
+        # window to be drawn, (b) measure the real required width of the
+        # left-panel content instead of guessing, and (c) retry until the
+        # sash position verifiably sticks.
+        self.root.after(50, self._set_default_sash_position)
+
+    def _set_default_sash_position(self, attempt=0):
+        try:
+            self.root.update_idletasks()  # force geometry to be computed
+
+            # Measure the actual content width: inner scrollable frame +
+            # vertical scrollbar + a little breathing room. Falls back to
+            # LEFT_PANEL_WIDTH if measurement isn't ready yet.
+            content_w = self.left_scrollable_frame.winfo_reqwidth()
+            if content_w > 1:
+                target = content_w + 30  # scrollbar (~15px) + padding
+            else:
+                target = self.LEFT_PANEL_WIDTH
+
+            self.main_pane.sashpos(0, target)
+
+            # Verify it stuck; if not (widget not mapped yet), retry.
+            if abs(self.main_pane.sashpos(0) - target) > 5 and attempt < 10:
+                self.root.after(100, lambda: self._set_default_sash_position(attempt + 1))
+        except tk.TclError:
+            if attempt < 10:
+                self.root.after(100, lambda: self._set_default_sash_position(attempt + 1))
 
     def create_header(self):
         font_title_main = ('Segoe UI', self.FONT_SIZE_BASE + 4, 'bold')

@@ -209,6 +209,8 @@ class VT_GUI_Passive:
     FONT_TITLE = ('Segoe UI', 13, 'bold')
     FONT_CONSOLE = ('Consolas', 10)
 
+    LEFT_PANEL_WIDTH = 480  # default sash position so the left panel starts fully visible
+
     def __init__(self, root):
         self.root = root
         self.root.title(
