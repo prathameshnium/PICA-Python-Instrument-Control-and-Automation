@@ -1,30 +1,59 @@
 """
-PROGRAM:       Passive Temperature Sensing & Dielectric Scan (E4980A & L350)
-PURPOSE:       Continuously monitors temperature (heater OFF) while performing
-               multi-frequency dielectric sweeps (Cp-G) and calculating 18
-               impedance parameters. Saves a separate file per frequency.
-
-VERSION:       2.1 (Passive) — Robust SCPI, trigger fix, settling delays
+Module:             CT_E4980A_L350_T_Control_GUI.py
+Purpose:             GUI module for Temperature-Dependent Dielectric
+                     Measurement (Keysight E4980A + Lakeshore 350).
+Original Authors:    Prathamesh Deshmukh (template programs)
+Integrated by:       AI-assisted merge per design specification
+Version:             V: 1.1  (passive monitoring + hardcoded 350 K kill switch)
 """
 
+# ===============================================================================
+# IMPORTS  (union of both source programs)
+# ===============================================================================
+
 import tkinter as tk
-from tkinter import ttk, Label, Entry, LabelFrame, filedialog, messagebox, scrolledtext, Canvas
+from tkinter import (
+    ttk, Label, Entry, LabelFrame, filedialog, messagebox,
+    scrolledtext, Canvas,
+)
 import threading
 import queue
 import os
 import time
 import math
+import traceback
+import atexit
 from datetime import datetime
 import numpy as np
-
-import matplotlib as mpl
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.gridspec as gridspec
+import matplotlib as mpl
 import runpy
 from multiprocessing import Process
 
+# --- Pillow for Logo Image ---
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+    try:
+        RESAMPLE_FILTER = Image.Resampling.LANCZOS
+    except AttributeError:
+        RESAMPLE_FILTER = Image.LANCZOS
+except ImportError:
+    PIL_AVAILABLE = False
+
+# --- PyVISA for instrument communication ---
+try:
+    import pyvisa
+    PYVISA_AVAILABLE = True
+except ImportError:
+    pyvisa = None
+    PYVISA_AVAILABLE = False
+
+
 # ===============================================================================
-# UTILITY LAUNCHERS
+# UTILITY LAUNCH FUNCTIONS  (verbatim from source programs)
 # ===============================================================================
 
 def run_script_process(script_path):
@@ -37,1201 +66,1474 @@ def run_script_process(script_path):
         print(e)
         print("-------------------------")
 
+
 def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        plotter_path = os.path.join(script_dir, "..", "utils", "PlotterUtil_GUI.py")
+        plotter_path = os.path.join(
+            script_dir, "..", "..", "..", "utils", "PlotterUtil_GUI.py")
         if not os.path.exists(plotter_path):
             messagebox.showerror(
                 "File Not Found",
-                f"Plotter utility not found at expected path:\n{plotter_path}",
-            )
+                f"Plotter utility not found at expected path:\n{plotter_path}")
             return
         Process(target=run_script_process, args=(plotter_path,)).start()
     except Exception as e:
-        messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
+        messagebox.showerror(
+            "Launch Error", f"Failed to launch Plotter Utility: {e}")
+
 
 def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         scanner_path = os.path.join(
-            script_dir, "..", "utils", "GPIB_Instrument_Scanner_GUI.py"
-        )
+            script_dir, "..", "..", "..",
+            "utils", "GPIB_Instrument_Scanner_GUI.py")
         if not os.path.exists(scanner_path):
             messagebox.showerror(
                 "File Not Found",
-                f"GPIB Scanner not found at expected path:\n{scanner_path}",
-            )
+                f"GPIB Scanner not found at expected path:\n{scanner_path}")
             return
         Process(target=run_script_process, args=(scanner_path,)).start()
     except Exception as e:
-        messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
-
-# ===============================================================================
-# OPTIONAL DEPENDENCIES
-# ===============================================================================
-
-try:
-    from PIL import Image, ImageTk
-    PIL_AVAILABLE = True
-    try:
-        RESAMPLE_FILTER = Image.Resampling.LANCZOS
-    except AttributeError:
-        RESAMPLE_FILTER = Image.LANCZOS
-except ImportError:
-    PIL_AVAILABLE = False
-
-try:
-    import pyvisa
-    PYVISA_AVAILABLE = True
-except ImportError:
-    pyvisa = None
-    PYVISA_AVAILABLE = False
+        messagebox.showerror(
+            "Launch Error", f"Failed to launch GPIB Scanner: {e}")
 
 
 # ===============================================================================
-# SCPI BACKEND: INSTRUMENT CONTROL
+# BACKEND: LAKESHORE 350  (passive-aware close)
 # ===============================================================================
 
-class Lakeshore350_PassiveBackend:
-    """SCPI Control for Lakeshore 350 — Read Only (Heater explicitly disabled).
+class Lakeshore350_Backend:
+    """A class to control the Lakeshore Model 350 Temperature Controller."""
 
-    IMPORTANT: *RST is NOT called here because it erases all user calibration
-    curves, zone tables, PID settings, and alarm configurations. For a passive
-    read-only application we only ensure the heater is off.
-    Reference: Lakeshore 350 Manual, "IEEE-488 Commands" section.
-    Source: https://www.lakeshore.com/docs/default-source/product-downloads/lstc_350_l.pdf
-    """
-
-    def __init__(self, rm, visa_address):
+    def __init__(self, visa_address, passive_mode=False):
+        self.instrument = None
+        self.passive_mode = passive_mode   # True => never touch heater on exit
+        rm = pyvisa.ResourceManager()
         self.instrument = rm.open_resource(visa_address)
         self.instrument.timeout = 10000
-        self.instrument.read_termination = '\r\n'
-        self.instrument.write_termination = '\r\n'
+        print(f"Lakeshore Connected: "
+              f"{self.instrument.query('*IDN?').strip()}")
 
-        idn = self.instrument.query('*IDN?').strip()
-        print(f"Lakeshore Connected: {idn}")
-
-        # Clear status register only (does NOT reset settings/curves)
+    def reset_and_clear(self):
+        self.instrument.write('*RST')
+        time.sleep(0.5)
         self.instrument.write('*CLS')
+        time.sleep(1)
+
+    def setup_heater(self, output, resistance_code, max_current_code):
+        self.instrument.write(
+            f'HTRSET {output},{resistance_code},{max_current_code},0,1')
         time.sleep(0.5)
 
-        # Ensure heater is off — Output 1 (main heater)
-        # RANGE <output>,<range>  where range 0 = OFF
-        # Source: Lakeshore 350 Manual, "RANGE" command
-        self.instrument.write('RANGE 1,0')
+    def setup_ramp(self, output, rate_k_per_min, ramp_on=True):
+        """Configures the instrument's internal ramp generator."""
+        self.instrument.write(
+            f'RAMP {output},{1 if ramp_on else 0},{rate_k_per_min}')
         time.sleep(0.5)
 
-        # Ensure ramp is off for output 1
-        # RAMP <output>,<on/off>,<rate>
-        # Rate field 1 is valid (1 K/min), range 0.001–100
-        self.instrument.write('RAMP 1,0,1')
-        time.sleep(0.5)
+    def set_setpoint(self, output, temperature_k):
+        self.instrument.write(f'SETP {output},{temperature_k}')
 
-    def get_temperature(self, sensor='A'):
-        """Read Kelvin temperature from specified sensor input.
-        KRDG? returns the current reading in Kelvin.
-        """
+    def set_heater_range(self, output, heater_range):
+        range_map = {'off': 0, 'low': 2, 'medium': 4, 'high': 5}
+        range_code = range_map.get(heater_range.lower())
+        if range_code is None:
+            raise ValueError("Invalid heater range.")
+        self.instrument.write(f'RANGE {output},{range_code}')
+
+    def get_temperature(self, sensor):
         return float(self.instrument.query(f'KRDG? {sensor}').strip())
 
-    def close(self):
-        if self.instrument:
-            try:
-                self.instrument.write('RANGE 1,0')
-                self.instrument.close()
-            except Exception as e:
-                print(f"Lakeshore close warning: {e}")
-            finally:
-                self.instrument = None
-
-
-class KeysightE4980A_Backend:
-    """SCPI Control for Keysight E4980A LCR Meter.
-
-    Trigger Model Reference (E4980A/E4980AL):
-    - :TRIG:SOUR INT  — Internal trigger, instrument triggers itself
-                        continuously.
-    - :INIT:CONT ON   — Continuous activation: after each measurement the
-                        trigger system re-arms automatically.
-    - :FETCh?         — Returns the latest completed measurement result;
-                        blocks until data is available.
-
-    Using INT + INIT:CONT ON + FETCh? is the simplest and most robust approach
-    for point-by-point frequency stepping. The previous code used BUS trigger
-    with *TRG which caused "dashes" (no measurement data) due to timing
-    conflicts.
-
-    Sources:
-    - E4980A Datasheet: https://www.cmc.ca/wp-content/uploads/2019/07/Keysight-E4980A-Datasheet.pdf
-    - PyMeasure E4980 driver: https://pymeasure.readthedocs.io/en/stable/api/instruments/agilent/agilentE4980.html
-    - Keysight Trigger Help: https://helpfiles.keysight.com/csg/e4982a/programming/remote_control/starting_measurement_cycle_(triggering)_and_detecting_end_of_measurement/starting_a_new_measurement_cycle_(triggering).htm
-    """
-
-    def __init__(self, rm, visa_address):
-        self.instrument = rm.open_resource(visa_address)
-        self.instrument.timeout = 15000
-        self.instrument.read_termination = '\n'
-        self.instrument.write_termination = '\n'
-
-        # Check for Option 001 (Power and DC Bias Enhancement)
-        # Source: E4980A Datasheet — Option E4980A-001 provides built-in 40V DC bias
-        opt_response = self.instrument.query('*OPT?').strip()
-        self.has_opt001 = '001' in opt_response
-
-        idn = self.instrument.query('*IDN?').strip()
-        print(f"E4980A Connected: {idn}")
-        print(f"E4980A Options: {opt_response}")
-        if self.has_opt001:
-            print("  -> Option 001 (DC Bias) detected.")
-        else:
-            print("  -> Option 001 (DC Bias) NOT detected.")
-
-    # ------------------------------------------------------------------
-    # Helper Methods
-    # ------------------------------------------------------------------
-
-    def _write_and_wait(self, cmd, delay=0.5):
-        """Send a SCPI command with a guaranteed settling delay.
-
-        This ensures the instrument has processed the command and any
-        internal transients have settled before the next command is sent.
-        The default 0.5 s delay is conservative but safe for all setup
-        commands per the E4980A command reference.
-        """
-        self.instrument.write(cmd)
-        time.sleep(delay)
-
-    def _check_errors(self, context=""):
-        """Query the SCPI error queue and print any errors.
-
-        :SYST:ERR? returns the oldest error and removes it from the queue.
-        Returns a string like "0,No error" when the queue is empty.
-        """
-        while True:
-            err = self.instrument.query(':SYST:ERR?').strip()
-            if err.startswith('0,') or err.startswith('+0,'):
-                break
-            print(f"[E4980A SCPI Error] {context}: {err}")
-
-    def _has_corr_data(self, corr_type):
-        """Check whether OPEN or SHORT correction data is stored.
-
-        :CORR:OPEN:DATA? / :CORR:SHOR:DATA? return the stored correction
-        data. If no data has been stored, the instrument returns empty
-        or zero values. Enabling correction without stored data causes
-        the display to show dashes.
-
-        Returns True if correction data appears to exist.
-        """
-        if corr_type.upper() == 'OPEN':
-            data = self.instrument.query(':CORR:OPEN:DATA?').strip()
-        else:
-            data = self.instrument.query(':CORR:SHOR:DATA?').strip()
-
-        # Check that data is not empty and contains non-zero values
-        if not data:
-            return False
-        try:
-            vals = [float(v) for v in data.split(',')]
-            # If all values are zero, no real correction data is stored
-            return any(abs(v) > 1e-15 for v in vals)
-        except (ValueError, IndexError):
-            return False
-
-    # ------------------------------------------------------------------
-    # DC Bias Ramp
-    # ------------------------------------------------------------------
-
-    def safe_ramp_dc_bias(self, target_v, step=0.5, dwell=0.1):
-        """Gradually ramp DC bias from current value to target.
-
-        Queries the current bias voltage safely (with fallback to 0V if
-        the query fails, e.g., when bias is not yet enabled).
-        """
-        try:
-            current_v = float(self.instrument.query(':BIAS:VOLT?'))
-        except Exception:
-            current_v = 0.0
-
-        if abs(target_v - current_v) < 0.01:
-            return
-
-        n = max(int(math.ceil(abs(target_v - current_v) / step)), 1)
-        ramp_points = np.linspace(current_v, target_v, n + 1)[1:]
-
-        for v in ramp_points:
-            self.instrument.write(f':BIAS:VOLT {v:.3f}')
-            time.sleep(dwell)
-
-    # ------------------------------------------------------------------
-    # Measurement Setup
-    # ------------------------------------------------------------------
-
-    def setup_measurement(self, ac_bias, dc_bias, aper, alc_on, corr_on):
-        """Configure the E4980A for Cp-G measurement with proper settling.
-
-        Parameters:
-            ac_bias  : AC test signal voltage in Volts (100 µV to 2 Vrms,
-                       or up to 20 Vrms with Option 001)
-            dc_bias  : DC bias voltage in Volts (requires Option 001)
-            aper     : Aperture mode — 'SHOR', 'MED', or 'LONG'
-            alc_on   : Enable Auto Level Control (ALC)
-            corr_on  : Enable OPEN/SHORT correction (if data exists)
-        """
-        # ------------------------------------------------------------------
-        # 1. Full reset with proper synchronization
-        # *RST is an overlapped command — must wait for completion via *OPC?
-        # Source: IEEE 488.2 standard, *OPC? blocks until all pending
-        #         overlapped commands complete.
-        # ------------------------------------------------------------------
-        self.instrument.write('*RST')
-        self.instrument.query('*OPC?')
-        time.sleep(1.0)  # Extra settling after full reset
-
-        self.instrument.write('*CLS')
-        time.sleep(0.5)
-
-        # ------------------------------------------------------------------
-        # 2. Display and measurement function
-        # :FUNC:IMP CPG — Primary: Cp (parallel capacitance, F)
-        #                   Secondary: G  (parallel conductance, S)
-        # Source: PyMeasure E4980 mode property — CPG is valid
-        # ------------------------------------------------------------------
-        self._write_and_wait(':DISP:ENAB ON')
-        self._write_and_wait(':FUNC:IMP CPG')
-
-        # ------------------------------------------------------------------
-        # 3. Aperture (integration time)
-        # SHOR = 5.6 ms, MED = 88 ms, LONG = 220 ms (at 1 MHz)
-        # Source: E4980A Datasheet
-        # ------------------------------------------------------------------
-        self._write_and_wait(f':APER {aper}')
-
-        # ------------------------------------------------------------------
-        # 4. Impedance range — auto
-        # ------------------------------------------------------------------
-        self._write_and_wait(':FUNC:IMP:RANG:AUTO ON')
-
-        # ------------------------------------------------------------------
-        # 5. Auto Level Control (ALC)
-        # ALC maintains the programmed AC voltage at the DUT terminals
-        # ------------------------------------------------------------------
-        self._write_and_wait(':AMPL:ALC ON' if alc_on else ':AMPL:ALC OFF')
-
-        # ------------------------------------------------------------------
-        # 6. Open/Short correction
-        # Only enable if calibration data is actually stored on the
-        # instrument. Enabling without data causes dashes.
-        # ------------------------------------------------------------------
-        if corr_on:
-            if self._has_corr_data('OPEN'):
-                self._write_and_wait(':CORR:OPEN:STAT ON')
-                print("  -> OPEN correction enabled (data found).")
-            else:
-                print("  -> WARNING: OPEN correction requested but no data "
-                      "stored. Skipping.")
-            if self._has_corr_data('SHOR'):
-                self._write_and_wait(':CORR:SHOR:STAT ON')
-                print("  -> SHORT correction enabled (data found).")
-            else:
-                print("  -> WARNING: SHORT correction requested but no data "
-                      "stored. Skipping.")
-
-        # ------------------------------------------------------------------
-        # 7. AC test signal level
-        # :VOLT sets the oscillator voltage in Vrms
-        # ------------------------------------------------------------------
-        self._write_and_wait(f':VOLT {ac_bias}')
-
-        # ------------------------------------------------------------------
-        # 8. Trigger configuration — INTERNAL trigger + continuous init
-        #
-        # This is the critical fix for the "dashes" issue.
-        # :TRIG:SOUR INT  — Instrument triggers itself automatically
-        # :INIT:CONT ON   — Trigger system re-arms after each measurement
-        #
-        # With this configuration, the instrument continuously measures at
-        # the set frequency. We simply change frequency, wait for settling,
-        # and fetch the latest result with :FETCh?
-        #
-        # Source: E4980A/E4982A Trigger Model documentation
-        # ------------------------------------------------------------------
-        self._write_and_wait(':TRIG:SOUR INT')
-        self._write_and_wait(':INIT:CONT ON')
-
-        # ------------------------------------------------------------------
-        # 9. DC bias (requires Option 001)
-        # If DC bias != 0 and Option 001 is not installed, raise an error
-        # before attempting any bias commands.
-        # Source: E4980A Datasheet — Option E4980A-001 provides DC bias
-        # ------------------------------------------------------------------
-        if dc_bias != 0:
-            if not self.has_opt001:
-                raise RuntimeError(
-                    "DC bias requires Option 001 (Power and DC Bias "
-                    "Enhancement), which is not installed on this unit."
-                )
-            # Enable DC bias output, starting from 0V, then ramp to target
-            self.instrument.write(':BIAS:VOLT 0')
-            time.sleep(0.5)
-            self.instrument.write(':BIAS:STAT ON')
-            time.sleep(0.5)
-            self.safe_ramp_dc_bias(dc_bias)
-
-        # ------------------------------------------------------------------
-        # 10. Final error check
-        # ------------------------------------------------------------------
-        self._check_errors("setup_measurement")
-
-    # ------------------------------------------------------------------
-    # Measurement
-    # ------------------------------------------------------------------
-
-    def measure_freq(self, freq, delay):
-        """Measure Cp and G at the specified frequency.
-
-        With :TRIG:SOUR INT and :INIT:CONT ON, the instrument is
-        continuously measuring. We set the frequency, wait for the
-        measurement to settle, then fetch the latest result.
-
-        :FETCh? blocks until a completed measurement is available and
-        returns: <primary>,<secondary>[,<status>]
-        For Cp-G mode: returns Cp(F), G(S), [status word]
-
-        Parameters:
-            freq  : Measurement frequency in Hz
-            delay : Settling time in seconds after frequency change
-
-        Returns:
-            tuple (cp, g, status)
-        """
-        self.instrument.write(f':FREQ {freq}')
-        time.sleep(delay)
-
-        # :FETCh? returns the latest completed measurement
-        vals = self.instrument.query_ascii_values(':FETCh?')
-
-        if len(vals) < 2:
-            raise IOError(
-                f"E4980A returned malformed data at {freq} Hz: {vals}"
-            )
-
-        cp = vals[0]
-        g = vals[1]
-        # Status word: 0 = normal, non-zero indicates measurement issues
-        status = vals[2] if len(vals) > 2 else 0
-
-        return cp, g, status
-
-    # ------------------------------------------------------------------
-    # Cleanup
-    # ------------------------------------------------------------------
+    def get_heater_output(self, output):
+        return float(self.instrument.query(f'HTR? {output}').strip())
 
     def close(self):
         if self.instrument:
             try:
-                # Ramp DC bias back to 0 before disabling
-                self.safe_ramp_dc_bias(0.0)
-                self.instrument.write(':BIAS:STAT OFF')
-                time.sleep(0.3)
-                # Return to measurement display page
-                self.instrument.write(':DISP:PAGE MEAS')
+                if not self.passive_mode:
+                    self.set_heater_range(1, 'off')
+                    time.sleep(0.5)
                 self.instrument.close()
             except Exception as e:
-                print(f"E4980A close warning: {e}")
+                print(f"Warning: Issue during Lakeshore shutdown: {e}")
             finally:
                 self.instrument = None
 
 
-class Combined_Passive_Backend:
-    """Combines Lakeshore 350 and E4980A backends for passive measurement."""
+# ===============================================================================
+# BACKEND: KEYSIGHT E4980A LCR  (verbatim from freq-scan program)
+# ===============================================================================
+
+class LCR_Backend:
+    """Handles all SCPI communication with the Keysight E4980A."""
 
     def __init__(self):
-        self.lakeshore = None
-        self.lcr = None
+        self.instrument = None
         self.params = {}
-        self.rm = pyvisa.ResourceManager() if PYVISA_AVAILABLE else None
+        self.has_opt001 = False
+        self.rm = None
+        if pyvisa:
+            try:
+                self.rm = pyvisa.ResourceManager()
+            except Exception as e:
+                print(f"VISA init failed: {e}")
 
-    def initialize_instruments(self, parameters):
-        self.params = parameters
+    def _check_errors(self, context=""):
+        """Drain SCPI error queue; raise on any error."""
+        errors = []
+        for _ in range(20):
+            err = self.instrument.query(":SYST:ERR?").strip()
+            if err.startswith("0,") or err.startswith("+0,"):
+                break
+            errors.append(err)
+        if errors:
+            raise RuntimeError(f"SCPI errors after {context}: {errors}")
+
+    def safe_ramp_dc_bias(self, target_v, step=0.5, dwell=0.1):
+        """Safely ramps the DC bias to the target voltage."""
+        current_v = float(self.instrument.query(":BIAS:VOLT?"))
+        if abs(target_v - current_v) < 0.01:
+            return
+        if step <= 0:
+            self.instrument.write(f":BIAS:VOLT {target_v:.3f}")
+            return
+        direction = 1 if target_v > current_v else -1
+        ramp_points = np.arange(current_v, target_v, direction * step)
+        ramp_points = np.append(ramp_points, target_v)
+        for v in ramp_points:
+            self.instrument.write(f":BIAS:VOLT {v:.3f}")
+            time.sleep(dwell)
+
+    def initialize_instrument(self, p):
+        """Configures the instrument for a multi-frequency R-X measurement."""
+        print("\n--- [Backend] Initializing Keysight E4980A ---")
+        self.params = p
         if not self.rm:
             raise ConnectionError("VISA Resource Manager unavailable.")
 
-        self.lakeshore = Lakeshore350_PassiveBackend(
-            self.rm, self.params['lakeshore_visa']
-        )
+        inst = self.rm.open_resource(p["lcr_visa"])
+        inst.timeout = 60000
+        inst.read_termination = "\n"
+        inst.write_termination = "\n"
+        self.instrument = inst
 
-        self.lcr = KeysightE4980A_Backend(self.rm, self.params['lcr_visa'])
-        self.lcr.setup_measurement(
-            self.params['ac_bias'],
-            self.params['dc_bias'],
-            self.params['aper'],
-            self.params['alc_enabled'],
-            self.params['corr_enabled']
-        )
+        idn = inst.query("*IDN?").strip()
+        if "E4980" not in idn:
+            inst.close()
+            raise ConnectionError(f"Not an E4980A: {idn}")
 
-    def get_temperature(self):
-        return self.lakeshore.get_temperature('A')
+        self.has_opt001 = "001" in inst.query("*OPT?")
 
-    def measure_lcr_array(self, freqs, delay):
-        results = {}
-        for f in freqs:
-            cp, g, status = self.lcr.measure_freq(f, delay)
-            results[f] = (cp, g)
-            # Log status if non-zero (informational)
-            if status != 0:
-                print(f"[E4980A] Measurement status at {f} Hz: {status}")
-        return results
+        # Strict Safety Ceilings: Hard cap at 2.0 V regardless of options
+        v_bias_max = min(2.0, 40.0 if self.has_opt001 else 2.0)
+        v_ac_max   = min(2.0, 20.0 if self.has_opt001 else 2.0)
+
+        if abs(p["dc_bias"]) > v_bias_max:
+            raise ValueError(f"|DC Bias| > {v_bias_max} V safety limit.")
+        if not (0 < p["ac_bias"] <= v_ac_max):
+            raise ValueError(
+                f"AC level outside 0-{v_ac_max} Vrms safety limit.")
+
+        # --- Instrument configuration ---
+        inst.write("*RST; *CLS")
+        time.sleep(1.0)
+        inst.write(":DISP:ENAB ON")
+        time.sleep(0.2)
+
+        inst.write(":FUNC:IMP RX")
+        inst.write(f":APER {p['aper']}")
+        inst.write(":FUNC:IMP:RANG:AUTO ON")
+        time.sleep(0.2)
+
+        inst.write(":FORM ASC")
+
+        inst.write(":FUNC:SMON:VAC ON")
+        inst.write(":FUNC:SMON:IAC ON")
+        inst.write(":FUNC:SMON:VDC OFF")
+        inst.write(":FUNC:SMON:IDC OFF")
+        time.sleep(0.2)
+
+        if p["alc_enabled"]:
+            inst.write(":AMPL:ALC ON")
+        else:
+            inst.write(":AMPL:ALC OFF")
+        time.sleep(0.2)
+
+        inst.write(f":CORR:LENG {p['cable_len']}")
+        if p["corr_enabled"]:
+            inst.write(":CORR:OPEN:STAT ON")
+            inst.write(":CORR:SHOR:STAT ON")
+        else:
+            inst.write(":CORR:OPEN:STAT OFF")
+            inst.write(":CORR:SHOR:STAT OFF")
+        time.sleep(0.2)
+
+        inst.write(f":VOLT {p['ac_bias']}")
+        time.sleep(0.5)
+
+        inst.write(":TRIG:SOUR BUS")
+        inst.write(":INIT:CONT ON")
+        time.sleep(0.2)
+
+        # --- Conditional DC Bias Handling ---
+        if abs(p["dc_bias"]) < 1e-9:
+            inst.write(":BIAS:VOLT 0")
+            inst.write(":BIAS:STAT OFF")
+        else:
+            inst.write(":BIAS:VOLT 0")
+            inst.write(":BIAS:STAT ON")
+            time.sleep(0.5)
+            if self.has_opt001:
+                print(f"  Ramping DC Bias to {p['dc_bias']} V...")
+                self.safe_ramp_dc_bias(p["dc_bias"])
+            else:
+                if p["dc_bias"] not in (1.5, 2.0):
+                    raise ValueError(
+                        "Without Option 001, DC bias must be 0, 1.5 or 2 V.")
+                inst.write(f":BIAS:VOLT {p['dc_bias']}")
+                time.sleep(1.0)
+
+        self._check_errors("configuration")
+        print(f"  Connected & configured (RX mode): {idn}")
+
+    def perform_measurement(self, freq, delay):
+        """Set frequency, settle, trigger one measurement, fetch R, X, status."""
+        if not self.instrument:
+            raise ConnectionError("Instrument is not connected.")
+        self.instrument.write(f":FREQ {freq}")
+        time.sleep(delay)
+        self.instrument.write(":TRIG:IMM")
+        vals = self.instrument.query_ascii_values(":FETC?")
+        R, X = vals[0], vals[1]
+        status = int(vals[2]) if len(vals) > 2 else 0
+        return R, X, status
+
+    def close_instrument(self):
+        print("--- [Backend] Closing LCR instrument connection. ---")
+        if not self.instrument:
+            return
+        try:
+            if self.has_opt001:
+                print("  Ramping bias to zero and turning off...")
+                self.safe_ramp_dc_bias(0.0)
+            else:
+                self.instrument.write(":BIAS:VOLT 0")
+                time.sleep(0.5)
+            self.instrument.write(":BIAS:STAT OFF")
+            self.instrument.write(":DISP:PAGE MEAS")
+            time.sleep(0.2)
+        except Exception as e:
+            print(f"  Warning during LCR shutdown: {e}")
+        finally:
+            try:
+                self.instrument.close()
+                print("  E4980A connection closed.")
+            finally:
+                self.instrument = None
+
+
+# ===============================================================================
+# BACKEND: COMBINED  (Appendix A.1 — per-point temperature binding)
+#                  +  PASSIVE init + hardcoded 350 K safety kill switch
+# ===============================================================================
+
+class Combined_Backend:
+    """Manages the Lakeshore 350 (read-only / passive) and the Keysight E4980A."""
+
+    # HARDCODED SAFETY KILL SWITCH — do not expose in UI
+    SAFETY_KILL_TEMP_K = 350.0
+
+    def __init__(self):
+        self.lakeshore = None
+        self.lcr = LCR_Backend()
+        self.params = {}
+
+    def initialize_instruments(self, parameters):
+        self.params = parameters
+        print("\n--- [Backend] Initializing Instruments (PASSIVE mode) ---")
+        # passive_mode=True when the user asked us NOT to touch the range
+        self.lakeshore = Lakeshore350_Backend(
+            parameters['lakeshore_visa'],
+            passive_mode=not parameters['zero_range'])
+
+        # NOTE: no reset_and_clear(), no setup_heater(), no setup_ramp(),
+        # no set_setpoint(). *RST is deliberately avoided because it would
+        # alter the controller's current state.
+        if parameters['zero_range']:
+            # RANGE 1,0  => heater output 1 OFF (Lake Shore 350 manual)
+            self.lakeshore.set_heater_range(1, 'off')
+            print("  Heater range set to 0 (OFF). Fully passive.")
+        else:
+            print("  Heater range left UNTOUCHED per user request.")
+
+        self.lcr.initialize_instrument(parameters)
+
+    def check_safety_kill(self, temperature_k):
+        """Hardcoded kill switch: force heater OFF at/above 350 K.
+        Always fires, regardless of the zero-range checkbox."""
+        if temperature_k >= self.SAFETY_KILL_TEMP_K:
+            try:
+                self.lakeshore.set_heater_range(1, 'off')
+            finally:
+                print(f"!!! SAFETY KILL: T={temperature_k:.3f} K >= "
+                      f"{self.SAFETY_KILL_TEMP_K} K. Heater forced OFF.")
+            return True
+        return False
+
+    def measure_frequency_sweep(self, frequencies, delay):
+        """
+        Appendix A.1 — CRITICAL:
+        Reads Lakeshore temperature INSIDE the frequency loop so every
+        single data point is bound to the exact temperature at which it
+        was measured.  No cycle-average temperature is computed.
+        """
+        htr = self.lakeshore.get_heater_output(1)
+        points = []
+        for f in frequencies:
+            temp = self.lakeshore.get_temperature('A')   # T for THIS point
+            R, X, status = self.lcr.perform_measurement(f, delay)
+            points.append((temp, f, R, X, status))
+        return {'heater': htr, 'points': points}
 
     def close_instruments(self):
-        if self.lcr:
-            self.lcr.close()
-        if self.lakeshore:
-            self.lakeshore.close()
+        print("\n--- [Backend] Closing all instrument connections. ---")
+        try:
+            self.lcr.close_instrument()
+        finally:
+            if self.lakeshore:
+                self.lakeshore.close()
 
 
 # ===============================================================================
-# FRONTEND GUI
+# FRONT END (GUI)
 # ===============================================================================
 
-class Passive_Dielectric_GUI:
-    PROGRAM_VERSION = "2.1 (Passive)"
+class Integrated_CT_GUI:
+    """
+    Main GUI application for Temperature-Dependent Dielectric Measurement.
+    Combines Lakeshore 350 temperature sensing with E4980A multi-frequency
+    LCR measurement.  The Lakeshore is treated as a PASSIVE temperature
+    sensor; the heater is never ramped or setpoint-driven from this GUI.
+    A hardcoded 350 K safety kill switch always forces RANGE 1,0.
+    """
+
+    PROGRAM_VERSION = "1.1"
     LOGO_SIZE = 110
 
-    try:
-        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-        LOGO_FILE_PATH = os.path.join(
-            SCRIPT_DIR, "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg"
-        )
-    except NameError:
-        LOGO_FILE_PATH = "../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
+    # --- Default frequency list (Section 4 of original instructions) ---
+    DEFAULT_FREQS = (
+        "1000, 2000, 3000, 5000, 7000, 10000, 25000, 50000, "
+        "70000, 90000, 100000, 120000, 150000, 170000, 200000, "
+        "250000, 500000, 1000000, 1500000, 2000000"
+    )
 
-    # Color scheme
-    CLR_BG_DARK = '#B8A392'
-    CLR_HEADER = '#E5DCD3'
-    CLR_FG_LIGHT = '#2C2825'
-    CLR_TEXT_DARK = '#1A1A1A'
-    CLR_ACCENT_GOLD = '#BA6B5E'
-    CLR_ACCENT_GREEN = '#8AB845'
-    CLR_ACCENT_RED = '#D63C2A'
-    CLR_CONSOLE_BG = '#E5DCD3'
-    CLR_GRAPH_BG = '#F4EFEA'
-
-    # Fonts
-    FONT_BASE = ('Segoe UI', 10)
-    FONT_SIZE_BASE = 10
-    FONT_TITLE = ('Segoe UI', 12, 'bold')
-    FONT_CONSOLE = ('Consolas', 9)
-
-    # Data header — clarified labels
-    # 20 columns: Time, Temp, + 18 calculated parameters
+    # --- Appendix A.2: exact 19-column header (Temperature + 18 derived) ---
     DATA_HEADER = (
-        "Time(s)\tTemperature\tQ\tD\tG(1/Rp)\tB\tCp\tLp\tCs\tLs\t"
-        "|Z|\ttheta(rad)\tXs\tRs\ttheta(deg)\tRp\t|Y|\tOmega\t"
+        "Temperature\tQ\tD\tG(1/Rp)\tB\tCp\tLp\tCs\tLs\tlZl\t"
+        "theta\tchi\tR(Rs)\ttheta(deg.)\tRp\t1/lZl\tOmega\t"
         "Cp''\tCs''"
     )
 
+    # --- Robust logo path finding (fixes missing logo issue) ---
+    try:
+        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+        # Try going up 3 levels first (as in R-T template)
+        LOGO_FILE_PATH = os.path.join(
+            SCRIPT_DIR, "..", "..", "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+        if not os.path.exists(LOGO_FILE_PATH):
+            # Fallback to 1 level up (as in Freq-scan template)
+            LOGO_FILE_PATH = os.path.join(
+                SCRIPT_DIR, "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
+    except NameError:
+        LOGO_FILE_PATH = "assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
+
+    # --- Theme constants (identical to both source programs) ---
+    CLR_BG_DARK     = '#B8A392'
+    CLR_HEADER      = '#E5DCD3'
+    CLR_FG_LIGHT    = '#2C2825'
+    CLR_TEXT_DARK   = '#1A1A1A'
+    CLR_ACCENT_GOLD = '#BA6B5E'
+    CLR_ACCENT_GREEN= '#B68B6E'
+    CLR_ACCENT_RED  = '#BA6B5E'
+    CLR_CONSOLE_BG  = '#E5DCD3'
+    CLR_GRAPH_BG    = '#F4EFEA'
+    FONT_SIZE_BASE  = 11
+    FONT_BASE       = ('Segoe UI', FONT_SIZE_BASE)
+    FONT_SUB_LABEL  = ('Segoe UI', FONT_SIZE_BASE - 2)
+    FONT_TITLE      = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
+    FONT_CONSOLE    = ('Consolas', 10)
+
+    # ------------------------------------------------------------------
     def __init__(self, root):
         self.root = root
         self.root.title(
-            f"Passive Temp Sensing & Dielectric Scan v{self.PROGRAM_VERSION}"
-        )
-        self.root.geometry("1600x950")
+            "E4980A & L350: Dielectric vs. Temperature (Passive T-Monitor)")
+        self.root.geometry("1600x980")
         self.root.configure(bg=self.CLR_BG_DARK)
+        self.root.minsize(1300, 880)
 
+        # --- State flags ---
         self.is_running = False
-        self._stopping = False  # Guard against double-stop
-        self.worker_thread = None
-        self.logo_image = None
+        self.is_stabilizing = False   # retained but always False (legacy)
         self.start_time = None
-        self.backend = Combined_Passive_Backend()
+        self._last_draw_time = 0.0
+        self._redraw_interval = 0.25   # seconds; redraw at most ~4×/sec
 
-        self.save_directory = ""
-        self.run_folder = ""
-        self.file_handles = {}
+        # --- Backend ---
+        self.backend = Combined_Backend()
+        atexit.register(self.backend.close_instruments)
 
-        self.freq_list = []
-        self.data_storage = {'time': [], 'temp': []}
-        self.lines_cp = {}
-        self.lines_g = {}
+        # --- File / frequency state ---
+        self.file_location_path = ""
+        self.frequencies = []
+        self.freq_filepaths = {}
+        self.plot_freq = None
 
+        # --- Data storage (Appendix A.4: keyed per frequency) ---
+        self.data_storage = {
+            'time': [],
+            'temperature': [],
+            'cp': {},   # {freq: {'T': [...], 'v': [...]}}
+            'g':  {},   # {freq: {'T': [...], 'v': [...]}}
+        }
+
+        # --- UI variables ---
+        self.log_scale_var = tk.BooleanVar(value=False)
+        self.logo_image = None
+
+        # --- Threading ---
         self.data_queue = queue.Queue()
+        self.measurement_thread = None
 
+        # --- Build the GUI ---
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
+    # ==================================================================
+    # STYLES
+    # ==================================================================
     def setup_styles(self):
         style = ttk.Style(self.root)
         style.theme_use('clam')
         style.configure('TFrame', background=self.CLR_BG_DARK)
-        style.configure(
-            'TLabel', background=self.CLR_BG_DARK,
-            foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE
-        )
-        style.configure(
-            'TLabelframe', background=self.CLR_BG_DARK,
-            bordercolor=self.CLR_HEADER
-        )
-        style.configure(
-            'TLabelframe.Label', background=self.CLR_BG_DARK,
-            foreground=self.CLR_ACCENT_GOLD, font=self.FONT_TITLE
-        )
-        style.configure(
-            'TCheckbutton', background=self.CLR_BG_DARK,
-            foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE
-        )
-        style.configure(
-            'TButton', font=self.FONT_BASE, padding=5,
-            background=self.CLR_HEADER
-        )
-        style.configure(
-            'Start.TButton', background=self.CLR_ACCENT_GREEN,
-            foreground=self.CLR_TEXT_DARK
-        )
-        style.configure(
-            'Stop.TButton', background=self.CLR_ACCENT_RED,
-            foreground=self.CLR_GRAPH_BG
-        )
+        style.configure('TPanedWindow', background=self.CLR_BG_DARK)
+        style.configure('TLabel', background=self.CLR_BG_DARK,
+                        foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
+        style.configure('TCheckbutton', background=self.CLR_BG_DARK,
+                        foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
+        style.configure('TLabelframe', background=self.CLR_BG_DARK,
+                        bordercolor=self.CLR_HEADER, borderwidth=1)
+        style.configure('TLabelframe.Label', background=self.CLR_BG_DARK,
+                        foreground=self.CLR_ACCENT_GOLD, font=self.FONT_TITLE)
+        style.configure('TButton', font=self.FONT_BASE, padding=(10, 9),
+                        foreground=self.CLR_ACCENT_GOLD,
+                        background=self.CLR_HEADER,
+                        borderwidth=0, focusthickness=0, focuscolor='none')
+        style.map('TButton',
+                  background=[('active', self.CLR_ACCENT_GOLD),
+                              ('hover',  self.CLR_ACCENT_GOLD)],
+                  foreground=[('active', self.CLR_TEXT_DARK),
+                              ('hover',  self.CLR_TEXT_DARK)])
+        style.configure('Start.TButton', font=self.FONT_BASE,
+                        padding=(10, 9),
+                        background=self.CLR_ACCENT_GREEN,
+                        foreground=self.CLR_TEXT_DARK)
+        style.map('Start.TButton',
+                  background=[('active', '#8AB845'),
+                              ('hover',  '#8AB845')])
+        style.configure('Stop.TButton', font=self.FONT_BASE,
+                        padding=(10, 9),
+                        background=self.CLR_ACCENT_RED,
+                        foreground=self.CLR_FG_LIGHT)
+        style.map('Stop.TButton',
+                  background=[('active', '#D63C2A'),
+                              ('hover',  '#D63C2A')])
 
+        mpl.rcParams['font.family'] = 'Segoe UI'
+        mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
+        mpl.rcParams['axes.titlesize'] = self.FONT_SIZE_BASE + 4
+        mpl.rcParams['axes.labelsize'] = self.FONT_SIZE_BASE + 2
+
+    # ==================================================================
+    # LAYOUT
+    # ==================================================================
     def create_widgets(self):
-        # Header
-        header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
-        header_frame.pack(side='top', fill='x')
-        Label(
-            header_frame, text="Passive T-Sensing & Impedance Spectroscopy",
-            bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD,
-            font=('Segoe UI', 14, 'bold')
-        ).pack(side='left', padx=20, pady=10)
+        self.create_header()
 
-        ttk.Button(
-            header_frame, text="📈",
-            command=launch_plotter_utility, width=3
-        ).pack(side='right', padx=10, pady=5)
-        ttk.Button(
-            header_frame, text="📟",
-            command=launch_gpib_scanner, width=3
-        ).pack(side='right', padx=(0, 5), pady=5)
-
-        # Main pane
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
-        # Left panel (scrollable)
-        left_panel = ttk.Frame(main_pane, width=450)
-        main_pane.add(left_panel, weight=0)
+        # --- Left panel (scrollable) ---
+        left_panel_container = ttk.Frame(main_pane)
+        main_pane.add(left_panel_container, weight=0)
 
-        canvas = Canvas(
-            left_panel, bg=self.CLR_BG_DARK, highlightthickness=0
-        )
-        scrollbar = ttk.Scrollbar(
-            left_panel, orient="vertical", command=canvas.yview
-        )
+        right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
+        main_pane.add(right_panel, weight=1)
+
+        canvas = Canvas(left_panel_container, bg=self.CLR_BG_DARK,
+                        highlightthickness=0)
+        scrollbar = ttk.Scrollbar(left_panel_container,
+                                  orient="vertical",
+                                  command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
         scrollable_frame.bind(
             "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        canvas.create_window(
-            (0, 0), window=scrollable_frame, anchor="nw", width=430
-        )
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scrollable_frame,
+                             anchor="nw", width=500)
         canvas.configure(yscrollcommand=scrollbar.set)
-
-        canvas.pack(side="top", fill="both", expand=True)
+        canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # Info frame
-        info_frame = self.create_info_frame(scrollable_frame)
-        info_frame.pack(fill='x', expand=True, padx=10, pady=5)
+        self.create_info_frame(scrollable_frame).pack(
+            fill='x', padx=10, pady=5)
+        self.create_input_frame(scrollable_frame).pack(
+            fill='x', padx=10, pady=5)
+        self.create_console_frame(scrollable_frame).pack(
+            fill='both', expand=True, padx=10, pady=5)
 
-        # Input frame
-        self.create_input_frame(scrollable_frame)
-
-        # Console
-        console_frame = LabelFrame(
-            left_panel, text='Console', bg=self.CLR_BG_DARK,
-            fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE
-        )
-        console_frame.pack(side="bottom", fill="both", expand=False, pady=5)
-        self.console_widget = scrolledtext.ScrolledText(
-            console_frame, state='disabled', bg=self.CLR_CONSOLE_BG,
-            font=self.FONT_CONSOLE, height=8
-        )
-        self.console_widget.pack(fill='both', expand=True, padx=5, pady=5)
-
-        # Right panel (graphs)
-        right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
-        main_pane.add(right_panel, weight=1)
         self.create_graph_frame(right_panel)
 
+    # ------------------------------------------------------------------
+    def create_header(self):
+        font_title_main = ('Segoe UI', self.FONT_SIZE_BASE + 4, 'bold')
+        header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
+        header_frame.pack(side='top', fill='x')
+
+        Label(header_frame,
+              text="E4980A & L350: Dielectric vs. Temperature (Passive T-Monitor)",
+              bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD,
+              font=font_title_main).pack(side='left', padx=20, pady=10)
+
+        ttk.Button(header_frame, text="📈",
+                   command=launch_plotter_utility,
+                   width=3).pack(side='right', padx=10, pady=5)
+        ttk.Button(header_frame, text="📟",
+                   command=launch_gpib_scanner,
+                   width=3).pack(side='right', padx=(0, 5), pady=5)
+
+        Label(header_frame, text=f"Version: {self.PROGRAM_VERSION}",
+              bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT,
+              font=self.FONT_SUB_LABEL).pack(
+                  side='right', padx=20, pady=10)
+
+    # ------------------------------------------------------------------
     def create_info_frame(self, parent):
-        frame = ttk.LabelFrame(parent, text='Information')
+        frame = LabelFrame(parent, text='Information', relief='groove',
+                           bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT,
+                           font=self.FONT_TITLE)
         frame.grid_columnconfigure(1, weight=1)
 
-        logo_canvas = Canvas(
-            frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE,
-            bg=self.CLR_BG_DARK, highlightthickness=0
-        )
-        logo_canvas.grid(
-            row=0, column=0, rowspan=3, padx=(15, 10), pady=10
-        )
+        logo_canvas = Canvas(frame, width=self.LOGO_SIZE,
+                             height=self.LOGO_SIZE,
+                             bg=self.CLR_BG_DARK, highlightthickness=0)
+        logo_canvas.grid(row=0, column=0, rowspan=3,
+                         padx=(15, 10), pady=10)
 
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
             try:
-                img = Image.open(self.LOGO_FILE_PATH).resize(
-                    (self.LOGO_SIZE, self.LOGO_SIZE), RESAMPLE_FILTER
-                )
+                img = Image.open(self.LOGO_FILE_PATH)
+                img.thumbnail((self.LOGO_SIZE, self.LOGO_SIZE),
+                              RESAMPLE_FILTER)
                 self.logo_image = ImageTk.PhotoImage(img)
                 logo_canvas.create_image(
                     self.LOGO_SIZE / 2, self.LOGO_SIZE / 2,
-                    image=self.logo_image
-                )
+                    image=self.logo_image)
             except Exception:
-                pass
+                logo_canvas.create_text(
+                    self.LOGO_SIZE / 2, self.LOGO_SIZE / 2,
+                    text="LOGO\nERROR", font=self.FONT_BASE,
+                    fill=self.CLR_FG_LIGHT, justify='center')
+        else:
+            logo_canvas.create_text(
+                self.LOGO_SIZE / 2, self.LOGO_SIZE / 2,
+                text="LOGO\nMISSING", font=self.FONT_BASE,
+                fill=self.CLR_FG_LIGHT, justify='center')
 
-        institute_font = (
-            'Segoe UI', self.FONT_SIZE_BASE + 2, 'bold'
-        )
-        ttk.Label(
-            frame, text="UGC-DAE Consortium for Scientific Research",
-            font=institute_font, background=self.CLR_BG_DARK
-        ).grid(row=0, column=1, padx=10, pady=(10, 0), sticky='sw')
-        ttk.Label(
-            frame, text="Mumbai Centre", font=institute_font,
-            background=self.CLR_BG_DARK
-        ).grid(row=1, column=1, padx=10, sticky='nw')
+        institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 6, 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research",
+                  font=institute_font,
+                  background=self.CLR_BG_DARK).grid(
+                      row=0, column=1, padx=10, pady=(10, 0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre",
+                  font=institute_font,
+                  background=self.CLR_BG_DARK).grid(
+                      row=1, column=1, padx=10, sticky='nw')
+
+        ttk.Separator(frame, orient='horizontal').grid(
+            row=2, column=1, sticky='ew', padx=10, pady=8)
+
+        details_text = (
+            "Program Name: Dielectric vs. Temperature (Passive T-Monitor)\n"
+            "Instruments: Lakeshore 350 (read-only), Keysight E4980A\n"
+            "Function: FUNC:IMP RX, multi-frequency scan per T point\n"
+            "Safety: hardcoded 350 K heater kill switch")
+        ttk.Label(frame, text=details_text, justify='left').grid(
+            row=3, column=0, columnspan=2, padx=15, pady=(0, 10),
+            sticky='w')
 
         return frame
 
+    # ------------------------------------------------------------------
     def create_input_frame(self, parent):
-        f_params = LabelFrame(
-            parent, text='Measurement Parameters', bg=self.CLR_BG_DARK,
-            fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE
-        )
-        f_params.pack(fill='x', pady=5, padx=5)
+        frame = LabelFrame(parent, text='Experiment Parameters',
+                           relief='groove',
+                           bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT,
+                           font=self.FONT_TITLE)
+        for i in range(2):
+            frame.grid_columnconfigure(i, weight=1)
 
         self.entries = {}
+        pady_val = (5, 5)
+        padx_val = 10
+        r = 0
 
-        def add_entry(frame, label, key, r, c, default=""):
-            Label(frame, text=f"{label}:").grid(
-                row=r, column=c, padx=5, pady=2, sticky='w'
-            )
-            e = Entry(frame, font=self.FONT_BASE, width=16)
-            e.grid(row=r + 1, column=c, padx=5, pady=(0, 5), sticky='w')
-            e.insert(0, default)
-            self.entries[key] = e
+        # --- Sample Name (span 2) ---
+        Label(frame, text="Sample Name:").grid(
+            row=r, column=0, columnspan=2, padx=padx_val,
+            pady=pady_val, sticky='w')
+        r += 1
+        self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE)
+        self.entries["Sample Name"].grid(
+            row=r, column=0, columnspan=2, padx=padx_val,
+            pady=(0, 10), sticky='ew')
+        r += 1
 
-        add_entry(f_params, "Sample Name", 'sample', 0, 0, "Sample_01")
-        add_entry(f_params, "Loop Delay (s)", 'loop_delay', 0, 1, "5.0")
+        # --- AC Bias | DC Bias ---
+        Label(frame, text="AC Bias Voltage (V):").grid(
+            row=r, column=0, padx=padx_val, pady=pady_val, sticky='w')
+        Label(frame, text="DC Bias Voltage (V):").grid(
+            row=r, column=1, padx=padx_val, pady=pady_val, sticky='w')
+        r += 1
+        self.entries["AC Bias"] = Entry(frame, font=self.FONT_BASE)
+        self.entries["AC Bias"].insert(0, "1.0")
+        self.entries["AC Bias"].grid(
+            row=r, column=0, padx=(10, 5), pady=(0, 10), sticky='ew')
+        self.entries["DC Bias"] = Entry(frame, font=self.FONT_BASE)
+        self.entries["DC Bias"].insert(0, "0.0")
+        self.entries["DC Bias"].grid(
+            row=r, column=1, padx=(5, 10), pady=(0, 10), sticky='ew')
+        r += 1
 
-        add_entry(f_params, "AC Bias (V)", 'ac_bias', 2, 0, "1.0")
-        add_entry(f_params, "DC Bias (V)", 'dc_bias', 2, 1, "0.0")
-        add_entry(f_params, "LCR Meas Delay (s)", 'lcr_delay', 4, 0, "0.2")
+        # --- Delay | Aperture ---
+        Label(frame, text="Delay per Freq (s):").grid(
+            row=r, column=0, padx=padx_val, pady=pady_val, sticky='w')
+        Label(frame, text="Aperture (:APER):").grid(
+            row=r, column=1, padx=padx_val, pady=pady_val, sticky='w')
+        r += 1
+        self.entries["Delay"] = Entry(frame, font=self.FONT_BASE)
+        self.entries["Delay"].insert(0, "0.2")
+        self.entries["Delay"].grid(
+            row=r, column=0, padx=(10, 5), pady=(0, 10), sticky='ew')
+        self.aper_combobox = ttk.Combobox(
+            frame, font=self.FONT_BASE, state='readonly',
+            values=["SHOR", "MED", "LONG"])
+        self.aper_combobox.set("MED")
+        self.aper_combobox.grid(
+            row=r, column=1, padx=(5, 10), pady=(0, 10), sticky='ew')
+        r += 1
 
-        Label(f_params, text="Aperture:").grid(
-            row=4, column=1, padx=5, sticky='w'
-        )
-        self.aper_cb = ttk.Combobox(
-            f_params, values=['SHOR', 'MED', 'LONG'],
-            state='readonly', width=14
-        )
-        self.aper_cb.set('MED')
-        self.aper_cb.grid(row=5, column=1, padx=5, pady=(0, 5), sticky='w')
+        # --- Checkbuttons: ALC, Corrections ---
+        self.var_alc  = tk.BooleanVar(value=True)
+        self.var_corr = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frame, text="Enable Auto Level Control (ALC)",
+                        variable=self.var_alc).grid(
+            row=r, column=0, columnspan=2, padx=padx_val,
+            pady=2, sticky='w')
+        r += 1
+        ttk.Checkbutton(frame, text="Enable Open/Short Corrections",
+                        variable=self.var_corr).grid(
+            row=r, column=0, columnspan=2, padx=padx_val,
+            pady=2, sticky='w')
+        r += 1
 
-        self.var_alc = tk.BooleanVar(value=True)
-        self.var_corr = tk.BooleanVar(value=False)
+        # --- Passive heater-range control ---
+        self.var_zero_range = tk.BooleanVar(value=True)   # CHECKED by default
         ttk.Checkbutton(
-            f_params, text="ALC ON", variable=self.var_alc
-        ).grid(row=6, column=0, sticky='w', padx=5)
-        ttk.Checkbutton(
-            f_params, text="Open/Short Corr", variable=self.var_corr
-        ).grid(row=6, column=1, sticky='w', padx=5)
+            frame,
+            text="Set Range to Zero (fully passive; heater OFF)",
+            variable=self.var_zero_range).grid(
+            row=r, column=0, columnspan=2, padx=padx_val, pady=2,
+            sticky='w')
+        r += 1
 
-        # Frequency selection
-        f_freq = LabelFrame(
-            parent, text='Frequency Selection (Hz)', bg=self.CLR_BG_DARK,
-            fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE
-        )
-        f_freq.pack(fill='x', pady=5, padx=5)
+        # --- Cable Length ---
+        Label(frame, text="Cable Length (m):").grid(
+            row=r, column=0, padx=padx_val, pady=pady_val, sticky='w')
+        r += 1
+        self.cable_len_combobox = ttk.Combobox(
+            frame, font=self.FONT_BASE, state='readonly',
+            values=["0", "1", "2", "4"])
+        self.cable_len_combobox.set("1")
+        self.cable_len_combobox.grid(
+            row=r, column=0, padx=(10, 5), pady=(0, 10), sticky='ew')
+        r += 1
 
-        self.freq_text = scrolledtext.ScrolledText(
-            f_freq, height=4, width=40, font=self.FONT_BASE
-        )
-        self.freq_text.pack(padx=5, pady=5, fill='x')
-        self.freq_text.insert(
-            'end',
-            "1000, 5000, 10000, 50000, 100000, 500000, 1000000"
-        )
+        # --- Frequency list text box (Section 4) ---
+        Label(frame, text="Frequencies (Hz, comma-separated):").grid(
+            row=r, column=0, columnspan=2, padx=padx_val,
+            pady=(5, 0), sticky='w')
+        r += 1
+        self.freq_text = tk.Text(frame, font=self.FONT_BASE,
+                                 height=3, wrap='word')
+        self.freq_text.insert('1.0', self.DEFAULT_FREQS)
+        self.freq_text.grid(
+            row=r, column=0, columnspan=2, padx=padx_val,
+            pady=(0, 10), sticky='ew')
+        r += 1
 
-        # Hardware & execution
-        f_hw = LabelFrame(
-            parent, text='Hardware & Execution', bg=self.CLR_BG_DARK,
-            fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE
-        )
-        f_hw.pack(fill='x', pady=5, padx=5)
+        # --- Plot Frequency dropdown (Appendix A.4) ---
+        Label(frame, text="Live Plot Frequency:").grid(
+            row=r, column=0, padx=padx_val, pady=pady_val, sticky='w')
+        r += 1
+        self.plot_freq_cb = ttk.Combobox(
+            frame, font=self.FONT_BASE, state='disabled')
+        self.plot_freq_cb.grid(
+            row=r, column=0, columnspan=2, padx=padx_val,
+            pady=(0, 10), sticky='ew')
+        self.plot_freq_cb.bind(
+            "<<ComboboxSelected>>", self._on_plot_freq_change)
+        r += 1
 
-        Label(f_hw, text="Lakeshore VISA:").grid(
-            row=0, column=0, sticky='w', padx=5
-        )
-        self.ls_visa = ttk.Combobox(f_hw, state='readonly', width=18)
-        self.ls_visa.grid(row=1, column=0, padx=5, pady=(0, 5))
+        # --- Lakeshore VISA | LCR VISA ---
+        Label(frame, text="Lakeshore VISA:").grid(
+            row=r, column=0, padx=padx_val, pady=pady_val, sticky='w')
+        Label(frame, text="LCR (E4980A) VISA:").grid(
+            row=r, column=1, padx=padx_val, pady=pady_val, sticky='w')
+        r += 1
+        self.lakeshore_cb = ttk.Combobox(
+            frame, font=self.FONT_BASE, state='readonly')
+        self.lakeshore_cb.grid(
+            row=r, column=0, padx=(10, 5), pady=(0, 10), sticky='ew')
+        self.lcr_cb = ttk.Combobox(
+            frame, font=self.FONT_BASE, state='readonly')
+        self.lcr_cb.grid(
+            row=r, column=1, padx=(5, 10), pady=(0, 10), sticky='ew')
+        r += 1
 
-        Label(f_hw, text="E4980A VISA:").grid(
-            row=0, column=1, sticky='w', padx=5
-        )
-        self.lcr_visa = ttk.Combobox(f_hw, state='readonly', width=18)
-        self.lcr_visa.grid(row=1, column=1, padx=5, pady=(0, 5))
+        # --- Scan for Instruments ---
+        self.scan_button = ttk.Button(
+            frame, text="Scan for Instruments",
+            command=self._scan_for_visa_instruments)
+        self.scan_button.grid(
+            row=r, column=0, columnspan=2, padx=padx_val,
+            pady=4, sticky='ew')
+        r += 1
 
-        ttk.Button(
-            f_hw, text="Scan Instruments", command=self._scan_visa
-        ).grid(row=2, column=0, columnspan=2, sticky='ew', padx=5, pady=5)
-        ttk.Button(
-            f_hw, text="Browse Save Folder", command=self._browse_dir
-        ).grid(row=3, column=0, columnspan=2, sticky='ew', padx=5, pady=5)
+        # --- Browse Destination Folder ---
+        self.file_button = ttk.Button(
+            frame, text="Browse Destination Folder...",
+            command=self._browse_file_location)
+        self.file_button.grid(
+            row=r, column=0, columnspan=2, padx=padx_val,
+            pady=4, sticky='ew')
+        r += 1
 
-        self.start_btn = ttk.Button(
-            f_hw, text="Start Passive Logging",
-            command=self.start_measurement, style='Start.TButton'
-        )
-        self.start_btn.grid(row=4, column=0, padx=5, pady=10, sticky='ew')
-        self.stop_btn = ttk.Button(
-            f_hw, text="Stop", command=self.stop_measurement,
-            style='Stop.TButton', state='disabled'
-        )
-        self.stop_btn.grid(row=4, column=1, padx=5, pady=10, sticky='ew')
+        # --- Start | Stop ---
+        self.start_button = ttk.Button(
+            frame, text="Start Measurement",
+            command=self.start_measurement,
+            style='Start.TButton')
+        self.start_button.grid(
+            row=r, column=0, padx=padx_val, pady=(10, 10), sticky='ew')
+        self.stop_button = ttk.Button(
+            frame, text="Stop",
+            command=self.stop_measurement,
+            style='Stop.TButton', state='disabled')
+        self.stop_button.grid(
+            row=r, column=1, padx=padx_val, pady=(10, 10), sticky='ew')
 
+        return frame
+
+    # ------------------------------------------------------------------
+    def create_console_frame(self, parent):
+        frame = LabelFrame(parent, text='Console Output', relief='groove',
+                           bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT,
+                           font=self.FONT_TITLE)
+        self.console_widget = scrolledtext.ScrolledText(
+            frame, state='disabled',
+            bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT,
+            font=self.FONT_CONSOLE, wrap='word', bd=0, height=10)
+        self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
+        self.log("Console initialized. Configure parameters and scan "
+                 "for instruments.")
+        if not PYVISA_AVAILABLE:
+            self.log("CRITICAL: PyVISA not found.")
+        return frame
+
+    # ------------------------------------------------------------------
     def create_graph_frame(self, parent):
-        self.figure = Figure(
-            dpi=100, facecolor=self.CLR_GRAPH_BG, layout='tight'
-        )
+        graph_container = LabelFrame(
+            parent, text='Live Graphs', relief='groove',
+            bg=self.CLR_GRAPH_BG, fg=self.CLR_BG_DARK,
+            font=self.FONT_TITLE)
+        graph_container.pack(fill='both', expand=True, padx=5, pady=5)
 
-        self.ax_cp = self.figure.add_subplot(2, 1, 1)
-        self.ax_cp.set_ylabel("Capacitance, Cp (F)")
-        self.ax_cp.set_title("Cp vs. Temperature", fontweight='bold')
-        self.ax_cp.set_yscale('log')
-        self.ax_cp.grid(True, linestyle='--', alpha=0.6)
+        # --- Log-scale checkbox ---
+        top_bar = tk.Frame(graph_container, bg=self.CLR_GRAPH_BG)
+        top_bar.pack(side='top', fill='x', pady=(0, 5))
+        self.log_scale_cb = ttk.Checkbutton(
+            top_bar, text="Logarithmic Cp Axis",
+            variable=self.log_scale_var,
+            command=self._update_y_scale)
+        self.log_scale_cb.pack(side='right', padx=5)
 
-        self.ax_g = self.figure.add_subplot(2, 1, 2)
-        self.ax_g.set_xlabel("Temperature (K)")
-        self.ax_g.set_ylabel("Conductance, G (S)")
-        self.ax_g.set_title("G vs. Temperature", fontweight='bold')
-        self.ax_g.set_yscale('log')
-        self.ax_g.grid(True, linestyle='--', alpha=0.6)
+        # --- Matplotlib figure with 3 axes ---
+        self.figure = Figure(figsize=(8, 8), dpi=100,
+                             facecolor=self.CLR_GRAPH_BG,
+                             layout='constrained')
+        self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
 
-        self.canvas = FigureCanvasTkAgg(self.figure, parent)
+        gs = gridspec.GridSpec(2, 2, figure=self.figure)
+        self.ax_main = self.figure.add_subplot(gs[0, :])
+        self.ax_sub1 = self.figure.add_subplot(gs[1, 0])
+        self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
+
+        # Main: Cp vs Temperature
+        self.line_main, = self.ax_main.plot(
+            [], [], color=self.CLR_ACCENT_RED,
+            marker='o', markersize=3, linestyle='-')
+        self.ax_main.set_title("Cp vs. Temperature", fontweight='bold')
+        self.ax_main.set_xlabel("Temperature (K)")
+        self.ax_main.set_ylabel("Capacitance, Cp (F)")
+        self.ax_main.grid(True, which="both", linestyle='--', alpha=0.6)
+
+        # Sub 1: G vs Temperature
+        self.line_sub1, = self.ax_sub1.plot(
+            [], [], color=self.CLR_ACCENT_GOLD,
+            marker='.', markersize=3, linestyle='-')
+        self.ax_sub1.set_xlabel("Temperature (K)")
+        self.ax_sub1.set_ylabel("Conductance, G (S)")
+        self.ax_sub1.grid(True, linestyle='--', alpha=0.6)
+
+        # Sub 2: Temperature vs Time
+        self.line_sub2, = self.ax_sub2.plot(
+            [], [], color=self.CLR_ACCENT_GREEN,
+            marker='.', markersize=3, linestyle='-')
+        self.ax_sub2.set_xlabel("Time (s)")
+        self.ax_sub2.set_ylabel("Temperature (K)")
+        self.ax_sub2.grid(True, linestyle='--', alpha=0.6)
+
         self.canvas.get_tk_widget().pack(
-            fill=tk.BOTH, expand=True, padx=5, pady=5
-        )
+            fill=tk.BOTH, expand=True, padx=5, pady=5)
 
+    # ==================================================================
+    # IMPEDANCE CALCULATIONS  (verbatim from freq-scan program)
+    # ==================================================================
+    def calculate_impedance_parameters(self, f, R, X):
+        """
+        Calculates all 18 parameters from measured R (series resistance)
+        and X (reactance).
+
+        Complex impedance:  Z = R + jX
+        Complex admittance: Y = 1/Z = (R - jX) / |Z|^2
+                           G = Re(Y) = R / |Z|^2
+                           B = Im(Y) = -X / |Z|^2
+
+        Returns list of 18 values in DATA_HEADER column order:
+            Q, D, G, B, Cp, Lp, Cs, Ls, |Z|, theta(rad), chi, Rs,
+            theta(deg), Rp, 1/|Z|, omega, Cp'', Cs''
+        """
+        omega = 2 * np.pi * f
+        omega_safe = omega if omega != 0 else 1e-20
+
+        Z_mag = np.sqrt(R ** 2 + X ** 2)
+        Z_mag_safe = Z_mag if Z_mag != 0 else 1e-20
+        Z_mag_sq = Z_mag_safe ** 2
+
+        # Admittance components
+        G = R / Z_mag_sq    # conductance (real part of Y)
+        B = -X / Z_mag_sq   # susceptance (imaginary part of Y)
+
+        G_safe = G if G != 0 else 1e-20
+        B_safe = B if B != 0 else 1e-20
+        X_safe = X if X != 0 else 1e-20
+
+        # Derived parameters
+        Rp = 1.0 / G_safe
+        Cp = B / omega_safe
+        Cs = -1.0 / (omega_safe * X_safe)
+        Ls = X / omega_safe
+        Lp = -1.0 / (omega_safe * B_safe)
+
+        # ------------------------------------------------------------------
+        # LEGACY COMPATIBILITY:
+        # The older LabVIEW program reports inductances (Ls and Lp) as
+        # absolute (positive) magnitudes only, regardless of whether the
+        # DUT is inductive (+X) or capacitive (-X). To keep this Python
+        # implementation drop-in compatible with that legacy data format
+        # (so downstream plotting/analysis tools can consume both files
+        # interchangeably), we force Ls and Lp to be non-negative here.
+        # NOTE: This discards the sign information. If signed inductance
+        # is ever needed, derive it back from X (Ls_signed = X/omega).
+        # ------------------------------------------------------------------
+        Ls = abs(Ls)
+        Lp = abs(Lp)
+
+        D = G_safe / B_safe   # dissipation factor
+        D_safe = D if D != 0 else 1e-20
+        Q = 1.0 / D_safe
+
+        theta_rad = math.atan2(X, R)
+        theta_deg = math.degrees(theta_rad)
+
+        chi = X       # reactance
+        Rs = R        # series resistance (directly measured)
+
+        Y_mag = 1.0 / Z_mag_safe
+
+        # Complex capacitance C* = C' - jC''
+        Cp_double_prime = G / omega_safe
+        Cs_double_prime = Cp_double_prime
+
+        return [
+            Q,                  # 0
+            D,                  # 1
+            G,                  # 2
+            B,                  # 3
+            Cp,                 # 4
+            Lp,                 # 5   (absolute value — legacy convention)
+            Cs,                 # 6
+            Ls,                 # 7   (absolute value — legacy convention)
+            Z_mag,              # 8
+            theta_rad,          # 9
+            chi,                # 10
+            Rs,                 # 11
+            theta_deg,          # 12
+            Rp,                 # 13
+            Y_mag,              # 14
+            omega,              # 15
+            Cp_double_prime,    # 16
+            Cs_double_prime,    # 17
+        ]
+
+    # ==================================================================
+    # FREQUENCY PARSING  (Section 4)
+    # ==================================================================
+    def _parse_frequencies(self):
+        raw = self.freq_text.get('1.0', 'end').replace('\n', ' ')
+        freqs = []
+        for tok in raw.split(','):
+            tok = tok.strip()
+            if not tok:
+                continue
+            f = float(tok)
+            if not (20 <= f <= 2e6):
+                raise ValueError(
+                    f"Frequency {f} Hz outside E4980A range "
+                    f"(20 Hz - 2 MHz).")
+            freqs.append(f)
+        if not freqs:
+            raise ValueError("Frequency list is empty.")
+        return sorted(set(freqs))
+
+    # ==================================================================
+    # LOGGING
+    # ==================================================================
     def log(self, message):
-        ts = datetime.now().strftime("%H:%M:%S")
+        timestamp = datetime.now().strftime("%H:%M:%S")
         self.console_widget.config(state='normal')
-        self.console_widget.insert('end', f"[{ts}] {message}\n")
+        self.console_widget.insert('end', f"[{timestamp}] {message}\n")
         self.console_widget.see('end')
         self.console_widget.config(state='disabled')
 
-    def _scan_visa(self):
-        if not PYVISA_AVAILABLE:
-            self.log("PyVISA not installed.")
-            return
-        rm = pyvisa.ResourceManager()
-        res = rm.list_resources()
-        self.ls_visa['values'] = res
-        self.lcr_visa['values'] = res
-        self.log(f"VISA Scan found: {res}")
+    def _handle_log_message(self, message):
+        self.log(message)
 
-    def _browse_dir(self):
-        d = filedialog.askdirectory()
-        if d:
-            self.save_directory = d
-            self.log(f"Save directory: {d}")
-
-    # ===================================================================
-    # CALCULATION & DATA HANDLING
-    # ===================================================================
-
-    def calculate_impedance_parameters(self, f, cp, g):
-        """Calculate 18 impedance parameters from Cp and G.
-
-        Given parallel capacitance Cp and parallel conductance G at
-        frequency f, computes:
-
-        Admittance: Y = G + jB  where B = omega * Cp
-        Impedance:  Z = 1/Y = Rs + jXs
-
-        Parameters derived:
-          Q       : Quality factor = 1/D
-          D       : Dissipation factor = G/B
-          G       : Parallel conductance (S) = 1/Rp
-          B       : Susceptance (S) = omega * Cp
-          Cp      : Parallel capacitance (F)
-          Lp      : Parallel inductance (H) = -1/(omega * B)
-          Cs      : Series capacitance (F) = -1/(omega * Xs)
-          Ls      : Series inductance (H) = Xs / omega
-          |Z|     : Impedance magnitude (Ohm) = 1/|Y|
-          theta(rad) : Impedance phase angle (rad) = atan2(Xs, Rs)
-          Xs      : Series reactance (Ohm)
-          Rs      : Series resistance (Ohm) = G / |Y|^2
-          theta(deg) : Impedance phase angle (degrees)
-          Rp      : Parallel resistance (Ohm) = 1/G
-          |Y|     : Admittance magnitude (S) = sqrt(G^2 + B^2)
-          Omega   : Angular frequency (rad/s) = 2*pi*f
-          Cp''    : Loss capacitance (parallel) = G / omega
-          Cs''    : Loss capacitance (series) = 1 / (omega * Rs)
-
-        Note: Cs'' != Cp'' in general.
-              Cp'' = G/omega (parallel loss representation)
-              Cs'' = 1/(omega*Rs) (series loss representation)
-        """
-        omega = 2 * np.pi * f
-
-        # Guard against division by zero
-        G_safe = g if g != 0 else 1e-20
-        omega_safe = omega if omega != 0 else 1e-20
-
-        Rp = 1.0 / G_safe
-        B = omega * cp
-        B_safe = B if B != 0 else 1e-20
-
-        D = G_safe / B_safe
-        Q = 1.0 / D if D != 0 else 0.0
-
-        Y_mag = np.sqrt(g ** 2 + B ** 2)
-        Y_mag_safe = Y_mag if Y_mag != 0 else 1e-20
-        Z_mag = 1.0 / Y_mag_safe
-
-        Rs = g / (Y_mag_safe ** 2)
-        Xs = -B / (Y_mag_safe ** 2)
-        Xs_safe = Xs if Xs != 0 else 1e-20
-        Rs_safe = Rs if Rs != 0 else 1e-20
-
-        theta_rad = math.atan2(Xs, Rs)
-        theta_deg = math.degrees(theta_rad)
-
-        chi = Xs  # Reactance (labeled Xs in header)
-        Cs = -1.0 / (omega_safe * Xs_safe)
-        Ls = Xs / omega_safe
-        Lp = -1.0 / (omega_safe * B_safe)
-
-        # Loss capacitances — corrected
-        # Cp'' (parallel loss) = G / omega
-        Cp_double_prime = g / omega_safe
-
-        # Cs'' (series loss) = 1 / (omega * Rs)
-        # This is NOT equal to Cp'' in general.
-        Cs_double_prime = 1.0 / (omega_safe * Rs_safe)
-
-        return [
-            Q, D, g, B, cp, Lp, Cs, Ls, Z_mag, theta_rad,
-            chi, Rs, theta_deg, Rp, Y_mag, omega,
-            Cp_double_prime, Cs_double_prime
-        ]
-
-    def _open_data_files(self, sample_name, timestamp):
-        self.run_folder = os.path.join(
-            self.save_directory, f"{sample_name}_{timestamp}_Passive"
-        )
-        os.makedirs(self.run_folder, exist_ok=True)
-        self.file_handles = {}
-
-        for f in self.freq_list:
-            fname = os.path.join(
-                self.run_folder, f"{sample_name}_{f}Hz.txt"
-            )
-            fh = open(fname, 'w', encoding='utf-8')
-            fh.write(
-                f"# PASSIVE SCAN | Sample: {sample_name} | "
-                f"Freq: {f} Hz | "
-                f"AC: {self.entries['ac_bias'].get()}V | "
-                f"DC: {self.entries['dc_bias'].get()}V\n"
-            )
-            fh.write(self.DATA_HEADER + "\n")
-            self.file_handles[f] = fh
-        self.log(f"Created {len(self.freq_list)} frequency files in folder.")
-
-    def _close_data_files(self):
-        for fh in self.file_handles.values():
-            try:
-                fh.close()
-            except Exception:
-                pass
-        self.file_handles.clear()
-
-    # ===================================================================
-    # MEASUREMENT EXECUTION
-    # ===================================================================
-
+    # ==================================================================
+    # START / STOP
+    # ==================================================================
     def start_measurement(self):
         try:
-            raw = self.freq_text.get("1.0", "end").strip()
-            self.freq_list = [
-                int(float(x.strip()))
-                for x in raw.split(',')
-                if x.strip()
-            ]
-            if not self.freq_list:
-                raise ValueError("Frequency list is empty or invalid.")
+            # --- Parse frequencies ---
+            self.frequencies = self._parse_frequencies()
 
+            # --- Gather parameters ---
             params = {
-                'sample': self.entries['sample'].get(),
-                'loop_delay': float(self.entries['loop_delay'].get()),
-                'ac_bias': float(self.entries['ac_bias'].get()),
-                'dc_bias': float(self.entries['dc_bias'].get()),
-                'lcr_delay': float(self.entries['lcr_delay'].get()),
-                'aper': self.aper_cb.get(),
-                'alc_enabled': self.var_alc.get(),
-                'corr_enabled': self.var_corr.get(),
-                'lakeshore_visa': self.ls_visa.get(),
-                'lcr_visa': self.lcr_visa.get()
+                'sample_name':   self.entries["Sample Name"].get(),
+                'zero_range':    self.var_zero_range.get(),
+                'ac_bias':       float(self.entries["AC Bias"].get()),
+                'dc_bias':       float(self.entries["DC Bias"].get()),
+                'delay':         float(self.entries["Delay"].get()),
+                'aper':          self.aper_combobox.get(),
+                'alc_enabled':   self.var_alc.get(),
+                'corr_enabled':  self.var_corr.get(),
+                'cable_len':     self.cable_len_combobox.get(),
+                'lakeshore_visa': self._extract_visa(
+                                      self.lakeshore_cb.get()),
+                'lcr_visa':      self._extract_visa(
+                                      self.lcr_cb.get()),
             }
 
-            if not all([
-                params['sample'],
-                params['lakeshore_visa'],
-                params['lcr_visa'],
-                self.save_directory
-            ]):
+            # --- Validation ---
+            if not all([params['sample_name'],
+                        params['lakeshore_visa'],
+                        params['lcr_visa']]) or not self.file_location_path:
                 raise ValueError(
-                    "Missing VISA addresses or Save Directory."
-                )
+                    "Sample Name, both VISA addresses, and a destination "
+                    "folder are required.")
 
+            if params['corr_enabled']:
+                self.log(
+                    f"WARNING: Ensure physical Open/Short calibration was "
+                    f"performed with {params['cable_len']} m cable before "
+                    f"enabling corrections!")
+
+            # --- Initialize hardware ---
             self.backend.initialize_instruments(params)
+            self.log(f"Backend initialized for sample: "
+                     f"{params['sample_name']}")
 
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self._open_data_files(params['sample'], ts)
+            # --- Appendix A.2: create one file per frequency ---
+            self._create_per_frequency_files(params['sample_name'])
+            self.log(
+                f"Number of frequencies entered: {len(self.frequencies)}. "
+                f"{len(self.frequencies)} output files created in "
+                f"{self.file_location_path}")
 
-            self.start_btn.config(state='disabled')
-            self.stop_btn.config(state='normal')
+            # --- Appendix A.4: populate plot-frequency dropdown ---
+            self._populate_plot_freq_dropdown()
 
-            # Setup plotting arrays & lines
-            self.ax_cp.clear()
-            self.ax_g.clear()
-            self.ax_cp.set_yscale('log')
-            self.ax_g.set_yscale('log')
-            self.ax_cp.grid(True, linestyle='--', alpha=0.6)
-            self.ax_g.grid(True, linestyle='--', alpha=0.6)
-            self.ax_cp.set_ylabel("Capacitance, Cp (F)")
-            self.ax_cp.set_title("Cp vs. Temperature", fontweight='bold')
-            self.ax_g.set_ylabel("Conductance, G (S)")
-            self.ax_g.set_title("G vs. Temperature", fontweight='bold')
-            self.ax_g.set_xlabel("Temperature (K)")
+            # --- Reset state ---
+            self.is_stabilizing, self.is_running = False, True
+            self.start_button.config(state='disabled')
+            self.stop_button.config(state='normal')
+            self.scan_button.config(state='disabled')
 
-            self.data_storage = {'time': [], 'temp': []}
-            self.lines_cp = {}
-            self.lines_g = {}
+            self.data_storage['time'].clear()
+            self.data_storage['temperature'].clear()
+            self.data_storage['cp'] = {
+                f: {'T': [], 'v': []} for f in self.frequencies}
+            self.data_storage['g'] = {
+                f: {'T': [], 'v': []} for f in self.frequencies}
 
-            cmap = mpl.colormaps['viridis']
-            for i, f in enumerate(self.freq_list):
-                self.data_storage[f] = {'cp': [], 'g': []}
-                denom = max(len(self.freq_list) - 1, 1)
-                c = cmap(i / denom)
-                self.lines_cp[f], = self.ax_cp.plot(
-                    [], [], color=c, marker='.', markersize=3,
-                    linestyle='-', linewidth=1, label=f"{f} Hz"
-                )
-                self.lines_g[f], = self.ax_g.plot(
-                    [], [], color=c, marker='.', markersize=3,
-                    linestyle='-', linewidth=1, label=f"{f} Hz"
-                )
-
-            self.ax_cp.legend(fontsize=7, loc='best')
-            self.ax_g.legend(fontsize=7, loc='best')
-
+            for line in (self.line_main, self.line_sub1, self.line_sub2):
+                line.set_data([], [])
+            self.ax_main.set_title(
+                f"Cp vs. T @ {int(self.plot_freq)} Hz", fontweight='bold')
             self.canvas.draw()
-            self.is_running = True
-            self._stopping = False
-            self.start_time = time.time()
 
-            self.worker_thread = threading.Thread(
-                target=self._measurement_worker, daemon=True
-            )
-            self.worker_thread.start()
+            self.log("Starting passive temperature-sensing measurement...")
+
+            # --- Launch worker thread ---
+            self.measurement_thread = threading.Thread(
+                target=self._measurement_worker, daemon=True)
+            self.measurement_thread.start()
             self.root.after(100, self._process_data_queue)
 
         except Exception as e:
-            self.log(f"Startup Error: {e}")
-            messagebox.showerror("Error", str(e))
+            self.log(f"ERROR during startup: {traceback.format_exc()}")
+            messagebox.showerror(
+                "Initialization Error",
+                f"Could not start measurement.\n{e}")
 
-    def _flush_queue_to_disk(self):
-        """Write any remaining queued measurements to disk before closing."""
-        while not self.data_queue.empty():
-            try:
-                item = self.data_queue.get_nowait()
-            except queue.Empty:
-                break
-            if not (
-                isinstance(item, tuple)
-                and item
-                and item[0] == 'DATA'
-            ):
-                continue
-            _, elapsed, t, results = item
-            for f in self.freq_list:
-                if f not in results:
-                    continue
-                cp, g = results[f]
-                calc_vals = self.calculate_impedance_parameters(f, cp, g)
-                row_str = "\t".join(
-                    f"{v:.6E}" for v in ([elapsed, t] + calc_vals)
-                )
-                fh = self.file_handles.get(f)
-                if fh and not fh.closed:
-                    fh.write(row_str + "\n")
-                    fh.flush()
+    # ------------------------------------------------------------------
+    def _extract_visa(self, combo_val):
+        """Strips the '  ->  IDN' suffix added by the identity-aware scan."""
+        if "  ->  " in combo_val:
+            return combo_val.split("  ->  ")[0].strip()
+        return combo_val.strip()
 
-    def stop_measurement(self, show_info=True):
-        """Stop measurement, flush data, and close instruments safely.
-
-        Includes a guard against double-stop calls.
+    # ------------------------------------------------------------------
+    def _create_per_frequency_files(self, sample_name):
         """
-        if not self.is_running or self._stopping:
-            return
+        Appendix A.2 / A.3:
+        One .txt file per frequency, header pre-written.
+        If any target file already exists, appends a timestamp to the
+        sample name to avoid silently overwriting previous data.
+        """
+        candidate_paths = {
+            f: os.path.join(self.file_location_path,
+                            f"{sample_name}-{int(f)}Hz.txt")
+            for f in self.frequencies
+        }
+        if any(os.path.exists(p) for p in candidate_paths.values()):
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            sample_name = f"{sample_name}_{ts}"
+            candidate_paths = {
+                f: os.path.join(self.file_location_path,
+                                f"{sample_name}-{int(f)}Hz.txt")
+                for f in self.frequencies
+            }
+            self.log(f"Existing files detected. Using unique sample "
+                     f"tag: {sample_name}")
 
-        self._stopping = True
-        self.is_running = False
-        self.log("Stopping Passive Measurement...")
+        self.freq_filepaths = candidate_paths
+        for f, path in self.freq_filepaths.items():
+            with open(path, 'w', encoding='utf-8') as fh:
+                fh.write(self.DATA_HEADER + "\n")
 
-        # Wait for the worker to finish its current cycle so we don't
-        # tear down VISA mid-transaction.
-        if self.worker_thread is not None:
-            self.worker_thread.join(
-                timeout=self.backend.params.get('loop_delay', 5) + 20
-            )
-            self.worker_thread = None
+    # ------------------------------------------------------------------
+    def _populate_plot_freq_dropdown(self):
+        """
+        Appendix A.4:
+        Populate the plot-frequency dropdown.  Default selection is the
+        middle frequency: (len - 1) // 2  →  for 20 freqs this is index 9,
+        i.e. the 10th frequency.
+        """
+        vals = [f"{int(f)} Hz" for f in self.frequencies]
+        self.plot_freq_cb.config(state='readonly')
+        self.plot_freq_cb['values'] = vals
+        mid_index = (len(self.frequencies) - 1) // 2
+        self.plot_freq_cb.current(mid_index)
+        self.plot_freq = self.frequencies[mid_index]
+        self.log(
+            f"Default live-plot frequency: {int(self.plot_freq)} Hz "
+            f"(index {mid_index + 1} of {len(self.frequencies)}).")
 
-        # Persist anything still queued BEFORE closing files.
-        self._flush_queue_to_disk()
+    # ------------------------------------------------------------------
+    def _on_plot_freq_change(self, event=None):
+        """
+        Appendix A.4:
+        Main-thread-only redraw.  Never touches the worker thread or the
+        instruments, so switching frequency cannot cause measurement lag,
+        errors, or a hang.
+        """
+        sel = self.plot_freq_cb.get().replace(" Hz", "")
+        self.plot_freq = float(sel)
+        self.ax_main.set_title(
+            f"Cp vs. T @ {int(self.plot_freq)} Hz", fontweight='bold')
+        self._update_live_plots(force=True)
 
-        self.start_btn.config(state='normal')
-        self.stop_btn.config(state='disabled')
+    # ------------------------------------------------------------------
+    def stop_measurement(self, from_user=True):
+        if self.is_running or self.is_stabilizing:
+            self.is_running, self.is_stabilizing = False, False
+            if from_user:
+                self.log("Measurement stopped by user.")
+            self.start_button.config(state='normal')
+            self.stop_button.config(state='disabled')
+            self.scan_button.config(state='normal')
+            self.backend.close_instruments()
+            if from_user:
+                messagebox.showinfo(
+                    "Info",
+                    "Measurement stopped and instruments disconnected.")
 
-        self.backend.close_instruments()
-        self._close_data_files()
-
-        self._stopping = False
-
-        if show_info:
-            messagebox.showinfo(
-                "Stopped",
-                "Measurement interrupted and files closed safely."
-            )
-
+    # ==================================================================
+    # WORKER THREAD  (Passive monitoring — no stabilization, no ramp)
+    # ==================================================================
     def _measurement_worker(self):
-        p = self.backend.params
-        loop_delay = p['loop_delay']
+        params = self.backend.params
+        try:
+            self.start_time = time.time()
+            self.data_queue.put("LOG:Passive monitoring started. "
+                                "Measuring until stopped by user.")
+            while self.is_running:
+                cycle = self.backend.measure_frequency_sweep(
+                    self.frequencies, params['delay'])
+                elapsed = time.time() - self.start_time
+                self.data_queue.put(('CYCLE', cycle, elapsed))
 
-        while self.is_running:
-            try:
-                t_start_loop = time.time()
-                elapsed = t_start_loop - self.start_time
+                # Hardcoded 350 K kill switch (checks max T in cycle)
+                max_temp = max(pt[0] for pt in cycle['points'])
+                if self.backend.check_safety_kill(max_temp):
+                    self.data_queue.put("KILL")
+                    break
+        except Exception as e:
+            self.data_queue.put(e)
 
-                # 1. Read passive temperature
-                current_t = self.backend.get_temperature()
-
-                # 2. Sweep frequencies
-                freq_results = self.backend.measure_lcr_array(
-                    self.freq_list, p['lcr_delay']
-                )
-
-                # 3. Queue results for GUI thread
-                self.data_queue.put(
-                    ('DATA', elapsed, current_t, freq_results)
-                )
-
-                # 4. Enforce loop delay
-                elapsed_in_loop = time.time() - t_start_loop
-                sleep_time = loop_delay - elapsed_in_loop
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
-
-            except Exception as e:
-                self.data_queue.put(e)
-                break
-
+    # ==================================================================
+    # QUEUE PROCESSING (main thread)
+    # ==================================================================
     def _process_data_queue(self):
         try:
             while not self.data_queue.empty():
-                item = self.data_queue.get_nowait()
+                data = self.data_queue.get_nowait()
 
-                if isinstance(item, Exception):
-                    self.log(f"RUNTIME ERROR: {item}")
-                    self.stop_measurement(show_info=False)
-                    messagebox.showerror("Runtime Error", str(item))
-
-                elif isinstance(item, tuple) and item[0] == 'DATA':
-                    _, elapsed, t, results = item
-
-                    self.data_storage['time'].append(elapsed)
-                    self.data_storage['temp'].append(t)
-                    self.log(
-                        f"Elapsed: {elapsed:.1f}s | "
-                        f"Temp: {t:.2f}K logged."
-                    )
-
-                    for f in self.freq_list:
-                        cp, g = results[f]
-                        self.data_storage[f]['cp'].append(cp)
-                        self.data_storage[f]['g'].append(g)
-
-                        calc_vals = self.calculate_impedance_parameters(
-                            f, cp, g
-                        )
-                        row_vals = [elapsed, t] + calc_vals
-                        row_str = "\t".join(
-                            [f"{v:.6E}" for v in row_vals]
-                        )
-
-                        fh = self.file_handles.get(f)
-                        if fh:
-                            fh.write(row_str + "\n")
-                            fh.flush()
-
-                    self._update_plots()
-
+                if isinstance(data, str) and data.startswith("LOG:"):
+                    self._handle_log_message(data[4:])
+                elif isinstance(data, str) and data == "KILL":
+                    self._handle_kill_event()
+                    return
+                elif isinstance(data, Exception):
+                    self._handle_runtime_error(data)
+                    return
+                elif isinstance(data, tuple) and data[0] == 'CYCLE':
+                    _, cycle, elapsed = data
+                    self._process_cycle(cycle, elapsed)
         except queue.Empty:
             pass
 
-        if self.is_running:
+        if self.is_running or self.is_stabilizing:
             self.root.after(200, self._process_data_queue)
 
-    def _update_plots(self):
-        temps = self.data_storage['temp']
-        for f in self.freq_list:
-            cp = [
-                v if v > 0 else np.nan
-                for v in self.data_storage[f]['cp']
-            ]
-            g = [
-                v if v > 0 else np.nan
-                for v in self.data_storage[f]['g']
-            ]
-            self.lines_cp[f].set_data(temps, cp)
-            self.lines_g[f].set_data(temps, g)
+    # ------------------------------------------------------------------
+    def _process_cycle(self, cycle, elapsed):
+        # Log non-zero status warnings
+        for (temp, f, R, X, status) in cycle['points']:
+            if status != 0:
+                self.log(
+                    f"WARNING: f={int(f)} Hz status={status} "
+                    f"(non-zero = overload/ALC issue) "
+                    f"at T={temp:.3f} K")
 
-        self.ax_cp.relim()
-        self.ax_cp.autoscale_view()
-        self.ax_g.relim()
-        self.ax_g.autoscale_view()
+        last_temp = cycle['points'][-1][0]
+        self.log(
+            f"Cycle @ t={elapsed:.1f}s | last T={last_temp:.3f} K | "
+            f"Htr={cycle['heater']:.1f}%")
+
+        # Appendix A.3: safe per-point file writing
+        self._save_cycle_to_files(cycle)
+
+        # Update in-memory storage for plotting
+        self._update_data_storage(cycle, elapsed)
+
+        # Redraw plots (throttled)
+        self._update_live_plots()
+
+    # ==================================================================
+    # Appendix A.3: Safe per-point file writing (open / append / close)
+    # ==================================================================
+    def _save_cycle_to_files(self, cycle):
+        for (temp, f, R, X, status) in cycle['points']:
+            try:
+                calc = self.calculate_impedance_parameters(f, R, X)
+            except Exception as calc_err:
+                self.log(f"Calc error at {int(f)} Hz: {calc_err}. "
+                         f"Writing NaNs.")
+                calc = [float('nan')] * 18
+
+            # Every value — including temperature — formatted as %.6E
+            row_vals = [temp] + calc
+            row_str = "\t".join("{:.6E}".format(v) for v in row_vals)
+
+            # Open, append, close for every single point: if the program
+            # crashes mid-experiment, no data already written is lost.
+            with open(self.freq_filepaths[f], 'a',
+                      encoding='utf-8') as fh:
+                fh.write(row_str + "\n")
+
+    # ==================================================================
+    # DATA STORAGE UPDATE (Appendix A.4: per-frequency keyed)
+    # ==================================================================
+    def _update_data_storage(self, cycle, elapsed):
+        for (temp, f, R, X, status) in cycle['points']:
+            try:
+                calc = self.calculate_impedance_parameters(f, R, X)
+                cp, g = calc[4], calc[2]
+            except Exception:
+                cp, g = float('nan'), float('nan')
+
+            self.data_storage['cp'][f]['T'].append(temp)
+            self.data_storage['cp'][f]['v'].append(cp)
+            self.data_storage['g'][f]['T'].append(temp)
+            self.data_storage['g'][f]['v'].append(g)
+
+        self.data_storage['time'].append(elapsed)
+        self.data_storage['temperature'].append(cycle['points'][-1][0])
+
+    # ==================================================================
+    # PLOTTING (Appendix A.4: decoupled from acquisition)
+    # ==================================================================
+    def _update_y_scale(self):
+        if self.log_scale_var.get():
+            self.ax_main.set_yscale('log')
+        else:
+            self.ax_main.set_yscale('linear')
+        self._rescale_main_axis()
         self.canvas.draw_idle()
 
+    # ------------------------------------------------------------------
+    def _update_live_plots(self, force=False):
+        fq = self.plot_freq
+        if fq is None or fq not in self.data_storage['cp']:
+            return
+
+        # Update line data for the currently selected frequency
+        self.line_main.set_data(
+            self.data_storage['cp'][fq]['T'],
+            self.data_storage['cp'][fq]['v'])
+        self.line_sub1.set_data(
+            self.data_storage['g'][fq]['T'],
+            self.data_storage['g'][fq]['v'])
+        self.line_sub2.set_data(
+            self.data_storage['time'],
+            self.data_storage['temperature'])
+
+        # Throttle expensive redraws
+        now = time.time()
+        if not force and (now - self._last_draw_time) < self._redraw_interval:
+            return
+        self._last_draw_time = now
+
+        self._rescale_main_axis()
+        for ax in (self.ax_sub1, self.ax_sub2):
+            ax.relim()
+            ax.autoscale_view()
+
+        self.canvas.draw_idle()
+
+    # ------------------------------------------------------------------
+    def _rescale_main_axis(self):
+        """Autoscale the main Cp axis, safely handling log y-scale."""
+        fq = self.plot_freq
+        if fq is None or fq not in self.data_storage['cp']:
+            return
+        vals = self.data_storage['cp'][fq]['v']
+        temps = self.data_storage['cp'][fq]['T']
+        if not vals:
+            return
+
+        if self.log_scale_var.get():
+            valid = [v for v in vals
+                     if v > 0 and v == v and v != float('inf')]
+            if valid:
+                lo, hi = min(valid), max(valid)
+                self.ax_main.set_ylim(lo * 0.5, hi * 2.0)
+        else:
+            self.ax_main.relim()
+            self.ax_main.autoscale_view(scaley=True)
+
+        if temps:
+            xlo, xhi = min(temps), max(temps)
+            if xhi > xlo:
+                pad = (xhi - xlo) * 0.05
+                self.ax_main.set_xlim(xlo - pad, xhi + pad)
+
+    # ==================================================================
+    # EVENT HANDLERS
+    # ==================================================================
+    def _handle_kill_event(self):
+        self.log("!!! HARDCODED SAFETY KILL (350 K) TRIGGERED — "
+                 "heater forced OFF !!!")
+        self._update_live_plots(force=True)
+        self.stop_measurement(False)
+        messagebox.showwarning(
+            "SAFETY KILL",
+            "Temperature reached 350 K.\nHeater turned OFF and "
+            "measurement stopped.")
+
+    # ------------------------------------------------------------------
+    def _handle_runtime_error(self, exception):
+        self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
+        self.stop_measurement(False)
+        messagebox.showerror(
+            "Runtime Error",
+            f"A critical error occurred: {exception}")
+
+    # ==================================================================
+    # VISA SCAN (identity-aware, for BOTH instruments)
+    # ==================================================================
+    def _scan_for_visa_instruments(self):
+        """
+        Identity-aware instrument scan (from freq-scan program, extended
+        to auto-select both the Lakeshore 350 and the E4980A).
+        Queries *IDN? on every discovered VISA resource, then auto-selects
+        the device reporting 'E4980' → LCR combobox and the device
+        reporting 'LSCI' or 'MODEL350' → Lakeshore combobox.
+        Displays 'address  ->  IDN' in both comboboxes.
+        """
+        if not PYVISA_AVAILABLE:
+            self.log("ERROR: PyVISA is not installed.")
+            return
+
+        try:
+            rm = pyvisa.ResourceManager()
+        except Exception as e:
+            self.log(f"ERROR: Cannot create VISA Resource Manager: {e}")
+            return
+
+        self.log("Scanning for VISA instruments (querying *IDN?)...")
+        resources = rm.list_resources()
+        if not resources:
+            self.log("No VISA instruments found.")
+            return
+
+        found = []
+        lakeshore_label = None
+        lcr_label = None
+
+        for res in resources:
+            idn = "Unknown / no response"
+            try:
+                with rm.open_resource(res) as dev:
+                    dev.timeout = 2000
+                    dev.read_termination = "\n"
+                    dev.write_termination = "\n"
+                    idn = dev.query("*IDN?").strip()
+            except Exception:
+                pass  # busy / non-SCPI / timeout — skip silently
+
+            label = f"{res}  ->  {idn}"
+            found.append(label)
+            self.log(f"  {label}")
+
+            # Auto-select Lakeshore 350
+            if (lakeshore_label is None and
+                ("LSCI" in idn or "MODEL350" in idn.upper()
+                 or "MODEL 350" in idn.upper())):
+                lakeshore_label = label
+
+            # Auto-select E4980A
+            if lcr_label is None and "E4980" in idn:
+                lcr_label = label
+
+        self.lakeshore_cb['values'] = found
+        self.lcr_cb['values'] = found
+
+        if lakeshore_label:
+            self.lakeshore_cb.set(lakeshore_label)
+            self.log("Lakeshore 350 auto-selected.")
+        elif found:
+            self.lakeshore_cb.set(found[0])
+            self.log("WARNING: No Lakeshore 350 found; "
+                     "defaulted to first device.")
+
+        if lcr_label:
+            self.lcr_cb.set(lcr_label)
+            self.log("E4980A auto-selected.")
+        elif found:
+            self.lcr_cb.set(found[0])
+            self.log("WARNING: No E4980A found; "
+                     "defaulted to first device.")
+
+    # ==================================================================
+    # FILE BROWSE  (Appendix A.2: askdirectory)
+    # ==================================================================
+    def _browse_file_location(self):
+        path = filedialog.askdirectory()
+        if path:
+            self.file_location_path = path
+            self.log(f"Destination folder set to: {path}")
+
+    # ==================================================================
+    # WINDOW CLOSE
+    # ==================================================================
     def _on_closing(self):
-        if self.is_running:
+        if self.is_running or self.is_stabilizing:
             if messagebox.askyesno(
-                "Exit", "Measurement is running. Stop and exit?"
-            ):
-                self.stop_measurement()
+                    "Exit",
+                    "Measurement is running. Stop and exit?"):
+                self.stop_measurement(from_user=False)
                 self.root.destroy()
         else:
             self.root.destroy()
 
 
+# ===============================================================================
+# MAIN ENTRY POINT
+# ===============================================================================
+
 def main():
+    if not PYVISA_AVAILABLE:
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            "Dependency Error",
+            "PyVISA is not installed.\n\nPlease run:\n"
+            "pip install pyvisa")
+        return
+
     root = tk.Tk()
-    Passive_Dielectric_GUI(root)
+    Integrated_CT_GUI(root)
     root.mainloop()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
