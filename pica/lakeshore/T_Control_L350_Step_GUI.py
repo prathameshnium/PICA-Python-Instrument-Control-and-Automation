@@ -1,6 +1,14 @@
 """
 Module: T_Control_L350_Step_GUI.py
 Purpose: GUI module for T Control L350 Step Measurement GUI (Threaded & Multi-plot).
+
+CHANGELOG (this revision):
+  1. Plot: added user-adjustable X-axis minimum + window-scoped Y auto-scaling.
+  2. UI: added large live-temperature readout; fixed left-panel default sizing.
+  3. Dynamic step management: sequence can be edited (add/remove) while running.
+  4. Bug fixes: pad-lock buttons now stay usable during a run; stabilization now
+     requires a continuous dwell (timer + consecutive in-band samples) instead of
+     declaring "stable" on the first sample that clips the tolerance band.
 """
 
 import tkinter as tk
@@ -164,7 +172,7 @@ class Lakeshore_Backend:
 # -------------------------------------------------------------------------------
 
 class TempControlGUI:
-    PROGRAM_VERSION = "9.3-Step"
+    PROGRAM_VERSION = "9.4-Step"
     CLR_BG_DARK = "#B8A392"
     CLR_HEADER = "#E5DCD3"
     CLR_FG_LIGHT = "#2C2825"
@@ -180,6 +188,8 @@ class TempControlGUI:
     FONT_BASE = ("Segoe UI", 10)
     FONT_TITLE = ("Segoe UI", 12, "bold")
     FONT_CONSOLE = ("Consolas", 9)
+
+    LEFT_PANEL_WIDTH = 540  # default sash position so the left panel starts fully visible
 
     def __init__(self, root):
         self.root = root
@@ -210,6 +220,15 @@ class TempControlGUI:
         self.live_heater_update = None
         self.live_param_update = None
         self.live_pid_update = None
+
+        # --- Dynamic step-sequence state (feature 3) ---
+        # setpoint_floats is now the single "live" source of truth for the
+        # sequence, mutated by the GUI thread and read by the worker thread
+        # under setpoint_lock. current_step_index marks how far the worker
+        # has progressed so completed/active steps can't be edited away.
+        self.setpoint_lock = threading.Lock()
+        self.setpoint_floats = []
+        self.current_step_index = 0
 
         # --- PID Presets ---
         self.PID_PRESETS = {
@@ -304,16 +323,49 @@ class TempControlGUI:
             header, text="📟", command=launch_gpib_scanner, width=3
         ).pack(side="right", padx=(0, 5), pady=5)
 
-        main_pane = ttk.PanedWindow(self.root, orient="horizontal")
-        main_pane.pack(fill="both", expand=True, padx=10, pady=10)
+        self.main_pane = ttk.PanedWindow(self.root, orient="horizontal")
+        self.main_pane.pack(fill="both", expand=True, padx=10, pady=10)
 
-        left_panel = ttk.Frame(main_pane, width=440)
-        main_pane.add(left_panel, weight=0)
-        right_panel = ttk.Frame(main_pane)
-        main_pane.add(right_panel, weight=1)
+        # FIX (2b): pack_propagate(False) makes the requested width stick;
+        # weight=0 keeps the left panel from being squeezed as the window
+        # resizes, while the right (plot) panel absorbs all extra space.
+        left_panel = ttk.Frame(self.main_pane, width=self.LEFT_PANEL_WIDTH)
+        left_panel.pack_propagate(False)
+        self.main_pane.add(left_panel, weight=0)
+        right_panel = ttk.Frame(self.main_pane)
+        self.main_pane.add(right_panel, weight=1)
 
         self._populate_left_panel(left_panel)
         self._populate_right_panel(right_panel)
+
+        # sashpos() has no effect until the PanedWindow is actually mapped and
+        # laid out — an early call fails SILENTLY. So we (a) wait for the
+        # window to be drawn, (b) measure the real required width of the
+        # left-panel content instead of guessing, and (c) retry until the
+        # sash position verifiably sticks.
+        self.root.after(50, self._set_default_sash_position)
+
+    def _set_default_sash_position(self, attempt=0):
+        try:
+            self.root.update_idletasks()  # force geometry to be computed
+
+            # Measure the actual content width: inner scrollable frame +
+            # vertical scrollbar + a little breathing room. Falls back to
+            # LEFT_PANEL_WIDTH if measurement isn't ready yet.
+            content_w = self.left_scrollable_frame.winfo_reqwidth()
+            if content_w > 1:
+                target = content_w + 30  # scrollbar (~15px) + padding
+            else:
+                target = self.LEFT_PANEL_WIDTH
+
+            self.main_pane.sashpos(0, target)
+
+            # Verify it stuck; if not (widget not mapped yet), retry.
+            if abs(self.main_pane.sashpos(0) - target) > 5 and attempt < 10:
+                self.root.after(100, lambda: self._set_default_sash_position(attempt + 1))
+        except tk.TclError:
+            if attempt < 10:
+                self.root.after(100, lambda: self._set_default_sash_position(attempt + 1))
 
     def _populate_left_panel(self, panel):
         canvas = tk.Canvas(panel, bg=self.CLR_BG_DARK, highlightthickness=0)
@@ -325,8 +377,17 @@ class TempControlGUI:
             lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
         )
 
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Keep the inner frame exactly as wide as the canvas viewport, so
+        # widgets are never clipped on the right edge (they reflow instead),
+        # and remember the frame so the sash logic can measure its true width.
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfigure(window_id, width=e.width),
+        )
+        self.left_scrollable_frame = scrollable_frame
 
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
@@ -419,9 +480,10 @@ class TempControlGUI:
         self.entry_step = ttk.Entry(frame, width=6)
         self.entry_step.grid(row=2, column=1, sticky="w", padx=2)
 
-        ttk.Button(
+        self.btn_generate_steps = ttk.Button(
             frame, text="Generate Steps", command=self._generate_steps
-        ).grid(row=2, column=2, columnspan=2, sticky="ew", padx=5, pady=2)
+        )
+        self.btn_generate_steps.grid(row=2, column=2, columnspan=2, sticky="ew", padx=5, pady=2)
 
         ttk.Separator(frame, orient="horizontal").grid(
             row=3, column=0, columnspan=4, sticky="ew", pady=5, padx=10
@@ -429,15 +491,15 @@ class TempControlGUI:
 
         ttk.Label(frame, text="Order:").grid(row=4, column=0, sticky="e", padx=2)
         self.sort_var = tk.StringVar(value="Ascending")
-        sort_cb = ttk.Combobox(
+        self.sort_cb = ttk.Combobox(
             frame,
             textvariable=self.sort_var,
             values=["Ascending", "Descending"],
             state="readonly",
             width=10,
         )
-        sort_cb.grid(row=4, column=1, sticky="w", padx=2)
-        sort_cb.bind("<<ComboboxSelected>>", lambda e: self._sort_listbox())
+        self.sort_cb.grid(row=4, column=1, sticky="w", padx=2)
+        self.sort_cb.bind("<<ComboboxSelected>>", lambda e: self._sort_listbox())
 
         ttk.Label(frame, text="Rows:").grid(row=4, column=2, sticky="e", padx=2)
         self.list_size_var = tk.IntVar(value=6)
@@ -470,6 +532,13 @@ class TempControlGUI:
             row=6, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 5)
         )
 
+        # Live status note shown only while a sequence is running, to make it
+        # clear the list is now editable in place (feature 3).
+        self.lbl_seq_hint = ttk.Label(
+            frame, text="", foreground=self.CLR_ACCENT_GOLD, font=("Segoe UI", 8, "italic")
+        )
+        self.lbl_seq_hint.grid(row=7, column=0, columnspan=4, sticky="w", padx=10)
+
     def _create_settings_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text="Instrument & Stability Settings")
         frame.grid(row=grid_row, column=0, sticky="new", pady=5, padx=5)
@@ -482,6 +551,11 @@ class TempControlGUI:
         self._create_grid_entry(frame, "Soak Time (s):", "soak", "120", 0, 3)
         self._create_grid_entry(frame, "Ramp Rate (K/min):", "rate", "10.0", 1, 0)
         self._create_grid_entry(frame, "Poll Delay (s):", "delay", "1", 1, 3)
+        # FIX (4b): dedicated dwell field — the minimum continuous time the
+        # temperature must remain inside the tolerance band before the
+        # program is allowed to declare "Stabilized". Kept distinct from
+        # "Soak Time" (extra hold requested after stabilization if desired).
+        self._create_grid_entry(frame, "Dwell (s):", "dwell", "60", 2, 3)
 
         ttk.Label(frame, text="Heater Range:").grid(
             row=2, column=0, sticky="w", padx=10, pady=5
@@ -498,13 +572,13 @@ class TempControlGUI:
         self.heater_cb.bind("<<ComboboxSelected>>", self._on_heater_range_changed)
 
         ttk.Label(frame, text="VISA Addr:").grid(
-            row=2, column=3, sticky="w", padx=5, pady=5
+            row=3, column=0, sticky="w", padx=5, pady=5
         )
         self.ls_cb = ttk.Combobox(frame, state="readonly", width=15)
-        self.ls_cb.grid(row=2, column=4, columnspan=2, sticky="ew", padx=5)
+        self.ls_cb.grid(row=3, column=1, columnspan=2, sticky="ew", padx=5)
 
         button_frame = ttk.Frame(frame)
-        button_frame.grid(row=3, column=0, columnspan=6, sticky="ew", pady=10, padx=10)
+        button_frame.grid(row=4, column=0, columnspan=6, sticky="ew", pady=10, padx=10)
         button_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
         self.start_button = ttk.Button(
@@ -607,6 +681,17 @@ class TempControlGUI:
         )
         self.lbl_status.grid(row=0, column=0, sticky="ew")
 
+        # --- Large live temperature readout (feature 2a) ---
+        self.lbl_current_temp = tk.Label(
+            status_frame,
+            text="--- K",
+            font=("Segoe UI", 26, "bold"),
+            bg=self.CLR_FRAME_BG,
+            fg=self.CLR_ACCENT_RED,
+            padx=20,
+        )
+        self.lbl_current_temp.grid(row=0, column=1, sticky="e", padx=10)
+
         self.btn_proceed = ttk.Button(
             status_frame,
             text="Measurement Complete - Proceed ➔",
@@ -614,12 +699,31 @@ class TempControlGUI:
             state="disabled",
             command=self._on_proceed,
         )
-        self.btn_proceed.grid(row=0, column=1, sticky="ew", padx=10, ipady=5)
+        self.btn_proceed.grid(row=0, column=2, sticky="ew", padx=10, ipady=5)
 
         container = ttk.LabelFrame(panel, text="Live Temperature Monitoring")
         container.grid(row=1, column=0, sticky="nsew")
-        container.grid_rowconfigure(0, weight=1)
         container.grid_columnconfigure(0, weight=1)
+        container.grid_rowconfigure(1, weight=1)  # canvas row expands; toolbar row (0) doesn't
+
+        # --- Plot window controls (feature 1a) ---
+        plot_ctrl = ttk.Frame(container)
+        plot_ctrl.grid(row=0, column=0, sticky="ew", padx=5, pady=(5, 0))
+
+        ttk.Label(plot_ctrl, text="X-axis min (s):").pack(side="left", padx=(5, 2))
+        self.xmin_var = tk.StringVar(value="0")
+        xmin_entry = ttk.Entry(plot_ctrl, textvariable=self.xmin_var, width=8)
+        xmin_entry.pack(side="left")
+        xmin_entry.bind("<Return>", lambda e: self._put_gui_msg("plot"))
+
+        ttk.Button(
+            plot_ctrl, text="Apply", command=lambda: self._put_gui_msg("plot")
+        ).pack(side="left", padx=4)
+        ttk.Button(
+            plot_ctrl,
+            text="Full View",
+            command=lambda: (self.xmin_var.set("0"), self._put_gui_msg("plot")),
+        ).pack(side="left", padx=4)
 
         self.figure = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
         self.ax_temp = self.figure.add_subplot(211)
@@ -645,7 +749,7 @@ class TempControlGUI:
 
         self.figure.tight_layout()
         self.canvas = FigureCanvasTkAgg(self.figure, container)
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=5, pady=5)
+        self.canvas.get_tk_widget().grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
     # --- UI HELPERS ---
     def _create_grid_entry(
@@ -682,6 +786,11 @@ class TempControlGUI:
             pass
 
     def _sort_listbox(self):
+        # FIX (3b): sorting mid-run could silently reorder steps that have
+        # already executed, corrupting the worker's index-based progress.
+        if self.is_running:
+            self.log("Sort disabled while a sequence is running.")
+            return
         items = list(self.listbox.get(0, tk.END))
         if not items:
             return
@@ -696,6 +805,12 @@ class TempControlGUI:
             pass
 
     def _generate_steps(self):
+        if self.is_running:
+            messagebox.showwarning(
+                "Not Available", "Bulk-generate is disabled while a sequence is running.\n"
+                "Use 'Manual(K) → Add' to append steps live."
+            )
+            return
         try:
             start = float(self.entry_start.get())
             end = float(self.entry_end.get())
@@ -722,19 +837,75 @@ class TempControlGUI:
     def _add_manual_step(self):
         try:
             val = float(self.entry_manual.get())
-            self.listbox.insert(tk.END, f"{val:.2f}")
+            if self.is_running:
+                # Append to the end only; do not re-sort (would disturb
+                # already-executed steps at the front of the list).
+                self.listbox.insert(tk.END, f"{val:.2f}")
+            else:
+                self.listbox.insert(tk.END, f"{val:.2f}")
+                self._sort_listbox()
             self.entry_manual.delete(0, tk.END)
-            self._sort_listbox()
+            self._sync_setpoints_from_listbox()
         except ValueError:
             messagebox.showerror("Input Error", "Enter a valid numeric temperature.")
 
     def _remove_step(self):
         selection = self.listbox.curselection()
+        if self.is_running:
+            # Guard against removing a step that has already executed or is
+            # currently active — _sync_setpoints_from_listbox will validate
+            # and reject/rollback if the protected prefix was touched.
+            for index in reversed(selection):
+                if index <= self.current_step_index:
+                    messagebox.showwarning(
+                        "Cannot Remove",
+                        "That step has already completed or is currently active "
+                        "and cannot be removed.",
+                    )
+                    return
         for index in reversed(selection):
             self.listbox.delete(index)
+        self._sync_setpoints_from_listbox()
 
     def _clear_listbox(self):
+        if self.is_running:
+            messagebox.showwarning(
+                "Not Available", "Cannot clear the sequence while it is running."
+            )
+            return
         self.listbox.delete(0, tk.END)
+
+    def _sync_setpoints_from_listbox(self):
+        """Push listbox contents into the worker's shared setpoint list.
+
+        Only steps at or after the current step index may be changed while a
+        sequence is running; completed/active steps must remain a prefix of
+        the new list, or the edit is rejected and the listbox is restored to
+        the authoritative state (feature 3 + safety guard).
+        """
+        if not self.is_running:
+            return
+        try:
+            new_list = [float(x) for x in self.listbox.get(0, tk.END)]
+        except ValueError:
+            return
+
+        with self.setpoint_lock:
+            idx = self.current_step_index
+            protected = self.setpoint_floats[: idx + 1]
+            if new_list[: idx + 1] == protected:
+                self.setpoint_floats = new_list
+                remaining = new_list[idx + 1:]
+                self.log(f"Sequence updated live. Remaining steps: {remaining}")
+            else:
+                self.log("WARN: edit touched a completed/active step; change rejected.")
+                restore = list(self.setpoint_floats)
+
+        if new_list[: idx + 1] != protected:
+            # Restore listbox outside the lock to avoid blocking the worker.
+            self.listbox.delete(0, tk.END)
+            for v in restore:
+                self.listbox.insert(tk.END, f"{v:.2f}")
 
     def log(self, message):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -877,7 +1048,9 @@ class TempControlGUI:
 
         try:
             self.params = self._validate_and_get_params()
-            self.setpoint_floats = [float(x) for x in setpoints]
+            with self.setpoint_lock:
+                self.setpoint_floats = [float(x) for x in setpoints]
+                self.current_step_index = 0
         except Exception as e:
             messagebox.showerror("Configuration Error", str(e))
             return
@@ -891,6 +1064,7 @@ class TempControlGUI:
         self.line_target.set_data([], [])
         self.line_temp.set_data([], [])
         self.line_heater.set_data([], [])
+        self.xmin_var.set("0")
         self.canvas.draw()
 
         self.start_time = time.time()
@@ -940,6 +1114,7 @@ class TempControlGUI:
             "soak": float(self.entries["soak"]["entry"].get()),
             "rate": float(self.entries["rate"]["entry"].get()),
             "delay": float(self.entries["delay"]["entry"].get()),
+            "dwell": float(self.entries["dwell"]["entry"].get()),
             "heater_range": self.heater_range_var.get().split()[0],
             "ls_visa": self.ls_cb.get(),
         }
@@ -949,6 +1124,10 @@ class TempControlGUI:
             raise ValueError("Ramp rate must be positive.")
         if params["tol"] <= 0:
             raise ValueError("Tolerance must be positive.")
+        if params["dwell"] < 0:
+            raise ValueError("Dwell time cannot be negative.")
+        if params["delay"] <= 0:
+            raise ValueError("Poll delay must be positive.")
         return params
 
     def set_ui_state(self, running: bool):
@@ -972,15 +1151,29 @@ class TempControlGUI:
                 entry.config(
                     state="disabled" if w.get("locked") else "normal"
                 )
-            # Toggle lock button availability
+            # FIX (4a): lock buttons must stay clickable at all times.
+            # Previously this line set the lock button's state to `state`
+            # (== "disabled" while running), so users could never toggle a
+            # lock mid-run — defeating the entire live-update workflow.
             if w.get("lock") is not None:
-                w["lock"].config(state=state)
+                w["lock"].config(state="normal")
 
+        # FIX (3b): sequence-builder controls that support *dynamic* editing
+        # stay enabled during a run; bulk-generation/sort/clear remain locked
+        # because they could disturb already-executed steps.
+        self.entry_manual.config(state="normal")
+        self.listbox.config(state="normal")
+        self.btn_generate_steps.config(state=state)
         self.entry_start.config(state=state)
         self.entry_end.config(state=state)
         self.entry_step.config(state=state)
-        self.entry_manual.config(state=state)
-        self.sort_var.set(self.sort_var.get())
+        self.sort_cb.config(state=("disabled" if running else "readonly"))
+
+        self.lbl_seq_hint.config(
+            text="Sequence is live: you may Add/Remove upcoming steps below."
+            if running else ""
+        )
+
         self.ls_cb.config(state=state if state == "normal" else "readonly")
         self.btn_proceed.config(state="disabled")
 
@@ -1017,27 +1210,12 @@ class TempControlGUI:
                 elif msg_type == "status":
                     self._update_status_ui(msg["text"], msg["color"])
 
+                elif msg_type == "temp_display":
+                    # Feature 2a: large live-temperature readout
+                    self.lbl_current_temp.config(text=f"{msg['value']:.3f} K")
+
                 elif msg_type == "plot":
-                    n = min(
-                        len(self.data_storage["time"]),
-                        len(self.data_storage["temperature"]),
-                        len(self.data_storage["heater"]),
-                        len(self.data_storage["target"]),
-                    )
-                    t = self.data_storage["time"][:n]
-                    self.line_target.set_data(
-                        t, self.data_storage["target"][:n]
-                    )
-                    self.line_temp.set_data(
-                        t, self.data_storage["temperature"][:n]
-                    )
-                    self.line_heater.set_data(
-                        t, self.data_storage["heater"][:n]
-                    )
-                    for ax in [self.ax_temp, self.ax_heater]:
-                        ax.relim()
-                        ax.autoscale_view()
-                    self.canvas.draw_idle()
+                    self._redraw_plot()
 
                 elif msg_type == "handshake_ready":
                     self.btn_proceed.config(state="normal")
@@ -1066,19 +1244,78 @@ class TempControlGUI:
         if self.is_running or not self.gui_queue.empty():
             self.root.after(100, self._process_gui_queue)
 
+    def _redraw_plot(self):
+        """Feature 1: redraw with a user-adjustable x_min and y-axis limits
+        that auto-scale using only the data inside the visible x window."""
+        n = min(
+            len(self.data_storage["time"]),
+            len(self.data_storage["temperature"]),
+            len(self.data_storage["heater"]),
+            len(self.data_storage["target"]),
+        )
+        t = self.data_storage["time"][:n]
+
+        self.line_target.set_data(t, self.data_storage["target"][:n])
+        self.line_temp.set_data(t, self.data_storage["temperature"][:n])
+        self.line_heater.set_data(t, self.data_storage["heater"][:n])
+
+        if not t:
+            self.canvas.draw_idle()
+            return
+
+        # --- Parse x_min safely; fall back to 0 on bad/empty input ---
+        try:
+            x_min = max(0.0, float(self.xmin_var.get()))
+        except (ValueError, tk.TclError):
+            x_min = 0.0
+        x_max = t[-1]
+        if x_min >= x_max:  # window collapsed or user typed something huge
+            x_min = max(0.0, x_max - 60)
+
+        vis = [k for k, tv in enumerate(t) if tv >= x_min]
+
+        def _ylim_from(*series_list):
+            vals = [s[k] for s in series_list for k in vis]
+            if not vals:
+                return None
+            lo, hi = min(vals), max(vals)
+            pad = max((hi - lo) * 0.05, 0.05)  # 5% margin, never zero-height
+            return lo - pad, hi + pad
+
+        margin = max((x_max - x_min) * 0.02, 1)
+        for ax in (self.ax_temp, self.ax_heater):
+            ax.set_xlim(x_min, x_max + margin)
+
+        yl = _ylim_from(self.data_storage["temperature"][:n], self.data_storage["target"][:n])
+        if yl:
+            self.ax_temp.set_ylim(*yl)
+
+        yl = _ylim_from(self.data_storage["heater"][:n])
+        if yl:
+            self.ax_heater.set_ylim(*yl)
+
+        self.canvas.draw_idle()
+
     def _hardware_worker_loop(self):
         try:
             self._put_gui_msg("log", text="Connecting to Lakeshore...")
             idn = self.backend.connect(self.params["ls_visa"])
             self._put_gui_msg("log", text=f"Connected: {idn}")
 
-            for i, target in enumerate(self.setpoint_floats):
-                if not self.is_running:
-                    break
+            # --- Feature 3: index-based loop over the SHARED setpoint list,
+            # so the GUI can append/remove upcoming steps mid-run. ---
+            step_index = 0
+            while self.is_running:
+                with self.setpoint_lock:
+                    total = len(self.setpoint_floats)
+                    if step_index >= total:
+                        break
+                    target = self.setpoint_floats[step_index]
+                    self.current_step_index = step_index
 
                 self._put_gui_msg(
                     "log",
-                    text=f"--- Sequence Step {i+1}/{len(self.setpoint_floats)}: Target {target} K ---",
+                    text=f"--- Sequence Step {step_index+1}/{total}: Target {target} K ---",
                 )
                 self._put_gui_msg(
                     "status",
@@ -1090,7 +1327,14 @@ class TempControlGUI:
                     target, self.params["rate"], self.params["heater_range"].split()[0]
                 )
 
+                # FIX (4b): stabilization now requires BOTH a continuous
+                # wall-clock dwell AND a minimum number of consecutive
+                # in-band polls, so a single transient overshoot/undershoot
+                # that merely clips the tolerance band cannot trigger a
+                # premature "Stabilized" declaration.
                 stable_start_time = None
+                consecutive_in_band = 0
+                min_consecutive = max(3, int(self.params["dwell"] / self.params["delay"] * 0.9))
                 phase = "RAMPING"
 
                 self.proceed_event.clear()
@@ -1120,6 +1364,10 @@ class TempControlGUI:
                         self._put_gui_msg(
                             "log", text=f"Live parameters applied: {updates}"
                         )
+                        if "dwell" in updates or "delay" in updates:
+                            min_consecutive = max(
+                                3, int(self.params["dwell"] / self.params["delay"] * 0.9)
+                            )
                         if "rate" in updates:
                             try:
                                 self.backend.lakeshore.write(
@@ -1182,45 +1430,56 @@ class TempControlGUI:
                         )
 
                     self._put_gui_msg("plot")
+                    self._put_gui_msg("temp_display", value=temp)
 
-                    # 4. State Machine Logic
-                    if phase in ["RAMPING", "SOAKING"]:
-                        if abs(temp - target) <= self.params["tol"]:
+                    # 4. State Machine Logic (dwell-gated stabilization)
+                    in_band = abs(temp - target) <= self.params["tol"]
+
+                    if phase in ("RAMPING", "SOAKING"):
+                        if in_band:
+                            consecutive_in_band += 1
                             if phase == "RAMPING":
                                 stable_start_time = time.time()
                                 phase = "SOAKING"
                                 self._put_gui_msg(
                                     "log",
-                                    text=f"Entered tolerance band (±{self.params['tol']}K). Starting soak timer...",
+                                    text=f"Entered tolerance band (±{self.params['tol']}K). "
+                                         f"Starting dwell timer...",
                                 )
                                 self._put_gui_msg(
                                     "status",
                                     text=f"STABILIZING AT {target} K...",
                                     color=self.CLR_STABLE_WAIT,
                                 )
-                            elif (
-                                phase == "SOAKING"
-                                and (
-                                    time.time() - stable_start_time
-                                    >= self.params["soak"]
+                            elif phase == "SOAKING":
+                                dwell_ok = (
+                                    time.time() - stable_start_time >= self.params["dwell"]
                                 )
-                            ):
-                                self._put_gui_msg(
-                                    "log",
-                                    text=f"Stable inside window for {self.params['soak']}s. Ready for external measurement.",
-                                )
-                                self._put_gui_msg(
-                                    "status",
-                                    text=f"STABLE AT {target} K | AWAITING MEASUREMENT",
-                                    color=self.CLR_ACCENT_GREEN,
-                                )
-                                self._put_gui_msg("handshake_ready")
-                                phase = "WAITING"
+                                samples_ok = consecutive_in_band >= min_consecutive
+                                if dwell_ok and samples_ok:
+                                    self._put_gui_msg(
+                                        "log",
+                                        text=f"Stable inside window for "
+                                             f"{self.params['dwell']}s "
+                                             f"({consecutive_in_band} consecutive samples). "
+                                             f"Ready for external measurement.",
+                                    )
+                                    self._put_gui_msg(
+                                        "status",
+                                        text=f"STABLE AT {target} K | AWAITING MEASUREMENT",
+                                        color=self.CLR_ACCENT_GREEN,
+                                    )
+                                    self._put_gui_msg("handshake_ready")
+                                    phase = "WAITING"
                         else:
+                            # Any single excursion fully resets the dwell —
+                            # this is what prevents a transient overshoot
+                            # from counting toward stabilization.
+                            consecutive_in_band = 0
                             if phase == "SOAKING":
                                 self._put_gui_msg(
                                     "log",
-                                    text="Drifted outside tolerance band. Restarting soak timer.",
+                                    text="Drifted outside tolerance band. Restarting dwell timer.",
                                 )
                                 self._put_gui_msg(
                                     "status",
@@ -1231,12 +1490,16 @@ class TempControlGUI:
                                 phase = "RAMPING"
 
                     elif phase == "WAITING":
+                        # Optional additional hold after stabilization, if
+                        # the user still wants a post-stable soak period.
                         if self.proceed_event.is_set():
                             self.proceed_event.clear()
                             break
 
                     # 5. Delay before next poll
                     time.sleep(self.params["delay"])
+
+                step_index += 1
 
             if self.is_running:
                 self._put_gui_msg("log", text="Measurement Sequence Complete.")
