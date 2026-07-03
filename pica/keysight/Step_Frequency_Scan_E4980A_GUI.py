@@ -16,42 +16,71 @@ Architecture (per design doc §2):
     zoom/pan (§3e).
   - Crash-safe finally block + atexit (§3f).
 
-Bug fixes from §1 applied:
-  #1  No cross-thread list sharing — plot data lives in main thread, fed
-      by `temp_point`/`scan_point` queue messages.
-  #2  configure_ramp no longer double-splits heater_range.
-  #3  GUI->worker commands go through cmd_queue (no live_* flag races).
-  #4  stop_sequence() only signals the worker; worker does hardware
-      shutdown in its finally block.
-  #5  _process_gui_queue reschedules while the worker thread is alive.
-  #6  Kill switch checked at every temperature read.
-  #7  Data file opened/closed inside worker try/finally.
-  #8  winsound imported once.
-  #9  _generate_steps uses np.arange + rounding.
-  #10 No-op sort_var.set removed.
-  #12 backend.connect warns if IDN lacks "350".
-  #13 _sort_listbox dedupes.
+Bug fixes from §1 applied (see v1.0/1.1 history): #1-#13, CRIT-1/2,
+MAJ-3/4/5, MIN-6/8, LCR-1.
 
-Code-review audit fixes:
-  CRIT-1  Removed `heater=` kwarg / unused param that caused NameError at
-          first soak transition.
-  CRIT-2  Heater plot now uses a GUI-thread list `plot_heater`; removed
-          cross-thread `_heater_series` and the broken double `set_data`.
-  MAJ-3   Frequency-scan filenames now timestamped to prevent silent
-          overwrites on re-run.
-  MAJ-4   Added "Apply Live Updates" button so `_send_live_updates` is
-          reachable from the UI.
-  MAJ-5   `stop_sequence` no longer flips `is_running` directly — only the
-          queued ("stop",) command mutates it (via the worker).
-  MIN-6   Added `*OPC?` synchronization after `:TRIG:IMM` and a GUI log
-          warning when the E4980A FETC status word is non-zero.
-  MIN-8   Worker join on close raised from 3 s -> 10 s to outlast the 60 s
-          VISA timeout in pathological cases.
+============================================================
+v1.2 — FREEZE + STABILIZATION OVERHAUL
+============================================================
+FREEZE FIXES (GUI froze mid-run, plot stopped updating):
+  FRZ-1  Plot redraw is now THROTTLED. `temp_point` / `scan_point`
+         messages only append to data lists and set a dirty flag.
+         A single periodic `_redraw_tick` (every REDRAW_MS, default
+         750 ms) does set_data / relim / autoscale / draw_idle ONCE.
+         Previously every single point triggered a full relim+redraw
+         on ever-growing lists → O(N) per point → GUI ground to a
+         halt on long runs.
+  FRZ-2  Plot data is DECIMATED for display: when a displayed series
+         exceeds MAX_PLOT_POINTS, every 2nd point is dropped (display
+         only — the CSV log always keeps every reading). Prevents
+         unbounded memory + redraw cost on overnight runs.
+  FRZ-3  `_beep` no longer touches Tk from the worker thread.
+         Tkinter is NOT thread-safe: the old code called
+         `self.root.bell()` from a worker-spawned thread, which can
+         hard-freeze the whole interpreter with no traceback. The
+         worker now sends a ("beep") message through gui_queue and the
+         main thread performs the beep. This was the most likely cause
+         of the total lock-up.
+  FRZ-4  `_process_gui_queue` drains at most MAX_MSGS_PER_CYCLE
+         messages per 50 ms tick so message bursts (interleaved temp
+         logging during sweeps) can no longer starve the Tk event loop.
+  FRZ-5  Matplotlib toolbars are now actually packed (they were
+         created with pack_toolbar=False and never packed, so
+         zoom/pan was invisible).
 
-GUI Layout fixes:
-  LCR-1   Refactored `_create_lcr_settings_panel` and `_add_lcr_entry` to
-          prevent grid overlaps. Enforced defaults: AC=1.0, DC=0.0, 
-          Delay=0.2, Aper=MED, ALC=ON, Corr=ON.
+STABILIZATION OVERHAUL (overshoot < 100 K, very slow first point):
+  STB-1  TWO-STAGE APPROACH. If the target is farther than
+         `Approach Band` (K) away, the worker first ramps at the full
+         rate to a PRE-TARGET that stops `Approach Band` short of the
+         real target, then switches to a slow `Approach Rate` (K/min)
+         for the final approach. The setpoint therefore never slews
+         into the target at full speed → drastically reduced overshoot
+         (the old code ramped the setpoint at 10 K/min straight into
+         the target; thermal lag + integral windup then overshot,
+         worst at low T).
+  STB-2  ROLLING-WINDOW STABILITY CRITERION replaces the fragile
+         "every instantaneous reading in band or restart the soak"
+         logic. Stability = over the last `Soak/Window` seconds:
+           (a) max |T - target| <= Tolerance, AND
+           (b) |linear drift| <= Drift Limit (K/min).
+         A single noise spike no longer resets a nearly-complete soak
+         to zero (that was why the first point took forever); the
+         window simply slides until the spike ages out. The drift
+         check also guarantees the sample has genuinely settled (not
+         merely passing through the band) before a sweep starts.
+  STB-3  STABILIZATION TIMEOUT (min, 0 = disabled). For unattended
+         overnight runs: if a setpoint cannot stabilize within the
+         timeout, the program logs a loud warning and proceeds with
+         the sweep anyway instead of hanging on one bad point all
+         night. The warning is also written to the console log.
+
+RELIABILITY:
+  REL-1  `Lakeshore_Backend.get_status` now retries transient VISA
+         read failures (2 retries with device clear + 0.5 s backoff)
+         so a single glitched query at 3 a.m. no longer aborts the
+         whole run. Persistent failures still raise.
+  REL-2  Live "rate" updates are deferred while the slow final
+         approach is active (would otherwise silently defeat STB-1).
 """
 
 import tkinter as tk
@@ -66,6 +95,7 @@ import atexit
 import traceback
 import platform
 from datetime import datetime
+from collections import deque
 from multiprocessing import Process
 import runpy
 
@@ -179,11 +209,34 @@ class Lakeshore_Backend:
         time.sleep(0.1)
         self.lakeshore.write(f"SETP 1,{setpoint}")
 
-    def get_status(self):
-        temp = float(self.lakeshore.query("KRDG? A").strip())
-        resistance = float(self.lakeshore.query("SRDG? A").strip())
-        htr_output = float(self.lakeshore.query("HTR? 1").strip())
-        return temp, resistance, htr_output
+    def set_ramp_rate(self, rate):
+        """Change ramp rate without touching heater range or setpoint."""
+        self.lakeshore.write(f"RAMP 1,1,{rate}")
+
+    def set_setpoint(self, setpoint):
+        self.lakeshore.write(f"SETP 1,{setpoint}")
+
+    def get_status(self, retries=2):
+        """REL-1: retry transient VISA glitches so a single failed query
+        at 3 a.m. does not abort an overnight run. Persistent failures
+        still raise (and the worker's except/finally shuts down safely)."""
+        last_err = None
+        for attempt in range(retries + 1):
+            try:
+                temp = float(self.lakeshore.query("KRDG? A").strip())
+                resistance = float(self.lakeshore.query("SRDG? A").strip())
+                htr_output = float(self.lakeshore.query("HTR? 1").strip())
+                return temp, resistance, htr_output
+            except Exception as e:
+                last_err = e
+                if attempt < retries:
+                    print(f"get_status retry {attempt+1}: {e}")
+                    try:
+                        self.lakeshore.clear()   # VISA device clear
+                    except Exception:
+                        pass
+                    time.sleep(0.5)
+        raise last_err
 
     def set_pid(self, output, p, i, d):
         if not (0 <= p <= 9999 and 0 <= i <= 1000 and 0 <= d <= 200):
@@ -378,7 +431,12 @@ class LCR_Backend:
 # FRONTEND: Combined GUI
 # ============================================================
 class CombinedGUI:
-    PROGRAM_VERSION = "1.1-Combined"  # bumped after audit fixes
+    PROGRAM_VERSION = "1.2-Combined"  # freeze + stabilization overhaul
+
+    # --- FRZ-1 / FRZ-2 / FRZ-4 tuning knobs ---
+    REDRAW_MS = 750           # plot redraw interval (ms). One redraw per tick.
+    MAX_PLOT_POINTS = 4000    # displayed points per series before decimation
+    MAX_MSGS_PER_CYCLE = 300  # gui_queue messages processed per 50 ms tick
 
     # Theme
     CLR_BG_DARK = "#B8A392"
@@ -454,6 +512,15 @@ class CombinedGUI:
         self.scan_cp = []
         self.scan_g = []
 
+        # FRZ-1: dirty flags — redraw happens only in _redraw_tick
+        self._temp_plot_dirty = False
+        self._freq_plot_dirty = False
+        self._pending_progress = None
+
+        # REL-2: worker-side phase marker (worker thread only writes it;
+        # used to defer live ramp-rate updates during final approach)
+        self._worker_phase = None
+
         # PID presets for the live PID panel
         self.PID_PRESETS = {
             "Slow (P=0.5, I=4, D=0)": self.PID_SLOW,
@@ -464,7 +531,12 @@ class CombinedGUI:
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
-        self.log("Combined GUI initialized. 40 Hz – 2 MHz sweep, 340 K kill switch active.")
+        # FRZ-1: single periodic redraw loop — runs for the app lifetime
+        self.root.after(self.REDRAW_MS, self._redraw_tick)
+        self.log("Combined GUI v1.2 initialized. 40 Hz – 2 MHz sweep, "
+                 "340 K kill switch active.")
+        self.log("Stabilization: two-stage approach + rolling-window "
+                 "(tolerance AND drift) criterion.")
 
     # ------------------------------------------------------------
     # Styling
@@ -623,26 +695,31 @@ class CombinedGUI:
             frame.grid_columnconfigure(i, weight=1 if i in (1, 4) else 0)
         self.entries = {}
         self._create_grid_entry(frame, "Tolerance (±K):", "tol", "0.5", 0, 0)
-        self._create_grid_entry(frame, "Soak Time (s):", "soak", "120", 0, 3)
+        self._create_grid_entry(frame, "Stab. Window (s):", "soak", "120", 0, 3)
         self._create_grid_entry(frame, "Ramp Rate (K/min):", "rate", "10.0", 1, 0)
         self._create_grid_entry(frame, "Poll Delay (s):", "delay", "1", 1, 3)
+        # --- STB-1 / STB-2 / STB-3: new stabilization parameters ---
+        self._create_grid_entry(frame, "Approach Band (K):", "app_band", "3.0", 2, 0)
+        self._create_grid_entry(frame, "Approach (K/min):", "app_rate", "2.0", 2, 3)
+        self._create_grid_entry(frame, "Drift Lim (K/min):", "drift", "0.10", 3, 0)
+        self._create_grid_entry(frame, "Stab. T/O (min):", "stab_timeout", "90", 3, 3)
 
-        ttk.Label(frame, text="Heater Range:").grid(row=2, column=0, sticky="w", padx=10, pady=5)
+        ttk.Label(frame, text="Heater Range:").grid(row=4, column=0, sticky="w", padx=10, pady=5)
         self.heater_range_var = tk.StringVar(value="5")
         self.heater_cb = ttk.Combobox(frame, textvariable=self.heater_range_var,
                                       values=["0", "1", "2", "3", "4", "5"], state="readonly", width=8)
-        self.heater_cb.grid(row=2, column=1, columnspan=2, sticky="ew", padx=5)
+        self.heater_cb.grid(row=4, column=1, columnspan=2, sticky="ew", padx=5)
         self.heater_cb.bind("<<ComboboxSelected>>", self._on_heater_range_changed)
 
-        ttk.Label(frame, text="LS VISA:").grid(row=2, column=3, sticky="w", padx=5, pady=5)
+        ttk.Label(frame, text="LS VISA:").grid(row=4, column=3, sticky="w", padx=5, pady=5)
         self.ls_cb = ttk.Combobox(frame, state="readonly", width=18)
-        self.ls_cb.grid(row=2, column=4, columnspan=2, sticky="ew", padx=5)
+        self.ls_cb.grid(row=4, column=4, columnspan=2, sticky="ew", padx=5)
 
         # MAJ-4: surface the previously-unreachable `_send_live_updates`
         # so unlocked tolerance/soak/rate/delay values can be pushed mid-run.
         ttk.Button(frame, text="Apply Live Updates",
                    command=self._send_live_updates
-                   ).grid(row=3, column=0, columnspan=6, sticky="ew",
+                   ).grid(row=5, column=0, columnspan=6, sticky="ew",
                           padx=10, pady=(2, 6))
 
     def _create_lcr_settings_panel(self, parent, row):
@@ -655,7 +732,7 @@ class CombinedGUI:
         # LCR-1 Layout Fix: Restructured grid to strictly avoid overlaps.
         # Row 0: Sample Name (spanning all columns)
         self._add_lcr_entry(frame, "Sample Name:", "sample_name", 0, 0, 3, "Sample")
-        
+
         # Row 1: AC Bias and DC Bias
         self._add_lcr_entry(frame, "AC Bias (V):", "ac_bias", 1, 0, 1, "1.0")
         self._add_lcr_entry(frame, "DC Bias (V):", "dc_bias", 1, 2, 1, "0.0")
@@ -693,7 +770,7 @@ class CombinedGUI:
 
         # Row 6: Browse Save Button
         ttk.Button(frame, text="Browse Save…", command=self._browse_save).grid(row=6, column=0, columnspan=4, sticky="ew", padx=5, pady=(0, 5))
-        
+
         # Row 7: Save Directory Label
         self.save_dir_lbl = ttk.Label(frame, text="Save dir: (not set)", foreground=self.CLR_ACCENT_GOLD)
         self.save_dir_lbl.grid(row=7, column=0, columnspan=4, sticky="w", padx=5)
@@ -765,10 +842,12 @@ class CombinedGUI:
         self.ax_heater.set_xlabel("Time (s)"); self.ax_heater.set_ylabel("Heater (%)")
         self.ax_heater.grid(True, ls="--", alpha=0.6)
         self.fig_t.tight_layout()
+        # FRZ-5: pack toolbar BEFORE canvas so it stays visible at the bottom
         self.canvas_t = FigureCanvasTkAgg(self.fig_t, parent)
+        tb = NavigationToolbar2Tk(self.canvas_t, parent, pack_toolbar=False)
+        tb.update()
+        tb.pack(side="bottom", fill="x")
         self.canvas_t.get_tk_widget().pack(fill="both", expand=True)
-        # §3e: Matplotlib toolbar (zoom/pan)
-        NavigationToolbar2Tk(self.canvas_t, parent, pack_toolbar=False).update()
 
     def _build_freq_plot(self, parent):
         self.fig_f = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
@@ -781,8 +860,54 @@ class CombinedGUI:
         self.ax_g.set_xscale("log"); self.ax_g.grid(True, ls="--", alpha=0.7)
         self.fig_f.subplots_adjust(left=0.08, right=0.98, top=0.98, bottom=0.07, hspace=0.15)
         self.canvas_f = FigureCanvasTkAgg(self.fig_f, parent)
+        tb = NavigationToolbar2Tk(self.canvas_f, parent, pack_toolbar=False)
+        tb.update()
+        tb.pack(side="bottom", fill="x")
         self.canvas_f.get_tk_widget().pack(fill="both", expand=True)
-        NavigationToolbar2Tk(self.canvas_f, parent, pack_toolbar=False).update()
+
+    # ------------------------------------------------------------
+    # FRZ-1 / FRZ-2: throttled redraw + display decimation
+    # ------------------------------------------------------------
+    def _decimate_display_series(self):
+        """Keep displayed series bounded (display only; CSV keeps all data)."""
+        if len(self.plot_t) > self.MAX_PLOT_POINTS:
+            self.plot_t[:] = self.plot_t[::2]
+            self.plot_temp[:] = self.plot_temp[::2]
+            self.plot_target[:] = self.plot_target[::2]
+            self.plot_heater[:] = self.plot_heater[::2]
+        if len(self.meas_t) > self.MAX_PLOT_POINTS:
+            self.meas_t[:] = self.meas_t[::2]
+            self.meas_temp[:] = self.meas_temp[::2]
+
+    def _redraw_tick(self):
+        """Single periodic redraw. All plot mutation happens here, at a
+        bounded rate, regardless of how fast data messages arrive."""
+        try:
+            if self._temp_plot_dirty:
+                self._temp_plot_dirty = False
+                self._decimate_display_series()
+                self.line_temp.set_data(self.plot_t, self.plot_temp)
+                self.line_target.set_data(self.plot_t, self.plot_target)
+                self.scat_meas.set_data(self.meas_t, self.meas_temp)
+                self.line_heater.set_data(self.plot_t, self.plot_heater)
+                for ax in (self.ax_temp, self.ax_heater):
+                    ax.relim(); ax.autoscale_view()
+                self.canvas_t.draw_idle()
+            if self._freq_plot_dirty:
+                self._freq_plot_dirty = False
+                self.line_cp.set_data(self.scan_f, self.scan_cp)
+                self.line_g.set_data(self.scan_f, self.scan_g)
+                for ax in (self.ax_cp, self.ax_g):
+                    ax.relim(); ax.autoscale_view()
+                self.canvas_f.draw_idle()
+            if self._pending_progress is not None:
+                self.progress["value"] = self._pending_progress
+                self._pending_progress = None
+        except Exception as e:
+            # A plotting hiccup must never kill the redraw loop overnight.
+            print(f"redraw warning: {e}")
+        finally:
+            self.root.after(self.REDRAW_MS, self._redraw_tick)
 
     # ------------------------------------------------------------
     # UI helpers
@@ -826,6 +951,12 @@ class CombinedGUI:
         ts = datetime.now().strftime("%H:%M:%S")
         self.console.config(state="normal")
         self.console.insert("end", f"[{ts}] {msg}\n")
+        # Keep the console itself bounded on overnight runs
+        try:
+            if int(self.console.index("end-1c").split(".")[0]) > 5000:
+                self.console.delete("1.0", "1000.0")
+        except Exception:
+            pass
         self.console.see("end")
         self.console.config(state="disabled")
 
@@ -833,15 +964,18 @@ class CombinedGUI:
         self.lbl_status.config(text=text, bg=color)
 
     def _beep(self):
-        def _r():
+        """FRZ-3: MUST only be called from the main (Tk) thread.
+        winsound runs in a helper thread (it blocks); root.bell() is
+        called directly on the main thread — never from a worker."""
+        if HAS_WINSOUND and platform.system() == "Windows":
+            threading.Thread(
+                target=lambda: winsound.Beep(1000, 500), daemon=True
+            ).start()
+        else:
             try:
-                if HAS_WINSOUND and platform.system() == "Windows":
-                    winsound.Beep(1000, 500)
-                else:
-                    self.root.bell()
+                self.root.bell()
             except Exception:
                 pass
-        threading.Thread(target=_r, daemon=True).start()
 
     # ------------------------------------------------------------
     # Sequence builder helpers (fix #9, #10, #13)
@@ -998,6 +1132,7 @@ class CombinedGUI:
 
         self.set_ui_state(running=True)
         self.is_running = True
+        self._worker_phase = None
 
         # Clear plot data (CRIT-2: include plot_heater)
         for L in (self.plot_t, self.plot_temp, self.plot_target, self.plot_heater,
@@ -1008,7 +1143,10 @@ class CombinedGUI:
         self.scat_meas.set_data([], []); self.line_heater.set_data([], [])
         self.line_cp.set_data([], []); self.line_g.set_data([], [])
         self.canvas_t.draw_idle(); self.canvas_f.draw_idle()
+        self._temp_plot_dirty = False
+        self._freq_plot_dirty = False
         self.progress["value"] = 0
+        self._pending_progress = None
         self.progress["maximum"] = len(self.setpoint_floats) * len(self.sweep_frequencies)
 
         # Drain queues
@@ -1042,12 +1180,24 @@ class CombinedGUI:
             "soak": float(self.entries["soak"]["entry"].get()),
             "rate": float(self.entries["rate"]["entry"].get()),
             "delay": float(self.entries["delay"]["entry"].get()),
+            "app_band": float(self.entries["app_band"]["entry"].get()),
+            "app_rate": float(self.entries["app_rate"]["entry"].get()),
+            "drift": float(self.entries["drift"]["entry"].get()),
+            "stab_timeout": float(self.entries["stab_timeout"]["entry"].get()),
             "heater_range": self.heater_range_var.get().split()[0],  # single split here
             "ls_visa": ls_visa,
         }
         if not p["ls_visa"]: raise ValueError("Select Lakeshore VISA.")
         if p["rate"] <= 0: raise ValueError("Ramp rate must be positive.")
         if p["tol"] <= 0: raise ValueError("Tolerance must be positive.")
+        if p["soak"] <= 0: raise ValueError("Stabilization window must be positive.")
+        if p["delay"] <= 0: raise ValueError("Poll delay must be positive.")
+        if p["app_band"] <= 0: raise ValueError("Approach band must be positive.")
+        if p["app_rate"] <= 0: raise ValueError("Approach rate must be positive.")
+        if p["drift"] <= 0: raise ValueError("Drift limit must be positive.")
+        if p["stab_timeout"] < 0: raise ValueError("Timeout must be >= 0 (0 disables).")
+        if p["app_band"] <= p["tol"]:
+            raise ValueError("Approach band should be larger than tolerance.")
         return p
 
     def _validate_lcr_params(self):
@@ -1096,14 +1246,20 @@ class CombinedGUI:
         self.gui_queue.put(kw)
 
     def _process_gui_queue(self):
+        """FRZ-1: data messages only append + mark dirty (no drawing here).
+        FRZ-4: bounded drain so bursts cannot starve the Tk event loop."""
+        processed = 0
         try:
-            while True:
+            while processed < self.MAX_MSGS_PER_CYCLE:
                 m = self.gui_queue.get_nowait()
+                processed += 1
                 t = m["type"]
                 if t == "log":
                     self.log(m["text"])
                 elif t == "status":
                     self._update_status_ui(m["text"], m["color"])
+                elif t == "beep":
+                    self._beep()   # FRZ-3: beep executes on the Tk thread
                 elif t == "temp_point":
                     self.plot_t.append(m["t"])
                     self.plot_temp.append(m["temp"])
@@ -1113,27 +1269,16 @@ class CombinedGUI:
                     if m["measuring"] == 1:
                         self.meas_t.append(m["t"])
                         self.meas_temp.append(m["temp"])
-                    self.line_temp.set_data(self.plot_t, self.plot_temp)
-                    self.line_target.set_data(self.plot_t, self.plot_target)
-                    self.scat_meas.set_data(self.meas_t, self.meas_temp)
-                    self.line_heater.set_data(self.plot_t, self.plot_heater)
-                    for ax in (self.ax_temp, self.ax_heater):
-                        ax.relim(); ax.autoscale_view()
-                    self.canvas_t.draw_idle()
+                    self._temp_plot_dirty = True
                 elif t == "scan_reset":
                     self.scan_f.clear(); self.scan_cp.clear(); self.scan_g.clear()
-                    self.line_cp.set_data([], []); self.line_g.set_data([], [])
-                    self.canvas_f.draw_idle()
+                    self._freq_plot_dirty = True
                 elif t == "scan_point":
                     self.scan_f.append(m["freq"])
                     self.scan_cp.append(m["cp"])
                     self.scan_g.append(m["g"])
-                    self.line_cp.set_data(self.scan_f, self.scan_cp)
-                    self.line_g.set_data(self.scan_f, self.scan_g)
-                    for ax in (self.ax_cp, self.ax_g):
-                        ax.relim(); ax.autoscale_view()
-                    self.canvas_f.draw_idle()
-                    self.progress["value"] = m["progress"]
+                    self._freq_plot_dirty = True
+                    self._pending_progress = m["progress"]
                 elif t == "pid_read_result":
                     p, i, d = m["values"]
                     self.pid_p_entry.delete(0, "end"); self.pid_p_entry.insert(0, str(p))
@@ -1151,6 +1296,9 @@ class CombinedGUI:
             pass
         # Fix #5: keep polling while worker is alive (not just is_running)
         if self.worker_thread and self.worker_thread.is_alive():
+            self.root.after(50, self._process_gui_queue)
+        elif not self.gui_queue.empty():
+            # Worker just died with messages still queued — finish draining.
             self.root.after(50, self._process_gui_queue)
 
     # ------------------------------------------------------------
@@ -1230,67 +1378,31 @@ class CombinedGUI:
                     break
                 self._put_gui_msg("log",
                     text=f"--- Step {i+1}/{len(self.setpoint_floats)}: target {target} K ---")
-                self._put_gui_msg("status", text=f"RAMPING TO {target} K", color=self.CLR_ACCENT_RED)
                 self._put_gui_msg("scan_reset")
 
                 # §3b: dynamic PID per setpoint
                 self._apply_dynamic_pid(target)
 
-                # Fix #2: heater_range already a clean code string
-                self.ls_backend.configure_ramp(
-                    target, self.params["rate"], self.params["heater_range"]
-                )
+                # STB-1/2/3: two-stage approach + rolling-window stability
+                result = self._ramp_and_stabilize(target)
+                if not self.is_running or result is False:
+                    break
+                if result == "timeout":
+                    self._put_gui_msg("log",
+                        text=f"⚠️⚠️ STABILIZATION TIMEOUT at {target} K — "
+                             f"proceeding with sweep anyway (unattended-run policy). "
+                             f"Check this data point!")
 
-                stable_start = None
-                phase = "RAMPING"
-
-                while self.is_running:
-                    # Drain command queue (fix #3)
-                    if self._process_cmd_queue():
-                        # stop requested
-                        break
-
-                    # CRIT-1: no heater= kwarg; the prior NameError on the
-                    # RAMPING->SOAKING transition is gone. The overtemp
-                    # RuntimeError from _log_temperature_point propagates
-                    # naturally to the worker's except/finally — no wrapper.
-                    temp, _, htr = self._log_temperature_point(
-                        target, measuring_flag=0
-                    )
-
-                    # State machine
-                    if phase in ("RAMPING", "SOAKING"):
-                        if abs(temp - target) <= self.params["tol"]:
-                            if phase == "RAMPING":
-                                stable_start = time.time()
-                                phase = "SOAKING"
-                                self._put_gui_msg("log",
-                                    text=f"In tolerance. Soaking {self.params['soak']}s…")
-                                self._put_gui_msg("status",
-                                    text=f"SOAKING AT {target} K", color=self.CLR_STABLE_WAIT)
-                            elif phase == "SOAKING" and (time.time() - stable_start >= self.params["soak"]):
-                                # Soak complete → run the frequency sweep
-                                self._put_gui_msg("log",
-                                    text=f"Stable. Starting frequency sweep at {target} K.")
-                                self._put_gui_msg("status",
-                                    text=f"MEASURING AT {target} K", color=self.CLR_ACCENT_GREEN)
-                                self._beep()
-                                done_pts = self._run_frequency_sweep(target, done_pts, total_pts)
-                                if not self.is_running:
-                                    break
-                                self._put_gui_msg("log",
-                                    text=f"Sweep done at {target} K. Proceeding.")
-                                break  # next setpoint
-                        else:
-                            if phase == "SOAKING":
-                                self._put_gui_msg("log",
-                                    text="Drifted outside tolerance. Restarting soak.")
-                                self._put_gui_msg("status",
-                                    text=f"RAMPING TO {target} K", color=self.CLR_ACCENT_RED)
-                                stable_start = None
-                                phase = "RAMPING"
-
-                    time.sleep(self.params["delay"])
+                self._put_gui_msg("log",
+                    text=f"Stable. Starting frequency sweep at {target} K.")
+                self._put_gui_msg("status",
+                    text=f"MEASURING AT {target} K", color=self.CLR_ACCENT_GREEN)
+                self._put_gui_msg("beep")   # FRZ-3: beep on Tk thread
+                done_pts = self._run_frequency_sweep(target, done_pts, total_pts)
+                if not self.is_running:
+                    break
+                self._put_gui_msg("log",
+                    text=f"Sweep done at {target} K. Proceeding.")
 
             if self.is_running:
                 self._put_gui_msg("log", text="Sequence complete.")
@@ -1314,7 +1426,132 @@ class CombinedGUI:
                 print(f"Lakeshore shutdown warning: {e}")
             self._close_data_file()
             self.is_running = False
+            self._worker_phase = None
             self._put_gui_msg("worker_done")
+
+    # ------------------------------------------------------------
+    # STB-1/2/3: robust ramp + stabilization
+    # ------------------------------------------------------------
+    def _window_check(self, window, target, p):
+        """Rolling-window stability test (STB-2).
+
+        Returns (ok, max_dev, drift_K_per_min).
+        ok requires: window spans >= 95% of the configured window length,
+        max |T - target| <= tol, AND |linear drift| <= drift limit.
+        """
+        if len(window) < 5:
+            return False, None, None
+        t0 = window[0][0]
+        span = window[-1][0] - t0
+        temps = np.array([w[1] for w in window])
+        times = np.array([w[0] - t0 for w in window])
+        max_dev = float(np.max(np.abs(temps - target)))
+        drift = 0.0
+        if span > 1.0:
+            drift = float(np.polyfit(times, temps, 1)[0]) * 60.0  # K/min
+        ok = (span >= 0.95 * p["soak"]
+              and max_dev <= p["tol"]
+              and abs(drift) <= p["drift"])
+        return ok, max_dev, drift
+
+    def _ramp_and_stabilize(self, target):
+        """Two-stage approach (STB-1) + rolling-window stability (STB-2)
+        + optional timeout (STB-3).
+
+        Stage 1 (PRE_RAMP): full-rate ramp to a pre-target that stops
+        `app_band` K short of the real target — the setpoint never slews
+        into the target at full speed, which is what caused the big
+        overshoots below 100 K.
+        Stage 2 (FINAL_APPROACH): slow `app_rate` ramp from the pre-target
+        to the real target, then wait until the rolling window is stable.
+
+        Returns True (stable), "timeout" (proceed with warning), or
+        False (stop requested). Raises RuntimeError on kill switch.
+        """
+        p = self.params
+        temp, _, _ = self._log_temperature_point(target, measuring_flag=0)
+        delta = target - temp
+        heating = delta > 0
+
+        if abs(delta) > p["app_band"]:
+            pre_target = target - math.copysign(p["app_band"], delta)
+            self._worker_phase = "PRE_RAMP"
+            self.ls_backend.configure_ramp(pre_target, p["rate"],
+                                           p["heater_range"])
+            self._put_gui_msg("log",
+                text=f"Stage 1: fast ramp ({p['rate']} K/min) to pre-target "
+                     f"{pre_target:.2f} K ({p['app_band']} K short of {target} K).")
+            self._put_gui_msg("status",
+                text=f"RAMPING TO {target} K (pre: {pre_target:.1f} K)",
+                color=self.CLR_ACCENT_RED)
+        else:
+            pre_target = None
+            self._worker_phase = "FINAL_APPROACH"
+            self.ls_backend.configure_ramp(target, p["app_rate"],
+                                           p["heater_range"])
+            self._put_gui_msg("log",
+                text=f"Already within approach band — slow approach "
+                     f"({p['app_rate']} K/min) to {target} K.")
+            self._put_gui_msg("status",
+                text=f"APPROACHING {target} K", color=self.CLR_STABLE_WAIT)
+
+        window = deque()          # (time, temp) rolling stability window
+        step_start = time.time()
+        last_status = 0.0
+
+        try:
+            while self.is_running:
+                if self._process_cmd_queue():
+                    return False   # stop requested
+
+                temp, _, _ = self._log_temperature_point(target, measuring_flag=0)
+                now = time.time()
+
+                if self._worker_phase == "PRE_RAMP":
+                    reached = (temp >= pre_target - p["tol"]) if heating \
+                        else (temp <= pre_target + p["tol"])
+                    if reached:
+                        # STB-1 stage 2: hand over to the slow final approach.
+                        self._worker_phase = "FINAL_APPROACH"
+                        self.ls_backend.set_ramp_rate(p["app_rate"])
+                        time.sleep(0.1)
+                        self.ls_backend.set_setpoint(target)
+                        window.clear()
+                        self._put_gui_msg("log",
+                            text=f"Pre-target reached ({temp:.3f} K). Stage 2: "
+                                 f"slow approach ({p['app_rate']} K/min) to {target} K.")
+                        self._put_gui_msg("status",
+                            text=f"APPROACHING {target} K", color=self.CLR_STABLE_WAIT)
+                else:
+                    # FINAL_APPROACH / STABILIZING: rolling-window criterion.
+                    window.append((now, temp))
+                    while window and (now - window[0][0]) > p["soak"]:
+                        window.popleft()
+                    ok, max_dev, drift = self._window_check(window, target, p)
+                    if ok:
+                        self._put_gui_msg("log",
+                            text=f"STABLE at {target} K: max dev "
+                                 f"{max_dev:.3f} K, drift {drift:+.3f} K/min "
+                                 f"over last {p['soak']:.0f} s.")
+                        return True
+                    # Live status (throttled to every ~3 s to limit messages)
+                    if now - last_status > 3.0:
+                        last_status = now
+                        if max_dev is not None:
+                            self._put_gui_msg("status",
+                                text=(f"STABILIZING {target} K | "
+                                      f"Δmax={max_dev:.3f} K | "
+                                      f"drift={drift:+.3f} K/min"),
+                                color=self.CLR_STABLE_WAIT)
+
+                # STB-3: overnight-safety timeout
+                if p["stab_timeout"] > 0 and (now - step_start) > p["stab_timeout"] * 60.0:
+                    return "timeout"
+
+                time.sleep(p["delay"])
+        finally:
+            self._worker_phase = None
+        return False
 
     # ------------------------------------------------------------
     # Worker-side helpers
@@ -1353,11 +1590,20 @@ class CombinedGUI:
                     self.params.update(updates)
                     self._put_gui_msg("log", text=f"Params applied: {updates}")
                     if "rate" in updates:
-                        try:
-                            self.ls_backend.lakeshore.write(f"RAMP 1,1,{updates['rate']}")
-                            self._put_gui_msg("log", text=f"Ramp rate -> {updates['rate']} K/min")
-                        except Exception as e:
-                            self._put_gui_msg("log", text=f"Ramp rate update failed: {e}")
+                        # REL-2: never override the slow final approach —
+                        # the new rate takes effect from the next stage/step.
+                        if self._worker_phase == "FINAL_APPROACH":
+                            self._put_gui_msg("log",
+                                text="Ramp rate stored; slow final approach "
+                                     "active — applies from next ramp stage.")
+                        else:
+                            try:
+                                self.ls_backend.set_ramp_rate(updates["rate"])
+                                self._put_gui_msg("log",
+                                    text=f"Ramp rate -> {updates['rate']} K/min")
+                            except Exception as e:
+                                self._put_gui_msg("log",
+                                    text=f"Ramp rate update failed: {e}")
         except queue.Empty:
             pass
         return False
