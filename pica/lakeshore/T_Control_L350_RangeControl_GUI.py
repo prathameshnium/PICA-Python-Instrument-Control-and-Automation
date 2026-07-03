@@ -147,6 +147,7 @@ class Lakeshore_Backend:
 
 class TempControlGUI:
     PROGRAM_VERSION = "8.0"
+    LEFT_PANEL_WIDTH = 450
     CLR_BG_DARK = '#B8A392'
     CLR_HEADER = '#E5DCD3'
     CLR_FG_LIGHT = '#2C2825'
@@ -269,16 +270,48 @@ class TempControlGUI:
             width=3)
         gpib_button.pack(side='right', padx=(0, 5), pady=5)
 
-        main_pane = ttk.PanedWindow(self.root, orient='horizontal')
-        main_pane.pack(fill='both', expand=True, padx=10, pady=10)
+        self.main_pane = ttk.PanedWindow(self.root, orient='horizontal')
+        self.main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
-        left_panel = ttk.Frame(main_pane, width=450)
-        main_pane.add(left_panel, weight=0)
-        right_panel = ttk.Frame(main_pane)
-        main_pane.add(right_panel, weight=1)
+        self.left_panel = ttk.Frame(self.main_pane, width=self.LEFT_PANEL_WIDTH)
+        self.main_pane.add(self.left_panel, weight=0)
+        right_panel = ttk.Frame(self.main_pane)
+        self.main_pane.add(right_panel, weight=1)
 
-        self._populate_left_panel(left_panel)
+        self._populate_left_panel(self.left_panel)
         self._populate_right_panel(right_panel)
+
+        # sashpos() has no effect until the PanedWindow is actually mapped and
+        # laid out — an early call fails SILENTLY. So we (a) wait for the
+        # window to be drawn, (b) measure the real required width of the
+        # left-panel content instead of guessing, and (c) retry until the
+        # sash position verifiably sticks.
+        self.root.after(50, self._set_default_sash_position)
+
+    def _set_default_sash_position(self, attempt=0):
+        try:
+            self.root.update_idletasks()  # force geometry to be computed
+
+            # Measure the actual content width of the left panel. All
+            # children are gridded directly into it (no canvas), so its
+            # natural reqwidth reflects the true content width. Falls back
+            # to LEFT_PANEL_WIDTH if measurement isn't ready yet.
+            content_w = self.left_panel.winfo_reqwidth()
+            if content_w > 1:
+                target = content_w + 30  # a little breathing room
+            else:
+                target = self.LEFT_PANEL_WIDTH
+
+            target = max(target, self.LEFT_PANEL_WIDTH)
+
+            self.main_pane.sashpos(0, target)
+
+            # Verify it stuck; if not (widget not mapped yet), retry.
+            if abs(self.main_pane.sashpos(0) - target) > 5 and attempt < 10:
+                self.root.after(100, lambda: self._set_default_sash_position(attempt + 1))
+        except tk.TclError:
+            if attempt < 10:
+                self.root.after(100, lambda: self._set_default_sash_position(attempt + 1))
 
     def _populate_left_panel(self, panel):
         panel.grid_columnconfigure(0, weight=1)

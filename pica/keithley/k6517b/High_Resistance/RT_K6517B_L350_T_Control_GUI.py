@@ -231,6 +231,7 @@ class Combined_Backend:
 class Integrated_RT_GUI:
     PROGRAM_VERSION = "3.9"
     LOGO_SIZE = 110
+    LEFT_PANEL_WIDTH = 500
     try:
         # Robust path finding for assets
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

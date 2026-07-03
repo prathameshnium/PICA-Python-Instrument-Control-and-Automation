@@ -193,6 +193,8 @@ class IV_GUI:
     FONT_TITLE = ('Segoe UI', 13, 'bold')
     FONT_CONSOLE = ('Consolas', 10)
 
+    LEFT_PANEL_WIDTH = 480  # default sash position so the left panel starts fully visible
+
     def __init__(self, root):
         self.root = root
         self.root.title(f"I-V Sweep (K2400 + K2182) v{self.PROGRAM_VERSION}")
@@ -307,9 +309,11 @@ class IV_GUI:
             padx=20,
             pady=10)
         main_pane = ttk.PanedWindow(self.root, orient='horizontal')
+        self.main_pane = main_pane
         main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         left_panel_container = ttk.Frame(main_pane)
+        left_panel_container.pack_propagate(False)
         # Give more weight to controls
         main_pane.add(left_panel_container, weight=0)
 
@@ -328,14 +332,49 @@ class IV_GUI:
             "<Configure>",
             lambda e: canvas.configure(
                 scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=left_panel, anchor="nw")
+        window_id = canvas.create_window((0, 0), window=left_panel, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
+        # Keep the inner frame exactly as wide as the canvas viewport so
+        # widgets are never clipped on the right edge (they reflow instead).
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfigure(window_id, width=e.width))
+        self.left_scrollable_frame = left_panel
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
         right_panel = self._create_right_panel(main_pane)
         main_pane.add(right_panel, weight=1)
         self._populate_left_panel(left_panel)
+
+        # sashpos() has no effect until the PanedWindow is actually mapped and
+        # laid out — an early call fails SILENTLY. So we (a) wait for the
+        # window to be drawn, (b) measure the real required width of the
+        # left-panel content instead of guessing, and (c) retry until the
+        # sash position verifiably sticks.
+        self.root.after(50, self._set_default_sash_position)
+
+    def _set_default_sash_position(self, attempt=0):
+        try:
+            self.root.update_idletasks()  # force geometry to be computed
+
+            # Measure the actual content width: inner scrollable frame +
+            # vertical scrollbar + a little breathing room. Falls back to
+            # LEFT_PANEL_WIDTH if measurement isn't ready yet.
+            content_w = self.left_scrollable_frame.winfo_reqwidth()
+            if content_w > 1:
+                target = content_w + 30  # scrollbar (~15px) + padding
+            else:
+                target = self.LEFT_PANEL_WIDTH
+
+            self.main_pane.sashpos(0, target)
+
+            # Verify it stuck; if not (widget not mapped yet), retry.
+            if abs(self.main_pane.sashpos(0) - target) > 5 and attempt < 10:
+                self.root.after(100, lambda: self._set_default_sash_position(attempt + 1))
+        except tk.TclError:
+            if attempt < 10:
+                self.root.after(100, lambda: self._set_default_sash_position(attempt + 1))
 
     def _populate_left_panel(self, panel):
         panel.grid_columnconfigure(0, weight=1)
