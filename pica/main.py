@@ -180,6 +180,7 @@ class PICALauncherApp:
         "Quick Calc": resource_path("utils/Quick_Calc_GUI.py"),
         "Time Utility": resource_path("utils/Time_Utility_GUI.py"),
         "Unit Converter": resource_path("utils/Unit_Converter_GUI.py"),
+        "Sequence Visualizer": resource_path("utils/SeqVisualizer_GUI.py"),
     }
 
     def __init__(self, root):
@@ -760,14 +761,14 @@ class PICALauncherApp:
         """Creates a small pop-up window for additional tools."""
         tools_win = Toplevel(self.root)
         tools_win.title("Tools")
-        tools_win.geometry("300x320")
+        tools_win.geometry("300x360")
         tools_win.configure(bg=self.CLR_BG_DARK)
         tools_win.transient(self.root)
         tools_win.grab_set()
 
         # Center the pop-up over the main window
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 150
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 160
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 180
         tools_win.geometry(f"+{x}+{y}")
 
         ttk.Label(
@@ -809,6 +810,14 @@ class PICALauncherApp:
             text="Unit Converter",
             style='App.TButton',
             command=lambda: self.launch_script(self.SCRIPT_PATHS["Unit Converter"])
+        ).pack(fill='x', padx=30, pady=5)
+
+        # Launch Sequence Visualizer Button
+        ttk.Button(
+            tools_win,
+            text="Sequence Visualizer",
+            style='App.TButton',
+            command=lambda: self.launch_script(self.SCRIPT_PATHS["Sequence Visualizer"])
         ).pack(fill='x', padx=30, pady=5)
 
         # Close Button
