@@ -1,12 +1,7 @@
 name: Deploy Sphinx Docs to GitHub Pages
 
 on:
-  push:
-    branches: ["main"]
   workflow_dispatch:
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: read
@@ -22,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.1.7
         
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -55,7 +50,7 @@ jobs:
           touch docs/_build/html/.nojekyll
           
       - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v3.0.1
         with:
           path: 'docs/_build/html'
 
@@ -68,4 +63,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v4.0.5
