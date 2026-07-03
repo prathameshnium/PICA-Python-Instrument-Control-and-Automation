@@ -47,6 +47,11 @@ Code-review audit fixes:
           warning when the E4980A FETC status word is non-zero.
   MIN-8   Worker join on close raised from 3 s -> 10 s to outlast the 60 s
           VISA timeout in pathological cases.
+
+GUI Layout fixes:
+  LCR-1   Refactored `_create_lcr_settings_panel` and `_add_lcr_entry` to
+          prevent grid overlaps. Enforced defaults: AC=1.0, DC=0.0, 
+          Delay=0.2, Aper=MED, ALC=ON, Corr=ON.
 """
 
 import tkinter as tk
@@ -646,28 +651,38 @@ class CombinedGUI:
         for i in range(4):
             frame.grid_columnconfigure(i, weight=1)
         self.lcr_entries = {}
-        self._add_lcr_entry(frame, "Sample Name", "sample_name", 0, 0, 2, "Sample")
-        self._add_lcr_entry(frame, "AC Bias (V)", "ac_bias", 1, 0, 1, "1.0")
-        self._add_lcr_entry(frame, "DC Bias (V)", "dc_bias", 1, 2, 1, "0.0")
-        self._add_lcr_entry(frame, "Freq Delay (s)", "delay", 2, 0, 1, "0.2")
 
+        # LCR-1 Layout Fix: Restructured grid to strictly avoid overlaps.
+        # Row 0: Sample Name (spanning all columns)
+        self._add_lcr_entry(frame, "Sample Name:", "sample_name", 0, 0, 3, "Sample")
+        
+        # Row 1: AC Bias and DC Bias
+        self._add_lcr_entry(frame, "AC Bias (V):", "ac_bias", 1, 0, 1, "1.0")
+        self._add_lcr_entry(frame, "DC Bias (V):", "dc_bias", 1, 2, 1, "0.0")
+
+        # Row 2: Freq Delay and Aperture
+        self._add_lcr_entry(frame, "Freq Delay (s):", "delay", 2, 0, 1, "0.2")
         ttk.Label(frame, text="Aperture:").grid(row=2, column=2, sticky="w", padx=5, pady=2)
         self.aper_cb = ttk.Combobox(frame, values=["SHOR", "MED", "LONG"], state="readonly", width=8)
-        self.aper_cb.set("MED"); self.aper_cb.grid(row=3, column=2, sticky="w", padx=5, pady=2)
+        self.aper_cb.set("MED")  # LCR-1 Enforced default MED
+        self.aper_cb.grid(row=2, column=3, sticky="w", padx=5, pady=2)
 
+        # Row 3: Cable and LCR VISA
+        ttk.Label(frame, text="Cable (m):").grid(row=3, column=0, sticky="w", padx=5, pady=2)
+        self.cable_cb = ttk.Combobox(frame, values=["0", "1", "2", "4"], state="readonly", width=4)
+        self.cable_cb.set("1")
+        self.cable_cb.grid(row=3, column=1, sticky="w", padx=5, pady=2)
+        ttk.Label(frame, text="LCR VISA:").grid(row=3, column=2, sticky="w", padx=5, pady=2)
+        self.lcr_cb = ttk.Combobox(frame, state="readonly", width=28)
+        self.lcr_cb.grid(row=3, column=3, sticky="ew", padx=5, pady=2)
+
+        # Row 4: ALC and Open/Short Corr Defaults checked
         self.var_alc = tk.BooleanVar(value=True)
         self.var_corr = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frame, text="ALC", variable=self.var_alc).grid(row=3, column=0, sticky="w", padx=5)
-        ttk.Checkbutton(frame, text="Open/Short Corr", variable=self.var_corr).grid(row=3, column=1, sticky="w", padx=5)
+        ttk.Checkbutton(frame, text="ALC", variable=self.var_alc).grid(row=4, column=0, columnspan=2, sticky="w", padx=5, pady=2)
+        ttk.Checkbutton(frame, text="Open/Short Corr", variable=self.var_corr).grid(row=4, column=2, columnspan=2, sticky="w", padx=5, pady=2)
 
-        ttk.Label(frame, text="Cable (m):").grid(row=4, column=0, sticky="w", padx=5, pady=2)
-        self.cable_cb = ttk.Combobox(frame, values=["0", "1", "2", "4"], state="readonly", width=4)
-        self.cable_cb.set("1"); self.cable_cb.grid(row=4, column=1, sticky="w", padx=5, pady=2)
-
-        ttk.Label(frame, text="LCR VISA:").grid(row=4, column=2, sticky="w", padx=5, pady=2)
-        self.lcr_cb = ttk.Combobox(frame, state="readonly", width=28)
-        self.lcr_cb.grid(row=4, column=3, sticky="ew", padx=5, pady=2)
-
+        # Row 5: Start/Stop/Scan Buttons
         bf = ttk.Frame(frame); bf.grid(row=5, column=0, columnspan=4, sticky="ew", pady=5, padx=5)
         bf.grid_columnconfigure((0, 1, 2), weight=1)
         self.start_button = ttk.Button(bf, text="Start Sequence", style="Start.TButton", command=self.start_sequence)
@@ -675,7 +690,11 @@ class CombinedGUI:
         self.stop_button = ttk.Button(bf, text="Stop All", style="Stop.TButton", state="disabled", command=self.stop_sequence)
         self.stop_button.grid(row=0, column=1, sticky="ew", padx=2)
         ttk.Button(bf, text="Scan VISA", command=self._scan_for_visa).grid(row=0, column=2, sticky="ew", padx=2)
-        ttk.Button(bf, text="Browse Save…", command=self._browse_save).grid(row=6, column=0, columnspan=4, sticky="ew", padx=5, pady=(0, 5))
+
+        # Row 6: Browse Save Button
+        ttk.Button(frame, text="Browse Save…", command=self._browse_save).grid(row=6, column=0, columnspan=4, sticky="ew", padx=5, pady=(0, 5))
+        
+        # Row 7: Save Directory Label
         self.save_dir_lbl = ttk.Label(frame, text="Save dir: (not set)", foreground=self.CLR_ACCENT_GOLD)
         self.save_dir_lbl.grid(row=7, column=0, columnspan=4, sticky="w", padx=5)
 
@@ -782,9 +801,10 @@ class CombinedGUI:
         return e
 
     def _add_lcr_entry(self, parent, label, key, r, c, span, default):
-        ttk.Label(parent, text=f"{label}:").grid(row=r, column=c, sticky="w", padx=5, pady=2)
-        e = ttk.Entry(parent, font=self.FONT_BASE, width=18)
-        e.grid(row=r+1, column=c, columnspan=span, sticky="ew", padx=5, pady=2)
+        # LCR-1 Layout fix: label and entry placed cleanly on same row.
+        ttk.Label(parent, text=label).grid(row=r, column=c, sticky="w", padx=5, pady=2)
+        e = ttk.Entry(parent, font=self.FONT_BASE, width=12)
+        e.grid(row=r, column=c+1, columnspan=span, sticky="ew", padx=5, pady=2)
         e.insert(0, default); self.lcr_entries[key] = e
 
     def _toggle_entry_lock(self, key):
