@@ -31,6 +31,22 @@ Bug fixes from §1 applied:
   #10 No-op sort_var.set removed.
   #12 backend.connect warns if IDN lacks "350".
   #13 _sort_listbox dedupes.
+
+Code-review audit fixes:
+  CRIT-1  Removed `heater=` kwarg / unused param that caused NameError at
+          first soak transition.
+  CRIT-2  Heater plot now uses a GUI-thread list `plot_heater`; removed
+          cross-thread `_heater_series` and the broken double `set_data`.
+  MAJ-3   Frequency-scan filenames now timestamped to prevent silent
+          overwrites on re-run.
+  MAJ-4   Added "Apply Live Updates" button so `_send_live_updates` is
+          reachable from the UI.
+  MAJ-5   `stop_sequence` no longer flips `is_running` directly — only the
+          queued ("stop",) command mutates it (via the worker).
+  MIN-6   Added `*OPC?` synchronization after `:TRIG:IMM` and a GUI log
+          warning when the E4980A FETC status word is non-zero.
+  MIN-8   Worker join on close raised from 3 s -> 10 s to outlast the 60 s
+          VISA timeout in pathological cases.
 """
 
 import tkinter as tk
@@ -167,6 +183,9 @@ class Lakeshore_Backend:
     def set_pid(self, output, p, i, d):
         if not (0 <= p <= 9999 and 0 <= i <= 1000 and 0 <= d <= 200):
             raise ValueError("PID values out of range.")
+        # NOTE (audit MIN-7): LS350 treats I=0 / D=0 as "off". Presets keep
+        # I>0; do not set I=0 from the live panel unless you intend to
+        # disable integral action (will produce a permanent offset).
         self.lakeshore.write(f"PID {output},{p},{i},{d}")
 
     def get_pid(self, output):
@@ -320,6 +339,9 @@ class LCR_Backend:
         self.instrument.write(f":FREQ {freq}")
         time.sleep(delay)
         self.instrument.write(":TRIG:IMM")
+        # MIN-6: block until the triggered measurement is actually complete
+        # before fetching. *OPC? returns "1" when the prior command finishes.
+        self.instrument.query("*OPC?")
         vals = self.instrument.query_ascii_values(":FETC?")
         R, X = vals[0], vals[1]
         status = int(vals[2]) if len(vals) > 2 else 0
@@ -351,7 +373,7 @@ class LCR_Backend:
 # FRONTEND: Combined GUI
 # ============================================================
 class CombinedGUI:
-    PROGRAM_VERSION = "1.0-Combined"
+    PROGRAM_VERSION = "1.1-Combined"  # bumped after audit fixes
 
     # Theme
     CLR_BG_DARK = "#B8A392"
@@ -416,10 +438,11 @@ class CombinedGUI:
             np.arange(1000000, 2000001, 100000),
         ])
 
-        # Plot data — main thread only (fix #1)
+        # Plot data — main thread only (fix #1; CRIT-2 adds plot_heater)
         self.plot_t = []
         self.plot_temp = []
         self.plot_target = []
+        self.plot_heater = []   # CRIT-2: GUI-owned heater % series
         self.meas_t = []
         self.meas_temp = []
         self.scan_f = []
@@ -609,6 +632,13 @@ class CombinedGUI:
         ttk.Label(frame, text="LS VISA:").grid(row=2, column=3, sticky="w", padx=5, pady=5)
         self.ls_cb = ttk.Combobox(frame, state="readonly", width=18)
         self.ls_cb.grid(row=2, column=4, columnspan=2, sticky="ew", padx=5)
+
+        # MAJ-4: surface the previously-unreachable `_send_live_updates`
+        # so unlocked tolerance/soak/rate/delay values can be pushed mid-run.
+        ttk.Button(frame, text="Apply Live Updates",
+                   command=self._send_live_updates
+                   ).grid(row=3, column=0, columnspan=6, sticky="ew",
+                          padx=10, pady=(2, 6))
 
     def _create_lcr_settings_panel(self, parent, row):
         frame = ttk.LabelFrame(parent, text="E4980A LCR Settings")
@@ -931,7 +961,7 @@ class CombinedGUI:
             self.log(f"Save directory: {p}")
 
     # ------------------------------------------------------------
-    # Start / Stop (fix #4: stop only signals worker)
+    # Start / Stop (fix #4: stop only signals worker; MAJ-5: no direct flag write)
     # ------------------------------------------------------------
     def start_sequence(self):
         setpoints = list(self.listbox.get(0, tk.END))
@@ -949,8 +979,8 @@ class CombinedGUI:
         self.set_ui_state(running=True)
         self.is_running = True
 
-        # Clear plot data
-        for L in (self.plot_t, self.plot_temp, self.plot_target,
+        # Clear plot data (CRIT-2: include plot_heater)
+        for L in (self.plot_t, self.plot_temp, self.plot_target, self.plot_heater,
                   self.meas_t, self.meas_temp,
                   self.scan_f, self.scan_cp, self.scan_g):
             L.clear()
@@ -977,8 +1007,9 @@ class CombinedGUI:
         if not self.is_running:
             return
         self.log(f"STOP requested: {reason or 'user'}")
-        self.is_running = False
-        # Fix #4: only signal the worker; it will do the hardware shutdown
+        # MAJ-5: do NOT mutate is_running here. The worker is the only
+        # writer; it flips it False inside its ("stop",) handler and again
+        # in its finally block. This eliminates the second stop path.
         self.cmd_queue.put(("stop",))
         self._update_status_ui("STOPPING…", self.CLR_ACCENT_RED)
 
@@ -1057,15 +1088,15 @@ class CombinedGUI:
                     self.plot_t.append(m["t"])
                     self.plot_temp.append(m["temp"])
                     self.plot_target.append(m["target"])
+                    # CRIT-2: heater series lives entirely in the GUI thread.
+                    self.plot_heater.append(m["heater"])
                     if m["measuring"] == 1:
                         self.meas_t.append(m["t"])
                         self.meas_temp.append(m["temp"])
                     self.line_temp.set_data(self.plot_t, self.plot_temp)
                     self.line_target.set_data(self.plot_t, self.plot_target)
                     self.scat_meas.set_data(self.meas_t, self.meas_temp)
-                    self.line_heater.set_data(self.plot_t, m.get("heater", 0) and [m["heater"]] * len(self.plot_t))
-                    # heater series: rebuild from a parallel list
-                    self.line_heater.set_data(self.plot_t, self._heater_series)
+                    self.line_heater.set_data(self.plot_t, self.plot_heater)
                     for ax in (self.ax_temp, self.ax_heater):
                         ax.relim(); ax.autoscale_view()
                     self.canvas_t.draw_idle()
@@ -1129,6 +1160,9 @@ class CombinedGUI:
         theta_deg = math.degrees(theta_rad)
         Y_mag = 1.0 / Z_mag_safe
         Cp_dp = G / omega_safe
+        # MIN-9 / physics note: Cs″ := Cp″ is a legacy convention used
+        # throughout this codebase; they differ by (1 + D²) in general.
+        # Do not "fix" without updating the downstream plotter.
         Cs_dp = Cp_dp
         return [Q, D, G, B, Cp, Lp, Cs, Ls, Z_mag, theta_rad, X, R,
                 theta_deg, Rp, Y_mag, omega, Cp_dp, Cs_dp]
@@ -1138,7 +1172,8 @@ class CombinedGUI:
     # ============================================================
     def _hardware_worker_loop(self):
         self.start_time = time.time()
-        self._heater_series = []  # parallel to plot_t, worker-side accumulator for heater %
+        # CRIT-2: no worker-side `_heater_series` — heater plot values
+        # travel through the gui_queue and are accumulated in plot_heater.
         self.data_file = None
         self.csv_writer = None
         try:
@@ -1195,11 +1230,13 @@ class CombinedGUI:
                         # stop requested
                         break
 
-                    # Temperature read + overtemp check (§3a, §6)
-                    try:
-                        temp, _, htr = self._log_temperature_point(target, measuring_flag=0, heater=htr if phase != "RAMPING" else None)
-                    except RuntimeError:
-                        raise
+                    # CRIT-1: no heater= kwarg; the prior NameError on the
+                    # RAMPING->SOAKING transition is gone. The overtemp
+                    # RuntimeError from _log_temperature_point propagates
+                    # naturally to the worker's except/finally — no wrapper.
+                    temp, _, htr = self._log_temperature_point(
+                        target, measuring_flag=0
+                    )
 
                     # State machine
                     if phase in ("RAMPING", "SOAKING"):
@@ -1313,9 +1350,13 @@ class CombinedGUI:
         except Exception as e:
             self._put_gui_msg("log", text=f"Dynamic PID failed: {e}")
 
-    def _log_temperature_point(self, target, measuring_flag, heater=None):
+    def _log_temperature_point(self, target, measuring_flag):
         """Reads Lakeshore, checks overtemp, writes CSV row, queues plot msg.
-        Raises RuntimeError if the kill switch trips."""
+
+        CRIT-1: the unused `heater=None` kwarg/parameter has been removed;
+        this function always reads the heater itself via get_status().
+        Raises RuntimeError if the kill switch trips.
+        """
         temp, _, htr = self.ls_backend.get_status()
         if self.ls_backend.check_overtemp(temp):
             self._put_gui_msg("log",
@@ -1330,7 +1371,7 @@ class CombinedGUI:
              f"{htr:.2f}", measuring_flag]
         )
         self.data_file.flush()
-        self._heater_series.append(htr)
+        # CRIT-2: heater value rides on the queue msg; no worker-side list.
         self._put_gui_msg("temp_point", t=elapsed, temp=temp, target=target,
                           measuring=measuring_flag, heater=htr)
         return temp, _, htr
@@ -1338,7 +1379,10 @@ class CombinedGUI:
     def _run_frequency_sweep(self, target_temp, done_pts, total_pts):
         """Runs the E4980A frequency sweep at one stable setpoint.
         Logs temperature (flag=1) interleaved between frequency points (§3d)."""
-        fname = f"{self.lcr_params['sample_name']}_{target_temp:.2f}K_FreqScan.txt"
+        # MAJ-3: timestamp prevents silent overwrite on re-run.
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = (f"{self.lcr_params['sample_name']}_{target_temp:.2f}K_"
+                 f"{stamp}_FreqScan.txt")
         fpath = os.path.join(self.save_dir, fname)
         with open(fpath, "w", encoding="utf-8") as f:
             f.write(f"# Sample: {self.lcr_params['sample_name']} | T_set = {target_temp} K | "
@@ -1360,6 +1404,11 @@ class CombinedGUI:
                 except Exception as e:
                     self._put_gui_msg("log", text=f"Meas error @ {freq} Hz: {e}")
                     break
+                # MIN-6: surface non-zero E4980A status words. Bits indicate
+                # overload/out-of-range/bridge warnings per the E4980A manual.
+                if status != 0:
+                    self._put_gui_msg("log",
+                        text=f"⚠️ E4980A status {status} @ {freq:.1f} Hz — row kept, check manual")
                 vals = self.calculate_impedance_parameters(freq, R, X)
                 row = [freq] + vals + [target_temp]
                 f.write("\t".join(f"{v:.6E}" for v in row) + "\n")
@@ -1404,7 +1453,9 @@ class CombinedGUI:
             if messagebox.askyesno("Exit", "Sequence is running. Stop and exit?"):
                 self.stop_sequence("User closed application.")
                 if self.worker_thread and self.worker_thread.is_alive():
-                    self.worker_thread.join(timeout=3.0)
+                    # MIN-8: raise from 3 s to 10 s to outlast the 60 s VISA
+                    # timeout when the worker is mid-sweep at low frequency.
+                    self.worker_thread.join(timeout=10.0)
                 self.root.destroy()
         else:
             self.root.destroy()
