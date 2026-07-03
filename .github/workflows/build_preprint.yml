@@ -1,12 +1,7 @@
 name: Build Professional Preprint
 
 on:
-  push:
-    branches: [main]
-
-env:
-  # Opting into Node.js 24 as per GitHub's 2025 deprecation roadmap
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  workflow_dispatch:
 
 jobs:
   build-paper:
@@ -14,7 +9,7 @@ jobs:
     name: Build Preprint PDF
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4.1.7
 
       - name: Install apt packages
         run: |
@@ -141,7 +136,7 @@ jobs:
           rm paper_cleaned.md
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4.3.4
         with:
           name: professional-preprint
           path: |
