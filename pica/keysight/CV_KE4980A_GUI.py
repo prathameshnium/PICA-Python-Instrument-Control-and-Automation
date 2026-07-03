@@ -162,6 +162,22 @@ class LCR_Backend:
             self.instrument.write(f":BIAS:VOLT {v:.3f}")
             time.sleep(dwell)
 
+    def force_zero_bias(self):
+        """Emergency safety: aggressively drive bias to 0V.
+        Swallows exceptions so it can be used in error handlers safely."""
+        if not self.instrument:
+            return
+        try:
+            try:
+                # Try a fast ramp first
+                self.safe_ramp_dc_bias(0.0, step=1.0, dwell=0.05)
+            except Exception:
+                # If ramp fails (e.g. VISA timeout), force a hard write
+                self.instrument.write(":BIAS:VOLT 0")
+                time.sleep(0.2)
+        except Exception as e:
+            print(f"  CRITICAL SAFETY WARNING: Failed to force bias to 0V! {e}")
+
     def set_bias_voltage(self, v):
         """Ramp DC bias to v. Final hardware-protection clamp lives here."""
         if abs(v) > V_ABS_MAX:  # defense in depth — should never trigger
@@ -195,90 +211,90 @@ class LCR_Backend:
         inst.write_termination = "\n"
         self.instrument = inst
 
-        idn = inst.query("*IDN?").strip()
-        if "E4980" not in idn:
-            inst.close()
-            raise ConnectionError(f"Not an E4980A: {idn}")
+        try:
+            idn = inst.query("*IDN?").strip()
+            if "E4980" not in idn:
+                inst.close()
+                raise ConnectionError(f"Not an E4980A: {idn}")
 
-        self.has_opt001 = "001" in inst.query("*OPT?")
+            self.has_opt001 = "001" in inst.query("*OPT?")
 
-        # --- Hardcoded safety ceilings (do not modify) ---
-        if not self.has_opt001:
-            raise RuntimeError(
-                "CV sweeps require Option 001 (continuous DC bias). "
-                "Standard unit only supports discrete 0/1.5/2 V bias."
-            )
-        for key in ("v_start", "v_stop"):
-            if abs(p[key]) > V_ABS_MAX:
-                raise ValueError(
-                    f"|{key}| = {abs(p[key])} V exceeds hardcoded "
-                    f"{V_ABS_MAX} V safety cutoff."
+            # --- Hardcoded safety ceilings (do not modify) ---
+            if not self.has_opt001:
+                raise RuntimeError(
+                    "CV sweeps require Option 001 (continuous DC bias). "
+                    "Standard unit only supports discrete 0/1.5/2 V bias."
                 )
-        if not (0 < p["ac_bias"] <= V_AC_MAX):
-            raise ValueError(
-                f"AC level must be in (0, {V_AC_MAX}] Vrms."
-            )
+            for key in ("v_start", "v_stop"):
+                if abs(p[key]) > V_ABS_MAX:
+                    raise ValueError(
+                        f"|{key}| = {abs(p[key])} V exceeds hardcoded "
+                        f"{V_ABS_MAX} V safety cutoff."
+                    )
+            if not (0 < p["ac_bias"] <= V_AC_MAX):
+                raise ValueError(
+                    f"AC level must be in (0, {V_AC_MAX}] Vrms."
+                )
 
-        # Instrument configuration
-        inst.write("*RST; *CLS")
-        time.sleep(1.0)  # Graceful reset
-        inst.write(":DISP:ENAB ON")
-        time.sleep(0.2)
+            # Instrument configuration
+            inst.write("*RST; *CLS")
+            time.sleep(1.0)  # Graceful reset
+            inst.write(":DISP:ENAB ON")
+            time.sleep(0.2)
 
-        inst.write(":FUNC:IMP RX")
-        inst.write(f":APER {p['aper']}")
-        inst.write(":FUNC:IMP:RANG:AUTO ON")
-        time.sleep(0.2)
+            inst.write(":FUNC:IMP RX")
+            inst.write(f":APER {p['aper']}")
+            inst.write(":FUNC:IMP:RANG:AUTO ON")
+            time.sleep(0.2)
 
-        inst.write(":FORM ASC")
+            inst.write(":FORM ASC")
 
-        inst.write(":FUNC:SMON:VAC ON")
-        inst.write(":FUNC:SMON:IAC ON")
-        inst.write(":FUNC:SMON:VDC OFF")
-        inst.write(":FUNC:SMON:IDC OFF")
-        time.sleep(0.2)
+            inst.write(":FUNC:SMON:VAC ON")
+            inst.write(":FUNC:SMON:IAC ON")
+            inst.write(":FUNC:SMON:VDC OFF")
+            inst.write(":FUNC:SMON:IDC OFF")
+            time.sleep(0.2)
 
-        if p["alc_enabled"]:
-            inst.write(":AMPL:ALC ON")
-        else:
-            inst.write(":AMPL:ALC OFF")
-        time.sleep(0.2)
+            if p["alc_enabled"]:
+                inst.write(":AMPL:ALC ON")
+            else:
+                inst.write(":AMPL:ALC OFF")
+            time.sleep(0.2)
 
-        inst.write(f":CORR:LENG {p['cable_len']}")
-        if p["corr_enabled"]:
-            inst.write(":CORR:OPEN:STAT ON")
-            inst.write(":CORR:SHOR:STAT ON")
-        else:
-            inst.write(":CORR:OPEN:STAT OFF")
-            inst.write(":CORR:SHOR:STAT OFF")
-        time.sleep(0.2)
+            inst.write(f":CORR:LENG {p['cable_len']}")
+            if p["corr_enabled"]:
+                inst.write(":CORR:OPEN:STAT ON")
+                inst.write(":CORR:SHOR:STAT ON")
+            else:
+                inst.write(":CORR:OPEN:STAT OFF")
+                inst.write(":CORR:SHOR:STAT OFF")
+            time.sleep(0.2)
 
-        inst.write(f":VOLT {p['ac_bias']}")
-        time.sleep(0.5)  # Let AC level settle
+            inst.write(f":VOLT {p['ac_bias']}")
+            time.sleep(0.5)  # Let AC level settle
 
-        inst.write(":TRIG:SOUR BUS")
-        inst.write(":INIT:CONT ON")
-        time.sleep(0.2)
+            inst.write(":TRIG:SOUR BUS")
+            inst.write(":INIT:CONT ON")
+            time.sleep(0.2)
 
-        # CV mode: start at 0 V with bias output enabled; sweep sets values.
-        inst.write(":BIAS:VOLT 0")
-        inst.write(":BIAS:STAT ON")
-        time.sleep(0.5)
+            # CV mode: start at 0 V with bias output enabled; sweep sets values.
+            inst.write(":BIAS:VOLT 0")
+            inst.write(":BIAS:STAT ON")
+            time.sleep(0.5)
 
-        self._check_errors("configuration")
-        print(f"  Connected & configured (RX/CV mode): {idn}")
+            self._check_errors("configuration")
+            print(f"  Connected & configured (RX/CV mode): {idn}")
+        except Exception:
+            # If init fails after bias is turned on, force 0V before raising
+            self.force_zero_bias()
+            raise
 
     def close_instrument(self):
         print("--- [Backend] Closing instrument connection. ---")
         if not self.instrument:
             return
         try:
-            if self.has_opt001:
-                print("  Ramping bias to zero and turning off...")
-                self.safe_ramp_dc_bias(0.0)
-            else:
-                self.instrument.write(":BIAS:VOLT 0")
-                time.sleep(0.5)
+            self.force_zero_bias()  # Safety: always ramp to 0V
             self.instrument.write(":BIAS:STAT OFF")
             self.instrument.write(":DISP:PAGE MEAS")
             time.sleep(0.2)
@@ -1030,6 +1046,9 @@ class LCR_Freq_GUI:
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
+            # Safety: if init failed after bias was turned on, force 0V
+            if self.backend.instrument:
+                self.backend.force_zero_bias()
             messagebox.showerror(
                 "Initialization Error",
                 f"Could not start sweep.\n\n{e}",
@@ -1092,6 +1111,8 @@ class LCR_Freq_GUI:
             if not self.stop_event.is_set():
                 self.data_queue.put(("DONE", None, None, None, None, None))
         except Exception as e:
+            # CRITICAL SAFETY: drive voltage to zero on any worker crash
+            self.backend.force_zero_bias()
             self.data_queue.put(("ERROR", e, None, None, None, None))
 
     def _open_new_file(self, freq):
@@ -1263,6 +1284,10 @@ class LCR_Freq_GUI:
 
     def _handle_sweep_error(self, exception):
         self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
+        # Explicitly call force_zero_bias just to be absolutely certain
+        # the worker thread's safety routine executed.
+        if self.backend.instrument:
+            self.backend.force_zero_bias()
         self.stop_sweep(
             "A critical hardware or measurement error occurred."
         )
