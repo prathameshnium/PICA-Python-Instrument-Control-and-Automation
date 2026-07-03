@@ -4,7 +4,7 @@ Purpose:             GUI module for Temperature-Dependent Dielectric
                      Measurement (Keysight E4980A + Lakeshore 350).
 Original Authors:    Prathamesh Deshmukh (template programs)
 Integrated by:       AI-assisted merge per design specification
-Version:             V: 1.1  (passive monitoring + hardcoded 350 K kill switch)
+Version:             V: 1.2  (passive monitoring + thread-safe stop + per-point kill)
 """
 
 # ===============================================================================
@@ -24,6 +24,7 @@ import math
 import traceback
 import atexit
 from datetime import datetime
+from collections import deque
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -307,6 +308,7 @@ class LCR_Backend:
         self.instrument.write(f":FREQ {freq}")
         time.sleep(delay)
         self.instrument.write(":TRIG:IMM")
+        self.instrument.query("*OPC?")  # Wait for operation complete
         vals = self.instrument.query_ascii_values(":FETC?")
         R, X = vals[0], vals[1]
         status = int(vals[2]) if len(vals) > 2 else 0
@@ -376,15 +378,18 @@ class Combined_Backend:
         """Hardcoded kill switch: force heater OFF at/above 350 K.
         Always fires, regardless of the zero-range checkbox."""
         if temperature_k >= self.SAFETY_KILL_TEMP_K:
-            try:
-                self.lakeshore.set_heater_range(1, 'off')
-            finally:
-                print(f"!!! SAFETY KILL: T={temperature_k:.3f} K >= "
-                      f"{self.SAFETY_KILL_TEMP_K} K. Heater forced OFF.")
+            for attempt in range(3):
+                try:
+                    self.lakeshore.set_heater_range(1, 'off')
+                    break
+                except Exception as e:
+                    print(f"Kill attempt {attempt+1} failed: {e}")
+                    time.sleep(0.5)
+            print(f"!!! SAFETY KILL: T={temperature_k:.3f} K. Heater OFF.")
             return True
         return False
 
-    def measure_frequency_sweep(self, frequencies, delay):
+    def measure_frequency_sweep(self, frequencies, delay, stop_event=None):
         """
         Appendix A.1 — CRITICAL:
         Reads Lakeshore temperature INSIDE the frequency loop so every
@@ -394,7 +399,13 @@ class Combined_Backend:
         htr = self.lakeshore.get_heater_output(1)
         points = []
         for f in frequencies:
+            if stop_event is not None and stop_event.is_set():
+                break                     # abort mid-sweep, cleanly
             temp = self.lakeshore.get_temperature('A')   # T for THIS point
+            if temp >= self.SAFETY_KILL_TEMP_K:
+                self.check_safety_kill(temp)
+                points.append((temp, f, float('nan'), float('nan'), -1))
+                break
             R, X, status = self.lcr.perform_measurement(f, delay)
             points.append((temp, f, R, X, status))
         return {'heater': htr, 'points': points}
@@ -421,7 +432,7 @@ class Integrated_CT_GUI:
     A hardcoded 350 K safety kill switch always forces RANGE 1,0.
     """
 
-    PROGRAM_VERSION = "1.1"
+    PROGRAM_VERSION = "1.2"
     LOGO_SIZE = 110
 
     # --- Default frequency list (Section 4 of original instructions) ---
@@ -493,12 +504,12 @@ class Integrated_CT_GUI:
         self.freq_filepaths = {}
         self.plot_freq = None
 
-        # --- Data storage (Appendix A.4: keyed per frequency) ---
+        # --- Data storage (Appendix A.4: keyed per frequency, bounded) ---
         self.data_storage = {
-            'time': [],
-            'temperature': [],
-            'cp': {},   # {freq: {'T': [...], 'v': [...]}}
-            'g':  {},   # {freq: {'T': [...], 'v': [...]}}
+            'time': deque(maxlen=10000),
+            'temperature': deque(maxlen=10000),
+            'cp': {},   # {freq: {'T': deque, 'v': deque}}
+            'g':  {},   # {freq: {'T': deque, 'v': deque}}
         }
 
         # --- UI variables ---
@@ -508,6 +519,7 @@ class Integrated_CT_GUI:
         # --- Threading ---
         self.data_queue = queue.Queue()
         self.measurement_thread = None
+        self.stop_event = threading.Event()
 
         # --- Build the GUI ---
         self.setup_styles()
@@ -989,7 +1001,7 @@ class Integrated_CT_GUI:
 
         # Complex capacitance C* = C' - jC''
         Cp_double_prime = G / omega_safe
-        Cs_double_prime = Cp_double_prime
+        Cs_double_prime = D * Cs  # Corrected from Cp_double_prime
 
         return [
             Q,                  # 0
@@ -1105,12 +1117,12 @@ class Integrated_CT_GUI:
             self.stop_button.config(state='normal')
             self.scan_button.config(state='disabled')
 
-            self.data_storage['time'].clear()
-            self.data_storage['temperature'].clear()
+            self.data_storage['time'] = deque(maxlen=10000)
+            self.data_storage['temperature'] = deque(maxlen=10000)
             self.data_storage['cp'] = {
-                f: {'T': [], 'v': []} for f in self.frequencies}
+                f: {'T': deque(maxlen=10000), 'v': deque(maxlen=10000)} for f in self.frequencies}
             self.data_storage['g'] = {
-                f: {'T': [], 'v': []} for f in self.frequencies}
+                f: {'T': deque(maxlen=10000), 'v': deque(maxlen=10000)} for f in self.frequencies}
 
             for line in (self.line_main, self.line_sub1, self.line_sub2):
                 line.set_data([], [])
@@ -1118,6 +1130,7 @@ class Integrated_CT_GUI:
                 f"Cp vs. T @ {int(self.plot_freq)} Hz", fontweight='bold')
             self.canvas.draw()
 
+            self.stop_event.clear()
             self.log("Starting passive temperature-sensing measurement...")
 
             # --- Launch worker thread ---
@@ -1202,18 +1215,28 @@ class Integrated_CT_GUI:
 
     # ------------------------------------------------------------------
     def stop_measurement(self, from_user=True):
-        if self.is_running or self.is_stabilizing:
-            self.is_running, self.is_stabilizing = False, False
-            if from_user:
-                self.log("Measurement stopped by user.")
-            self.start_button.config(state='normal')
-            self.stop_button.config(state='disabled')
-            self.scan_button.config(state='normal')
-            self.backend.close_instruments()
-            if from_user:
-                messagebox.showinfo(
-                    "Info",
-                    "Measurement stopped and instruments disconnected.")
+        if not (self.is_running or self.is_stabilizing):
+            return
+        self.is_running, self.is_stabilizing = False, False
+        self.stop_event.set()
+        if from_user:
+            self.log("Stop requested; waiting for worker to finish...")
+
+        # Wait for the worker to exit BEFORE touching the VISA sessions.
+        if self.measurement_thread and self.measurement_thread.is_alive():
+            self.measurement_thread.join(timeout=15.0)
+            if self.measurement_thread.is_alive():
+                self.log("WARNING: worker did not exit in 15 s; "
+                         "closing sessions anyway.")
+
+        self.start_button.config(state='normal')
+        self.stop_button.config(state='disabled')
+        self.scan_button.config(state='normal')
+        self.backend.close_instruments()
+        if from_user:
+            self.log("Measurement stopped and instruments disconnected.")
+            messagebox.showinfo(
+                "Info", "Measurement stopped and instruments disconnected.")
 
     # ==================================================================
     # WORKER THREAD  (Passive monitoring — no stabilization, no ramp)
@@ -1224,11 +1247,15 @@ class Integrated_CT_GUI:
             self.start_time = time.time()
             self.data_queue.put("LOG:Passive monitoring started. "
                                 "Measuring until stopped by user.")
-            while self.is_running:
+            while self.is_running and not self.stop_event.is_set():
                 cycle = self.backend.measure_frequency_sweep(
-                    self.frequencies, params['delay'])
+                    self.frequencies, params['delay'], self.stop_event)
                 elapsed = time.time() - self.start_time
-                self.data_queue.put(('CYCLE', cycle, elapsed))
+
+                if cycle['points']:
+                    self.data_queue.put(('CYCLE', cycle, elapsed))
+                else:
+                    break
 
                 # Hardcoded 350 K kill switch (checks max T in cycle)
                 max_temp = max(pt[0] for pt in cycle['points'])
@@ -1242,6 +1269,7 @@ class Integrated_CT_GUI:
     # QUEUE PROCESSING (main thread)
     # ==================================================================
     def _process_data_queue(self):
+        terminal = None
         try:
             while not self.data_queue.empty():
                 data = self.data_queue.get_nowait()
@@ -1249,16 +1277,21 @@ class Integrated_CT_GUI:
                 if isinstance(data, str) and data.startswith("LOG:"):
                     self._handle_log_message(data[4:])
                 elif isinstance(data, str) and data == "KILL":
-                    self._handle_kill_event()
-                    return
+                    terminal = "KILL"          # defer; keep draining
                 elif isinstance(data, Exception):
-                    self._handle_runtime_error(data)
-                    return
+                    terminal = data
                 elif isinstance(data, tuple) and data[0] == 'CYCLE':
                     _, cycle, elapsed = data
                     self._process_cycle(cycle, elapsed)
         except queue.Empty:
             pass
+
+        if terminal == "KILL":
+            self._handle_kill_event()
+            return
+        if isinstance(terminal, Exception):
+            self._handle_runtime_error(terminal)
+            return
 
         if self.is_running or self.is_stabilizing:
             self.root.after(200, self._process_data_queue)
