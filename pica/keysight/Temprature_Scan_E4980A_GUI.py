@@ -72,7 +72,7 @@ def launch_plotter_utility():
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         plotter_path = os.path.join(
-            script_dir, "..", "..", "..", "utils", "PlotterUtil_GUI.py")
+            script_dir, "..", "utils", "PlotterUtil_GUI.py")
         if not os.path.exists(plotter_path):
             messagebox.showerror(
                 "File Not Found",
@@ -89,8 +89,7 @@ def launch_gpib_scanner():
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         scanner_path = os.path.join(
-            script_dir, "..", "..", "..",
-            "utils", "GPIB_Instrument_Scanner_GUI.py")
+            script_dir, "..", "utils", "GPIB_Instrument_Scanner_GUI.py")
         if not os.path.exists(scanner_path):
             messagebox.showerror(
                 "File Not Found",
