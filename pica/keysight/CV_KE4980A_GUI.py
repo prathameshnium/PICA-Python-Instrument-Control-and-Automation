@@ -1,31 +1,12 @@
 '''
-PROGRAM:      Keysight E4980A C-V Measurement GUI
-PURPOSE:      Provide a user-friendly interface for automating C-V sweeps.
-VERSION:      2.0
-DATE:         2026-06-17
-CHANGES:      - Fixed trigger model (replaced broken :TRIG:SOUR BUS + :INIT:CONT ON
-                with :READ? for reliable per-point measurement)
-              - Fixed traceback loss (now captured in worker thread)
-              - Added open/short compensation workflow with cable length selection
-              - Added configurable dwell time, integration time, and averaging
-              - Added bias ramp-up before sweep start
-              - Added *OPC? synchronization and 0.5s stabilization delays
-              - Rich CSV metadata logging
-              - Removed all dead code (sweep_gen references)
-              - Fixed Option 001 parsing
-              - Added post-sweep bias verification
-              - Added AC level reduction during short compensation
-              - Added connection validation ping
-REFERENCES:
-  - Keysight E4980A/AL User's Guide (9018-05655)
-  - Keysight E4980A Brochure (5989-4235): confirms 1/2/4m cable extension,
-    Open/Short/Load correction, averaging up to 999, SHOR/MED/LONG integration
-  - Keysight Fixture Compensation (E4990A): "If oscillator level > 500 mV,
-    REDUCE OSC LEVEL or BRIDGE UNBALANCED may occur during Short correction"
-  - :READ? is equivalent to :INIT:IMM + :FETC? (per Keysight SCPI convention)
+ PROGRAM:      Keysight E4980A CV Scan (R-X) GUI
+ PURPOSE:      Provide a robust interface for automating Capacitance-Voltage
+               (CV) sweeps with nested frequency loops, ALC, Aperture control,
+               Open/Short corrections, Cable Length correction, and Full
+               Impedance calculations derived from measured R-X.
+               Requires Option 001 (continuous DC bias) on the E4980A.
 '''
 
-# --- Packages for Front end ---
 import tkinter as tk
 from tkinter import (
     ttk,
@@ -36,45 +17,29 @@ from tkinter import (
     messagebox,
     scrolledtext,
     Canvas,
-    Checkbutton,
-    BooleanVar,
-    StringVar,
 )
 import os
 import time
-import threading
-import queue
 import math
 import traceback
 from datetime import datetime
-import csv
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
-import runpy
 from multiprocessing import Process
+import runpy
+import threading
+import queue
+import atexit
 
-# --- Pillow for Logo Image ---
-try:
-    from PIL import Image, ImageTk
 
-    PIL_AVAILABLE = True
-    RESAMPLE_FILTER = getattr(Image, "Resampling", Image).LANCZOS
-except ImportError:
-    PIL_AVAILABLE = False
-
-# --- Packages for Back end ---
-try:
-    import pyvisa
-
-    PYVISA_AVAILABLE = True
-except ImportError:
-    pyvisa = None
-    PYVISA_AVAILABLE = False
-
-# Stabilization delay after each SCPI configuration command (seconds)
-SCPI_STABILIZE_DELAY = 0.5
+# --- Absolute hardware safety limits (E4980A) ---
+V_ABS_MAX = 20.0        # Hardcoded DC bias ceiling. NEVER raise this.
+                        # (Opt 001 hardware allows ±40 V; we cap at ±20 V.)
+V_AC_MAX = 2.0          # AC test signal ceiling (Vrms), standard unit spec.
+V_STD_BIAS_MAX = 2.0    # Max bias without Option 001.
+FREQ_MIN, FREQ_MAX = 20.0, 2e6
 
 
 def run_script_process(script_path):
@@ -128,21 +93,40 @@ def launch_gpib_scanner():
         )
 
 
+# --- Pillow for Logo Image ---
+try:
+    from PIL import Image, ImageTk
+
+    PIL_AVAILABLE = True
+    try:
+        RESAMPLE_FILTER = Image.Resampling.LANCZOS
+    except AttributeError:
+        RESAMPLE_FILTER = Image.LANCZOS
+except ImportError:
+    PIL_AVAILABLE = False
+
+# --- Packages for Back end ---
+try:
+    import pyvisa
+
+    PYVISA_AVAILABLE = True
+except ImportError:
+    pyvisa = None
+    PYVISA_AVAILABLE = False
+
+
 # ===============================================================================
 # BACKEND CLASS - Instrument Control Logic
 # ===============================================================================
 
-
 class LCR_Backend:
-    """Handles backend communication with the Keysight E4980A LCR Meter."""
+    """Handles all SCPI communication with the Keysight E4980A."""
 
     def __init__(self):
         self.instrument = None
         self.params = {}
         self.has_opt001 = False
         self.rm = None
-        self.idn = ""
-        self.firmware = ""
         if pyvisa:
             try:
                 self.rm = pyvisa.ResourceManager()
@@ -160,242 +144,144 @@ class LCR_Backend:
         if errors:
             raise RuntimeError(f"SCPI errors after {context}: {errors}")
 
-    def _write_delayed(self, cmd):
-        """Write a SCPI command and wait for stabilization delay."""
-        self.instrument.write(cmd)
-        time.sleep(SCPI_STABILIZE_DELAY)
+    def safe_ramp_dc_bias(self, target_v, step=0.5, dwell=0.1):
+        """Safely ramps the DC bias to the target voltage."""
+        current_v = float(self.instrument.query(":BIAS:VOLT?"))
+        if abs(target_v - current_v) < 0.01:
+            return
 
-    def _write_opc(self, cmd):
-        """Write a SCPI command and wait for *OPC? (operation complete)."""
-        self.instrument.write(cmd)
-        self.instrument.query("*OPC?")
-        time.sleep(SCPI_STABILIZE_DELAY)
+        if step <= 0:
+            self.instrument.write(f":BIAS:VOLT {target_v:.3f}")
+            return
 
-    def validate_connection(self, visa_address):
-        """Ping the instrument with *IDN? before full initialization."""
-        if not self.rm:
-            raise ConnectionError("VISA Resource Manager unavailable.")
-        inst = self.rm.open_resource(visa_address)
-        inst.timeout = 5000
-        inst.read_termination = "\n"
-        inst.write_termination = "\n"
-        try:
-            idn = inst.query("*IDN?").strip()
-            if "E4980" not in idn:
-                inst.close()
-                raise ConnectionError(f"Not an E4980A: {idn}")
-            return idn
-        finally:
-            inst.close()
+        direction = 1 if target_v > current_v else -1
+        ramp_points = np.arange(current_v, target_v, direction * step)
+        ramp_points = np.append(ramp_points, target_v)
+
+        for v in ramp_points:
+            self.instrument.write(f":BIAS:VOLT {v:.3f}")
+            time.sleep(dwell)
+
+    def set_bias_voltage(self, v):
+        """Ramp DC bias to v. Final hardware-protection clamp lives here."""
+        if abs(v) > V_ABS_MAX:  # defense in depth — should never trigger
+            raise ValueError(
+                f"Bias {v} V blocked by hardcoded {V_ABS_MAX} V cutoff."
+            )
+        self.safe_ramp_dc_bias(v)
+
+    def set_frequency(self, freq):
+        self.instrument.write(f":FREQ {freq}")
+
+    def measure_point(self, delay):
+        """Trigger and fetch one R, X, status at current freq/bias."""
+        time.sleep(delay)
+        self.instrument.write(":TRIG:IMM")
+        vals = self.instrument.query_ascii_values(":FETC?")
+        R, X = vals[0], vals[1]
+        status = int(vals[2]) if len(vals) > 2 else 0
+        return R, X, status
 
     def initialize_instrument(self, p):
-        """Receives all parameters from the GUI and configures the instrument."""
+        """Configures the instrument for a CV sweep using R-X function."""
         print("\n--- [Backend] Initializing Keysight E4980A ---")
         self.params = p
         if not self.rm:
             raise ConnectionError("VISA Resource Manager unavailable.")
 
         inst = self.rm.open_resource(p["lcr_visa"])
-        inst.timeout = 30000  # 30s timeout for LONG integration + averaging
+        inst.timeout = 60000  # 60 s; low-freq + LONG + autorange can be slow
         inst.read_termination = "\n"
         inst.write_termination = "\n"
         self.instrument = inst
 
-        # --- Connection validation (Phase 5.3) ---
         idn = inst.query("*IDN?").strip()
         if "E4980" not in idn:
             inst.close()
             raise ConnectionError(f"Not an E4980A: {idn}")
-        self.idn = idn
-        parts = idn.split(",")
-        self.firmware = parts[3].strip() if len(parts) > 3 else "unknown"
-        print(f"  Connected: {idn}")
 
-        # --- Parse Option 001 properly (Phase 4.2) ---
-        opt_response = inst.query("*OPT?").strip()
-        opts = [o.strip() for o in opt_response.split(",")]
-        self.has_opt001 = "001" in opts
-        print(f"  Options: {opts} | Option 001: {self.has_opt001}")
+        self.has_opt001 = "001" in inst.query("*OPT?")
 
-        # ---- Safety Limits (Keysight brochure 5989-4235) ----
-        v_bias_max = 40.0 if self.has_opt001 else 2.0
-        v_ac_max = 20.0 if self.has_opt001 else 2.0
-        if abs(p["v_max"]) > v_bias_max:
-            raise ValueError(
-                f"|Max Voltage| > {v_bias_max} V limit "
-                f"(Option 001 {'present' if self.has_opt001 else 'absent'})."
+        # --- Hardcoded safety ceilings (do not modify) ---
+        if not self.has_opt001:
+            raise RuntimeError(
+                "CV sweeps require Option 001 (continuous DC bias). "
+                "Standard unit only supports discrete 0/1.5/2 V bias."
             )
-        if not (0 < p["v_ac"] <= v_ac_max):
-            raise ValueError(f"AC level outside 0-{v_ac_max} Vrms.")
-        if not (20 <= p["freq"] <= 2e6):
-            raise ValueError("Frequency outside 20 Hz-2 MHz.")
-
-        # ---- SCPI Setup Sequence ----
-        # Reset and clear (Phase 1.3: *OPC? synchronization)
-        self._write_opc("*RST; *CLS")
-        self._write_delayed(":DISP:ENAB ON")
-        self._write_delayed(":FUNC:IMP CPRP")  # Cp-Rp; values[0] = C
-        self._write_delayed(f":APER {p['aper']}")  # Integration time
-
-        # Auto-range (Phase 3: configurable)
-        self._write_delayed(":FUNC:IMP:RANG:AUTO ON")
-
-        # Averaging (Phase 3.3)
-        if p["avg_count"] > 1:
-            self._write_delayed(f":AVER:COUN {p['avg_count']}")
-            self._write_delayed(":AVER:STAT ON")
-        else:
-            self._write_delayed(":AVER:STAT OFF")
-
-        self._write_delayed(f":FREQ {p['freq']}")
-        self._write_delayed(f":VOLT {p['v_ac']}")
-
-        # ---- Compensation settings (Phase 2.4, 2.5) ----
-        if p["corr_enable"]:
-            cable_len = int(p["cable_length"])
-            if cable_len not in (0, 1, 2, 4):
+        for key in ("v_start", "v_stop"):
+            if abs(p[key]) > V_ABS_MAX:
                 raise ValueError(
-                    f"Cable length must be 0, 1, 2, or 4 m. Got: {cable_len}"
+                    f"|{key}| = {abs(p[key])} V exceeds hardcoded "
+                    f"{V_ABS_MAX} V safety cutoff."
                 )
-            self._write_delayed(f":CORR:LENG {cable_len}")
-            self._write_delayed(":CORR:OPEN:STAT ON")
-            self._write_delayed(":CORR:SHOR:STAT ON")
-            print(
-                f"  Compensation: ENABLED (cable={cable_len}m, open+short)"
+        if not (0 < p["ac_bias"] <= V_AC_MAX):
+            raise ValueError(
+                f"AC level must be in (0, {V_AC_MAX}] Vrms."
             )
+
+        # Instrument configuration
+        inst.write("*RST; *CLS")
+        time.sleep(1.0)  # Graceful reset
+        inst.write(":DISP:ENAB ON")
+        time.sleep(0.2)
+
+        inst.write(":FUNC:IMP RX")
+        inst.write(f":APER {p['aper']}")
+        inst.write(":FUNC:IMP:RANG:AUTO ON")
+        time.sleep(0.2)
+
+        inst.write(":FORM ASC")
+
+        inst.write(":FUNC:SMON:VAC ON")
+        inst.write(":FUNC:SMON:IAC ON")
+        inst.write(":FUNC:SMON:VDC OFF")
+        inst.write(":FUNC:SMON:IDC OFF")
+        time.sleep(0.2)
+
+        if p["alc_enabled"]:
+            inst.write(":AMPL:ALC ON")
         else:
-            self._write_delayed(":CORR:OPEN:STAT OFF")
-            self._write_delayed(":CORR:SHOR:STAT OFF")
-            print("  Compensation: DISABLED")
+            inst.write(":AMPL:ALC OFF")
+        time.sleep(0.2)
 
-        # ---- Trigger model: use :READ? (Phase 1.1) ----
-        # No :TRIG:SOUR, no :INIT:CONT — :READ? handles INIT+TRIG+FETC
-        self._write_delayed(":TRIG:SOUR IMM")
-        self._write_delayed(":INIT:CONT OFF")
+        inst.write(f":CORR:LENG {p['cable_len']}")
+        if p["corr_enabled"]:
+            inst.write(":CORR:OPEN:STAT ON")
+            inst.write(":CORR:SHOR:STAT ON")
+        else:
+            inst.write(":CORR:OPEN:STAT OFF")
+            inst.write(":CORR:SHOR:STAT OFF")
+        time.sleep(0.2)
 
-        # ---- DC Bias setup ----
-        self._write_delayed(":BIAS:VOLT 0")  # Explicit 0 V BEFORE enabling
-        self._write_opc(":BIAS:STAT ON")  # Enable DC Bias (Phase 1.3: *OPC?)
+        inst.write(f":VOLT {p['ac_bias']}")
+        time.sleep(0.5)  # Let AC level settle
+
+        inst.write(":TRIG:SOUR BUS")
+        inst.write(":INIT:CONT ON")
+        time.sleep(0.2)
+
+        # CV mode: start at 0 V with bias output enabled; sweep sets values.
+        inst.write(":BIAS:VOLT 0")
+        inst.write(":BIAS:STAT ON")
+        time.sleep(0.5)
 
         self._check_errors("configuration")
-        print("--- [Backend] Instrument Initialization Complete ---")
-
-    def perform_open_compensation(self):
-        """Perform OPEN compensation measurement."""
-        if not self.instrument:
-            raise ConnectionError("Instrument is not connected.")
-        print("  Performing OPEN compensation...")
-        self.instrument.write(":CORR:OPEN")
-        self.instrument.query("*OPC?")
-        time.sleep(SCPI_STABILIZE_DELAY)
-        self._check_errors("open compensation")
-        print("  OPEN compensation complete.")
-
-    def perform_short_compensation(self, original_v_ac):
-        """Perform SHORT compensation, reducing AC level if > 500 mV.
-
-        Per Keysight documentation: 'If oscillator level > 500 mV,
-        REDUCE OSC LEVEL or BRIDGE UNBALANCED may occur during Short
-        correction.' (Phase 5.1)
-        """
-        if not self.instrument:
-            raise ConnectionError("Instrument is not connected.")
-        print("  Performing SHORT compensation...")
-        reduced = False
-        if original_v_ac > 0.5:
-            print(
-                f"  AC level {original_v_ac}V > 0.5V — "
-                "temporarily reducing to 0.5V for short correction."
-            )
-            self.instrument.write(":VOLT 0.5")
-            time.sleep(SCPI_STABILIZE_DELAY)
-            reduced = True
-
-        self.instrument.write(":CORR:SHOR")
-        self.instrument.query("*OPC?")
-        time.sleep(SCPI_STABILIZE_DELAY)
-        self._check_errors("short compensation")
-
-        if reduced:
-            self.instrument.write(f":VOLT {original_v_ac}")
-            time.sleep(SCPI_STABILIZE_DELAY)
-        print("  SHORT compensation complete.")
-
-    def perform_measurement(self, voltage, dwell=0.5):
-        """Sets a voltage, lets it settle, and performs a triggered read.
-
-        Uses :READ? which combines INIT + TRIG + FETC in one command.
-        This is the correct trigger model for the E4980A (Phase 1.1).
-        """
-        if not self.instrument:
-            raise ConnectionError("Instrument is not connected.")
-
-        self.instrument.write(f":BIAS:VOLT {voltage}")
-        time.sleep(dwell)  # Wait for dielectric/cable settling
-
-        # :READ? = INIT:IMM + TRIG + FETC? (Phase 1.1)
-        vals = self.instrument.query_ascii_values(":READ?")
-
-        capacitance = vals[0]
-        actual_v = float(self.instrument.query(":BIAS:VOLT?"))
-
-        return actual_v, capacitance
-
-    def ramp_bias_to_voltage(self, target_v, step=0.5, dwell=0.1):
-        """Ramps bias from current value to target voltage safely (Phase 3.4)."""
-        try:
-            current_v = float(self.instrument.query(":BIAS:VOLT?"))
-            if abs(target_v - current_v) < step:
-                self.instrument.write(f":BIAS:VOLT {target_v}")
-                time.sleep(dwell)
-                return
-            n = int(abs(target_v - current_v) / step)
-            direction = 1 if target_v > current_v else -1
-            for i in range(1, n + 1):
-                v = current_v + direction * i * step
-                self.instrument.write(f":BIAS:VOLT {v}")
-                time.sleep(dwell)
-            self.instrument.write(f":BIAS:VOLT {target_v}")
-            time.sleep(dwell)
-        except Exception as e:
-            print(f"  Warning during bias ramp: {e}")
-
-    def ramp_bias_to_zero(self, step=0.5, dwell=0.1):
-        """Safely ramps down the DC bias to 0V to protect the DUT."""
-        try:
-            v = float(self.instrument.query(":BIAS:VOLT?"))
-            if abs(v) < step:  # Phase 4.5: skip if already near zero
-                self.instrument.write(":BIAS:VOLT 0")
-                return
-            n = int(abs(v) / step)
-            for i in range(n, 0, -1):
-                self.instrument.write(
-                    f":BIAS:VOLT {math.copysign(i * step, v)}"
-                )
-                time.sleep(dwell)
-            self.instrument.write(":BIAS:VOLT 0")
-        except Exception as e:
-            print(f"  Warning during bias ramp-down: {e}")
-
-    def get_bias_voltage(self):
-        """Query the current DC bias voltage."""
-        if self.instrument:
-            return float(self.instrument.query(":BIAS:VOLT?"))
-        return 0.0
+        print(f"  Connected & configured (RX/CV mode): {idn}")
 
     def close_instrument(self):
-        """Ramps down safely and shuts down the instrument connection."""
         print("--- [Backend] Closing instrument connection. ---")
         if not self.instrument:
             return
         try:
-            print("  Ramping bias to zero and turning off...")
-            self.ramp_bias_to_zero()
-            # Phase 4.6: Post-sweep bias verification
-            final_v = self.get_bias_voltage()
-            print(f"  Post-ramp bias verification: {final_v:.4f} V")
+            if self.has_opt001:
+                print("  Ramping bias to zero and turning off...")
+                self.safe_ramp_dc_bias(0.0)
+            else:
+                self.instrument.write(":BIAS:VOLT 0")
+                time.sleep(0.5)
             self.instrument.write(":BIAS:STAT OFF")
             self.instrument.write(":DISP:PAGE MEAS")
+            time.sleep(0.2)
         except Exception as e:
             print(f"  Warning during shutdown: {e}")
         finally:
@@ -410,11 +296,9 @@ class LCR_Backend:
 # FRONTEND CLASS - The Main GUI Application
 # ===============================================================================
 
+class LCR_Freq_GUI:
+    """The main GUI application class for CV measurements."""
 
-class LCR_CV_GUI:
-    """The main GUI application class for C-V measurements."""
-
-    PROGRAM_VERSION = "2.0"
     LOGO_SIZE = 110
 
     try:
@@ -425,7 +309,7 @@ class LCR_CV_GUI:
     except NameError:
         LOGO_FILE_PATH = "../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
 
-    # --- Theme Colors ---
+    # --- Theme Colours ---
     CLR_BG_DARK = "#B8A392"
     CLR_HEADER = "#E5DCD3"
     CLR_FG_LIGHT = "#2C2825"
@@ -440,9 +324,15 @@ class LCR_CV_GUI:
     FONT_TITLE = ("Segoe UI", FONT_SIZE_BASE + 2, "bold")
     FONT_CONSOLE = ("Consolas", 10)
 
+    # Required output format string
+    DATA_HEADER = (
+        "Frequency\tQ\tD\tG(1/Rp)\tB\tCp\tLp\tCs\tLs\tlZl\ttheta\tchi\t"
+        "R(Rs)\ttheta(deg.)\tRp\t1/lZl\tOmega\tCp''\tCs''"
+    )
+
     def __init__(self, root):
         self.root = root
-        self.root.title("Keysight E4980A C-V Measurement")
+        self.root.title("Keysight E4980A CV Scan (R-X)")
         self.root.geometry("1600x950")
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1300, 850)
@@ -450,23 +340,31 @@ class LCR_CV_GUI:
         self.is_running = False
         self.backend = LCR_Backend()
         self.file_location_path = ""
+        self.data_filepath = ""
+
+        # Threading components
+        self.data_queue = queue.Queue()
+        self.stop_event = threading.Event()
+        self.worker_thread = None
+
+        # Forced Cleanup: register backend close on crash/exit
+        atexit.register(self.backend.close_instrument)
+
         self.data_storage = {
-            "voltage": [],
-            "capacitance": [],
-            "loop": [],
-            "protocol": [],
+            "volt": [],
+            "cp": [],
+            "g": [],
+            "rs": [],
+            "rp": [],
+            "status": [],
         }
         self.logo_image = None
-        self.sweep_points = []
         self.sweep_index = 0
-        self.data_queue = queue.Queue()
-        self.measurement_thread = None
-        self.current_params = {}
+        self.sweep_delay = 0.2
 
-        # GUI variables for checkboxes/comboboxes
-        self.corr_enabled_var = BooleanVar(value=True)
-        self.cable_length_var = StringVar(value="1")
-        self.aper_var = StringVar(value="MED")
+        # Built at start_sweep from validated user input:
+        self.voltage_points = np.array([])
+        self.freq_list = []
 
         self.setup_styles()
         self.create_widgets()
@@ -479,6 +377,12 @@ class LCR_CV_GUI:
         style.configure("TPanedWindow", background=self.CLR_BG_DARK)
         style.configure(
             "TLabel",
+            background=self.CLR_BG_DARK,
+            foreground=self.CLR_FG_LIGHT,
+            font=self.FONT_BASE,
+        )
+        style.configure(
+            "TCheckbutton",
             background=self.CLR_BG_DARK,
             foreground=self.CLR_FG_LIGHT,
             font=self.FONT_BASE,
@@ -517,45 +421,27 @@ class LCR_CV_GUI:
                 ("hover", self.CLR_TEXT_DARK),
             ],
         )
-
         style.configure(
             "Start.TButton",
             background=self.CLR_ACCENT_GREEN,
             foreground=self.CLR_TEXT_DARK,
         )
-        style.map(
-            "Start.TButton",
-            background=[("active", "#8AB845"), ("hover", "#8AB845")],
-        )
-
         style.configure(
             "Stop.TButton",
             background=self.CLR_ACCENT_RED,
             foreground=self.CLR_FG_LIGHT,
         )
-        style.map(
-            "Stop.TButton",
-            background=[("active", "#D63C2A"), ("hover", "#D63C2A")],
-        )
-
         style.configure(
             "green.Horizontal.TProgressbar",
             background=self.CLR_ACCENT_GREEN,
-        )
-
-        style.configure(
-            "TCheckbutton",
-            background=self.CLR_BG_DARK,
-            foreground=self.CLR_FG_LIGHT,
-            font=self.FONT_BASE,
         )
 
         mpl.rcParams.update(
             {
                 "font.family": "Segoe UI",
                 "font.size": self.FONT_SIZE_BASE,
-                "axes.titlesize": self.FONT_SIZE_BASE + 4,
-                "axes.labelsize": self.FONT_SIZE_BASE + 2,
+                "axes.titlesize": self.FONT_SIZE_BASE + 2,
+                "axes.labelsize": self.FONT_SIZE_BASE,
                 "figure.facecolor": self.CLR_GRAPH_BG,
             }
         )
@@ -570,27 +456,27 @@ class LCR_CV_GUI:
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side="top", fill="x")
 
+        Label(
+            header_frame,
+            text="Keysight E4980A: CV Scan (R-X)",
+            bg=self.CLR_HEADER,
+            fg=self.CLR_FG_LIGHT,
+            font=font_title_italic,
+        ).pack(side="left", padx=20, pady=10)
+
         # --- Utility Launch Buttons ---
         ttk.Button(
             header_frame,
-            text="\U0001F4C8",
+            text="📈",
             command=launch_plotter_utility,
             width=3,
         ).pack(side="right", padx=10, pady=5)
         ttk.Button(
             header_frame,
-            text="\U0001F4DF",
+            text="📟",
             command=launch_gpib_scanner,
             width=3,
         ).pack(side="right", padx=(0, 5), pady=5)
-
-        Label(
-            header_frame,
-            text="Keysight E4980A: C-V Measurement",
-            bg=self.CLR_HEADER,
-            fg=self.CLR_FG_LIGHT,
-            font=font_title_italic,
-        ).pack(side="left", padx=20, pady=10)
 
         main_pane = ttk.PanedWindow(self.root, orient="horizontal")
         main_pane.pack(fill="both", expand=True, padx=10, pady=10)
@@ -607,7 +493,9 @@ class LCR_CV_GUI:
             highlightthickness=0,
         )
         scrollbar = ttk.Scrollbar(
-            left_panel_container, orient="vertical", command=canvas.yview
+            left_panel_container,
+            orient="vertical",
+            command=canvas.yview,
         )
         scrollable_frame = ttk.Frame(canvas)
         scrollable_frame.bind(
@@ -616,21 +504,17 @@ class LCR_CV_GUI:
         )
 
         canvas.create_window(
-            (0, 0), window=scrollable_frame, anchor="nw", width=500
+            (0, 0), window=scrollable_frame, anchor="nw", width=480
         )
         canvas.configure(yscrollcommand=scrollbar.set)
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # --- Populate Panels ---
         info_frame = self.create_info_frame(scrollable_frame)
         info_frame.pack(fill="x", expand=True, padx=10, pady=5)
 
         input_frame = self.create_input_frame(scrollable_frame)
         input_frame.pack(fill="x", expand=True, padx=10, pady=5)
-
-        comp_frame = self.create_compensation_frame(scrollable_frame)
-        comp_frame.pack(fill="x", expand=True, padx=10, pady=5)
 
         console_frame = self.create_console_frame(scrollable_frame)
         console_frame.pack(fill="both", expand=True, padx=10, pady=5)
@@ -653,7 +537,8 @@ class LCR_CV_GUI:
         if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
             try:
                 img = Image.open(self.LOGO_FILE_PATH).resize(
-                    (self.LOGO_SIZE, self.LOGO_SIZE), RESAMPLE_FILTER
+                    (self.LOGO_SIZE, self.LOGO_SIZE),
+                    RESAMPLE_FILTER,
                 )
                 self.logo_image = ImageTk.PhotoImage(img)
                 logo_canvas.create_image(
@@ -661,8 +546,8 @@ class LCR_CV_GUI:
                     self.LOGO_SIZE / 2,
                     image=self.logo_image,
                 )
-            except Exception as e:
-                self.log(f"ERROR: Failed to load logo: {e}")
+            except Exception:
+                pass
 
         institute_font = ("Segoe UI", self.FONT_SIZE_BASE + 2, "bold")
         ttk.Label(
@@ -677,20 +562,6 @@ class LCR_CV_GUI:
             font=institute_font,
             background=self.CLR_BG_DARK,
         ).grid(row=1, column=1, padx=10, sticky="nw")
-        ttk.Separator(frame, orient="horizontal").grid(
-            row=2, column=1, sticky="ew", padx=10, pady=8
-        )
-
-        details_text = (
-            f"Program: C-V Measurement (v{self.PROGRAM_VERSION})\n"
-            "Instrument: Keysight E4980A LCR Meter\n"
-            "Measurement Range: 20 Hz to 2 MHz\n"
-            "Function: Cp-Rp (Capacitance - Parallel Resistance)\n"
-            "Note: Ensure DUT complies with programmed Bias settings."
-        )
-        ttk.Label(frame, text=details_text, justify="left").grid(
-            row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky="w"
-        )
 
         return frame
 
@@ -700,92 +571,149 @@ class LCR_CV_GUI:
             frame.grid_columnconfigure(i, weight=1)
 
         self.entries = {}
-        pady = (5, 5)
+        pady = (2, 5)
         padx = 10
 
+        # Row 0: Discharge warning banner (spans both columns)
+        tk.Label(
+            frame,
+            text=(
+                "⚠ Warning: Ensure the sample/capacitor is fully "
+                "discharged before measurement to prevent instrument "
+                "damage."
+            ),
+            bg="#8B0000",
+            fg="white",
+            font=("Segoe UI", 10, "bold"),
+            wraplength=440,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=2, padx=10, pady=8, sticky="ew")
+
+        # Numeric-entry validation: allow only floats while typing
+        def _vfloat(P):
+            if P in ("", "-", ".", "-."):
+                return True
+            try:
+                float(P)
+                return True
+            except ValueError:
+                return False
+
+        self._vfloat_cmd = (frame.register(_vfloat), "%P")
+
+        # Row 1-2: Sample Name
         self._add_entry(
             frame,
             "Sample Name",
             "sample_name",
-            0,
+            1,
             0,
             colspan=2,
-            default="Sample_CV",
-        )
-        self._add_entry(
-            frame, "Max Voltage (V)", "v_max", 2, 0, default="2"
-        )
-        self._add_entry(
-            frame, "Voltage Step (V)", "v_step", 2, 1, default="0.2"
-        )
-        self._add_entry(
-            frame, "Frequency (Hz)", "freq", 4, 0, default="1000"
-        )
-        self._add_entry(
-            frame, "AC Voltage (V)", "v_ac", 4, 1, default="0.5"
-        )
-        self._add_entry(
-            frame, "Number of Loops", "loops", 6, 0, default="1"
-        )
-        self._add_entry(
-            frame, "Dwell Time (s)", "dwell", 6, 1, default="0.5"
-        )
-        self._add_entry(
-            frame, "Averaging Count", "avg_count", 8, 0, default="1"
+            default="Sample_CVScan",
         )
 
-        # Integration Time selector (Phase 3.2)
+        # Row 3-4: V Start | V Stop
+        self._add_entry(
+            frame, "V Start (V)", "v_start", 3, 0, default="-2.0"
+        )
+        self._add_entry(
+            frame, "V Stop (V)", "v_stop", 3, 1, default="2.0"
+        )
+
+        # Row 5-6: V Step | AC Bias
+        self._add_entry(
+            frame, "V Step (V)", "v_step", 5, 0, default="0.05"
+        )
+        self._add_entry(
+            frame, "AC Bias Voltage (V)", "ac_bias", 5, 1, default="1.0"
+        )
+
+        # Row 7-8: Frequencies (comma-separated list)
+        self._add_entry(
+            frame,
+            "Frequencies (Hz, comma-sep)",
+            "freq_list",
+            7,
+            0,
+            colspan=2,
+            default="1000, 10000, 100000, 1000000",
+        )
+
+        # Row 9-10: Delay | Aperture
+        self._add_entry(
+            frame, "Delay per step (s)", "delay", 9, 0, default="0.2"
+        )
         Label(
+            frame, text="Aperture (:APER):", font=self.FONT_BASE
+        ).grid(row=9, column=1, padx=padx, pady=pady, sticky="w")
+        self.aper_combobox = ttk.Combobox(
             frame,
-            text="Integration Time:",
             font=self.FONT_BASE,
-            bg=self.CLR_BG_DARK,
-            fg=self.CLR_FG_LIGHT,
-        ).grid(row=8, column=1, padx=padx, pady=pady, sticky="w")
-        aper_combo = ttk.Combobox(
-            frame,
-            textvariable=self.aper_var,
-            values=["SHOR", "MED", "LONG"],
             state="readonly",
-            font=self.FONT_BASE,
-            width=8,
+            values=["SHOR", "MED", "LONG"],
         )
-        aper_combo.grid(row=9, column=1, padx=padx, pady=(0, 10), sticky="w")
+        self.aper_combobox.set("MED")
+        self.aper_combobox.grid(
+            row=10, column=1, padx=padx, pady=(0, 10), sticky="ew"
+        )
 
-        Label(
+        # Row 11: ALC checkbox
+        self.var_alc = tk.BooleanVar(value=True)
+        self.var_corr = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
             frame,
-            text="LCR Meter VISA:",
+            text="Enable Auto Level Control (ALC)",
+            variable=self.var_alc,
+        ).grid(row=11, column=0, columnspan=2, padx=padx, pady=2, sticky="w")
+
+        # Row 12: Corrections checkbox
+        ttk.Checkbutton(
+            frame,
+            text="Enable Open/Short Corrections",
+            variable=self.var_corr,
+        ).grid(row=12, column=0, columnspan=2, padx=padx, pady=2, sticky="w")
+
+        # Row 13: Cable Length selector
+        Label(
+            frame, text="Cable Length (m):", font=self.FONT_BASE
+        ).grid(row=13, column=0, padx=padx, pady=pady, sticky="w")
+        self.cable_len_combobox = ttk.Combobox(
+            frame,
             font=self.FONT_BASE,
-            bg=self.CLR_BG_DARK,
-            fg=self.CLR_FG_LIGHT,
+            state="readonly",
+            values=["0", "1", "2", "4"],
+        )
+        self.cable_len_combobox.set("1")
+        self.cable_len_combobox.grid(
+            row=13, column=1, padx=padx, pady=pady, sticky="ew"
+        )
+
+        # Row 14-15: LCR Meter VISA
+        Label(
+            frame, text="LCR Meter VISA:", font=self.FONT_BASE
         ).grid(
-            row=10, column=0, columnspan=2, padx=padx, pady=pady, sticky="w"
+            row=14, column=0, columnspan=2, padx=padx, pady=(10, 2), sticky="w"
         )
         self.lcr_combobox = ttk.Combobox(
             frame, font=self.FONT_BASE, state="readonly"
         )
         self.lcr_combobox.grid(
-            row=11,
-            column=0,
-            columnspan=2,
-            padx=padx,
-            pady=(0, 10),
-            sticky="ew",
+            row=15, column=0, columnspan=2, padx=padx, pady=(0, 10), sticky="ew"
         )
+
+        # Row 16: Scan + Browse buttons
+        self.scan_button = ttk.Button(
+            frame, text="Scan Instruments", command=self._scan_for_visa
+        )
+        self.scan_button.grid(row=16, column=0, padx=padx, pady=5, sticky="ew")
 
         ttk.Button(
             frame,
-            text="Scan for Instruments",
-            command=self._scan_for_visa,
-        ).grid(row=12, column=0, columnspan=2, padx=padx, pady=5, sticky="ew")
-        ttk.Button(
-            frame,
-            text="Browse Save Location...",
+            text="Browse Save Loc...",
             command=self._browse_file_location,
-        ).grid(
-            row=13, column=0, columnspan=2, padx=padx, pady=5, sticky="ew"
-        )
+        ).grid(row=16, column=1, padx=padx, pady=5, sticky="ew")
 
+        # Row 17: Start + Stop buttons
         self.start_button = ttk.Button(
             frame,
             text="Start Sweep",
@@ -793,7 +721,7 @@ class LCR_CV_GUI:
             style="Start.TButton",
         )
         self.start_button.grid(
-            row=14, column=0, padx=(padx, 5), pady=15, sticky="ew"
+            row=17, column=0, padx=(padx, 5), pady=15, sticky="ew"
         )
 
         self.stop_button = ttk.Button(
@@ -804,9 +732,21 @@ class LCR_CV_GUI:
             state="disabled",
         )
         self.stop_button.grid(
-            row=14, column=1, padx=(5, padx), pady=15, sticky="ew"
+            row=17, column=1, padx=(5, padx), pady=15, sticky="ew"
         )
 
+        # Row 18: Current measurement label
+        self.lbl_current_freq = ttk.Label(
+            frame,
+            text="Measuring: -- Hz",
+            font=("Segoe UI", 12, "bold"),
+            foreground=self.CLR_ACCENT_RED,
+        )
+        self.lbl_current_freq.grid(
+            row=18, column=0, columnspan=2, pady=5
+        )
+
+        # Row 19: Progress bar
         self.progress_bar = ttk.Progressbar(
             frame,
             orient="horizontal",
@@ -814,54 +754,19 @@ class LCR_CV_GUI:
             style="green.Horizontal.TProgressbar",
         )
         self.progress_bar.grid(
-            row=15, column=0, columnspan=2, padx=padx, pady=(0, 10), sticky="ew"
+            row=19,
+            column=0,
+            columnspan=2,
+            padx=padx,
+            pady=(5, 10),
+            sticky="ew",
         )
 
-        return frame
-
-    def create_compensation_frame(self, parent):
-        """Phase 2: Open/Short compensation controls."""
-        frame = ttk.LabelFrame(parent, text="Open/Short Compensation")
-        frame.grid_columnconfigure(0, weight=1)
-        frame.grid_columnconfigure(1, weight=1)
-
-        # Checkbox to enable/disable correction (Phase 2.1)
-        Checkbutton(
-            frame,
-            text="Enable Open/Short Correction",
-            variable=self.corr_enabled_var,
-            bg=self.CLR_BG_DARK,
-            fg=self.CLR_FG_LIGHT,
-            font=self.FONT_BASE,
-            selectcolor=self.CLR_HEADER,
-            activebackground=self.CLR_BG_DARK,
-            activeforeground=self.CLR_FG_LIGHT,
-        ).grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="w")
-
-        # Cable length entry (Phase 2.2)
-        Label(
-            frame,
-            text="Cable Length (m):",
-            font=self.FONT_BASE,
-            bg=self.CLR_BG_DARK,
-            fg=self.CLR_FG_LIGHT,
-        ).grid(row=1, column=0, padx=10, pady=5, sticky="w")
-        cable_combo = ttk.Combobox(
-            frame,
-            textvariable=self.cable_length_var,
-            values=["0", "1", "2", "4"],
-            state="readonly",
-            font=self.FONT_BASE,
-            width=8,
-        )
-        cable_combo.grid(row=1, column=1, padx=10, pady=5, sticky="w")
-
-        # Perform Compensation button (Phase 2.3)
-        ttk.Button(
-            frame,
-            text="Perform Compensation",
-            command=self._perform_compensation,
-        ).grid(row=2, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
+        # Apply keystroke validation to numeric entries
+        for key in ("v_start", "v_stop", "v_step", "ac_bias"):
+            self.entries[key].config(
+                validate="key", validatecommand=self._vfloat_cmd
+            )
 
         return frame
 
@@ -882,38 +787,40 @@ class LCR_CV_GUI:
             font=self.FONT_CONSOLE,
             wrap="word",
             bd=0,
+            height=8,
         )
         self.console_widget.pack(pady=5, padx=5, fill="both", expand=True)
         self.log(
-            "Console initialized. Configure parameters and scan for "
-            "instruments."
+            "CV Scan Initialized. Requires Option 001 for continuous bias."
         )
         return frame
 
     def create_graph_frame(self, parent):
-        graph_container = ttk.LabelFrame(parent, text="Live C-V Curve")
-        graph_container.pack(fill="both", expand=True, padx=5, pady=5)
-
         self.figure = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
-        self.ax_main = self.figure.add_subplot(1, 1, 1)
-        self.line_main, = self.ax_main.plot(
-            [], [],
-            color="#C00000",
-            marker="o",
-            markersize=4,
-            linestyle="-",
-        )
-        self.ax_main.set_title(
-            "Capacitance vs. Voltage", fontweight="bold"
-        )
-        self.ax_main.set_xlabel("Bias Voltage (V)")
-        self.ax_main.set_ylabel("Capacitance (F)")
-        self.ax_main.grid(True, linestyle="--", alpha=0.7)
-        self.figure.tight_layout(pad=2.5)
 
-        self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
+        self.ax_cp = self.figure.add_subplot(2, 1, 1)
+        self.line_cp, = self.ax_cp.plot(
+            [], [], color="#C00000", marker="o", markersize=3, linestyle="-"
+        )
+        self.ax_cp.set_ylabel("Capacitance, Cp (F)")
+        self.ax_cp.set_xlabel("DC Bias Voltage (V)")
+        self.ax_cp.grid(True, linestyle="--", alpha=0.7)
+
+        self.ax_g = self.figure.add_subplot(2, 1, 2)
+        self.line_g, = self.ax_g.plot(
+            [], [], color="#2A6B3A", marker="s", markersize=3, linestyle="-"
+        )
+        self.ax_g.set_xlabel("DC Bias Voltage (V)")
+        self.ax_g.set_ylabel("Conductance, G (S)")
+        self.ax_g.grid(True, linestyle="--", alpha=0.7)
+
+        self.figure.subplots_adjust(
+            left=0.08, right=0.98, top=0.98, bottom=0.07, hspace=0.15
+        )
+
+        self.canvas = FigureCanvasTkAgg(self.figure, parent)
         self.canvas.get_tk_widget().pack(
-            fill=tk.BOTH, expand=True, padx=5, pady=5
+            fill=tk.BOTH, expand=True, padx=0, pady=0
         )
 
     def log(self, message):
@@ -926,14 +833,9 @@ class LCR_CV_GUI:
     def _add_entry(
         self, parent, text, dict_key, r, c, colspan=1, default=""
     ):
-        """Helper to create an entry widget and map it to a dict key."""
         Label(
-            parent,
-            text=f"{text}:",
-            font=self.FONT_BASE,
-            bg=self.CLR_BG_DARK,
-            fg=self.CLR_FG_LIGHT,
-        ).grid(row=r, column=c, padx=10, pady=(5, 0), sticky="w")
+            parent, text=f"{text}:", font=self.FONT_BASE
+        ).grid(row=r, column=c, padx=10, pady=(2, 0), sticky="w")
         entry = Entry(parent, font=self.FONT_BASE)
         entry.grid(
             row=r + 1,
@@ -946,101 +848,74 @@ class LCR_CV_GUI:
         entry.insert(0, default)
         self.entries[dict_key] = entry
 
-    def _perform_compensation(self):
-        """Phase 2.3: Guides user through open/short compensation."""
-        visa_addr = self.lcr_combobox.get()
-        if not visa_addr:
-            messagebox.showerror(
-                "Error", "Please scan for and select a VISA instrument first."
-            )
-            return
+    def calculate_impedance_parameters(self, f, R, X):
+        """Calculates all 18 parameters from measured R (series resistance)
+        and X (reactance)."""
+        omega = 2 * np.pi * f
+        omega_safe = omega if omega != 0 else 1e-20
 
-        v_ac = float(self.entries["v_ac"].get())
-        freq = float(self.entries["freq"].get())
+        Z_mag = np.sqrt(R ** 2 + X ** 2)
+        Z_mag_safe = Z_mag if Z_mag != 0 else 1e-20
+        Z_mag_sq = Z_mag_safe ** 2
 
-        # Use a temporary backend connection for compensation
-        temp_backend = LCR_Backend()
-        try:
-            self.log(
-                "Starting compensation. Instrument will be configured "
-                "temporarily."
-            )
-            temp_backend.initialize_instrument(
-                {
-                    "lcr_visa": visa_addr,
-                    "v_max": 2.0,
-                    "v_step": 0.2,
-                    "freq": freq,
-                    "v_ac": v_ac,
-                    "loops": 1,
-                    "aper": self.aper_var.get(),
-                    "avg_count": 1,
-                    "corr_enable": True,
-                    "cable_length": self.cable_length_var.get(),
-                    "dwell": 0.5,
-                }
-            )
+        G = R / Z_mag_sq
+        B = -X / Z_mag_sq
 
-            # Step 1: OPEN compensation
-            response = messagebox.askyesno(
-                "Open Compensation",
-                "Remove the DUT from the fixture (leave OPEN).\n\n"
-                "Click YES when the fixture is in OPEN state.",
-            )
-            if not response:
-                self.log("Compensation cancelled by user.")
-                temp_backend.close_instrument()
-                return
-            temp_backend.perform_open_compensation()
-            self.log("OPEN compensation data acquired.")
+        G_safe = G if G != 0 else 1e-20
+        B_safe = B if B != 0 else 1e-20
+        X_safe = X if X != 0 else 1e-20
 
-            # Step 2: SHORT compensation
-            response = messagebox.askyesno(
-                "Short Compensation",
-                "Short the fixture contacts (use a shorting bar).\n\n"
-                "Click YES when the fixture is in SHORT state.",
-            )
-            if not response:
-                self.log("Compensation cancelled by user.")
-                temp_backend.close_instrument()
-                return
-            temp_backend.perform_short_compensation(v_ac)
-            self.log("SHORT compensation data acquired.")
+        Rp = 1.0 / G_safe
+        Cp = B / omega_safe
+        Cs = -1.0 / (omega_safe * X_safe)
+        Ls = X / omega_safe
+        Lp = -1.0 / (omega_safe * B_safe)
 
-            self.log("Compensation complete. Correction is now active.")
-            messagebox.showinfo(
-                "Compensation Complete",
-                "Open/Short compensation has been performed successfully.\n"
-                "Correction is now active on the instrument.",
-            )
+        Ls = abs(Ls)
+        Lp = abs(Lp)
 
-        except Exception as e:
-            self.log(f"ERROR during compensation: {traceback.format_exc()}")
-            messagebox.showerror(
-                "Compensation Error",
-                f"Failed to perform compensation:\n\n{e}",
-            )
-        finally:
-            temp_backend.close_instrument()
+        D = G_safe / B_safe
+        D_safe = D if D != 0 else 1e-20
+        Q = 1.0 / D_safe
+
+        theta_rad = math.atan2(X, R)
+        theta_deg = math.degrees(theta_rad)
+
+        chi = X
+        Rs = R
+
+        Y_mag = 1.0 / Z_mag_safe
+
+        Cp_double_prime = G / omega_safe
+        Cs_double_prime = Cp_double_prime
+
+        return [
+            Q, D, G, B, Cp, Lp, Cs, Ls, Z_mag, theta_rad, chi, Rs,
+            theta_deg, Rp, Y_mag, omega, Cp_double_prime, Cs_double_prime,
+        ]
 
     def start_sweep(self):
         try:
-            # Gather & validate parameters before hardware contact
+            visa_val = self.lcr_combobox.get()
+            if "  ->  " in visa_val:
+                visa_addr = visa_val.split("  ->  ")[0].strip()
+            else:
+                visa_addr = visa_val.strip()
+
             params = {
                 "sample_name": self.entries["sample_name"].get(),
-                "v_max": float(self.entries["v_max"].get()),
+                "ac_bias": float(self.entries["ac_bias"].get()),
+                "v_start": float(self.entries["v_start"].get()),
+                "v_stop": float(self.entries["v_stop"].get()),
                 "v_step": float(self.entries["v_step"].get()),
-                "freq": float(self.entries["freq"].get()),
-                "v_ac": float(self.entries["v_ac"].get()),
-                "loops": int(self.entries["loops"].get()),
-                "dwell": float(self.entries["dwell"].get()),
-                "avg_count": int(self.entries["avg_count"].get()),
-                "aper": self.aper_var.get(),
-                "lcr_visa": self.lcr_combobox.get(),
-                "corr_enable": self.corr_enabled_var.get(),
-                "cable_length": self.cable_length_var.get(),
+                "freq_list": self.entries["freq_list"].get(),
+                "delay": float(self.entries["delay"].get()),
+                "aper": self.aper_combobox.get(),
+                "alc_enabled": self.var_alc.get(),
+                "corr_enabled": self.var_corr.get(),
+                "cable_len": self.cable_len_combobox.get(),
+                "lcr_visa": visa_addr,
             }
-            self.current_params = params
 
             if not all(
                 [
@@ -1050,147 +925,110 @@ class LCR_CV_GUI:
                 ]
             ):
                 raise ValueError(
-                    "Sample Name, VISA address, and Save Location are "
-                    "required."
-                )
-            if params["v_step"] <= 0 or params["loops"] <= 0:
-                raise ValueError(
-                    "Voltage Step and Number of Loops must be positive."
-                )
-            if params["dwell"] < 0.1:
-                raise ValueError(
-                    "Dwell time must be at least 0.1 seconds."
-                )
-            if not (1 <= params["avg_count"] <= 999):
-                raise ValueError(
-                    "Averaging count must be between 1 and 999."
-                )
-            if params["corr_enable"]:
-                cl = int(params["cable_length"])
-                if cl not in (0, 1, 2, 4):
-                    raise ValueError(
-                        "Cable length must be 0, 1, 2, or 4 meters."
-                    )
-
-            # Calculate sweep points (Phase 4.1: no sweep_gen)
-            self.sweep_points = self._build_sweep_points(
-                params["v_max"], params["v_step"], params["loops"]
-            )
-            if not self.sweep_points:
-                raise ValueError(
-                    "Calculated zero measurement points. Verify voltage step."
+                    "Sample Name, VISA address, and Save Location"
+                    " are required."
                 )
 
-            # Create CSV file with rich metadata (Phase 4.3)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            file_name = (
-                f"{params['sample_name']}_{timestamp}_CV.csv"
-            )
-            self.data_filepath = os.path.join(
-                self.file_location_path, file_name
-            )
+            # --- Voltage input validation with clamping ---
+            v_start = params["v_start"]
+            v_stop = params["v_stop"]
+            v_step = abs(params["v_step"])
 
-            with open(self.data_filepath, "w", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow(
-                    [f"# C-V Measurement Data - {timestamp}"]
-                )
-                writer.writerow(
-                    [f"# Sample: {params['sample_name']}"]
-                )
-                writer.writerow(
-                    [f"# Frequency: {params['freq']} Hz"]
-                )
-                writer.writerow(
-                    [f"# AC Voltage: {params['v_ac']} V"]
-                )
-                writer.writerow(
-                    [f"# Max Voltage: {params['v_max']} V"]
-                )
-                writer.writerow(
-                    [f"# Voltage Step: {params['v_step']} V"]
-                )
-                writer.writerow(
-                    [f"# Loops: {params['loops']}"]
-                )
-                writer.writerow(
-                    [f"# Dwell Time: {params['dwell']} s"]
-                )
-                writer.writerow(
-                    [f"# Integration Time: {params['aper']}"]
-                )
-                writer.writerow(
-                    [f"# Averaging Count: {params['avg_count']}"]
-                )
-                writer.writerow(
-                    [
-                        f"# Compensation: "
-                        f"{'ENABLED' if params['corr_enable'] else 'DISABLED'}"
-                    ]
-                )
-                if params["corr_enable"]:
-                    writer.writerow(
-                        [f"# Cable Length: {params['cable_length']} m"]
-                    )
-                writer.writerow(
-                    [f"# Function: Cp-Rp"]
-                )
-                writer.writerow(
-                    [
-                        "Voltage (V)",
-                        "Capacitance (F)",
-                        "Loop",
-                        "Protocol",
-                    ]
-                )
-            self.log(
-                f"Output file created: {os.path.basename(self.data_filepath)}"
-            )
+            if v_step <= 0:
+                raise ValueError("Voltage step must be > 0.")
 
-            # Initialize backend
-            self.backend.initialize_instrument(params)
-            self.log(
-                f"Backend initialized for sample: {params['sample_name']}"
-            )
-
-            # Phase 3.4: Ramp bias to first sweep point
-            first_v = self.sweep_points[0][0]
-            if abs(first_v) > 0:
+            clamped = False
+            for name, val in (("v_start", v_start), ("v_stop", v_stop)):
+                if abs(val) > V_ABS_MAX:
+                    clamped = True
+            v_start = max(-V_ABS_MAX, min(V_ABS_MAX, v_start))
+            v_stop = max(-V_ABS_MAX, min(V_ABS_MAX, v_stop))
+            if clamped:
                 self.log(
-                    f"Ramping bias to starting voltage: {first_v:.3f} V"
+                    f"WARNING: voltage limits clamped to ±{V_ABS_MAX} V "
+                    f"(hardcoded safety cutoff)."
                 )
-                self.backend.ramp_bias_to_voltage(
-                    first_v, step=params["v_step"], dwell=0.1
+            params["v_start"], params["v_stop"] = v_start, v_stop
+
+            if not (0 < params["ac_bias"] <= V_AC_MAX):
+                raise ValueError(
+                    f"AC level must be in (0, {V_AC_MAX}] Vrms."
                 )
 
-            self.is_running = True
-            self.start_button.config(state="disabled")
-            self.stop_button.config(state="normal")
-
-            for key in self.data_storage:
-                self.data_storage[key].clear()
-
-            self.line_main.set_data([], [])
-            self.ax_main.set_title(
-                f"C-V Curve for: {params['sample_name']}",
-                fontweight="bold",
+            direction = 1 if v_stop >= v_start else -1
+            self.voltage_points = np.append(
+                np.arange(v_start, v_stop, direction * v_step), v_stop
             )
-            self.canvas.draw()
-            self.sweep_index = 0
 
-            self.progress_bar["value"] = 0
-            self.progress_bar["maximum"] = len(self.sweep_points)
-            self.log("Starting C-V sweep...")
-
-            # Launch measurement worker thread (Phase 1.2)
-            self.measurement_thread = threading.Thread(
-                target=self._measurement_worker, daemon=True
+            # --- Frequency list parsing & validation ---
+            self.freq_list = sorted(
+                {
+                    float(tok)
+                    for tok in params["freq_list"].split(",")
+                    if tok.strip()
+                }
             )
-            self.measurement_thread.start()
-            self.root.after(100, self._process_data_queue)
+            if not self.freq_list:
+                raise ValueError("At least one frequency is required.")
+            for f in self.freq_list:
+                if not (FREQ_MIN <= f <= FREQ_MAX):
+                    raise ValueError(
+                        f"Frequency {f} Hz outside "
+                        f"{FREQ_MIN}-{FREQ_MAX} Hz."
+                    )
+
+            # --- Mandatory discharge confirmation ---
+            if not messagebox.askokcancel(
+                "Safety Check",
+                "Warning: Ensure the sample/capacitor is fully discharged "
+                "before measurement to prevent instrument damage.\n\n"
+                "Proceed with CV sweep?",
+                icon="warning",
+            ):
+                self.log("Sweep aborted by user at discharge check.")
+                return
+
+            self.backend.initialize_instrument(params)
+
+            try:
+                self.is_running = True
+                self.start_button.config(state="disabled")
+                self.stop_button.config(state="normal")
+                self.scan_button.config(state="disabled")
+
+                for key in self.data_storage:
+                    self.data_storage[key].clear()
+
+                self.line_cp.set_data([], [])
+                self.line_g.set_data([], [])
+                self.canvas.draw()
+
+                self.sweep_index = 0
+                self.progress_bar["value"] = 0
+                self.progress_bar["maximum"] = (
+                    len(self.freq_list) * len(self.voltage_points)
+                )
+
+                self.log(
+                    f"Starting CV sweep: {len(self.freq_list)} freq(s) × "
+                    f"{len(self.voltage_points)} voltage points..."
+                )
+
+                self.sweep_delay = float(self.entries["delay"].get())
+
+                self.stop_event.clear()
+                self.worker_thread = threading.Thread(
+                    target=self._sweep_loop, daemon=True
+                )
+                self.worker_thread.start()
+
+                self.root.after(100, self._poll_queue)
+
+            except Exception as sweep_err:
+                self.backend.close_instrument()
+                raise sweep_err
 
         except Exception as e:
-            self.backend.close_instrument()
             self.log(f"ERROR during startup: {traceback.format_exc()}")
             messagebox.showerror(
                 "Initialization Error",
@@ -1200,6 +1038,8 @@ class LCR_CV_GUI:
     def stop_sweep(self, reason=""):
         if self.is_running:
             self.is_running = False
+            self.stop_event.set()
+            self.lbl_current_freq.config(text="Measuring: STOPPED")
 
             if reason:
                 self.log(f"Sweep stopped: {reason}")
@@ -1208,18 +1048,9 @@ class LCR_CV_GUI:
 
             self.start_button.config(state="normal")
             self.stop_button.config(state="disabled")
+            self.scan_button.config(state="normal")
 
-            # Phase 4.4: Increased thread join timeout to 10s
-            if (
-                self.measurement_thread is not None
-                and self.measurement_thread.is_alive()
-                and threading.current_thread() is not self.measurement_thread
-            ):
-                self.measurement_thread.join(timeout=10.0)
-
-            # Shut down gracefully (bias ramps to 0)
             self.backend.close_instrument()
-            self.log("Instrument connection closed.")
 
             if not reason:
                 messagebox.showinfo(
@@ -1227,95 +1058,131 @@ class LCR_CV_GUI:
                     "Sweep stopped and instrument disconnected.",
                 )
 
-    def _build_sweep_points(self, v_max, v_step, loops):
-        """Build sweep point list using integer steps to prevent drift."""
-        n = int(round(v_max / v_step))
-        up = [round(i * v_step, 9) for i in range(n + 1)]
-        pts = []
-        for loop in range(1, loops + 1):
-            pts += [(v, loop, "A") for v in up]  # 0 to +V
-            pts += [(v, loop, "B") for v in reversed(up)]  # +V to 0
-            pts += [(-v, loop, "C") for v in up]  # 0 to -V
-            pts += [(-v, loop, "D") for v in reversed(up)]  # -V to 0
-        return pts
-
-    def _measurement_worker(self):
-        """Worker thread to run hardware SCPI calls safely.
-
-        Phase 1.2: Captures full traceback string in the worker thread
-        so the actual error is preserved when processed by the GUI thread.
-        """
+    def _sweep_loop(self):
+        """Worker thread: nested freq (outer) × voltage (inner) CV sweep."""
         try:
-            dwell = self.current_params.get("dwell", 0.5)
-            for i in range(len(self.sweep_points)):
-                if not self.is_running:
-                    return
+            point = 0
+            for f in self.freq_list:
+                if self.stop_event.is_set():
+                    break
+                self.backend.set_frequency(f)
+                self.backend.set_bias_voltage(0.0)  # discharge between freqs
+                self.data_queue.put(("NEW_FILE", f, None, None, None, None))
 
-                target_v, loop_n, proto = self.sweep_points[i]
-                actual_v, cap = self.backend.perform_measurement(
-                    target_v, dwell=dwell
-                )
-                self.data_queue.put(
-                    ("DATA", actual_v, cap, loop_n, proto, i)
-                )
+                for v in self.voltage_points:
+                    if self.stop_event.is_set():
+                        break
+                    self.backend.set_bias_voltage(v)
+                    R, X, status = self.backend.measure_point(
+                        self.sweep_delay
+                    )
+                    point += 1
+                    self.data_queue.put((f, v, R, X, status, point))
 
-            # Natural completion signal
-            self.data_queue.put(None)
+            # Always end discharged — but only if instrument still alive
+            try:
+                if (
+                    self.backend.instrument is not None
+                    and not self.stop_event.is_set()
+                ):
+                    self.backend.set_bias_voltage(0.0)
+            except Exception:
+                pass  # ignore cleanup errors after stop
 
-        except Exception:
-            # Phase 1.2: Capture full traceback HERE, not in GUI thread
-            self.data_queue.put(traceback.format_exc())
+            if not self.stop_event.is_set():
+                self.data_queue.put(("DONE", None, None, None, None, None))
+        except Exception as e:
+            self.data_queue.put(("ERROR", e, None, None, None, None))
 
-    def _process_data_queue(self):
-        """Polls measurement results back into GUI main thread."""
+    def _open_new_file(self, freq):
+        p = self.backend.params
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = f"{p['sample_name']}_{ts}_CV_{freq:.0f}Hz.txt"
+        self.data_filepath = os.path.join(self.file_location_path, fname)
+        with open(self.data_filepath, "w", encoding="utf-8") as fh:
+            fh.write(
+                f"# Sample: {p['sample_name']} | Freq: {freq} Hz | "
+                f"AC: {p['ac_bias']}V | Sweep: {p['v_start']} to "
+                f"{p['v_stop']} V | APER: {p['aper']}\n"
+            )
+            fh.write("Voltage(V)\t" + self.DATA_HEADER + "\n")
+
+        # Reset plot for new frequency
+        for key in self.data_storage:
+            self.data_storage[key].clear()
+        self.line_cp.set_data([], [])
+        self.line_g.set_data([], [])
+        self.canvas.draw_idle()
+        self.log(f"New file: {fname}")
+
+    def _poll_queue(self):
+        """Main thread: processes data from the worker thread."""
         try:
             while not self.data_queue.empty():
-                item = self.data_queue.get_nowait()
-                if item is None:
+                f, v, R, X, status, idx = self.data_queue.get_nowait()
+                if f == "DONE":
                     self._handle_sweep_completion()
                     return
-                if isinstance(item, str):
-                    # Phase 1.2: This is a captured traceback string
-                    self._handle_sweep_error(item)
+                if f == "ERROR":
+                    self._handle_sweep_error(v)
                     return
-
-                _, v, c, l, p, idx = item
-                self._process_sweep_point(v, c, l, p)
-                self.sweep_index = idx + 1
+                if f == "NEW_FILE":
+                    self._open_new_file(v)  # v carries the frequency here
+                    continue
+                self.sweep_index = idx
+                self.lbl_current_freq.config(
+                    text=f"f = {f:,.0f} Hz | V = {v:+.3f} V"
+                )
+                self._process_sweep_point(f, v, R, X, status)
                 self._update_sweep_plot()
         except queue.Empty:
             pass
 
         if self.is_running:
-            self.root.after(100, self._process_data_queue)
+            self.root.after(100, self._poll_queue)
 
     def _scan_for_visa(self):
-        if not PYVISA_AVAILABLE:
-            self.log(
-                "ERROR: PyVISA not found. Ensure PyVISA and a backend "
-                "(like NI-VISA) are installed."
-            )
+        """Identity-aware instrument scan."""
+        if not PYVISA_AVAILABLE or self.backend.rm is None:
+            self.log("ERROR: PyVISA/VISA manager unavailable.")
             return
 
-        backend = self.backend
-        if backend.rm is None:
-            self.log("ERROR: VISA manager failed. Is NI-VISA installed?")
-            return
+        self.log("Scanning for VISA instruments (querying *IDN?)...")
+        rm = self.backend.rm
+        found = []
+        e4980_label = None
 
-        self.log("Scanning for VISA instruments...")
         try:
-            resources = backend.rm.list_resources()
-            if resources:
-                self.log(f"Found: {resources}")
-                self.lcr_combobox["values"] = resources
-                for res in resources:
-                    if "GPIB0::17" in res:  # Common GPIB for E4980A
-                        self.lcr_combobox.set(res)
-                        break
-                if not self.lcr_combobox.get():
-                    self.lcr_combobox.set(resources[0])
+            for res in rm.list_resources():
+                idn = "Unknown / no response"
+                try:
+                    with rm.open_resource(res) as dev:
+                        dev.timeout = 2000
+                        dev.read_termination = "\n"
+                        dev.write_termination = "\n"
+                        idn = dev.query("*IDN?").strip()
+                except Exception:
+                    pass
+
+                label = f"{res}  ->  {idn}"
+                found.append(label)
+                if "E4980" in idn and e4980_label is None:
+                    e4980_label = label
+                self.log(f"  {label}")
+
+            self.lcr_combobox["values"] = found
+
+            if e4980_label:
+                self.lcr_combobox.set(e4980_label)
+                self.log("E4980A auto-selected.")
+            elif found:
+                self.lcr_combobox.set(found[0])
+                self.log(
+                    "WARNING: No E4980A found; defaulted to first device."
+                )
             else:
                 self.log("No VISA instruments found.")
+
         except Exception as e:
             self.log(f"ERROR during scan: {e}")
 
@@ -1335,63 +1202,89 @@ class LCR_CV_GUI:
         else:
             self.root.destroy()
 
-    def _process_sweep_point(self, actual_v, cap, loop_n, proto):
-        self.log(
-            f"V: {actual_v:.3f} V | C: {cap:.4e} F | "
-            f"Loop: {loop_n} ({proto})"
-        )
-        self.data_storage["voltage"].append(actual_v)
-        self.data_storage["capacitance"].append(cap)
-        self.data_storage["loop"].append(loop_n)
-        self.data_storage["protocol"].append(proto)
-
-        with open(self.data_filepath, "a", newline="") as f:
-            csv.writer(f).writerow(
-                [f"{actual_v:.6f}", f"{cap:.6e}", loop_n, proto]
+    def _process_sweep_point(self, f, v, R, X, status=0):
+        if status != 0:
+            self.log(
+                f"WARNING: V={v} V returned status {status} "
+                f"(0=normal, non-zero=overload/ALC issue)."
             )
 
-    def _update_sweep_plot(self):
-        self.line_main.set_data(
-            self.data_storage["voltage"], self.data_storage["capacitance"]
+        self.log(
+            f"f: {f} Hz | V: {v:+.3f} V | R: {R:.4e} | X: {X:.4e} | "
+            f"st: {status}"
         )
-        self.ax_main.relim()
-        self.ax_main.autoscale_view()
-        self.figure.tight_layout(pad=2.5)
-        self.canvas.draw()
+
+        try:
+            calc_vals = self.calculate_impedance_parameters(f, R, X)
+        except Exception as calc_err:
+            self.log(
+                f"Calc error at V={v} V: {calc_err}. "
+                f"Saving raw row with NaN for derived values."
+            )
+            calc_vals = [float("nan")] * 18
+
+        # Row: Voltage + Frequency + 18 calculated values
+        row_vals = [v, f] + calc_vals
+        row_str = "\t".join(f"{x:.6E}" for x in row_vals)
+
+        with open(self.data_filepath, "a", encoding="utf-8") as file:
+            file.write(row_str + "\n")
+            file.flush()
+
+        # calc_vals indices: Cp=4, G=2, Rs=11, Rp=13
+        self.data_storage["volt"].append(v)
+        self.data_storage["cp"].append(calc_vals[4])
+        self.data_storage["g"].append(calc_vals[2])
+        self.data_storage["rs"].append(calc_vals[11])
+        self.data_storage["rp"].append(calc_vals[13])
+        self.data_storage["status"].append(status)
+
+    def _update_sweep_plot(self):
+        self.line_cp.set_data(
+            self.data_storage["volt"], self.data_storage["cp"]
+        )
+        self.line_g.set_data(
+            self.data_storage["volt"], self.data_storage["g"]
+        )
+
+        self.ax_cp.relim()
+        self.ax_cp.autoscale_view()
+        self.ax_g.relim()
+        self.ax_g.autoscale_view()
+
+        self.canvas.draw_idle()
         self.progress_bar["value"] = self.sweep_index
 
     def _handle_sweep_completion(self):
-        self.log("Sweep finished successfully.")
+        self.lbl_current_freq.config(text="Measuring: DONE")
+        self.log("CV sweep finished successfully.")
         self.stop_sweep("Sweep naturally complete.")
-        messagebox.showinfo("Finished", "C-V sweep is complete.")
+        messagebox.showinfo("Finished", "CV sweep is complete.")
 
-    def _handle_sweep_error(self, traceback_str):
-        """Phase 1.2: Now receives the actual traceback string."""
-        self.log(f"RUNTIME ERROR:\n{traceback_str}")
+    def _handle_sweep_error(self, exception):
+        self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
         self.stop_sweep(
             "A critical hardware or measurement error occurred."
         )
         messagebox.showerror(
             "Runtime Error",
-            "An error occurred during the sweep. Check console for "
-            "full traceback.",
+            "An error occurred during the sweep. Check console.",
         )
 
 
 def main():
-    """Initializes and runs the main application."""
     if not PYVISA_AVAILABLE:
         root = tk.Tk()
         root.withdraw()
         messagebox.showerror(
             "Dependency Error",
-            "PyVISA is not installed.\n\n"
-            "Please run:\npip install pyvisa",
+            "PyVISA is not installed.\n\nPlease run:\n"
+            "pip install pyvisa",
         )
         return
 
     root = tk.Tk()
-    LCR_CV_GUI(root)
+    LCR_Freq_GUI(root)
     root.mainloop()
 
 
