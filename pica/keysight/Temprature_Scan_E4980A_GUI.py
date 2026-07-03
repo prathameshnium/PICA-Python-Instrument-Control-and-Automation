@@ -4,7 +4,7 @@ Purpose:             GUI module for Temperature-Dependent Dielectric
                      Measurement (Keysight E4980A + Lakeshore 350).
 Original Authors:    Prathamesh Deshmukh (template programs)
 Integrated by:       AI-assisted merge per design specification
-Version:             V: 1.0
+Version:             V: 1.1
 """
 
 # ===============================================================================
@@ -305,6 +305,7 @@ class LCR_Backend:
         self.instrument.write(f":FREQ {freq}")
         time.sleep(delay)
         self.instrument.write(":TRIG:IMM")
+        self.instrument.query("*OPC?")  # added for robustness on LAN
         vals = self.instrument.query_ascii_values(":FETC?")
         R, X = vals[0], vals[1]
         status = int(vals[2]) if len(vals) > 2 else 0
@@ -345,6 +346,7 @@ class Combined_Backend:
         self.lakeshore = None
         self.lcr = LCR_Backend()
         self.params = {}
+        self.SAFETY_KILL_TEMP_K = 350.0  # Hard safety ceiling
 
     def initialize_instruments(self, parameters):
         self.params = parameters
@@ -357,7 +359,20 @@ class Combined_Backend:
         #   corr_enabled, cable_len
         self.lcr.initialize_instrument(parameters)
 
-    def measure_frequency_sweep(self, frequencies, delay):
+    def check_safety_kill(self, temperature_k):
+        if temperature_k >= self.SAFETY_KILL_TEMP_K:
+            for attempt in range(3):
+                try:
+                    self.lakeshore.set_heater_range(1, 'off')
+                    break
+                except Exception as e:
+                    print(f"Kill attempt {attempt+1} failed: {e}")
+                    time.sleep(0.5)
+            print(f"!!! SAFETY KILL: T={temperature_k:.3f} K. Heater OFF.")
+            return True
+        return False
+
+    def measure_frequency_sweep(self, frequencies, delay, stop_event=None):
         """
         Appendix A.1 — CRITICAL:
         Reads Lakeshore temperature INSIDE the frequency loop so every
@@ -366,11 +381,21 @@ class Combined_Backend:
         """
         htr = self.lakeshore.get_heater_output(1)
         points = []
+        killed = False
         for f in frequencies:
+            if stop_event is not None and stop_event.is_set():
+                break                     # abort mid-sweep, cleanly
             temp = self.lakeshore.get_temperature('A')   # T for THIS point
+            
+            # Issue #2: per-point safety kill check
+            if temp >= self.SAFETY_KILL_TEMP_K:
+                killed = self.check_safety_kill(temp)
+                points.append((temp, f, float('nan'), float('nan'), -1))
+                break
+
             R, X, status = self.lcr.perform_measurement(f, delay)
             points.append((temp, f, R, X, status))
-        return {'heater': htr, 'points': points}
+        return {'heater': htr, 'points': points, 'killed': killed}
 
     def close_instruments(self):
         print("\n--- [Backend] Closing all instrument connections. ---")
@@ -392,7 +417,7 @@ class Integrated_CT_GUI:
     LCR measurement.
     """
 
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "1.1"
     LOGO_SIZE = 110
 
     # --- Default frequency list (Section 4 of original instructions) ---
@@ -453,6 +478,9 @@ class Integrated_CT_GUI:
         self.start_time = None
         self._last_draw_time = 0.0
         self._redraw_interval = 0.25   # seconds; redraw at most ~4×/sec
+
+        # --- Stop Event (Issue #1 Fix) ---
+        self.stop_event = threading.Event()
 
         # --- Backend ---
         self.backend = Combined_Backend()
@@ -977,7 +1005,7 @@ class Integrated_CT_GUI:
 
         # Complex capacitance C* = C' - jC''
         Cp_double_prime = G / omega_safe
-        Cs_double_prime = Cp_double_prime
+        Cs_double_prime = D * Cs  # Fix Issue #7: Physically correct series loss
 
         return [
             Q,                  # 0
@@ -1096,6 +1124,7 @@ class Integrated_CT_GUI:
 
             # --- Reset state ---
             self.is_stabilizing, self.is_running = True, False
+            self.stop_event.clear()  # Issue #1: Clear stop event
             self.start_button.config(state='disabled')
             self.stop_button.config(state='normal')
             self.scan_button.config(state='disabled')
@@ -1197,18 +1226,29 @@ class Integrated_CT_GUI:
 
     # ------------------------------------------------------------------
     def stop_measurement(self, from_user=True):
-        if self.is_running or self.is_stabilizing:
-            self.is_running, self.is_stabilizing = False, False
-            if from_user:
-                self.log("Measurement stopped by user.")
-            self.start_button.config(state='normal')
-            self.stop_button.config(state='disabled')
-            self.scan_button.config(state='normal')
-            self.backend.close_instruments()
-            if from_user:
-                messagebox.showinfo(
-                    "Info",
-                    "Measurement stopped and instruments disconnected.")
+        # Issue #1 Fix: Wait for worker to finish before touching VISA
+        if not (self.is_running or self.is_stabilizing):
+            return
+        self.is_running, self.is_stabilizing = False, False
+        self.stop_event.set()
+        if from_user:
+            self.log("Stop requested; waiting for worker to finish...")
+
+        # Wait for the worker to exit BEFORE touching the VISA sessions.
+        if self.measurement_thread and self.measurement_thread.is_alive():
+            self.measurement_thread.join(timeout=15.0)
+            if self.measurement_thread.is_alive():
+                self.log("WARNING: worker did not exit in 15 s; "
+                         "closing sessions anyway.")
+
+        self.start_button.config(state='normal')
+        self.stop_button.config(state='disabled')
+        self.scan_button.config(state='normal')
+        self.backend.close_instruments()
+        if from_user:
+            self.log("Measurement stopped and instruments disconnected.")
+            messagebox.showinfo(
+                "Info", "Measurement stopped and instruments disconnected.")
 
     # ==================================================================
     # WORKER THREAD  (Section 7, amended by Appendix A.1)
@@ -1217,7 +1257,7 @@ class Integrated_CT_GUI:
         params = self.backend.params
         try:
             # --- Stabilization Phase (verbatim from R-T template) ---
-            while self.is_stabilizing:
+            while self.is_stabilizing and not self.stop_event.is_set():
                 current_temp = self.backend.lakeshore.get_temperature('A')
                 self.data_queue.put(
                     f"LOG:Stabilizing... Current: {current_temp:.4f} K "
@@ -1234,14 +1274,14 @@ class Integrated_CT_GUI:
                     self.data_queue.put(
                         f"LOG:Stabilized at {current_temp:.4f} K. "
                         f"Waiting 5s before ramp...")
-                    time.sleep(5)
+                    self.stop_event.wait(5)
                     self.is_stabilizing = False
                     self.is_running = True
                     break
-                time.sleep(2)
+                self.stop_event.wait(2)
 
             # --- Ramp Phase ---
-            if self.is_running:
+            if self.is_running and not self.stop_event.is_set():
                 self.backend.lakeshore.set_setpoint(1, params['end_temp'])
                 self.backend.lakeshore.setup_ramp(1, params['rate'])
                 self.backend.lakeshore.set_heater_range(1, 'high')
@@ -1253,11 +1293,20 @@ class Integrated_CT_GUI:
             # --- Measurement Loop ---
             # Appendix A.1: measure_frequency_sweep reads T inside the
             # frequency loop so every data point is bound to its own T.
-            while self.is_running:
+            while self.is_running and not self.stop_event.is_set():
                 cycle = self.backend.measure_frequency_sweep(
-                    self.frequencies, params['delay'])
+                    self.frequencies, params['delay'], self.stop_event)
+                
+                if not cycle['points']:
+                    break
+                
                 elapsed = time.time() - self.start_time
                 self.data_queue.put(('CYCLE', cycle, elapsed))
+
+                # Check if the safety kill was triggered
+                if cycle.get('killed', False):
+                    self.data_queue.put("CUTOFF")
+                    break
 
                 # Termination check uses the temperature of the LAST
                 # point measured in this cycle.
@@ -1276,6 +1325,8 @@ class Integrated_CT_GUI:
     # QUEUE PROCESSING (main thread)
     # ==================================================================
     def _process_data_queue(self):
+        # Issue #4 Fix: Fully drain the queue before acting on terminal events
+        terminal = None
         try:
             while not self.data_queue.empty():
                 data = self.data_queue.get_nowait()
@@ -1283,20 +1334,26 @@ class Integrated_CT_GUI:
                 if isinstance(data, str) and data.startswith("LOG:"):
                     self._handle_log_message(data[4:])
                 elif isinstance(data, str) and data == "CUTOFF":
-                    self._handle_cutoff_event()
-                    return
+                    terminal = "CUTOFF"          # defer; keep draining
                 elif isinstance(data, str) and data == "COMPLETE":
-                    self._handle_complete_event()
-                    return
+                    terminal = "COMPLETE"        # defer; keep draining
                 elif isinstance(data, Exception):
-                    self._handle_runtime_error(data)
-                    return
+                    terminal = data
                 elif isinstance(data, tuple) and data[0] == 'CYCLE':
                     _, cycle, elapsed = data
                     self._process_cycle(cycle, elapsed)
         except queue.Empty:
             pass
 
+        if terminal == "CUTOFF":
+            self._handle_cutoff_event()
+            return
+        if terminal == "COMPLETE":
+            self._handle_complete_event()
+            return
+        if isinstance(terminal, Exception):
+            self._handle_runtime_error(terminal)
+            return
         if self.is_running or self.is_stabilizing:
             self.root.after(200, self._process_data_queue)
 
