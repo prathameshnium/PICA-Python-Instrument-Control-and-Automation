@@ -225,12 +225,20 @@ class LCR_Backend:
                     "CV sweeps require Option 001 (continuous DC bias). "
                     "Standard unit only supports discrete 0/1.5/2 V bias."
                 )
-            for key in ("v_start", "v_stop"):
-                if abs(p[key]) > V_ABS_MAX:
+            # Validate Vmax when in cycle mode; otherwise validate v_start/v_stop
+            if p.get("cycle_mode", False):
+                if abs(p.get("v_max", 0.0)) > V_ABS_MAX:
                     raise ValueError(
-                        f"|{key}| = {abs(p[key])} V exceeds hardcoded "
+                        f"|v_max| = {abs(p['v_max'])} V exceeds hardcoded "
                         f"{V_ABS_MAX} V safety cutoff."
                     )
+            else:
+                for key in ("v_start", "v_stop"):
+                    if abs(p[key]) > V_ABS_MAX:
+                        raise ValueError(
+                            f"|{key}| = {abs(p[key])} V exceeds hardcoded "
+                            f"{V_ABS_MAX} V safety cutoff."
+                        )
             if not (0 < p["ac_bias"] <= V_AC_MAX):
                 raise ValueError(
                     f"AC level must be in (0, {V_AC_MAX}] Vrms."
@@ -317,6 +325,10 @@ class LCR_Freq_GUI:
 
     LOGO_SIZE = 110
 
+    # --- Layout constants for deferred sash placement ---
+    SASH_FALLBACK_WIDTH = 480
+    SASH_PADDING = 30  # scrollbar + padding
+
     try:
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
         LOGO_FILE_PATH = os.path.join(
@@ -381,6 +393,9 @@ class LCR_Freq_GUI:
         # Built at start_sweep from validated user input:
         self.voltage_points = np.array([])
         self.freq_list = []
+
+        # Sash-placement retry counter (Fix #1 + #2)
+        self._sash_attempts = 0
 
         self.setup_styles()
         self.create_widgets()
@@ -496,14 +511,18 @@ class LCR_Freq_GUI:
 
         main_pane = ttk.PanedWindow(self.root, orient="horizontal")
         main_pane.pack(fill="both", expand=True, padx=10, pady=10)
+        self.main_pane = main_pane  # Fix #1: store reference for sashpos()
 
         left_panel_container = ttk.Frame(main_pane)
+        # Fix #4: prevent child widgets from shrinking this pane
+        left_panel_container.pack_propagate(False)
+        self.left_panel_container = left_panel_container
         main_pane.add(left_panel_container, weight=0)
 
         right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG)
         main_pane.add(right_panel, weight=1)
 
-        canvas = Canvas(
+        left_canvas = Canvas(
             left_panel_container,
             bg=self.CLR_BG_DARK,
             highlightthickness=0,
@@ -511,31 +530,67 @@ class LCR_Freq_GUI:
         scrollbar = ttk.Scrollbar(
             left_panel_container,
             orient="vertical",
-            command=canvas.yview,
+            command=left_canvas.yview,
         )
-        scrollable_frame = ttk.Frame(canvas)
+        scrollable_frame = ttk.Frame(left_canvas)
+        self.scrollable_frame = scrollable_frame  # used by _set_initial_sash
         scrollable_frame.bind(
             "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
+            lambda e: left_canvas.configure(
+                scrollregion=left_canvas.bbox("all")
+            ),
         )
 
-        canvas.create_window(
-            (0, 0), window=scrollable_frame, anchor="nw", width=480
+        # Fix #3: capture window id and keep inner frame width matched to
+        # the canvas viewport (no hardcoded width).
+        window_id = left_canvas.create_window(
+            (0, 0), window=scrollable_frame, anchor="nw"
         )
-        canvas.configure(yscrollcommand=scrollbar.set)
-        canvas.pack(side="left", fill="both", expand=True)
+        left_canvas.bind(
+            "<Configure>",
+            lambda e: left_canvas.itemconfigure(window_id, width=e.width),
+        )
+
+        left_canvas.configure(yscrollcommand=scrollbar.set)
+        left_canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
         info_frame = self.create_info_frame(scrollable_frame)
         info_frame.pack(fill="x", expand=True, padx=10, pady=5)
-
         input_frame = self.create_input_frame(scrollable_frame)
         input_frame.pack(fill="x", expand=True, padx=10, pady=5)
-
         console_frame = self.create_console_frame(scrollable_frame)
         console_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
         self.create_graph_frame(right_panel)
+
+        # Fix #1 + #2: deferred, verified, retried sash placement.
+        # sashpos() silently no-ops until the PanedWindow is mapped, so we
+        # schedule the call after the event loop has had a chance to layout
+        # the widgets.
+        self._sash_attempts = 0
+        self.root.after(50, self._set_initial_sash)
+
+    def _set_initial_sash(self):
+        """Set left-pane width; verify and retry (sashpos fails silently
+        before the PanedWindow is mapped)."""
+        self.root.update_idletasks()
+        content_w = self.scrollable_frame.winfo_reqwidth()
+        target = (
+            content_w + self.SASH_PADDING
+            if content_w > 1
+            else self.SASH_FALLBACK_WIDTH
+        )
+        try:
+            self.main_pane.sashpos(0, target)
+            self.root.update_idletasks()
+            actual = self.main_pane.sashpos(0)
+        except tk.TclError:
+            actual = -1
+
+        if abs(actual - target) > 5 and self._sash_attempts < 10:
+            self._sash_attempts += 1
+            self.root.after(100, self._set_initial_sash)
 
     def create_info_frame(self, parent):
         frame = ttk.LabelFrame(parent, text="Information")
@@ -729,7 +784,22 @@ class LCR_Freq_GUI:
             command=self._browse_file_location,
         ).grid(row=16, column=1, padx=padx, pady=5, sticky="ew")
 
-        # Row 17: Start + Stop buttons
+        # Row 17-18: Cycle-mode controls (CV cycle feature)
+        self.var_cycle = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            frame,
+            text="Cycle mode (0 → +Vmax → −Vmax → 0)",
+            variable=self.var_cycle,
+        ).grid(row=17, column=0, columnspan=2, padx=padx, pady=2, sticky="w")
+
+        self._add_entry(
+            frame, "Vmax (V)", "v_max", 18, 0, default="2.0"
+        )
+        self._add_entry(
+            frame, "No. of Cycles", "n_cycles", 18, 1, default="1"
+        )
+
+        # Row 19: Start + Stop buttons
         self.start_button = ttk.Button(
             frame,
             text="Start Sweep",
@@ -737,7 +807,7 @@ class LCR_Freq_GUI:
             style="Start.TButton",
         )
         self.start_button.grid(
-            row=17, column=0, padx=(padx, 5), pady=15, sticky="ew"
+            row=19, column=0, padx=(padx, 5), pady=15, sticky="ew"
         )
 
         self.stop_button = ttk.Button(
@@ -748,10 +818,10 @@ class LCR_Freq_GUI:
             state="disabled",
         )
         self.stop_button.grid(
-            row=17, column=1, padx=(5, padx), pady=15, sticky="ew"
+            row=19, column=1, padx=(5, padx), pady=15, sticky="ew"
         )
 
-        # Row 18: Current measurement label
+        # Row 20: Current measurement label
         self.lbl_current_freq = ttk.Label(
             frame,
             text="Measuring: -- Hz",
@@ -759,10 +829,10 @@ class LCR_Freq_GUI:
             foreground=self.CLR_ACCENT_RED,
         )
         self.lbl_current_freq.grid(
-            row=18, column=0, columnspan=2, pady=5
+            row=20, column=0, columnspan=2, pady=5
         )
 
-        # Row 19: Progress bar
+        # Row 21: Progress bar
         self.progress_bar = ttk.Progressbar(
             frame,
             orient="horizontal",
@@ -770,7 +840,7 @@ class LCR_Freq_GUI:
             style="green.Horizontal.TProgressbar",
         )
         self.progress_bar.grid(
-            row=19,
+            row=21,
             column=0,
             columnspan=2,
             padx=padx,
@@ -779,7 +849,7 @@ class LCR_Freq_GUI:
         )
 
         # Apply keystroke validation to numeric entries
-        for key in ("v_start", "v_stop", "v_step", "ac_bias"):
+        for key in ("v_start", "v_stop", "v_step", "ac_bias", "v_max"):
             self.entries[key].config(
                 validate="key", validatecommand=self._vfloat_cmd
             )
@@ -918,12 +988,17 @@ class LCR_Freq_GUI:
             else:
                 visa_addr = visa_val.strip()
 
+            cycle_mode = self.var_cycle.get()
+
             params = {
                 "sample_name": self.entries["sample_name"].get(),
                 "ac_bias": float(self.entries["ac_bias"].get()),
                 "v_start": float(self.entries["v_start"].get()),
                 "v_stop": float(self.entries["v_stop"].get()),
                 "v_step": float(self.entries["v_step"].get()),
+                "v_max": float(self.entries["v_max"].get()),
+                "n_cycles": int(self.entries["n_cycles"].get()),
+                "cycle_mode": cycle_mode,
                 "freq_list": self.entries["freq_list"].get(),
                 "delay": float(self.entries["delay"].get()),
                 "aper": self.aper_combobox.get(),
@@ -971,10 +1046,41 @@ class LCR_Freq_GUI:
                     f"AC level must be in (0, {V_AC_MAX}] Vrms."
                 )
 
-            direction = 1 if v_stop >= v_start else -1
-            self.voltage_points = np.append(
-                np.arange(v_start, v_stop, direction * v_step), v_stop
-            )
+            # --- Voltage waveform construction (cycle mode or linear ramp) ---
+            def _ramp(a, b, step):
+                d = 1 if b >= a else -1
+                return np.append(np.arange(a, b, d * step), b)
+
+            if cycle_mode:
+                v_max = abs(params["v_max"])
+                n_cycles = params["n_cycles"]
+                if n_cycles < 1:
+                    raise ValueError("Number of cycles must be >= 1.")
+                if v_max > V_ABS_MAX:
+                    v_max = V_ABS_MAX
+                    self.log(
+                        f"WARNING: Vmax clamped to ±{V_ABS_MAX} V."
+                    )
+                    params["v_max"] = v_max
+                # Build one cycle: 0 -> +Vmax -> -Vmax -> 0
+                # [1:] slices avoid duplicating endpoints between segments.
+                one_cycle = np.concatenate(
+                    [
+                        _ramp(0.0, v_max, v_step)[1:],      # 0 -> +Vmax
+                        _ramp(v_max, -v_max, v_step)[1:],   # +Vmax -> -Vmax
+                        _ramp(-v_max, 0.0, v_step)[1:],     # -Vmax -> 0
+                    ]
+                )
+                # Leading [0.0] gives a defined start point.
+                self.voltage_points = np.concatenate(
+                    [[0.0]] + [one_cycle] * n_cycles
+                )
+                self.log(
+                    f"Cycle mode: {n_cycles} cycle(s), Vmax = ±{v_max} V, "
+                    f"{len(self.voltage_points)} points/frequency."
+                )
+            else:
+                self.voltage_points = _ramp(v_start, v_stop, v_step)
 
             # --- Frequency list parsing & validation ---
             self.freq_list = sorted(
@@ -1021,6 +1127,8 @@ class LCR_Freq_GUI:
 
                 self.sweep_index = 0
                 self.progress_bar["value"] = 0
+                # progress_bar maximum scales automatically with
+                # len(self.voltage_points) — works for both modes.
                 self.progress_bar["maximum"] = (
                     len(self.freq_list) * len(self.voltage_points)
                 )
@@ -1057,6 +1165,9 @@ class LCR_Freq_GUI:
     def stop_sweep(self, reason=""):
         if self.is_running:
             self.is_running = False
+            # Thread-race fix: signal the worker BEFORE closing the
+            # instrument, then join so the worker exits measure_point()
+            # cleanly instead of touching a closed VISA handle.
             self.stop_event.set()
             self.lbl_current_freq.config(text="Measuring: STOPPED")
 
@@ -1068,6 +1179,9 @@ class LCR_Freq_GUI:
             self.start_button.config(state="normal")
             self.stop_button.config(state="disabled")
             self.scan_button.config(state="normal")
+
+            if self.worker_thread and self.worker_thread.is_alive():
+                self.worker_thread.join(timeout=5.0)  # let worker exit cleanly
 
             self.backend.close_instrument()
 
@@ -1086,6 +1200,7 @@ class LCR_Freq_GUI:
                     break
                 self.backend.set_frequency(f)
                 self.backend.set_bias_voltage(0.0)  # discharge between freqs
+                # NEW_FILE tuple: frequency value is carried in the "v" slot.
                 self.data_queue.put(("NEW_FILE", f, None, None, None, None))
 
                 for v in self.voltage_points:
@@ -1121,11 +1236,19 @@ class LCR_Freq_GUI:
         fname = f"{p['sample_name']}_{ts}_CV_{freq:.0f}Hz.txt"
         self.data_filepath = os.path.join(self.file_location_path, fname)
         with open(self.data_filepath, "w", encoding="utf-8") as fh:
-            fh.write(
-                f"# Sample: {p['sample_name']} | Freq: {freq} Hz | "
-                f"AC: {p['ac_bias']}V | Sweep: {p['v_start']} to "
-                f"{p['v_stop']} V | APER: {p['aper']}\n"
-            )
+            if p.get("cycle_mode", False):
+                fh.write(
+                    f"# Sample: {p['sample_name']} | Freq: {freq} Hz | "
+                    f"AC: {p['ac_bias']}V | Cycle mode: "
+                    f"{p['n_cycles']} × (0 -> +{p['v_max']} -> "
+                    f"-{p['v_max']} -> 0) | APER: {p['aper']}\n"
+                )
+            else:
+                fh.write(
+                    f"# Sample: {p['sample_name']} | Freq: {freq} Hz | "
+                    f"AC: {p['ac_bias']}V | Sweep: {p['v_start']} to "
+                    f"{p['v_stop']} V | APER: {p['aper']}\n"
+                )
             fh.write("Voltage(V)\t" + self.DATA_HEADER + "\n")
 
         # Reset plot for new frequency
@@ -1148,7 +1271,8 @@ class LCR_Freq_GUI:
                     self._handle_sweep_error(v)
                     return
                 if f == "NEW_FILE":
-                    self._open_new_file(v)  # v carries the frequency here
+                    # v carries the frequency here (tuple reuse).
+                    self._open_new_file(v)
                     continue
                 self.sweep_index = idx
                 self.lbl_current_freq.config(
