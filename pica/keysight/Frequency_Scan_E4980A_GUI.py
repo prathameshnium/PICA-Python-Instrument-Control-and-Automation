@@ -258,7 +258,7 @@ class LCR_Backend:
         time.sleep(delay)  # settle at the new frequency
 
         self.instrument.write(":TRIG:IMM")  # trigger one measurement (BUS armed)
-        # :FETC? blocks until the triggered measurement data is available
+        self.instrument.query("*OPC?")  # Wait for operation complete
         vals = self.instrument.query_ascii_values(":FETC?")
 
         R, X = vals[0], vals[1]
@@ -336,6 +336,8 @@ class LCR_Freq_GUI:
         self.root.minsize(1300, 850)
 
         self.is_running = False
+        self._stopping = False          # re-entrancy guard for stop_sweep
+        self._close_after_stop = False  # destroy window once worker exits
         self.backend = LCR_Backend()
         self.file_location_path = ""
 
@@ -357,6 +359,12 @@ class LCR_Freq_GUI:
         }
         self.logo_image = None
         self.sweep_index = 0
+
+        # Decade log autoscale state (LabVIEW-style): current snapped
+        # y-limits per axis key; log-Y enabled by default since Cp/G
+        # span several decades over a frequency sweep.
+        self.log_y_var = tk.BooleanVar(value=True)
+        self._decade_ylims = {}
 
         # Frequency array — UNCHANGED per user instruction (40 Hz to 2 MHz)
         self.sweep_frequencies = np.concatenate(
@@ -811,10 +819,48 @@ class LCR_Freq_GUI:
             left=0.08, right=0.98, top=0.98, bottom=0.07, hspace=0.15
         )
 
+        ttk.Checkbutton(
+            parent,
+            text="Log Y scale (decade autoscale)",
+            variable=self.log_y_var,
+            command=self._on_log_y_toggle,
+        ).pack(anchor="w", padx=5, pady=(5, 0))
+
         self.canvas = FigureCanvasTkAgg(self.figure, parent)
         self.canvas.get_tk_widget().pack(
             fill=tk.BOTH, expand=True, padx=0, pady=0
         )
+
+    def _on_log_y_toggle(self):
+        """Re-snap axes from scratch when the log-Y checkbox flips."""
+        self._decade_ylims.clear()
+        self._update_sweep_plot()
+
+    def _decade_autoscale_y(self, ax, values, key):
+        """LabVIEW-style decade autoscale: snap y-limits to
+        [10^floor(log10(min_pos)), 10^ceil(log10(max_pos))]; expand only,
+        whole decades at a time, so the scale never jitters per point.
+        Linear fallback if no positive finite data."""
+        pos = [v for v in values if isinstance(v, (int, float))
+               and math.isfinite(v) and v > 0]
+        if not pos:
+            ax.set_yscale('linear')
+            ax.relim()
+            ax.autoscale_view(scaley=True)
+            self._decade_ylims.pop(key, None)
+            return False
+        lo = 10.0 ** math.floor(math.log10(min(pos)))
+        hi = 10.0 ** math.ceil(math.log10(max(pos)))
+        if hi <= lo:
+            hi = lo * 10.0
+        cur = self._decade_ylims.get(key)
+        if cur is not None:
+            lo, hi = min(lo, cur[0]), max(hi, cur[1])  # expand only
+        if cur != (lo, hi):
+            self._decade_ylims[key] = (lo, hi)
+            ax.set_yscale('log')
+            ax.set_ylim(lo, hi)
+        return True
 
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -1012,6 +1058,7 @@ class LCR_Freq_GUI:
 
                 self.line_cp.set_data([], [])
                 self.line_g.set_data([], [])
+                self._decade_ylims.clear()  # fresh dataset re-snaps decades
                 self.canvas.draw()
 
                 self.sweep_index = 0
@@ -1047,27 +1094,66 @@ class LCR_Freq_GUI:
             )
 
     def stop_sweep(self, reason=""):
-        if self.is_running:
-            self.is_running = False
-            self.stop_event.set() # Signal worker thread to stop
-            self.lbl_current_freq.config(text="Measuring: STOPPED")
+        """Signal the worker to stop, then finish cleanup asynchronously.
 
-            if reason:
-                self.log(f"Sweep stopped: {reason}")
-            else:
-                self.log("Sweep stopped by user.")
+        The instrument is closed only after the worker thread has exited
+        (non-blocking root.after() poll), so the worker never touches a
+        closed VISA handle and the GUI never freezes while a slow VISA
+        read drains.
+        """
+        if self._stopping or not self.is_running:
+            return
+        self._stopping = True
+        self.is_running = False
+        self.stop_event.set()  # Signal worker thread to stop
+        self.lbl_current_freq.config(text="Measuring: STOPPING…")
+        self.stop_button.config(state="disabled")
 
-            self.start_button.config(state="normal")
-            self.stop_button.config(state="disabled")
-            self.scan_button.config(state="normal") # Re-enable scan
+        if reason:
+            self.log(f"Sweep stopped: {reason}")
+        else:
+            self.log("Sweep stopped by user.")
+        self.log("Waiting for worker thread to finish...")
 
+        self._stop_deadline = time.time() + 15.0
+        self._poll_worker_stopped(reason)
+
+    def _poll_worker_stopped(self, reason):
+        t = self.worker_thread
+        if (
+            t is not None
+            and t.is_alive()
+            and time.time() < self._stop_deadline
+        ):
+            self.root.after(200, lambda: self._poll_worker_stopped(reason))
+            return
+        if t is not None and t.is_alive():
+            self.log(
+                "WARNING: worker did not exit within timeout; "
+                "closing instrument anyway."
+            )
+        self._finalize_stop(reason)
+
+    def _finalize_stop(self, reason):
+        try:
             self.backend.close_instrument()
+        except Exception as e:
+            self.log(f"WARNING: error closing instrument: {e}")
 
-            if not reason and "User closed" not in reason:
-                messagebox.showinfo(
-                    "Info",
-                    "Sweep stopped and instrument disconnected.",
-                )
+        self.lbl_current_freq.config(text="Measuring: STOPPED")
+        self.start_button.config(state="normal")
+        self.scan_button.config(state="normal")  # Re-enable scan
+        self._stopping = False
+
+        if self._close_after_stop:
+            self.root.destroy()
+            return
+
+        if not reason:
+            messagebox.showinfo(
+                "Info",
+                "Sweep stopped and instrument disconnected.",
+            )
 
     def _sweep_loop(self):
         """Worker thread: performs measurements and puts data in queue."""
@@ -1176,8 +1262,13 @@ class LCR_Freq_GUI:
             if messagebox.askyesno(
                 "Exit", "Sweep is running. Stop and exit?"
             ):
+                # Destroy is deferred to _finalize_stop so the worker
+                # can exit cleanly without freezing the GUI.
+                self._close_after_stop = True
                 self.stop_sweep("User closed application.")
-                self.root.destroy()
+        elif self._stopping:
+            # Stop already in progress — just close once it finishes.
+            self._close_after_stop = True
         else:
             self.root.destroy()
 
@@ -1228,10 +1319,17 @@ class LCR_Freq_GUI:
             self.data_storage["freq"], self.data_storage["g"]
         )
 
-        self.ax_cp.relim()
-        self.ax_cp.autoscale_view()
-        self.ax_g.relim()
-        self.ax_g.autoscale_view()
+        for ax, key, data in (
+            (self.ax_cp, "cp", self.data_storage["cp"]),
+            (self.ax_g, "g", self.data_storage["g"]),
+        ):
+            ax.relim()
+            ax.autoscale_view(scalex=True, scaley=False)
+            if self.log_y_var.get():
+                self._decade_autoscale_y(ax, data, key)
+            else:
+                ax.set_yscale('linear')
+                ax.autoscale_view(scaley=True)
 
         self.canvas.draw_idle()
         self.progress_bar["value"] = self.sweep_index
