@@ -818,12 +818,12 @@ class DirectControlGUI:
         self._create_pid_panel(scroll_frame, 2)
         self._create_setpoint_panel(scroll_frame, 3)
         self._create_range_panel(scroll_frame, 4)
-        self._create_tlimit_panel(scroll_frame, 5)
-        self._create_display_panel(scroll_frame, 6)
-        self._create_input_config_panel(scroll_frame, 7)
-        self._create_manual_output_panel(scroll_frame, 8)
-        self._create_advanced_panel(scroll_frame, 9)
-        self._create_temp_zone_panel(scroll_frame, 10)
+        self._create_display_panel(scroll_frame, 5)
+        self._create_input_config_panel(scroll_frame, 6)
+        self._create_manual_output_panel(scroll_frame, 7)
+        self._create_advanced_panel(scroll_frame, 8)
+        self._create_temp_zone_panel(scroll_frame, 9)
+        self._create_tlimit_panel(scroll_frame, 10)
         self._create_console_panel(scroll_frame, 99)
 
     def _create_info_panel(self, parent, grid_row):
@@ -1263,38 +1263,49 @@ class DirectControlGUI:
 
     def _create_tlimit_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(
-            parent, text='⚠ Temperature Limit (TLIMIT)')
+            parent,
+            text='⚠ DANGER: Safety Temperature Limit (TLIMIT)')
         frame.grid(row=grid_row, column=0, sticky='new',
                    pady=5, padx=10)
         frame.grid_columnconfigure(1, weight=1)
 
         ttk.Label(
             frame,
-            text=("Safety shutdown: if this input exceeds the\n"
-                  "limit, ALL control outputs turn off.\n"
-                  "0 K disables the feature."),
+            text="THIS IS NOT THE CONTROL SETPOINT!",
+            background=self.CLR_FRAME_BG,
+            foreground=self.CLR_ACCENT_RED,
+            font=('Segoe UI', 10, 'bold')).grid(
+            row=0, column=0, columnspan=2,
+            sticky='w', padx=10, pady=(5, 0))
+        ttk.Label(
+            frame,
+            text=("Over-temperature safety shutdown: if this\n"
+                  "input exceeds the limit, ALL control outputs\n"
+                  "turn off. 0 K disables the protection.\n"
+                  "To set a target temperature, use the\n"
+                  "'Setpoint Control' panel above instead."),
             background=self.CLR_FRAME_BG,
             foreground=self.CLR_ACCENT_RED,
             font=('Segoe UI', 9),
             justify='left').grid(
-            row=0, column=0, columnspan=2,
-            sticky='w', padx=10, pady=(5, 5))
+            row=1, column=0, columnspan=2,
+            sticky='w', padx=10, pady=(0, 5))
 
         # Input selector
         self.tlimit_ch_var = tk.StringVar(value='A')
         ttk.Label(frame, text="Input:").grid(
-            row=1, column=0, sticky='w', padx=10, pady=5)
+            row=2, column=0, sticky='w', padx=10, pady=5)
         ttk.Combobox(
             frame, textvariable=self.tlimit_ch_var,
             values=['A', 'B', 'C', 'D'], state='readonly',
-            width=5).grid(row=1, column=1, sticky='w',
+            width=5).grid(row=2, column=1, sticky='w',
                           padx=10, pady=5)
 
         self.tlimit_entry = self._make_entry(
-            frame, "Limit (K)", "325", 2)
+            frame, "Safety Limit (K)", "325", 3)
 
         btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=3, column=0, columnspan=2,
+        btn_frame.grid(row=4, column=0, columnspan=2,
                        sticky='ew', pady=5)
         btn_frame.grid_columnconfigure((0, 1), weight=1)
         ttk.Button(
@@ -2168,17 +2179,29 @@ class DirectControlGUI:
                 "Temperature limit must be a number 0-2999 K.")
             return
 
-        # Safety: setting 0 K disables over-temperature protection
+        # Always confirm: this is a safety limit, easily confused
+        # with the control setpoint.
         if limit == 0:
-            if not messagebox.askyesno(
-                    "⚠ Disable Temperature Limit",
-                    f"A limit of 0 K turns the over-temperature "
-                    f"safety shutdown OFF for Input {channel}.\n\n"
-                    f"The instrument will no longer shut down "
-                    f"outputs if this input overheats.\n\n"
-                    f"Continue?"):
-                self.log("Temperature limit change cancelled by user.")
-                return
+            confirm_msg = (
+                f"A limit of 0 K turns the over-temperature "
+                f"safety shutdown OFF for Input {channel}.\n\n"
+                f"The instrument will no longer shut down "
+                f"outputs if this input overheats.\n\n"
+                f"Continue?")
+        else:
+            confirm_msg = (
+                f"You are about to set the SAFETY temperature "
+                f"limit for Input {channel} to {limit} K.\n\n"
+                f"This is NOT the control setpoint. If Input "
+                f"{channel} reads above {limit} K, the instrument "
+                f"will shut down ALL control outputs.\n\n"
+                f"To set a target temperature instead, cancel "
+                f"and use the Setpoint Control panel.\n\n"
+                f"Set the safety limit?")
+        if not messagebox.askyesno(
+                "⚠ DANGER: Safety Temperature Limit", confirm_msg):
+            self.log("Temperature limit change cancelled by user.")
+            return
 
         self._safe_command(
             f"Set Temp Limit (Input {channel}): {limit} K",
