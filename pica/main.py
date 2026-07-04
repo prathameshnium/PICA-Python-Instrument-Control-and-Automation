@@ -275,6 +275,23 @@ class PICALauncherApp:
             bordercolor=self.CLR_BG_DARK)
         style.map("Vertical.TScrollbar", background=[
                   ('active', self.CLR_ACCENT_GOLD)])
+        # --- Styles for the "Additional Tools" pop-up ---
+        style.configure(
+            'ToolsPopup.TFrame',
+            background=self.CLR_FRAME_BG)
+        style.configure(
+            'ToolsPopupHeader.TFrame',
+            background=self.CLR_BG_DARK)
+        style.configure(
+            'ToolsPopupTitle.TLabel',
+            background=self.CLR_BG_DARK,
+            foreground=self.CLR_ACCENT_GOLD,
+            font=self.FONT_SUBTITLE)
+        style.configure(
+            'ToolsPopupSubtitle.TLabel',
+            background=self.CLR_BG_DARK,
+            foreground=self.CLR_TEXT,
+            font=self.FONT_INFO_ITALIC)
 
     def create_widgets(self):
         self.root.grid_rowconfigure(0, weight=1)
@@ -489,13 +506,23 @@ class PICALauncherApp:
         def _on_mousewheel_linux_macos(event):
             canvas.yview_scroll(-1 if event.num == 4 else 1, "units")
 
+        def _bind_mousewheel(event):
+            canvas.bind_all("<MouseWheel>", _on_mousewheel_windows)
+            canvas.bind_all("<Button-4>", _on_mousewheel_linux_macos)
+            canvas.bind_all("<Button-5>", _on_mousewheel_linux_macos)
+
+        def _unbind_mousewheel(event):
+            canvas.unbind_all("<MouseWheel>")
+            canvas.unbind_all("<Button-4>")
+            canvas.unbind_all("<Button-5>")
+
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Bind scrolling
-        canvas.bind("<MouseWheel>", _on_mousewheel_windows)
-        canvas.bind("<Button-4>", _on_mousewheel_linux_macos)
-        canvas.bind("<Button-5>", _on_mousewheel_linux_macos)
+
+        # Bind scrolling only while the pointer is over this panel, so it
+        # works anywhere over the scrollable content (not just bare canvas).
+        main_container.bind("<Enter>", _bind_mousewheel)
+        main_container.bind("<Leave>", _unbind_mousewheel)
 
         canvas.grid(row=0, column=0, sticky='nsew', pady=10)
         scrollbar.grid(row=0, column=1, sticky='ns', pady=10)
@@ -757,76 +784,68 @@ class PICALauncherApp:
     def open_license(self):
         self._show_file_in_window(self.LICENSE_FILE, "MIT License")
 
+    def _create_tool_row(self, parent, text, script_key):
+        """Helper to create one launch button in the Tools pop-up."""
+        ttk.Button(
+            parent,
+            text=text,
+            style='App.TButton',
+            command=lambda: self.launch_script(self.SCRIPT_PATHS[script_key])
+        ).pack(fill='x', pady=(0, 8))
+
     def open_tools_popup(self):
-        """Creates a small pop-up window for additional tools."""
+        """Creates a pop-up window listing the standalone utility scripts."""
         tools_win = Toplevel(self.root)
-        tools_win.title("Tools")
-        tools_win.geometry("300x360")
+        tools_win.title("Additional Tools")
         tools_win.configure(bg=self.CLR_BG_DARK)
         tools_win.transient(self.root)
+        tools_win.resizable(False, False)
         tools_win.grab_set()
 
-        # Center the pop-up over the main window
-        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 150
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 180
-        tools_win.geometry(f"+{x}+{y}")
-
+        # --- Header ---
+        header = ttk.Frame(tools_win, style='ToolsPopupHeader.TFrame', padding=(24, 18, 24, 12))
+        header.pack(fill='x')
         ttk.Label(
-            tools_win,
+            header,
             text="Additional Tools",
-            font=self.FONT_TITLE,
-            foreground=self.CLR_ACCENT_GOLD,
-            background=self.CLR_BG_DARK,
-            justify='center'
-        ).pack(pady=(20, 15))
+            style='ToolsPopupTitle.TLabel'
+        ).pack(anchor='w')
+        ttk.Label(
+            header,
+            text="Standalone utilities bundled with PICA",
+            style='ToolsPopupSubtitle.TLabel'
+        ).pack(anchor='w', pady=(2, 0))
 
-        # Launch PE Plotter Button
-        ttk.Button(
-            tools_win,
-            text="PE Plotter",
-            style='App.TButton',
-            command=lambda: self.launch_script(self.SCRIPT_PATHS["PE Plotter"])
-        ).pack(fill='x', padx=30, pady=5)
+        # --- Card body ---
+        card = ttk.Frame(tools_win, style='ToolsPopup.TFrame', padding=(20, 16, 20, 16))
+        card.pack(fill='both', expand=True, padx=24, pady=(0, 16))
 
-        # Launch Quick Calc Button
-        ttk.Button(
-            tools_win,
-            text="Quick Calc",
-            style='App.TButton',
-            command=lambda: self.launch_script(self.SCRIPT_PATHS["Quick Calc"])
-        ).pack(fill='x', padx=30, pady=5)
+        tools = [
+            ("PE Plotter", "PE Plotter"),
+            ("Quick Calc", "Quick Calc"),
+            ("Time Utility", "Time Utility"),
+            ("Unit Converter", "Unit Converter"),
+            ("Sequence Visualizer", "Sequence Visualizer"),
+        ]
+        for label, key in tools:
+            self._create_tool_row(card, label, key)
 
-        # Launch Time Utility Button
+        # --- Footer ---
+        footer = ttk.Frame(tools_win, style='ToolsPopupHeader.TFrame', padding=(24, 0, 24, 20))
+        footer.pack(fill='x')
         ttk.Button(
-            tools_win,
-            text="Time Utility",
-            style='App.TButton',
-            command=lambda: self.launch_script(self.SCRIPT_PATHS["Time Utility"])
-        ).pack(fill='x', padx=30, pady=5)
-
-        # Launch Unit Converter Button
-        ttk.Button(
-            tools_win,
-            text="Unit Converter",
-            style='App.TButton',
-            command=lambda: self.launch_script(self.SCRIPT_PATHS["Unit Converter"])
-        ).pack(fill='x', padx=30, pady=5)
-
-        # Launch Sequence Visualizer Button
-        ttk.Button(
-            tools_win,
-            text="Sequence Visualizer",
-            style='App.TButton',
-            command=lambda: self.launch_script(self.SCRIPT_PATHS["Sequence Visualizer"])
-        ).pack(fill='x', padx=30, pady=5)
-
-        # Close Button
-        ttk.Button(
-            tools_win,
+            footer,
             text="Close",
             style='App.TButton',
             command=tools_win.destroy
-        ).pack(fill='x', padx=30, pady=5)
+        ).pack(fill='x')
+
+        # Center the pop-up over the main window once its final size is known
+        tools_win.update_idletasks()
+        w, h = tools_win.winfo_width(), tools_win.winfo_height()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (w // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (h // 2)
+        tools_win.geometry(f"+{x}+{y}")
 
     def open_repo(self, event=None):
         import webbrowser
