@@ -172,6 +172,7 @@ class Backend_Passthrough:
 class Passthrough_IV_GUI:
     PROGRAM_VERSION = "1.6"
     LOGO_SIZE = 110
+    LEFT_PANEL_WIDTH = 500  # default sash position so the left panel starts fully visible
     LOGO_FILE_PATH = resource_path("../../assets/LOGO/UGC_DAE_CSR_NBG.jpeg") # Path to your logo image
     CLR_BG_DARK = '#B8A392'; CLR_HEADER = '#E5DCD3'; CLR_FG_LIGHT = '#2C2825'; CLR_TEXT_DARK = '#1A1A1A' # Base colors
     CLR_ACCENT_GOLD = '#BA6B5E'; CLR_ACCENT_GREEN = '#B68B6E'; CLR_ACCENT_RED = '#BA6B5E' # Accent colors
@@ -206,13 +207,36 @@ class Passthrough_IV_GUI:
         gpib_button.pack(side='right', padx=(0, 5), pady=5)
 
         Label(header, text="K6221/2182 I-V Sweep", bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD, font=font_title_main).pack(side='left', padx=20, pady=10)
-        main_pane = ttk.PanedWindow(self.root, orient='horizontal'); main_pane.pack(fill='both', expand=True, padx=10, pady=10)
-        left_panel = ttk.PanedWindow(main_pane, orient='vertical', width=500); main_pane.add(left_panel, weight=1)
-        right_panel = tk.Frame(main_pane, bg=self.CLR_GRAPH_BG); main_pane.add(right_panel, weight=3)
-        top_controls = ttk.Frame(left_panel); left_panel.add(top_controls, weight=0)
-        console_pane = self.create_console_frame(left_panel); left_panel.add(console_pane, weight=1)
+        self.main_pane = ttk.PanedWindow(self.root, orient='horizontal'); self.main_pane.pack(fill='both', expand=True, padx=10, pady=10)
+        # weight=0 keeps the left panel from being squeezed as the window resizes.
+        self.left_panel = ttk.PanedWindow(self.main_pane, orient='vertical', width=self.LEFT_PANEL_WIDTH); self.main_pane.add(self.left_panel, weight=0)
+        right_panel = tk.Frame(self.main_pane, bg=self.CLR_GRAPH_BG); self.main_pane.add(right_panel, weight=1)
+        top_controls = ttk.Frame(self.left_panel); self.left_panel.add(top_controls, weight=0)
+        console_pane = self.create_console_frame(self.left_panel); self.left_panel.add(console_pane, weight=1)
         self.create_info_frame(top_controls); self.create_input_frame(top_controls)
         self.create_graph_frame(right_panel)
+
+        # sashpos() has no effect until the PanedWindow is actually mapped and
+        # laid out — an early call fails SILENTLY. So we (a) wait for the
+        # window to be drawn, (b) measure the real required width of the
+        # left-panel content instead of guessing, and (c) retry until the
+        # sash position verifiably sticks.
+        self.root.after(50, self._set_default_sash_position)
+
+    def _set_default_sash_position(self, attempt=0):
+        try:
+            self.root.update_idletasks()  # force geometry to be computed
+            # No canvas here, so the left panel's natural reqwidth reflects
+            # the true content width.
+            content_w = self.left_panel.winfo_reqwidth()
+            target = content_w + 30 if content_w > 1 else self.LEFT_PANEL_WIDTH
+            target = max(target, self.LEFT_PANEL_WIDTH)
+            self.main_pane.sashpos(0, target)
+            if abs(self.main_pane.sashpos(0) - target) > 5 and attempt < 10:
+                self.root.after(100, lambda: self._set_default_sash_position(attempt + 1))
+        except tk.TclError:
+            if attempt < 10:
+                self.root.after(100, lambda: self._set_default_sash_position(attempt + 1))
 
     def create_info_frame(self, parent):
         frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE); frame.pack(pady=5, padx=10, fill='x')
