@@ -432,6 +432,7 @@ class LCR_Backend:
 # ============================================================
 class CombinedGUI:
     PROGRAM_VERSION = "1.2-Combined"  # freeze + stabilization overhaul
+    LEFT_PANEL_WIDTH = 480  # default sash position so the left panel starts fully visible
 
     # --- FRZ-1 / FRZ-2 / FRZ-4 tuning knobs ---
     REDRAW_MS = 750           # plot redraw interval (ms). One redraw per tick.
@@ -592,16 +593,49 @@ class CombinedGUI:
         ttk.Button(header, text="📟", command=launch_gpib_scanner,
                    width=3).pack(side="right", padx=(0, 5), pady=5)
 
-        main_pane = ttk.PanedWindow(self.root, orient="horizontal")
-        main_pane.pack(fill="both", expand=True, padx=10, pady=10)
+        self.main_pane = ttk.PanedWindow(self.root, orient="horizontal")
+        self.main_pane.pack(fill="both", expand=True, padx=10, pady=10)
 
-        left = ttk.Frame(main_pane, width=480)
-        main_pane.add(left, weight=0)
-        right = ttk.Frame(main_pane)
-        main_pane.add(right, weight=1)
+        # FIX: pack_propagate(False) makes the requested width stick;
+        # weight=0 keeps the left panel from being squeezed as the window
+        # resizes, while the right (plot) panel absorbs all extra space.
+        left = ttk.Frame(self.main_pane, width=self.LEFT_PANEL_WIDTH)
+        left.pack_propagate(False)
+        self.main_pane.add(left, weight=0)
+        right = ttk.Frame(self.main_pane)
+        self.main_pane.add(right, weight=1)
 
         self._populate_left(left)
         self._populate_right(right)
+
+        # sashpos() has no effect until the PanedWindow is actually mapped and
+        # laid out — an early call fails SILENTLY. So we (a) wait for the
+        # window to be drawn, (b) measure the real required width of the
+        # left-panel content instead of guessing, and (c) retry until the
+        # sash position verifiably sticks.
+        self.root.after(50, self._set_default_sash_position)
+
+    def _set_default_sash_position(self, attempt=0):
+        try:
+            self.root.update_idletasks()  # force geometry to be computed
+
+            # Measure the actual content width: inner scrollable frame +
+            # vertical scrollbar + a little breathing room. Falls back to
+            # LEFT_PANEL_WIDTH if measurement isn't ready yet.
+            content_w = self.left_scrollable_frame.winfo_reqwidth()
+            if content_w > 1:
+                target = content_w + 30  # scrollbar (~15px) + padding
+            else:
+                target = self.LEFT_PANEL_WIDTH
+
+            self.main_pane.sashpos(0, target)
+
+            # Verify it stuck; if not (widget not mapped yet), retry.
+            if abs(self.main_pane.sashpos(0) - target) > 5 and attempt < 10:
+                self.root.after(100, lambda: self._set_default_sash_position(attempt + 1))
+        except tk.TclError:
+            if attempt < 10:
+                self.root.after(100, lambda: self._set_default_sash_position(attempt + 1))
 
     def _populate_left(self, panel):
         canvas = tk.Canvas(panel, bg=self.CLR_BG_DARK, highlightthickness=0)
@@ -609,8 +643,16 @@ class CombinedGUI:
         sf = ttk.Frame(canvas)
         sf.bind("<Configure>",
                 lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=sf, anchor="nw", width=460)
+        window_id = canvas.create_window((0, 0), window=sf, anchor="nw")
         canvas.configure(yscrollcommand=sb.set)
+
+        # Keep the inner frame exactly as wide as the canvas viewport, so
+        # widgets are never clipped on the right edge (they reflow instead),
+        # and remember the frame so the sash logic can measure its true width.
+        canvas.bind("<Configure>",
+                    lambda e: canvas.itemconfigure(window_id, width=e.width))
+        self.left_scrollable_frame = sf
+
         canvas.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
         sf.grid_columnconfigure(0, weight=1)
