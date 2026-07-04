@@ -802,7 +802,7 @@ class Integrated_CT_GUI:
         self.aper_combobox = ttk.Combobox(
             frame, font=self.FONT_BASE, state='readonly',
             values=["SHOR", "MED", "LONG"])
-        self.aper_combobox.set("MED")
+        self.aper_combobox.set("LONG")
         self.aper_combobox.grid(
             row=r, column=1, padx=(5, 10), pady=(0, 10), sticky='ew')
         r += 1
