@@ -1,8 +1,9 @@
 """
 Module: T_Control_L350_DirectControl_GUI.py
 Purpose: Direct command workbench GUI for Lake Shore Model 350 Temperature Controller.
-         Sends individual SCPI commands for PID, setpoint, heater range, display,
-         input configuration, manual output, and more.
+         Sends individual SCPI commands for PID, setpoint, heater range,
+         temperature limit, display, input configuration, manual output,
+         and more.
          Non-destructive disconnect: instrument retains all settings after programme close.
 
 SCPI commands verified against:
@@ -294,6 +295,26 @@ class Lakeshore350Backend:
     def get_range(self, output):
         """Query current heater range."""
         return int(self._query(f"RANGE? {output}"))
+
+    # -- Temperature limit (Manual: TLIMIT command) --
+    # TLIMIT <input>,<limit>
+    # input: A, B, C, or D
+    # limit: 0 to 2999 K; 0 = feature disabled (default)
+    # Safety: if the input reading exceeds the limit, ALL control
+    # outputs are shut down.
+
+    def set_temp_limit(self, channel, limit):
+        """Set over-temperature limit in K for input A-D (0 disables)."""
+        if not (0 <= limit <= 2999):
+            raise ValueError(
+                f"Temperature limit must be 0-2999 K, got {limit}")
+        cmd = f"TLIMIT {channel},{limit}"
+        self._write(cmd)
+        return cmd
+
+    def get_temp_limit(self, channel):
+        """Query over-temperature limit for input A-D. Returns float K."""
+        return float(self._query(f"TLIMIT? {channel}"))
 
     # -- Temperature readings (Manual: KRDG? / SRDG? commands) --
     # KRDG? <channel>  -> temperature in Kelvin
@@ -797,11 +818,12 @@ class DirectControlGUI:
         self._create_pid_panel(scroll_frame, 2)
         self._create_setpoint_panel(scroll_frame, 3)
         self._create_range_panel(scroll_frame, 4)
-        self._create_display_panel(scroll_frame, 5)
-        self._create_input_config_panel(scroll_frame, 6)
-        self._create_manual_output_panel(scroll_frame, 7)
-        self._create_advanced_panel(scroll_frame, 8)
-        self._create_temp_zone_panel(scroll_frame, 9)
+        self._create_tlimit_panel(scroll_frame, 5)
+        self._create_display_panel(scroll_frame, 6)
+        self._create_input_config_panel(scroll_frame, 7)
+        self._create_manual_output_panel(scroll_frame, 8)
+        self._create_advanced_panel(scroll_frame, 9)
+        self._create_temp_zone_panel(scroll_frame, 10)
         self._create_console_panel(scroll_frame, 99)
 
     def _create_info_panel(self, parent, grid_row):
@@ -1237,6 +1259,53 @@ class DirectControlGUI:
             btn_frame,
             text="Read Range",
             command=self._read_range).grid(
+            row=0, column=1, sticky='ew', padx=5)
+
+    def _create_tlimit_panel(self, parent, grid_row):
+        frame = ttk.LabelFrame(
+            parent, text='⚠ Temperature Limit (TLIMIT)')
+        frame.grid(row=grid_row, column=0, sticky='new',
+                   pady=5, padx=10)
+        frame.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(
+            frame,
+            text=("Safety shutdown: if this input exceeds the\n"
+                  "limit, ALL control outputs turn off.\n"
+                  "0 K disables the feature."),
+            background=self.CLR_FRAME_BG,
+            foreground=self.CLR_ACCENT_RED,
+            font=('Segoe UI', 9),
+            justify='left').grid(
+            row=0, column=0, columnspan=2,
+            sticky='w', padx=10, pady=(5, 5))
+
+        # Input selector
+        self.tlimit_ch_var = tk.StringVar(value='A')
+        ttk.Label(frame, text="Input:").grid(
+            row=1, column=0, sticky='w', padx=10, pady=5)
+        ttk.Combobox(
+            frame, textvariable=self.tlimit_ch_var,
+            values=['A', 'B', 'C', 'D'], state='readonly',
+            width=5).grid(row=1, column=1, sticky='w',
+                          padx=10, pady=5)
+
+        self.tlimit_entry = self._make_entry(
+            frame, "Limit (K)", "325", 2)
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.grid(row=3, column=0, columnspan=2,
+                       sticky='ew', pady=5)
+        btn_frame.grid_columnconfigure((0, 1), weight=1)
+        ttk.Button(
+            btn_frame,
+            text="Send T-Limit",
+            command=self._send_tlimit).grid(
+            row=0, column=0, sticky='ew', padx=5)
+        ttk.Button(
+            btn_frame,
+            text="Read T-Limit",
+            command=self._read_tlimit).grid(
             row=0, column=1, sticky='ew', padx=5)
 
     def _create_display_panel(self, parent, grid_row):
@@ -1766,6 +1835,8 @@ class DirectControlGUI:
             " power)\n"
             "  \u2022 PID: P=0-9999, I=0-1000, D=0-200\n"
             "  \u2022 Setpoint ramping: 0.001-100 K/min\n"
+            "  \u2022 TLIMIT safety: per-input over-temp limit"
+            " shuts down all outputs; 0 K = disabled\n"
             "  \u2022 Display: 1 to 8 reading displays\n"
             "  \u2022 Interfaces: Ethernet, USB, IEEE-488\n\n"
             "PID / Heater-Range selection guide (operator notes):\n\n"
@@ -2079,6 +2150,54 @@ class DirectControlGUI:
                 self.range_var.set(str(r))
         except Exception as e:
             self.log(f"ERROR reading range: {e}")
+            messagebox.showerror("Read Failed", str(e))
+
+    # -----------------------------------------------------------------------
+    # TEMPERATURE LIMIT HANDLERS
+    # -----------------------------------------------------------------------
+
+    def _send_tlimit(self):
+        """Send over-temperature limit (TLIMIT) to the instrument."""
+        channel = self.tlimit_ch_var.get()
+        try:
+            limit = float(self.tlimit_entry.get())
+        except ValueError:
+            self.log("ERROR: Invalid temperature limit value.")
+            messagebox.showerror(
+                "Invalid Input",
+                "Temperature limit must be a number 0-2999 K.")
+            return
+
+        # Safety: setting 0 K disables over-temperature protection
+        if limit == 0:
+            if not messagebox.askyesno(
+                    "⚠ Disable Temperature Limit",
+                    f"A limit of 0 K turns the over-temperature "
+                    f"safety shutdown OFF for Input {channel}.\n\n"
+                    f"The instrument will no longer shut down "
+                    f"outputs if this input overheats.\n\n"
+                    f"Continue?"):
+                self.log("Temperature limit change cancelled by user.")
+                return
+
+        self._safe_command(
+            f"Set Temp Limit (Input {channel}): {limit} K",
+            self.backend.set_temp_limit, channel, limit)
+
+    def _read_tlimit(self):
+        """Read current over-temperature limit from the instrument."""
+        if not self._require_connection():
+            return
+        try:
+            channel = self.tlimit_ch_var.get()
+            limit = self.backend.get_temp_limit(channel)
+            state = "disabled" if limit == 0 else "active"
+            self.log(f"Read Temp Limit (Input {channel}): "
+                     f"{limit} K ({state})")
+            self.tlimit_entry.delete(0, 'end')
+            self.tlimit_entry.insert(0, str(limit))
+        except Exception as e:
+            self.log(f"ERROR reading temperature limit: {e}")
             messagebox.showerror("Read Failed", str(e))
 
     # -----------------------------------------------------------------------
