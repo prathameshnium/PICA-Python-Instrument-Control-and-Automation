@@ -23,6 +23,7 @@ import time
 import math
 import traceback
 import atexit
+from collections import deque
 from datetime import datetime
 import numpy as np
 from matplotlib.figure import Figure
@@ -476,6 +477,8 @@ class Integrated_CT_GUI:
         # --- State flags ---
         self.is_running = False
         self.is_stabilizing = False
+        self._stopping = False          # re-entrancy guard for stop
+        self._close_after_stop = False  # destroy window once worker exits
         self.start_time = None
         self._last_draw_time = 0.0
         self._redraw_interval = 0.25   # seconds; redraw at most ~4×/sec
@@ -493,17 +496,21 @@ class Integrated_CT_GUI:
         self.freq_filepaths = {}
         self.plot_freq = None
 
-        # --- Data storage (Appendix A.4: keyed per frequency) ---
+        # --- Data storage (Appendix A.4: keyed per frequency, bounded) ---
         self.data_storage = {
-            'time': [],
-            'temperature': [],
-            'cp': {},   # {freq: {'T': [...], 'v': [...]}}
-            'g':  {},   # {freq: {'T': [...], 'v': [...]}}
+            'time': deque(maxlen=10000),
+            'temperature': deque(maxlen=10000),
+            'cp': {},   # {freq: {'T': deque, 'v': deque}}
+            'g':  {},   # {freq: {'T': deque, 'v': deque}}
         }
 
         # --- UI variables ---
         self.log_scale_var = tk.BooleanVar(value=False)
         self.logo_image = None
+
+        # Decade log autoscale state (LabVIEW-style): current snapped
+        # y-limits per axis key ("cp" / "g")
+        self._decade_ylims = {}
 
         # --- Threading ---
         self.data_queue = queue.Queue()
@@ -1172,12 +1179,13 @@ class Integrated_CT_GUI:
             self.stop_button.config(state='normal')
             self.scan_button.config(state='disabled')
 
-            self.data_storage['time'].clear()
-            self.data_storage['temperature'].clear()
+            self.data_storage['time'] = deque(maxlen=10000)
+            self.data_storage['temperature'] = deque(maxlen=10000)
             self.data_storage['cp'] = {
-                f: {'T': [], 'v': []} for f in self.frequencies}
+                f: {'T': deque(maxlen=10000), 'v': deque(maxlen=10000)} for f in self.frequencies}
             self.data_storage['g'] = {
-                f: {'T': [], 'v': []} for f in self.frequencies}
+                f: {'T': deque(maxlen=10000), 'v': deque(maxlen=10000)} for f in self.frequencies}
+            self._decade_ylims.clear()  # fresh dataset re-snaps decades
 
             for line in (self.line_main, self.line_sub1, self.line_sub2):
                 line.set_data([], [])
@@ -1240,18 +1248,18 @@ class Integrated_CT_GUI:
         """
         Appendix A.4:
         Populate the plot-frequency dropdown.  Default selection is the
-        middle frequency: (len - 1) // 2  →  for 20 freqs this is index 9,
-        i.e. the 10th frequency.
+        lowest frequency (index 0) — the sweep measures lowest-first, so
+        the live plot shows data as soon as the measurement starts.
         """
         vals = [f"{int(f)} Hz" for f in self.frequencies]
         self.plot_freq_cb.config(state='readonly')
         self.plot_freq_cb['values'] = vals
-        mid_index = (len(self.frequencies) - 1) // 2
-        self.plot_freq_cb.current(mid_index)
-        self.plot_freq = self.frequencies[mid_index]
+        default_index = 0
+        self.plot_freq_cb.current(default_index)
+        self.plot_freq = self.frequencies[default_index]
         self.log(
             f"Default live-plot frequency: {int(self.plot_freq)} Hz "
-            f"(index {mid_index + 1} of {len(self.frequencies)}).")
+            f"(lowest of {len(self.frequencies)}).")
 
     # ------------------------------------------------------------------
     def _on_plot_freq_change(self, event=None):
@@ -1263,31 +1271,56 @@ class Integrated_CT_GUI:
         """
         sel = self.plot_freq_cb.get().replace(" Hz", "")
         self.plot_freq = float(sel)
+        self._decade_ylims.clear()  # new frequency re-snaps decades
         self.ax_main.set_title(
             f"Cp vs. T @ {int(self.plot_freq)} Hz", fontweight='bold')
         self._update_live_plots(force=True)
 
     # ------------------------------------------------------------------
     def stop_measurement(self, from_user=True):
-        # Issue #1 Fix: Wait for worker to finish before touching VISA
-        if not (self.is_running or self.is_stabilizing):
+        # Issue #1 Fix: Wait for worker to finish before touching VISA.
+        # The wait is a non-blocking root.after() poll so the GUI never
+        # freezes (was a join(15) that stalled the window on Stop).
+        if self._stopping or not (self.is_running or self.is_stabilizing):
             return
+        self._stopping = True
         self.is_running, self.is_stabilizing = False, False
         self.stop_event.set()
+        self.stop_button.config(state='disabled')
         if from_user:
             self.log("Stop requested; waiting for worker to finish...")
 
-        # Wait for the worker to exit BEFORE touching the VISA sessions.
-        if self.measurement_thread and self.measurement_thread.is_alive():
-            self.measurement_thread.join(timeout=15.0)
-            if self.measurement_thread.is_alive():
-                self.log("WARNING: worker did not exit in 15 s; "
-                         "closing sessions anyway.")
+        self._stop_deadline = time.time() + 15.0
+        self._poll_worker_stopped(from_user)
 
+    def _poll_worker_stopped(self, from_user):
+        t = self.measurement_thread
+        if (
+            t is not None
+            and t.is_alive()
+            and time.time() < self._stop_deadline
+        ):
+            self.root.after(
+                200, lambda: self._poll_worker_stopped(from_user))
+            return
+        if t is not None and t.is_alive():
+            self.log("WARNING: worker did not exit in 15 s; "
+                     "closing sessions anyway.")
+        self._finalize_stop(from_user)
+
+    def _finalize_stop(self, from_user):
         self.start_button.config(state='normal')
-        self.stop_button.config(state='disabled')
         self.scan_button.config(state='normal')
-        self.backend.close_instruments()
+        try:
+            self.backend.close_instruments()
+        except Exception as e:
+            self.log(f"WARNING: error closing instruments: {e}")
+        self._stopping = False
+
+        if self._close_after_stop:
+            self.root.destroy()
+            return
+
         if from_user:
             self.log("Measurement stopped and instruments disconnected.")
             messagebox.showinfo(
@@ -1468,12 +1501,42 @@ class Integrated_CT_GUI:
     # ==================================================================
     # PLOTTING (Appendix A.4: decoupled from acquisition)
     # ==================================================================
+    def _decade_autoscale_y(self, ax, values, key):
+        """LabVIEW-style decade autoscale: snap y-limits to
+        [10^floor(log10(min_pos)), 10^ceil(log10(max_pos))]; expand only,
+        whole decades at a time, so the scale never jitters per point.
+        Linear fallback if no positive finite data."""
+        pos = [v for v in values if isinstance(v, (int, float))
+               and math.isfinite(v) and v > 0]
+        if not pos:
+            ax.set_yscale('linear')
+            ax.relim()
+            ax.autoscale_view(scaley=True)
+            self._decade_ylims.pop(key, None)
+            return False
+        lo = 10.0 ** math.floor(math.log10(min(pos)))
+        hi = 10.0 ** math.ceil(math.log10(max(pos)))
+        if hi <= lo:
+            hi = lo * 10.0
+        cur = self._decade_ylims.get(key)
+        if cur is not None:
+            lo, hi = min(lo, cur[0]), max(hi, cur[1])  # expand only
+        if cur != (lo, hi):
+            self._decade_ylims[key] = (lo, hi)
+            ax.set_yscale('log')
+            ax.set_ylim(lo, hi)
+        return True
+
+    # ------------------------------------------------------------------
     def _update_y_scale(self):
+        self._decade_ylims.clear()  # re-snap from scratch on toggle
         if self.log_scale_var.get():
             self.ax_main.set_yscale('log')
+            self.ax_sub1.set_yscale('log')
         else:
             self.ax_main.set_yscale('linear')
-        self._rescale_main_axis()
+            self.ax_sub1.set_yscale('linear')
+        self._update_live_plots(force=True)
         self.canvas.draw_idle()
 
     # ------------------------------------------------------------------
@@ -1500,9 +1563,15 @@ class Integrated_CT_GUI:
         self._last_draw_time = now
 
         self._rescale_main_axis()
-        for ax in (self.ax_sub1, self.ax_sub2):
-            ax.relim()
-            ax.autoscale_view()
+        self.ax_sub1.relim()
+        if self.log_scale_var.get():
+            self.ax_sub1.autoscale_view(scalex=True, scaley=False)
+            self._decade_autoscale_y(
+                self.ax_sub1, self.data_storage['g'][fq]['v'], "g")
+        else:
+            self.ax_sub1.autoscale_view()
+        self.ax_sub2.relim()
+        self.ax_sub2.autoscale_view()
 
         self.canvas.draw_idle()
 
@@ -1518,11 +1587,7 @@ class Integrated_CT_GUI:
             return
 
         if self.log_scale_var.get():
-            valid = [v for v in vals
-                     if v > 0 and v == v and v != float('inf')]
-            if valid:
-                lo, hi = min(valid), max(valid)
-                self.ax_main.set_ylim(lo * 0.5, hi * 2.0)
+            self._decade_autoscale_y(self.ax_main, vals, "cp")
         else:
             self.ax_main.relim()
             self.ax_main.autoscale_view(scaley=True)
@@ -1651,8 +1716,13 @@ class Integrated_CT_GUI:
             if messagebox.askyesno(
                     "Exit",
                     "Measurement is running. Stop and exit?"):
+                # Destroy is deferred to _finalize_stop so the worker
+                # can exit cleanly without freezing the GUI.
+                self._close_after_stop = True
                 self.stop_measurement(from_user=False)
-                self.root.destroy()
+        elif self._stopping:
+            # Stop already in progress — just close once it finishes.
+            self._close_after_stop = True
         else:
             self.root.destroy()
 

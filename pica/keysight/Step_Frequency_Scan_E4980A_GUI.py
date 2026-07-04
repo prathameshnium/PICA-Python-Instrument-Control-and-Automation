@@ -2,6 +2,9 @@
 Module: Combined_TFreq_GUI.py
 Purpose: Combined Lakeshore 350 temperature control + Keysight E4980A
          frequency sweep GUI.
+Note: despite the filename (Step_Frequency_Scan…), this program performs
+a temperature-STEPPED dielectric scan: a full frequency sweep at each
+temperature setpoint. Filename kept for compatibility.
 
 Architecture (per design doc §2):
   - Single GUI thread, single hardware worker thread.
@@ -518,6 +521,11 @@ class CombinedGUI:
         self._freq_plot_dirty = False
         self._pending_progress = None
 
+        # Decade log autoscale state (LabVIEW-style): current snapped
+        # y-limits per axis key; log-Y on by default (Cp/G span decades).
+        self.log_y_var = tk.BooleanVar(value=True)
+        self._decade_ylims = {}
+
         # REL-2: worker-side phase marker (worker thread only writes it;
         # used to defer live ramp-rate updates during final approach)
         self._worker_phase = None
@@ -901,11 +909,47 @@ class CombinedGUI:
         self.ax_g.set_xlabel("Frequency (Hz)"); self.ax_g.set_ylabel("G (S)")
         self.ax_g.set_xscale("log"); self.ax_g.grid(True, ls="--", alpha=0.7)
         self.fig_f.subplots_adjust(left=0.08, right=0.98, top=0.98, bottom=0.07, hspace=0.15)
+        ttk.Checkbutton(parent, text="Log Y scale (decade autoscale)",
+                        variable=self.log_y_var,
+                        command=self._on_log_y_toggle).pack(side="top", anchor="w", padx=5, pady=(5, 0))
         self.canvas_f = FigureCanvasTkAgg(self.fig_f, parent)
         tb = NavigationToolbar2Tk(self.canvas_f, parent, pack_toolbar=False)
         tb.update()
         tb.pack(side="bottom", fill="x")
         self.canvas_f.get_tk_widget().pack(fill="both", expand=True)
+
+    def _on_log_y_toggle(self):
+        """Re-snap decade limits when the log-Y checkbox flips.
+        FRZ-1: never draws directly — just marks the plot dirty and lets
+        the throttled _redraw_tick do the drawing."""
+        self._decade_ylims.clear()
+        self._freq_plot_dirty = True
+
+    def _decade_autoscale_y(self, ax, values, key):
+        """LabVIEW-style decade autoscale: snap y-limits to
+        [10^floor(log10(min_pos)), 10^ceil(log10(max_pos))]; expand only,
+        whole decades at a time, so the scale never jitters per point.
+        Linear fallback if no positive finite data."""
+        pos = [v for v in values if isinstance(v, (int, float))
+               and math.isfinite(v) and v > 0]
+        if not pos:
+            ax.set_yscale('linear')
+            ax.relim()
+            ax.autoscale_view(scaley=True)
+            self._decade_ylims.pop(key, None)
+            return False
+        lo = 10.0 ** math.floor(math.log10(min(pos)))
+        hi = 10.0 ** math.ceil(math.log10(max(pos)))
+        if hi <= lo:
+            hi = lo * 10.0
+        cur = self._decade_ylims.get(key)
+        if cur is not None:
+            lo, hi = min(lo, cur[0]), max(hi, cur[1])  # expand only
+        if cur != (lo, hi):
+            self._decade_ylims[key] = (lo, hi)
+            ax.set_yscale('log')
+            ax.set_ylim(lo, hi)
+        return True
 
     # ------------------------------------------------------------
     # FRZ-1 / FRZ-2: throttled redraw + display decimation
@@ -939,8 +983,13 @@ class CombinedGUI:
                 self._freq_plot_dirty = False
                 self.line_cp.set_data(self.scan_f, self.scan_cp)
                 self.line_g.set_data(self.scan_f, self.scan_g)
-                for ax in (self.ax_cp, self.ax_g):
-                    ax.relim(); ax.autoscale_view()
+                for ax, key, data in ((self.ax_cp, "cp", self.scan_cp),
+                                      (self.ax_g, "g", self.scan_g)):
+                    ax.relim(); ax.autoscale_view(scalex=True, scaley=False)
+                    if self.log_y_var.get():
+                        self._decade_autoscale_y(ax, data, key)
+                    else:
+                        ax.set_yscale('linear'); ax.autoscale_view(scaley=True)
                 self.canvas_f.draw_idle()
             if self._pending_progress is not None:
                 self.progress["value"] = self._pending_progress
@@ -1185,6 +1234,7 @@ class CombinedGUI:
         self.scat_meas.set_data([], []); self.line_heater.set_data([], [])
         self.line_cp.set_data([], []); self.line_g.set_data([], [])
         self.canvas_t.draw_idle(); self.canvas_f.draw_idle()
+        self._decade_ylims.clear()
         self._temp_plot_dirty = False
         self._freq_plot_dirty = False
         self.progress["value"] = 0
@@ -1314,6 +1364,7 @@ class CombinedGUI:
                     self._temp_plot_dirty = True
                 elif t == "scan_reset":
                     self.scan_f.clear(); self.scan_cp.clear(); self.scan_g.clear()
+                    self._decade_ylims.clear()  # new spectrum re-snaps decades
                     self._freq_plot_dirty = True
                 elif t == "scan_point":
                     self.scan_f.append(m["freq"])
@@ -1760,13 +1811,29 @@ class CombinedGUI:
         if self.is_running:
             if messagebox.askyesno("Exit", "Sequence is running. Stop and exit?"):
                 self.stop_sequence("User closed application.")
-                if self.worker_thread and self.worker_thread.is_alive():
-                    # MIN-8: raise from 3 s to 10 s to outlast the 60 s VISA
-                    # timeout when the worker is mid-sweep at low frequency.
-                    self.worker_thread.join(timeout=10.0)
-                self.root.destroy()
+                # Non-blocking shutdown: poll for worker exit with
+                # root.after instead of join() so the GUI stays alive
+                # while a slow VISA read drains (was a hard freeze of
+                # up to 10 s here). _atexit_shutdown remains the
+                # backstop for instrument cleanup after destroy.
+                self._close_deadline = time.time() + 15.0
+                self._poll_worker_exit_then_destroy()
         else:
             self.root.destroy()
+
+    def _poll_worker_exit_then_destroy(self):
+        t = self.worker_thread
+        if (
+            t is not None
+            and t.is_alive()
+            and time.time() < self._close_deadline
+        ):
+            self.root.after(200, self._poll_worker_exit_then_destroy)
+            return
+        if t is not None and t.is_alive():
+            self.log("WARNING: worker did not exit within timeout; "
+                     "closing anyway (atexit will clean up instruments).")
+        self.root.destroy()
 
 
 # ============================================================
