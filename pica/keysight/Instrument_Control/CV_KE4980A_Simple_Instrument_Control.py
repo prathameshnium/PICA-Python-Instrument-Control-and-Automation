@@ -9,6 +9,9 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import sys
+import tkinter as tk
+from tkinter import filedialog
 
 # ---------------------------------------------------------------
 # User Input
@@ -19,9 +22,6 @@ loop = 1
 name = "Swastika_Test2_"
 V_ac = 0.5
 # ---------------------------------------------------------------
-
-filename = "E:/Prathamesh/Python Stuff/CV/CV_Measurements/" + str(name) + "_freq_" + str(
-    freq) + "_volt_" + str(V) + "_V_step_" + str(V_step) + "_Loops" + str(loop) + ".txt"
 
 loop_ind_new = 0
 protocol_list = []
@@ -134,6 +134,20 @@ def Loop_fcn(loop):
 
 
 if __name__ == "__main__":
+    default_name = f"{name}_freq_{freq}_volt_{V}_V_step_{V_step}_Loops{loop}.txt"
+    root = tk.Tk()
+    root.withdraw()
+    filename = filedialog.asksaveasfilename(
+        defaultextension=".txt",
+        initialfile=default_name,
+        filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+        title="Select file to save CV data"
+    )
+    root.destroy()
+    if not filename:
+        print("No file selected. Exiting.")
+        sys.exit()
+
     try:
         Loop_fcn(loop)
 

@@ -8,15 +8,30 @@ import time
 from pymeasure.instruments.keithley import Keithley6517B
 from datetime import datetime
 import traceback
+import tkinter as tk
+from tkinter import filedialog
 
 
 def main():
     """
     Main function to run the pyroelectric measurement experiment.
     """
-    base_filename = 'E:/Prathamesh/Python Stuff/Py Pyroelectric/Test_data/Pyro_data_test'
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{base_filename}_{timestamp}.csv"
+    default_name = f"Pyro_data_test_{timestamp}.csv"
+
+    root = tk.Tk()
+    root.withdraw()
+    filename = filedialog.asksaveasfilename(
+        defaultextension=".csv",
+        initialfile=default_name,
+        filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        title="Select file to save Pyroelectric data"
+    )
+    root.destroy()
+    if not filename:
+        print("No file selected. Exiting.")
+        return
+
     print(f'Filename: {filename}')
     time.sleep(0.01)
 

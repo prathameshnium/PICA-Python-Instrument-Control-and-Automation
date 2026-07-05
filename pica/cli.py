@@ -71,7 +71,7 @@ def find_scripts(base_path):
     # Exclude non-main measurement scripts.
     exclude_list = [
         "BasicTest_S830_Instrument_Control.py",
-        "GPIB_InterfaceTest_Simple_Instrument_Control.py",
+        "GPIB_VISA_InterfaceTest_Simple_Instrument_Control.py",
     ]
 
     for path in base.rglob("*Instrument_Control.py"):
