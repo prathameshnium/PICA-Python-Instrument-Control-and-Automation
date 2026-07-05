@@ -896,8 +896,10 @@ class LCR_Freq_GUI:
                            G = Re(Y) = R / |Z|^2
                            B = Im(Y) = -X / |Z|^2
 
-        NOTE: Complex capacitance C* = C' - jC''. By this definition,
-        Cp'' = Cs'' = G/omega. This equivalence is used here.
+        NOTE: Complex capacitance C* = C' - jC''. Loss terms use the
+        model matching each capacitance: Cp'' = G/omega (parallel model)
+        and Cs'' = D*Cs (series model), matching the legacy LabVIEW
+        program (verified against its reference data files).
 
         Returns list of 18 values in DATA_HEADER column order:
             Q, D, G, B, Cp, Lp, Cs, Ls, |Z|, theta(rad), chi, Rs,
@@ -955,7 +957,7 @@ class LCR_Freq_GUI:
 
         # Complex capacitance C* = C' - jC''
         Cp_double_prime = G / omega_safe
-        Cs_double_prime = Cp_double_prime
+        Cs_double_prime = D * Cs  # series-model loss (legacy LabVIEW convention)
 
         return [
             Q,                  # 0
