@@ -58,14 +58,14 @@ def test_pyroelectric_script_import():
 
 # ============================================================================ 
 # 3. Test Visualization Script (Tricky: Runs on Import)
-# Target: pica/keithley/k6517b/Pyroelectricity/Instrument_Control/PyroDataVisualization_Simple.py
-# ============================================================================ 
+# Target: pica/keithley/k6517b/Pyroelectricity/Instrument_Control/PyroDataVisualization_Simple_Instrument_Control.py
+# ============================================================================
 def test_visualization_script_safe_run():
     """
     This script runs code immediately upon import (it has no 'if __name__ == main' guard).
     We must mock tkinter and file dialogs BEFORE importing to prevent the test from hanging.
     """
-    module_name = "pica.keithley.k6517b.Pyroelectricity.Instrument_Control.PyroDataVisualization_Simple"
+    module_name = "pica.keithley.k6517b.Pyroelectricity.Instrument_Control.PyroDataVisualization_Simple_Instrument_Control"
     
     with patch("tkinter.Tk"), \
          patch("tkinter.filedialog.askopenfilename", return_value="dummy_data.csv"), \

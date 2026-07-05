@@ -18,10 +18,10 @@ def main():
     Main function to run the I-V sweep measurement.
     """
     parser = argparse.ArgumentParser(description="Keithley 2400 I-V Sweep")
-    parser.add_argument("--filename", required=True, help="Name of the file to save the data.")
+    parser.add_argument("--filename", default="IV_K2400_Loop_data", help="Name of the file to save the data.")
     parser.add_argument("--path", help="Path to save the data file. Defaults to a 'data' folder.")
-    parser.add_argument("--range", type=float, required=True, help="Highest value of Current (in micro A).")
-    parser.add_argument("--step", type=float, required=True, help="The step size (in micro A).")
+    parser.add_argument("--range", type=float, default=1.0, help="Highest value of Current (in micro A).")
+    parser.add_argument("--step", type=float, default=0.2, help="The step size (in micro A).")
     parser.add_argument("--gpib-address", default="GPIB::4", help="GPIB address of the instrument.")
     args = parser.parse_args()
 

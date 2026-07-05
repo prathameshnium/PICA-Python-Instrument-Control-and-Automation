@@ -68,7 +68,7 @@ def test_lcr_backend_structure():
 def test_delta_backend_structure():
     with patch('pyvisa.ResourceManager'):
         try:
-            from pica.keithley.delta_mode.Instrument_Control import Delta_K6221_K2182_Simple as Delta_Module
+            from pica.keithley.delta_mode.Instrument_Control import Delta_K6221_K2182_Simple_Instrument_Control as Delta_Module
         except ImportError:
             pytest.skip("Could not import Delta Instrument Control.")
 

@@ -158,7 +158,7 @@ class TestDeepSimulation(unittest.TestCase):
             inputs = ['0', '1e-5', '1e-6', 'test_file', 'y', 'y']
             with patch('builtins.input', side_effect=inputs), \
                  patch('pandas.DataFrame.to_csv'):
-                self.run_module_safely("pica.keithley.delta_mode.Instrument_Control.Delta_K6221_K2182_Simple", {})
+                self.run_module_safely("pica.keithley.delta_mode.Instrument_Control.Delta_K6221_K2182_Simple_Instrument_Control", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_06_delta_sensing(self):
