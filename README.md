@@ -158,6 +158,16 @@ The system is currently validated with industry-standard hardware, covering a re
 > [!NOTE]
 > **Understanding "Delta Mode":** The term "Delta Mode" refers specifically to a technique used by Keithley Models 6220 and 6221 Current Sources in conjunction with the Model 2182/2182A Nanovoltmeter for very low resistance measurements. This method is described in detail in the [Keithley Low Level Measurements Handbook](https://www.tek.com/en/documents/product-article/keithley-low-level-measurements-handbook---7th-edition). In this documentation, "Ultra Low Resistance Measurements" is used as the general scientific term, while "Delta Mode" may appear when specifically referencing the Keithley-specific method or program files.
 
+### Advanced Temperature Step Control (Lakeshore 350)
+
+`pica/lakeshore/T_Control_L350_Step_GUI_advanced.py` is a self-contained, advanced version of the classic step-sequence controller (`T_Control_L350_Step_GUI.py`, which remains unchanged for existing workflows). It embeds the field-tested v1.2 stabilization logic (two-stage approach, rolling-window tolerance + drift criterion, stabilization timeout) and adds:
+
+- **Adaptive ramp rate** — the rate is computed per step as `|ΔT| × Step Factor`, then hard-capped by an editable low-temperature table (`30:0.3, 100:0.5, else:5` = max 0.3 K/min below 30 K, 0.5 K/min below 100 K, otherwise 5 K/min). This suppresses the large overshoot seen below 100 K on LN2-dewar probes, where even a small heater input raises the temperature substantially. The first setpoint of a run is approached extra slowly (**First-Step ×**, default 0.5). Untick *Adaptive ramp rate* to use a fixed manual rate.
+- **Approach from one side** — optional "always from below/above" mode for hysteresis-sensitive measurements: the slow final ramp always enters the setpoint from the chosen side.
+- **Stability criteria** — configurable ±tolerance band, rolling window length, drift limit (K/min), and a max-wait timeout with a loud warning if stabilization fails.
+- **Safety** — hardcoded 340 K kill switch, user-set soft Max-Temp limit with graceful abort (ramp stopped, heater off), heater-range checks, and crash-safe shutdown on window close or error.
+- **Run control & logging** — Pause/Resume, Skip Step, live-editable sequence, per-poll CSV (with ramp rate + phase columns), a per-setpoint summary CSV (rate used, stabilization time, outcome), and a live plot showing the setpoint and its tolerance band. After each stabilization the program beeps and waits for the **Proceed** button (external-measurement handshake).
+
 ### Module Previews
 
 <p align="center">
