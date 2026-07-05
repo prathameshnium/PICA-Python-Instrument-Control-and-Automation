@@ -1421,10 +1421,10 @@ class CombinedGUI:
         theta_deg = math.degrees(theta_rad)
         Y_mag = 1.0 / Z_mag_safe
         Cp_dp = G / omega_safe
-        # MIN-9 / physics note: Cs″ := Cp″ is a legacy convention used
-        # throughout this codebase; they differ by (1 + D²) in general.
-        # Do not "fix" without updating the downstream plotter.
-        Cs_dp = Cp_dp
+        # Cs″ = D·Cs (series-model loss) — the legacy LabVIEW convention,
+        # verified against its reference data files; differs from Cp″ by
+        # (1 + D²) in general.
+        Cs_dp = D * Cs
         return [Q, D, G, B, Cp, Lp, Cs, Ls, Z_mag, theta_rad, X, R,
                 theta_deg, Rp, Y_mag, omega, Cp_dp, Cs_dp]
 

@@ -993,7 +993,7 @@ class LCR_Freq_GUI:
         Y_mag = 1.0 / Z_mag_safe
 
         Cp_double_prime = G / omega_safe
-        Cs_double_prime = Cp_double_prime
+        Cs_double_prime = D * Cs  # series-model loss (legacy LabVIEW convention)
 
         return [
             Q, D, G, B, Cp, Lp, Cs, Ls, Z_mag, theta_rad, chi, Rs,
