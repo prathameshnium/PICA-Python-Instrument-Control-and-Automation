@@ -122,3 +122,4 @@ pica/README.md
 pica/LICENSE
 pica/CONTRIBUTING.md
 pica/keysight/data_file_for_ref/
+.claude/settings.json

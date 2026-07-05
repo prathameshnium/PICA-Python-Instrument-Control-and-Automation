@@ -35,8 +35,8 @@ ADAPTIVE RAMP RATE (new):
     first setpoint of a run: rate *= First-Step Factor (overshoot is
     worst on the first point, so it is approached extra slowly)
 
-    Cap table syntax (editable in the GUI):  "30:0.3, 100:0.5, else:5"
-      -> below 30 K max 0.3 K/min; below 100 K max 0.5 K/min;
+    Cap table syntax (editable in the GUI):  "77:0.3, 100:0.5, else:5"
+      -> below 77 K max 0.3 K/min; below 100 K max 0.5 K/min;
          otherwise max 5 K/min.
     THE CAP TABLE IS A GLOBAL SAFETY ENVELOPE: it clamps EVERY rate the
     program sends to the Lakeshore — the adaptive rate, the fixed rate,
@@ -47,7 +47,7 @@ ADAPTIVE RAMP RATE (new):
     the temperature a lot below 100 K; medium/low PID still overshoots
     unless the setpoint ramp itself is very slow.
 
-    Worked examples (defaults: factor 0.2, caps 30:0.3/100:0.5/else:5):
+    Worked examples (defaults: factor 0.2, caps 77:0.3/100:0.5/else:5):
       10 K step at  80 K -> min(10*0.2, 0.5) = 0.5 K/min
       10 K step at 150 K -> min(10*0.2, 5.0) = 2.0 K/min
       50 K step at 250 K -> min(50*0.2, 5.0) = 5.0 K/min (ceiling)
@@ -207,7 +207,7 @@ def window_check(window, target, tol, window_s, drift_limit):
 
 
 def parse_ramp_table(text):
-    """Parse "30:0.3, 100:0.5, else:5" -> (sorted caps list, default cap).
+    """Parse "77:0.3, 100:0.5, else:5" -> (sorted caps list, default cap).
 
     Raises ValueError with a readable message on malformed input.
     """
@@ -501,7 +501,7 @@ class TempControlAdvancedGUI:
                  "(tolerance AND drift) criterion. 340 K kill switch active.")
         self.log("Ramp: adaptive or fixed (radio buttons); the low-T cap "
                  "table clamps EVERY rate incl. fixed + approach "
-                 "(defaults: <30 K: 0.3, <100 K: 0.5, else 5 K/min).")
+                 "(defaults: <77 K: 0.3, <100 K: 0.5, else 5 K/min).")
 
     # ------------------------------------------------------------
     # Styling
@@ -744,14 +744,14 @@ class TempControlAdvancedGUI:
 
         ttk.Label(frame, text="Low-T caps — all modes (K:K/min):").grid(
             row=4, column=0, columnspan=2, sticky="w", padx=10, pady=(5, 2))
-        self.ramp_table_var = tk.StringVar(value="30:0.3, 100:0.5, else:5")
+        self.ramp_table_var = tk.StringVar(value="77:0.3, 100:0.5, else:5")
         self.ramp_table_entry = ttk.Entry(frame, textvariable=self.ramp_table_var,
                                           font=self.FONT_BASE)
         self.ramp_table_entry.grid(row=4, column=2, columnspan=4, sticky="ew",
                                    padx=(2, 10), pady=(5, 2))
         ttk.Label(frame,
                   text="Hard ceiling on EVERY rate sent (adaptive, fixed and "
-                       "approach). e.g. below 30 K max 0.3 K/min.",
+                       "approach). e.g. below 77 K max 0.3 K/min.",
                   font=("Segoe UI", 8, "italic")
                   ).grid(row=5, column=0, columnspan=6, sticky="w",
                          padx=10, pady=(0, 5))
