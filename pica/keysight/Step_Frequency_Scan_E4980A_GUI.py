@@ -122,6 +122,36 @@ programs do not import from each other).
          columns (appended at the end — existing readers unaffected);
          new per-setpoint <sample>_<stamp>_StabSummary.csv records
          rate used, approach mode, stabilization duration, outcome.
+
+============================================================
+v1.4 — INTUITIVE PANELS + RATE-CONFLICT FIXES
+============================================================
+  UI-1   Left panel reorganized by intent (mirrors
+         T_Control_L350_Step_GUI_advanced): "Stabilization Criteria"
+         (tol/window/drift/timeout/poll), "Temperature Ramp" (rate
+         source + low-T caps + approach band/rate/mode), "Instrument &
+         Safety" (Max Temp, heater range, Auto-PID, VISA). The old
+         grab-bag "Lakeshore 350 Settings" frame is gone.
+  UI-2   Rate source is a RADIO pair (Adaptive / Fixed); the inactive
+         group is greyed out, so exactly one rate source is ever
+         editable. Radios are locked while a sequence runs (the mode
+         is only read at Start). Fixed Rate default is 2.0 K/min
+         (was 10.0 — unsafe on the LN2-dewar probe).
+  RATE-1 The low-T cap table is now a GLOBAL SAFETY ENVELOPE: it
+         clamps EVERY rate sent to the Lakeshore — adaptive, fixed,
+         the slow approach rate (both send points), and live mid-run
+         rate updates (`capped_rate`; each clamp is logged). This also
+         fixes the inversion where below the caps the stage-1 ramp
+         crawled while the "slow" stage-2 approach was faster.
+  RATE-2 `compute_ramp_rate` clamp order fixed: Min Rate floors the
+         proposed rate BEFORE the cap, so Min Rate can no longer
+         silently defeat a low-T safety cap.
+  RATE-3 "Always from above" setpoints whose pre-target (T + band)
+         would exceed Max Temp are rejected at Start instead of
+         SoftLimitAbort-ing the run at 3 a.m.
+  PID-1  "Auto PID per setpoint" checkbox (parity with the advanced
+         T-controller): untick to keep manual Live-PID values instead
+         of having them silently overwritten at every setpoint.
 """
 
 import tkinter as tk
@@ -251,21 +281,41 @@ def compute_ramp_rate(current_T, target_T, p, is_first_step=False):
     `p` is the validated params dict (keys: step_factor, ramp_caps,
     ramp_default_cap, min_rate, max_rate, first_factor).
     Returns (rate_K_per_min, reason_str) — reason_str goes to the log.
+
+    Clamp order: Min Rate floors the PROPOSED rate before the low-T cap
+    and Max Rate are applied, so the caps are hard ceilings that neither
+    Min Rate nor the first-step factor can override.
     """
     step = abs(target_T - current_T)
     proposed = step * p["step_factor"]
     coldest = min(current_T, target_T)
     cap = ramp_cap_for(coldest, p["ramp_caps"], p["ramp_default_cap"])
-    rate = min(proposed, cap, p["max_rate"])
+    rate = min(max(proposed, p["min_rate"]), cap, p["max_rate"])
     reason = (f"step {step:.1f} K x {p['step_factor']:g} = {proposed:.2f} "
               f"K/min, low-T cap @ {coldest:.1f} K = {cap:g} K/min")
     if is_first_step and p["first_factor"] != 1.0:
         rate *= p["first_factor"]
         reason += f", first-step x{p['first_factor']:g}"
-    rate = max(rate, p["min_rate"])
-    rate = min(rate, p["max_rate"])
+    rate = min(rate, cap, p["max_rate"])
     reason += f" -> {rate:.2f} K/min"
     return rate, reason
+
+
+def capped_rate(requested, current_T, target_T, p, label=""):
+    """Clamp ANY rate sent to the Lakeshore to the low-T cap table.
+
+    The table is a global safety envelope: it also governs the fixed
+    rate and the slow approach rate, not just the adaptive rate. The
+    cap is looked up at min(current_T, target_T) — the coldest
+    temperature the ramp traverses.
+    Returns (rate_K_per_min, clamp_message_or_None).
+    """
+    coldest = min(current_T, target_T)
+    cap = ramp_cap_for(coldest, p["ramp_caps"], p["ramp_default_cap"])
+    if requested > cap:
+        return cap, (f"{label} rate {requested:g} K/min capped to "
+                     f"{cap:g} K/min by low-T table @ {coldest:.1f} K")
+    return requested, None
 
 
 class SoftLimitAbort(RuntimeError):
@@ -538,7 +588,7 @@ class LCR_Backend:
 # FRONTEND: Combined GUI
 # ============================================================
 class CombinedGUI:
-    PROGRAM_VERSION = "1.3-Combined"  # adaptive ramp + pause/skip + soft limit
+    PROGRAM_VERSION = "1.4-Combined"  # intuitive panels + rate-conflict fixes
     LEFT_PANEL_WIDTH = 480  # default sash position so the left panel starts fully visible
 
     # --- FRZ-1 / FRZ-2 / FRZ-4 tuning knobs ---
@@ -636,6 +686,7 @@ class CombinedGUI:
         self._paused = False           # worker-only write
         self._skip_requested = False   # worker-only write
         self._current_rate = 0.0       # ramp rate for the CSV Phase column
+        self._current_target = None    # setpoint being worked on (for caps)
         self._band_params = None       # (target, tol) of current setpoint
         self._band_dirty = False
         self.band_patch = None
@@ -661,11 +712,12 @@ class CombinedGUI:
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
         # FRZ-1: single periodic redraw loop — runs for the app lifetime
         self.root.after(self.REDRAW_MS, self._redraw_tick)
-        self.log("Combined GUI v1.3 initialized. 40 Hz – 2 MHz sweep, "
+        self.log("Combined GUI v1.4 initialized. 40 Hz – 2 MHz sweep, "
                  "340 K kill switch active.")
         self.log("Stabilization: two-stage approach + rolling-window "
                  "(tolerance AND drift) criterion.")
-        self.log("Adaptive ramp: rate from step size, hard-capped at low T "
+        self.log("Ramp: adaptive or fixed (radio buttons); the low-T cap "
+                 "table clamps EVERY rate incl. fixed + approach "
                  "(defaults: <30 K: 0.3, <100 K: 0.5, else 5 K/min). "
                  "Pause/Skip + soft Max-Temp limit available.")
 
@@ -697,6 +749,8 @@ class CombinedGUI:
                         foreground=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
         style.configure("TEntry", fieldbackground=self.CLR_GRAPH_BG,
                         foreground=self.CLR_TEXT_DARK)
+        style.configure("TCheckbutton", background=self.CLR_FRAME_BG)
+        style.configure("TRadiobutton", background=self.CLR_FRAME_BG)
         style.configure("TNotebook", background=self.CLR_BG_DARK)
         style.configure("TNotebook.Tab", padding=(12, 6))
         mpl.rcParams.update({
@@ -786,15 +840,16 @@ class CombinedGUI:
         canvas.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
         sf.grid_columnconfigure(0, weight=1)
-        sf.grid_rowconfigure(6, weight=1)
+        sf.grid_rowconfigure(7, weight=1)
 
         self._create_info_panel(sf, 0)
         self._create_sequence_panel(sf, 1)
-        self._create_ls_settings_panel(sf, 2)
+        self._create_stability_panel(sf, 2)
         self._create_ramp_panel(sf, 3)
-        self._create_lcr_settings_panel(sf, 4)
-        self._create_pid_panel(sf, 5)
-        self._create_console_panel(sf, 6)
+        self._create_safety_panel(sf, 4)
+        self._create_lcr_settings_panel(sf, 5)
+        self._create_pid_panel(sf, 6)
+        self._create_console_panel(sf, 7)
 
     def _create_info_panel(self, parent, row):
         frame = ttk.LabelFrame(parent, text="Information")
@@ -861,82 +916,133 @@ class CombinedGUI:
         ttk.Button(frame, text="Remove", command=self._remove_step).grid(row=5, column=3, sticky="ew", padx=2, pady=5)
         ttk.Button(frame, text="Clear All", command=self._clear_listbox).grid(row=6, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 5))
 
-    def _create_ls_settings_panel(self, parent, row):
-        frame = ttk.LabelFrame(parent, text="Lakeshore 350 Settings")
+    def _create_stability_panel(self, parent, row):
+        """When do we call the temperature stable (STB-2/3)."""
+        frame = ttk.LabelFrame(parent, text="Stabilization Criteria")
         frame.grid(row=row, column=0, sticky="new", pady=5, padx=5)
         for i in range(6):
             frame.grid_columnconfigure(i, weight=1 if i in (1, 4) else 0)
         self.entries = {}
         self._create_grid_entry(frame, "Tolerance (±K):", "tol", "0.5", 0, 0)
-        self._create_grid_entry(frame, "Stab. Window (s):", "soak", "120", 0, 3)
-        self._create_grid_entry(frame, "Ramp Rate (K/min):", "rate", "10.0", 1, 0)
-        self._create_grid_entry(frame, "Poll Delay (s):", "delay", "1", 1, 3)
-        # --- STB-1 / STB-2 / STB-3: new stabilization parameters ---
-        self._create_grid_entry(frame, "Approach Band (K):", "app_band", "3.0", 2, 0)
-        self._create_grid_entry(frame, "Approach (K/min):", "app_rate", "2.0", 2, 3)
-        self._create_grid_entry(frame, "Drift Lim (K/min):", "drift", "0.10", 3, 0)
-        self._create_grid_entry(frame, "Stab. T/O (min):", "stab_timeout", "90", 3, 3)
+        self._create_grid_entry(frame, "Window (s):", "soak", "120", 0, 3)
+        self._create_grid_entry(frame, "Drift Lim (K/min):", "drift", "0.10", 1, 0)
+        self._create_grid_entry(frame, "Timeout (min, 0=off):",
+                                "stab_timeout", "90", 1, 3)
+        self._create_grid_entry(frame, "Poll Delay (s):", "delay", "1", 2, 0)
 
-        ttk.Label(frame, text="Heater Range:").grid(row=4, column=0, sticky="w", padx=10, pady=5)
-        self.heater_range_var = tk.StringVar(value="5")
-        self.heater_cb = ttk.Combobox(frame, textvariable=self.heater_range_var,
-                                      values=["0", "1", "2", "3", "4", "5"], state="readonly", width=8)
-        self.heater_cb.grid(row=4, column=1, columnspan=2, sticky="ew", padx=5)
-        self.heater_cb.bind("<<ComboboxSelected>>", self._on_heater_range_changed)
-
-        ttk.Label(frame, text="LS VISA:").grid(row=4, column=3, sticky="w", padx=5, pady=5)
-        self.ls_cb = ttk.Combobox(frame, state="readonly", width=18)
-        self.ls_cb.grid(row=4, column=4, columnspan=2, sticky="ew", padx=5)
-
-        # ADV-4: soft max-temp limit; ADV-2: approach mode
-        self._create_grid_entry(frame, "Max Temp (K):", "max_temp", "320", 5, 0)
-        ttk.Label(frame, text="Approach:").grid(row=5, column=3, sticky="w",
-                                                padx=5, pady=5)
-        self.approach_var = tk.StringVar(value="Two-stage (default)")
-        self.approach_cb = ttk.Combobox(frame, textvariable=self.approach_var,
-                                        values=list(self.APPROACH_MODES.keys()),
-                                        state="readonly", width=16)
-        self.approach_cb.grid(row=5, column=4, columnspan=2, sticky="ew", padx=5)
-
-        # MAJ-4: surface the previously-unreachable `_send_live_updates`
-        # so unlocked tolerance/soak/rate/delay values can be pushed mid-run.
+        # MAJ-4: push unlocked values to the worker mid-run.
         ttk.Button(frame, text="Apply Live Updates",
                    command=self._send_live_updates
-                   ).grid(row=6, column=0, columnspan=6, sticky="ew",
+                   ).grid(row=3, column=0, columnspan=6, sticky="ew",
                           padx=10, pady=(2, 6))
 
     def _create_ramp_panel(self, parent, row):
-        """ADV-1: adaptive ramp-rate configuration."""
-        frame = ttk.LabelFrame(parent, text="Adaptive Ramp Rate")
+        """How we travel to a setpoint: rate source + final approach.
+        Exactly ONE rate source (adaptive or fixed) is active; the other
+        group is greyed out so it is always obvious which rate wins."""
+        frame = ttk.LabelFrame(parent, text="Temperature Ramp")
         frame.grid(row=row, column=0, sticky="new", pady=5, padx=5)
         for i in range(6):
             frame.grid_columnconfigure(i, weight=1 if i in (1, 4) else 0)
 
-        self.var_adaptive = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frame,
-                        text="Adaptive ramp rate (step size + low-T caps); "
-                             "off = fixed Ramp Rate above",
-                        variable=self.var_adaptive
-                        ).grid(row=0, column=0, columnspan=6, sticky="w",
-                               padx=10, pady=(5, 2))
+        self.ramp_mode_var = tk.StringVar(value="adaptive")
+        self.rb_adaptive = ttk.Radiobutton(
+            frame, text="Adaptive rate (recommended)",
+            variable=self.ramp_mode_var, value="adaptive",
+            command=self._on_ramp_mode_changed)
+        self.rb_adaptive.grid(row=0, column=0, columnspan=3, sticky="w",
+                              padx=10, pady=(5, 2))
+        self.rb_fixed = ttk.Radiobutton(
+            frame, text="Fixed rate", variable=self.ramp_mode_var,
+            value="fixed", command=self._on_ramp_mode_changed)
+        self.rb_fixed.grid(row=0, column=3, columnspan=3, sticky="w",
+                           padx=10, pady=(5, 2))
 
         self._create_grid_entry(frame, "Step Factor:", "step_factor", "0.2", 1, 0)
         self._create_grid_entry(frame, "First-Step x:", "first_factor", "0.5", 1, 3)
         self._create_grid_entry(frame, "Min Rate (K/min):", "min_rate", "0.1", 2, 0)
         self._create_grid_entry(frame, "Max Rate (K/min):", "max_rate", "5.0", 2, 3)
+        self._create_grid_entry(frame, "Fixed Rate (K/min):", "rate", "2.0", 3, 0)
 
-        ttk.Label(frame, text="Low-T caps (K:K/min):").grid(
-            row=3, column=0, columnspan=2, sticky="w", padx=10, pady=(5, 2))
+        ttk.Label(frame, text="Low-T caps — all modes (K:K/min):").grid(
+            row=4, column=0, columnspan=2, sticky="w", padx=10, pady=(5, 2))
         self.ramp_table_var = tk.StringVar(value="30:0.3, 100:0.5, else:5")
         self.ramp_table_entry = ttk.Entry(frame, textvariable=self.ramp_table_var,
                                           font=self.FONT_BASE)
-        self.ramp_table_entry.grid(row=3, column=2, columnspan=4, sticky="ew",
+        self.ramp_table_entry.grid(row=4, column=2, columnspan=4, sticky="ew",
                                    padx=(2, 10), pady=(5, 2))
         ttk.Label(frame,
-                  text="e.g. 30:0.3, 100:0.5, else:5 (below 30 K max 0.3 K/min …)",
+                  text="Hard ceiling on EVERY rate sent (adaptive, fixed and "
+                       "approach). e.g. below 30 K max 0.3 K/min.",
                   font=("Segoe UI", 8, "italic")
-                  ).grid(row=4, column=0, columnspan=6, sticky="w",
+                  ).grid(row=5, column=0, columnspan=6, sticky="w",
                          padx=10, pady=(0, 5))
+
+        ttk.Separator(frame, orient="horizontal").grid(
+            row=6, column=0, columnspan=6, sticky="ew", padx=10, pady=4)
+
+        self._create_grid_entry(frame, "Approach Band (K):", "app_band", "3.0", 7, 0)
+        self._create_grid_entry(frame, "Approach Rate (K/min):", "app_rate", "2.0", 7, 3)
+        ttk.Label(frame, text="Approach Mode:").grid(row=8, column=0,
+                                                     sticky="w", padx=10, pady=5)
+        self.approach_var = tk.StringVar(value="Two-stage (default)")
+        self.approach_cb = ttk.Combobox(frame, textvariable=self.approach_var,
+                                        values=list(self.APPROACH_MODES.keys()),
+                                        state="readonly", width=16)
+        self.approach_cb.grid(row=8, column=1, columnspan=4,
+                              sticky="ew", padx=5, pady=5)
+
+        self._on_ramp_mode_changed()
+
+    # Rate-source groups for greying (only the active source is editable)
+    ADAPTIVE_KEYS = ("step_factor", "first_factor", "min_rate", "max_rate")
+    FIXED_KEYS = ("rate",)
+
+    def _on_ramp_mode_changed(self):
+        adaptive = self.ramp_mode_var.get() == "adaptive"
+        for key in self.ADAPTIVE_KEYS:
+            self._set_entry_enabled(key, adaptive)
+        for key in self.FIXED_KEYS:
+            self._set_entry_enabled(key, not adaptive)
+
+    def _set_entry_enabled(self, key, enabled):
+        w = self.entries.get(key)
+        if not w:
+            return
+        if enabled and not w["locked"]:
+            w["entry"].config(state="normal")
+        else:
+            w["entry"].config(state="disabled")
+
+    def _create_safety_panel(self, parent, row):
+        frame = ttk.LabelFrame(parent, text="Instrument & Safety")
+        frame.grid(row=row, column=0, sticky="new", pady=5, padx=5)
+        for i in range(6):
+            frame.grid_columnconfigure(i, weight=1 if i in (1, 4) else 0)
+
+        # ADV-4: soft max-temp limit (hardcoded 340 K remains the backstop)
+        self._create_grid_entry(frame, "Max Temp (K):", "max_temp", "320", 0, 0)
+        ttk.Label(frame, text="Heater Range:").grid(row=0, column=3,
+                                                    sticky="w", padx=10, pady=5)
+        self.heater_range_var = tk.StringVar(value="5 (Max)")
+        self.heater_cb = ttk.Combobox(
+            frame, textvariable=self.heater_range_var,
+            values=["0 (Off)", "1", "2", "3", "4", "5 (Max)"],
+            state="readonly", width=8)
+        self.heater_cb.grid(row=0, column=4, columnspan=2, sticky="ew", padx=5)
+        self.heater_cb.bind("<<ComboboxSelected>>", self._on_heater_range_changed)
+
+        self.var_auto_pid = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frame,
+                        text="Auto PID per setpoint (Slow <100 K, Medium ≥100 K)",
+                        variable=self.var_auto_pid
+                        ).grid(row=1, column=0, columnspan=6, sticky="w",
+                               padx=10, pady=2)
+
+        ttk.Label(frame, text="LS VISA:").grid(row=2, column=0, sticky="w",
+                                               padx=10, pady=5)
+        self.ls_cb = ttk.Combobox(frame, state="readonly", width=18)
+        self.ls_cb.grid(row=2, column=1, columnspan=5, sticky="ew", padx=5)
 
     def _create_lcr_settings_panel(self, parent, row):
         frame = ttk.LabelFrame(parent, text="E4980A LCR Settings")
@@ -1310,7 +1416,7 @@ class CombinedGUI:
     # ------------------------------------------------------------
     def _on_heater_range_changed(self, event=None):
         if self.is_running:
-            r = self.heater_range_var.get()
+            r = self.heater_range_var.get().split()[0]
             self.log(f"Queued heater range update: {r}")
             self.cmd_queue.put(("heater", r))
 
@@ -1441,6 +1547,29 @@ class CombinedGUI:
                     f"Setpoints above Max Temp ({self.params['max_temp']} K): "
                     f"{too_hot}. Raise Max Temp (≤ "
                     f"{Lakeshore_Backend.HARD_TEMP_LIMIT_K:g} K) or remove them.")
+            # 'From above' would place the pre-target ABOVE the setpoint;
+            # reject at Start rather than SoftLimitAbort mid-run.
+            if self.params["approach_side"] == "above":
+                band = self.params["app_band"]
+                too_close = [t for t in self.setpoint_floats
+                             if t + band > self.params["max_temp"]]
+                if too_close:
+                    raise ValueError(
+                        f"'From above' pre-target (T + {band:g} K band) "
+                        f"exceeds Max Temp ({self.params['max_temp']:g} K) "
+                        f"for setpoints: {too_close}. Lower the setpoints/"
+                        f"band or raise Max Temp.")
+            # Heads-up (not an error): approach rate will be auto-capped
+            # by the low-T table at the coldest setpoint of the run.
+            coldest_cap = ramp_cap_for(min(self.setpoint_floats),
+                                       self.params["ramp_caps"],
+                                       self.params["ramp_default_cap"])
+            if self.params["app_rate"] > coldest_cap:
+                self.log(f"NOTE: Approach Rate "
+                         f"{self.params['app_rate']:g} K/min exceeds the "
+                         f"low-T cap ({coldest_cap:g} K/min at "
+                         f"{min(self.setpoint_floats):g} K) — it will be "
+                         f"auto-capped during the run.")
         except Exception as e:
             messagebox.showerror("Config Error", str(e)); return
 
@@ -1450,6 +1579,7 @@ class CombinedGUI:
         self._paused = False
         self._skip_requested = False
         self._current_rate = 0.0
+        self._current_target = None
         self.pause_button.config(text="Pause")
 
         # Clear plot data (CRIT-2: include plot_heater)
@@ -1519,13 +1649,14 @@ class CombinedGUI:
             "first_factor": float(self.entries["first_factor"]["entry"].get()),
             "min_rate": float(self.entries["min_rate"]["entry"].get()),
             "max_rate": float(self.entries["max_rate"]["entry"].get()),
-            "adaptive": self.var_adaptive.get(),
+            "adaptive": self.ramp_mode_var.get() == "adaptive",
+            "auto_pid": self.var_auto_pid.get(),
             "approach_side": self.APPROACH_MODES.get(self.approach_var.get(), None),
         }
         p["ramp_caps"], p["ramp_default_cap"] = \
             parse_ramp_table(self.ramp_table_var.get())
         if not p["ls_visa"]: raise ValueError("Select Lakeshore VISA.")
-        if p["rate"] <= 0: raise ValueError("Ramp rate must be positive.")
+        if p["rate"] <= 0: raise ValueError("Fixed rate must be positive.")
         if p["tol"] <= 0: raise ValueError("Tolerance must be positive.")
         if p["soak"] <= 0: raise ValueError("Stabilization window must be positive.")
         if p["delay"] <= 0: raise ValueError("Poll delay must be positive.")
@@ -1577,6 +1708,9 @@ class CombinedGUI:
         if not running:
             self.pause_button.config(text="Pause")
         self.approach_cb.config(state="disabled" if running else "readonly")
+        # Ramp mode is only read at Start — lock the radios during a run
+        self.rb_adaptive.config(state=st)
+        self.rb_fixed.config(state=st)
         self.ramp_table_entry.config(state="normal")  # live-updatable
         for w in self.entries.values():
             if running:
@@ -1588,6 +1722,7 @@ class CombinedGUI:
                 w["entry"].config(state="disabled" if w["locked"] else "normal")
             if w["lock"] is not None:
                 w["lock"].config(state=st)
+        self._on_ramp_mode_changed()  # re-grey the inactive rate source
         for e in (self.entry_start, self.entry_end, self.entry_step, self.entry_manual):
             e.config(state=st)
         self.ls_cb.config(state="readonly" if not running else "disabled")
@@ -1770,7 +1905,11 @@ class CombinedGUI:
                     self._put_gui_msg("log",
                                       text=f"Adaptive ramp rate: {reason}")
                 else:
-                    rate = self.params["rate"]
+                    rate, cap_msg = capped_rate(self.params["rate"],
+                                                temp_now, target,
+                                                self.params, "Fixed")
+                    if cap_msg:
+                        self._put_gui_msg("log", text=cap_msg)
                     self._put_gui_msg(
                         "log", text=f"Fixed ramp rate: {rate:g} K/min.")
 
@@ -1836,6 +1975,7 @@ class CombinedGUI:
             self._worker_phase = None
             self._paused = False
             self._skip_requested = False
+            self._current_target = None
             self._put_gui_msg("worker_done")
 
     # ------------------------------------------------------------
@@ -1913,8 +2053,14 @@ class CombinedGUI:
         """
         p = self.params
         self._current_rate = ramp_rate
+        self._current_target = target
         temp, _, _ = self._log_temperature_point(target, measuring_flag=0)
         pre_target = self._choose_pre_target(temp, target)
+        # Low-T safety envelope applies to the approach rate too
+        app_rate, app_msg = capped_rate(p["app_rate"], temp, target, p,
+                                        "Approach")
+        if app_msg:
+            self._put_gui_msg("log", text=app_msg)
 
         if pre_target is not None:
             self._worker_phase = "PRE_RAMP"
@@ -1928,12 +2074,12 @@ class CombinedGUI:
                 color=self.CLR_ACCENT_RED)
         else:
             self._worker_phase = "FINAL_APPROACH"
-            self._current_rate = p["app_rate"]
-            self.ls_backend.configure_ramp(target, p["app_rate"],
+            self._current_rate = app_rate
+            self.ls_backend.configure_ramp(target, app_rate,
                                            p["heater_range"])
             self._put_gui_msg("log",
                 text=f"Already within approach band — slow approach "
-                     f"({p['app_rate']} K/min) to {target} K.")
+                     f"({app_rate:g} K/min) to {target} K.")
             self._put_gui_msg("status",
                 text=f"APPROACHING {target} K", color=self.CLR_STABLE_WAIT)
 
@@ -1973,15 +2119,20 @@ class CombinedGUI:
                         else (temp <= pre_target + p["tol"])
                     if reached:
                         # STB-1 stage 2: hand over to the slow final approach.
+                        # Re-check the cap at the handover temperature.
+                        app_rate, app_msg = capped_rate(
+                            p["app_rate"], temp, target, p, "Approach")
+                        if app_msg:
+                            self._put_gui_msg("log", text=app_msg)
                         self._worker_phase = "FINAL_APPROACH"
-                        self._current_rate = p["app_rate"]
-                        self.ls_backend.set_ramp_rate(p["app_rate"])
+                        self._current_rate = app_rate
+                        self.ls_backend.set_ramp_rate(app_rate)
                         time.sleep(0.1)
                         self.ls_backend.set_setpoint(target)
                         window.clear()
                         self._put_gui_msg("log",
                             text=f"Pre-target reached ({temp:.3f} K). Stage 2: "
-                                 f"slow approach ({p['app_rate']} K/min) to {target} K.")
+                                 f"slow approach ({app_rate:g} K/min) to {target} K.")
                         self._put_gui_msg("status",
                             text=f"APPROACHING {target} K", color=self.CLR_STABLE_WAIT)
                 else:
@@ -2079,9 +2230,18 @@ class CombinedGUI:
                                      "active — applies from next ramp stage.")
                         else:
                             try:
-                                self.ls_backend.set_ramp_rate(updates["rate"])
+                                temp_now, _, _ = self.ls_backend.get_status()
+                                tgt = self._current_target
+                                new_rate, cap_msg = capped_rate(
+                                    updates["rate"], temp_now,
+                                    tgt if tgt is not None else temp_now,
+                                    self.params, "Live")
+                                if cap_msg:
+                                    self._put_gui_msg("log", text=cap_msg)
+                                self.ls_backend.set_ramp_rate(new_rate)
+                                self._current_rate = new_rate
                                 self._put_gui_msg("log",
-                                    text=f"Ramp rate -> {updates['rate']} K/min")
+                                    text=f"Ramp rate -> {new_rate} K/min")
                             except Exception as e:
                                 self._put_gui_msg("log",
                                     text=f"Ramp rate update failed: {e}")
@@ -2090,6 +2250,8 @@ class CombinedGUI:
         return False
 
     def _apply_dynamic_pid(self, target):
+        if not self.params["auto_pid"]:
+            return
         p, i, d = self.PID_SLOW if target < 100.0 else self.PID_MEDIUM
         try:
             self.ls_backend.set_pid(1, p, i, d)
