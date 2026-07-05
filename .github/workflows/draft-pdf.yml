@@ -1,5 +1,8 @@
 name: Draft PDF
-on: [push]
+
+# Disabled automatic runs for now; trigger manually from the Actions tab.
+on:
+  workflow_dispatch:
 
 jobs:
   paper:
