@@ -99,8 +99,8 @@ programs do not import from each other).
              rate     = clamp(min(proposed, cap), Min Rate .. Max Rate)
          First setpoint of a run is slowed further by First-Step x
          (overshoot is worst there). Cap table is editable text,
-         default "30:0.3, 100:0.5, else:5" — below 100 K never faster
-         than 0.5 K/min (0.3 below 30 K): on the LN2-dewar probe even
+         default "77:0.3, 100:0.5, else:5" — below 100 K never faster
+         than 0.5 K/min (0.3 below 77 K): on the LN2-dewar probe even
          a small heater input overshoots at low T. Untick "Adaptive"
          to use the fixed Ramp Rate field as before.
   ADV-2  APPROACH FROM ONE SIDE (hysteresis-sensitive measurements):
@@ -240,7 +240,7 @@ def launch_gpib_scanner():
 # ADV-1/2/4 helpers (embedded copy — PICA programs stay self-contained)
 # ============================================================
 def parse_ramp_table(text):
-    """Parse "30:0.3, 100:0.5, else:5" -> (sorted caps list, default cap).
+    """Parse "77:0.3, 100:0.5, else:5" -> (sorted caps list, default cap).
 
     Raises ValueError with a readable message on malformed input.
     """
@@ -718,7 +718,7 @@ class CombinedGUI:
                  "(tolerance AND drift) criterion.")
         self.log("Ramp: adaptive or fixed (radio buttons); the low-T cap "
                  "table clamps EVERY rate incl. fixed + approach "
-                 "(defaults: <30 K: 0.3, <100 K: 0.5, else 5 K/min). "
+                 "(defaults: <77 K: 0.3, <100 K: 0.5, else 5 K/min). "
                  "Pause/Skip + soft Max-Temp limit available.")
 
     # ------------------------------------------------------------
@@ -966,14 +966,14 @@ class CombinedGUI:
 
         ttk.Label(frame, text="Low-T caps — all modes (K:K/min):").grid(
             row=4, column=0, columnspan=2, sticky="w", padx=10, pady=(5, 2))
-        self.ramp_table_var = tk.StringVar(value="30:0.3, 100:0.5, else:5")
+        self.ramp_table_var = tk.StringVar(value="77:0.3, 100:0.5, else:5")
         self.ramp_table_entry = ttk.Entry(frame, textvariable=self.ramp_table_var,
                                           font=self.FONT_BASE)
         self.ramp_table_entry.grid(row=4, column=2, columnspan=4, sticky="ew",
                                    padx=(2, 10), pady=(5, 2))
         ttk.Label(frame,
                   text="Hard ceiling on EVERY rate sent (adaptive, fixed and "
-                       "approach). e.g. below 30 K max 0.3 K/min.",
+                       "approach). e.g. below 77 K max 0.3 K/min.",
                   font=("Segoe UI", 8, "italic")
                   ).grid(row=5, column=0, columnspan=6, sticky="w",
                          padx=10, pady=(0, 5))
