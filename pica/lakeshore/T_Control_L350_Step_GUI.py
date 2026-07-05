@@ -548,14 +548,12 @@ class TempControlGUI:
         self.entries = {}
 
         self._create_grid_entry(frame, "Tolerance (±K):", "tol", "0.5", 0, 0)
-        self._create_grid_entry(frame, "Soak Time (s):", "soak", "120", 0, 3)
+        # Dwell: the minimum continuous time the temperature must remain
+        # inside the tolerance band before the program is allowed to
+        # declare "Stabilized".
+        self._create_grid_entry(frame, "Dwell (s):", "dwell", "60", 0, 3)
         self._create_grid_entry(frame, "Ramp Rate (K/min):", "rate", "2.0", 1, 0)
         self._create_grid_entry(frame, "Poll Delay (s):", "delay", "1", 1, 3)
-        # FIX (4b): dedicated dwell field — the minimum continuous time the
-        # temperature must remain inside the tolerance band before the
-        # program is allowed to declare "Stabilized". Kept distinct from
-        # "Soak Time" (extra hold requested after stabilization if desired).
-        self._create_grid_entry(frame, "Dwell (s):", "dwell", "60", 2, 3)
 
         ttk.Label(frame, text="Heater Range:").grid(
             row=2, column=0, sticky="w", padx=10, pady=5
@@ -1101,7 +1099,9 @@ class TempControlGUI:
         self.log("ABORT INITIATED BY USER.")
         self.is_running = False
         self.proceed_event.set()
-        self.backend.stop_ramp()
+        # The hardware stop happens on the WORKER thread (its finally
+        # block): the pyvisa session is not thread-safe, so writing to it
+        # here could collide with an in-flight worker query.
         self.set_ui_state(running=False)
         self._update_status_ui("SEQUENCE ABORTED", self.CLR_ACCENT_RED)
         messagebox.showinfo(
@@ -1111,7 +1111,6 @@ class TempControlGUI:
     def _validate_and_get_params(self):
         params = {
             "tol": float(self.entries["tol"]["entry"].get()),
-            "soak": float(self.entries["soak"]["entry"].get()),
             "rate": float(self.entries["rate"]["entry"].get()),
             "delay": float(self.entries["delay"]["entry"].get()),
             "dwell": float(self.entries["dwell"]["entry"].get()),
@@ -1241,7 +1240,11 @@ class TempControlGUI:
         except queue.Empty:
             pass
 
-        if self.is_running or not self.gui_queue.empty():
+        # Keep polling while the worker thread is still alive so messages
+        # queued from its except/finally blocks are never dropped.
+        if (self.is_running or not self.gui_queue.empty()
+                or (self.measurement_thread
+                    and self.measurement_thread.is_alive())):
             self.root.after(100, self._process_gui_queue)
 
     def _redraw_plot(self):
@@ -1515,10 +1518,16 @@ class TempControlGUI:
                 "log",
                 text=f"CRITICAL ERROR IN HARDWARE THREAD: {e}\n{traceback.format_exc()}",
             )
-            self.is_running = False
+            # Queue the completion message BEFORE flipping is_running, so
+            # the GUI poller cannot stop between the two and drop it
+            # (which would leave the Start button disabled forever).
             self._put_gui_msg("sequence_complete")
-            self.backend.stop_ramp()
+            self.is_running = False
         finally:
+            # Hardware stop always runs here, on the worker thread — this
+            # also covers the user-Stop path (stop_ramp no longer touches
+            # the VISA session from the GUI thread).
+            self.backend.stop_ramp()
             self._close_data_file()
 
     def _on_closing(self):
@@ -1529,6 +1538,10 @@ class TempControlGUI:
             time.sleep(0.5)
             if self.measurement_thread and self.measurement_thread.is_alive():
                 self.measurement_thread.join(timeout=2.0)
+            if self.measurement_thread and self.measurement_thread.is_alive():
+                # Worker stuck (e.g. slow VISA read): its finally block may
+                # never run, so force the heater off before the window dies.
+                self.backend.stop_ramp()
             self.root.destroy()
         elif not self.is_running:
             self.root.destroy()
