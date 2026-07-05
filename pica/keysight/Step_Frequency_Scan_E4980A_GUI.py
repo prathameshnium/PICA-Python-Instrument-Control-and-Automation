@@ -84,6 +84,44 @@ RELIABILITY:
          whole run. Persistent failures still raise.
   REL-2  Live "rate" updates are deferred while the slow final
          approach is active (would otherwise silently defeat STB-1).
+
+============================================================
+v1.3 — ADVANCED CONTROL (parity with T_Control_L350_Step_GUI_advanced)
+============================================================
+Self-contained by design: the logic below is an embedded copy of the
+helpers in pica/lakeshore/T_Control_L350_Step_GUI_advanced.py (PICA
+programs do not import from each other).
+
+  ADV-1  ADAPTIVE RAMP RATE. Per setpoint:
+             proposed = |target - current| * Step Factor
+             cap      = low-T cap table at min(current, target)
+                        (the coldest temperature traversed governs)
+             rate     = clamp(min(proposed, cap), Min Rate .. Max Rate)
+         First setpoint of a run is slowed further by First-Step x
+         (overshoot is worst there). Cap table is editable text,
+         default "30:0.3, 100:0.5, else:5" — below 100 K never faster
+         than 0.5 K/min (0.3 below 30 K): on the LN2-dewar probe even
+         a small heater input overshoots at low T. Untick "Adaptive"
+         to use the fixed Ramp Rate field as before.
+  ADV-2  APPROACH FROM ONE SIDE (hysteresis-sensitive measurements):
+         "Always from below/above" forces the pre-target onto the
+         chosen side so the slow final ramp always enters the
+         setpoint from that side.
+  ADV-3  PAUSE/RESUME + SKIP STEP. Pause holds the current setpoint
+         (stability window + timeout clock suspended, logging
+         continues). Skip abandons the current stabilization (that
+         setpoint gets no sweep) or aborts the remainder of a running
+         sweep.
+  ADV-4  SOFT MAX-TEMP LIMIT (GUI, default 320 K, <= 340 K): graceful
+         abort (ramp stopped, heater off) if exceeded; setpoints
+         above it are rejected at Start; heater range 0 rejected.
+         The hardcoded 340 K kill switch remains the backstop.
+  ADV-5  Tolerance band (target +/- tol) drawn on the temperature
+         plot for the current setpoint.
+  ADV-6  Logging: temperature CSV gains Ramp_rate_K_min and Phase
+         columns (appended at the end — existing readers unaffected);
+         new per-setpoint <sample>_<stamp>_StabSummary.csv records
+         rate used, approach mode, stabilization duration, outcome.
 """
 
 import tkinter as tk
@@ -166,6 +204,72 @@ def launch_gpib_scanner():
         Process(target=run_script_process, args=(p,)).start()
     except Exception as e:
         messagebox.showerror("Launch Error", str(e))
+
+
+# ============================================================
+# ADV-1/2/4 helpers (embedded copy — PICA programs stay self-contained)
+# ============================================================
+def parse_ramp_table(text):
+    """Parse "30:0.3, 100:0.5, else:5" -> (sorted caps list, default cap).
+
+    Raises ValueError with a readable message on malformed input.
+    """
+    caps = []
+    default_cap = None
+    for chunk in text.split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if ":" not in chunk:
+            raise ValueError(f"Ramp table entry '{chunk}' must be 'T:rate'.")
+        key, val = (s.strip() for s in chunk.split(":", 1))
+        rate = float(val)
+        if rate <= 0:
+            raise ValueError(f"Ramp table rate must be positive: '{chunk}'.")
+        if key.lower() in ("else", "default", "*"):
+            default_cap = rate
+        else:
+            caps.append((float(key), rate))
+    if default_cap is None:
+        raise ValueError("Ramp table needs an 'else:<rate>' entry.")
+    if not caps:
+        raise ValueError("Ramp table needs at least one 'T:rate' entry.")
+    return sorted(caps), default_cap
+
+
+def ramp_cap_for(temperature_K, caps, default_cap):
+    """Low-T cap lookup: first (T_upper, cap) with temperature < T_upper."""
+    for t_upper, cap in caps:
+        if temperature_K < t_upper:
+            return cap
+    return default_cap
+
+
+def compute_ramp_rate(current_T, target_T, p, is_first_step=False):
+    """Adaptive ramp rate for one step (ADV-1; formula in the docstring).
+
+    `p` is the validated params dict (keys: step_factor, ramp_caps,
+    ramp_default_cap, min_rate, max_rate, first_factor).
+    Returns (rate_K_per_min, reason_str) — reason_str goes to the log.
+    """
+    step = abs(target_T - current_T)
+    proposed = step * p["step_factor"]
+    coldest = min(current_T, target_T)
+    cap = ramp_cap_for(coldest, p["ramp_caps"], p["ramp_default_cap"])
+    rate = min(proposed, cap, p["max_rate"])
+    reason = (f"step {step:.1f} K x {p['step_factor']:g} = {proposed:.2f} "
+              f"K/min, low-T cap @ {coldest:.1f} K = {cap:g} K/min")
+    if is_first_step and p["first_factor"] != 1.0:
+        rate *= p["first_factor"]
+        reason += f", first-step x{p['first_factor']:g}"
+    rate = max(rate, p["min_rate"])
+    rate = min(rate, p["max_rate"])
+    reason += f" -> {rate:.2f} K/min"
+    return rate, reason
+
+
+class SoftLimitAbort(RuntimeError):
+    """Raised when the user-configured soft Max Temp limit is exceeded."""
 
 
 # ============================================================
@@ -434,7 +538,7 @@ class LCR_Backend:
 # FRONTEND: Combined GUI
 # ============================================================
 class CombinedGUI:
-    PROGRAM_VERSION = "1.2-Combined"  # freeze + stabilization overhaul
+    PROGRAM_VERSION = "1.3-Combined"  # adaptive ramp + pause/skip + soft limit
     LEFT_PANEL_WIDTH = 480  # default sash position so the left panel starts fully visible
 
     # --- FRZ-1 / FRZ-2 / FRZ-4 tuning knobs ---
@@ -463,6 +567,13 @@ class CombinedGUI:
     # Dynamic PID presets (§3b)
     PID_SLOW = (0.5, 4.0, 0)      # below 100 K
     PID_MEDIUM = (20.0, 15.0, 0)  # 100 K and above
+
+    # ADV-2: approach-mode selector -> stabilizer argument
+    APPROACH_MODES = {
+        "Two-stage (default)": None,
+        "Always from below": "below",
+        "Always from above": "above",
+    }
 
     try:
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -521,6 +632,14 @@ class CombinedGUI:
         self._freq_plot_dirty = False
         self._pending_progress = None
 
+        # ADV-3/5: pause/skip + tolerance-band state
+        self._paused = False           # worker-only write
+        self._skip_requested = False   # worker-only write
+        self._current_rate = 0.0       # ramp rate for the CSV Phase column
+        self._band_params = None       # (target, tol) of current setpoint
+        self._band_dirty = False
+        self.band_patch = None
+
         # Decade log autoscale state (LabVIEW-style): current snapped
         # y-limits per axis key; log-Y on by default (Cp/G span decades).
         self.log_y_var = tk.BooleanVar(value=True)
@@ -542,10 +661,13 @@ class CombinedGUI:
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
         # FRZ-1: single periodic redraw loop — runs for the app lifetime
         self.root.after(self.REDRAW_MS, self._redraw_tick)
-        self.log("Combined GUI v1.2 initialized. 40 Hz – 2 MHz sweep, "
+        self.log("Combined GUI v1.3 initialized. 40 Hz – 2 MHz sweep, "
                  "340 K kill switch active.")
         self.log("Stabilization: two-stage approach + rolling-window "
                  "(tolerance AND drift) criterion.")
+        self.log("Adaptive ramp: rate from step size, hard-capped at low T "
+                 "(defaults: <30 K: 0.3, <100 K: 0.5, else 5 K/min). "
+                 "Pause/Skip + soft Max-Temp limit available.")
 
     # ------------------------------------------------------------
     # Styling
@@ -664,14 +786,15 @@ class CombinedGUI:
         canvas.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
         sf.grid_columnconfigure(0, weight=1)
-        sf.grid_rowconfigure(5, weight=1)
+        sf.grid_rowconfigure(6, weight=1)
 
         self._create_info_panel(sf, 0)
         self._create_sequence_panel(sf, 1)
         self._create_ls_settings_panel(sf, 2)
-        self._create_lcr_settings_panel(sf, 3)
-        self._create_pid_panel(sf, 4)
-        self._create_console_panel(sf, 5)
+        self._create_ramp_panel(sf, 3)
+        self._create_lcr_settings_panel(sf, 4)
+        self._create_pid_panel(sf, 5)
+        self._create_console_panel(sf, 6)
 
     def _create_info_panel(self, parent, row):
         frame = ttk.LabelFrame(parent, text="Information")
@@ -765,12 +888,55 @@ class CombinedGUI:
         self.ls_cb = ttk.Combobox(frame, state="readonly", width=18)
         self.ls_cb.grid(row=4, column=4, columnspan=2, sticky="ew", padx=5)
 
+        # ADV-4: soft max-temp limit; ADV-2: approach mode
+        self._create_grid_entry(frame, "Max Temp (K):", "max_temp", "320", 5, 0)
+        ttk.Label(frame, text="Approach:").grid(row=5, column=3, sticky="w",
+                                                padx=5, pady=5)
+        self.approach_var = tk.StringVar(value="Two-stage (default)")
+        self.approach_cb = ttk.Combobox(frame, textvariable=self.approach_var,
+                                        values=list(self.APPROACH_MODES.keys()),
+                                        state="readonly", width=16)
+        self.approach_cb.grid(row=5, column=4, columnspan=2, sticky="ew", padx=5)
+
         # MAJ-4: surface the previously-unreachable `_send_live_updates`
         # so unlocked tolerance/soak/rate/delay values can be pushed mid-run.
         ttk.Button(frame, text="Apply Live Updates",
                    command=self._send_live_updates
-                   ).grid(row=5, column=0, columnspan=6, sticky="ew",
+                   ).grid(row=6, column=0, columnspan=6, sticky="ew",
                           padx=10, pady=(2, 6))
+
+    def _create_ramp_panel(self, parent, row):
+        """ADV-1: adaptive ramp-rate configuration."""
+        frame = ttk.LabelFrame(parent, text="Adaptive Ramp Rate")
+        frame.grid(row=row, column=0, sticky="new", pady=5, padx=5)
+        for i in range(6):
+            frame.grid_columnconfigure(i, weight=1 if i in (1, 4) else 0)
+
+        self.var_adaptive = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frame,
+                        text="Adaptive ramp rate (step size + low-T caps); "
+                             "off = fixed Ramp Rate above",
+                        variable=self.var_adaptive
+                        ).grid(row=0, column=0, columnspan=6, sticky="w",
+                               padx=10, pady=(5, 2))
+
+        self._create_grid_entry(frame, "Step Factor:", "step_factor", "0.2", 1, 0)
+        self._create_grid_entry(frame, "First-Step x:", "first_factor", "0.5", 1, 3)
+        self._create_grid_entry(frame, "Min Rate (K/min):", "min_rate", "0.1", 2, 0)
+        self._create_grid_entry(frame, "Max Rate (K/min):", "max_rate", "5.0", 2, 3)
+
+        ttk.Label(frame, text="Low-T caps (K:K/min):").grid(
+            row=3, column=0, columnspan=2, sticky="w", padx=10, pady=(5, 2))
+        self.ramp_table_var = tk.StringVar(value="30:0.3, 100:0.5, else:5")
+        self.ramp_table_entry = ttk.Entry(frame, textvariable=self.ramp_table_var,
+                                          font=self.FONT_BASE)
+        self.ramp_table_entry.grid(row=3, column=2, columnspan=4, sticky="ew",
+                                   padx=(2, 10), pady=(5, 2))
+        ttk.Label(frame,
+                  text="e.g. 30:0.3, 100:0.5, else:5 (below 30 K max 0.3 K/min …)",
+                  font=("Segoe UI", 8, "italic")
+                  ).grid(row=4, column=0, columnspan=6, sticky="w",
+                         padx=10, pady=(0, 5))
 
     def _create_lcr_settings_panel(self, parent, row):
         frame = ttk.LabelFrame(parent, text="E4980A LCR Settings")
@@ -817,6 +983,13 @@ class CombinedGUI:
         self.stop_button = ttk.Button(bf, text="Stop All", style="Stop.TButton", state="disabled", command=self.stop_sequence)
         self.stop_button.grid(row=0, column=1, sticky="ew", padx=2)
         ttk.Button(bf, text="Scan VISA", command=self._scan_for_visa).grid(row=0, column=2, sticky="ew", padx=2)
+        # ADV-3: pause/resume + skip step
+        self.pause_button = ttk.Button(bf, text="Pause", state="disabled",
+                                       command=self._toggle_pause)
+        self.pause_button.grid(row=1, column=0, sticky="ew", padx=2, pady=(4, 0))
+        self.skip_button = ttk.Button(bf, text="Skip Step", state="disabled",
+                                      command=self._skip_step)
+        self.skip_button.grid(row=1, column=1, sticky="ew", padx=2, pady=(4, 0))
 
         # Row 6: Browse Save Button
         ttk.Button(frame, text="Browse Save…", command=self._browse_save).grid(row=6, column=0, columnspan=4, sticky="ew", padx=5, pady=(0, 5))
@@ -969,6 +1142,20 @@ class CombinedGUI:
         """Single periodic redraw. All plot mutation happens here, at a
         bounded rate, regardless of how fast data messages arrive."""
         try:
+            if self._band_dirty:
+                # ADV-5: redraw the tolerance band for the current setpoint
+                self._band_dirty = False
+                if self.band_patch is not None:
+                    try:
+                        self.band_patch.remove()
+                    except Exception:
+                        pass
+                    self.band_patch = None
+                if self._band_params is not None:
+                    target, tol = self._band_params
+                    self.band_patch = self.ax_temp.axhspan(
+                        target - tol, target + tol,
+                        color=self.CLR_ACCENT_GREEN, alpha=0.15, zorder=0)
             if self._temp_plot_dirty:
                 self._temp_plot_dirty = False
                 self._decimate_display_series()
@@ -1151,13 +1338,41 @@ class CombinedGUI:
             for k, w in self.entries.items():
                 if w["lock"] is not None and not w["locked"]:
                     updates[k] = float(w["entry"].get())
-            if updates:
-                self.cmd_queue.put(("params", updates))
-                self.log(f"Queued live params: {updates}")
-            else:
-                self.log("No unlocked parameters to update.")
         except ValueError:
             messagebox.showerror("Invalid Input", "Unlocked params must be numeric.")
+            return
+        try:
+            caps, default_cap = parse_ramp_table(self.ramp_table_var.get())
+            updates["ramp_caps"] = caps
+            updates["ramp_default_cap"] = default_cap
+        except ValueError as e:
+            messagebox.showerror("Ramp Table Error", str(e))
+            return
+        self.cmd_queue.put(("params", updates))
+        shown = {k: v for k, v in updates.items() if k != "ramp_caps"}
+        self.log(f"Queued live params: {shown}")
+
+    def _toggle_pause(self):
+        """ADV-3: pause holds the current setpoint; window/timeout suspend."""
+        if not self.is_running:
+            return
+        if self.pause_button["text"] == "Pause":
+            self.cmd_queue.put(("pause",))
+            self.pause_button.config(text="Resume")
+            self.log("PAUSE requested (holds current setpoint; stability "
+                     "window & timeout suspended).")
+        else:
+            self.cmd_queue.put(("resume",))
+            self.pause_button.config(text="Pause")
+            self.log("RESUME requested.")
+
+    def _skip_step(self):
+        """ADV-3: skip the current stabilization (no sweep at that point)
+        or abort the remainder of a running sweep."""
+        if not self.is_running:
+            return
+        self.cmd_queue.put(("skip",))
+        self.log("SKIP requested.")
 
     # ------------------------------------------------------------
     # VISA scan / file browse
@@ -1218,12 +1433,24 @@ class CombinedGUI:
             self.params = self._validate_ls_params()
             self.lcr_params = self._validate_lcr_params()
             self.setpoint_floats = [float(x) for x in setpoints]
+            # ADV-4: every setpoint must respect the soft limit
+            too_hot = [t for t in self.setpoint_floats
+                       if t > self.params["max_temp"]]
+            if too_hot:
+                raise ValueError(
+                    f"Setpoints above Max Temp ({self.params['max_temp']} K): "
+                    f"{too_hot}. Raise Max Temp (≤ "
+                    f"{Lakeshore_Backend.HARD_TEMP_LIMIT_K:g} K) or remove them.")
         except Exception as e:
             messagebox.showerror("Config Error", str(e)); return
 
         self.set_ui_state(running=True)
         self.is_running = True
         self._worker_phase = None
+        self._paused = False
+        self._skip_requested = False
+        self._current_rate = 0.0
+        self.pause_button.config(text="Pause")
 
         # Clear plot data (CRIT-2: include plot_heater)
         for L in (self.plot_t, self.plot_temp, self.plot_target, self.plot_heater,
@@ -1233,6 +1460,14 @@ class CombinedGUI:
         self.line_temp.set_data([], []); self.line_target.set_data([], [])
         self.scat_meas.set_data([], []); self.line_heater.set_data([], [])
         self.line_cp.set_data([], []); self.line_g.set_data([], [])
+        if self.band_patch is not None:            # ADV-5: clear old band
+            try:
+                self.band_patch.remove()
+            except Exception:
+                pass
+            self.band_patch = None
+        self._band_params = None
+        self._band_dirty = False
         self.canvas_t.draw_idle(); self.canvas_f.draw_idle()
         self._decade_ylims.clear()
         self._temp_plot_dirty = False
@@ -1278,7 +1513,17 @@ class CombinedGUI:
             "stab_timeout": float(self.entries["stab_timeout"]["entry"].get()),
             "heater_range": self.heater_range_var.get().split()[0],  # single split here
             "ls_visa": ls_visa,
+            # ADV-1/2/4: adaptive ramp + approach mode + soft limit
+            "max_temp": float(self.entries["max_temp"]["entry"].get()),
+            "step_factor": float(self.entries["step_factor"]["entry"].get()),
+            "first_factor": float(self.entries["first_factor"]["entry"].get()),
+            "min_rate": float(self.entries["min_rate"]["entry"].get()),
+            "max_rate": float(self.entries["max_rate"]["entry"].get()),
+            "adaptive": self.var_adaptive.get(),
+            "approach_side": self.APPROACH_MODES.get(self.approach_var.get(), None),
         }
+        p["ramp_caps"], p["ramp_default_cap"] = \
+            parse_ramp_table(self.ramp_table_var.get())
         if not p["ls_visa"]: raise ValueError("Select Lakeshore VISA.")
         if p["rate"] <= 0: raise ValueError("Ramp rate must be positive.")
         if p["tol"] <= 0: raise ValueError("Tolerance must be positive.")
@@ -1290,6 +1535,18 @@ class CombinedGUI:
         if p["stab_timeout"] < 0: raise ValueError("Timeout must be >= 0 (0 disables).")
         if p["app_band"] <= p["tol"]:
             raise ValueError("Approach band should be larger than tolerance.")
+        if p["step_factor"] <= 0:
+            raise ValueError("Step factor must be positive.")
+        if not (0 < p["first_factor"] <= 1):
+            raise ValueError("First-step factor must be in (0, 1].")
+        if p["min_rate"] <= 0 or p["max_rate"] < p["min_rate"]:
+            raise ValueError("Need 0 < Min Rate <= Max Rate.")
+        if p["heater_range"] == "0":
+            raise ValueError("Heater range 0 (off) cannot start a sequence.")
+        if not (0 < p["max_temp"] <= Lakeshore_Backend.HARD_TEMP_LIMIT_K):
+            raise ValueError(
+                f"Max Temp must be in (0, "
+                f"{Lakeshore_Backend.HARD_TEMP_LIMIT_K:g}] K.")
         return p
 
     def _validate_lcr_params(self):
@@ -1314,6 +1571,13 @@ class CombinedGUI:
         st = "disabled" if running else "normal"
         self.start_button.config(state=st)
         self.stop_button.config(state="normal" if running else "disabled")
+        # ADV-3: run-control buttons
+        self.pause_button.config(state="normal" if running else "disabled")
+        self.skip_button.config(state="normal" if running else "disabled")
+        if not running:
+            self.pause_button.config(text="Pause")
+        self.approach_cb.config(state="disabled" if running else "readonly")
+        self.ramp_table_entry.config(state="normal")  # live-updatable
         for w in self.entries.values():
             if running:
                 if w["lock"] is not None:
@@ -1362,6 +1626,14 @@ class CombinedGUI:
                         self.meas_t.append(m["t"])
                         self.meas_temp.append(m["temp"])
                     self._temp_plot_dirty = True
+                elif t == "band":
+                    # ADV-5: tolerance band for the current setpoint
+                    self._band_params = (m["target"], m["tol"])
+                    self._band_dirty = True
+                    self._temp_plot_dirty = True
+                elif t == "pause_state":
+                    self.pause_button.config(
+                        text="Resume" if m["paused"] else "Pause")
                 elif t == "scan_reset":
                     self.scan_f.clear(); self.scan_cp.clear(); self.scan_g.clear()
                     self._decade_ylims.clear()  # new spectrum re-snaps decades
@@ -1437,6 +1709,8 @@ class CombinedGUI:
         # travel through the gui_queue and are accumulated in plot_heater.
         self.data_file = None
         self.csv_writer = None
+        self.summary_file = None
+        self.summary_writer = None
         try:
             # --- Connect Lakeshore ---
             self._put_gui_msg("log", text="Connecting to Lakeshore 350…")
@@ -1458,10 +1732,23 @@ class CombinedGUI:
             self.csv_writer = csv.writer(self.data_file)
             self.csv_writer.writerow(
                 ["Timestamp", "Elapsed_s", "Target_K", "Temperature_K",
-                 "Heater_pct", "Measuring"]
+                 "Heater_pct", "Measuring", "Ramp_rate_K_min", "Phase"]
             )
             self.data_file.flush()
             self._put_gui_msg("log", text=f"Temperature log: {tlog_path}")
+
+            # ADV-6: per-setpoint stabilization summary
+            sum_path = os.path.join(
+                self.save_dir,
+                f"{self.lcr_params['sample_name']}_{stamp}_StabSummary.csv",
+            )
+            self.summary_file = open(sum_path, "w", newline="")
+            self.summary_writer = csv.writer(self.summary_file)
+            self.summary_writer.writerow(
+                ["Setpoint_K", "Ramp_rate_K_min", "Approach_mode",
+                 "Start_time", "End_time", "Stabilization_s", "Outcome"])
+            self.summary_file.flush()
+            self._put_gui_msg("log", text=f"Stabilization summary: {sum_path}")
 
             total_pts = len(self.setpoint_floats) * len(self.sweep_frequencies)
             done_pts = 0
@@ -1472,17 +1759,38 @@ class CombinedGUI:
                 self._put_gui_msg("log",
                     text=f"--- Step {i+1}/{len(self.setpoint_floats)}: target {target} K ---")
                 self._put_gui_msg("scan_reset")
+                self._put_gui_msg("band", target=target,
+                                  tol=self.params["tol"])
+
+                # ADV-1: adaptive (or fixed) ramp rate for this step
+                temp_now, _, _ = self.ls_backend.get_status()
+                if self.params["adaptive"]:
+                    rate, reason = compute_ramp_rate(
+                        temp_now, target, self.params, is_first_step=(i == 0))
+                    self._put_gui_msg("log",
+                                      text=f"Adaptive ramp rate: {reason}")
+                else:
+                    rate = self.params["rate"]
+                    self._put_gui_msg(
+                        "log", text=f"Fixed ramp rate: {rate:g} K/min.")
 
                 # §3b: dynamic PID per setpoint
                 self._apply_dynamic_pid(target)
 
                 # STB-1/2/3: two-stage approach + rolling-window stability
-                result = self._ramp_and_stabilize(target)
-                if not self.is_running or result is False:
+                t_start = datetime.now()
+                result, elapsed = self._ramp_and_stabilize(target, rate)
+                self._write_summary_row(target, rate, t_start, elapsed, result)
+                if not self.is_running or result == "stopped":
                     break
+                if result == "skipped":
+                    self._put_gui_msg("log",
+                        text=f"⏭ Setpoint {target} K skipped — no sweep taken.")
+                    continue
                 if result == "timeout":
                     self._put_gui_msg("log",
-                        text=f"⚠️⚠️ STABILIZATION TIMEOUT at {target} K — "
+                        text=f"⚠️⚠️ STABILIZATION TIMEOUT at {target} K after "
+                             f"{elapsed/60.0:.1f} min — "
                              f"proceeding with sweep anyway (unattended-run policy). "
                              f"Check this data point!")
 
@@ -1502,6 +1810,12 @@ class CombinedGUI:
                 self._put_gui_msg("status", text="COMPLETE", color=self.CLR_ACCENT_GREEN)
                 self._put_gui_msg("sequence_complete")
 
+        except SoftLimitAbort as e:
+            # ADV-4: graceful safety abort (ramp/heater stopped in finally)
+            self._put_gui_msg("log",
+                text=f"SAFETY ABORT: {e} Ramp stopped, heater off.")
+            self._put_gui_msg("status", text="SAFETY ABORT (MAX TEMP)",
+                              color=self.CLR_ACCENT_RED)
         except Exception as e:
             self._put_gui_msg("log",
                 text=f"CRITICAL: {e}\n{traceback.format_exc()}")
@@ -1520,6 +1834,8 @@ class CombinedGUI:
             self._close_data_file()
             self.is_running = False
             self._worker_phase = None
+            self._paused = False
+            self._skip_requested = False
             self._put_gui_msg("worker_done")
 
     # ------------------------------------------------------------
@@ -1547,39 +1863,72 @@ class CombinedGUI:
               and abs(drift) <= p["drift"])
         return ok, max_dev, drift
 
-    def _ramp_and_stabilize(self, target):
-        """Two-stage approach (STB-1) + rolling-window stability (STB-2)
-        + optional timeout (STB-3).
+    def _choose_pre_target(self, temp, target):
+        """Pre-target selection (STB-1 + ADV-2 one-side approach).
+        Returns the pre-target setpoint, or None for a direct slow approach."""
+        p = self.params
+        delta = target - temp
+        side = p["approach_side"]
+        if side in ("below", "above"):
+            sign = -1.0 if side == "below" else 1.0
+            on_correct_side = (temp <= target) if side == "below" \
+                else (temp >= target)
+            if on_correct_side and abs(delta) <= p["app_band"]:
+                return None
+            # Force the pre-target onto the chosen side so the final slow
+            # ramp always enters the target from that side.
+            return target + sign * p["app_band"]
+        if abs(delta) > p["app_band"]:
+            return target - math.copysign(p["app_band"], delta)
+        return None
 
-        Stage 1 (PRE_RAMP): full-rate ramp to a pre-target that stops
-        `app_band` K short of the real target — the setpoint never slews
-        into the target at full speed, which is what caused the big
-        overshoots below 100 K.
+    def _write_summary_row(self, target, rate, t_start, elapsed, outcome):
+        """ADV-6: one row per setpoint in the stabilization summary CSV."""
+        try:
+            side = self.params["approach_side"] or "two-stage"
+            self.summary_writer.writerow(
+                [f"{target:.4f}", f"{rate:.3f}", side,
+                 t_start.strftime("%Y-%m-%d %H:%M:%S"),
+                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                 f"{elapsed:.1f}", outcome])
+            self.summary_file.flush()
+        except Exception as e:
+            self._put_gui_msg("log", text=f"WARN: summary write failed: {e}")
+
+    def _ramp_and_stabilize(self, target, ramp_rate):
+        """Two-stage approach (STB-1) + rolling-window stability (STB-2)
+        + optional timeout (STB-3) + pause/skip (ADV-3) + one-side
+        approach (ADV-2).
+
+        Stage 1 (PRE_RAMP): ramp at `ramp_rate` (adaptive per step) to a
+        pre-target that stops `app_band` K short of the real target — the
+        setpoint never slews into the target at full speed, which is what
+        caused the big overshoots below 100 K.
         Stage 2 (FINAL_APPROACH): slow `app_rate` ramp from the pre-target
         to the real target, then wait until the rolling window is stable.
 
-        Returns True (stable), "timeout" (proceed with warning), or
-        False (stop requested). Raises RuntimeError on kill switch.
+        Returns (outcome, elapsed_s); outcome in
+        "stable" | "timeout" | "skipped" | "stopped".
+        Raises on kill switch / soft limit / persistent VISA failure.
         """
         p = self.params
+        self._current_rate = ramp_rate
         temp, _, _ = self._log_temperature_point(target, measuring_flag=0)
-        delta = target - temp
-        heating = delta > 0
+        pre_target = self._choose_pre_target(temp, target)
 
-        if abs(delta) > p["app_band"]:
-            pre_target = target - math.copysign(p["app_band"], delta)
+        if pre_target is not None:
             self._worker_phase = "PRE_RAMP"
-            self.ls_backend.configure_ramp(pre_target, p["rate"],
+            self.ls_backend.configure_ramp(pre_target, ramp_rate,
                                            p["heater_range"])
             self._put_gui_msg("log",
-                text=f"Stage 1: fast ramp ({p['rate']} K/min) to pre-target "
+                text=f"Stage 1: ramp ({ramp_rate:g} K/min) to pre-target "
                      f"{pre_target:.2f} K ({p['app_band']} K short of {target} K).")
             self._put_gui_msg("status",
                 text=f"RAMPING TO {target} K (pre: {pre_target:.1f} K)",
                 color=self.CLR_ACCENT_RED)
         else:
-            pre_target = None
             self._worker_phase = "FINAL_APPROACH"
+            self._current_rate = p["app_rate"]
             self.ls_backend.configure_ramp(target, p["app_rate"],
                                            p["heater_range"])
             self._put_gui_msg("log",
@@ -1588,24 +1937,44 @@ class CombinedGUI:
             self._put_gui_msg("status",
                 text=f"APPROACHING {target} K", color=self.CLR_STABLE_WAIT)
 
+        # Direction of travel toward the pre-target (may differ from the
+        # overall direction when approach_side forces an overshoot).
+        pre_heating = (pre_target is not None) and (pre_target > temp)
+
         window = deque()          # (time, temp) rolling stability window
         step_start = time.time()
+        paused_s = 0.0            # pause time excluded from the timeout
         last_status = 0.0
 
         try:
             while self.is_running:
                 if self._process_cmd_queue():
-                    return False   # stop requested
+                    return "stopped", time.time() - step_start
+                if self._skip_requested:
+                    self._skip_requested = False
+                    return "skipped", time.time() - step_start
 
                 temp, _, _ = self._log_temperature_point(target, measuring_flag=0)
                 now = time.time()
 
+                if self._paused:
+                    # ADV-3: hold at the current setpoint; keep logging but
+                    # suspend the stability window and timeout clock.
+                    paused_s += p["delay"]
+                    window.clear()
+                    self._put_gui_msg("status",
+                        text=f"PAUSED (holding, target {target} K)",
+                        color=self.CLR_ACCENT_GOLD)
+                    time.sleep(p["delay"])
+                    continue
+
                 if self._worker_phase == "PRE_RAMP":
-                    reached = (temp >= pre_target - p["tol"]) if heating \
+                    reached = (temp >= pre_target - p["tol"]) if pre_heating \
                         else (temp <= pre_target + p["tol"])
                     if reached:
                         # STB-1 stage 2: hand over to the slow final approach.
                         self._worker_phase = "FINAL_APPROACH"
+                        self._current_rate = p["app_rate"]
                         self.ls_backend.set_ramp_rate(p["app_rate"])
                         time.sleep(0.1)
                         self.ls_backend.set_setpoint(target)
@@ -1626,7 +1995,7 @@ class CombinedGUI:
                             text=f"STABLE at {target} K: max dev "
                                  f"{max_dev:.3f} K, drift {drift:+.3f} K/min "
                                  f"over last {p['soak']:.0f} s.")
-                        return True
+                        return "stable", time.time() - step_start
                     # Live status (throttled to every ~3 s to limit messages)
                     if now - last_status > 3.0:
                         last_status = now
@@ -1637,14 +2006,15 @@ class CombinedGUI:
                                       f"drift={drift:+.3f} K/min"),
                                 color=self.CLR_STABLE_WAIT)
 
-                # STB-3: overnight-safety timeout
-                if p["stab_timeout"] > 0 and (now - step_start) > p["stab_timeout"] * 60.0:
-                    return "timeout"
+                # STB-3: overnight-safety timeout (pause time excluded)
+                if p["stab_timeout"] > 0 and \
+                        (now - step_start - paused_s) > p["stab_timeout"] * 60.0:
+                    return "timeout", time.time() - step_start
 
                 time.sleep(p["delay"])
         finally:
             self._worker_phase = None
-        return False
+        return "stopped", time.time() - step_start
 
     # ------------------------------------------------------------
     # Worker-side helpers
@@ -1659,6 +2029,16 @@ class CombinedGUI:
                     self._put_gui_msg("log", text="Stop received by worker.")
                     self.is_running = False
                     return True
+                elif kind == "pause":
+                    self._paused = True
+                    self._put_gui_msg("pause_state", paused=True)
+                    self._put_gui_msg("log", text="PAUSED by user.")
+                elif kind == "resume":
+                    self._paused = False
+                    self._put_gui_msg("pause_state", paused=False)
+                    self._put_gui_msg("log", text="RESUMED.")
+                elif kind == "skip":
+                    self._skip_requested = True
                 elif kind == "heater":
                     try:
                         self.ls_backend.set_heater_range(1, cmd[1])
@@ -1681,8 +2061,16 @@ class CombinedGUI:
                 elif kind == "params":
                     updates = cmd[1]
                     self.params.update(updates)
-                    self._put_gui_msg("log", text=f"Params applied: {updates}")
-                    if "rate" in updates:
+                    shown = {k: v for k, v in updates.items()
+                             if k != "ramp_caps"}
+                    self._put_gui_msg("log", text=f"Params applied: {shown}")
+                    if "rate" in updates and self.params.get("adaptive"):
+                        # ADV-1: adaptive mode computes the rate per step;
+                        # a manual rate only applies with Adaptive unticked.
+                        self._put_gui_msg("log",
+                            text="Adaptive ramp active — manual rate stored "
+                                 "but rates stay computed per setpoint.")
+                    elif "rate" in updates:
                         # REL-2: never override the slow final approach —
                         # the new rate takes effect from the next stage/step.
                         if self._worker_phase == "FINAL_APPROACH":
@@ -1723,11 +2111,18 @@ class CombinedGUI:
             self._put_gui_msg("status", text="OVERTEMP ABORT", color=self.CLR_ACCENT_RED)
             self.is_running = False
             raise RuntimeError("Hard overtemperature limit reached.")
+        if temp >= self.params["max_temp"]:
+            # ADV-4: graceful abort well before the hard kill switch
+            raise SoftLimitAbort(
+                f"Soft Max Temp limit reached: {temp:.2f} K >= "
+                f"{self.params['max_temp']:g} K.")
         elapsed = time.time() - self.start_time
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        phase = "PAUSED" if self._paused else (self._worker_phase or "")
         self.csv_writer.writerow(
             [now_str, f"{elapsed:.2f}", f"{target:.4f}", f"{temp:.4f}",
-             f"{htr:.2f}", measuring_flag]
+             f"{htr:.2f}", measuring_flag,
+             f"{self._current_rate:.3f}", phase]
         )
         self.data_file.flush()
         # CRIT-2: heater value rides on the queue msg; no worker-side list.
@@ -1748,12 +2143,29 @@ class CombinedGUI:
                     f"AC: {self.lcr_params['ac_bias']} V | DC: {self.lcr_params['dc_bias']} V | "
                     f"APER: {self.lcr_params['aper']}\n")
             f.write(self.lcr_backend.DATA_HEADER + "\n")
+            self._worker_phase = "SWEEP"
             for i, freq in enumerate(self.sweep_frequencies):
                 if not self.is_running:
                     break
                 # check for stop / pid updates mid-sweep
                 if self._process_cmd_queue():
                     break
+                if not self.is_running:
+                    break
+                # ADV-3: skip aborts the remainder of this sweep
+                if self._skip_requested:
+                    self._skip_requested = False
+                    self._put_gui_msg("log",
+                        text="⏭ Remaining sweep skipped by user.")
+                    break
+                # ADV-3: pause holds between frequency points
+                while self._paused and self.is_running:
+                    self._put_gui_msg("status",
+                        text=f"PAUSED (sweep at {target_temp} K)",
+                        color=self.CLR_ACCENT_GOLD)
+                    if self._process_cmd_queue():
+                        break
+                    time.sleep(1.0)
                 if not self.is_running:
                     break
                 try:
@@ -1775,24 +2187,29 @@ class CombinedGUI:
                 # Interleaved temperature log (flag=1) — §3c/§3d
                 try:
                     self._log_temperature_point(target_temp, measuring_flag=1)
+                except SoftLimitAbort:
+                    raise    # ADV-4: graceful abort must reach the worker
                 except RuntimeError:
                     break
                 done_pts += 1
                 self._put_gui_msg("scan_point", freq=freq, cp=vals[4], g=vals[2],
                                   progress=done_pts)
+        self._worker_phase = None
         self._put_gui_msg("log", text=f"Sweep saved: {fname}")
         return done_pts
 
     def _close_data_file(self):
-        f = getattr(self, "data_file", None)
-        if f:
-            try:
-                f.flush(); f.close()
-                self._put_gui_msg("log", text=f"Temperature log closed.")
-            except Exception:
-                pass
-            finally:
-                self.data_file = None
+        for attr, label in (("data_file", "Temperature log"),
+                            ("summary_file", "Stabilization summary")):
+            f = getattr(self, attr, None)
+            if f:
+                try:
+                    f.flush(); f.close()
+                    self._put_gui_msg("log", text=f"{label} closed.")
+                except Exception:
+                    pass
+                finally:
+                    setattr(self, attr, None)
 
     # ------------------------------------------------------------
     # Shutdown / close

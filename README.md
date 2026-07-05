@@ -168,6 +168,8 @@ The system is currently validated with industry-standard hardware, covering a re
 - **Safety** — hardcoded 340 K kill switch, user-set soft Max-Temp limit with graceful abort (ramp stopped, heater off), heater-range checks, and crash-safe shutdown on window close or error.
 - **Run control & logging** — Pause/Resume, Skip Step, live-editable sequence, per-poll CSV (with ramp rate + phase columns), a per-setpoint summary CSV (rate used, stabilization time, outcome), and a live plot showing the setpoint and its tolerance band. After each stabilization the program beeps and waits for the **Proceed** button (external-measurement handshake).
 
+The combined dielectric-scan program `pica/keysight/Step_Frequency_Scan_E4980A_GUI.py` (v1.3) carries the same advanced control set — adaptive ramp rate, approach-from-one-side, Pause/Skip, soft Max-Temp limit, tolerance band, and stabilization-summary CSV — as an embedded copy (every PICA program stays self-contained). Being an unattended overnight program, on stabilization timeout it logs a loud warning and proceeds with the frequency sweep instead of waiting.
+
 ### Module Previews
 
 <p align="center">
