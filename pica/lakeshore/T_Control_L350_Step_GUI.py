@@ -549,7 +549,7 @@ class TempControlGUI:
 
         self._create_grid_entry(frame, "Tolerance (±K):", "tol", "0.5", 0, 0)
         self._create_grid_entry(frame, "Soak Time (s):", "soak", "120", 0, 3)
-        self._create_grid_entry(frame, "Ramp Rate (K/min):", "rate", "10.0", 1, 0)
+        self._create_grid_entry(frame, "Ramp Rate (K/min):", "rate", "2.0", 1, 0)
         self._create_grid_entry(frame, "Poll Delay (s):", "delay", "1", 1, 3)
         # FIX (4b): dedicated dwell field — the minimum continuous time the
         # temperature must remain inside the tolerance band before the
