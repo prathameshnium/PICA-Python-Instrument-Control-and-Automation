@@ -618,7 +618,7 @@ class HighResistanceIV_GUI:
 
         Label(
             frame,
-            text="Steps:").grid(
+            text="No. of Points:").grid(
             row=3,
             column=0,
             padx=(
@@ -805,7 +805,7 @@ class HighResistanceIV_GUI:
                 raise ValueError(
                     "All fields, VISA address, and a save location are required.")
             if steps < 2:
-                raise ValueError("Number of steps must be 2 or more.")
+                raise ValueError("Number of points must be 2 or more.")
 
             self.voltage_list = np.linspace(start_v, stop_v, steps)
             self.log(
