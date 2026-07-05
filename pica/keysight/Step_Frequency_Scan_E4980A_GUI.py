@@ -1959,7 +1959,6 @@ class CombinedGUI:
             self._put_gui_msg("log",
                 text=f"CRITICAL: {e}\n{traceback.format_exc()}")
             self._put_gui_msg("status", text="ERROR", color=self.CLR_ACCENT_RED)
-            self._put_gui_msg("sequence_complete")
         finally:
             # §3f: crash-safe shutdown
             try:

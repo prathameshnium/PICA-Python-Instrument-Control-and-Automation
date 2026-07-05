@@ -1175,7 +1175,10 @@ class LCR_Freq_GUI:
                 self.data_queue.put(("DONE", None, None, None, None))
                 
         except Exception as e:
-            self.data_queue.put(("ERROR", e, None, None, None))
+            # Traceback must be captured HERE (worker thread) — the main
+            # thread's format_exc() would just print "NoneType: None".
+            self.data_queue.put(
+                ("ERROR", e, traceback.format_exc(), None, None))
 
     def _poll_queue(self):
         """Main thread: processes data from the worker thread."""
@@ -1188,7 +1191,7 @@ class LCR_Freq_GUI:
                     self._handle_sweep_completion()
                     return
                 elif f == "ERROR":
-                    self._handle_sweep_error(R)
+                    self._handle_sweep_error(R, X)
                     return
                 else:
                     self.sweep_index = idx
@@ -1342,14 +1345,15 @@ class LCR_Freq_GUI:
         self.stop_sweep("Sweep naturally complete.")
         messagebox.showinfo("Finished", "Frequency sweep is complete.")
 
-    def _handle_sweep_error(self, exception):
-        self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
+    def _handle_sweep_error(self, exception, tb=None):
+        self.log(f"RUNTIME ERROR: {exception}\n{tb or ''}")
         self.stop_sweep(
             "A critical hardware or measurement error occurred."
         )
         messagebox.showerror(
             "Runtime Error",
-            "An error occurred during the sweep. Check console.",
+            f"An error occurred during the sweep:\n\n{exception}\n\n"
+            "See console for the full traceback.",
         )
 
 

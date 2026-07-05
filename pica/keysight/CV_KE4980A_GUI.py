@@ -1290,7 +1290,10 @@ class LCR_Freq_GUI:
         except Exception as e:
             # CRITICAL SAFETY: drive voltage to zero on any worker crash
             self.backend.force_zero_bias()
-            self.data_queue.put(("ERROR", e, None, None, None, None))
+            # Traceback must be captured HERE (worker thread) — the main
+            # thread's format_exc() would just print "NoneType: None".
+            self.data_queue.put(
+                ("ERROR", e, traceback.format_exc(), None, None, None))
 
     def _open_new_file(self, freq):
         p = self.backend.params
@@ -1330,7 +1333,7 @@ class LCR_Freq_GUI:
                     self._handle_sweep_completion()
                     return
                 if f == "ERROR":
-                    self._handle_sweep_error(v)
+                    self._handle_sweep_error(v, R)
                     return
                 if f == "NEW_FILE":
                     # v carries the frequency here (tuple reuse).
@@ -1473,8 +1476,8 @@ class LCR_Freq_GUI:
         self.stop_sweep("Sweep naturally complete.")
         messagebox.showinfo("Finished", "CV sweep is complete.")
 
-    def _handle_sweep_error(self, exception):
-        self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
+    def _handle_sweep_error(self, exception, tb=None):
+        self.log(f"RUNTIME ERROR: {exception}\n{tb or ''}")
         # Explicitly call force_zero_bias just to be absolutely certain
         # the worker thread's safety routine executed.
         if self.backend.instrument:
@@ -1484,7 +1487,8 @@ class LCR_Freq_GUI:
         )
         messagebox.showerror(
             "Runtime Error",
-            "An error occurred during the sweep. Check console.",
+            f"An error occurred during the sweep:\n\n{exception}\n\n"
+            "See console for the full traceback.",
         )
 
 

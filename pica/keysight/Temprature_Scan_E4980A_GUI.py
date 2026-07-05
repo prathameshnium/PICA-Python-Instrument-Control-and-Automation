@@ -1358,8 +1358,10 @@ class Integrated_CT_GUI:
 
             # --- Ramp Phase ---
             if self.is_running and not self.stop_event.is_set():
-                self.backend.lakeshore.set_setpoint(1, params['end_temp'])
+                # Enable ramp FIRST: a SETP sent while ramping is off is
+                # applied instantly and would bypass the ramp rate entirely.
                 self.backend.lakeshore.setup_ramp(1, params['rate'])
+                self.backend.lakeshore.set_setpoint(1, params['end_temp'])
                 self.backend.lakeshore.set_heater_range(1, 'high')
                 self.data_queue.put(
                     f"LOG:Hardware ramp started towards "
