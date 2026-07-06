@@ -152,6 +152,20 @@ v1.4 — INTUITIVE PANELS + RATE-CONFLICT FIXES
   PID-1  "Auto PID per setpoint" checkbox (parity with the advanced
          T-controller): untick to keep manual Live-PID values instead
          of having them silently overwritten at every setpoint.
+
+============================================================
+v1.5 — 2x2 PLOT GRID + PERSISTENT SPECTRUM
+============================================================
+  UI-3   All four plots (Temperature, Heater %, Cp, G) now live in
+         ONE 2x2 figure on a single canvas — no more toggling
+         between the two plot tabs.
+  UI-4   The completed Cp/G spectrum PERSISTS on screen, titled with
+         its measurement temperature, through the entire ramp +
+         stabilization to the next setpoint. `scan_reset` moved from
+         the top of the setpoint loop to the moment the sweep starts
+         (so the plot is cleared only when new points are imminent);
+         a new `scan_done` message marks the held spectrum as
+         "Last scan: <T> K".
 """
 
 import tkinter as tk
@@ -588,7 +602,7 @@ class LCR_Backend:
 # FRONTEND: Combined GUI
 # ============================================================
 class CombinedGUI:
-    PROGRAM_VERSION = "1.4-Combined"  # intuitive panels + rate-conflict fixes
+    PROGRAM_VERSION = "1.5-Combined"  # 2x2 plot grid + persistent spectrum
     LEFT_PANEL_WIDTH = 480  # default sash position so the left panel starts fully visible
 
     # --- FRZ-1 / FRZ-2 / FRZ-4 tuning knobs ---
@@ -695,6 +709,10 @@ class CombinedGUI:
         # y-limits per axis key; log-Y on by default (Cp/G span decades).
         self.log_y_var = tk.BooleanVar(value=True)
         self._decade_ylims = {}
+
+        # UI-4: scan label state — ("measuring"|"done", T_set) or None.
+        # Rendered as the Cp axis title by _redraw_tick.
+        self._scan_info = None
 
         # REL-2: worker-side phase marker (worker thread only writes it;
         # used to defer live ramp-rate updates during final approach)
@@ -1147,55 +1165,53 @@ class CombinedGUI:
         self.progress = ttk.Progressbar(sf, orient="horizontal", mode="determinate")
         self.progress.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 5))
 
-        nb = ttk.Notebook(panel); nb.grid(row=1, column=0, sticky="nsew")
+        # UI-3: single 2x2 plot grid — all plots visible at once, no tabs
+        plot_frame = ttk.Frame(panel)
+        plot_frame.grid(row=1, column=0, sticky="nsew")
+        self._build_plots(plot_frame)
 
-        # Temperature plot tab
-        t_tab = ttk.Frame(nb); nb.add(t_tab, text="Temperature vs Time")
-        self._build_temp_plot(t_tab)
+    def _build_plots(self, parent):
+        """UI-3: one figure, 2x2 grid. Left column: Temperature and
+        Heater % vs time (shared x). Right column: Cp and G vs
+        frequency (shared log x)."""
+        self.fig = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
+        self.ax_temp = self.fig.add_subplot(221)
+        self.ax_heater = self.fig.add_subplot(223, sharex=self.ax_temp)
+        self.ax_cp = self.fig.add_subplot(222)
+        self.ax_g = self.fig.add_subplot(224, sharex=self.ax_cp)
 
-        # Frequency scan plot tab
-        f_tab = ttk.Frame(nb); nb.add(f_tab, text="Cp / G vs Frequency")
-        self._build_freq_plot(f_tab)
-
-    def _build_temp_plot(self, parent):
-        self.fig_t = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
-        self.ax_temp = self.fig_t.add_subplot(211)
-        self.ax_heater = self.fig_t.add_subplot(212, sharex=self.ax_temp)
         self.line_target, = self.ax_temp.plot([], [], color=self.CLR_ACCENT_GREEN, ls="--", label="Target")
         self.line_temp, = self.ax_temp.plot([], [], color=self.CLR_ACCENT_RED, marker="o", ms=3, ls="-", label="Temp")
         self.scat_meas, = self.ax_temp.plot([], [], ls="", marker="o", ms=5, color=self.CLR_MEAS, label="Measuring (flag=1)")
         self.ax_temp.set_ylabel("Temperature (K)"); self.ax_temp.grid(True, ls="--", alpha=0.6)
         self.ax_temp.legend(loc="best", frameon=True, facecolor=self.CLR_GRAPH_BG)
         self.ax_temp.tick_params(axis="x", which="both", bottom=False, labelbottom=False)
+
         self.line_heater, = self.ax_heater.plot([], [], color=self.CLR_ACCENT_GOLD, marker=".", ms=3, ls="-")
         self.ax_heater.set_xlabel("Time (s)"); self.ax_heater.set_ylabel("Heater (%)")
         self.ax_heater.grid(True, ls="--", alpha=0.6)
-        self.fig_t.tight_layout()
-        # FRZ-5: pack toolbar BEFORE canvas so it stays visible at the bottom
-        self.canvas_t = FigureCanvasTkAgg(self.fig_t, parent)
-        tb = NavigationToolbar2Tk(self.canvas_t, parent, pack_toolbar=False)
-        tb.update()
-        tb.pack(side="bottom", fill="x")
-        self.canvas_t.get_tk_widget().pack(fill="both", expand=True)
 
-    def _build_freq_plot(self, parent):
-        self.fig_f = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
-        self.ax_cp = self.fig_f.add_subplot(211)
         self.line_cp, = self.ax_cp.plot([], [], color="#C00000", marker="o", ms=3, ls="-")
-        self.ax_cp.set_ylabel("Cp (F)"); self.ax_cp.set_xscale("log"); self.ax_cp.grid(True, ls="--", alpha=0.7)
-        self.ax_g = self.fig_f.add_subplot(212)
+        self.ax_cp.set_ylabel("Cp (F)"); self.ax_cp.set_xscale("log")
+        self.ax_cp.grid(True, ls="--", alpha=0.7)
+        self.ax_cp.tick_params(axis="x", which="both", labelbottom=False)
         self.line_g, = self.ax_g.plot([], [], color=self.CLR_MEAS, marker="s", ms=3, ls="-")
         self.ax_g.set_xlabel("Frequency (Hz)"); self.ax_g.set_ylabel("G (S)")
         self.ax_g.set_xscale("log"); self.ax_g.grid(True, ls="--", alpha=0.7)
-        self.fig_f.subplots_adjust(left=0.08, right=0.98, top=0.98, bottom=0.07, hspace=0.15)
+
+        # top leaves room for the UI-4 scan-temperature title on ax_cp
+        self.fig.subplots_adjust(left=0.09, right=0.98, top=0.93,
+                                 bottom=0.08, hspace=0.15, wspace=0.28)
+
         ttk.Checkbutton(parent, text="Log Y scale (decade autoscale)",
                         variable=self.log_y_var,
                         command=self._on_log_y_toggle).pack(side="top", anchor="w", padx=5, pady=(5, 0))
-        self.canvas_f = FigureCanvasTkAgg(self.fig_f, parent)
-        tb = NavigationToolbar2Tk(self.canvas_f, parent, pack_toolbar=False)
+        # FRZ-5: pack toolbar BEFORE canvas so it stays visible at the bottom
+        self.canvas_plots = FigureCanvasTkAgg(self.fig, parent)
+        tb = NavigationToolbar2Tk(self.canvas_plots, parent, pack_toolbar=False)
         tb.update()
         tb.pack(side="bottom", fill="x")
-        self.canvas_f.get_tk_widget().pack(fill="both", expand=True)
+        self.canvas_plots.get_tk_widget().pack(fill="both", expand=True)
 
     def _on_log_y_toggle(self):
         """Re-snap decade limits when the log-Y checkbox flips.
@@ -1262,6 +1278,7 @@ class CombinedGUI:
                     self.band_patch = self.ax_temp.axhspan(
                         target - tol, target + tol,
                         color=self.CLR_ACCENT_GREEN, alpha=0.15, zorder=0)
+            need_draw = False
             if self._temp_plot_dirty:
                 self._temp_plot_dirty = False
                 self._decimate_display_series()
@@ -1271,7 +1288,7 @@ class CombinedGUI:
                 self.line_heater.set_data(self.plot_t, self.plot_heater)
                 for ax in (self.ax_temp, self.ax_heater):
                     ax.relim(); ax.autoscale_view()
-                self.canvas_t.draw_idle()
+                need_draw = True
             if self._freq_plot_dirty:
                 self._freq_plot_dirty = False
                 self.line_cp.set_data(self.scan_f, self.scan_cp)
@@ -1283,7 +1300,21 @@ class CombinedGUI:
                         self._decade_autoscale_y(ax, data, key)
                     else:
                         ax.set_yscale('linear'); ax.autoscale_view(scaley=True)
-                self.canvas_f.draw_idle()
+                # UI-4: measurement-temperature label on the spectrum
+                if self._scan_info is None:
+                    self.ax_cp.set_title("")
+                else:
+                    state, t_set = self._scan_info
+                    if state == "measuring":
+                        self.ax_cp.set_title(
+                            f"Measuring at {t_set:.2f} K …", fontsize=10)
+                    else:
+                        self.ax_cp.set_title(
+                            f"Last scan: {t_set:.2f} K "
+                            f"(held until next scan)", fontsize=10)
+                need_draw = True
+            if need_draw:
+                self.canvas_plots.draw_idle()
             if self._pending_progress is not None:
                 self.progress["value"] = self._pending_progress
                 self._pending_progress = None
@@ -1598,7 +1629,9 @@ class CombinedGUI:
             self.band_patch = None
         self._band_params = None
         self._band_dirty = False
-        self.canvas_t.draw_idle(); self.canvas_f.draw_idle()
+        self._scan_info = None            # UI-4: drop the held spectrum label
+        self.ax_cp.set_title("")
+        self.canvas_plots.draw_idle()
         self._decade_ylims.clear()
         self._temp_plot_dirty = False
         self._freq_plot_dirty = False
@@ -1772,6 +1805,14 @@ class CombinedGUI:
                 elif t == "scan_reset":
                     self.scan_f.clear(); self.scan_cp.clear(); self.scan_g.clear()
                     self._decade_ylims.clear()  # new spectrum re-snaps decades
+                    # UI-4: label the incoming spectrum with its temperature
+                    target = m.get("target")
+                    self._scan_info = None if target is None \
+                        else ("measuring", target)
+                    self._freq_plot_dirty = True
+                elif t == "scan_done":
+                    # UI-4: sweep finished — hold the spectrum, mark it done
+                    self._scan_info = ("done", m["target"])
                     self._freq_plot_dirty = True
                 elif t == "scan_point":
                     self.scan_f.append(m["freq"])
@@ -1893,7 +1934,6 @@ class CombinedGUI:
                     break
                 self._put_gui_msg("log",
                     text=f"--- Step {i+1}/{len(self.setpoint_floats)}: target {target} K ---")
-                self._put_gui_msg("scan_reset")
                 self._put_gui_msg("band", target=target,
                                   tol=self.params["tol"])
 
@@ -1938,9 +1978,13 @@ class CombinedGUI:
                 self._put_gui_msg("status",
                     text=f"MEASURING AT {target} K", color=self.CLR_ACCENT_GREEN)
                 self._put_gui_msg("beep")   # FRZ-3: beep on Tk thread
+                # UI-4: clear the held previous spectrum only NOW, when
+                # new points are imminent (was at the top of the loop).
+                self._put_gui_msg("scan_reset", target=target)
                 done_pts = self._run_frequency_sweep(target, done_pts, total_pts)
                 if not self.is_running:
                     break
+                self._put_gui_msg("scan_done", target=target)  # UI-4
                 self._put_gui_msg("log",
                     text=f"Sweep done at {target} K. Proceeding.")
 
