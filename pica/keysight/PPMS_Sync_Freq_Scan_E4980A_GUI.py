@@ -8,17 +8,18 @@ The PPMS runs its own temperature sequence — this program never talks to
 the PPMS and never sends a single control command to the Lakeshore (no
 RANGE/RAMP/SETP/PID). The sample sits on a custom probe with large
 thermal inertia: it lags the PPMS setpoint and needs extra time to
-equilibrate after the PPMS itself has settled. Per schedule step this
-program therefore:
+equilibrate after the PPMS itself has settled. The run is:
 
-  1. SLEEP        — optional fixed wait (e.g. 3 h 30 min for the first
-                    cooldown) entered per step in the schedule table.
-  2. WAIT_STABLE  — active stabilization detection from the probe
-                    thermometer alone (rolling window; three selectable
-                    criteria, see below).
-  3. SCAN         — full 40 Hz – 2 MHz frequency sweep (identical scan
-                    engine and data format as
-                    Step_Frequency_Scan_E4980A_GUI.py).
+  0. INITIAL SLEEP — optional ONE-TIME fixed wait at Start (e.g.
+                     3 h 30 min while the PPMS does its first big
+                     cooldown). Checkbox + duration; not per step.
+  Then, per temperature in the schedule list:
+  1. WAIT_STABLE   — active stabilization detection from the probe
+                     thermometer alone (rolling window; three selectable
+                     criteria, see below).
+  2. SCAN          — full 40 Hz – 2 MHz frequency sweep (identical scan
+                     engine and data format as
+                     Step_Frequency_Scan_E4980A_GUI.py).
 
 Stability criteria (radio selectable):
   - Band around target : every reading in the window within ±Tolerance
@@ -36,14 +37,17 @@ Timing intelligence:
   - Live scan-duration estimate from the sweep parameters (aperture,
     per-point delay, VISA overhead, low-frequency period limit);
     replaced by the MEASURED mean per-point time after the first sweep.
-  - Per step the program logs sleep used, probe settle time and scan
-    time, and computes the wait the user should program into the PPMS
-    sequence at that setpoint:
-        suggested PPMS wait = max(0, sleep + settle − PPMS ramp est.)
-                              + scan time + margin
-    (margin = max(base × Margin %, Margin floor)). Suggestions appear
-    live in the "Timing / PPMS Suggestions" tab and in the TimingLog
-    CSV, so the next run of the same sequence can be tightened.
+  - "Generate PPMS suggestions" works BEFORE the run, with no
+    instruments connected: per setpoint it shows
+        suggested PPMS wait = stability window + estimated scan + Margin
+    so the PPMS sequence can be written up front.
+  - During the run each row is replaced by measured values:
+        suggested PPMS wait = probe settle time + scan time + Margin
+    (settle is measured from the end of the previous scan — i.e. from
+    when the PPMS started moving — to declared stability). Suggestions
+    appear live in the "Timing / PPMS Suggestions" tab and in the
+    TimingLog CSV, so the next run of the same sequence can be
+    tightened.
   - If the sample temperature leaves the stability band DURING a sweep
     (PPMS moved on too early), the sweep still completes but the step
     is flagged (TempDriftDuringScan) in the timing log — flag-only
@@ -518,9 +522,12 @@ class PPMSSyncGUI:
         self.log(f"PPMS-Sync GUI v{self.PROGRAM_VERSION} initialized. "
                  "Lakeshore 350 is READ-ONLY (KRDG? only) — the PPMS owns "
                  "all temperature control.")
-        self.log("Per step: optional sleep -> stability detection "
-                 "(band / flatness / both) -> 40 Hz–2 MHz sweep. PPMS wait "
-                 "suggestions appear in the Timing tab as steps complete.")
+        self.log("Run: optional one-time initial sleep, then per setpoint: "
+                 "stability detection (band / flatness / both) -> "
+                 "40 Hz–2 MHz sweep.")
+        self.log("Use 'Generate PPMS suggestions' (Timing panel) to plan "
+                 "the PPMS sequence BEFORE the run; rows update with "
+                 "measured times as steps complete.")
 
     # ------------------------------------------------------------
     # Styling (unchanged)
@@ -663,244 +670,134 @@ class PPMSSyncGUI:
                   ).grid(row=1, column=1, padx=5, sticky="nw")
 
     # ------------------------------------------------------------
-    # Measurement schedule editor
+    # Temperature schedule (simple setpoint list, like the original)
     # ------------------------------------------------------------
-    SCHED_COLS = ("step", "target", "ppms", "sleep")
-
     def _create_schedule_panel(self, parent, row):
-        frame = ttk.LabelFrame(parent, text="Measurement Schedule "
-                                             "(mirror of the PPMS sequence)")
+        frame = ttk.LabelFrame(parent, text="Temperature Schedule "
+                                             "(same setpoints as the PPMS "
+                                             "sequence)")
         frame.grid(row=row, column=0, sticky="new", pady=5, padx=5)
-        for i in range(6):
+        for i in range(4):
             frame.grid_columnconfigure(i, weight=1)
 
-        tf = ttk.Frame(frame)
-        tf.grid(row=0, column=0, columnspan=6, sticky="nsew", padx=10, pady=5)
-        sb = ttk.Scrollbar(tf, orient="vertical")
-        self.sched_tree = ttk.Treeview(
-            tf, columns=self.SCHED_COLS, show="headings", height=6,
-            selectmode="browse", yscrollcommand=sb.set)
-        sb.config(command=self.sched_tree.yview)
-        heads = {"step": ("#", 30), "target": ("Target (K)", 90),
-                 "ppms": ("PPMS ramp+settle (min)", 150),
-                 "sleep": ("Sleep (min / h:mm)", 130)}
-        for col in self.SCHED_COLS:
-            text, width = heads[col]
-            self.sched_tree.heading(col, text=text)
-            self.sched_tree.column(col, width=width, anchor="center",
-                                   stretch=True)
-        self.sched_tree.pack(side="left", fill="both", expand=True)
+        lf = ttk.Frame(frame)
+        lf.grid(row=0, column=0, columnspan=4, sticky="nsew", padx=10, pady=5)
+        sb = ttk.Scrollbar(lf, orient="vertical")
+        self.listbox = tk.Listbox(lf, height=6, selectmode=tk.EXTENDED,
+                                  font=self.FONT_BASE, bg=self.CLR_INPUT_BG,
+                                  fg=self.CLR_TEXT_DARK, yscrollcommand=sb.set)
+        sb.config(command=self.listbox.yview)
+        self.listbox.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
-        self.sched_tree.bind("<<TreeviewSelect>>", self._sched_on_select)
 
-        ttk.Label(frame, text="Target(K):").grid(row=1, column=0, sticky="e", padx=2)
-        self.sched_target = ttk.Entry(frame, width=7)
-        self.sched_target.grid(row=1, column=1, sticky="w", padx=2)
-        ttk.Label(frame, text="PPMS(min):").grid(row=1, column=2, sticky="e", padx=2)
-        self.sched_ppms = ttk.Entry(frame, width=7)
-        self.sched_ppms.grid(row=1, column=3, sticky="w", padx=2)
-        self.sched_ppms.insert(0, "10")
-        ttk.Label(frame, text="Sleep:").grid(row=1, column=4, sticky="e", padx=2)
-        self.sched_sleep = ttk.Entry(frame, width=7)
-        self.sched_sleep.grid(row=1, column=5, sticky="w", padx=2)
-        self.sched_sleep.insert(0, "0:30")
-
-        bf = ttk.Frame(frame)
-        bf.grid(row=2, column=0, columnspan=6, sticky="ew", padx=10, pady=2)
-        bf.grid_columnconfigure((0, 1, 2, 3, 4, 5), weight=1)
+        ttk.Label(frame, text="Start(K):").grid(row=1, column=0, sticky="e", padx=2)
+        self.entry_start = ttk.Entry(frame, width=6)
+        self.entry_start.grid(row=1, column=1, sticky="w", padx=2)
+        ttk.Label(frame, text="End(K):").grid(row=1, column=2, sticky="e", padx=2)
+        self.entry_end = ttk.Entry(frame, width=6)
+        self.entry_end.grid(row=1, column=3, sticky="w", padx=2)
+        ttk.Label(frame, text="Step(K):").grid(row=2, column=0, sticky="e", padx=2)
+        self.entry_step = ttk.Entry(frame, width=6)
+        self.entry_step.grid(row=2, column=1, sticky="w", padx=2)
         self.sched_buttons = []
-        for c, (txt, cmd) in enumerate((
-                ("Add", self._sched_add),
-                ("Update", self._sched_update),
-                ("Remove", self._sched_remove),
-                ("▲", lambda: self._sched_move(-1)),
-                ("▼", lambda: self._sched_move(+1)),
-                ("Clear", self._sched_clear))):
-            b = ttk.Button(bf, text=txt, command=cmd, width=7)
-            b.grid(row=0, column=c, sticky="ew", padx=1)
-            self.sched_buttons.append(b)
+        b = ttk.Button(frame, text="Generate Steps", command=self._generate_steps)
+        b.grid(row=2, column=2, columnspan=2, sticky="ew", padx=5, pady=2)
+        self.sched_buttons.append(b)
+
+        ttk.Label(frame, text="Order:").grid(row=3, column=0, sticky="e", padx=2)
+        self.sort_var = tk.StringVar(value="Ascending")
+        self.sort_cb = ttk.Combobox(frame, textvariable=self.sort_var,
+                                    values=["Ascending", "Descending"],
+                                    state="readonly", width=10)
+        self.sort_cb.grid(row=3, column=1, sticky="w", padx=2)
+        self.sort_cb.bind("<<ComboboxSelected>>", lambda e: self._sort_listbox())
+
+        ttk.Label(frame, text="Manual(K):").grid(row=4, column=0, sticky="e", padx=2, pady=5)
+        self.entry_manual = ttk.Entry(frame, width=6)
+        self.entry_manual.grid(row=4, column=1, sticky="w", padx=2, pady=5)
+        b = ttk.Button(frame, text="Add", command=self._add_manual_step)
+        b.grid(row=4, column=2, sticky="ew", padx=2, pady=5)
+        self.sched_buttons.append(b)
+        b = ttk.Button(frame, text="Remove", command=self._remove_step)
+        b.grid(row=4, column=3, sticky="ew", padx=2, pady=5)
+        self.sched_buttons.append(b)
+        b = ttk.Button(frame, text="Clear All", command=self._clear_listbox)
+        b.grid(row=5, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 5))
+        self.sched_buttons.append(b)
 
         ttk.Separator(frame, orient="horizontal").grid(
-            row=3, column=0, columnspan=6, sticky="ew", pady=4, padx=10)
+            row=6, column=0, columnspan=4, sticky="ew", pady=4, padx=10)
 
-        ttk.Label(frame, text="Start(K):").grid(row=4, column=0, sticky="e", padx=2)
-        self.entry_start = ttk.Entry(frame, width=7)
-        self.entry_start.grid(row=4, column=1, sticky="w", padx=2)
-        ttk.Label(frame, text="End(K):").grid(row=4, column=2, sticky="e", padx=2)
-        self.entry_end = ttk.Entry(frame, width=7)
-        self.entry_end.grid(row=4, column=3, sticky="w", padx=2)
-        ttk.Label(frame, text="Step(K):").grid(row=4, column=4, sticky="e", padx=2)
-        self.entry_step = ttk.Entry(frame, width=7)
-        self.entry_step.grid(row=4, column=5, sticky="w", padx=2)
-        gen = ttk.Button(frame, text="Generate steps (uses PPMS/Sleep fields "
-                                     "above as defaults)",
-                         command=self._sched_generate)
-        gen.grid(row=5, column=0, columnspan=6, sticky="ew", padx=10, pady=2)
-        self.sched_buttons.append(gen)
-
-        of = ttk.Frame(frame)
-        of.grid(row=6, column=0, columnspan=6, sticky="ew", padx=10, pady=2)
-        of.grid_columnconfigure((0, 1), weight=1)
-        b_save = ttk.Button(of, text="Save schedule…", command=self._sched_save)
-        b_save.grid(row=0, column=0, sticky="ew", padx=2)
-        b_load = ttk.Button(of, text="Load schedule…", command=self._sched_load)
-        b_load.grid(row=0, column=1, sticky="ew", padx=2)
-        self.sched_buttons.extend((b_save, b_load))
-
+        # One-time initial sleep (first big cooldown), NOT per setpoint.
         self.var_sleep_enabled = tk.BooleanVar(value=True)
         self.chk_sleep = ttk.Checkbutton(
-            frame, text="Enable initial sleep phase (unchecked: go straight "
-                        "to stability detection)",
+            frame, text="Initial sleep before the first setpoint:",
             variable=self.var_sleep_enabled)
-        self.chk_sleep.grid(row=7, column=0, columnspan=6, sticky="w",
-                            padx=10, pady=(2, 5))
+        self.chk_sleep.grid(row=7, column=0, columnspan=2, sticky="w",
+                            padx=10, pady=(2, 0))
+        self.sleep_entry = ttk.Entry(frame, width=8)
+        self.sleep_entry.insert(0, "3:30")
+        self.sleep_entry.grid(row=7, column=2, sticky="w", padx=2, pady=(2, 0))
+        ttk.Label(frame, text="(min or h:mm)").grid(row=7, column=3,
+                                                    sticky="w", padx=2,
+                                                    pady=(2, 0))
+        ttk.Label(frame,
+                  text="One-time wait at Start while the PPMS finishes its "
+                       "first cooldown. Every later step goes straight to "
+                       "stability detection.",
+                  font=("Segoe UI", 8, "italic"), wraplength=420
+                  ).grid(row=8, column=0, columnspan=4, sticky="w",
+                         padx=10, pady=(0, 5))
 
-    def _sched_read_entry_row(self):
-        """Validate the three schedule entry fields -> (target, ppms, sleep)."""
-        target = float(self.sched_target.get())
-        if target <= 0:
-            raise ValueError("Target must be > 0 K.")
-        ppms = parse_duration_min(self.sched_ppms.get() or "0")
-        sleep = parse_duration_min(self.sched_sleep.get() or "0")
-        if ppms < 0 or sleep < 0:
-            raise ValueError("Durations must be >= 0.")
-        return target, ppms, sleep
-
-    def _sched_add(self):
-        try:
-            target, ppms, sleep = self._sched_read_entry_row()
-        except ValueError as e:
-            messagebox.showerror("Schedule", str(e)); return
-        self.sched_tree.insert("", "end", values=(
-            0, f"{target:.2f}", f"{ppms:g}", f"{sleep:g}"))
-        self._sched_renumber()
-        self.sched_target.delete(0, tk.END)
-
-    def _sched_update(self):
-        sel = self.sched_tree.selection()
-        if not sel:
-            return
-        try:
-            target, ppms, sleep = self._sched_read_entry_row()
-        except ValueError as e:
-            messagebox.showerror("Schedule", str(e)); return
-        self.sched_tree.item(sel[0], values=(
-            0, f"{target:.2f}", f"{ppms:g}", f"{sleep:g}"))
-        self._sched_renumber()
-
-    def _sched_remove(self):
-        for iid in self.sched_tree.selection():
-            self.sched_tree.delete(iid)
-        self._sched_renumber()
-
-    def _sched_move(self, delta):
-        sel = self.sched_tree.selection()
-        if not sel:
-            return
-        iid = sel[0]
-        idx = self.sched_tree.index(iid)
-        self.sched_tree.move(iid, "", idx + delta)
-        self._sched_renumber()
-
-    def _sched_clear(self):
-        for iid in self.sched_tree.get_children():
-            self.sched_tree.delete(iid)
-
-    def _sched_generate(self):
+    def _generate_steps(self):
         try:
             start = float(self.entry_start.get())
             end = float(self.entry_end.get())
             step = float(self.entry_step.get())
             if step <= 0:
-                raise ValueError("Step must be positive.")
-            ppms = parse_duration_min(self.sched_ppms.get() or "0")
-            sleep = parse_duration_min(self.sched_sleep.get() or "0")
-        except ValueError as e:
-            messagebox.showerror("Input Error", f"Invalid Start/End/Step: {e}")
-            return
-        if start < end:
-            pts = np.arange(start, end + step/2, step)
-        else:
-            pts = np.arange(start, end - step/2, -step)
-        for v in pts:
-            self.sched_tree.insert("", "end", values=(
-                0, f"{v:.2f}", f"{ppms:g}", f"{sleep:g}"))
-        self._sched_renumber()
+                raise ValueError("Step must be positive")
+            if start < end:
+                pts = np.arange(start, end + step/2, step)
+            else:
+                pts = np.arange(start, end - step/2, -step)
+            for v in pts:
+                self.listbox.insert(tk.END, f"{v:.2f}")
+            self._sort_listbox()
+        except ValueError:
+            messagebox.showerror("Input Error", "Invalid Start/End/Step.")
 
-    def _sched_on_select(self, event=None):
-        sel = self.sched_tree.selection()
-        if not sel:
-            return
-        _, target, ppms, sleep = self.sched_tree.item(sel[0], "values")
-        for entry, val in ((self.sched_target, target),
-                           (self.sched_ppms, ppms),
-                           (self.sched_sleep, sleep)):
-            entry.delete(0, tk.END)
-            entry.insert(0, val)
+    def _add_manual_step(self):
+        try:
+            v = float(self.entry_manual.get())
+            self.listbox.insert(tk.END, f"{v:.2f}")
+            self.entry_manual.delete(0, tk.END)
+            self._sort_listbox()
+        except ValueError:
+            messagebox.showerror("Input Error", "Enter a valid temperature.")
 
-    def _sched_renumber(self):
-        for i, iid in enumerate(self.sched_tree.get_children(), start=1):
-            vals = list(self.sched_tree.item(iid, "values"))
-            vals[0] = i
-            self.sched_tree.item(iid, values=vals)
+    def _remove_step(self):
+        for i in reversed(self.listbox.curselection()):
+            self.listbox.delete(i)
 
-    def _sched_rows(self):
-        """Schedule as a list of dicts (in table order)."""
-        rows = []
-        for iid in self.sched_tree.get_children():
-            _, target, ppms, sleep = self.sched_tree.item(iid, "values")
-            rows.append({
-                "target": float(target),
-                "ppms_min": parse_duration_min(ppms),
-                "sleep_min": parse_duration_min(sleep),
-            })
-        return rows
+    def _clear_listbox(self):
+        self.listbox.delete(0, tk.END)
 
-    def _sched_save(self):
-        rows = self._sched_rows()
-        if not rows:
-            messagebox.showwarning("Schedule", "Nothing to save."); return
-        path = filedialog.asksaveasfilename(
-            defaultextension=".csv", filetypes=[("CSV", "*.csv")],
-            title="Save schedule")
-        if not path:
+    def _sort_listbox(self):
+        items = list(self.listbox.get(0, tk.END))
+        if not items:
             return
         try:
-            with open(path, "w", newline="") as f:
-                w = csv.writer(f)
-                w.writerow(["Target_K", "PPMS_ramp_settle_min", "Sleep_min"])
-                for r in rows:
-                    w.writerow([r["target"], r["ppms_min"], r["sleep_min"]])
-            self.log(f"Schedule saved: {path}")
-        except Exception as e:
-            messagebox.showerror("Schedule", f"Save failed: {e}")
+            floats = sorted({float(x) for x in items},  # dedupe
+                            reverse=(self.sort_var.get() == "Descending"))
+            self.listbox.delete(0, tk.END)
+            for v in floats:
+                self.listbox.insert(tk.END, f"{v:.2f}")
+        except Exception:
+            pass
 
-    def _sched_load(self):
-        path = filedialog.askopenfilename(
-            filetypes=[("CSV", "*.csv"), ("All files", "*.*")],
-            title="Load schedule")
-        if not path:
-            return
-        try:
-            with open(path, newline="") as f:
-                rdr = csv.reader(f)
-                rows = []
-                for i, row in enumerate(rdr):
-                    if not row or (i == 0 and not
-                                   row[0].replace(".", "", 1).isdigit()):
-                        continue  # header / blank
-                    rows.append((float(row[0]),
-                                 parse_duration_min(row[1]) if len(row) > 1 else 0.0,
-                                 parse_duration_min(row[2]) if len(row) > 2 else 0.0))
-        except Exception as e:
-            messagebox.showerror("Schedule", f"Load failed: {e}")
-            return
-        self._sched_clear()
-        for target, ppms, sleep in rows:
-            self.sched_tree.insert("", "end", values=(
-                0, f"{target:.2f}", f"{ppms:g}", f"{sleep:g}"))
-        self._sched_renumber()
-        self.log(f"Schedule loaded ({len(rows)} steps): {path}")
+    def _get_targets(self):
+        """Schedule as a list of floats (listbox order)."""
+        return [float(x) for x in self.listbox.get(0, tk.END)]
 
     # ------------------------------------------------------------
     # Stabilization criteria
@@ -1050,13 +947,18 @@ class PPMSSyncGUI:
         self.scan_est_lbl.grid(row=0, column=0, columnspan=6, sticky="w",
                                padx=10, pady=(5, 2))
 
-        self._create_grid_entry(frame, "Margin (%):", "margin_pct", "20", 1, 0)
-        self._create_grid_entry(frame, "Margin floor (min):",
-                                "margin_floor", "5", 1, 3)
+        self._create_grid_entry(frame, "Margin (min):", "margin_min", "10", 1, 0)
+        self.suggest_button = ttk.Button(
+            frame, text="Generate PPMS suggestions",
+            command=self._generate_pre_run_suggestions)
+        self.suggest_button.grid(row=1, column=3, columnspan=3, sticky="ew",
+                                 padx=(2, 10), pady=2)
         ttk.Label(frame,
-                  text="Suggested PPMS wait = max(0, sleep + settle − PPMS "
-                       "ramp est.) + scan + max(base×Margin%, floor). See "
-                       "the 'Timing / PPMS Suggestions' tab.",
+                  text="Suggested wait per setpoint = probe settle + scan "
+                       "time + Margin. Works BEFORE the run (stability "
+                       "window + scan estimate); measured values replace "
+                       "each row as steps complete. See the 'Timing / PPMS "
+                       "Suggestions' tab.",
                   font=("Segoe UI", 8, "italic"), wraplength=420
                   ).grid(row=2, column=0, columnspan=6, sticky="w",
                          padx=10, pady=(0, 5))
@@ -1144,10 +1046,11 @@ class PPMSSyncGUI:
 
     def _build_timing_tab(self, parent):
         ttk.Label(parent,
-                  text="Per setpoint: measured probe settle + scan time → "
-                       "the wait to program into the PPMS sequence at that "
-                       "temperature. Rows start as pre-run estimates and "
-                       "are replaced by measured values as steps complete.",
+                  text="Suggested PPMS wait per setpoint = probe settle + "
+                       "scan time + Margin. Click 'Generate PPMS "
+                       "suggestions' (left panel) to plan the PPMS sequence "
+                       "BEFORE the run; during the run each row is replaced "
+                       "by the measured values.",
                   wraplength=900, background=self.CLR_BG_DARK,
                   foreground=self.CLR_FG_LIGHT
                   ).pack(side="top", anchor="w", padx=8, pady=6)
@@ -1158,7 +1061,7 @@ class PPMSSyncGUI:
             yscrollcommand=sb.set)
         sb.config(command=self.timing_tree.yview)
         heads = {"step": ("#", 40), "target": ("Target (K)", 90),
-                 "sleep": ("Sleep used", 110),
+                 "sleep": ("Initial sleep", 110),
                  "settle": ("Probe settle", 110),
                  "scan": ("Scan time", 110),
                  "suggest": ("Suggested PPMS wait", 160),
@@ -1421,12 +1324,12 @@ class PPMSSyncGUI:
     # ------------------------------------------------------------
     def start_sequence(self):
         try:
-            self.schedule = self._sched_rows()
+            self.schedule = self._get_targets()
         except ValueError as e:
-            messagebox.showerror("Schedule Error", f"Bad schedule row: {e}")
+            messagebox.showerror("Schedule Error", f"Bad setpoint: {e}")
             return
         if not self.schedule:
-            messagebox.showwarning("Empty Schedule", "Add at least one step."); return
+            messagebox.showwarning("Empty Schedule", "Add at least one setpoint."); return
         if not self.save_dir:
             messagebox.showwarning("No Save Dir", "Choose a save directory first."); return
         try:
@@ -1465,7 +1368,12 @@ class PPMSSyncGUI:
         self._pending_progress = None
         self.progress["maximum"] = len(self.schedule) * len(self.sweep_frequencies)
 
-        self._prefill_timing_tab()
+        # Pre-fill the suggestions tab with lower-bound estimates;
+        # measured rows replace them as steps complete.
+        self._update_scan_estimate()
+        sug = (self.params["window_min"] * 60.0 + self._scan_est_s
+               + self.params["margin_min"] * 60.0)
+        self._fill_timing_tab(self.schedule, fmt_hms(sug))
 
         while not self.cmd_queue.empty():
             try: self.cmd_queue.get_nowait()
@@ -1498,11 +1406,12 @@ class PPMSSyncGUI:
             "guard": float(self.entries["guard"]["entry"].get()),
             "stab_timeout": float(self.entries["stab_timeout"]["entry"].get()),
             "delay": float(self.entries["delay"]["entry"].get()),
-            "margin_pct": float(self.entries["margin_pct"]["entry"].get()),
-            "margin_floor": float(self.entries["margin_floor"]["entry"].get()),
+            "margin_min": float(self.entries["margin_min"]["entry"].get()),
             "thermo_visa": ls_visa,
             "channel": self.channel_cb.get() or "A",
             "sleep_enabled": self.var_sleep_enabled.get(),
+            "initial_sleep_min": parse_duration_min(
+                self.sleep_entry.get() or "0"),
         }
         if not p["thermo_visa"]: raise ValueError("Select the thermometer VISA.")
         if p["tol"] <= 0: raise ValueError("Tolerance must be positive.")
@@ -1511,11 +1420,12 @@ class PPMSSyncGUI:
         if p["guard"] < 0: raise ValueError("Target guard must be >= 0 (0 disables).")
         if p["stab_timeout"] < 0: raise ValueError("Timeout must be >= 0 (0 disables).")
         if p["delay"] <= 0: raise ValueError("Poll delay must be positive.")
-        if p["margin_pct"] < 0: raise ValueError("Margin % must be >= 0.")
-        if p["margin_floor"] < 0: raise ValueError("Margin floor must be >= 0.")
-        for r in self.schedule:
-            if r["target"] <= 0:
-                raise ValueError(f"Schedule target {r['target']} K invalid.")
+        if p["margin_min"] < 0: raise ValueError("Margin must be >= 0 min.")
+        if p["initial_sleep_min"] < 0:
+            raise ValueError("Initial sleep must be >= 0.")
+        for t in self.schedule:
+            if t <= 0:
+                raise ValueError(f"Schedule setpoint {t} K invalid.")
         return p
 
     def _validate_lcr_params(self):
@@ -1544,14 +1454,18 @@ class PPMSSyncGUI:
         self.skip_button.config(state="normal" if running else "disabled")
         if not running:
             self.pause_button.config(text="Pause")
-        # Stability mode + sleep enable are only read at Start
+        # Stability mode + initial sleep are only read at Start
         for rb in self.stab_mode_radios:
             rb.config(state=st)
         self.chk_sleep.config(state=st)
+        self.sleep_entry.config(state=st)
+        # Pre-run suggestion generator would clobber measured rows mid-run
+        self.suggest_button.config(state=st)
         for b in self.sched_buttons:
             b.config(state=st)
-        for e in (self.sched_target, self.sched_ppms, self.sched_sleep,
-                  self.entry_start, self.entry_end, self.entry_step):
+        self.sort_cb.config(state="readonly" if not running else "disabled")
+        for e in (self.entry_start, self.entry_end, self.entry_step,
+                  self.entry_manual):
             e.config(state=st)
         for w in self.entries.values():
             if running:
@@ -1572,27 +1486,55 @@ class PPMSSyncGUI:
     # ------------------------------------------------------------
     # Timing tab plumbing (main thread)
     # ------------------------------------------------------------
-    def _prefill_timing_tab(self):
-        """Pre-run lower-bound suggestion per step:
-        stability window + estimated scan + margin."""
+    def _generate_pre_run_suggestions(self):
+        """Fill the Timing / PPMS Suggestions tab from the schedule alone —
+        no instruments needed, works before the run: per setpoint
+        suggested wait = stability window + estimated scan + Margin.
+        Also called automatically at Start."""
+        if self.is_running:
+            return
+        try:
+            targets = self._get_targets()
+        except ValueError as e:
+            messagebox.showerror("Schedule", f"Bad setpoint in list: {e}")
+            return
+        if not targets:
+            messagebox.showwarning(
+                "Empty Schedule",
+                "Add setpoints first (Generate Steps or Manual Add).")
+            return
+        try:
+            window_min = float(self.entries["window_min"]["entry"].get())
+            margin_min = float(self.entries["margin_min"]["entry"].get())
+            if window_min <= 0 or margin_min < 0:
+                raise ValueError
+        except (ValueError, tk.TclError):
+            messagebox.showerror("Timing",
+                                 "Check Window (min) and Margin (min).")
+            return
+        self._update_scan_estimate()
+        sug = window_min * 60.0 + self._scan_est_s + margin_min * 60.0
+        self._fill_timing_tab(targets, fmt_hms(sug))
+        self.log(f"PPMS suggestion (pre-run, all setpoints): wait ≥ "
+                 f"{fmt_hms(sug)} at each temperature "
+                 f"(= window {window_min:g} min + scan "
+                 f"{fmt_hms(self._scan_est_s)} + margin {margin_min:g} min). "
+                 f"Measured values will replace these during the run.")
+
+    def _fill_timing_tab(self, targets, suggest_text):
         for iid in self.timing_tree.get_children():
             self.timing_tree.delete(iid)
-        self._update_scan_estimate()
-        p = self.params
-        base = p["window_min"] * 60.0 + self._scan_est_s
-        margin = max(base * p["margin_pct"] / 100.0,
-                     p["margin_floor"] * 60.0)
-        sug = base + margin
-        for i, row in enumerate(self.schedule):
+        for i, target in enumerate(targets):
             self.timing_tree.insert("", "end", iid=f"s{i}", values=(
-                i + 1, f"{row['target']:.2f}", "—", "—",
-                fmt_hms(self._scan_est_s), fmt_hms(sug),
-                "pending (pre-run estimate)"))
+                i + 1, f"{target:.2f}", "—", "—",
+                fmt_hms(self._scan_est_s), suggest_text,
+                "pre-run estimate"))
 
     def _apply_timing_row(self, m):
         iid = f"s{m['index']}"
         vals = (m["index"] + 1, f"{m['target']:.2f}",
-                fmt_hms(m["sleep_s"]), fmt_hms(m["settle_s"]),
+                fmt_hms(m["sleep_s"]) if m["sleep_s"] > 0 else "—",
+                fmt_hms(m["settle_s"]),
                 fmt_hms(m["scan_s"]), fmt_hms(m["suggest_s"]),
                 m["status"])
         if self.timing_tree.exists(iid):
@@ -1739,7 +1681,7 @@ class PPMSSyncGUI:
             self.timing_writer.writerow(
                 ["Step", "Target_K", "Step_start", "Sleep_used_s",
                  "Stab_wait_s", "Stab_outcome", "Scan_s",
-                 "TempDriftDuringScan", "PPMS_ramp_est_s",
+                 "TempDriftDuringScan",
                  "Suggested_PPMS_wait_s", "Suggested_PPMS_wait_hms"])
             self.timing_file.flush()
             self._put_gui_msg("log", text=f"Timing log: {timing_path}")
@@ -1748,28 +1690,30 @@ class PPMSSyncGUI:
             done_pts = 0
             n_steps = len(self.schedule)
 
-            for i, row in enumerate(self.schedule):
+            # Phase 0: ONE-TIME initial sleep (first big PPMS cooldown)
+            initial_sleep_used_s = 0.0
+            p = self.params
+            if p["sleep_enabled"] and p["initial_sleep_min"] > 0 \
+                    and self.is_running:
+                first_target = self.schedule[0]
+                self._send_band_msg(first_target)
+                outcome, initial_sleep_used_s = self._sleep_phase(
+                    first_target, p["initial_sleep_min"] * 60.0)
+                if outcome == "stopped":
+                    self.is_running = False
+
+            for i, target in enumerate(self.schedule):
                 if not self.is_running:
                     break
-                target = row["target"]
                 self._put_gui_msg("log",
-                    text=f"--- Step {i+1}/{n_steps}: target {target} K "
-                         f"(PPMS est. {row['ppms_min']:g} min, "
-                         f"sleep {row['sleep_min']:g} min) ---")
+                    text=f"--- Step {i+1}/{n_steps}: target {target} K ---")
                 self._put_gui_msg("scan_reset")
                 self._send_band_msg(target)
 
                 step_start_dt = datetime.now()
+                sleep_used_s = initial_sleep_used_s if i == 0 else 0.0
 
-                # Phase 1: SLEEP (optional fixed wait)
-                sleep_used_s = 0.0
-                if self.params["sleep_enabled"] and row["sleep_min"] > 0:
-                    outcome, sleep_used_s = self._sleep_phase(
-                        target, row["sleep_min"] * 60.0)
-                    if outcome == "stopped" or not self.is_running:
-                        break
-
-                # Phase 2: WAIT_STABLE (active detection)
+                # Phase 1: WAIT_STABLE (active detection)
                 stab_outcome, settle_s = self._wait_for_stability(target)
                 if stab_outcome == "stopped" or not self.is_running:
                     break
@@ -1784,7 +1728,7 @@ class PPMSSyncGUI:
                         text=f"⏭ Stability wait skipped by user at {target} K "
                              f"— starting sweep immediately.")
 
-                # Phase 3: SCAN
+                # Phase 2: SCAN
                 self._put_gui_msg("log",
                     text=f"Starting frequency sweep at {target} K "
                          f"(sample reads {self._last_temp:.3f} K).")
@@ -1795,7 +1739,7 @@ class PPMSSyncGUI:
                     target, done_pts, total_pts)
 
                 self._write_timing_row(
-                    i, row, step_start_dt, sleep_used_s, settle_s,
+                    i, target, step_start_dt, sleep_used_s, settle_s,
                     stab_outcome, scan_s, drift_flag)
                 if not self.is_running:
                     break
@@ -1841,16 +1785,17 @@ class PPMSSyncGUI:
         self._put_gui_msg("band", center=target, halfw=halfw)
 
     def _sleep_phase(self, target, sleep_s):
-        """Phase 1: fixed wait. Pause freezes the countdown (deadline
-        shifts); Skip ends the sleep early. Returns (outcome, used_s);
+        """Phase 0: ONE-TIME initial wait while the PPMS finishes its
+        first cooldown. Pause freezes the countdown (deadline shifts);
+        Skip ends the sleep early. Returns (outcome, used_s);
         outcome in "done" | "skipped" | "stopped"."""
         p = self.params
         self._worker_phase = "SLEEP"
         phase_start = time.time()
         deadline = phase_start + sleep_s
         self._put_gui_msg("log",
-            text=f"Sleeping {fmt_hms(sleep_s)} before stability detection "
-                 f"at {target} K (skip with 'Skip Phase').")
+            text=f"Initial sleep {fmt_hms(sleep_s)} before stability "
+                 f"detection at {target} K (skip with 'Skip Phase').")
         try:
             while self.is_running and time.time() < deadline:
                 if self._process_cmd_queue():
@@ -2141,39 +2086,36 @@ class PPMSSyncGUI:
                                       f"({n_measured} pts, {fmt_hms(scan_s)}).")
         return done_pts, scan_s, drift_flag
 
-    def _write_timing_row(self, index, row, step_start_dt, sleep_s,
+    def _write_timing_row(self, index, target, step_start_dt, sleep_s,
                           settle_s, stab_outcome, scan_s, drift_flag):
         """One row per completed step: measured timings + the PPMS wait
-        suggestion. Written to the TimingLog CSV and mirrored into the
-        Timing / PPMS Suggestions tab."""
+        suggestion (settle + scan + Margin; the initial sleep counts into
+        the first step's settle). Written to the TimingLog CSV and
+        mirrored into the Timing / PPMS Suggestions tab."""
         p = self.params
-        ppms_est_s = row["ppms_min"] * 60.0
-        base = max(0.0, sleep_s + settle_s - ppms_est_s) + scan_s
-        margin = max(base * p["margin_pct"] / 100.0,
-                     p["margin_floor"] * 60.0)
-        suggest_s = base + margin
+        margin_s = p["margin_min"] * 60.0
+        suggest_s = sleep_s + settle_s + scan_s + margin_s
         status = {"stable": "stable", "timeout": "TIMEOUT — check data",
                   "forced": "forced by user"}.get(stab_outcome, stab_outcome)
         if drift_flag:
             status += " | DRIFT DURING SCAN"
         try:
             self.timing_writer.writerow(
-                [index + 1, f"{row['target']:.4f}",
+                [index + 1, f"{target:.4f}",
                  step_start_dt.strftime("%Y-%m-%d %H:%M:%S"),
                  f"{sleep_s:.1f}", f"{settle_s:.1f}", stab_outcome,
-                 f"{scan_s:.1f}", int(drift_flag), f"{ppms_est_s:.1f}",
+                 f"{scan_s:.1f}", int(drift_flag),
                  f"{suggest_s:.1f}", fmt_hms(suggest_s)])
             self.timing_file.flush()
         except Exception as e:
             self._put_gui_msg("log", text=f"WARN: timing write failed: {e}")
-        self._put_gui_msg("timing_row", index=index, target=row["target"],
+        self._put_gui_msg("timing_row", index=index, target=target,
                           sleep_s=sleep_s, settle_s=settle_s, scan_s=scan_s,
                           suggest_s=suggest_s, status=status)
         self._put_gui_msg("log",
-            text=f"→ Suggested PPMS wait at {row['target']} K: "
-                 f"{fmt_hms(suggest_s)} (probe settle beyond PPMS ramp "
-                 f"{fmt_hms(max(0.0, sleep_s + settle_s - ppms_est_s))} "
-                 f"+ scan {fmt_hms(scan_s)} + margin).")
+            text=f"→ Suggested PPMS wait at {target} K: {fmt_hms(suggest_s)} "
+                 f"(settle {fmt_hms(sleep_s + settle_s)} + scan "
+                 f"{fmt_hms(scan_s)} + margin {p['margin_min']:g} min).")
 
     def _close_data_file(self):
         for attr, label in (("data_file", "Temperature log"),
