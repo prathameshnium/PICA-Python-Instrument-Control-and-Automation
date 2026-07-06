@@ -63,6 +63,22 @@ Architecture (inherited from Step_Frequency_Scan_E4980A_GUI.py v1.4):
   - Crash-safe finally block + atexit.
 Self-contained by design: PICA programs never import from each other;
 shared logic is embedded as a copy.
+
+============================================================
+v1.1 — 2x2 PLOT GRID + PERSISTENT SPECTRUM
+============================================================
+  UI-3   Temperature, Cp and G now live in ONE figure on a single
+         canvas ("Plots" tab): temperature spans the left column,
+         Cp/G stack in the right column — no more toggling between
+         the two plot tabs. The Timing / PPMS Suggestions table
+         keeps its own tab.
+  UI-4   The completed Cp/G spectrum PERSISTS on screen, titled with
+         its measurement temperature, through the entire wait for
+         the next PPMS setpoint. `scan_reset` moved from the top of
+         the schedule loop to the moment the sweep starts (so the
+         plot is cleared only when new points are imminent); a new
+         `scan_done` message marks the held spectrum as
+         "Last scan: <T> K".
 """
 
 import tkinter as tk
@@ -408,7 +424,7 @@ class LCR_Backend:
 # FRONTEND: PPMS-synchronized GUI
 # ============================================================
 class PPMSSyncGUI:
-    PROGRAM_VERSION = "1.0-PPMS-Sync"
+    PROGRAM_VERSION = "1.1-PPMS-Sync"  # 2x2 plot grid + persistent spectrum
     LEFT_PANEL_WIDTH = 480
 
     # --- FRZ-1 / FRZ-2 / FRZ-4 tuning knobs ---
@@ -505,6 +521,10 @@ class PPMSSyncGUI:
 
         self.log_y_var = tk.BooleanVar(value=True)
         self._decade_ylims = {}
+
+        # UI-4: scan label state — ("measuring"|"done", T_set) or None.
+        # Rendered as the Cp axis title by _redraw_tick.
+        self._scan_info = None
 
         # Worker-side phase marker (worker thread writes; CSV Phase column)
         self._worker_phase = None
@@ -996,18 +1016,23 @@ class PPMSSyncGUI:
 
         nb = ttk.Notebook(panel); nb.grid(row=1, column=0, sticky="nsew")
 
-        t_tab = ttk.Frame(nb); nb.add(t_tab, text="Temperature vs Time")
-        self._build_temp_plot(t_tab)
-
-        f_tab = ttk.Frame(nb); nb.add(f_tab, text="Cp / G vs Frequency")
-        self._build_freq_plot(f_tab)
+        # UI-3: single plot grid — temperature + Cp + G on one canvas
+        p_tab = ttk.Frame(nb); nb.add(p_tab, text="Plots")
+        self._build_plots(p_tab)
 
         s_tab = ttk.Frame(nb); nb.add(s_tab, text="Timing / PPMS Suggestions")
         self._build_timing_tab(s_tab)
 
-    def _build_temp_plot(self, parent):
-        self.fig_t = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
-        self.ax_temp = self.fig_t.add_subplot(111)
+    def _build_plots(self, parent):
+        """UI-3: one figure, 2x2 grid. Temperature vs time spans the
+        whole left column; Cp and G vs frequency (shared log x) stack
+        in the right column."""
+        self.fig = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
+        gs = self.fig.add_gridspec(2, 2)
+        self.ax_temp = self.fig.add_subplot(gs[:, 0])
+        self.ax_cp = self.fig.add_subplot(gs[0, 1])
+        self.ax_g = self.fig.add_subplot(gs[1, 1], sharex=self.ax_cp)
+
         self.line_target, = self.ax_temp.plot([], [], color=self.CLR_ACCENT_GREEN, ls="--", label="Schedule target")
         self.line_temp, = self.ax_temp.plot([], [], color=self.CLR_ACCENT_RED, marker="o", ms=3, ls="-", label="Sample T")
         self.scat_meas, = self.ax_temp.plot([], [], ls="", marker="o", ms=5, color=self.CLR_MEAS, label="Measuring (flag=1)")
@@ -1015,31 +1040,27 @@ class PPMSSyncGUI:
         self.ax_temp.set_ylabel("Temperature (K)")
         self.ax_temp.grid(True, ls="--", alpha=0.6)
         self.ax_temp.legend(loc="best", frameon=True, facecolor=self.CLR_GRAPH_BG)
-        self.fig_t.tight_layout()
-        self.canvas_t = FigureCanvasTkAgg(self.fig_t, parent)
-        tb = NavigationToolbar2Tk(self.canvas_t, parent, pack_toolbar=False)
-        tb.update()
-        tb.pack(side="bottom", fill="x")
-        self.canvas_t.get_tk_widget().pack(fill="both", expand=True)
 
-    def _build_freq_plot(self, parent):
-        self.fig_f = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
-        self.ax_cp = self.fig_f.add_subplot(211)
         self.line_cp, = self.ax_cp.plot([], [], color="#C00000", marker="o", ms=3, ls="-")
-        self.ax_cp.set_ylabel("Cp (F)"); self.ax_cp.set_xscale("log"); self.ax_cp.grid(True, ls="--", alpha=0.7)
-        self.ax_g = self.fig_f.add_subplot(212)
+        self.ax_cp.set_ylabel("Cp (F)"); self.ax_cp.set_xscale("log")
+        self.ax_cp.grid(True, ls="--", alpha=0.7)
+        self.ax_cp.tick_params(axis="x", which="both", labelbottom=False)
         self.line_g, = self.ax_g.plot([], [], color=self.CLR_MEAS, marker="s", ms=3, ls="-")
         self.ax_g.set_xlabel("Frequency (Hz)"); self.ax_g.set_ylabel("G (S)")
         self.ax_g.set_xscale("log"); self.ax_g.grid(True, ls="--", alpha=0.7)
-        self.fig_f.subplots_adjust(left=0.08, right=0.98, top=0.98, bottom=0.07, hspace=0.15)
+
+        # top leaves room for the UI-4 scan-temperature title on ax_cp
+        self.fig.subplots_adjust(left=0.09, right=0.98, top=0.93,
+                                 bottom=0.08, hspace=0.15, wspace=0.28)
+
         ttk.Checkbutton(parent, text="Log Y scale (decade autoscale)",
                         variable=self.log_y_var,
                         command=self._on_log_y_toggle).pack(side="top", anchor="w", padx=5, pady=(5, 0))
-        self.canvas_f = FigureCanvasTkAgg(self.fig_f, parent)
-        tb = NavigationToolbar2Tk(self.canvas_f, parent, pack_toolbar=False)
+        self.canvas_plots = FigureCanvasTkAgg(self.fig, parent)
+        tb = NavigationToolbar2Tk(self.canvas_plots, parent, pack_toolbar=False)
         tb.update()
         tb.pack(side="bottom", fill="x")
-        self.canvas_f.get_tk_widget().pack(fill="both", expand=True)
+        self.canvas_plots.get_tk_widget().pack(fill="both", expand=True)
 
     TIMING_COLS = ("step", "target", "sleep", "settle", "scan",
                    "suggest", "status")
@@ -1128,6 +1149,7 @@ class PPMSSyncGUI:
                     self.band_patch = self.ax_temp.axhspan(
                         center - halfw, center + halfw,
                         color=self.CLR_ACCENT_GREEN, alpha=0.15, zorder=0)
+            need_draw = False
             if self._temp_plot_dirty:
                 self._temp_plot_dirty = False
                 self._decimate_display_series()
@@ -1135,7 +1157,7 @@ class PPMSSyncGUI:
                 self.line_target.set_data(self.plot_t, self.plot_target)
                 self.scat_meas.set_data(self.meas_t, self.meas_temp)
                 self.ax_temp.relim(); self.ax_temp.autoscale_view()
-                self.canvas_t.draw_idle()
+                need_draw = True
             if self._freq_plot_dirty:
                 self._freq_plot_dirty = False
                 self.line_cp.set_data(self.scan_f, self.scan_cp)
@@ -1147,7 +1169,21 @@ class PPMSSyncGUI:
                         self._decade_autoscale_y(ax, data, key)
                     else:
                         ax.set_yscale('linear'); ax.autoscale_view(scaley=True)
-                self.canvas_f.draw_idle()
+                # UI-4: measurement-temperature label on the spectrum
+                if self._scan_info is None:
+                    self.ax_cp.set_title("")
+                else:
+                    state, t_set = self._scan_info
+                    if state == "measuring":
+                        self.ax_cp.set_title(
+                            f"Measuring at {t_set:.2f} K …", fontsize=10)
+                    else:
+                        self.ax_cp.set_title(
+                            f"Last scan: {t_set:.2f} K "
+                            f"(held until next scan)", fontsize=10)
+                need_draw = True
+            if need_draw:
+                self.canvas_plots.draw_idle()
             if self._pending_progress is not None:
                 self.progress["value"] = self._pending_progress
                 self._pending_progress = None
@@ -1360,7 +1396,9 @@ class PPMSSyncGUI:
             self.band_patch = None
         self._band_params = None
         self._band_dirty = False
-        self.canvas_t.draw_idle(); self.canvas_f.draw_idle()
+        self._scan_info = None            # UI-4: drop the held spectrum label
+        self.ax_cp.set_title("")
+        self.canvas_plots.draw_idle()
         self._decade_ylims.clear()
         self._temp_plot_dirty = False
         self._freq_plot_dirty = False
@@ -1581,6 +1619,14 @@ class PPMSSyncGUI:
                 elif t == "scan_reset":
                     self.scan_f.clear(); self.scan_cp.clear(); self.scan_g.clear()
                     self._decade_ylims.clear()
+                    # UI-4: label the incoming spectrum with its temperature
+                    target = m.get("target")
+                    self._scan_info = None if target is None \
+                        else ("measuring", target)
+                    self._freq_plot_dirty = True
+                elif t == "scan_done":
+                    # UI-4: sweep finished — hold the spectrum, mark it done
+                    self._scan_info = ("done", m["target"])
                     self._freq_plot_dirty = True
                 elif t == "scan_point":
                     self.scan_f.append(m["freq"])
@@ -1707,7 +1753,6 @@ class PPMSSyncGUI:
                     break
                 self._put_gui_msg("log",
                     text=f"--- Step {i+1}/{n_steps}: target {target} K ---")
-                self._put_gui_msg("scan_reset")
                 self._send_band_msg(target)
 
                 step_start_dt = datetime.now()
@@ -1735,6 +1780,9 @@ class PPMSSyncGUI:
                 self._put_gui_msg("status",
                     text=f"SCANNING AT {target} K", color=self.CLR_ACCENT_GREEN)
                 self._put_gui_msg("beep")
+                # UI-4: clear the held previous spectrum only NOW, when
+                # new points are imminent (was at the top of the loop).
+                self._put_gui_msg("scan_reset", target=target)
                 done_pts, scan_s, drift_flag = self._run_frequency_sweep(
                     target, done_pts, total_pts)
 
@@ -1743,6 +1791,7 @@ class PPMSSyncGUI:
                     stab_outcome, scan_s, drift_flag)
                 if not self.is_running:
                     break
+                self._put_gui_msg("scan_done", target=target)  # UI-4
                 self._put_gui_msg("log",
                     text=f"Sweep done at {target} K. Proceeding.")
 
