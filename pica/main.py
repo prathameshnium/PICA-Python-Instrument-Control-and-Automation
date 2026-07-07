@@ -174,6 +174,7 @@ class PICALauncherApp:
         "LCR Temp. Step Freq. Scan (T_Control)": resource_path("keysight/Step_Frequency_Scan_E4980A_GUI.py"), # Already present
         "LCR Temp. Scan (T_Control)": resource_path("keysight/Temprature_Scan_E4980A_GUI.py"), # Already present
         "LCR Temp. Scan (T_Sensing)": resource_path("keysight/Temprature_Scan_Passive_E4980A_GUI.py"), # Already present
+        "PPMS Sync Freq. Scan": resource_path("keysight/PPMS_Sync_Freq_Scan_E4980A_GUI.py"),
         "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
         "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
         "PICA Help": resource_path("README.md"),
@@ -619,6 +620,7 @@ class PICALauncherApp:
                                    "LCR C-V Measurement"),
                                   ("Dielectric Frequency Scan", "LCR Frequency Scan"), # Already present
                                   ("Temp. Step Freq. Scan (T_Control)", "LCR Temp. Step Freq. Scan (T_Control)"), # Already present
+                                  ("Temp. Step Freq. Scan (PPMS, T_Sensing)", "PPMS Sync Freq. Scan"),
                                   ("Dielectric Temp. Scan (T_Control)", "LCR Temp. Scan (T_Control)"), # Already present
                                   ("Dielectric Temp. Scan (T_Sensing)", "LCR Temp. Scan (T_Sensing)"), # Already present
                                   ])
