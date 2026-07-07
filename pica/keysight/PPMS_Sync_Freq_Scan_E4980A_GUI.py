@@ -1718,7 +1718,8 @@ class PPMSSyncGUI:
         """Fill the Timing / PPMS Suggestions tab from the schedule alone —
         no instruments needed, works before the run: per setpoint
         suggested wait = stability window + estimated scan + Margin.
-        Also called automatically at Start. Returns True on success."""
+        This is the pre-run 'Generate PPMS plan' path (Start rebuilds the
+        table directly via _fill_timing_tab). Returns True on success."""
         if self.is_running:
             return False
         try:
@@ -1943,8 +1944,11 @@ class PPMSSyncGUI:
             prev = t
         self.seq_rows = rows
         # Mirror the schedule's initial-sleep field as the initial wait.
-        if getattr(self, "seq_init_entry", None) is not None \
-                and self.var_sleep_enabled.get():
+        # Pre-run only: during a run seq_init_entry is disabled (writes
+        # would be ignored) and the user's planned value must stand.
+        if (not self.is_running
+                and getattr(self, "seq_init_entry", None) is not None
+                and self.var_sleep_enabled.get()):
             self.seq_init_entry.delete(0, tk.END)
             self.seq_init_entry.insert(0, self.sleep_entry.get() or "0")
         self._seq_render()
@@ -2099,6 +2103,32 @@ class PPMSSyncGUI:
             return
         self._seq_edit_cell(idx, col_name, bbox)
 
+    def _seq_apply_cell_value(self, idx, col_name, raw):
+        """Parse/validate a raw cell string and write it into seq_rows[idx].
+        Rate must be > 0 (clamped to Max rate); wait may be >= 0 and accepts
+        min or H:MM. Re-renders on success. Returns (ok, error_message)."""
+        if not (0 <= idx < len(self.seq_rows)):
+            return False, "Row no longer exists."
+        try:
+            if col_name == "wait":
+                v = parse_duration_min(raw)
+                if v < 0:
+                    raise ValueError
+            else:
+                v = float(raw)
+                if v <= 0:
+                    raise ValueError
+        except (ValueError, TypeError):
+            return False, (
+                "Wait must be a non-negative number (min or h:mm)."
+                if col_name == "wait"
+                else "Rate must be a positive number (K/min).")
+        if col_name == "rate":
+            v = self._seq_clamp_rate(v)
+        self.seq_rows[idx][col_name] = v
+        self._seq_render()
+        return True, ""
+
     def _seq_edit_cell(self, idx, col_name, bbox):
         x, y, w, h = bbox
         cur = self.seq_rows[idx][col_name]
@@ -2115,26 +2145,9 @@ class PPMSSyncGUI:
             state["done"] = True
             raw = editor.get().strip()
             editor.destroy()
-            try:
-                if col_name == "wait":
-                    v = parse_duration_min(raw)
-                    if v < 0:
-                        raise ValueError
-                else:
-                    v = float(raw)
-                    if v <= 0:
-                        raise ValueError
-            except ValueError:
-                messagebox.showerror(
-                    "Sequence",
-                    ("Wait must be a non-negative number (min or h:mm)."
-                     if col_name == "wait"
-                     else "Rate must be a positive number (K/min)."))
-                return
-            if col_name == "rate":
-                v = self._seq_clamp_rate(v)
-            self.seq_rows[idx][col_name] = v
-            self._seq_render()
+            ok, err = self._seq_apply_cell_value(idx, col_name, raw)
+            if not ok:
+                messagebox.showerror("Sequence", err)
 
         def cancel(event=None):
             if state["done"]:
