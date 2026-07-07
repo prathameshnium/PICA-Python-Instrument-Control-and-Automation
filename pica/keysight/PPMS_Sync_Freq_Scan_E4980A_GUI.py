@@ -52,6 +52,13 @@ Timing intelligence:
     (PPMS moved on too early), the sweep still completes but the step
     is flagged (TempDriftDuringScan) in the timing log — flag-only
     policy for unattended runs.
+  - Clock-time planner ("Suggest ramp rate"): enter the sequence start
+    and desired end time (24h or AM/PM) and it back-solves the PPMS
+    ramp rate for the N-1 ramps between setpoints —
+        rate = sum(|dT|) / (available - initial sleep - N x wait)
+    then shows ramping / stabilizing / initial-delay / total and the
+    projected finish clock. Clamped to Max rate (default 12 K/min)
+    with an achievable-end warning when the window is too tight.
 
 Architecture (inherited from Step_Frequency_Scan_E4980A_GUI.py v1.4):
   - Single GUI thread, single hardware worker thread. Worker owns BOTH
@@ -193,6 +200,37 @@ def fmt_hms(seconds):
     h, rem = divmod(seconds, 3600)
     m, s = divmod(rem, 60)
     return f"{h}:{m:02d}:{s:02d}"
+
+
+def parse_clock_minutes(text, meridiem="24h"):
+    """'H:MM' (+ AM/PM combobox choice) -> minutes since midnight.
+
+    meridiem '24h': hours 0-23. 'AM'/'PM': 12-hour style where
+    12 AM -> 0 h and 12 PM -> 12 h. Raises ValueError on garbage.
+    """
+    s = str(text).strip()
+    if ":" not in s:
+        raise ValueError(f"Time '{s}' must be H:MM.")
+    h_str, m_str = s.split(":", 1)
+    h, m = int(h_str), int(m_str)
+    if not (0 <= m <= 59):
+        raise ValueError(f"Minutes in '{s}' must be 00-59.")
+    if meridiem in ("AM", "PM"):
+        if not (1 <= h <= 12):
+            raise ValueError(f"Hour in '{s}' must be 1-12 for {meridiem}.")
+        h = h % 12 + (12 if meridiem == "PM" else 0)
+    elif not (0 <= h <= 23):
+        raise ValueError(f"Hour in '{s}' must be 0-23 (24h).")
+    return h * 60 + m
+
+
+def fmt_clock(minutes):
+    """Minutes since midnight (any float, wrapped mod 24 h) -> 'H:MM AM/PM'."""
+    total = int(round(minutes)) % (24 * 60)
+    h24, m = divmod(total, 60)
+    ampm = "AM" if h24 < 12 else "PM"
+    h12 = h24 % 12 or 12
+    return f"{h12}:{m:02d} {ampm}"
 
 
 # Per-point timing model for the E4980A sweep (used until real data
@@ -983,6 +1021,48 @@ class PPMSSyncGUI:
                   ).grid(row=2, column=0, columnspan=6, sticky="w",
                          padx=10, pady=(0, 5))
 
+        # Clock-time planner: start + estimated end -> suggested PPMS
+        # ramp rate for the N-1 ramps between setpoints (advisory only).
+        ttk.Separator(frame, orient="horizontal").grid(
+            row=3, column=0, columnspan=6, sticky="ew", padx=10, pady=4)
+        ttk.Label(frame, text="Start:").grid(row=4, column=0, sticky="w",
+                                             padx=(10, 2), pady=2)
+        self.time_start_entry = ttk.Entry(frame, font=self.FONT_BASE, width=7)
+        self.time_start_entry.grid(row=4, column=1, sticky="ew", padx=2, pady=2)
+        self.time_start_ampm = ttk.Combobox(
+            frame, values=["24h", "AM", "PM"], state="readonly", width=4)
+        self.time_start_ampm.set("24h")
+        self.time_start_ampm.grid(row=4, column=2, sticky="w", padx=2, pady=2)
+        self.time_now_button = ttk.Button(frame, text="Now", width=5,
+                                          command=self._fill_start_now)
+        self.time_now_button.grid(row=4, column=3, sticky="w", padx=2, pady=2)
+
+        ttk.Label(frame, text="End (est.):").grid(row=5, column=0, sticky="w",
+                                                  padx=(10, 2), pady=2)
+        self.time_end_entry = ttk.Entry(frame, font=self.FONT_BASE, width=7)
+        self.time_end_entry.grid(row=5, column=1, sticky="ew", padx=2, pady=2)
+        self.time_end_ampm = ttk.Combobox(
+            frame, values=["24h", "AM", "PM"], state="readonly", width=4)
+        self.time_end_ampm.set("24h")
+        self.time_end_ampm.grid(row=5, column=2, sticky="w", padx=2, pady=2)
+        ttk.Label(frame, text="(H:MM; end may roll past midnight)",
+                  font=("Segoe UI", 8, "italic")
+                  ).grid(row=5, column=3, columnspan=3, sticky="w", padx=2)
+
+        self._create_grid_entry(frame, "Max rate (K/min):", "max_rate", "12",
+                                6, 0, lockable=False)
+        self.ramp_suggest_button = ttk.Button(
+            frame, text="Suggest ramp rate", command=self._suggest_ramp_rate)
+        self.ramp_suggest_button.grid(row=6, column=3, columnspan=3,
+                                      sticky="ew", padx=(2, 10), pady=2)
+
+        self.ramp_sug_lbl = ttk.Label(frame, text="Ramp suggestion: —",
+                                      font=("Segoe UI", 9, "bold"),
+                                      foreground=self.CLR_ACCENT_GOLD,
+                                      wraplength=420, justify="left")
+        self.ramp_sug_lbl.grid(row=7, column=0, columnspan=6, sticky="w",
+                               padx=10, pady=(2, 5))
+
     def _create_console_panel(self, parent, row):
         frame = ttk.LabelFrame(parent, text="Console Log")
         frame.grid(row=row, column=0, sticky="nsew", pady=5, padx=5)
@@ -1499,6 +1579,15 @@ class PPMSSyncGUI:
         self.sleep_entry.config(state=st)
         # Pre-run suggestion generator would clobber measured rows mid-run
         self.suggest_button.config(state=st)
+        # Clock-time ramp planner is pre-run only (advisory)
+        self.ramp_suggest_button.config(state=st)
+        self.time_now_button.config(state=st)
+        self.time_start_entry.config(state=st)
+        self.time_end_entry.config(state=st)
+        self.time_start_ampm.config(
+            state="readonly" if not running else "disabled")
+        self.time_end_ampm.config(
+            state="readonly" if not running else "disabled")
         for b in self.sched_buttons:
             b.config(state=st)
         self.sort_cb.config(state="readonly" if not running else "disabled")
@@ -1558,6 +1647,136 @@ class PPMSSyncGUI:
                  f"(= window {window_min:g} min + scan "
                  f"{fmt_hms(self._scan_est_s)} + margin {margin_min:g} min). "
                  f"Measured values will replace these during the run.")
+
+    def _fill_start_now(self):
+        now = datetime.now()
+        h12 = now.hour % 12 or 12
+        self.time_start_entry.delete(0, tk.END)
+        self.time_start_entry.insert(0, f"{h12}:{now.minute:02d}")
+        self.time_start_ampm.set("AM" if now.hour < 12 else "PM")
+
+    def _suggest_ramp_rate(self):
+        """Back-solve the PPMS ramp rate from the start / estimated-end
+        clock times: rate = sum|dT| between setpoints over whatever time
+        is left after the initial sleep and N per-setpoint waits
+        (window + scan estimate + Margin — same formula as the pre-run
+        suggestions). Advisory only; nothing is sent anywhere."""
+        if self.is_running:
+            return
+        try:
+            targets = self._get_targets()
+        except ValueError as e:
+            messagebox.showerror("Schedule", f"Bad setpoint in list: {e}")
+            return
+        if not targets:
+            messagebox.showwarning(
+                "Empty Schedule",
+                "Add setpoints first (Generate Steps or Manual Add).")
+            return
+        try:
+            window_min = float(self.entries["window_min"]["entry"].get())
+            margin_min = float(self.entries["margin_min"]["entry"].get())
+            if window_min <= 0 or margin_min < 0:
+                raise ValueError
+        except (ValueError, tk.TclError):
+            messagebox.showerror("Timing",
+                                 "Check Window (min) and Margin (min).")
+            return
+        try:
+            max_rate = float(self.entries["max_rate"]["entry"].get())
+            if max_rate <= 0:
+                raise ValueError
+        except (ValueError, tk.TclError):
+            messagebox.showerror("Timing", "Max rate (K/min) must be > 0.")
+            return
+        try:
+            start_min = parse_clock_minutes(self.time_start_entry.get(),
+                                            self.time_start_ampm.get())
+            end_min = parse_clock_minutes(self.time_end_entry.get(),
+                                          self.time_end_ampm.get())
+        except ValueError as e:
+            messagebox.showerror("Timing", f"Start/End time: {e}")
+            return
+        try:
+            sleep_s = (parse_duration_min(self.sleep_entry.get() or "0")
+                       * 60.0 if self.var_sleep_enabled.get() else 0.0)
+            if sleep_s < 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Timing",
+                                 "Check Initial sleep (min or h:mm).")
+            return
+
+        avail_s = ((end_min - start_min) % (24 * 60)) * 60.0
+        if avail_s <= 0:
+            messagebox.showerror("Timing",
+                                 "Start and End times are identical.")
+            return
+
+        self._update_scan_estimate()
+        n = len(targets)
+        per_wait_s = window_min * 60.0 + self._scan_est_s + margin_min * 60.0
+        stab_s = n * per_wait_s
+        dT = float(sum(abs(b - a) for a, b in zip(targets, targets[1:])))
+        ramp_budget_s = avail_s - sleep_s - stab_s
+
+        # Shared breakdown text; the rate line + color depend on the case.
+        def breakdown(ramp_s):
+            parts = [f"Ramping {fmt_hms(ramp_s)} ({dT:.1f} K over "
+                     f"{n - 1} ramps)",
+                     f"Stabilizing {fmt_hms(stab_s)} "
+                     f"({n} × {fmt_hms(per_wait_s)})"]
+            if sleep_s > 0:
+                parts.append(f"Initial delay {fmt_hms(sleep_s)}")
+            return "  +  ".join(parts)
+
+        if dT <= 0:
+            total_s = sleep_s + stab_s
+            head = "No ramping needed (single setpoint / zero span)."
+            ok = total_s <= avail_s
+            tail = (f"Total {fmt_hms(total_s)} → finishes "
+                    f"~{fmt_clock(start_min + total_s / 60.0)}"
+                    + ("" if ok else
+                       f" — LATER than requested {fmt_clock(end_min)}"))
+            text = f"{head}\n{breakdown(0)}\n{tail}" if n > 1 else \
+                   f"{head}\n{tail}"
+            color = self.CLR_ACCENT_GOLD if ok else self.CLR_ACCENT_RED
+        elif ramp_budget_s <= 0:
+            min_total_s = sleep_s + stab_s + dT / max_rate * 60.0
+            text = ("INFEASIBLE: the initial delay + stabilizing waits "
+                    f"alone exceed the {fmt_hms(avail_s)} window — no ramp "
+                    "rate can help.\n"
+                    f"{breakdown(dT / max_rate * 60.0)}\n"
+                    f"Earliest possible end (at max {max_rate:g} K/min): "
+                    f"~{fmt_clock(start_min + min_total_s / 60.0)} "
+                    f"(total {fmt_hms(min_total_s)}).")
+            color = self.CLR_ACCENT_RED
+        else:
+            # Round UP to 0.1 K/min so the plan finishes at/before End.
+            rate_needed = dT / (ramp_budget_s / 60.0)
+            rate = math.ceil(rate_needed * 10.0 - 1e-9) / 10.0
+            clamped = rate > max_rate
+            rate = min(rate, max_rate)
+            ramp_s = dT / rate * 60.0
+            total_s = sleep_s + ramp_s + stab_s
+            finish = fmt_clock(start_min + total_s / 60.0)
+            if clamped:
+                head = (f"Needs {rate_needed:.1f} K/min — clamped to max "
+                        f"{max_rate:g} K/min, end time will slip.")
+                tail = (f"Total {fmt_hms(total_s)} → finishes ~{finish} "
+                        f"(requested {fmt_clock(end_min)})")
+                color = self.CLR_ACCENT_RED
+            else:
+                head = (f"Suggested PPMS rate: {rate:g} K/min "
+                        f"(max {max_rate:g})")
+                tail = f"Total {fmt_hms(total_s)} → finishes ~{finish}"
+                color = self.CLR_ACCENT_GOLD
+            text = f"{head}\n{breakdown(ramp_s)}\n{tail}"
+
+        self.ramp_sug_lbl.config(text=text, foreground=color)
+        self.log("PPMS ramp planner ["
+                 f"{fmt_clock(start_min)} → {fmt_clock(end_min)}]: "
+                 + text.replace("\n", " | "))
 
     def _fill_timing_tab(self, targets, suggest_text):
         for iid in self.timing_tree.get_children():
