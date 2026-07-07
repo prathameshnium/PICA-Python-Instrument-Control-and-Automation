@@ -37,7 +37,7 @@ Timing intelligence:
   - Live scan-duration estimate from the sweep parameters (aperture,
     per-point delay, VISA overhead, low-frequency period limit);
     replaced by the MEASURED mean per-point time after the first sweep.
-  - "Generate PPMS suggestions" works BEFORE the run, with no
+  - "Generate PPMS plan" works BEFORE the run, with no
     instruments connected: per setpoint it shows
         suggested PPMS wait = stability window + estimated scan + Margin
     so the PPMS sequence can be written up front.
@@ -52,8 +52,8 @@ Timing intelligence:
     (PPMS moved on too early), the sweep still completes but the step
     is flagged (TempDriftDuringScan) in the timing log — flag-only
     policy for unattended runs.
-  - Clock-time planner ("Suggest ramp rate"): enter the sequence start
-    and desired end time (24h or AM/PM) and it back-solves the PPMS
+  - The same button is also the clock-time planner: enter the sequence
+    start and desired end time (24h or AM/PM) and it back-solves the PPMS
     ramp rate for the N-1 ramps between setpoints —
         rate = sum(|dT|) / (available - initial sleep - N x wait)
     then shows ramping / stabilizing / initial-delay / total and the
@@ -86,6 +86,21 @@ v1.1 — 2x2 PLOT GRID + PERSISTENT SPECTRUM
          plot is cleared only when new points are imminent); a new
          `scan_done` message marks the held spectrum as
          "Last scan: <T> K".
+
+============================================================
+v1.2 — EDITABLE PER-STEP PPMS SEQUENCE BUILDER
+============================================================
+  UI-5   The "Timing / PPMS Suggestions" tab is now an editable PPMS
+         sequence guide (planning aid — this program still never
+         commands the PPMS). Each setpoint carries its OWN ramp rate
+         and wait/soak; double-click a Rate or Wait cell to edit, or
+         use "Set all" at the top of a column to change the whole
+         column at once. An "Initial wait" sits at the top and the
+         Total + projected finish clock recompute live as you edit.
+         Default rates are temperature-aware (slower below 100 K) and
+         clamped to the Max rate. During a run the MEASURED PPMS wait
+         replaces each row's wait in place. Timer meridiem now defaults
+         to AM/PM instead of 24h.
 """
 
 import tkinter as tk
@@ -462,7 +477,7 @@ class LCR_Backend:
 # FRONTEND: PPMS-synchronized GUI
 # ============================================================
 class PPMSSyncGUI:
-    PROGRAM_VERSION = "1.1-PPMS-Sync"  # 2x2 plot grid + persistent spectrum
+    PROGRAM_VERSION = "1.2-PPMS-Sync"  # editable per-step PPMS sequence builder
     LEFT_PANEL_WIDTH = 480
 
     # --- FRZ-1 / FRZ-2 / FRZ-4 tuning knobs ---
@@ -545,6 +560,12 @@ class PPMSSyncGUI:
         self.scan_cp = []
         self.scan_g = []
 
+        # PPMS sequence-builder rows (editable planning aid; rendered in
+        # the "Timing / PPMS Suggestions" tab). Each dict:
+        #   target, dT (|Δ| from previous, None for the first), rate
+        #   (K/min, None for the first), wait (min), status.
+        self.seq_rows = []
+
         # FRZ-1: dirty flags — redraw happens only in _redraw_tick
         self._temp_plot_dirty = False
         self._freq_plot_dirty = False
@@ -583,8 +604,9 @@ class PPMSSyncGUI:
         self.log("Run: optional one-time initial sleep, then per setpoint: "
                  "stability detection (band / flatness / both) -> "
                  "40 Hz–2 MHz sweep.")
-        self.log("Use 'Generate PPMS suggestions' (Timing panel) to plan "
-                 "the PPMS sequence BEFORE the run; rows update with "
+        self.log("Use 'Generate PPMS plan' (Timing panel) to plan the PPMS "
+                 "sequence BEFORE the run — wait table plus, with Start/End "
+                 "times filled, a suggested ramp rate; rows update with "
                  "measured times as steps complete.")
 
     # ------------------------------------------------------------
@@ -1006,17 +1028,13 @@ class PPMSSyncGUI:
                                padx=10, pady=(5, 2))
 
         self._create_grid_entry(frame, "Margin (min):", "margin_min", "10", 1, 0)
-        self.suggest_button = ttk.Button(
-            frame, text="Generate PPMS suggestions",
-            command=self._generate_pre_run_suggestions)
-        self.suggest_button.grid(row=1, column=3, columnspan=3, sticky="ew",
-                                 padx=(2, 10), pady=2)
         ttk.Label(frame,
-                  text="Suggested wait per setpoint = probe settle + scan "
-                       "time + Margin. Works BEFORE the run (stability "
-                       "window + scan estimate); measured values replace "
-                       "each row as steps complete. See the 'Timing / PPMS "
-                       "Suggestions' tab.",
+                  text="One button, whole plan: per-setpoint wait table "
+                       "(= probe settle + scan time + Margin, see the "
+                       "'Timing / PPMS Suggestions' tab) plus — when Start "
+                       "and End are filled — a suggested PPMS ramp rate. "
+                       "Works BEFORE the run; measured values replace each "
+                       "row as steps complete.",
                   font=("Segoe UI", 8, "italic"), wraplength=420
                   ).grid(row=2, column=0, columnspan=6, sticky="w",
                          padx=10, pady=(0, 5))
@@ -1031,8 +1049,13 @@ class PPMSSyncGUI:
         self.time_start_entry.grid(row=4, column=1, sticky="ew", padx=2, pady=2)
         self.time_start_ampm = ttk.Combobox(
             frame, values=["24h", "AM", "PM"], state="readonly", width=4)
-        self.time_start_ampm.set("24h")
+        self.time_start_ampm.set("AM" if datetime.now().hour < 12 else "PM")
         self.time_start_ampm.grid(row=4, column=2, sticky="w", padx=2, pady=2)
+        # Editing Start also re-projects the sequence-builder finish clock.
+        self.time_start_ampm.bind(
+            "<<ComboboxSelected>>", lambda e: self._seq_recompute_total())
+        self.time_start_entry.bind(
+            "<KeyRelease>", lambda e: self._seq_recompute_total())
         self.time_now_button = ttk.Button(frame, text="Now", width=5,
                                           command=self._fill_start_now)
         self.time_now_button.grid(row=4, column=3, sticky="w", padx=2, pady=2)
@@ -1043,7 +1066,7 @@ class PPMSSyncGUI:
         self.time_end_entry.grid(row=5, column=1, sticky="ew", padx=2, pady=2)
         self.time_end_ampm = ttk.Combobox(
             frame, values=["24h", "AM", "PM"], state="readonly", width=4)
-        self.time_end_ampm.set("24h")
+        self.time_end_ampm.set("AM" if datetime.now().hour < 12 else "PM")
         self.time_end_ampm.grid(row=5, column=2, sticky="w", padx=2, pady=2)
         ttk.Label(frame, text="(H:MM; end may roll past midnight)",
                   font=("Segoe UI", 8, "italic")
@@ -1051,10 +1074,11 @@ class PPMSSyncGUI:
 
         self._create_grid_entry(frame, "Max rate (K/min):", "max_rate", "12",
                                 6, 0, lockable=False)
-        self.ramp_suggest_button = ttk.Button(
-            frame, text="Suggest ramp rate", command=self._suggest_ramp_rate)
-        self.ramp_suggest_button.grid(row=6, column=3, columnspan=3,
-                                      sticky="ew", padx=(2, 10), pady=2)
+        self.suggest_button = ttk.Button(
+            frame, text="Generate PPMS plan",
+            command=self._generate_ppms_plan)
+        self.suggest_button.grid(row=6, column=3, columnspan=3,
+                                 sticky="ew", padx=(2, 10), pady=2)
 
         self.ramp_sug_lbl = ttk.Label(frame, text="Ramp suggestion: —",
                                       font=("Segoe UI", 9, "bold"),
@@ -1142,31 +1166,81 @@ class PPMSSyncGUI:
         tb.pack(side="bottom", fill="x")
         self.canvas_plots.get_tk_widget().pack(fill="both", expand=True)
 
-    TIMING_COLS = ("step", "target", "sleep", "settle", "scan",
-                   "suggest", "status")
+    TIMING_COLS = ("step", "target", "dT", "rate", "ramp",
+                   "wait", "steptot", "status")
 
     def _build_timing_tab(self, parent):
         ttk.Label(parent,
-                  text="Suggested PPMS wait per setpoint = probe settle + "
-                       "scan time + Margin. Click 'Generate PPMS "
-                       "suggestions' (left panel) to plan the PPMS sequence "
-                       "BEFORE the run; during the run each row is replaced "
-                       "by the measured values.",
+                  text="PPMS sequence guide (planning aid — this program "
+                       "never commands the PPMS). Each setpoint gets its own "
+                       "ramp rate and wait/soak; double-click a Rate or Wait "
+                       "cell to edit, or use 'Set all' to change a whole "
+                       "column at once. The Total and projected finish "
+                       "recompute as you edit. During a run the measured PPMS "
+                       "wait replaces each row's Wait.",
                   wraplength=900, background=self.CLR_BG_DARK,
-                  foreground=self.CLR_FG_LIGHT
-                  ).pack(side="top", anchor="w", padx=8, pady=6)
+                  foreground=self.CLR_FG_LIGHT, justify="left"
+                  ).pack(side="top", anchor="w", padx=8, pady=(6, 2))
+
+        # --- Controls: load/reset + initial wait ---
+        ctl = ttk.Frame(parent)
+        ctl.pack(side="top", fill="x", padx=8, pady=2)
+        self.seq_load_btn = ttk.Button(
+            ctl, text="Load / reset from schedule",
+            command=self._seq_load_from_schedule)
+        self.seq_load_btn.pack(side="left", padx=(0, 14))
+        ttk.Label(ctl, text="Initial wait (min or h:mm):",
+                  background=self.CLR_BG_DARK,
+                  foreground=self.CLR_FG_LIGHT).pack(side="left")
+        self.seq_init_entry = ttk.Entry(ctl, width=8)
+        self.seq_init_entry.insert(0, "3:30")
+        self.seq_init_entry.pack(side="left", padx=(4, 0))
+        self.seq_init_entry.bind("<KeyRelease>",
+                                 lambda e: self._seq_recompute_total())
+
+        # --- Bulk "set all" for the Rate and Wait columns ---
+        bulk = ttk.Frame(parent)
+        bulk.pack(side="top", fill="x", padx=8, pady=(0, 2))
+        ttk.Label(bulk, text="Set all →", background=self.CLR_BG_DARK,
+                  foreground=self.CLR_FG_LIGHT).pack(side="left")
+        ttk.Label(bulk, text="Rate (K/min):", background=self.CLR_BG_DARK,
+                  foreground=self.CLR_FG_LIGHT).pack(side="left", padx=(12, 2))
+        self.seq_rate_all = ttk.Entry(bulk, width=7)
+        self.seq_rate_all.pack(side="left")
+        self.seq_rate_all_btn = ttk.Button(
+            bulk, text="Apply", width=7,
+            command=lambda: self._seq_set_all("rate", self.seq_rate_all))
+        self.seq_rate_all_btn.pack(side="left", padx=(2, 16))
+        ttk.Label(bulk, text="Wait (min or h:mm):",
+                  background=self.CLR_BG_DARK,
+                  foreground=self.CLR_FG_LIGHT).pack(side="left", padx=(0, 2))
+        self.seq_wait_all = ttk.Entry(bulk, width=7)
+        self.seq_wait_all.pack(side="left")
+        self.seq_wait_all_btn = ttk.Button(
+            bulk, text="Apply", width=7,
+            command=lambda: self._seq_set_all("wait", self.seq_wait_all))
+        self.seq_wait_all_btn.pack(side="left", padx=(2, 0))
+
+        # --- Live total / projected finish ---
+        self.seq_total_lbl = ttk.Label(
+            parent, text="Total: —  (click 'Load / reset from schedule')",
+            font=("Segoe UI", 11, "bold"), background=self.CLR_BG_DARK,
+            foreground=self.CLR_ACCENT_GOLD)
+        self.seq_total_lbl.pack(side="top", anchor="w", padx=8, pady=(2, 4))
+
         tf = ttk.Frame(parent); tf.pack(fill="both", expand=True, padx=5, pady=5)
         sb = ttk.Scrollbar(tf, orient="vertical")
         self.timing_tree = ttk.Treeview(
             tf, columns=self.TIMING_COLS, show="headings",
             yscrollcommand=sb.set)
         sb.config(command=self.timing_tree.yview)
-        heads = {"step": ("#", 40), "target": ("Target (K)", 90),
-                 "sleep": ("Initial sleep", 110),
-                 "settle": ("Probe settle", 110),
-                 "scan": ("Scan time", 110),
-                 "suggest": ("Suggested PPMS wait", 160),
-                 "status": ("Status", 220)}
+        heads = {"step": ("#", 36), "target": ("Target (K)", 82),
+                 "dT": ("ΔT (K)", 66),
+                 "rate": ("Rate K/min ✎", 108),
+                 "ramp": ("Ramp time", 92),
+                 "wait": ("Wait / soak ✎", 108),
+                 "steptot": ("Step total", 96),
+                 "status": ("Status", 168)}
         for col in self.TIMING_COLS:
             text, width = heads[col]
             self.timing_tree.heading(col, text=text)
@@ -1174,6 +1248,13 @@ class PPMSSyncGUI:
                                     stretch=True)
         self.timing_tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
+        # Double-click a Rate/Wait cell to edit it in place.
+        self.timing_tree.bind("<Double-1>", self._seq_on_double_click)
+
+        # Disabled during a run (pre-run planning aids)
+        self.seq_controls = [self.seq_load_btn, self.seq_init_entry,
+                             self.seq_rate_all, self.seq_rate_all_btn,
+                             self.seq_wait_all, self.seq_wait_all_btn]
 
     def _on_log_y_toggle(self):
         self._decade_ylims.clear()
@@ -1491,7 +1572,8 @@ class PPMSSyncGUI:
         self._update_scan_estimate()
         sug = (self.params["window_min"] * 60.0 + self._scan_est_s
                + self.params["margin_min"] * 60.0)
-        self._fill_timing_tab(self.schedule, fmt_hms(sug))
+        # Keep the user's edited plan if it already matches this schedule.
+        self._fill_timing_tab(self.schedule, sug)
 
         while not self.cmd_queue.empty():
             try: self.cmd_queue.get_nowait()
@@ -1580,7 +1662,6 @@ class PPMSSyncGUI:
         # Pre-run suggestion generator would clobber measured rows mid-run
         self.suggest_button.config(state=st)
         # Clock-time ramp planner is pre-run only (advisory)
-        self.ramp_suggest_button.config(state=st)
         self.time_now_button.config(state=st)
         self.time_start_entry.config(state=st)
         self.time_end_entry.config(state=st)
@@ -1609,27 +1690,47 @@ class PPMSSyncGUI:
         self.ls_cb.config(state="readonly" if not running else "disabled")
         self.lcr_cb.config(state="readonly" if not running else "disabled")
         self.channel_cb.config(state="readonly" if not running else "disabled")
+        # Sequence-builder controls are pre-run planning aids
+        for w in getattr(self, "seq_controls", []):
+            try:
+                w.config(state=st)
+            except tk.TclError:
+                pass
 
     # ------------------------------------------------------------
     # Timing tab plumbing (main thread)
     # ------------------------------------------------------------
+    def _generate_ppms_plan(self):
+        """One-button PPMS plan: fill the per-setpoint wait table, then —
+        if Start / End (est.) are filled — also back-solve the ramp rate."""
+        if not self._generate_pre_run_suggestions():
+            return
+        if (self.time_start_entry.get().strip()
+                and self.time_end_entry.get().strip()):
+            self._suggest_ramp_rate()
+        else:
+            self.ramp_sug_lbl.config(
+                text="Ramp suggestion: — (fill Start and End (est.) above "
+                     "to also get a suggested PPMS ramp rate)",
+                foreground=self.CLR_ACCENT_GOLD)
+
     def _generate_pre_run_suggestions(self):
         """Fill the Timing / PPMS Suggestions tab from the schedule alone —
         no instruments needed, works before the run: per setpoint
         suggested wait = stability window + estimated scan + Margin.
-        Also called automatically at Start."""
+        Also called automatically at Start. Returns True on success."""
         if self.is_running:
-            return
+            return False
         try:
             targets = self._get_targets()
         except ValueError as e:
             messagebox.showerror("Schedule", f"Bad setpoint in list: {e}")
-            return
+            return False
         if not targets:
             messagebox.showwarning(
                 "Empty Schedule",
                 "Add setpoints first (Generate Steps or Manual Add).")
-            return
+            return False
         try:
             window_min = float(self.entries["window_min"]["entry"].get())
             margin_min = float(self.entries["margin_min"]["entry"].get())
@@ -1638,15 +1739,16 @@ class PPMSSyncGUI:
         except (ValueError, tk.TclError):
             messagebox.showerror("Timing",
                                  "Check Window (min) and Margin (min).")
-            return
+            return False
         self._update_scan_estimate()
         sug = window_min * 60.0 + self._scan_est_s + margin_min * 60.0
-        self._fill_timing_tab(targets, fmt_hms(sug))
+        self._fill_timing_tab(targets, sug)
         self.log(f"PPMS suggestion (pre-run, all setpoints): wait ≥ "
                  f"{fmt_hms(sug)} at each temperature "
                  f"(= window {window_min:g} min + scan "
                  f"{fmt_hms(self._scan_est_s)} + margin {margin_min:g} min). "
                  f"Measured values will replace these during the run.")
+        return True
 
     def _fill_start_now(self):
         now = datetime.now()
@@ -1778,26 +1880,282 @@ class PPMSSyncGUI:
                  f"{fmt_clock(start_min)} → {fmt_clock(end_min)}]: "
                  + text.replace("\n", " | "))
 
-    def _fill_timing_tab(self, targets, suggest_text):
+    # ------------------------------------------------------------
+    # PPMS sequence builder (editable planning table)
+    # ------------------------------------------------------------
+    def _seq_default_rate(self, target, prev):
+        """Temperature-aware default ramp rate (K/min), clamped to Max
+        rate. Slower where it matters: the colder endpoint of the ramp
+        drives it (below 100 K a probe needs a gentle rate). Purely a
+        starting suggestion — every cell is editable."""
+        if prev is None:
+            return None
+        coldest = min(target, prev)
+        if coldest < 100.0:
+            rate = 0.5
+        elif coldest < 200.0:
+            rate = 1.0
+        else:
+            rate = 2.0
+        try:
+            max_rate = float(self.entries["max_rate"]["entry"].get())
+            if max_rate > 0:
+                rate = min(rate, max_rate)
+        except (ValueError, tk.TclError, KeyError):
+            pass
+        return rate
+
+    def _seq_clamp_rate(self, rate):
+        """Clamp a user-entered rate to the Max rate envelope, logging
+        when it bites (Max rate is the global safety ceiling)."""
+        try:
+            max_rate = float(self.entries["max_rate"]["entry"].get())
+            if max_rate <= 0:
+                raise ValueError
+        except (ValueError, tk.TclError):
+            return rate
+        if rate > max_rate:
+            self.log(f"Sequence: rate {rate:g} K/min clamped to Max rate "
+                     f"{max_rate:g} K/min.")
+            return max_rate
+        return rate
+
+    def _fill_timing_tab(self, targets, suggest_s, keep_edits=True):
+        """(Re)build the sequence-builder rows from a list of setpoints,
+        seeding each per-step wait from the suggested PPMS wait (seconds)
+        and each rate from the temperature-aware default. When keep_edits
+        is True and the schedule is unchanged, existing rate/wait edits
+        are preserved (only a re-render happens)."""
+        targets = [float(t) for t in targets]
+        if (keep_edits and self.seq_rows
+                and [r["target"] for r in self.seq_rows] == targets):
+            self._seq_render()
+            return
+        wait_min = round(suggest_s / 60.0, 2)
+        rows = []
+        prev = None
+        for t in targets:
+            dT = None if prev is None else abs(t - prev)
+            rate = None if (prev is None or dT == 0) \
+                else self._seq_default_rate(t, prev)
+            rows.append({"target": t, "dT": dT, "rate": rate,
+                         "wait": wait_min, "status": "planned"})
+            prev = t
+        self.seq_rows = rows
+        # Mirror the schedule's initial-sleep field as the initial wait.
+        if getattr(self, "seq_init_entry", None) is not None \
+                and self.var_sleep_enabled.get():
+            self.seq_init_entry.delete(0, tk.END)
+            self.seq_init_entry.insert(0, self.sleep_entry.get() or "0")
+        self._seq_render()
+
+    def _seq_load_from_schedule(self):
+        """Pull the current setpoints and rebuild a fresh default plan
+        (discards previous rate/wait edits)."""
+        if self.is_running:
+            return
+        try:
+            targets = self._get_targets()
+        except ValueError as e:
+            messagebox.showerror("Schedule", f"Bad setpoint in list: {e}")
+            return
+        if not targets:
+            messagebox.showwarning(
+                "Empty Schedule",
+                "Add setpoints first (Generate Steps or Manual Add).")
+            return
+        self._update_scan_estimate()
+        try:
+            window_min = float(self.entries["window_min"]["entry"].get())
+            margin_min = float(self.entries["margin_min"]["entry"].get())
+        except (ValueError, tk.TclError):
+            window_min, margin_min = 10.0, 10.0
+        sug_s = window_min * 60.0 + self._scan_est_s + margin_min * 60.0
+        self._fill_timing_tab(targets, sug_s, keep_edits=False)
+        self.log(f"PPMS sequence loaded ({len(targets)} setpoints): default "
+                 f"wait {fmt_hms(sug_s)} per step, temperature-aware rates. "
+                 f"Double-click Rate/Wait cells or use 'Set all' to edit.")
+
+    def _seq_render(self):
+        """Redraw the sequence tree from self.seq_rows and refresh totals.
+        Each row caches its ramp and step seconds for the total."""
+        if not hasattr(self, "timing_tree"):
+            return
         for iid in self.timing_tree.get_children():
             self.timing_tree.delete(iid)
-        for i, target in enumerate(targets):
+        for i, r in enumerate(self.seq_rows):
+            dT = r.get("dT")
+            rate = r.get("rate")
+            wait_min = r.get("wait", 0.0) or 0.0
+            if i == 0 or dT is None or dT <= 0 or not rate:
+                ramp_s = 0.0
+                dT_txt = "—" if dT is None else f"{dT:.2f}"
+                rate_txt = "—"
+                ramp_txt = "—"
+            else:
+                ramp_s = dT / rate * 60.0
+                dT_txt = f"{dT:.2f}"
+                rate_txt = f"{rate:g}"
+                ramp_txt = fmt_hms(ramp_s)
+            wait_s = wait_min * 60.0
+            step_s = ramp_s + wait_s
+            r["_ramp_s"] = ramp_s
+            r["_step_s"] = step_s
             self.timing_tree.insert("", "end", iid=f"s{i}", values=(
-                i + 1, f"{target:.2f}", "—", "—",
-                fmt_hms(self._scan_est_s), suggest_text,
-                "pre-run estimate"))
+                i + 1, f"{r['target']:.2f}", dT_txt, rate_txt, ramp_txt,
+                fmt_hms(wait_s), fmt_hms(step_s),
+                r.get("status", "planned")))
+        self._seq_recompute_total()
+
+    def _seq_recompute_total(self):
+        """Total = initial wait + Σ(ramp + wait); append the projected
+        finish clock when a Start time is filled."""
+        if not hasattr(self, "seq_total_lbl"):
+            return
+        try:
+            init_min = parse_duration_min(self.seq_init_entry.get() or "0")
+            if init_min < 0:
+                init_min = 0.0
+        except ValueError:
+            init_min = 0.0
+        steps_s = sum(r.get("_step_s", 0.0) for r in self.seq_rows)
+        total_s = init_min * 60.0 + steps_s
+        n = len(self.seq_rows)
+        if n == 0:
+            self.seq_total_lbl.config(
+                text="Total: —  (click 'Load / reset from schedule')")
+            return
+        txt = (f"Total: {fmt_hms(total_s)}   (initial wait "
+               f"{fmt_hms(init_min * 60.0)} + {n} step"
+               f"{'' if n == 1 else 's'} {fmt_hms(steps_s)})")
+        start_txt = self.time_start_entry.get().strip()
+        if start_txt:
+            try:
+                start_min = parse_clock_minutes(
+                    start_txt, self.time_start_ampm.get())
+                txt += ("   →  finishes ~ "
+                        f"{fmt_clock(start_min + total_s / 60.0)}")
+            except ValueError:
+                pass
+        self.seq_total_lbl.config(text=txt)
+
+    def _seq_set_all(self, field, entry):
+        """Bulk-set the Rate or Wait column from the header entry."""
+        if not self.seq_rows:
+            messagebox.showinfo(
+                "Sequence", "No steps yet — click 'Load / reset from "
+                            "schedule' first.")
+            return
+        txt = entry.get().strip()
+        try:
+            if field == "wait":
+                v = parse_duration_min(txt)
+                if v < 0:
+                    raise ValueError
+            else:
+                v = float(txt)
+                if v <= 0:
+                    raise ValueError
+        except ValueError:
+            messagebox.showerror(
+                "Sequence",
+                "Enter a positive number "
+                + ("(min or h:mm) " if field == "wait" else "")
+                + "to set the whole column.")
+            return
+        if field == "rate":
+            v = self._seq_clamp_rate(v)
+        for i, r in enumerate(self.seq_rows):
+            if field == "rate" and (i == 0 or not r.get("dT")):
+                continue  # first setpoint has no ramp
+            r[field] = v
+        self._seq_render()
+        self.log(f"Sequence: set all {field} = {v:g}"
+                 + (" min." if field == "wait" else " K/min."))
+
+    def _seq_on_double_click(self, event):
+        """Open an in-place editor for a Rate or Wait cell."""
+        if self.is_running:
+            return
+        if self.timing_tree.identify_region(event.x, event.y) != "cell":
+            return
+        col = self.timing_tree.identify_column(event.x)
+        rowid = self.timing_tree.identify_row(event.y)
+        if not rowid or not col:
+            return
+        try:
+            col_name = self.TIMING_COLS[int(col.replace("#", "")) - 1]
+            idx = int(rowid[1:])
+        except (ValueError, IndexError):
+            return
+        if col_name not in ("rate", "wait"):
+            return
+        if not (0 <= idx < len(self.seq_rows)):
+            return
+        if col_name == "rate" and (idx == 0 or not self.seq_rows[idx].get("dT")):
+            return  # first setpoint has no ramp
+        bbox = self.timing_tree.bbox(rowid, col)
+        if not bbox:
+            return
+        self._seq_edit_cell(idx, col_name, bbox)
+
+    def _seq_edit_cell(self, idx, col_name, bbox):
+        x, y, w, h = bbox
+        cur = self.seq_rows[idx][col_name]
+        editor = ttk.Entry(self.timing_tree)
+        editor.place(x=x, y=y, width=w, height=h)
+        editor.insert(0, f"{cur:g}" if cur is not None else "")
+        editor.select_range(0, tk.END)
+        editor.focus_set()
+        state = {"done": False}
+
+        def commit(event=None):
+            if state["done"]:
+                return
+            state["done"] = True
+            raw = editor.get().strip()
+            editor.destroy()
+            try:
+                if col_name == "wait":
+                    v = parse_duration_min(raw)
+                    if v < 0:
+                        raise ValueError
+                else:
+                    v = float(raw)
+                    if v <= 0:
+                        raise ValueError
+            except ValueError:
+                messagebox.showerror(
+                    "Sequence",
+                    ("Wait must be a non-negative number (min or h:mm)."
+                     if col_name == "wait"
+                     else "Rate must be a positive number (K/min)."))
+                return
+            if col_name == "rate":
+                v = self._seq_clamp_rate(v)
+            self.seq_rows[idx][col_name] = v
+            self._seq_render()
+
+        def cancel(event=None):
+            if state["done"]:
+                return
+            state["done"] = True
+            editor.destroy()
+
+        editor.bind("<Return>", commit)
+        editor.bind("<KP_Enter>", commit)
+        editor.bind("<FocusOut>", commit)
+        editor.bind("<Escape>", cancel)
 
     def _apply_timing_row(self, m):
-        iid = f"s{m['index']}"
-        vals = (m["index"] + 1, f"{m['target']:.2f}",
-                fmt_hms(m["sleep_s"]) if m["sleep_s"] > 0 else "—",
-                fmt_hms(m["settle_s"]),
-                fmt_hms(m["scan_s"]), fmt_hms(m["suggest_s"]),
-                m["status"])
-        if self.timing_tree.exists(iid):
-            self.timing_tree.item(iid, values=vals)
-        else:
-            self.timing_tree.insert("", "end", iid=iid, values=vals)
+        """During a run: replace a step's planned Wait with the MEASURED
+        PPMS wait (settle + scan + margin) and update its status. Planned
+        rate/ramp are kept; the total re-projects live."""
+        idx = m["index"]
+        if 0 <= idx < len(self.seq_rows):
+            self.seq_rows[idx]["wait"] = round(m["suggest_s"] / 60.0, 2)
+            self.seq_rows[idx]["status"] = f"measured · {m['status']}"
+            self._seq_render()
 
     # ------------------------------------------------------------
     # Queue plumbing
