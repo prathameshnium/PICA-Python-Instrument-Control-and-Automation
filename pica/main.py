@@ -175,6 +175,7 @@ class PICALauncherApp:
         "LCR Temp. Scan (T_Control)": resource_path("keysight/Temprature_Scan_E4980A_GUI.py"), # Already present
         "LCR Temp. Scan (T_Sensing)": resource_path("keysight/Temprature_Scan_Passive_E4980A_GUI.py"), # Already present
         "PPMS Sync Freq. Scan": resource_path("keysight/PPMS_Sync_Freq_Scan_E4980A_GUI.py"),
+        "Alpha-AN Freq. Scan": resource_path("novocontrol/Frequency_Scan_AlphaAN_GUI.py"),
         "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
         "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
         "SCPI Console": resource_path("utils/SCPI_Console_GUI.py"),
@@ -625,6 +626,12 @@ class PICALauncherApp:
                                   ("Dielectric Temp. Scan (T_Control)", "LCR Temp. Scan (T_Control)"), # Already present
                                   ("Dielectric Temp. Scan (T_Sensing)", "LCR Temp. Scan (T_Sensing)"), # Already present
                                   ])
+        self._create_suite_frame(right_col,
+                                 'Broadband Dielectric Spectroscopy',
+                                 "Voltage Driven",
+                                 "Instrument: Novocontrol Alpha-AN + ZG4",
+                                 [("Frequency Scan (fixed T)",
+                                   "Alpha-AN Freq. Scan")])
 
         return main_container
 

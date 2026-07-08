@@ -78,3 +78,11 @@
     * **Creator:** Keysight Technologies
     * **Type:** Data Sheet
 
+### **Novocontrol Technologies**
+
+* **Alpha-A / Alpha-AN High Performance Frequency Analyzer – User's Manual**
+    * **Creator:** Novocontrol Technologies GmbH & Co. KG
+    * **Type:** User's Manual
+    * **Subject:** Command reference and operating instructions for the Alpha-AN impedance analyzer and the ZG4 sample interface used by the broadband dielectric spectroscopy module.
+    * *Note: This is the authoritative source for all proprietary GPIB commands used by the Alpha-AN module.*
+

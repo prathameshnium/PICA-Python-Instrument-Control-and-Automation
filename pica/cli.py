@@ -23,6 +23,7 @@ ALL_GUI_MODULES = [
     "pica.keithley.k6517b.High_Resistance.RT_K6517B_L350_T_Sensing_GUI",
     "pica.keithley.k6517b.Pyroelectricity.Pyroelectric_K6517B_L350_GUI",
     "pica.keysight.CV_KE4980A_GUI",
+    "pica.novocontrol.Frequency_Scan_AlphaAN_GUI",
     "pica.lakeshore.T_Control_L350_RangeControl_GUI",
     "pica.lakeshore.T_Control_L350_Step_GUI",
     "pica.lakeshore.T_Control_L350_DirectControl_GUI",

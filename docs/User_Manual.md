@@ -29,7 +29,8 @@ pip install --upgrade pica-suite
    * [Pyroelectric Measurements](#65-pyroelectric-measurements)
    * [High Voltage Poling](#66-high-voltage-poling)
    * [Capacitance Spectroscopy](#67-capacitance-spectroscopy)
-   * [Standalone Temperature Utilities](#68-standalone-temperature-utilities)
+   * [Broadband Dielectric Spectroscopy](#68-broadband-dielectric-spectroscopy)
+   * [Standalone Temperature Utilities](#69-standalone-temperature-utilities)
 7. [Releases and Versions](#7-releases-and-versions)
 8. [Common Issues & Troubleshooting](#8-common-issues--troubleshooting)
 9. [Technical Reference](#9-technical-reference)
@@ -276,6 +277,7 @@ The system is currently validated with industry-standard hardware, covering a re
 | **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** + Lakeshore 350/340 | Detecting subtle phase transitions. | 1 µΩ - 100 MΩ |
 | **High-Resistance** | **Keithley 6517B** Electrometer + Lakeshore 350/340 | High bandgap materials, polymers, & ceramics. | 1 Ω - 10 PΩ |
 | **Capacitance Analysis** | **Keysight E4980A** + Lakeshore 350/340 | C-V Analysis and Magnetocapacitance characterization. | 20 Hz - 2 MHz |
+| **Broadband Dielectric** | **Novocontrol Alpha-AN** + ZG4 | Permittivity, electric modulus & AC conductivity (WinDETA-compatible). | 3 µHz - 20 MHz |
 | **Pyroelectric** | **K6517B** + Lakeshore 350/340 | Current vs Temp (detecting Curie temperature). | 10<sup>-15</sup> A Resolution |
 
 *While the current implementation drives specific instruments, the underlying framework is highly customizable. Researchers need only replace specific SCPI commands to utilize the suite with different models.*
@@ -474,7 +476,20 @@ This utility provides a dedicated interface for **In-situ and ex-situ electrical
 Capacitance-Voltage (C-V) characterization of a device or a sample using a Keysight E4980A LCR meter.
 :::
 
-### 6.8 Standalone Temperature Utilities
+### 6.8 Broadband Dielectric Spectroscopy
+
+**Target Hardware:** Novocontrol Alpha-AN Impedance Analyzer with a ZG4 sample interface, over direct GPIB.
+**Frequency Range:** 3 µHz to 20 MHz (this module sweeps a fixed 20 Hz – 1 MHz logarithmic series, 115 points).
+
+  *   **Scientific Objective:** Measures the complex permittivity (ε', ε''), electric modulus (M', M'') and AC conductivity (σ', σ'') of a dielectric sample at fixed temperature. Output is written in a **WinDETA-compatible** format so it opens directly in Novocontrol's WinFIT analysis tool, alongside a PICA `.dat` for the built-in Plotter.
+
+  *   **Reference Calibration:** Use the dedicated **Run REF Calibration** button before a measurement session. It must run with the **sample disconnected** from the ZG4 (the GUI prompts you). Calibration data is stored inside the mainframe and survives resets, so a sweep runs on the most recent calibration; the GUI logs the calibration's age but never blocks on it.
+
+:::{note}
+This mainframe has **no DC bias hardware** — the module never transmits a bias command. A stale reference calibration shows up as a step or kink in ε'(f) at a reference-capacitor switch boundary rather than as uniform noise; re-run the REF calibration if you see one.
+:::
+
+### 6.9 Standalone Temperature Utilities
 
 **Target Hardware:** Lake Shore 350 Temperature Controller.
 
@@ -554,6 +569,7 @@ PICA uses standard VISA resource strings. While the defaults below are common, u
   * **Keithley 2182:** `GPIB0::7::INSTR`
   * **Keithley 6517B:** `GPIB1::27::INSTR`
   * **Keysight E4980A:** `GPIB0::17::INSTR`
+  * **Novocontrol Alpha-AN:** `GPIB0::5::INSTR`
 
 ### 9.3 Repository Mirroring
 
@@ -721,6 +737,9 @@ PICA (Root Directory)/
                     Instrument_Control/
         keysight/               <-- Capacitance (E4980A)
             CV_KE4980A_GUI.py
+            Instrument_Control/
+        novocontrol/            <-- Broadband Dielectric (Alpha-AN)
+            Frequency_Scan_AlphaAN_GUI.py
             Instrument_Control/
         lakeshore/              <-- Temperature Control
             T_Control_L350_RangeControl_GUI.py
