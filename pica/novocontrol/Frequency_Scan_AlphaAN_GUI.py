@@ -245,14 +245,21 @@ def impedance_to_dielectric(zr, zi, f_actual, c0):
     Z* = R + jX with R = Zs', X = Zs'' (Zs'' is negative for a capacitive
     sample). eps* = eps' - i*eps''.
 
-        Zp'   =  R
-        Zp''  = -X
         eps'  = -X / (w * C0 * |Z|^2)
         eps'' =  R / (w * C0 * |Z|^2)
         M'    =  eps'  / (eps'^2 + eps''^2)
         M''   =  eps'' / (eps'^2 + eps''^2)
         sig'  =  w * eps0 * eps''     (eps0 in F/cm -> sigma in S/cm)
         sig'' = -w * eps0 * eps'
+
+    The WinDETA Zp' / Zp'' columns are the PARALLEL-equivalent impedance,
+    NOT the series R / X (verified against a Novocontrol WinDETA export,
+    data_file_for_ref/Sample_Fscan_RT.TXT, to < 1e-5):
+
+        Zp'  = 1/G =  (R^2 + X^2) / R      # parallel resistance  Rp
+        Zp'' = 1/B = -(R^2 + X^2) / X      # parallel reactance   1/(w*Cp)
+
+    with admittance Y = G + jB = 1/Z. Both are geometry-independent (no C0).
 
     Returns a 9-tuple in WINDETA_HEADER column order.
     """
@@ -276,8 +283,12 @@ def impedance_to_dielectric(zr, zi, f_actual, c0):
     sig1 = omega * EPS0_CM * eps2
     sig2 = -omega * EPS0_CM * eps1
 
-    zp1 = zr
-    zp2 = -zi
+    # Parallel-equivalent impedance (1/G and 1/B), matching WinDETA. These are
+    # geometry-independent, so they do not use C0.
+    zr_safe = zr if zr != 0 else 1e-20
+    zi_safe = zi if zi != 0 else 1e-20
+    zp1 = z_mag_sq / zr_safe    # 1/G = parallel resistance
+    zp2 = -z_mag_sq / zi_safe   # 1/B = parallel reactance
 
     return (f_actual, eps1, eps2, m1, m2, sig1, sig2, zp1, zp2)
 
@@ -1441,11 +1452,12 @@ class AlphaAN_FreqScan_GUI:
         # WinDETA expects free text on line 1; the cal age rides along there
         # because there is nowhere else to put it without breaking the parse.
         comment = f"{params['comment']} | {self.cal_age_str}"
+        # Date/time with NO zero-padding, matching the WinDETA reference
+        # export (e.g. "25.4.2025, 13:2" -- not "25.04.2025, 13:02").
+        date_str = f"{now.day}.{now.month}.{now.year}"
+        time_str = f"{now.hour}:{now.minute}"
         with open(self.txt_filepath, "w", encoding="utf-8") as fh:
-            fh.write(
-                f"{comment}, {now.strftime('%d.%m.%Y')}, "
-                f"{now.strftime('%H:%M')}\n"
-            )
+            fh.write(f"{comment}, {date_str}, {time_str}\n")
             fh.write(
                 f"Fixed value(s) :  AC Volt  [Vrms]={params['acv']:.4e}\n"
             )
