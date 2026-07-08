@@ -365,15 +365,22 @@ def main():
         n_flagged = 0
         for i, freq in enumerate(FREQUENCIES_HZ, 1):
             inst.write(f"GFR={freq:.6e}")
+            inst.read_stb()   # clear stale status before triggering
             inst.write("MST")
             wait_for_srq(inst, SRQ_TIMEOUT_MEASURE_S,
                          f"measurement at {freq:.6g} Hz")
             zr, zi, f_actual, status, ref = parse_zre(inst.query("ZRE?"))
 
             if status != STATUS_RESULT_VALID:
+                if status in STATUS_FATAL:
+                    raise RuntimeError(
+                        f"f={freq:.6g} Hz: {status_message(status)} "
+                        f"(status {status})."
+                    )
                 n_flagged += 1
                 print(f"[{i:3d}/{len(FREQUENCIES_HZ)}] {freq:12.4g} Hz "
-                      f"-> status {status}, point discarded")
+                      f"-> {status_message(status)} (status {status}), "
+                      f"discarded")
                 continue
 
             # Convert with the ACTUAL frequency the analyzer used.
