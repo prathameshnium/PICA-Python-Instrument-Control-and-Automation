@@ -87,6 +87,7 @@ TERMINATIONS = {
     "\\r\\n (CRLF)": "\r\n",
     "\\r (CR)": "\r",
     "None": None,
+    "EOI": "EOI",  # Special case for End-Of-Instruction termination
 }
 
 
@@ -581,8 +582,15 @@ class PICASCPIConsoleApp:
                 self.rm = pyvisa.ResourceManager()
             device = self.rm.open_resource(address)
             device.timeout = timeout_ms
-            device.read_termination = termination
-            device.write_termination = termination
+            # Handle the special EOI termination case
+            if termination == "EOI":
+                device.read_termination = ""
+                device.write_termination = ""
+                device.send_end = True
+            else:
+                device.read_termination = termination
+                device.write_termination = termination
+                device.send_end = False  # Default behavior
             idn = device.query('*IDN?').strip()
             self.instrument = device
             self.msg_queue.put(('info', f"Connected to {address}"))
