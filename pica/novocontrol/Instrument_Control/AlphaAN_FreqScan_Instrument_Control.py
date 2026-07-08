@@ -35,13 +35,42 @@ import pyvisa
 
 # --- Safety constants. NEVER raise these to "make it work". -----------------
 FREQ_HW_MIN, FREQ_HW_MAX = 3e-5, 20e6
-ACV_MAX_VRMS = 3.0          # TODO(bench): confirm against the ZG4 manual
+# ZG4 AC-voltage ceiling: 3 Vrms up to 10 MHz, 1 Vrms above. Frequency-
+# dependent, so enforced per-point.
+ACV_MAX_LOW_FREQ, ACV_MAX_HIGH_FREQ, ACV_FREQ_BREAK_HZ = 3.0, 1.0, 10e6
 MTM_MIN_S, MTM_MAX_S = 0.01, 1000.0
 STATUS_RESULT_VALID = 2
+STATUS_FATAL = frozenset({6})   # signal source disconnected -> abort sweep
+STATUS_MEANINGS = {
+    2: "Result valid",
+    3: "Signal out of range (check ACV or sample)",
+    4: "Signal out of range (check ACV or sample)",
+    5: "Signal out of range (check ACV or sample)",
+    6: "Signal source disconnected during measurement (hardware fault)",
+}
+ZG4_INTERFACE_CODE = 5          # INTTYP? reports a numeric code, not "ZG4"
 SRQ_TIMEOUT_MEASURE_S = 120.0
 
 EPS0_SI = 8.8541878128e-12   # F/m  - geometric capacitance C0
 EPS0_CM = 8.8541878128e-14   # F/cm - so sigma lands in S/cm
+
+
+def acv_ceiling(freq_hz):
+    """ZG4 AC-voltage ceiling (Vrms) at a given frequency."""
+    return ACV_MAX_LOW_FREQ if freq_hz <= ACV_FREQ_BREAK_HZ else ACV_MAX_HIGH_FREQ
+
+
+def status_message(status):
+    """Human-readable meaning of a ZRE? status code."""
+    return STATUS_MEANINGS.get(status, f"unknown status {status}")
+
+
+def parse_inttyp(response):
+    """Interface code from an 'INTTYP=<code> <serial>' response (ZG4 = 5)."""
+    text = response.strip(" \t\r\n\x00\x10")
+    if "=" in text:
+        text = text.split("=", 1)[1]
+    return int(text.split()[0])
 
 WINDETA_HEADER = (
     " Freq. [Hz]\t Eps'    \t Eps''   \t Modulus'  \t Modulus''  \t"
@@ -89,11 +118,21 @@ def compute_c0(diameter_mm, thickness_mm):
 
 
 def parse_zre(response):
-    """Parse 'ZRE=Zs' Zs'' freq status ref' into a 5-tuple."""
-    text = response.strip()
+    """Parse 'ZRE=Zs' Zs'' freq status ref' into a 5-tuple.
+
+    Responses terminate on EOI plus an EOS byte, so strip trailing
+    CR/NUL/DLE that .strip() would miss. A bare 'CR' means Recalibrate.
+    """
+    text = response.strip(" \t\r\n\x00\x10")
     if "=" in text:
         text = text.split("=", 1)[1]
     fields = text.replace(",", " ").split()
+    if fields and fields[0].upper() == "CR":
+        raise RuntimeError(
+            "Instrument returned 'CR' (Recalibrate): load-short correction "
+            "(ZSLCAL=1) is on but no load-short calibration is stored. Run a "
+            "load-short calibration, or disable ZSLCAL."
+        )
     if len(fields) < 5:
         raise ValueError(f"Malformed ZRE? response: {response!r}")
     return (
@@ -172,10 +211,14 @@ def wait_for_srq(inst, timeout_s, context):
 
 
 def safe_state(inst):
-    """Drive the generator to a safe state. Never raises."""
+    """Drive the generator to the defined safe idle state. Never raises.
+
+    MBK (abort) -> ACV=0 (park generator) -> ZCONSPL=0 (current input to
+    high impedance).
+    """
     if inst is None:
         return
-    for cmd in ("MBK", "ACV=0"):
+    for cmd in ("MBK", "ACV=0", "ZCONSPL=0"):
         try:
             inst.write(cmd)
         except Exception as e:
@@ -210,9 +253,11 @@ def shutdown(inst):
 
 def validate(acv, mtm, wire_mode, diameter, thickness):
     """Reject anything unsafe BEFORE a byte reaches the instrument."""
-    if not (0.0 < acv <= ACV_MAX_VRMS):
+    max_acv = min(acv_ceiling(f) for f in FREQUENCIES_HZ)
+    if not (0.0 < acv <= max_acv):
         raise ValueError(
-            f"AC voltage {acv} Vrms outside 0 < V <= {ACV_MAX_VRMS} Vrms."
+            f"AC voltage {acv} Vrms outside 0 < V <= {max_acv} Vrms "
+            f"(frequency-dependent ZG4 ceiling)."
         )
     if not (MTM_MIN_S <= mtm <= MTM_MAX_S):
         raise ValueError(
@@ -269,16 +314,22 @@ def main():
         rm = pyvisa.ResourceManager()
         inst = rm.open_resource(args.gpib_address)
         inst.timeout = 60000
-        inst.read_termination = "\n"
-        inst.write_termination = "\n"
+        # The Alpha-AN terminates on EOI (plus an EOS byte) and accepts
+        # commands on EOI only -- no newline terminator.
+        inst.read_termination = ""
+        inst.write_termination = ""
+        inst.send_end = True
 
         idn = inst.query("*IDN?").strip()
-        interface = inst.query("INTTYP?").strip()
-        if "ZG4" not in interface.upper():
+        # INTTYP? reports a numeric interface code; the ZG4 is code 5.
+        code = parse_inttyp(inst.query("INTTYP?"))
+        if code != ZG4_INTERFACE_CODE:
             raise ConnectionError(
-                f"Expected a ZG4 sample interface, got {interface!r}."
+                f"Expected a ZG4 sample interface (INTTYP code "
+                f"{ZG4_INTERFACE_CODE}), got code {code}."
             )
-        print(f"Connected: {idn} | interface: {interface}")
+        inst.read_stb()   # clear any stale status on the bus
+        print(f"Connected: {idn} | ZG4 interface code {code}")
 
         # *RST preserves the stored calibration tables; it only resets
         # operating parameters. A scan therefore runs on the previous REF
