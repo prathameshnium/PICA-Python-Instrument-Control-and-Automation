@@ -177,6 +177,7 @@ class PICALauncherApp:
         "PPMS Sync Freq. Scan": resource_path("keysight/PPMS_Sync_Freq_Scan_E4980A_GUI.py"),
         "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
         "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
+        "SCPI Console": resource_path("utils/SCPI_Console_GUI.py"),
         "PICA Help": resource_path("README.md"),
         "PE Plotter": resource_path("utils/PE_plotter.py"),
         "Quick Calc": resource_path("utils/Quick_Calc_GUI.py"),
@@ -826,6 +827,7 @@ class PICALauncherApp:
         card.pack(fill='both', expand=True, padx=24, pady=(0, 16))
 
         tools = [
+            ("SCPI Console", "SCPI Console"),
             ("PE Plotter", "PE Plotter"),
             ("Quick Calc", "Quick Calc"),
             ("Time Utility", "Time Utility"),

@@ -29,6 +29,7 @@ ALL_GUI_MODULES = [
     "pica.lakeshore.T_Sensing_L350_GUI",
     "pica.utils.GPIB_Instrument_Scanner_GUI",
     "pica.utils.PlotterUtil_GUI",
+    "pica.utils.SCPI_Console_GUI",
 ]
 
 APP_NAME = "PICA Command Line Interface"
