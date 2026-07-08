@@ -127,19 +127,34 @@ except ImportError:
 # checked against this before a single byte reaches the bus.
 FREQ_HW_MIN, FREQ_HW_MAX = 3e-5, 20e6
 
-# Generator AC amplitude ceiling (Vrms).
-# TODO(bench): confirm against the ZG4 / Alpha-AN manual before the first
-# live run and lower if the interface is more restrictive than the
-# mainframe. Lowering this is always safe; raising it is not.
-ACV_MAX_VRMS = 3.0
+# Generator AC amplitude ceiling (Vrms), from the ZG4 spec: up to 3 Vrms at
+# or below 10 MHz, dropping to 1 Vrms above 10 MHz. Frequency-dependent, so
+# it is enforced per-point rather than as one flat number.
+ACV_MAX_LOW_FREQ = 3.0        # <= 10 MHz
+ACV_MAX_HIGH_FREQ = 1.0       # > 10 MHz
+ACV_FREQ_BREAK_HZ = 10e6
 
-# Integration time bounds (s). Below ~2 Hz the analyzer internally never
-# integrates less than one period regardless of MTM, which is where the
-# reference recipe's "max of 0.5 s or 1 period" behaviour comes from.
+# Integration time bounds (s). MTM=0 is legal and means "shortest available";
+# the analyzer never integrates less than one period regardless, which is
+# where the recipe's "max of 0.5 s or 1 period" behaviour comes from. The
+# 0.01 s floor here is conservative but harmless.
 MTM_MIN_S, MTM_MAX_S = 0.01, 1000.0
 
-# ZRE? status field. Anything else means the point is not trustworthy.
+# ZRE? status field. 2 = Result Valid; anything else is not trustworthy.
 STATUS_RESULT_VALID = 2
+# Statuses that abort the whole sweep rather than just flagging one point.
+# 6 = the signal source was disconnected mid-measurement (hardware fault).
+STATUS_FATAL = frozenset({6})
+STATUS_MEANINGS = {
+    2: "Result valid",
+    3: "Signal out of range (check ACV or sample)",
+    4: "Signal out of range (check ACV or sample)",
+    5: "Signal out of range (check ACV or sample)",
+    6: "Signal source disconnected during measurement (hardware fault)",
+}
+
+# ZG4 interface code reported by INTTYP? (the ZG4 is code 5, not a string).
+ZG4_INTERFACE_CODE = 5
 
 # Timeouts (s) for the SRQ waits. A REF calibration takes ~30 s.
 SRQ_TIMEOUT_MEASURE_S = 120.0
@@ -150,6 +165,27 @@ EPS0_CM = 8.8541878128e-14   # F/cm - used only so sigma lands in S/cm
 
 # Wire modes exposed by the ZG4 interface.
 WIRE_MODES = ("2", "3", "4")
+
+
+def acv_ceiling(freq_hz):
+    """ZG4 AC-voltage ceiling (Vrms) at a given frequency."""
+    return ACV_MAX_LOW_FREQ if freq_hz <= ACV_FREQ_BREAK_HZ else ACV_MAX_HIGH_FREQ
+
+
+def status_message(status):
+    """Human-readable meaning of a ZRE? status code."""
+    return STATUS_MEANINGS.get(status, f"unknown status {status}")
+
+
+def parse_inttyp(response):
+    """Extract the numeric interface code from an INTTYP? response.
+
+    Format is 'INTTYP=%d1 %d2' (code, then serial); the ZG4 is code 5.
+    """
+    text = response.strip(" \t\r\n\x00\x10")
+    if "=" in text:
+        text = text.split("=", 1)[1]
+    return int(text.split()[0])
 
 
 # Frozen frequency series: 20 Hz, x1.1 per step, final point clamped to
@@ -224,11 +260,22 @@ def parse_zre(response):
 
     The analyzer answers 'ZRE=Zs' Zs'' freq status ref'. The leading
     'ZRE=' echo is stripped if present; fields are whitespace separated.
+
+    Responses terminate on EOI (plus an EOS byte), so strip trailing
+    non-whitespace terminator bytes (CR/NUL/DLE) that .strip() misses.
     """
-    text = response.strip()
+    text = response.strip(" \t\r\n\x00\x10")
     if "=" in text:
         text = text.split("=", 1)[1]
     fields = text.replace(",", " ").split()
+    # A bare 'CR' (Recalibrate) is returned when load-short correction
+    # (ZSLCAL=1) is on but no load-short calibration is stored.
+    if fields and fields[0].upper() == "CR":
+        raise RuntimeError(
+            "Instrument returned 'CR' (Recalibrate): load-short correction "
+            "(ZSLCAL=1) is enabled but no load-short calibration is stored. "
+            "Run a load-short calibration, or disable ZSLCAL."
+        )
     if len(fields) < 5:
         raise ValueError(f"Malformed ZRE? response: {response!r}")
     zr = float(fields[0])
@@ -299,10 +346,13 @@ def validate_parameters(params):
     Raises ValueError on the first violation.
     """
     acv = params["acv"]
-    if not (0.0 < acv <= ACV_MAX_VRMS):
+    # The ZG4 ceiling is frequency-dependent (3 Vrms <=10 MHz, 1 Vrms above),
+    # so the binding limit is the lowest ceiling over the whole sweep.
+    max_acv = min(acv_ceiling(f) for f in FREQUENCIES_HZ)
+    if not (0.0 < acv <= max_acv):
         raise ValueError(
-            f"AC voltage {acv} Vrms outside the 0 < V <= {ACV_MAX_VRMS} "
-            f"Vrms safety limit."
+            f"AC voltage {acv} Vrms outside the 0 < V <= {max_acv} Vrms "
+            f"safety limit (frequency-dependent ZG4 ceiling)."
         )
 
     mtm = params["mtm"]
@@ -410,25 +460,34 @@ class AlphaAN_Backend:
 
         inst = self.rm.open_resource(visa_addr)
         inst.timeout = 60000  # 60 s; a long MTM at low frequency is slow
-        inst.read_termination = "\n"
-        inst.write_termination = "\n"
+        # The Alpha-AN terminates responses with EOI (plus an EOS byte) and
+        # accepts commands on EOI only - it does NOT use a newline terminator.
+        inst.read_termination = ""
+        inst.write_termination = ""
+        inst.send_end = True
         self.instrument = inst
 
         try:
             idn = inst.query("*IDN?").strip()
-            interface = inst.query("INTTYP?").strip()
-            if "ZG4" not in interface.upper():
+            # INTTYP? returns 'INTTYP=<code> <serial>'; the ZG4 is code 5,
+            # NOT the literal string "ZG4".
+            code = parse_inttyp(inst.query("INTTYP?"))
+            if code != ZG4_INTERFACE_CODE:
                 raise ConnectionError(
-                    f"Expected a ZG4 sample interface, got: {interface!r}. "
-                    f"Refusing to continue."
+                    f"Expected a ZG4 sample interface (INTTYP code "
+                    f"{ZG4_INTERFACE_CODE}), got code {code}. Refusing to "
+                    f"continue."
                 )
+            # Serial-poll once to clear any stale status left on the bus, so
+            # the first wait_for_srq cannot latch onto a leftover event.
+            inst.read_stb()
         except Exception:
             # Never leave a half-open session behind on a failed handshake.
             self.close_instrument()
             raise
 
-        print(f"  Connected: {idn} | interface: {interface}")
-        return idn, interface
+        print(f"  Connected: {idn} | ZG4 interface code {code}")
+        return idn, code
 
     # --- SRQ ------------------------------------------------------------
 
@@ -497,9 +556,9 @@ class AlphaAN_Backend:
         time.sleep(1.0)
         inst.write("MODE=IMP")
 
-        interface = inst.query("INTTYP?").strip()
-        if "ZG4" not in interface.upper():
-            raise ConnectionError(f"ZG4 not present ({interface!r}).")
+        code = parse_inttyp(inst.query("INTTYP?"))
+        if code != ZG4_INTERFACE_CODE:
+            raise ConnectionError(f"ZG4 not present (INTTYP code {code}).")
 
         self._task_may_be_running = True
         inst.write("ZRUNCAL=REF_INIT")
@@ -533,9 +592,9 @@ class AlphaAN_Backend:
         time.sleep(1.0)  # graceful reset
         inst.write("MODE=IMP")
 
-        interface = inst.query("INTTYP?").strip()
-        if "ZG4" not in interface.upper():
-            raise ConnectionError(f"ZG4 not present ({interface!r}).")
+        code = parse_inttyp(inst.query("INTTYP?"))
+        if code != ZG4_INTERFACE_CODE:
+            raise ConnectionError(f"ZG4 not present (INTTYP code {code}).")
 
         # Settings AFTER any calibration: ZRUNCAL resets ACV, DCE and MTM.
         # ZREFMODE/ZLLCOR/ZSLCAL already hold these values after *RST; we
@@ -570,6 +629,9 @@ class AlphaAN_Backend:
             raise ConnectionError("Instrument is not connected.")
 
         inst.write(f"GFR={freq:.6e}")
+        # Clear any stale status immediately before triggering, so a fast
+        # point cannot let wait_for_srq latch onto a leftover completion.
+        inst.read_stb()
         self._task_may_be_running = True
         inst.write("MST")
         self._wait_for_srq(timeout_s, f"measurement at {freq:.6g} Hz")
@@ -583,8 +645,10 @@ class AlphaAN_Backend:
         """Drive the generator to a safe state. Never raises.
 
         Safe for any error handler to call. MBK first (a task may be
-        mid-flight), then ACV=0. *RST would also park the generator, but it
-        is attempted separately in close_instrument so a failing *RST cannot
+        mid-flight), then park the AC generator (ACV=0) and disconnect the
+        current input to high impedance (ZCONSPL=0) - the manual's defined
+        safe idle state. *RST would also park the generator, but it is
+        attempted separately in close_instrument so a failing *RST cannot
         prevent the ACV=0 that actually matters.
         """
         inst = self.instrument
@@ -596,10 +660,11 @@ class AlphaAN_Backend:
                 self._task_may_be_running = False
             except Exception as e:
                 print(f"  Warning: MBK failed during safe_state: {e}")
-        try:
-            inst.write("ACV=0")
-        except Exception as e:
-            print(f"  Warning: ACV=0 failed during safe_state: {e}")
+        for cmd in ("ACV=0", "ZCONSPL=0"):
+            try:
+                inst.write(cmd)
+            except Exception as e:
+                print(f"  Warning: {cmd} failed during safe_state: {e}")
 
     def close_instrument(self):
         """Safe-state, reset, release the session. Never leaves output live."""
@@ -1221,8 +1286,11 @@ class AlphaAN_FreqScan_GUI:
                 try:
                     with rm.open_resource(res) as dev:
                         dev.timeout = 2000
-                        dev.read_termination = "\n"
-                        dev.write_termination = "\n"
+                        # EOI-only, matching the Alpha-AN, so it is
+                        # identifiable here (it uses no newline terminator).
+                        dev.read_termination = ""
+                        dev.write_termination = ""
+                        dev.send_end = True
                         idn = dev.query("*IDN?").strip()
                 except Exception:
                     pass  # busy / non-SCPI / timeout - skip silently
@@ -1500,6 +1568,13 @@ class AlphaAN_FreqScan_GUI:
                 )
 
                 if status != STATUS_RESULT_VALID:
+                    if status in STATUS_FATAL:
+                        # e.g. signal source disconnected mid-sweep: abort
+                        # the whole run, do not just flag one point.
+                        raise RuntimeError(
+                            f"f={target_f:.6g} Hz: {status_message(status)} "
+                            f"(status {status})."
+                        )
                     self.data_queue.put(("FLAG", (target_f, status)))
                     continue
 
@@ -1535,9 +1610,8 @@ class AlphaAN_FreqScan_GUI:
                 if kind == "FLAG":
                     f, status = payload
                     self.log(
-                        f"WARNING: f = {f:,.6g} Hz returned status {status} "
-                        f"(expected {STATUS_RESULT_VALID} = Result Valid). "
-                        f"Point discarded."
+                        f"WARNING: f = {f:,.6g} Hz -> {status_message(status)} "
+                        f"(status {status}). Point discarded."
                     )
                     continue
 
