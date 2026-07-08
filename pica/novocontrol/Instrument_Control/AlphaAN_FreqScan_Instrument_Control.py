@@ -107,6 +107,9 @@ def impedance_to_dielectric(zr, zi, f_actual, c0):
 
     Z* = R + jX with R = Zs', X = Zs''.  eps* = eps' - i*eps''.
     Returns (f, eps', eps'', M', M'', sig', sig'', Zp', Zp'').
+
+    The Zp' / Zp'' columns are the PARALLEL-equivalent impedance (1/G, 1/B),
+    NOT series R / X -- verified against a WinDETA export to < 1e-5.
     """
     omega = 2.0 * math.pi * f_actual
     omega_safe = omega if omega != 0 else 1e-20
@@ -126,7 +129,13 @@ def impedance_to_dielectric(zr, zi, f_actual, c0):
     sig1 = omega * EPS0_CM * eps2
     sig2 = -omega * EPS0_CM * eps1
 
-    return (f_actual, eps1, eps2, m1, m2, sig1, sig2, zr, -zi)
+    # Parallel-equivalent impedance (1/G, 1/B), matching WinDETA.
+    zr_safe = zr if zr != 0 else 1e-20
+    zi_safe = zi if zi != 0 else 1e-20
+    zp1 = z_mag_sq / zr_safe
+    zp2 = -z_mag_sq / zi_safe
+
+    return (f_actual, eps1, eps2, m1, m2, sig1, sig2, zp1, zp2)
 
 
 def abort_and_diagnose(inst):
@@ -290,11 +299,12 @@ def main():
         time.sleep(0.2)
         # DCV / DCE are NEVER sent: no bias hardware on this mainframe.
 
+        # Date/time with NO zero-padding, matching the WinDETA reference
+        # export (e.g. "25.4.2025, 13:2").
+        date_str = f"{stamp.day}.{stamp.month}.{stamp.year}"
+        time_str = f"{stamp.hour}:{stamp.minute}"
         with open(out_path, "w", encoding="utf-8") as fh:
-            fh.write(
-                f"{args.comment}, {stamp.strftime('%d.%m.%Y')}, "
-                f"{stamp.strftime('%H:%M')}\n"
-            )
+            fh.write(f"{args.comment}, {date_str}, {time_str}\n")
             fh.write(f"Fixed value(s) :  AC Volt  [Vrms]={args.acv:.4e}\n")
             fh.write(WINDETA_HEADER + "\n")
 
