@@ -51,6 +51,35 @@ card). WinDETA already works there, so the card, driver, and cable are good.
 6. **Restart the GUI after any driver install** — the GPIB backend is
    chosen once per process.
 
+## Safety — instrument and system
+
+Instrument (the Alpha can never be harmed by the bring-up itself):
+
+- The **only traffic any PICA tool sends automatically is `*IDN?`** — a
+  read-only IEEE-488.2 identification query. Scans never write settings.
+- The whole bring-up needs only read-only queries: `*IDN?`, `INTTYP?`.
+- In the lifeline terminal: queries send freely; any state-changing write
+  asks for confirmation; **DCV/DCE (DC bias) are blocked outright** — this
+  mainframe has no bias hardware and `pica/novocontrol` never sends them.
+  `:safe` parks the analyzer with the documented sequence
+  `MBK, ACV=0, ZCONSPL=0`.
+- In the SCPI Console GUI, DCV/DCE/RSTH writes pop a confirmation dialog
+  (default No) before anything reaches the bus.
+- `*RST` is safe on the Alpha: it parks the generator and **preserves** the
+  stored calibration tables (per the Alpha manual and `pica/novocontrol`).
+- Never run WinDETA and Python at the same time — one program on the bus.
+
+System (the PC that WinDETA depends on):
+
+- Python-side fixes (`pip uninstall pygpib`, running the scripts) touch
+  nothing outside Python — the lifeline only *reads* DLLs and files.
+- The one system-level change is the **driver install**. Before it:
+  create a Windows restore point. Prefer adding the NI-488.2 compatibility
+  component of the *same* ines driver version already installed over
+  upgrading the whole driver, so the stack WinDETA uses stays untouched.
+- Acceptance test after any driver change: **start WinDETA and confirm it
+  still talks to the Alpha**, then close it and continue with Python.
+
 ## If it still fails
 
 Run `python pica/utils/GPIB_Lifeline_CLI.py --deep` (walks all of `C:\` for

@@ -23,7 +23,12 @@
                exists, this same file runs unmodified on a bare 32-bit
                Python (py -3-32) with no pip and no internet.
 
-               SAFETY: sends nothing but *IDN? probes and what you type.
+               SAFETY: automatically sends nothing but *IDN? (a read-only
+               IEEE-488.2 query). In the terminal, queries pass freely,
+               state-changing writes require an explicit yes, DCV/DCE (DC
+               bias -- no bias hardware on this mainframe) are blocked
+               outright, and ':safe' parks the analyzer with the documented
+               sequence MBK, ACV=0, ZCONSPL=0.
 
  USAGE:        python GPIB_Lifeline_CLI.py
                python GPIB_Lifeline_CLI.py --deep
@@ -74,6 +79,16 @@ IBERR_MEANINGS = {
 RESPONSE_STRIP = b" \t\r\n\x00\x10"
 
 DLL_BASENAMES = ("gpib-32.dll", "gpib32.dll", "ni4882.dll")
+
+# --- Instrument safety -------------------------------------------------------
+# DC-bias writes are hard-blocked: the lab's Alpha-AN mainframe has no bias
+# hardware, and pica/novocontrol never transmits DCV/DCE either. Every other
+# state-changing write requires an explicit yes; queries ('?') pass freely.
+BLOCKED_WRITE_PREFIXES = ("DCV", "DCE")
+# Documented Novocontrol Alpha safe idle state, same order as
+# pica/novocontrol safe_state(): abort task, park generator, current input
+# to high impedance.
+SAFE_STATE_SEQUENCE = ("MBK", "ACV=0", "ZCONSPL=0")
 
 
 def iberr_text(code):
@@ -399,8 +414,12 @@ def scan_bus(gpib, boards, probe_timeout_code):
 def repl(gpib, handle, resource_label):
     print(f"\n== Interactive terminal on {resource_label} ==")
     print("   Command ending in '?' -> write + read; otherwise write only.")
-    print("   ':read' forces a read, ':quit' exits. (Novocontrol Alpha: try "
-          "*IDN? then INTTYP?)")
+    print("   SAFETY: queries send freely; state-changing writes ask for "
+          "confirmation; DCV/DCE (DC bias) writes are blocked outright.")
+    print("   ':safe' parks a Novocontrol Alpha (MBK, ACV=0, ZCONSPL=0), "
+          "':read' forces a read, ':quit' exits.")
+    print("   (Novocontrol Alpha bring-up: *IDN? then INTTYP? -- both are "
+          "read-only.)")
     while True:
         try:
             command = input(f"{resource_label} > ").strip()
@@ -414,6 +433,31 @@ def repl(gpib, handle, resource_label):
             continue
         if command.lower() in (":quit", ":q", "quit", "exit"):
             break
+
+        if command.lower() == ":safe":
+            for step in SAFE_STATE_SEQUENCE:
+                sta = gpib.write(handle, step)
+                verdict = ("ok" if not (sta & ERR)
+                           else f"FAILED {sta_text(sta)}; "
+                                f"{iberr_text(gpib.error_code())}")
+                print(f"  {step:<10} -> {verdict}")
+            continue
+
+        if command.lower() != ":read" and not command.endswith("?"):
+            if command.upper().startswith(BLOCKED_WRITE_PREFIXES):
+                print("  BLOCKED: DCV/DCE set the DC bias; this mainframe "
+                      "has no bias hardware and PICA never sends them.")
+                continue
+            try:
+                answer = input(
+                    f"  '{command}' changes instrument state. Send? [y/N] ")
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            sys.stdout.file.write(answer + "\n")
+            if answer.strip().lower() not in ("y", "yes"):
+                print("  not sent")
+                continue
 
         started = time.perf_counter()
         if command.lower() == ":read":
