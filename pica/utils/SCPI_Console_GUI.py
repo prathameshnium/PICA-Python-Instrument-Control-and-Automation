@@ -6,13 +6,23 @@
                Ships with a categorized library of universal IEEE-488.2 / SCPI
                commands. Separate from the GPIB/VISA Instrument Scanner, which
                only discovers instruments.
+
+               Supports non-NI GPIB cards (e.g. the Novocontrol/ines PCI card
+               driving an Alpha analyzer) through the pyvisa-py backend, which
+               reaches the card via gpib-ctypes and the vendor's NI-488.2
+               compatible gpib-32.dll. Each scan reports which VISA backend is
+               active and diagnoses the GPIB driver chain when GPIB resources
+               are missing.
  AUTHOR:       Prathamesh Deshmukh
- VERSION:      V: 1.0
+ VERSION:      V: 1.1
 ===============================================================================
 '''
 
 import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
+import ctypes
+import os
+import struct
 import threading
 import queue
 import time
@@ -92,13 +102,123 @@ TERMINATIONS = {
 
 
 # -------------------------------------------------------------------------------
+# --- GPIB DRIVER DIAGNOSTICS ---
+# Non-NI GPIB cards (Novocontrol ships ines-made PCI cards with the Alpha
+# analyzers) are invisible to NI-VISA. PyVISA reaches them through the
+# pyvisa-py backend, which drives the vendor's NI-488.2 compatible
+# gpib-32.dll via gpib-ctypes. The helpers below tell the user exactly which
+# link of that chain is broken. All read-only, all crash-proof.
+# -------------------------------------------------------------------------------
+
+def backend_description(rm):
+    """Human-readable name of the VISA implementation behind a ResourceManager."""
+    cls = type(rm.visalib)
+    module = cls.__module__
+    if module.startswith('pyvisa_py'):
+        return "pyvisa-py (pure Python; GPIB via gpib-ctypes + gpib-32.dll)"
+    if module.startswith('pyvisa.ctwrapper'):
+        return f"system VISA ({getattr(rm.visalib, 'library_path', 'unknown path')})"
+    return f"{module}.{cls.__name__}"
+
+
+def point_gpib_ctypes_at_system32():
+    """Fallback when gpib-ctypes missed the DLL on its default search:
+    load gpib-32.dll from System32 by full path. Returns the path on
+    success, None otherwise. Touches gpib-ctypes internals, so every step
+    is guarded."""
+    if os.name != 'nt':
+        return None
+    try:
+        from gpib_ctypes.gpib import gpib as gpib_module
+        if getattr(gpib_module, '_lib', None) is not None:
+            return None   # default search already worked; nothing to fix
+        path = os.path.join(
+            os.environ.get('SystemRoot', r'C:\Windows'),
+            'System32', 'gpib-32.dll')
+        if not os.path.isfile(path):
+            return None
+        gpib_module._load_lib(path)
+        return path if getattr(gpib_module, '_lib', None) is not None else None
+    except Exception:
+        return None
+
+
+def diagnose_gpib_driver():
+    """Checks whether this Python can drive a NI-488.2 style GPIB card.
+
+    Returns (ok, messages). ok means the 488.2 DLL loads in this interpreter
+    and no package problem was found; messages lead with the verdict and
+    follow with targeted remediation hints.
+    """
+    hints = []
+
+    try:
+        import gpib_ctypes  # noqa: F401 -- pyvisa-py's GPIB bindings
+    except ImportError:
+        hints.append("gpib-ctypes is not installed: pip install gpib-ctypes")
+
+    # The empty, name-squatting 'pygpib' PyPI package installs a stub 'gpib'
+    # module that shadows the real bindings inside pyvisa-py.
+    try:
+        import gpib as gpib_probe
+        if not (hasattr(gpib_probe, 'ibln')
+                or hasattr(gpib_probe, 'find_listeners')):
+            hints.append(
+                "A stub 'gpib' module shadows the GPIB bindings (likely the "
+                "empty 'pygpib' package): pip uninstall pygpib")
+    except Exception:
+        pass   # no top-level gpib module is the normal case on Windows
+
+    if os.name != 'nt':
+        ok = not hints
+        return ok, (["GPIB bindings present."] if ok else hints)
+
+    bits = struct.calcsize('P') * 8
+    windir = os.environ.get('SystemRoot', r'C:\Windows')
+    native_dll = os.path.join(windir, 'System32', 'gpib-32.dll')
+    wow64_dll = os.path.join(windir, 'SysWOW64', 'gpib-32.dll')
+
+    loaded = None
+    for candidate in ('gpib-32.dll', native_dll):
+        try:
+            ctypes.WinDLL(candidate)
+            loaded = candidate
+            break
+        except OSError:
+            continue
+
+    if loaded:
+        messages = [f"GPIB driver OK: {loaded} loads in this "
+                    f"{bits}-bit Python."] + hints
+        return not hints, messages
+
+    messages = [f"GPIB driver NOT loadable from this {bits}-bit Python."]
+    if os.path.isfile(wow64_dll) and not os.path.isfile(native_dll):
+        messages.append(
+            f"Only a 32-bit gpib-32.dll exists ({wow64_dll}); {bits}-bit "
+            "Python cannot load it. Install the card vendor's x64 driver "
+            "with NI-488.2 compatibility (ines driver for Novocontrol "
+            "cards), or switch to 32-bit Python.")
+    elif not os.path.isfile(native_dll):
+        messages.append(
+            "No gpib-32.dll in System32 or SysWOW64. Re-run the GPIB card's "
+            "driver setup and enable its NI-488.2 compatibility component "
+            "(ines driver for Novocontrol/ines cards).")
+    else:
+        messages.append(
+            f"gpib-32.dll exists ({native_dll}) but failed to load; the "
+            "driver installation may be damaged -- reinstall it.")
+    return False, messages + hints
+
+
+# -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 
 class PICASCPIConsoleApp:
     """Interactive SCPI send/receive terminal for a single VISA instrument."""
 
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "1.1"
 
     # --- PICA Theme Constants ---
     CLR_BG_DARK = '#B8A392'
@@ -145,6 +265,11 @@ class PICASCPIConsoleApp:
                 "CRITICAL: PyVISA library not found. Run 'pip install pyvisa'.")
             self._set_controls_enabled(connected=False, visa_ok=False)
         else:
+            self.log(
+                "info",
+                "Tip: Novocontrol Alpha on the Novocontrol/ines GPIB card: "
+                "pick (or type) its GPIB resource and set Term = EOI. "
+                "It answers *IDN? and INTTYP?.")
             self.log("info", "Scanning for instruments...")
             self.root.after(500, self.refresh_instruments)
 
@@ -248,8 +373,10 @@ class PICASCPIConsoleApp:
         bar.columnconfigure(1, weight=1)
 
         ttk.Label(bar, text="Instrument:").grid(row=0, column=0, padx=(0, 6))
+        # 'normal' (editable), not 'readonly': a VISA address such as
+        # GPIB0::5::INSTR can be typed in even when the scan misses it.
         self.instrument_combobox = ttk.Combobox(
-            bar, state='readonly', font=self.FONT_BASE)
+            bar, state='normal', font=self.FONT_BASE)
         self.instrument_combobox.grid(row=0, column=1, sticky='ew', padx=(0, 6))
 
         self.refresh_button = ttk.Button(
@@ -443,7 +570,7 @@ class PICASCPIConsoleApp:
         self.connect_button.config(state=conn_state)
         self.timeout_entry.config(state=conn_state)
         self.instrument_combobox.config(
-            state='readonly' if conn_state == 'normal' else 'disabled')
+            state='normal' if conn_state == 'normal' else 'disabled')
         self.term_combobox.config(
             state='readonly' if conn_state == 'normal' else 'disabled')
         self.disconnect_button.config(
@@ -524,11 +651,33 @@ class PICASCPIConsoleApp:
         self._run_worker(self._scan_thread)
 
     def _scan_thread(self):
-        """Enumerates VISA resources and probes each with *IDN?."""
+        """Enumerates VISA resources and probes each with *IDN?.
+
+        On the pyvisa-py backend (the only route to non-NI GPIB cards such
+        as the Novocontrol/ines PCI card) it first diagnoses the GPIB driver
+        chain, so a silent 'no GPIB resources' has a stated reason.
+        """
         found = []
         try:
             if self.rm is None:
                 self.rm = pyvisa.ResourceManager()
+            self.msg_queue.put(
+                ('info', f"VISA backend: {backend_description(self.rm)}"))
+
+            is_py_backend = type(
+                self.rm.visalib).__module__.startswith('pyvisa_py')
+            gpib_ok = True
+            if is_py_backend:
+                gpib_ok, messages = diagnose_gpib_driver()
+                if gpib_ok:
+                    fixed_path = point_gpib_ctypes_at_system32()
+                    if fixed_path:
+                        messages.append(
+                            f"gpib-ctypes loaded explicitly from {fixed_path}.")
+                for message in messages:
+                    self.msg_queue.put(
+                        ('info' if gpib_ok else 'error', f"  {message}"))
+
             addresses = self.rm.list_resources()
             if not addresses:
                 self.msg_queue.put(('info', "No VISA instruments found."))
@@ -537,19 +686,37 @@ class PICASCPIConsoleApp:
                 try:
                     with self.rm.open_resource(address) as device:
                         device.timeout = 2000
-                        device.read_termination = "\n"
-                        device.write_termination = "\n"
-                        idn = device.query('*IDN?').strip()
+                        if address.upper().startswith('GPIB'):
+                            # EOI-only framing: standard for IEEE-488 and
+                            # required by the Novocontrol Alpha, which never
+                            # sends newline terminators.
+                            device.read_termination = ""
+                            device.write_termination = ""
+                            device.send_end = True
+                        else:
+                            device.read_termination = "\n"
+                            device.write_termination = "\n"
+                        # Some instruments (the Alpha included) pad responses
+                        # with CR/NUL/DLE around the EOI -- strip those too.
+                        idn = device.query('*IDN?').strip(" \t\r\n\x00\x10")
                 except Exception:
                     pass  # busy / non-SCPI / timeout -- keep it in the list anyway
                 label = f"{address}{ADDR_SEP}{idn}"
                 found.append(label)
                 self.msg_queue.put(('info', f"  {label}"))
+            if gpib_ok and not any(
+                    a.upper().startswith('GPIB') for a in addresses):
+                self.msg_queue.put((
+                    'info',
+                    "No GPIB resources listed. If the instrument is powered "
+                    "on and cabled, type its address (e.g. GPIB0::5::INSTR) "
+                    "into the Instrument box and press Connect."))
         except Exception as exc:
             self.msg_queue.put((
                 'error',
-                f"A critical VISA error occurred: {exc}. "
-                "Ensure a VISA backend (e.g. NI-VISA) is installed."))
+                f"A critical VISA error occurred: {exc}. Ensure a VISA "
+                "backend is installed: NI-VISA, or pyvisa-py + gpib-ctypes "
+                "for non-NI GPIB cards (pip install pyvisa-py gpib-ctypes)."))
         self.msg_queue.put(('resources', found))
         self.msg_queue.put(('done', None))
 
@@ -591,7 +758,9 @@ class PICASCPIConsoleApp:
                 device.read_termination = termination
                 device.write_termination = termination
                 device.send_end = False  # Default behavior
-            idn = device.query('*IDN?').strip()
+            # Strip CR/NUL/DLE padding too (the Novocontrol Alpha pads its
+            # EOI-terminated responses with these bytes).
+            idn = device.query('*IDN?').strip(" \t\r\n\x00\x10")
             self.instrument = device
             self.msg_queue.put(('info', f"Connected to {address}"))
             self.msg_queue.put(('rx', f"<< {idn}"))
@@ -683,8 +852,10 @@ class PICASCPIConsoleApp:
                 response = (device.query(command) if mode == 'query'
                             else device.read())
                 elapsed = (time.perf_counter() - start) * 1000
+                # Strip CR/NUL/DLE padding too (Novocontrol Alpha EOS bytes).
+                text = response.strip(" \t\r\n\x00\x10")
                 self.msg_queue.put(
-                    ('rx', f"<< {response.strip()}  [{elapsed:.1f} ms]"))
+                    ('rx', f"<< {text}  [{elapsed:.1f} ms]"))
         except Exception as exc:
             elapsed = (time.perf_counter() - start) * 1000
             if pyvisa is not None and isinstance(exc, pyvisa.VisaIOError) \
