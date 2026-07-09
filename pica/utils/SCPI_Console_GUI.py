@@ -88,6 +88,12 @@ SCPI_LIBRARY = {
 # Commands that perturb instrument state -- highlighted in the library panel.
 SCPI_WARN_COMMANDS = {"*RST", "*SAV 0", "*RCL 0", "ABOR"}
 
+# Writes that can drive hardware into a damaging state get a confirmation
+# dialog before anything reaches the bus. On a Novocontrol Alpha, DCV/DCE
+# set the DC bias (the lab mainframe has no bias hardware and PICA never
+# sends them) and RSTH is a hard reset.
+RISKY_WRITE_PREFIXES = ("DCV", "DCE", "RSTH")
+
 # Label separator used to render "address  ->  IDN" in the instrument combobox.
 ADDR_SEP = "  ->  "
 
@@ -893,7 +899,25 @@ class PICASCPIConsoleApp:
             return
         self._dispatch('read', None)
 
+    def _confirm_if_risky(self, command):
+        """True when the command may be sent. Pure queries pass freely;
+        bias / hard-reset writes need an explicit yes."""
+        if command.endswith('?'):
+            return True
+        if not command.upper().lstrip().startswith(RISKY_WRITE_PREFIXES):
+            return True
+        return messagebox.askyesno(
+            "Confirm instrument write",
+            f"'{command}' can change the instrument's output or bias "
+            "state.\n\nOn a Novocontrol Alpha, DCV/DCE drive the DC bias "
+            "(this mainframe has no bias hardware) and RSTH is a hard "
+            "reset.\n\nSend it anyway?",
+            icon='warning', default='no')
+
     def _dispatch(self, mode, command):
+        if command is not None and not self._confirm_if_risky(command):
+            self.log("info", f"Cancelled: '{command}' was not sent.")
+            return
         if command is not None:
             self._remember(command)
             self.command_entry.delete(0, tk.END)
