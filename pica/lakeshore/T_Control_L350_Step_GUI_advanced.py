@@ -84,8 +84,13 @@ CONTROL / GUI:
     band for the current setpoint, Matplotlib toolbar, X-min window
     control. Throttled redraw + display decimation (FRZ-1/2) so
     overnight runs cannot freeze the GUI.
-  * Dynamic PID per setpoint (optional): Slow PID below 100 K,
-    Medium above; live PID panel still available.
+  * Dynamic PID per setpoint (optional): Ultra-slow PID (P=0.2, I=1)
+    below 100 K, Medium above; live PID panel still available.
+    Ultra-slow replaces the old Slow tier (P=0.5, I=4) below 100 K:
+    lab runs (2026-07-10) showed Slow still overshoots at 80-90 K and
+    the wound-up integral then holds the heater on, so the overshoot
+    never decays (the probe can only cool passively). Slow remains a
+    manual preset in the live PID panel.
   * Sequence editable while running (append/remove upcoming steps).
   * Logging: main CSV (per poll) with ramp rate + phase columns, and a
     per-setpoint summary CSV (rate used, stabilization time, outcome).
@@ -408,7 +413,7 @@ class Lakeshore_Backend:
 # -------------------------------------------------------------------------------
 
 class TempControlAdvancedGUI:
-    PROGRAM_VERSION = "1.0-Step-Advanced"
+    PROGRAM_VERSION = "1.1-Step-Advanced"  # ultra-slow anti-windup PID <100 K
 
     # --- FRZ-1 / FRZ-2 / FRZ-4 tuning knobs ---
     REDRAW_MS = 750           # plot redraw interval (ms), one redraw per tick
@@ -434,7 +439,12 @@ class TempControlAdvancedGUI:
     LEFT_PANEL_WIDTH = 540
 
     # Dynamic PID presets (applied per setpoint when Auto-PID is on)
-    PID_SLOW = (0.5, 4.0, 0)      # below 100 K
+    # LS350 integral term scales with BOTH P and I, and the LN2 probe
+    # can only cool passively — so below 100 K windup must stay tiny or
+    # an overshoot never recovers. Keep I > 0 (I=0 disables integral
+    # action entirely -> permanent offset).
+    PID_ULTRA = (0.2, 1.0, 0)     # below 100 K — anti-windup
+    PID_SLOW = (0.5, 4.0, 0)      # manual use; winds up below 100 K
     PID_MEDIUM = (20.0, 15.0, 0)  # 100 K and above
 
     APPROACH_MODES = {
@@ -487,6 +497,7 @@ class TempControlAdvancedGUI:
         self.current_step_index = 0
 
         self.PID_PRESETS = {
+            "Ultra-slow (P=0.2, I=1, D=0)": self.PID_ULTRA,
             "Slow (P=0.5, I=4, D=0)": self.PID_SLOW,
             "Medium (P=20, I=15, D=0)": self.PID_MEDIUM,
             "Fast (P=50, I=20, D=0)": (50.0, 20.0, 0),
@@ -813,7 +824,7 @@ class TempControlAdvancedGUI:
 
         self.var_auto_pid = tk.BooleanVar(value=True)
         ttk.Checkbutton(frame,
-                        text="Auto PID per setpoint (Slow <100 K, Medium ≥100 K)",
+                        text="Auto PID per setpoint (Ultra-slow <100 K, Medium ≥100 K)",
                         variable=self.var_auto_pid
                         ).grid(row=1, column=0, columnspan=6, sticky="w",
                                padx=10, pady=2)
@@ -1734,7 +1745,7 @@ class TempControlAdvancedGUI:
     def _apply_dynamic_pid(self, target):
         if not self.params["auto_pid"]:
             return
-        p, i, d = self.PID_SLOW if target < 100.0 else self.PID_MEDIUM
+        p, i, d = self.PID_ULTRA if target < 100.0 else self.PID_MEDIUM
         try:
             self.backend.set_pid(1, p, i, d)
             self._put_gui_msg("log",
