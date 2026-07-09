@@ -121,41 +121,84 @@ def backend_description(rm):
     return f"{module}.{cls.__name__}"
 
 
-def point_gpib_ctypes_at_system32():
-    """Fallback when gpib-ctypes missed the DLL on its default search:
-    load gpib-32.dll from System32 by full path. Returns the path on
-    success, None otherwise. Touches gpib-ctypes internals, so every step
-    is guarded."""
+def find_gpib_dll_candidates():
+    """Ordered, existing candidate paths for a NI-488.2 style GPIB DLL.
+
+    Covers the standard locations plus vendor install folders (ines /
+    Novocontrol / WinDETA), so OEM cards whose driver never copied
+    gpib-32.dll into System32 are still found.
+    """
     if os.name != 'nt':
-        return None
+        return []
+    windir = os.environ.get('SystemRoot', r'C:\Windows')
+    candidates = [
+        os.path.join(windir, 'System32', 'gpib-32.dll'),
+        r'C:\GPIB\gpib-32.dll',
+    ]
+    dll_names = ('gpib-32.dll', 'gpib32.dll', 'ni4882.dll')
+    roots = {os.environ.get(key) for key in
+             ('ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432')}
+    for base in [root for root in roots if root] + ['C:\\']:
+        try:
+            entries = os.listdir(base)
+        except OSError:
+            continue
+        for entry in entries:
+            lowered = entry.lower()
+            if not any(key in lowered for key in
+                       ('ines', 'novocontrol', 'windeta', 'gpib')):
+                continue
+            for dirpath, _dirs, files in os.walk(os.path.join(base, entry)):
+                for fname in files:
+                    if fname.lower() in dll_names:
+                        candidates.append(os.path.join(dirpath, fname))
+    unique, seen = [], set()
+    for path in candidates:
+        key = os.path.normcase(path)
+        if key not in seen and os.path.isfile(path):
+            seen.add(key)
+            unique.append(path)
+    return unique
+
+
+def ensure_gpib_ctypes_loaded():
+    """Binds gpib-ctypes to a real GPIB DLL, trying vendor locations when
+    its default search fails.
+
+    MUST run before pyvisa-py's first import: pyvisa-py decides GPIB
+    availability exactly once per process. Returns the DLL path when an
+    explicit load fixed the binding, else None. Never raises.
+    """
     try:
         from gpib_ctypes.gpib import gpib as gpib_module
-        if getattr(gpib_module, '_lib', None) is not None:
-            return None   # default search already worked; nothing to fix
-        path = os.path.join(
-            os.environ.get('SystemRoot', r'C:\Windows'),
-            'System32', 'gpib-32.dll')
-        if not os.path.isfile(path):
-            return None
-        gpib_module._load_lib(path)
-        return path if getattr(gpib_module, '_lib', None) is not None else None
     except Exception:
         return None
+    # A failed default search leaves a MockGPIB stub in _lib, not None.
+    if isinstance(getattr(gpib_module, '_lib', None), ctypes.CDLL):
+        return None   # default search already worked
+    for path in find_gpib_dll_candidates():
+        try:
+            if gpib_module._load_lib(path):
+                return path
+        except Exception:
+            # A half-bound DLL (missing exports) must not linger: reset to
+            # the stub by pointing the loader at a nonexistent file.
+            try:
+                gpib_module._load_lib(
+                    os.path.join(path, 'nonexistent-reset.dll'))
+            except Exception:
+                pass
+    return None
 
 
 def diagnose_gpib_driver():
-    """Checks whether this Python can drive a NI-488.2 style GPIB card.
+    """Checks the chain pyvisa-py needs to reach a NI-488.2 style GPIB card:
+    gpib-ctypes importable -> real DLL bound -> required exports present.
 
-    Returns (ok, messages). ok means the 488.2 DLL loads in this interpreter
-    and no package problem was found; messages lead with the verdict and
-    follow with targeted remediation hints.
+    Returns (ok, messages): verdict first, then targeted remediation hints.
     """
+    bits = struct.calcsize('P') * 8
     hints = []
-
-    try:
-        import gpib_ctypes  # noqa: F401 -- pyvisa-py's GPIB bindings
-    except ImportError:
-        hints.append("gpib-ctypes is not installed: pip install gpib-ctypes")
 
     # The empty, name-squatting 'pygpib' PyPI package installs a stub 'gpib'
     # module that shadows the real bindings inside pyvisa-py.
@@ -169,45 +212,71 @@ def diagnose_gpib_driver():
     except Exception:
         pass   # no top-level gpib module is the normal case on Windows
 
-    if os.name != 'nt':
-        ok = not hints
-        return ok, (["GPIB bindings present."] if ok else hints)
+    try:
+        from gpib_ctypes.gpib import gpib as gpib_module
+    except Exception as exc:
+        return False, [
+            f"gpib-ctypes is not usable ({exc}).",
+            "Install it: pip install gpib-ctypes",
+        ] + hints
 
-    bits = struct.calcsize('P') * 8
-    windir = os.environ.get('SystemRoot', r'C:\Windows')
-    native_dll = os.path.join(windir, 'System32', 'gpib-32.dll')
-    wow64_dll = os.path.join(windir, 'SysWOW64', 'gpib-32.dll')
+    lib = getattr(gpib_module, '_lib', None)
+    if isinstance(lib, ctypes.CDLL):
+        messages = [f"GPIB driver OK: {getattr(lib, '_name', 'gpib-32.dll')} "
+                    f"is loaded ({bits}-bit Python)."]
+        # pyvisa-py refuses the whole DLL if these exports are missing.
+        missing = [name for name in ('ibcac', 'ibgts', 'ibpct')
+                   if not hasattr(lib, name)]
+        if missing:
+            messages.append(
+                f"BUT the DLL lacks {', '.join(missing)}, which pyvisa-py "
+                "requires -- it will list no GPIB resources. Use the raw "
+                "fallback console: python pica/utils/GPIB_Lifeline_CLI.py")
+            return False, messages + hints
+        return not hints, messages + hints
 
-    loaded = None
-    for candidate in ('gpib-32.dll', native_dll):
-        try:
-            ctypes.WinDLL(candidate)
-            loaded = candidate
-            break
-        except OSError:
-            continue
-
-    if loaded:
-        messages = [f"GPIB driver OK: {loaded} loads in this "
-                    f"{bits}-bit Python."] + hints
-        return not hints, messages
-
-    messages = [f"GPIB driver NOT loadable from this {bits}-bit Python."]
-    if os.path.isfile(wow64_dll) and not os.path.isfile(native_dll):
-        messages.append(
-            f"Only a 32-bit gpib-32.dll exists ({wow64_dll}); {bits}-bit "
-            "Python cannot load it. Install the card vendor's x64 driver "
-            "with NI-488.2 compatibility (ines driver for Novocontrol "
-            "cards), or switch to 32-bit Python.")
-    elif not os.path.isfile(native_dll):
-        messages.append(
-            "No gpib-32.dll in System32 or SysWOW64. Re-run the GPIB card's "
-            "driver setup and enable its NI-488.2 compatibility component "
-            "(ines driver for Novocontrol/ines cards).")
+    # No real DLL bound: explain why, as precisely as possible.
+    messages = [f"GPIB driver NOT loaded ({bits}-bit Python)."]
+    candidates = find_gpib_dll_candidates()
+    if candidates:
+        for path in candidates:
+            try:
+                ctypes.WinDLL(path)
+            except OSError as exc:
+                if getattr(exc, 'winerror', None) == 193:
+                    messages.append(
+                        f"{path} is a 32-bit DLL; {bits}-bit Python cannot "
+                        "load it. Install the card vendor's x64 driver with "
+                        "NI-488.2 compatibility (ines driver for Novocontrol "
+                        "cards), or run 32-bit Python.")
+                else:
+                    messages.append(f"{path} failed to load: {exc}")
+            else:
+                messages.append(
+                    f"{path} loads, but gpib-ctypes could not bind it "
+                    "(missing exports?). Use the raw fallback console: "
+                    "python pica/utils/GPIB_Lifeline_CLI.py")
     else:
+        windir = os.environ.get('SystemRoot', r'C:\Windows')
+        wow64_dll = os.path.join(windir, 'SysWOW64', 'gpib-32.dll')
+        if bits == 64 and os.path.isfile(wow64_dll):
+            messages.append(
+                f"Only a 32-bit gpib-32.dll exists ({wow64_dll}); 64-bit "
+                "Python cannot load it. Install the card vendor's x64 "
+                "driver with NI-488.2 compatibility (ines driver for "
+                "Novocontrol cards), or run 32-bit Python.")
+        else:
+            messages.append(
+                "No gpib-32.dll found in System32, C:\\GPIB, or any "
+                "ines/Novocontrol/WinDETA program folder. Re-run the GPIB "
+                "card's driver setup and enable its NI-488.2 compatibility "
+                "component.")
         messages.append(
-            f"gpib-32.dll exists ({native_dll}) but failed to load; the "
-            "driver installation may be damaged -- reinstall it.")
+            "Deeper search + raw driver test: "
+            "python pica/utils/GPIB_Lifeline_CLI.py --deep")
+    messages.append(
+        "After installing or fixing a driver, RESTART this program (the "
+        "GPIB backend is chosen once per process).")
     return False, messages + hints
 
 
@@ -660,6 +729,12 @@ class PICASCPIConsoleApp:
         found = []
         try:
             if self.rm is None:
+                # Bind the GPIB DLL BEFORE pyvisa-py's first import:
+                # pyvisa-py decides GPIB availability once per process.
+                fixed_path = ensure_gpib_ctypes_loaded()
+                if fixed_path:
+                    self.msg_queue.put(
+                        ('info', f"GPIB DLL bound from {fixed_path}"))
                 self.rm = pyvisa.ResourceManager()
             self.msg_queue.put(
                 ('info', f"VISA backend: {backend_description(self.rm)}"))
@@ -669,11 +744,6 @@ class PICASCPIConsoleApp:
             gpib_ok = True
             if is_py_backend:
                 gpib_ok, messages = diagnose_gpib_driver()
-                if gpib_ok:
-                    fixed_path = point_gpib_ctypes_at_system32()
-                    if fixed_path:
-                        messages.append(
-                            f"gpib-ctypes loaded explicitly from {fixed_path}.")
                 for message in messages:
                     self.msg_queue.put(
                         ('info' if gpib_ok else 'error', f"  {message}"))
