@@ -166,6 +166,23 @@ v1.5 — 2x2 PLOT GRID + PERSISTENT SPECTRUM
          (so the plot is cleared only when new points are imminent);
          a new `scan_done` message marks the held spectrum as
          "Last scan: <T> K".
+
+============================================================
+v1.6 — ULTRA-SLOW PID BELOW 100 K (anti-windup)
+============================================================
+  PID-2  Lab runs (2026-07-10) showed the Slow preset (P=0.5, I=4)
+         still overshoots at 80-90 K, and after the overshoot the
+         temperature would NOT come back down (it crept upward).
+         Diagnosis: integral windup. The LS350 output is
+         ~ P*[e + (I/1000)*Int(e dt) + ...]; the integral accumulated
+         during the ramp keeps the heater output nonzero after the
+         temperature passes the setpoint, and on the LN2-dewar probe
+         the only way down is passive cooling. New PID_ULTRA
+         (P=0.2, I=1, D=0) — P*I windup product ~10x smaller — is now
+         the Auto-PID tier below 100 K. Slow stays in the live-PID
+         preset dropdown for manual use. Expect a slower final
+         approach in exchange for reduced overshoot and much faster
+         recovery.
 """
 
 import tkinter as tk
@@ -602,7 +619,7 @@ class LCR_Backend:
 # FRONTEND: Combined GUI
 # ============================================================
 class CombinedGUI:
-    PROGRAM_VERSION = "1.5-Combined"  # 2x2 plot grid + persistent spectrum
+    PROGRAM_VERSION = "1.6-Combined"  # ultra-slow anti-windup PID below 100 K
     LEFT_PANEL_WIDTH = 480  # default sash position so the left panel starts fully visible
 
     # --- FRZ-1 / FRZ-2 / FRZ-4 tuning knobs ---
@@ -629,7 +646,12 @@ class CombinedGUI:
     FONT_CONSOLE = ("Consolas", 9)
 
     # Dynamic PID presets (§3b)
-    PID_SLOW = (0.5, 4.0, 0)      # below 100 K
+    # PID-2: LS350 integral term scales with BOTH P and I, and the LN2
+    # probe can only cool passively — so below 100 K windup must stay
+    # tiny or an overshoot never recovers. Keep I > 0 (I=0 disables
+    # integral action entirely -> permanent offset; see MIN-7).
+    PID_ULTRA = (0.2, 1.0, 0)     # below 100 K — anti-windup
+    PID_SLOW = (0.5, 4.0, 0)      # manual use; winds up below 100 K
     PID_MEDIUM = (20.0, 15.0, 0)  # 100 K and above
 
     # ADV-2: approach-mode selector -> stabilizer argument
@@ -720,6 +742,7 @@ class CombinedGUI:
 
         # PID presets for the live PID panel
         self.PID_PRESETS = {
+            "Ultra-slow (P=0.2, I=1, D=0)": self.PID_ULTRA,
             "Slow (P=0.5, I=4, D=0)": self.PID_SLOW,
             "Medium (P=20, I=15, D=0)": self.PID_MEDIUM,
             "Fast (P=50, I=20, D=0)": (50.0, 20.0, 0),
@@ -1052,7 +1075,7 @@ class CombinedGUI:
 
         self.var_auto_pid = tk.BooleanVar(value=True)
         ttk.Checkbutton(frame,
-                        text="Auto PID per setpoint (Slow <100 K, Medium ≥100 K)",
+                        text="Auto PID per setpoint (Ultra-slow <100 K, Medium ≥100 K)",
                         variable=self.var_auto_pid
                         ).grid(row=1, column=0, columnspan=6, sticky="w",
                                padx=10, pady=2)
@@ -2295,7 +2318,7 @@ class CombinedGUI:
     def _apply_dynamic_pid(self, target):
         if not self.params["auto_pid"]:
             return
-        p, i, d = self.PID_SLOW if target < 100.0 else self.PID_MEDIUM
+        p, i, d = self.PID_ULTRA if target < 100.0 else self.PID_MEDIUM
         try:
             self.ls_backend.set_pid(1, p, i, d)
             self._put_gui_msg("log", text=f"Dynamic PID @ {target} K: P={p}, I={i}, D={d}")
