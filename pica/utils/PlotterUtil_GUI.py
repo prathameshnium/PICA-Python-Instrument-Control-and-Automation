@@ -884,6 +884,17 @@ class PlotterAppGUI:
         self.ax_main.clear()
         self.ax_main.grid(True, linestyle='--', alpha=0.6)
 
+    @staticmethod
+    def _shorten_label(filename, max_len=32):
+        """Truncates long filenames with a middle ellipsis, keeping the start and extension."""
+        if len(filename) <= max_len:
+            return filename
+        stem, ext = os.path.splitext(filename)
+        keep = max(max_len - len(ext) - 1, 8)
+        head = (keep * 2) // 3
+        tail = keep - head
+        return f"{stem[:head]}…{stem[-tail:]}{ext}"
+
     def _plot_file_data(self, filepath, x_col, y_col):
         """Plots data for a single file."""
         file_info = self.file_data_cache.get(filepath)
@@ -911,7 +922,7 @@ class PlotterAppGUI:
         plot_y = raw_y[finite_mask]
 
         if plot_x.size > 0:
-            label_text = (f"{y_col} vs {x_col} ({filename})"
+            label_text = (self._shorten_label(filename)
                           if len(self.file_ui_elements) > 1
                           else f"{y_col} vs {x_col}")
             self.ax_main.plot(
@@ -927,13 +938,21 @@ class PlotterAppGUI:
     def _finalize_plot(self, x_col, y_col, selected_filepaths):
         """Sets labels, titles, and legend for the plot."""
         if len(selected_filepaths) == 1:
-            legend_title = f"File: {os.path.basename(selected_filepaths[0])}"
+            legend_title = f"File: {self._shorten_label(os.path.basename(selected_filepaths[0]))}"
         else:
             legend_title = "Multiple Files"
-        leg = self.ax_main.legend(title=legend_title,
-                                  labelcolor=self.CLR_FG)
+        # Compact legend: small font, translucent frame, two columns when crowded, draggable
+        handles = self.ax_main.get_legend_handles_labels()[0]
+        leg = None
+        if handles:
+            leg = self.ax_main.legend(title=legend_title,
+                                      labelcolor=self.CLR_FG,
+                                      fontsize=8, title_fontsize=9,
+                                      framealpha=0.7,
+                                      ncol=2 if len(handles) > 8 else 1)
         if leg:
             leg.get_title().set_color(self.CLR_FG)
+            leg.set_draggable(True)
 
         self.ax_main.set_xscale('log' if self.x_log_var.get() else 'linear')  # type: ignore
         self.ax_main.set_yscale('log' if self.y_log_var.get() else 'linear')
