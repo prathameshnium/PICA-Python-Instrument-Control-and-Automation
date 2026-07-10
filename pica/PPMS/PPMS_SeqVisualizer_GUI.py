@@ -110,7 +110,8 @@ class SeqVisualizerGUI:
     def _create_left_panel(self, parent):
         panel = ttk.Frame(parent, width=440)
         panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(2, weight=1)
+        panel.grid_rowconfigure(2, weight=3)
+        panel.grid_rowconfigure(3, weight=1)
 
         # --- Source & timing ---
         src = ttk.LabelFrame(panel, text="Sequence Source & Timing")
@@ -157,13 +158,31 @@ class SeqVisualizerGUI:
         ttk.Entry(src, textvariable=self.settle_var, width=10).grid(
             row=6, column=1, sticky='w', padx=10)
 
+        ttk.Label(src, text="AC meas. per freq. (s):").grid(
+            row=7, column=0, sticky='w', padx=10)
+        self.ac_freq_var = tk.StringVar(value="40")
+        ttk.Entry(src, textvariable=self.ac_freq_var, width=10).grid(
+            row=7, column=1, sticky='w', padx=10)
+
         ttk.Button(src, text="Parse & Visualize", style='Plot.TButton',
                    command=self.parse_and_plot).grid(
-            row=7, column=0, columnspan=2, sticky='ew', padx=10, pady=10)
+            row=8, column=0, columnspan=2, sticky='ew', padx=10, pady=10)
+
+        # --- Plain-language summary ---
+        summ = ttk.LabelFrame(panel, text="At a Glance")
+        summ.grid(row=1, column=0, sticky='new', pady=5)
+        self.summary_var = tk.StringVar(
+            value="Load a sequence to see what it does and how long "
+                  "it will take.")
+        ttk.Label(summ, textvariable=self.summary_var, wraplength=400,
+                  justify='left', font=('Segoe UI', 10)).pack(
+            fill='x', padx=10, pady=6)
 
         # --- Step table ---
-        steps = ttk.LabelFrame(panel, text="Protocol Steps")
-        steps.grid(row=1, column=0, sticky='nsew', pady=5)
+        steps = ttk.LabelFrame(panel,
+                               text="Protocol Steps  (click a row to "
+                                    "highlight it on the plot)")
+        steps.grid(row=2, column=0, sticky='nsew', pady=5)
         steps.grid_columnconfigure(0, weight=1)
         steps.grid_rowconfigure(0, weight=1)
         cols = ('n', 'cmd', 'desc', 'start', 'end', 'dur')
@@ -178,10 +197,19 @@ class SeqVisualizerGUI:
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.grid(row=0, column=0, sticky='nsew', padx=(5, 0), pady=5)
         vsb.grid(row=0, column=1, sticky='ns', pady=5)
+        # row colors by what the step does
+        self.tree.tag_configure('meas', background='#F3DBD4')  # measuring
+        self.tree.tag_configure('wait', background='#EDEAE6',
+                                foreground='#6B655F')          # waiting
+        self.tree.tag_configure('warn', background='#E8C0B8')  # attention
+        self.tree.tag_configure('off', foreground='#9A928A')   # disabled
+        self.tree.tag_configure('rem', background=self.CLR_HEADER,
+                                font=('Segoe UI', 9, 'bold'))  # section
+        self.tree.bind('<<TreeviewSelect>>', self._on_step_select)
 
         # --- Console ---
         cons = ttk.LabelFrame(panel, text="Console")
-        cons.grid(row=2, column=0, sticky='nsew', pady=5)
+        cons.grid(row=3, column=0, sticky='nsew', pady=5)
         self.console = scrolledtext.ScrolledText(
             cons, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG,
             font=('Consolas', 9), wrap='word', borderwidth=0, height=6)
@@ -259,9 +287,9 @@ class SeqVisualizerGUI:
         H = float(self.init_field_var.get())
         mh_est = float(self.mh_time_var.get())
         settle = float(self.settle_var.get())
+        ac_per_freq = float(self.ac_freq_var.get())
         t = 0.0  # elapsed seconds
         self.segments = []   # dicts: t0,t1,T0,T1,H0,H1,cmd,desc,kind
-        self.annotations = []  # (t, text) from REM lines
 
         def add(dur, T1, H1, cmd, desc, kind='op'):
             nonlocal t, T, H
@@ -271,105 +299,243 @@ class SeqVisualizerGUI:
             t += dur
             T, H = T1, H1
 
+        def acms_freqs(line):
+            # frequency list is the quoted comma-separated token
+            for part in re.findall(r'"([^"]*)"', line):
+                if ',' in part:
+                    fl = [x.strip() for x in part.split(',') if x.strip()]
+                    if fl:
+                        return fl
+            return []
+
         with open(self.filepath, 'r', encoding='utf-8',
                   errors='ignore') as f:
-            for line in f:
-                s = line.strip()
-                if not s:
-                    continue
-                tok = s.split()
-                cmd = tok[0].upper()
+            lines = [ln.strip() for ln in f]
 
-                if cmd == 'REM':
-                    self.annotations.append(
-                        (t, s[4:].strip(' -.')))
-                elif cmd == 'TMP':
-                    # TMP TEMP <target K> <rate K/min> <mode>
-                    target, rate = float(tok[2]), float(tok[3])
-                    dur = abs(target - T) / rate * 60.0 if rate > 0 else 0.0
-                    add(dur, target, H, 'TMP',
-                        f"T → {target:g} K @ {rate:g} K/min")
-                elif cmd == 'FLD':
-                    # FLD FIELD <target Oe> <rate Oe/s> <approach> <mode>
-                    # approach: 0=Linear, 1=No overshoot, 2=Oscillate
-                    target, rate = float(tok[2]), float(tok[3])
-                    dur = abs(target - H) / rate if rate > 0 else 0.0
-                    approach = tok[4] if len(tok) > 4 else '0'
-                    note = {'1': ', no o/s', '2': ', oscillate'}.get(
-                        approach, '')
-                    add(dur, T, target, 'FLD',
-                        f"H → {target:g} Oe @ {rate:g} Oe/s{note}")
-                elif cmd == 'WAI':
-                    # WAI WAITFOR <delay s> <T> <H> <pos> ... stability flags
-                    # delay starts only AFTER the flagged items are stable,
-                    # so add a user-adjustable settle estimate per flag set.
-                    delay = float(tok[2])
-                    flags = []
-                    if len(tok) > 3 and tok[3] == '1':
-                        flags.append('T stable')
-                    if len(tok) > 4 and tok[4] == '1':
-                        flags.append('H stable')
-                    if len(tok) > 5 and tok[5] == '1':
-                        flags.append('pos.')
-                    dur = delay + (settle if flags else 0.0)
-                    extra = (f" after {', '.join(flags)} "
-                             f"(+{settle:g} s est.)" if flags else "")
-                    add(dur, T, H, 'WAI', f"Wait {delay:g} s{extra}",
-                        kind='wait')
-                elif cmd == 'VSMMT':
-                    # VSMMT moment-vs-temperature sweep. Validated against
-                    # MultiVu data files: tok[12]=start K, tok[13]=end K,
-                    # tok[14]=rate K/min; T ramps start→end during the scan.
-                    ok = False
-                    if len(tok) > 14:
-                        try:
-                            T_start = float(tok[12])
-                            T_end = float(tok[13])
-                            rate = float(tok[14])
-                            ok = (0 < T_start < 1100 and 0 < T_end < 1100
-                                  and 0 < rate <= 50)
-                        except ValueError:
-                            ok = False
-                    if ok:
-                        if abs(T - T_start) > 1.0:
-                            pre = abs(T_start - T) / rate * 60.0
-                            add(pre, T_start, H, 'VSMMT',
-                                f"go to M(T) start {T_start:g} K",
-                                kind='meas')
-                            self.log(f"Note: M(T) starts at {T_start:g} K "
-                                     f"but sequence T is {T:g} K — added "
-                                     "implicit ramp.")
-                        dur = abs(T_end - T_start) / rate * 60.0
-                        add(dur, T_end, H, 'VSMMT',
-                            f"M(T) {T_start:g} → {T_end:g} K "
-                            f"@ {rate:g} K/min", kind='meas')
-                    else:
-                        add(0, T, H, 'VSMMT',
-                            "M(T) (unrecognized params!)", kind='warn')
-                        self.log("WARNING: could not parse VSMMT sweep "
-                                 "parameters — duration not included.")
-                elif cmd == 'VSMMH':
-                    # M(H) loop at fixed T; duration from user estimate
-                    add(mh_est, T, H, 'VSMMH',
-                        f"M(H) loop @ {T:g} K (est.)", kind='meas')
-                elif cmd == 'CALL':
-                    add(0, T, H, 'CALL', "Sub-sequence (not expanded!)",
-                        kind='warn')
-                    self.log("WARNING: CALL to sub-sequence found — its "
-                             "duration is NOT included.")
-                elif cmd == 'VSMDF':
-                    m = re.search(r'"([^"]+)"', s)
-                    fname = os.path.basename(m.group(1)) if m else '?'
-                    add(0, T, H, 'VSMDF', f"Data file: {fname}")
-                elif cmd in ('VSMLS', 'VSMCM'):
-                    add(0, T, H, cmd, "VSM config/centering")
+        i = 0
+        while i < len(lines):
+            s = lines[i]
+            i += 1
+            if not s:
+                continue
+            if s.startswith('!'):
+                # MultiVu saves disabled sequence lines with a leading '!'
+                add(0, T, H, 'off',
+                    f"(disabled) {s[1:].strip()[:70]}", kind='off')
+                continue
+            tok = s.split()
+            cmd = tok[0].upper()
+
+            if cmd == 'REM':
+                add(0, T, H, 'REM', s[4:].strip(' -.'), kind='rem')
+            elif cmd == 'TMP':
+                # TMP TEMP <target K> <rate K/min> <mode>
+                target, rate = float(tok[2]), float(tok[3])
+                dur = abs(target - T) / rate * 60.0 if rate > 0 else 0.0
+                word = "Cool" if target < T else "Warm"
+                add(dur, target, H, 'TMP',
+                    f"{word} {T:g} → {target:g} K @ {rate:g} K/min")
+            elif cmd == 'FLD':
+                # FLD FIELD <target Oe> <rate Oe/s> <approach> <mode>
+                # approach: 0=Linear, 1=No overshoot, 2=Oscillate
+                target, rate = float(tok[2]), float(tok[3])
+                dur = abs(target - H) / rate if rate > 0 else 0.0
+                approach = tok[4] if len(tok) > 4 else '0'
+                note = {'1': ', no o/s', '2': ', oscillate'}.get(
+                    approach, '')
+                add(dur, T, target, 'FLD',
+                    f"Field {H:g} → {target:g} Oe @ {rate:g} Oe/s{note}")
+            elif cmd == 'WAI':
+                # WAI WAITFOR <delay s> <T> <H> <pos> ... stability flags
+                # delay starts only AFTER the flagged items are stable,
+                # so add a user-adjustable settle estimate per flag set.
+                delay = float(tok[2])
+                flags = []
+                if len(tok) > 3 and tok[3] == '1':
+                    flags.append('T stable')
+                if len(tok) > 4 and tok[4] == '1':
+                    flags.append('H stable')
+                if len(tok) > 5 and tok[5] == '1':
+                    flags.append('pos.')
+                dur = delay + (settle if flags else 0.0)
+                extra = (f" after {', '.join(flags)} "
+                         f"(+{settle:g} s est.)" if flags else "")
+                add(dur, T, H, 'WAI', f"Wait {delay:g} s{extra}",
+                    kind='wait')
+            elif cmd == 'VSMMT':
+                # VSMMT moment-vs-temperature sweep. Validated against
+                # MultiVu data files: tok[12]=start K, tok[13]=end K,
+                # tok[14]=rate K/min; T ramps start→end during the scan.
+                ok = False
+                if len(tok) > 14:
+                    try:
+                        T_start = float(tok[12])
+                        T_end = float(tok[13])
+                        rate = float(tok[14])
+                        ok = (0 < T_start < 1100 and 0 < T_end < 1100
+                              and 0 < rate <= 50)
+                    except ValueError:
+                        ok = False
+                if ok:
+                    if abs(T - T_start) > 1.0:
+                        pre = abs(T_start - T) / rate * 60.0
+                        add(pre, T_start, H, 'VSMMT',
+                            f"go to M(T) start {T_start:g} K",
+                            kind='meas')
+                        self.log(f"Note: M(T) starts at {T_start:g} K "
+                                 f"but sequence T is {T:g} K — added "
+                                 "implicit ramp.")
+                    dur = abs(T_end - T_start) / rate * 60.0
+                    add(dur, T_end, H, 'VSMMT',
+                        f"Measure M(T) {T_start:g} → {T_end:g} K "
+                        f"@ {rate:g} K/min", kind='meas')
                 else:
-                    self.log(f"Unknown command skipped: {cmd}")
+                    add(0, T, H, 'VSMMT',
+                        "M(T) (unrecognized params!)", kind='warn')
+                    self.log("WARNING: could not parse VSMMT sweep "
+                             "parameters — duration not included.")
+            elif cmd == 'VSMMH':
+                # M(H) loop at fixed T; duration from user estimate
+                add(mh_est, T, H, 'VSMMH',
+                    f"Measure M(H) loop @ {T:g} K (est.)", kind='meas')
+            elif cmd == 'ACMSAC':
+                # AC susceptibility at current T, one point per frequency
+                fl = acms_freqs(s)
+                n = len(fl) if fl else 1
+                rng = f", {fl[0]}–{fl[-1]} Hz" if fl else ""
+                add(n * ac_per_freq, T, H, 'ACMSAC',
+                    f"Measure AC χ: {n} freqs{rng} @ {T:g} K",
+                    kind='meas')
+            elif cmd == 'ACMSLS':
+                # ACMSLS <..> <..> <amplitude Oe> <freq Hz>: locate sample
+                amp = tok[3] if len(tok) > 3 else '?'
+                frq = tok[4] if len(tok) > 4 else '?'
+                add(60, T, H, 'ACMSLS',
+                    f"Locate sample ({amp} Oe, {frq} Hz, ~60 s)")
+            elif cmd == 'LPT' and len(tok) > 7 and \
+                    tok[1].upper() in ('SCANT', 'SCANH'):
+                # LPT SCANT <start> <end> <rate> <npts> <spacing> <approach>
+                # approach 2 = continuous sweep (measure on the fly);
+                # 0/1 = stepped scan (settle + measure at each point).
+                # Body commands until ENT EOS run at each scan point.
+                what = tok[1].upper()
+                v0, v1 = float(tok[2]), float(tok[3])
+                rate, npts = float(tok[4]), int(float(tok[5]))
+                approach = tok[7]
+                body = []
+                depth = 1
+                while i < len(lines):
+                    b = lines[i]
+                    i += 1
+                    if not b or b.startswith('!'):
+                        continue
+                    bt = b.split()[0].upper()
+                    if bt in ('LPT', 'LPB'):
+                        depth += 1
+                        self.log("WARNING: nested scan loop — inner "
+                                 "loop timing not expanded.")
+                    elif bt == 'ENT':
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    elif depth == 1:
+                        body.append(b)
+                body_t = 0.0
+                for b in body:
+                    bt = b.split()[0].upper()
+                    if bt == 'ACMSAC':
+                        fl = acms_freqs(b)
+                        body_t += (len(fl) if fl else 1) * ac_per_freq
+                    elif bt == 'VSMMH':
+                        body_t += mh_est
+                    elif bt == 'WAI':
+                        body_t += float(b.split()[2])
+                unit, rate_u = (('K', 'K/min') if what == 'SCANT'
+                                else ('Oe', 'Oe/s'))
+                span = abs(v1 - v0)
+                ramp_s = (span / rate * 60.0 if what == 'SCANT'
+                          else span / rate) if rate > 0 else 0.0
+                if approach == '2':
+                    # continuous sweep: duration set by ramp rate only
+                    dur = ramp_s
+                    n_est = int(dur / body_t) if body_t > 0 else npts
+                    desc = (f"Measure while sweeping {v0:g} → {v1:g} "
+                            f"{unit} @ {rate:g} {rate_u} "
+                            f"(~{n_est} points)")
+                else:
+                    dur = ramp_s + npts * (settle + body_t)
+                    desc = (f"Stepped scan {v0:g} → {v1:g} {unit}, "
+                            f"{npts} points @ {rate:g} {rate_u}")
+                if what == 'SCANT':
+                    if abs(T - v0) > 1.0 and rate > 0:
+                        add(abs(v0 - T) / rate * 60.0, v0, H, 'LPT',
+                            f"go to scan start {v0:g} K")
+                    add(dur, v1, H, 'LPT', desc, kind='meas')
+                else:
+                    if abs(H - v0) > 1.0 and rate > 0:
+                        add(abs(v0 - H) / rate, T, v0, 'LPT',
+                            f"go to scan start {v0:g} Oe")
+                    add(dur, T, v1, 'LPT', desc, kind='meas')
+            elif cmd == 'ENT':
+                pass  # loop terminator without a matching LPT
+            elif cmd == 'CALL':
+                add(0, T, H, 'CALL', "Sub-sequence (not expanded!)",
+                    kind='warn')
+                self.log("WARNING: CALL to sub-sequence found — its "
+                         "duration is NOT included.")
+            elif cmd in ('VSMDF', 'ACMSDF'):
+                m = re.search(r'"([^"]+)"', s)
+                fname = os.path.basename(m.group(1)) if m else '?'
+                add(0, T, H, cmd, f"Data file: {fname}")
+            elif cmd in ('VSMLS', 'VSMCM'):
+                add(0, T, H, cmd, "VSM config/centering")
+            else:
+                self.log(f"Unknown command skipped: {cmd}")
 
         total = timedelta(seconds=t)
         self.log(f"Parsed {len(self.segments)} steps. "
                  f"Estimated total duration: {total} "
                  f"(ends {start_dt + total:%Y-%m-%d %H:%M}).")
+        self._update_summary(start_dt)
+
+    @staticmethod
+    def _fmt_dur(sec):
+        sec = int(sec)
+        h, m = divmod(sec // 60, 60)
+        if h:
+            return f"{h}h {m:02d}m"
+        if m:
+            return f"{m}m {sec % 60:02d}s"
+        return f"{sec}s"
+
+    def _update_summary(self, start_dt):
+        segs = [sg for sg in self.segments
+                if sg['kind'] not in ('rem', 'off')]
+        if not segs:
+            self.summary_var.set("No timed steps found in this sequence.")
+            return
+        total = segs[-1]['t1']
+        by = {}
+        for sg in segs:
+            by[sg['kind']] = by.get(sg['kind'], 0) + (sg['t1'] - sg['t0'])
+        meas = by.get('meas', 0)
+        ramp = by.get('op', 0)
+        wait = by.get('wait', 0)
+        n_meas = sum(1 for sg in segs
+                     if sg['kind'] == 'meas' and sg['t1'] > sg['t0'])
+        temps = [x for sg in segs for x in (sg['T0'], sg['T1'])]
+        fields = sorted({sg['H1'] for sg in segs})
+        f_txt = ', '.join(f"{f:g}" for f in fields)
+        pct = (100 * meas / total) if total else 0
+        self.summary_var.set(
+            f"Total ≈ {self._fmt_dur(total)}   →   ends "
+            f"{start_dt + timedelta(seconds=total):%a %d %b, %H:%M}\n"
+            f"Measuring {self._fmt_dur(meas)} ({pct:.0f}%)  ·  "
+            f"Ramping {self._fmt_dur(ramp)}  ·  "
+            f"Waiting {self._fmt_dur(wait)}\n"
+            f"{n_meas} measurement(s)  ·  "
+            f"T: {min(temps):g}–{max(temps):g} K  ·  "
+            f"Fields: {f_txt} Oe")
 
     # ------------------------------------------------------------- Plotting
     def _plot_timeline(self, start_dt):
@@ -380,6 +546,10 @@ class SeqVisualizerGUI:
 
         def dt(sec):
             return start_dt + timedelta(seconds=sec)
+
+        self._plot_start = start_dt
+        self._hl_spans = []
+        total = self.segments[-1]['t1'] if self.segments else 0
 
         tT, yT, tH, yH = [], [], [], []
         for sg in self.segments:
@@ -395,39 +565,102 @@ class SeqVisualizerGUI:
         self.ax_T.plot(tT, yT, color=self.CLR_TEMP, lw=2)
         self.ax_H.plot(tH, yH, color=self.CLR_FIELD, lw=2)
 
-        for tsec, text in self.annotations:
-            self.ax_T.axvline(dt(tsec), color=self.CLR_FG, ls=':', alpha=0.5)
-            self.ax_T.annotate(text, (dt(tsec), 1.02),
-                               xycoords=('data', 'axes fraction'),
-                               rotation=20, fontsize=8, ha='left')
+        # label wide measurement segments so the shading is self-explaining
+        MEAS_LABEL = {'VSMMT': 'M(T)', 'VSMMH': 'M(H)',
+                      'ACMSAC': 'AC χ', 'LPT': 'AC χ scan'}
+        for sg in self.segments:
+            w = sg['t1'] - sg['t0']
+            if sg['kind'] == 'meas' and total and w / total > 0.04:
+                label = MEAS_LABEL.get(sg['cmd'], 'meas.')
+                self.ax_T.annotate(
+                    label, (dt((sg['t0'] + sg['t1']) / 2), 0.06),
+                    xycoords=('data', 'axes fraction'),
+                    ha='center', fontsize=9, fontweight='bold',
+                    color=self.CLR_MEAS)
+
+        # label field plateaus at each field change (skip returns to zero)
+        for sg in self.segments:
+            if sg['cmd'] == 'FLD' and sg['H1'] != sg['H0'] and sg['H1']:
+                self.ax_H.annotate(
+                    f"{sg['H1']:g} Oe", (dt(sg['t1']), sg['H1']),
+                    xytext=(4, 5), textcoords='offset points',
+                    fontsize=8, color=self.CLR_FIELD)
+
+        # section banners from REM lines, staggered to avoid overlap
+        rems = [sg for sg in self.segments if sg['kind'] == 'rem']
+        for k, sg in enumerate(rems):
+            self.ax_T.axvline(dt(sg['t0']), color=self.CLR_FG,
+                              ls=':', alpha=0.5)
+            self.ax_T.annotate(
+                sg['desc'], (dt(sg['t0']), 1.03 + 0.09 * (k % 2)),
+                xycoords=('data', 'axes fraction'),
+                fontsize=8, ha='left', fontweight='bold')
+
+        from matplotlib.patches import Patch
+        self.ax_T.legend(
+            handles=[Patch(facecolor=self.CLR_MEAS, alpha=0.25,
+                           label='instrument measuring')],
+            loc='upper right', fontsize=8, framealpha=0.7)
 
         self.ax_T.set_ylabel("Temperature (K)")
         self.ax_H.set_ylabel("Field (Oe)")
         self.ax_H.set_xlabel("Time")
         self.ax_H.xaxis.set_major_formatter(
             mdates.DateFormatter('%d %b\n%H:%M'))
-        total = self.segments[-1]['t1'] if self.segments else 0
         self.figure.suptitle(
             f"{os.path.basename(self.filepath)}  —  est. "
-            f"{timedelta(seconds=int(total))}", fontweight='bold')
+            f"{self._fmt_dur(total)}", fontweight='bold')
         self.figure.tight_layout()
+        self.canvas.draw_idle()
+
+    def _on_step_select(self, event=None):
+        """Highlight the selected table step on the timeline plot."""
+        if getattr(self, '_plot_start', None) is None:
+            return
+        for art in self._hl_spans:
+            try:
+                art.remove()
+            except (ValueError, NotImplementedError):
+                pass
+        self._hl_spans = []
+        sel = self.tree.selection()
+        if sel and sel[0].isdigit():
+            sg = self.segments[int(sel[0])]
+            d0 = self._plot_start + timedelta(seconds=sg['t0'])
+            d1 = self._plot_start + timedelta(seconds=sg['t1'])
+            for ax in (self.ax_T, self.ax_H):
+                if sg['t1'] > sg['t0']:
+                    self._hl_spans.append(
+                        ax.axvspan(d0, d1, color='#4A6B8A', alpha=0.30))
+                else:
+                    self._hl_spans.append(
+                        ax.axvline(d0, color='#4A6B8A', lw=2, alpha=0.8))
         self.canvas.draw_idle()
 
     def _populate_table(self):
         self.tree.delete(*self.tree.get_children())
         start_dt = datetime.strptime(self.start_time_var.get().strip(),
                                      "%Y-%m-%d %H:%M")
+
         def clock(sec):
             dt = start_dt + timedelta(seconds=sec)
             days = (dt.date() - start_dt.date()).days
             return dt.strftime('%H:%M') + (f" +{days}d" if days else "")
 
-        for i, sg in enumerate(self.segments, 1):
+        n = 0
+        for idx, sg in enumerate(self.segments):
+            if sg['kind'] == 'rem':
+                self.tree.insert('', 'end', iid=f"rem{idx}", values=(
+                    '', '', f"—— {sg['desc']} ——", clock(sg['t0']), '', ''),
+                    tags=('rem',))
+                continue
+            n += 1
             dur = sg['t1'] - sg['t0']
-            self.tree.insert('', 'end', values=(
-                i, sg['cmd'], sg['desc'],
+            self.tree.insert('', 'end', iid=str(idx), values=(
+                n, sg['cmd'] if sg['kind'] != 'off' else '—', sg['desc'],
                 clock(sg['t0']), clock(sg['t1']),
-                str(timedelta(seconds=int(dur)))))
+                self._fmt_dur(dur) if dur else ''),
+                tags=(sg['kind'],))
 
 
 if __name__ == '__main__':
