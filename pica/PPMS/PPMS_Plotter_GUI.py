@@ -378,7 +378,7 @@ class PPMSPlotterGUI:
 
         self.setup_styles()
         self.create_widgets()
-        self.log("Welcome to the PICA PPMS VSM Plotter. Add a .DAT file to begin.")
+        self.log("Welcome to the PICA PPMS Plotter Utility. Add a .DAT file to begin.")
 
     # ------------------------------------------------------------------ styles
     def setup_styles(self):
@@ -440,7 +440,7 @@ class PPMSPlotterGUI:
         left_header_frame = tk.Frame(header, bg=self.CLR_HEADER)
         left_header_frame.grid(row=0, column=0, sticky='w')
         font_title_main = ('Segoe UI', self.FONT_BASE[1] + 4, 'bold')
-        ttk.Label(left_header_frame, text="PICA PPMS VSM Plotter",
+        ttk.Label(left_header_frame, text="PICA PPMS Plotter Utility",
                   style='Header.TLabel', font=font_title_main,
                   foreground=self.CLR_ACCENT_GOLD).pack(side='left', padx=20, pady=10)
 
