@@ -59,6 +59,10 @@ class SeqVisualizerGUI:
         self.style.configure('Header.TLabel', background=self.CLR_HEADER)
         self.style.configure('TEntry', fieldbackground=self.CLR_INPUT_BG,
                              foreground=self.CLR_FG, insertcolor=self.CLR_FG)
+        self.style.configure('TCheckbutton', background=self.CLR_FRAME_BG,
+                             foreground=self.CLR_FG)
+        self.style.map('TCheckbutton',
+                       background=[('active', self.CLR_FRAME_BG)])
         self.style.configure('TButton', font=self.FONT_BASE, padding=(10, 9),
                              foreground=self.CLR_ACCENT_GOLD,
                              background=self.CLR_HEADER)
@@ -108,9 +112,9 @@ class SeqVisualizerGUI:
         main_pane.add(self._create_right_panel(main_pane), weight=3)
 
     def _create_left_panel(self, parent):
-        panel = ttk.Frame(parent, width=440)
+        panel = ttk.Frame(parent, width=520)
         panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(2, weight=3)
+        panel.grid_rowconfigure(2, weight=5)
         panel.grid_rowconfigure(3, weight=1)
 
         # --- Source & timing ---
@@ -185,12 +189,18 @@ class SeqVisualizerGUI:
         steps.grid(row=2, column=0, sticky='nsew', pady=5)
         steps.grid_columnconfigure(0, weight=1)
         steps.grid_rowconfigure(0, weight=1)
+        self.raw_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(steps,
+                        text="Show raw .seq commands (as written in file)",
+                        variable=self.raw_var,
+                        command=self._refresh_table_view).grid(
+            row=1, column=0, columnspan=2, sticky='w', padx=5, pady=(0, 5))
         cols = ('n', 'cmd', 'desc', 'start', 'end', 'dur')
         self.tree = ttk.Treeview(steps, columns=cols, show='headings',
-                                 height=12)
-        for c, w, t in [('n', 30, '#'), ('cmd', 55, 'Cmd'),
-                        ('desc', 150, 'Description'), ('start', 55, 'Start'),
-                        ('end', 55, 'End'), ('dur', 60, 'Duration')]:
+                                 height=22)
+        for c, w, t in [('n', 30, '#'), ('cmd', 60, 'Cmd'),
+                        ('desc', 260, 'Description'), ('start', 60, 'Start'),
+                        ('end', 60, 'End'), ('dur', 65, 'Duration')]:
             self.tree.heading(c, text=t)
             self.tree.column(c, width=w, anchor='w')
         vsb = ttk.Scrollbar(steps, orient='vertical', command=self.tree.yview)
@@ -212,7 +222,7 @@ class SeqVisualizerGUI:
         cons.grid(row=3, column=0, sticky='nsew', pady=5)
         self.console = scrolledtext.ScrolledText(
             cons, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG,
-            font=('Consolas', 9), wrap='word', borderwidth=0, height=6)
+            font=('Consolas', 9), wrap='word', borderwidth=0, height=4)
         self.console.pack(fill='both', expand=True, padx=5, pady=5)
         return panel
 
@@ -291,11 +301,13 @@ class SeqVisualizerGUI:
         t = 0.0  # elapsed seconds
         self.segments = []   # dicts: t0,t1,T0,T1,H0,H1,cmd,desc,kind
 
+        cur_raw = ['']  # raw .seq line for the segment(s) being added
+
         def add(dur, T1, H1, cmd, desc, kind='op'):
             nonlocal t, T, H
             self.segments.append(dict(t0=t, t1=t + dur, T0=T, T1=T1,
                                       H0=H, H1=H1, cmd=cmd, desc=desc,
-                                      kind=kind))
+                                      kind=kind, raw=cur_raw[0]))
             t += dur
             T, H = T1, H1
 
@@ -318,6 +330,7 @@ class SeqVisualizerGUI:
             i += 1
             if not s:
                 continue
+            cur_raw[0] = s
             if s.startswith('!'):
                 # MultiVu saves disabled sequence lines with a leading '!'
                 add(0, T, H, 'off',
@@ -332,36 +345,38 @@ class SeqVisualizerGUI:
                 # TMP TEMP <target K> <rate K/min> <mode>
                 target, rate = float(tok[2]), float(tok[3])
                 dur = abs(target - T) / rate * 60.0 if rate > 0 else 0.0
-                word = "Cool" if target < T else "Warm"
+                mode = {'0': 'Fast Settle', '1': "No O'Shoot"}.get(
+                    tok[4] if len(tok) > 4 else '0', '?')
+                word = "cool" if target < T else "warm"
                 add(dur, target, H, 'TMP',
-                    f"{word} {T:g} → {target:g} K @ {rate:g} K/min")
+                    f"Set Temperature {target:g}K at {rate:g}K/min, "
+                    f"{mode}  ({word} from {T:g}K)")
             elif cmd == 'FLD':
                 # FLD FIELD <target Oe> <rate Oe/s> <approach> <mode>
-                # approach: 0=Linear, 1=No overshoot, 2=Oscillate
                 target, rate = float(tok[2]), float(tok[3])
                 dur = abs(target - H) / rate if rate > 0 else 0.0
-                approach = tok[4] if len(tok) > 4 else '0'
-                note = {'1': ', no o/s', '2': ', oscillate'}.get(
-                    approach, '')
+                appr = {'0': 'Linear', '1': "No O'Shoot",
+                        '2': 'Oscillate'}.get(
+                    tok[4] if len(tok) > 4 else '0', '?')
+                endm = {'0': 'Persistent', '1': 'Driven'}.get(
+                    tok[5] if len(tok) > 5 else '0', '?')
                 add(dur, T, target, 'FLD',
-                    f"Field {H:g} → {target:g} Oe @ {rate:g} Oe/s{note}")
+                    f"Set Magnetic Field {target:g}Oe at {rate:g}Oe/sec, "
+                    f"{appr}, {endm}")
             elif cmd == 'WAI':
                 # WAI WAITFOR <delay s> <T> <H> <pos> ... stability flags
                 # delay starts only AFTER the flagged items are stable,
                 # so add a user-adjustable settle estimate per flag set.
                 delay = float(tok[2])
-                flags = []
-                if len(tok) > 3 and tok[3] == '1':
-                    flags.append('T stable')
-                if len(tok) > 4 and tok[4] == '1':
-                    flags.append('H stable')
-                if len(tok) > 5 and tok[5] == '1':
-                    flags.append('pos.')
+                names = {3: 'Temperature', 4: 'Field', 5: 'Position'}
+                flags = [names[j] for j in (3, 4, 5)
+                         if len(tok) > j and tok[j] == '1']
                 dur = delay + (settle if flags else 0.0)
-                extra = (f" after {', '.join(flags)} "
-                         f"(+{settle:g} s est.)" if flags else "")
-                add(dur, T, H, 'WAI', f"Wait {delay:g} s{extra}",
-                    kind='wait')
+                base = (f"Wait For {', '.join(flags)} — " if flags
+                        else "Wait — ")
+                extra = f" (+{settle:g}s settle est.)" if flags else ""
+                add(dur, T, H, 'WAI',
+                    f"{base}Delay {delay:g} secs{extra}", kind='wait')
             elif cmd == 'VSMMT':
                 # VSMMT moment-vs-temperature sweep. Validated against
                 # MultiVu data files: tok[12]=start K, tok[13]=end K,
@@ -387,31 +402,33 @@ class SeqVisualizerGUI:
                                  "implicit ramp.")
                     dur = abs(T_end - T_start) / rate * 60.0
                     add(dur, T_end, H, 'VSMMT',
-                        f"Measure M(T) {T_start:g} → {T_end:g} K "
-                        f"@ {rate:g} K/min", kind='meas')
+                        f"VSM: Moment vs Temperature {T_start:g}K to "
+                        f"{T_end:g}K at {rate:g}K/min", kind='meas')
                 else:
                     add(0, T, H, 'VSMMT',
-                        "M(T) (unrecognized params!)", kind='warn')
+                        "VSM: Moment vs Temperature "
+                        "(unrecognized params!)", kind='warn')
                     self.log("WARNING: could not parse VSMMT sweep "
                              "parameters — duration not included.")
             elif cmd == 'VSMMH':
                 # M(H) loop at fixed T; duration from user estimate
                 add(mh_est, T, H, 'VSMMH',
-                    f"Measure M(H) loop @ {T:g} K (est.)", kind='meas')
+                    f"VSM: Moment vs Field at {T:g}K (user est.)",
+                    kind='meas')
             elif cmd == 'ACMSAC':
                 # AC susceptibility at current T, one point per frequency
                 fl = acms_freqs(s)
                 n = len(fl) if fl else 1
-                rng = f", {fl[0]}–{fl[-1]} Hz" if fl else ""
+                rng = f" ({fl[0]}–{fl[-1]} Hz)" if fl else ""
                 add(n * ac_per_freq, T, H, 'ACMSAC',
-                    f"Measure AC χ: {n} freqs{rng} @ {T:g} K",
-                    kind='meas')
+                    f"ACMS: AC Susceptibility — {n} frequencies{rng} "
+                    f"at {T:g}K", kind='meas')
             elif cmd == 'ACMSLS':
                 # ACMSLS <..> <..> <amplitude Oe> <freq Hz>: locate sample
                 amp = tok[3] if len(tok) > 3 else '?'
                 frq = tok[4] if len(tok) > 4 else '?'
                 add(60, T, H, 'ACMSLS',
-                    f"Locate sample ({amp} Oe, {frq} Hz, ~60 s)")
+                    f"ACMS: Locate Sample ({amp}Oe, {frq}Hz, ~60 s)")
             elif cmd == 'LPT' and len(tok) > 7 and \
                     tok[1].upper() in ('SCANT', 'SCANH'):
                 # LPT SCANT <start> <end> <rate> <npts> <spacing> <approach>
@@ -450,22 +467,26 @@ class SeqVisualizerGUI:
                         body_t += mh_est
                     elif bt == 'WAI':
                         body_t += float(b.split()[2])
-                unit, rate_u = (('K', 'K/min') if what == 'SCANT'
-                                else ('Oe', 'Oe/s'))
+                # raw view: show the whole loop incl. consumed body lines
+                cur_raw[0] = '  ▸  '.join([s] + body + ['ENT EOS'])
+                thing, unit, rate_u = (('Temperature', 'K', 'K/min')
+                                       if what == 'SCANT'
+                                       else ('Field', 'Oe', 'Oe/s'))
+                mode_n = {'0': 'Fast', '1': "No O'Shoot",
+                          '2': 'Sweep'}.get(approach, '?')
                 span = abs(v1 - v0)
                 ramp_s = (span / rate * 60.0 if what == 'SCANT'
                           else span / rate) if rate > 0 else 0.0
+                base = (f"Scan {thing} {v0:g}{unit} to {v1:g}{unit} "
+                        f"at {rate:g}{rate_u}, {npts} steps, {mode_n}")
                 if approach == '2':
                     # continuous sweep: duration set by ramp rate only
                     dur = ramp_s
                     n_est = int(dur / body_t) if body_t > 0 else npts
-                    desc = (f"Measure while sweeping {v0:g} → {v1:g} "
-                            f"{unit} @ {rate:g} {rate_u} "
-                            f"(~{n_est} points)")
+                    desc = f"{base} — measuring on the fly (~{n_est} pts)"
                 else:
                     dur = ramp_s + npts * (settle + body_t)
-                    desc = (f"Stepped scan {v0:g} → {v1:g} {unit}, "
-                            f"{npts} points @ {rate:g} {rate_u}")
+                    desc = f"{base} — settle + measure at each step"
                 if what == 'SCANT':
                     if abs(T - v0) > 1.0 and rate > 0:
                         add(abs(v0 - T) / rate * 60.0, v0, H, 'LPT',
@@ -479,16 +500,19 @@ class SeqVisualizerGUI:
             elif cmd == 'ENT':
                 pass  # loop terminator without a matching LPT
             elif cmd == 'CALL':
-                add(0, T, H, 'CALL', "Sub-sequence (not expanded!)",
+                add(0, T, H, 'CALL',
+                    "Call Sequence (not expanded — time NOT included!)",
                     kind='warn')
                 self.log("WARNING: CALL to sub-sequence found — its "
                          "duration is NOT included.")
             elif cmd in ('VSMDF', 'ACMSDF'):
                 m = re.search(r'"([^"]+)"', s)
                 fname = os.path.basename(m.group(1)) if m else '?'
-                add(0, T, H, cmd, f"Data file: {fname}")
-            elif cmd in ('VSMLS', 'VSMCM'):
-                add(0, T, H, cmd, "VSM config/centering")
+                add(0, T, H, cmd, f"New Datafile: {fname}")
+            elif cmd == 'VSMLS':
+                add(0, T, H, cmd, "VSM: Locate Sample")
+            elif cmd == 'VSMCM':
+                add(0, T, H, cmd, "VSM: Center Sample")
             else:
                 self.log(f"Unknown command skipped: {cmd}")
 
@@ -637,27 +661,40 @@ class SeqVisualizerGUI:
                         ax.axvline(d0, color='#4A6B8A', lw=2, alpha=0.8))
         self.canvas.draw_idle()
 
+    def _refresh_table_view(self):
+        if self.segments:
+            try:
+                self._populate_table()
+            except ValueError:
+                pass  # invalid start-time entry; table refreshes next parse
+
     def _populate_table(self):
         self.tree.delete(*self.tree.get_children())
         start_dt = datetime.strptime(self.start_time_var.get().strip(),
                                      "%Y-%m-%d %H:%M")
+        raw_mode = self.raw_var.get()
 
         def clock(sec):
             dt = start_dt + timedelta(seconds=sec)
             days = (dt.date() - start_dt.date()).days
             return dt.strftime('%H:%M') + (f" +{days}d" if days else "")
 
+        def text(sg):
+            return sg.get('raw') or sg['desc'] if raw_mode else sg['desc']
+
         n = 0
         for idx, sg in enumerate(self.segments):
             if sg['kind'] == 'rem':
+                desc = (sg['raw'] if raw_mode
+                        else f"—— {sg['desc']} ——")
                 self.tree.insert('', 'end', iid=f"rem{idx}", values=(
-                    '', '', f"—— {sg['desc']} ——", clock(sg['t0']), '', ''),
+                    '', '', desc, clock(sg['t0']), '', ''),
                     tags=('rem',))
                 continue
             n += 1
             dur = sg['t1'] - sg['t0']
             self.tree.insert('', 'end', iid=str(idx), values=(
-                n, sg['cmd'] if sg['kind'] != 'off' else '—', sg['desc'],
+                n, sg['cmd'] if sg['kind'] != 'off' else '—', text(sg),
                 clock(sg['t0']), clock(sg['t1']),
                 self._fmt_dur(dur) if dur else ''),
                 tags=(sg['kind'],))
