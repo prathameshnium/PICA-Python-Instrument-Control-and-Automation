@@ -684,7 +684,14 @@ class PlotterAppGUI:
             return False
 
     def _find_header_row(self, filepath):
-        """Returns (header_index, delimiter, headers). Raises on failure."""
+        """Returns (header_index, delimiter, headers). Raises on failure.
+
+        Locates the first fully-numeric data row, then walks back to the
+        nearest preceding line with a matching column count to use as the
+        header. Metadata preamble lines (e.g. the title and 'Fixed value(s)'
+        lines in Novocontrol WinDETA exports) are skipped this way, since the
+        delimiter is taken from the data row rather than the first line.
+        """
         def is_num(tok):
             try:
                 float(tok)
@@ -692,19 +699,46 @@ class PlotterAppGUI:
             except ValueError:
                 return False
 
+        def tokenize(s, delim):
+            return [t.strip() for t in (s.split(delim) if delim else s.split()) if t.strip()]
+
+        lines = []
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
             for i, line in enumerate(f):
-                s = line.strip()
-                if not s or s.startswith('#'):
+                lines.append(line.strip())
+                if i >= 500:  # header must appear near the top
+                    break
+
+        for i, s in enumerate(lines):
+            if not s or s.startswith('#'):
+                continue
+            delim = self._detect_delimiter(s)
+            tokens = tokenize(s, delim)
+            if len(tokens) < 2 or not all(is_num(t) for t in tokens):
+                continue
+            # `s` is the first data row; the nearest preceding non-empty
+            # line with the same column count is the header.
+            for j in range(i - 1, -1, -1):
+                prev = lines[j]
+                if not prev or prev.startswith('#'):
                     continue
-                delim = self._detect_delimiter(s)
-                tokens = [t.strip() for t in (s.split(delim) if delim else s.split()) if t.strip()]
-                if len(tokens) < 2:
-                    continue
-                if not all(is_num(t) for t in tokens):
-                    return i, delim, self._dedupe_headers(tokens)
-                # First real line is numeric -> headerless file
-                return i - 1, delim, [f"Col{j + 1}" for j in range(len(tokens))]
+                prev_tokens = tokenize(prev, delim)
+                if len(prev_tokens) == len(tokens) and not all(is_num(t) for t in prev_tokens):
+                    return j, delim, self._dedupe_headers(prev_tokens)
+                break
+            # No matching header line -> headerless file
+            return i - 1, delim, [f"Col{k + 1}" for k in range(len(tokens))]
+
+        # No fully-numeric row found (e.g. a text column in every row):
+        # fall back to treating the first multi-token non-numeric line as
+        # the header, as before.
+        for i, s in enumerate(lines):
+            if not s or s.startswith('#'):
+                continue
+            delim = self._detect_delimiter(s)
+            tokens = tokenize(s, delim)
+            if len(tokens) >= 2:
+                return i, delim, self._dedupe_headers(tokens)
         raise ValueError("No valid data header row found.")
 
     def _read_data_from_file(self, filepath):
