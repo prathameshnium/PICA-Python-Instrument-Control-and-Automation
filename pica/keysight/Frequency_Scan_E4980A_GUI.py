@@ -26,6 +26,7 @@ from datetime import datetime
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.ticker import EngFormatter, NullFormatter
 import matplotlib as mpl
 from multiprocessing import Process
 import runpy
@@ -360,10 +361,9 @@ class LCR_Freq_GUI:
         self.logo_image = None
         self.sweep_index = 0
 
-        # Decade log autoscale state (LabVIEW-style): current snapped
-        # y-limits per axis key; log-Y enabled by default since Cp/G
-        # span several decades over a frequency sweep.
-        self.log_y_var = tk.BooleanVar(value=True)
+        # Y-scale mode: 'auto' uses decade-snapped log when the data
+        # spans >= 1 decade and linear otherwise; 'log'/'linear' force it.
+        self.y_scale_var = tk.StringVar(value="auto")
         self._decade_ylims = {}
 
         # Frequency array — UNCHANGED per user instruction (40 Hz to 2 MHz)
@@ -810,42 +810,74 @@ class LCR_Freq_GUI:
         self.line_g, = self.ax_g.plot(
             [], [], color="#2A6B3A", marker="s", markersize=3, linestyle="-"
         )
-        self.ax_g.set_xlabel("Frequency (Hz)")
+        self.ax_g.set_xlabel("Frequency (Hz)",
+                             fontsize=self.FONT_SIZE_BASE + 3,
+                             fontweight="bold")
         self.ax_g.set_ylabel("Conductance, G (S)")
         self.ax_g.set_xscale("log")
         self.ax_g.grid(True, linestyle="--", alpha=0.7)
 
+        # Prominent frequency axis: engineering tick labels (100, 1k,
+        # 10k, 100k, 1M) on BOTH subplots, no minor tick labels, and
+        # strong solid vertical decade gridlines (y-grid stays dashed).
+        for ax in (self.ax_cp, self.ax_g):
+            ax.xaxis.set_major_formatter(EngFormatter(sep=""))
+            ax.xaxis.set_minor_formatter(NullFormatter())
+            ax.tick_params(axis="x", which="major",
+                           labelsize=self.FONT_SIZE_BASE + 1)
+            ax.grid(True, which="major", axis="x",
+                    linestyle="-", linewidth=1.0, alpha=0.8)
+
         self.figure.subplots_adjust(
-            left=0.08, right=0.98, top=0.98, bottom=0.07, hspace=0.15
+            left=0.08, right=0.98, top=0.98, bottom=0.09, hspace=0.24
         )
 
-        ttk.Checkbutton(
-            parent,
-            text="Log Y scale (decade autoscale)",
-            variable=self.log_y_var,
-            command=self._on_log_y_toggle,
-        ).pack(anchor="w", padx=5, pady=(5, 0))
+        scale_bar = ttk.Frame(parent)
+        scale_bar.pack(anchor="w", padx=5, pady=(5, 0))
+        ttk.Label(scale_bar, text="Y scale:").pack(side="left")
+        for text, val in (("Auto", "auto"), ("Log", "log"),
+                          ("Linear", "linear")):
+            ttk.Radiobutton(scale_bar, text=text, value=val,
+                            variable=self.y_scale_var,
+                            command=self._on_y_scale_change).pack(
+                side="left", padx=(8, 0))
 
         self.canvas = FigureCanvasTkAgg(self.figure, parent)
         self.canvas.get_tk_widget().pack(
             fill=tk.BOTH, expand=True, padx=0, pady=0
         )
 
-    def _on_log_y_toggle(self):
-        """Re-snap axes from scratch when the log-Y checkbox flips."""
+    def _on_y_scale_change(self):
+        """Re-snap axes from scratch when the Y-scale mode changes."""
         self._decade_ylims.clear()
         self._update_sweep_plot()
 
-    def _decade_autoscale_y(self, ax, values, key):
-        """LabVIEW-style decade autoscale: snap y-limits to
-        [10^floor(log10(min_pos)), 10^ceil(log10(max_pos))]; expand only,
-        whole decades at a time, so the scale never jitters per point.
-        Linear fallback if no positive finite data."""
+    def _apply_y_scale(self, ax, values, key):
+        """Adaptive Y-scale driven by self.y_scale_var ('auto'|'log'|'linear').
+
+        log:    LabVIEW-style decade autoscale — snap y-limits to
+                [10^floor(log10(min_pos)), 10^ceil(log10(max_pos))],
+                expand only (cached in self._decade_ylims[key]) so the
+                scale never jitters per point.
+        linear: plain relim/autoscale_view.
+        auto:   log when the positive data spans >= 1 decade, else
+                linear, so narrow-span data is not squashed onto a
+                single decade band. Data only accumulates during a
+                sweep, so the span is monotone and auto cannot flicker
+                back from log to linear mid-sweep.
+        Falls back to linear whenever there is no positive finite data.
+        Returns True when a log scale was applied."""
+        mode = self.y_scale_var.get()
         pos = [v for v in values if isinstance(v, (int, float))
                and math.isfinite(v) and v > 0]
-        if not pos:
+        use_log = bool(pos) and mode != 'linear'
+        if use_log and mode == 'auto':
+            span = math.log10(max(pos)) - math.log10(min(pos))
+            use_log = span >= 1.0  # at least one full decade of data
+        if not use_log:
             ax.set_yscale('linear')
             ax.relim()
+            ax.set_autoscaley_on(True)  # set_ylim in log mode disables it
             ax.autoscale_view(scaley=True)
             self._decade_ylims.pop(key, None)
             return False
@@ -1330,11 +1362,7 @@ class LCR_Freq_GUI:
         ):
             ax.relim()
             ax.autoscale_view(scalex=True, scaley=False)
-            if self.log_y_var.get():
-                self._decade_autoscale_y(ax, data, key)
-            else:
-                ax.set_yscale('linear')
-                ax.autoscale_view(scaley=True)
+            self._apply_y_scale(ax, data, key)
 
         self.canvas.draw_idle()
         self.progress_bar["value"] = self.sweep_index
