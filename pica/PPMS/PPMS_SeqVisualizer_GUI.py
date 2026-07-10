@@ -6,6 +6,7 @@ Purpose: PPMS sequence (.seq) protocol visualizer - PICA suite style.
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import os
+import re
 import traceback
 from datetime import datetime, timedelta
 from matplotlib.figure import Figure
@@ -150,10 +151,10 @@ class SeqVisualizerGUI:
         ttk.Entry(src, textvariable=self.mh_time_var, width=10).grid(
             row=5, column=1, sticky='w', padx=10)
 
-        ttk.Label(src, text="VSM M(T) est. (s):").grid(row=6, column=0,
-                                                       sticky='w', padx=10)
-        self.mt_time_var = tk.StringVar(value="0")
-        ttk.Entry(src, textvariable=self.mt_time_var, width=10).grid(
+        ttk.Label(src, text="Stability settle est. (s):").grid(
+            row=6, column=0, sticky='w', padx=10)
+        self.settle_var = tk.StringVar(value="300")
+        ttk.Entry(src, textvariable=self.settle_var, width=10).grid(
             row=6, column=1, sticky='w', padx=10)
 
         ttk.Button(src, text="Parse & Visualize", style='Plot.TButton',
@@ -257,7 +258,7 @@ class SeqVisualizerGUI:
         T = float(self.init_temp_var.get())
         H = float(self.init_field_var.get())
         mh_est = float(self.mh_time_var.get())
-        mt_est = float(self.mt_time_var.get())
+        settle = float(self.settle_var.get())
         t = 0.0  # elapsed seconds
         self.segments = []   # dicts: t0,t1,T0,T1,H0,H1,cmd,desc,kind
         self.annotations = []  # (t, text) from REM lines
@@ -283,42 +284,85 @@ class SeqVisualizerGUI:
                     self.annotations.append(
                         (t, s[4:].strip(' -.')))
                 elif cmd == 'TMP':
-                    # TMP TEMP target rate(K/min) mode
+                    # TMP TEMP <target K> <rate K/min> <mode>
                     target, rate = float(tok[2]), float(tok[3])
                     dur = abs(target - T) / rate * 60.0 if rate > 0 else 0.0
                     add(dur, target, H, 'TMP',
                         f"T → {target:g} K @ {rate:g} K/min")
                 elif cmd == 'FLD':
-                    # FLD FIELD target rate(Oe/s) approach mode
+                    # FLD FIELD <target Oe> <rate Oe/s> <approach> <mode>
+                    # approach: 0=Linear, 1=No overshoot, 2=Oscillate
                     target, rate = float(tok[2]), float(tok[3])
                     dur = abs(target - H) / rate if rate > 0 else 0.0
+                    approach = tok[4] if len(tok) > 4 else '0'
+                    note = {'1': ', no o/s', '2': ', oscillate'}.get(
+                        approach, '')
                     add(dur, T, target, 'FLD',
-                        f"H → {target:g} Oe @ {rate:g} Oe/s")
+                        f"H → {target:g} Oe @ {rate:g} Oe/s{note}")
                 elif cmd == 'WAI':
-                    # WAI WAITFOR delay tempFlag fieldFlag ...
+                    # WAI WAITFOR <delay s> <T> <H> <pos> ... stability flags
+                    # delay starts only AFTER the flagged items are stable,
+                    # so add a user-adjustable settle estimate per flag set.
                     delay = float(tok[2])
                     flags = []
                     if len(tok) > 3 and tok[3] == '1':
                         flags.append('T stable')
                     if len(tok) > 4 and tok[4] == '1':
                         flags.append('H stable')
-                    extra = f" (after {', '.join(flags)})" if flags else ""
-                    add(delay, T, H, 'WAI', f"Wait {delay:g} s{extra}",
+                    if len(tok) > 5 and tok[5] == '1':
+                        flags.append('pos.')
+                    dur = delay + (settle if flags else 0.0)
+                    extra = (f" after {', '.join(flags)} "
+                             f"(+{settle:g} s est.)" if flags else "")
+                    add(dur, T, H, 'WAI', f"Wait {delay:g} s{extra}",
                         kind='wait')
+                elif cmd == 'VSMMT':
+                    # VSMMT moment-vs-temperature sweep. Validated against
+                    # MultiVu data files: tok[12]=start K, tok[13]=end K,
+                    # tok[14]=rate K/min; T ramps start→end during the scan.
+                    ok = False
+                    if len(tok) > 14:
+                        try:
+                            T_start = float(tok[12])
+                            T_end = float(tok[13])
+                            rate = float(tok[14])
+                            ok = (0 < T_start < 1100 and 0 < T_end < 1100
+                                  and 0 < rate <= 50)
+                        except ValueError:
+                            ok = False
+                    if ok:
+                        if abs(T - T_start) > 1.0:
+                            pre = abs(T_start - T) / rate * 60.0
+                            add(pre, T_start, H, 'VSMMT',
+                                f"go to M(T) start {T_start:g} K",
+                                kind='meas')
+                            self.log(f"Note: M(T) starts at {T_start:g} K "
+                                     f"but sequence T is {T:g} K — added "
+                                     "implicit ramp.")
+                        dur = abs(T_end - T_start) / rate * 60.0
+                        add(dur, T_end, H, 'VSMMT',
+                            f"M(T) {T_start:g} → {T_end:g} K "
+                            f"@ {rate:g} K/min", kind='meas')
+                    else:
+                        add(0, T, H, 'VSMMT',
+                            "M(T) (unrecognized params!)", kind='warn')
+                        self.log("WARNING: could not parse VSMMT sweep "
+                                 "parameters — duration not included.")
                 elif cmd == 'VSMMH':
-                    # extract field range if visible in tokens (heuristic)
+                    # M(H) loop at fixed T; duration from user estimate
                     add(mh_est, T, H, 'VSMMH',
                         f"M(H) loop @ {T:g} K (est.)", kind='meas')
-                elif cmd == 'VSMMT':
-                    add(mt_est, T, H, 'VSMMT',
-                        "M(T) measurement (concurrent est.)", kind='meas')
                 elif cmd == 'CALL':
                     add(0, T, H, 'CALL', "Sub-sequence (not expanded!)",
                         kind='warn')
                     self.log("WARNING: CALL to sub-sequence found — its "
                              "duration is NOT included.")
-                elif cmd in ('VSMDF', 'VSMLS', 'VSMCM'):
-                    add(0, T, H, cmd, "VSM config/datafile/centering")
+                elif cmd == 'VSMDF':
+                    m = re.search(r'"([^"]+)"', s)
+                    fname = os.path.basename(m.group(1)) if m else '?'
+                    add(0, T, H, 'VSMDF', f"Data file: {fname}")
+                elif cmd in ('VSMLS', 'VSMCM'):
+                    add(0, T, H, cmd, "VSM config/centering")
                 else:
                     self.log(f"Unknown command skipped: {cmd}")
 
@@ -362,8 +406,10 @@ class SeqVisualizerGUI:
         self.ax_H.set_xlabel("Time")
         self.ax_H.xaxis.set_major_formatter(
             mdates.DateFormatter('%d %b\n%H:%M'))
-        self.figure.suptitle(os.path.basename(self.filepath),
-                             fontweight='bold')
+        total = self.segments[-1]['t1'] if self.segments else 0
+        self.figure.suptitle(
+            f"{os.path.basename(self.filepath)}  —  est. "
+            f"{timedelta(seconds=int(total))}", fontweight='bold')
         self.figure.tight_layout()
         self.canvas.draw_idle()
 
@@ -371,12 +417,16 @@ class SeqVisualizerGUI:
         self.tree.delete(*self.tree.get_children())
         start_dt = datetime.strptime(self.start_time_var.get().strip(),
                                      "%Y-%m-%d %H:%M")
+        def clock(sec):
+            dt = start_dt + timedelta(seconds=sec)
+            days = (dt.date() - start_dt.date()).days
+            return dt.strftime('%H:%M') + (f" +{days}d" if days else "")
+
         for i, sg in enumerate(self.segments, 1):
             dur = sg['t1'] - sg['t0']
             self.tree.insert('', 'end', values=(
                 i, sg['cmd'], sg['desc'],
-                (start_dt + timedelta(seconds=sg['t0'])).strftime('%H:%M'),
-                (start_dt + timedelta(seconds=sg['t1'])).strftime('%H:%M'),
+                clock(sg['t0']), clock(sg['t1']),
                 str(timedelta(seconds=int(dur)))))
 
 
