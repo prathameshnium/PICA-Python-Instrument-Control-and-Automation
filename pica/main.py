@@ -375,39 +375,26 @@ class PICALauncherApp:
         util_frame = ttk.Frame(info_frame)
         util_frame.pack(fill='x', expand=False, pady=5)
         
-        # --- Adjusted to span 5 columns ---
-        util_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
-        
-        ttk.Button(
-            util_frame,
-            text="VISA/GPIB",
-            style='App.TButton',
-            command=self.run_gpib_test).grid(row=0, column=0, sticky='ew', padx=(0, 2))
-            
-        ttk.Button(
-            util_frame,
-            text="Plotter",
-            style='App.TButton',
-            command=launch_plotter_utility).grid(row=0, column=1, sticky='ew', padx=2)
-            
-        # --- NEW Tools Button ---
+        # --- VISA/GPIB and Plotter moved to top-right icon toolbar ---
+        util_frame.grid_columnconfigure((0, 1, 2), weight=1)
+
         ttk.Button(
             util_frame,
             text="Tools",
             style='App.TButton',
-            command=self.open_tools_popup).grid(row=0, column=2, sticky='ew', padx=2)
-            
+            command=self.open_tools_popup).grid(row=0, column=0, sticky='ew', padx=(0, 2))
+
         ttk.Button(
             util_frame,
             text="README",
             style='App.TButton',
-            command=self.open_readme).grid(row=0, column=3, sticky='ew', padx=2)
-            
+            command=self.open_readme).grid(row=0, column=1, sticky='ew', padx=2)
+
         ttk.Button(
             util_frame,
             text="Manuals",
             style='App.TButton',
-            command=self.open_manual_file).grid(row=0, column=4, sticky='ew', padx=(2, 0))
+            command=self.open_manual_file).grid(row=0, column=2, sticky='ew', padx=(2, 0))
 
         bottom_frame = ttk.Frame(info_frame)
         bottom_frame.pack(side='bottom', fill='x', pady=(15, 0))
@@ -488,10 +475,64 @@ class PICALauncherApp:
             command=lambda: self.launch_script(
                 self.SCRIPT_PATHS[script_key]))
 
+    def _add_tooltip(self, widget, text):
+        """Attach a lightweight hover tooltip to a widget."""
+        tip = {'win': None}
+
+        def show(_event):
+            if tip['win'] is not None:
+                return
+            x = widget.winfo_rootx() + widget.winfo_width() // 2
+            y = widget.winfo_rooty() + widget.winfo_height() + 4
+            win = tk.Toplevel(widget)
+            win.wm_overrideredirect(True)
+            win.wm_geometry(f"+{x}+{y}")
+            tk.Label(
+                win,
+                text=text,
+                bg=self.CLR_CONSOLE_BG,
+                fg=self.CLR_TEXT,
+                font=('Segoe UI', 9),
+                bd=1,
+                relief='solid',
+                padx=6,
+                pady=2).pack()
+            tip['win'] = win
+
+        def hide(_event):
+            if tip['win'] is not None:
+                tip['win'].destroy()
+                tip['win'] = None
+
+        widget.bind("<Enter>", show)
+        widget.bind("<Leave>", hide)
+
     def create_launcher_panel(self, parent):
         main_container = ttk.Frame(parent)
-        main_container.grid_rowconfigure(0, weight=1)
+        main_container.grid_rowconfigure(1, weight=1)
         main_container.grid_columnconfigure(0, weight=1)
+
+        # --- Top-right utility toolbar (small icon buttons) ---
+        toolbar = ttk.Frame(main_container)
+        toolbar.grid(row=0, column=0, columnspan=2, sticky='e', pady=(0, 2))
+
+        plotter_button = ttk.Button(
+            toolbar,
+            text="📈",
+            width=3,
+            style='Icon.TButton',
+            command=launch_plotter_utility)
+        plotter_button.pack(side='right', padx=(2, 0))
+        self._add_tooltip(plotter_button, "Plotter Utility")
+
+        gpib_button = ttk.Button(
+            toolbar,
+            text="📟",
+            width=3,
+            style='Icon.TButton',
+            command=self.run_gpib_test)
+        gpib_button.pack(side='right', padx=(0, 2))
+        self._add_tooltip(gpib_button, "VISA/GPIB Scanner")
 
         # --- Create a scrollable area ---
         canvas = Canvas(
@@ -528,8 +569,8 @@ class PICALauncherApp:
         main_container.bind("<Enter>", _bind_mousewheel)
         main_container.bind("<Leave>", _unbind_mousewheel)
 
-        canvas.grid(row=0, column=0, sticky='nsew', pady=10)
-        scrollbar.grid(row=0, column=1, sticky='ns', pady=10)
+        canvas.grid(row=1, column=0, sticky='nsew', pady=10)
+        scrollbar.grid(row=1, column=1, sticky='ns', pady=10)
 
         # --- Make the scrollable frame expand to the width of the canvas ---
         def _configure_scrollable_frame(event):
