@@ -727,9 +727,9 @@ class CombinedGUI:
         self._band_dirty = False
         self.band_patch = None
 
-        # Decade log autoscale state (LabVIEW-style): current snapped
-        # y-limits per axis key; log-Y on by default (Cp/G span decades).
-        self.log_y_var = tk.BooleanVar(value=True)
+        # Y-scale mode: 'auto' uses decade-snapped log when the data
+        # spans >= 1 decade and linear otherwise; 'log'/'linear' force it.
+        self.y_scale_var = tk.StringVar(value="auto")
         self._decade_ylims = {}
 
         # UI-4: scan label state — ("measuring"|"done", T_set) or None.
@@ -1226,9 +1226,15 @@ class CombinedGUI:
         self.fig.subplots_adjust(left=0.09, right=0.98, top=0.93,
                                  bottom=0.08, hspace=0.15, wspace=0.28)
 
-        ttk.Checkbutton(parent, text="Log Y scale (decade autoscale)",
-                        variable=self.log_y_var,
-                        command=self._on_log_y_toggle).pack(side="top", anchor="w", padx=5, pady=(5, 0))
+        scale_bar = ttk.Frame(parent)
+        scale_bar.pack(side="top", anchor="w", padx=5, pady=(5, 0))
+        ttk.Label(scale_bar, text="Y scale:").pack(side="left")
+        for text, val in (("Auto", "auto"), ("Log", "log"),
+                          ("Linear", "linear")):
+            ttk.Radiobutton(scale_bar, text=text, value=val,
+                            variable=self.y_scale_var,
+                            command=self._on_y_scale_change).pack(
+                side="left", padx=(8, 0))
         # FRZ-5: pack toolbar BEFORE canvas so it stays visible at the bottom
         self.canvas_plots = FigureCanvasTkAgg(self.fig, parent)
         tb = NavigationToolbar2Tk(self.canvas_plots, parent, pack_toolbar=False)
@@ -1236,23 +1242,39 @@ class CombinedGUI:
         tb.pack(side="bottom", fill="x")
         self.canvas_plots.get_tk_widget().pack(fill="both", expand=True)
 
-    def _on_log_y_toggle(self):
-        """Re-snap decade limits when the log-Y checkbox flips.
+    def _on_y_scale_change(self):
+        """Re-snap decade limits when the Y-scale mode changes.
         FRZ-1: never draws directly — just marks the plot dirty and lets
         the throttled _redraw_tick do the drawing."""
         self._decade_ylims.clear()
         self._freq_plot_dirty = True
 
-    def _decade_autoscale_y(self, ax, values, key):
-        """LabVIEW-style decade autoscale: snap y-limits to
-        [10^floor(log10(min_pos)), 10^ceil(log10(max_pos))]; expand only,
-        whole decades at a time, so the scale never jitters per point.
-        Linear fallback if no positive finite data."""
+    def _apply_y_scale(self, ax, values, key):
+        """Adaptive Y-scale driven by self.y_scale_var ('auto'|'log'|'linear').
+
+        log:    LabVIEW-style decade autoscale — snap y-limits to
+                [10^floor(log10(min_pos)), 10^ceil(log10(max_pos))],
+                expand only (cached in self._decade_ylims[key]) so the
+                scale never jitters per point.
+        linear: plain relim/autoscale_view.
+        auto:   log when the positive data spans >= 1 decade, else
+                linear, so narrow-span data is not squashed onto a
+                single decade band. Data only accumulates during a
+                sweep, so the span is monotone and auto cannot flicker
+                back from log to linear mid-sweep.
+        Falls back to linear whenever there is no positive finite data.
+        Returns True when a log scale was applied."""
+        mode = self.y_scale_var.get()
         pos = [v for v in values if isinstance(v, (int, float))
                and math.isfinite(v) and v > 0]
-        if not pos:
+        use_log = bool(pos) and mode != 'linear'
+        if use_log and mode == 'auto':
+            span = math.log10(max(pos)) - math.log10(min(pos))
+            use_log = span >= 1.0  # at least one full decade of data
+        if not use_log:
             ax.set_yscale('linear')
             ax.relim()
+            ax.set_autoscaley_on(True)  # set_ylim in log mode disables it
             ax.autoscale_view(scaley=True)
             self._decade_ylims.pop(key, None)
             return False
@@ -1319,10 +1341,7 @@ class CombinedGUI:
                 for ax, key, data in ((self.ax_cp, "cp", self.scan_cp),
                                       (self.ax_g, "g", self.scan_g)):
                     ax.relim(); ax.autoscale_view(scalex=True, scaley=False)
-                    if self.log_y_var.get():
-                        self._decade_autoscale_y(ax, data, key)
-                    else:
-                        ax.set_yscale('linear'); ax.autoscale_view(scaley=True)
+                    self._apply_y_scale(ax, data, key)
                 # UI-4: measurement-temperature label on the spectrum
                 if self._scan_info is None:
                     self.ax_cp.set_title("")

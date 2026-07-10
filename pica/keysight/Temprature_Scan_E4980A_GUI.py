@@ -505,7 +505,9 @@ class Integrated_CT_GUI:
         }
 
         # --- UI variables ---
-        self.log_scale_var = tk.BooleanVar(value=False)
+        # Y-scale mode: 'auto' uses decade-snapped log when the data
+        # spans >= 1 decade and linear otherwise; 'log'/'linear' force it.
+        self.y_scale_var = tk.StringVar(value="auto")
         self.logo_image = None
 
         # Decade log autoscale state (LabVIEW-style): current snapped
@@ -940,14 +942,19 @@ class Integrated_CT_GUI:
             font=self.FONT_TITLE)
         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
 
-        # --- Log-scale checkbox ---
+        # --- Y-scale selector ---
         top_bar = tk.Frame(graph_container, bg=self.CLR_GRAPH_BG)
         top_bar.pack(side='top', fill='x', pady=(0, 5))
-        self.log_scale_cb = ttk.Checkbutton(
-            top_bar, text="Logarithmic Cp Axis",
-            variable=self.log_scale_var,
-            command=self._update_y_scale)
-        self.log_scale_cb.pack(side='right', padx=5)
+        scale_bar = tk.Frame(top_bar, bg=self.CLR_GRAPH_BG)
+        scale_bar.pack(side='right', padx=5)
+        tk.Label(scale_bar, text="Y scale:",
+                 bg=self.CLR_GRAPH_BG).pack(side='left')
+        for text, val in (("Auto", "auto"), ("Log", "log"),
+                          ("Linear", "linear")):
+            ttk.Radiobutton(scale_bar, text=text, value=val,
+                            variable=self.y_scale_var,
+                            command=self._on_y_scale_change).pack(
+                side='left', padx=(8, 0))
 
         # --- Matplotlib figure with 3 axes ---
         self.figure = Figure(figsize=(8, 8), dpi=100,
@@ -1503,16 +1510,32 @@ class Integrated_CT_GUI:
     # ==================================================================
     # PLOTTING (Appendix A.4: decoupled from acquisition)
     # ==================================================================
-    def _decade_autoscale_y(self, ax, values, key):
-        """LabVIEW-style decade autoscale: snap y-limits to
-        [10^floor(log10(min_pos)), 10^ceil(log10(max_pos))]; expand only,
-        whole decades at a time, so the scale never jitters per point.
-        Linear fallback if no positive finite data."""
+    def _apply_y_scale(self, ax, values, key):
+        """Adaptive Y-scale driven by self.y_scale_var ('auto'|'log'|'linear').
+
+        log:    LabVIEW-style decade autoscale — snap y-limits to
+                [10^floor(log10(min_pos)), 10^ceil(log10(max_pos))],
+                expand only (cached in self._decade_ylims[key]) so the
+                scale never jitters per point.
+        linear: plain relim/autoscale_view.
+        auto:   log when the positive data spans >= 1 decade, else
+                linear, so narrow-span data is not squashed onto a
+                single decade band. Data only accumulates during a
+                sweep, so the span is monotone and auto cannot flicker
+                back from log to linear mid-sweep.
+        Falls back to linear whenever there is no positive finite data.
+        Returns True when a log scale was applied."""
+        mode = self.y_scale_var.get()
         pos = [v for v in values if isinstance(v, (int, float))
                and math.isfinite(v) and v > 0]
-        if not pos:
+        use_log = bool(pos) and mode != 'linear'
+        if use_log and mode == 'auto':
+            span = math.log10(max(pos)) - math.log10(min(pos))
+            use_log = span >= 1.0  # at least one full decade of data
+        if not use_log:
             ax.set_yscale('linear')
             ax.relim()
+            ax.set_autoscaley_on(True)  # set_ylim in log mode disables it
             ax.autoscale_view(scaley=True)
             self._decade_ylims.pop(key, None)
             return False
@@ -1530,14 +1553,8 @@ class Integrated_CT_GUI:
         return True
 
     # ------------------------------------------------------------------
-    def _update_y_scale(self):
-        self._decade_ylims.clear()  # re-snap from scratch on toggle
-        if self.log_scale_var.get():
-            self.ax_main.set_yscale('log')
-            self.ax_sub1.set_yscale('log')
-        else:
-            self.ax_main.set_yscale('linear')
-            self.ax_sub1.set_yscale('linear')
+    def _on_y_scale_change(self):
+        self._decade_ylims.clear()  # re-snap from scratch on mode change
         self._update_live_plots(force=True)
         self.canvas.draw_idle()
 
@@ -1566,12 +1583,9 @@ class Integrated_CT_GUI:
 
         self._rescale_main_axis()
         self.ax_sub1.relim()
-        if self.log_scale_var.get():
-            self.ax_sub1.autoscale_view(scalex=True, scaley=False)
-            self._decade_autoscale_y(
-                self.ax_sub1, self.data_storage['g'][fq]['v'], "g")
-        else:
-            self.ax_sub1.autoscale_view()
+        self.ax_sub1.autoscale_view(scalex=True, scaley=False)
+        self._apply_y_scale(
+            self.ax_sub1, self.data_storage['g'][fq]['v'], "g")
         self.ax_sub2.relim()
         self.ax_sub2.autoscale_view()
 
@@ -1588,11 +1602,7 @@ class Integrated_CT_GUI:
         if not vals:
             return
 
-        if self.log_scale_var.get():
-            self._decade_autoscale_y(self.ax_main, vals, "cp")
-        else:
-            self.ax_main.relim()
-            self.ax_main.autoscale_view(scaley=True)
+        self._apply_y_scale(self.ax_main, vals, "cp")
 
         if temps:
             xlo, xhi = min(temps), max(temps)
