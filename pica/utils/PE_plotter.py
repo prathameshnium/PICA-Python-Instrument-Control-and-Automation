@@ -340,6 +340,17 @@ class PEPlotterAppGUI:
             default_y = next((c for c in columns if 'Polarization' in c), columns[1] if len(columns)>1 else columns[0])
             self.y_col_cb.set(default_y)
 
+    @staticmethod
+    def _shorten_label(filename, max_len=32):
+        """Truncates long filenames with a middle ellipsis, keeping the start and extension."""
+        if len(filename) <= max_len:
+            return filename
+        stem, ext = os.path.splitext(filename)
+        keep = max(max_len - len(ext) - 1, 8)
+        head = (keep * 2) // 3
+        tail = keep - head
+        return f"{stem[:head]}…{stem[-tail:]}{ext}"
+
     def plot_data(self, event=None):
         self.ax_main.clear()
         self.ax_main.grid(True, linestyle='--', alpha=0.6)
@@ -358,14 +369,21 @@ class PEPlotterAppGUI:
             filename = os.path.basename(filepath)
 
             if x_col in df.columns and y_col in df.columns:
-                self.ax_main.plot(df[x_col], df[y_col], linewidth=1.5, label=filename)
+                self.ax_main.plot(df[x_col], df[y_col], linewidth=1.5,
+                                  label=self._shorten_label(filename))
 
         self.ax_main.set_xlabel(x_col, fontweight='bold')
         self.ax_main.set_ylabel(y_col, fontweight='bold')
         self.ax_main.set_title("PE Hysteresis Overlay", fontweight='bold')
         
-        # Placing legend *inside* the plot area (loc='best' finds the clearest corner automatically)
-        self.ax_main.legend(title="Sample Files", loc='best')
+        # Compact legend: small font, translucent frame, two columns when crowded, draggable
+        handles = self.ax_main.get_legend_handles_labels()[0]
+        if handles:
+            leg = self.ax_main.legend(title="Sample Files", loc='best',
+                                      fontsize=8, title_fontsize=9,
+                                      framealpha=0.7,
+                                      ncol=2 if len(handles) > 8 else 1)
+            leg.set_draggable(True)
         
         self.figure.tight_layout()
         self.canvas.draw_idle()
