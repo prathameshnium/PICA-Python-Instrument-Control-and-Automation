@@ -185,7 +185,8 @@ class PICALauncherApp:
         "Quick Calc": resource_path("utils/Quick_Calc_GUI.py"),
         "Time Utility": resource_path("utils/Time_Utility_GUI.py"),
         "Unit Converter": resource_path("utils/Unit_Converter_GUI.py"),
-        "Sequence Visualizer": resource_path("utils/SeqVisualizer_GUI.py"),
+        "Sequence Visualizer": resource_path("PPMS/PPMS_SeqVisualizer_GUI.py"),
+        "PPMS Time Estimator": resource_path("PPMS/PPMS_TimeEstimator_GUI.py"),
     }
 
     def __init__(self, root):
@@ -900,6 +901,7 @@ class PICALauncherApp:
             ("Time Utility", "Time Utility"),
             ("Unit Converter", "Unit Converter"),
             ("Sequence Visualizer", "Sequence Visualizer"),
+            ("PPMS Time Estimator", "PPMS Time Estimator"),
         ]
         for label, key in tools:
             self._create_tool_row(card, label, key)
