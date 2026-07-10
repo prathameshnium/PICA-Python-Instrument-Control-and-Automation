@@ -672,7 +672,8 @@ class PICALauncherApp:
                                  "Voltage Driven",
                                  "Instrument: Novocontrol Alpha-AN + ZG4",
                                  [("Frequency Scan (fixed T)",
-                                   "Alpha-AN Freq. Scan")])
+                                   "Alpha-AN Freq. Scan")],
+                                 experimental=True)
 
         return main_container
 
@@ -682,7 +683,8 @@ class PICALauncherApp:
             title,
             measurement_type,
             instruments_text,
-            buttons):
+            buttons,
+            experimental=False):
         """Helper to create a measurement suite frame, reducing code duplication."""
         frame = ttk.LabelFrame(parent, text=title, style='TLabelframe')
         frame.pack(fill='x', expand=True, pady=5)
@@ -732,8 +734,23 @@ class PICALauncherApp:
                 command=lambda: self.open_script_folder(first_script_key))
             folder_button.grid(row=0, column=1, sticky='e')
 
-        # --- Launch Buttons ---
+        # --- Experimental badge on its own row so it never widens the
+        # header (uniform columns would push the whole module grid right) ---
         row_idx = 1
+        if experimental:
+            exp_font = font.Font(family='Segoe UI', size=8, weight='bold')
+            exp_badge = tk.Label(
+                frame,
+                text="UNDER TEST · EXPERIMENTAL",
+                bg='#8B3A2F',
+                fg='#FFFFFF',
+                font=exp_font,
+                padx=6,
+                pady=2)
+            exp_badge.grid(row=row_idx, column=0, sticky='w', pady=(0, 4))
+            row_idx += 1
+
+        # --- Launch Buttons ---
         for i, (btn_text, script_key) in enumerate(buttons):
             self._create_launch_button(
                 frame,
