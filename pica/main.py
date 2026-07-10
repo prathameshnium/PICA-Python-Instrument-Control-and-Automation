@@ -177,6 +177,7 @@ class PICALauncherApp:
         "PPMS Sync Freq. Scan": resource_path("keysight/PPMS_Sync_Freq_Scan_E4980A_GUI.py"),
         "Alpha-AN Freq. Scan": resource_path("novocontrol/Frequency_Scan_AlphaAN_GUI.py"),
         "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
+        "PPMS Plotter Utility": resource_path("PPMS/PPMS_Plotter_GUI.py"),
         "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
         "SCPI Console": resource_path("utils/SCPI_Console_GUI.py"),
         "PICA Help": resource_path("README.md"),
@@ -894,6 +895,7 @@ class PICALauncherApp:
         tools = [
             ("SCPI Console", "SCPI Console"),
             ("PE Plotter", "PE Plotter"),
+            ("PPMS Plotter Utility", "PPMS Plotter Utility"),
             ("Quick Calc", "Quick Calc"),
             ("Time Utility", "Time Utility"),
             ("Unit Converter", "Unit Converter"),
