@@ -72,9 +72,11 @@ def parse_inttyp(response):
         text = text.split("=", 1)[1]
     return int(text.split()[0])
 
+# Zp BEFORE Sig, matching the WinDETA export paired with the mes_def
+# (../data_file_for_ref/Fscan_data_Novo_Windeta.dat) and the GUI program.
 WINDETA_HEADER = (
     " Freq. [Hz]\t Eps'    \t Eps''   \t Modulus'  \t Modulus''  \t"
-    " Sig' [S/cm]\t Sig'' [S/cm]\t Zp' [Ohms]\t Zp'' [Ohms]"
+    " Zp' [Ohms]\t Zp'' [Ohms]\t Sig' [S/cm]\t Sig'' [S/cm]"
 )
 
 # 20 Hz, x1.1 per step, final point clamped to exactly 1 MHz. 115 points.
@@ -145,7 +147,7 @@ def impedance_to_dielectric(zr, zi, f_actual, c0):
     """Convert one complex-impedance point to the nine WinDETA quantities.
 
     Z* = R + jX with R = Zs', X = Zs''.  eps* = eps' - i*eps''.
-    Returns (f, eps', eps'', M', M'', sig', sig'', Zp', Zp'').
+    Returns (f, eps', eps'', M', M'', Zp', Zp'', sig', sig'').
 
     The Zp' / Zp'' columns are the PARALLEL-equivalent impedance (1/G, 1/B),
     NOT series R / X -- verified against a WinDETA export to < 1e-5.
@@ -166,7 +168,10 @@ def impedance_to_dielectric(zr, zi, f_actual, c0):
     m2 = eps2 / eps_sq_safe
 
     sig1 = omega * EPS0_CM * eps2
-    sig2 = -omega * EPS0_CM * eps1
+    # WinDETA's sigma* = i*w*eps0*(eps* - 1): the vacuum displacement is
+    # subtracted, so sig'' uses (eps' - 1), NOT eps'. Verified against the
+    # reference exports in ../data_file_for_ref (12% off at 10 MHz otherwise).
+    sig2 = -omega * EPS0_CM * (eps1 - 1.0)
 
     # Parallel-equivalent impedance (1/G, 1/B), matching WinDETA.
     zr_safe = zr if zr != 0 else 1e-20
@@ -174,7 +179,7 @@ def impedance_to_dielectric(zr, zi, f_actual, c0):
     zp1 = z_mag_sq / zr_safe
     zp2 = -z_mag_sq / zi_safe
 
-    return (f_actual, eps1, eps2, m1, m2, sig1, sig2, zp1, zp2)
+    return (f_actual, eps1, eps2, m1, m2, zp1, zp2, sig1, sig2)
 
 
 def abort_and_diagnose(inst):
