@@ -255,7 +255,9 @@ class MeasurementAppGUI:
             'temperature': []}
         self.logo_image = None  # Attribute to hold the logo image reference
         self.data_queue = queue.Queue()
-        self.plot_backgrounds = None  # For blitting
+        # Plot updates are decoupled from data acquisition: data callbacks
+        # only set this flag; _refresh_plot redraws on a fixed cadence.
+        self._plot_dirty = False
         self.visa_queue = queue.Queue()
         self.measurement_thread = None
 
@@ -678,7 +680,7 @@ class MeasurementAppGUI:
 
         # Main Plot: Resistance vs Temperature
         self.line_main, = self.ax_main.plot([], [], color=self.CLR_ACCENT_RED, marker='o',
-                                            markersize=3, linestyle='-', animated=True)
+                                            markersize=3, linestyle='-')
         self.ax_main.set_title("Resistance vs. Temperature", fontweight='bold')
         self.ax_main.set_xlabel("Temperature (K)")
         self.ax_main.set_ylabel("Resistance (Ω)")
@@ -686,14 +688,14 @@ class MeasurementAppGUI:
 
         # Sub Plot 1: Voltage vs Temperature
         self.line_sub1, = self.ax_sub1.plot([], [], color=self.CLR_ACCENT_GOLD, marker='.',
-                                            markersize=4, linestyle='-', animated=True)
+                                            markersize=4, linestyle='-')
         self.ax_sub1.set_xlabel("Temperature (K)")
         self.ax_sub1.set_ylabel("Voltage (V)")
         self.ax_sub1.grid(True, linestyle='--', alpha=0.6)
 
         # Sub Plot 2: Temperature vs Time
         self.line_sub2, = self.ax_sub2.plot([], [], color=self.CLR_ACCENT_GREEN, marker='.',
-                                            markersize=4, linestyle='-', animated=True)
+                                            markersize=4, linestyle='-')
         self.ax_sub2.set_xlabel("Time (s)")
         self.ax_sub2.set_ylabel("Temperature (K)")
         self.ax_sub2.grid(True, linestyle='--', alpha=0.6)
@@ -755,24 +757,17 @@ class MeasurementAppGUI:
                 f"Sample: {params['sample_name']} | I = {params['apply_current']:.2e} A",
                 fontweight='bold')
 
-            # --- Performance Improvement: Full draw before starting loop ---
-            self.canvas.draw()
-            # Capture the background for blitting
-            self.plot_backgrounds = [
-                self.canvas.copy_from_bbox(
-                    ax.bbox) for ax in [
-                    self.ax_main,
-                    self.ax_sub1,
-                    self.ax_sub2]]
-            self.log("Blitting enabled for fast graph updates.")
+            self._plot_dirty = False
+            self.canvas.draw_idle()
 
             self.log("Measurement loop started.")
 
-            # Start the worker thread and the queue processor
+            # Start the worker thread, the queue processor and the plot timer
             self.measurement_thread = threading.Thread(
                 target=self._measurement_worker, daemon=True)
             self.measurement_thread.start()
             self.root.after(100, self._process_data_queue)
+            self.root.after(250, self._refresh_plot)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
@@ -786,10 +781,9 @@ class MeasurementAppGUI:
         if self.is_running:
             self.is_running = False
             self.log("Measurement loop stopped by user.")
-            # --- Performance Improvement: Disable blitting on stop ---
-            for line in [self.line_main, self.line_sub1, self.line_sub2]:
-                line.set_animated(False)
-            self.plot_backgrounds = None
+            # Final flush: is_running is already False, so this won't
+            # reschedule the timer.
+            self._refresh_plot()
             self.canvas.draw_idle()
             self.start_button.config(state='normal')
             self.stop_button.config(state='disabled')
@@ -835,14 +829,6 @@ class MeasurementAppGUI:
                 # Unpack and save data
                 self._handle_new_data_point(data)
 
-            # Check if there is data to plot
-            if not self.data_storage['time']:
-                if self.is_running:
-                    self.root.after(100, self._process_data_queue)
-                return
-
-            self._update_plots()
-
         except queue.Empty:
             pass
 
@@ -863,45 +849,66 @@ class MeasurementAppGUI:
         self.data_storage['temperature'].append(temp)
         self.data_storage['voltage'].append(volt)
         self.data_storage['resistance'].append(res)
+        self._plot_dirty = True
 
-    def _update_plots(self):
-        """Helper: Updates the Matplotlib charts."""
-        # Set data for ALL plot lines
-        self.line_main.set_data(
-            self.data_storage['temperature'],
-            self.data_storage['resistance'])
-        self.line_sub1.set_data(
-            self.data_storage['temperature'],
-            self.data_storage['voltage'])
-        self.line_sub2.set_data(
-            self.data_storage['time'],
-            self.data_storage['temperature'])
+    def _refresh_plot(self):
+        """Redraws the plots at a fixed cadence, independent of data rate.
 
-        if self.plot_backgrounds:
-            # Blitting optimization
-            for bg in self.plot_backgrounds:
-                self.canvas.restore_region(bg)
+        A normal (non-blitted) draw is used so that the axes — ticks,
+        limits, gridlines and scale — always stay in sync with the data.
+        """
+        if self._plot_dirty:
+            self._plot_dirty = False
 
-            artists_to_update = [
-                (self.ax_main, self.line_main),
-                (self.ax_sub1, self.line_sub1),
-                (self.ax_sub2, self.line_sub2)
-            ]
+            temps = self.data_storage['temperature']
+            res = self.data_storage['resistance']
+            volts = self.data_storage['voltage']
+            t = self.data_storage['time']
 
-            for ax, line in artists_to_update:
-                ax.relim()
-                ax.autoscale_view()
-                ax.draw_artist(line)
-                self.canvas.blit(ax.bbox)
+            self.line_main.set_data(temps, res)
+            self.line_sub1.set_data(temps, volts)
+            self.line_sub2.set_data(t, temps)
 
-            self.canvas.flush_events()
-        else:
-            # Full redraw fallback
-            for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
-                ax.relim()
-                ax.autoscale_view()
-            self.figure.tight_layout(pad=3.0)
+            # Recompute and apply limits on every axis.
+            self._autoscale_axis(self.ax_main, x=temps, y=res)
+            self._autoscale_axis(self.ax_sub1, x=temps, y=volts)
+            self._autoscale_axis(self.ax_sub2, x=t, y=temps)
+
+            # Full redraw keeps ticks/labels/gridlines correct and is
+            # resize-proof. draw_idle() coalesces redraws efficiently.
             self.canvas.draw_idle()
+
+        if self.is_running:
+            self.root.after(250, self._refresh_plot)
+
+    def _autoscale_axis(self, ax, x, y, log_y=False, margin=0.05):
+        """Rescale an axis, ignoring non-finite and (for log) non-positive
+        values so the axis never collapses or freezes."""
+        import math
+
+        xs = [v for v in x if v is not None and math.isfinite(v)]
+        if log_y:
+            ys = [v for v in y if v is not None and math.isfinite(v) and v > 0]
+        else:
+            ys = [v for v in y if v is not None and math.isfinite(v)]
+
+        if not xs or not ys:
+            return
+
+        xmin, xmax = min(xs), max(xs)
+        ymin, ymax = min(ys), max(ys)
+
+        # X padding (linear)
+        xpad = (xmax - xmin) * margin or 0.5
+        ax.set_xlim(xmin - xpad, xmax + xpad)
+
+        # Y padding
+        if log_y:
+            # pad multiplicatively in log space
+            ax.set_ylim(ymin / (1 + margin), ymax * (1 + margin))
+        else:
+            ypad = (ymax - ymin) * margin or abs(ymax) * margin or 1e-12
+            ax.set_ylim(ymin - ypad, ymax + ypad)
 
     def start_visa_scan(self):
         """Starts the VISA scan in a separate thread to keep the GUI responsive."""

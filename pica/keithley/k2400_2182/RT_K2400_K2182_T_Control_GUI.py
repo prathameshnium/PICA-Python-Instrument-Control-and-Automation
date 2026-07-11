@@ -237,6 +237,9 @@ class VT_GUI_Active:
         self.logo_image = None
         self.backend = VT_Backend()
         self.data_storage = {'temperature': [], 'voltage': []}
+        # Plot updates are decoupled from data acquisition: data callbacks
+        # only set this flag; _refresh_plot redraws on a fixed cadence.
+        self._plot_dirty = False
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -495,7 +498,6 @@ class VT_GUI_Active:
         container.pack(fill='both', expand=True)
         self.figure = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
         self.ax_main = self.figure.add_subplot(111)
-        self.plot_background = None
         self.line_main, = self.ax_main.plot(
             [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
         self.ax_main.set_yscale('log')
@@ -613,17 +615,13 @@ class VT_GUI_Active:
             self.line_main.set_data([], [])
             self.ax_main.set_title(f"R-T Curve: {self.params['name']}")
             self.ax_main.set_yscale('log')
-
-            # --- Performance Improvement: Full draw before starting loop ---
-            self.canvas.draw()
-            self.plot_background = self.canvas.copy_from_bbox(
-                self.ax_main.bbox)
-            self.line_main.set_animated(True)
-            self.log("Blitting enabled for fast graph updates.")
+            self._plot_dirty = False
+            self.canvas.draw_idle()
 
             self.log(
                 f"Starting stabilization at {self.params['start_temp']} K...")
             self.root.after(100, self._experiment_loop)
+            self.root.after(250, self._refresh_plot)
         except Exception as e:
             self.log(f"ERROR: {traceback.format_exc()}")
             messagebox.showerror("Start Failed", f"{e}")
@@ -637,8 +635,8 @@ class VT_GUI_Active:
         self.experiment_state = 'idle'
         self.backend.shutdown()
         self.set_ui_state(running=False)
-        self.line_main.set_animated(False)
-        self.plot_background = None
+        # Final flush: state is already 'idle', so this won't reschedule.
+        self._refresh_plot()
         self.ax_main.set_title("Experiment stopped.")
         self.canvas.draw_idle()
         if reason:
@@ -704,18 +702,7 @@ class VT_GUI_Active:
                     csv.writer(f).writerow(
                         [f"{temp:.4f}", f"{voltage:.6e}", f"{elapsed:.2f}"])
 
-                # --- Performance Improvement: Use blitting for fast updates ---
-                if self.plot_background:
-                    self.canvas.restore_region(self.plot_background)
-                    self.line_main.set_data(
-                        self.data_storage['temperature'],
-                        self.data_storage['voltage'])
-                    self.ax_main.relim()
-                    self.ax_main.autoscale_view()
-                    self.ax_main.draw_artist(self.line_main)
-                    self.canvas.blit(self.ax_main.bbox)
-                else:
-                    self.canvas.draw_idle()
+                self._plot_dirty = True
 
                 # Check end conditions
                 if temp >= self.params['cutoff']:
@@ -732,6 +719,59 @@ class VT_GUI_Active:
             self.log(f"CRITICAL ERROR: {traceback.format_exc()}")
             messagebox.showerror("Runtime Error", f"{e}")
             self.stop_experiment("Runtime Error")
+
+    def _refresh_plot(self):
+        """Redraws the plot at a fixed cadence, independent of data rate.
+
+        A normal (non-blitted) draw is used so that the axes — ticks,
+        limits, gridlines and scale — always stay in sync with the data.
+        """
+        if self._plot_dirty:
+            self._plot_dirty = False
+
+            temps = self.data_storage['temperature']
+            volts = self.data_storage['voltage']
+
+            self.line_main.set_data(temps, volts)
+
+            # Recompute and apply limits.
+            self._autoscale_axis(self.ax_main, x=temps, y=volts, log_y=True)
+
+            # Full redraw keeps ticks/labels/gridlines correct and is
+            # resize-proof. draw_idle() coalesces redraws efficiently.
+            self.canvas.draw_idle()
+
+        if self.experiment_state != 'idle':
+            self.root.after(250, self._refresh_plot)
+
+    def _autoscale_axis(self, ax, x, y, log_y=False, margin=0.05):
+        """Rescale an axis, ignoring non-finite and (for log) non-positive
+        values so the axis never collapses or freezes."""
+        import math
+
+        xs = [v for v in x if v is not None and math.isfinite(v)]
+        if log_y:
+            ys = [v for v in y if v is not None and math.isfinite(v) and v > 0]
+        else:
+            ys = [v for v in y if v is not None and math.isfinite(v)]
+
+        if not xs or not ys:
+            return
+
+        xmin, xmax = min(xs), max(xs)
+        ymin, ymax = min(ys), max(ys)
+
+        # X padding (linear)
+        xpad = (xmax - xmin) * margin or 0.5
+        ax.set_xlim(xmin - xpad, xmax + xpad)
+
+        # Y padding
+        if log_y:
+            # pad multiplicatively in log space
+            ax.set_ylim(ymin / (1 + margin), ymax * (1 + margin))
+        else:
+            ypad = (ymax - ymin) * margin or abs(ymax) * margin or 1e-12
+            ax.set_ylim(ymin - ypad, ymax + ypad)
 
     def _validate_and_get_params(self):
         try:
