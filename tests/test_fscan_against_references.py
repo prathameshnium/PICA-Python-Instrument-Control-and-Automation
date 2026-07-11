@@ -336,38 +336,65 @@ class FakeAlphaInstrument:
 
     Simulates a lossy capacitor with constant eps* = EPS1 - j*EPS2 in the
     cell whose C0 is passed in, so every produced number is predictable.
+
+    It also enforces the acknowledgment protocol from the Alpha manual:
+    every executable (set) command leaves an 'OK' in the result buffer that
+    MUST be read before the next response. A bare write() of a set command
+    therefore poisons the buffer, and the next query returns the stale
+    'OK' instead of data - exactly like the real instrument.
     """
 
     EPS1, EPS2 = 100.0, 10.0
+
+    # Commands that leave NO buffered ack (per manual/JUMP): task starters
+    # signalled by SRQ, and IEEE-488.2 common commands.
+    NO_ACK = ("MST", "*RST", "RSTH")
 
     def __init__(self, c0):
         self.c0 = c0
         self.writes = []
         self.freq = None
+        self.pending = []   # unread response buffer (FIFO)
         self.timeout = None
         self.read_termination = None
         self.write_termination = None
         self.send_end = None
 
-    def write(self, cmd):
-        self.writes.append(cmd)
+    def _execute(self, cmd):
+        """Run a command; queue its response(s) into the buffer."""
         if cmd.startswith("GFR="):
             self.freq = float(cmd.split("=", 1)[1])
-
-    def query(self, cmd):
-        self.writes.append(cmd)
         if cmd == "*IDN?":
-            return "NOVOCONTROL,Alpha-AN,00000,FAKE"
-        if cmd == "INTTYP?":
-            return "INTTYP=5 12345"
-        if cmd == "ZRE?":
+            self.pending.append("NOVOCONTROL,Alpha-AN,00000,FAKE")
+        elif cmd == "INTTYP?":
+            self.pending.append("INTTYP=5 12345")
+        elif cmd == "ZRE?":
             omega = 2.0 * math.pi * self.freq
             g = omega * self.c0 * self.EPS2
             b = omega * self.c0 * self.EPS1
             den = g * g + b * b
             zr, zi = g / den, -b / den
-            return f"ZRE={zr:.10e} {zi:.10e} {self.freq:.10e} 2 1"
-        raise AssertionError(f"unexpected query: {cmd}")
+            self.pending.append(
+                f"ZRE={zr:.10e} {zi:.10e} {self.freq:.10e} 2 1"
+            )
+        elif cmd.endswith("?"):
+            raise AssertionError(f"unexpected query: {cmd}")
+        elif cmd in self.NO_ACK:
+            pass
+        else:
+            self.pending.append("OK")  # executable-command acknowledgment
+
+    def write(self, cmd):
+        self.writes.append(cmd)
+        self._execute(cmd)
+
+    def read(self):
+        assert self.pending, "read() with empty result buffer"
+        return self.pending.pop(0)
+
+    def query(self, cmd):
+        self.write(cmd)
+        return self.read()
 
     def read_stb(self):
         return 0x41  # SRQ + bit 0, as after a completed task
@@ -482,6 +509,11 @@ def dry_run_preset(preset_name):
             "ACV=0" in close_tail and "ZCONSPL=0" in close_tail
             and "*RST" in close_tail,
             str(close_tail),
+        )
+        check(
+            f"[{preset_name}] every command acknowledgment was read "
+            "(no buffer desync)",
+            not fake.pending, f"unread: {fake.pending}",
         )
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
