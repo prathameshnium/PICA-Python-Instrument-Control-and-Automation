@@ -648,9 +648,6 @@ class SeqVisualizerGUI:
                 fname = os.path.basename(m.group(1)) if m else '?'
                 add(0, T, H, cmd, f"New Datafile: {fname}",
                     mv=f'New Datafile "{m.group(1) if m else "?"}"')
-            elif cmd == 'VSMLS':
-                add(0, T, H, cmd, "VSM: Locate Sample",
-                    mv="VSM Locate Sample")
             elif cmd == 'VSMCM':
                 add(0, T, H, cmd, "VSM: Center Sample",
                     mv="Center Sample")
