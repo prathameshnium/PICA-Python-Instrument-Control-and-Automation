@@ -892,19 +892,38 @@ class PICALauncherApp:
         # --- Card body ---
         card = ttk.Frame(tools_win, style='ToolsPopup.TFrame', padding=(20, 16, 20, 16))
         card.pack(fill='both', expand=True, padx=24, pady=(0, 16))
+        card.grid_columnconfigure((0, 1), weight=1, uniform="tools")
 
-        tools = [
-            ("SCPI Console", "SCPI Console"),
-            ("PE Plotter", "PE Plotter"),
-            ("PPMS Plotter Utility", "PPMS Plotter Utility"),
-            ("Quick Calc", "Quick Calc"),
-            ("Time Utility", "Time Utility"),
-            ("Unit Converter", "Unit Converter"),
-            ("Sequence Visualizer", "Sequence Visualizer"),
-            ("PPMS Time Estimator", "PPMS Time Estimator"),
+        tool_groups = [
+            ("Communication", [
+                ("GPIB Scanner", "GPIB Scanner"),
+                ("SCPI Console", "SCPI Console"),
+            ]),
+            ("PPMS Utilities", [
+                ("PPMS Plotter Utility", "PPMS Plotter Utility"),
+                ("Sequence Visualizer", "Sequence Visualizer"),
+                ("PPMS Time Estimator", "PPMS Time Estimator"),
+            ]),
+            ("Mini Tools", [
+                ("Quick Calc", "Quick Calc"),
+                ("Time Utility", "Time Utility"),
+                ("Unit Converter", "Unit Converter"),
+            ]),
+            ("P-E Measurement", [
+                ("PE Plotter", "PE Plotter"),
+            ]),
         ]
-        for label, key in tools:
-            self._create_tool_row(card, label, key)
+        for i, (group_title, tools) in enumerate(tool_groups):
+            group_frame = ttk.LabelFrame(
+                card, text=group_title, style='TLabelframe')
+            group_frame.grid(
+                row=i // 2,
+                column=i % 2,
+                sticky='new',
+                padx=6,
+                pady=6)
+            for label, key in tools:
+                self._create_tool_row(group_frame, label, key)
 
         # --- Footer ---
         footer = ttk.Frame(tools_win, style='ToolsPopupHeader.TFrame', padding=(24, 0, 24, 20))
