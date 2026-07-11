@@ -1,41 +1,37 @@
 '''
 ===============================================================================
  PROGRAM:      PICA GPIB Lifeline Console
- PURPOSE:      Last-resort GPIB diagnostic and terminal that needs NOTHING
-               but a stock Python install: it talks to the NI-488.2 style
-               driver DLL (gpib-32.dll) directly through ctypes, bypassing
-               pyvisa, pyvisa-py and gpib-ctypes entirely. Built to bring up
-               a Novocontrol Alpha analyzer on Novocontrol's own (ines) GPIB
-               PCI card, but works with any NI-488.2 compatible stack.
+ PURPOSE:      Minimal fallback GPIB terminal that needs NOTHING but a stock
+               Python install: it talks to the NI-488.2 driver DLL
+               (gpib-32.dll / ni4882.dll) directly through ctypes, bypassing
+               pyvisa entirely. Useful when the SCPI Console GUI cannot reach
+               the instrument and you want to know whether the NI driver
+               itself can.
 
-               What it does, in order:
-                 1. Reports the Python/OS environment and package pitfalls
-                    (64- vs 32-bit, the 'pygpib' name-squat shadow, ...).
-                 2. Hunts for candidate GPIB DLLs (System32, C:\\GPIB, ines /
-                    Novocontrol / WinDETA folders; --deep walks all of C:\\)
-                    and classifies each: loads / wrong bitness / broken.
-                 3. Scans the bus for listeners and asks each for *IDN?.
-                 4. Opens an interactive terminal on the instrument.
-               Everything is echoed to a timestamped report file, so a
-               failed attempt still produces evidence to debug from.
+               GENTLE BY DESIGN: there is no bus scan and no driver hunt.
+               You state the instrument's address (--address); the tool loads
+               the standard NI-488.2 DLL from System32 (or an explicit --dll
+               path), sends a single read-only *IDN? to that one address, and
+               opens an interactive terminal. Nothing else on the bus is ever
+               touched, and every operation is one attempt only -- no retries.
+               Everything is echoed to a timestamped report file.
 
-               Being stdlib-only is deliberate: if only a 32-bit driver DLL
-               exists, this same file runs unmodified on a bare 32-bit
-               Python (py -3-32) with no pip and no internet.
+               SAFETY: queries ('?') pass freely; state-changing writes need
+               an explicit yes; DCV/DCE (DC bias -- no bias hardware on this
+               mainframe) and RSTH (hard reset) are blocked outright; ':safe'
+               parks the analyzer with the documented sequence MBK, ACV=0,
+               ZCONSPL=0.
 
-               SAFETY: automatically sends nothing but *IDN? (a read-only
-               IEEE-488.2 query). In the terminal, queries pass freely,
-               state-changing writes require an explicit yes, DCV/DCE (DC
-               bias -- no bias hardware on this mainframe) are blocked
-               outright, and ':safe' parks the analyzer with the documented
-               sequence MBK, ACV=0, ZCONSPL=0.
+               NOTE: v1.0's machinery for the old Novocontrol/ines card (DLL
+               hunting across vendor folders, --deep disk walk, bus sweeps)
+               was removed in v1.1; it lives in git history should that card
+               ever return.
 
- USAGE:        python GPIB_Lifeline_CLI.py
-               python GPIB_Lifeline_CLI.py --deep
-               python GPIB_Lifeline_CLI.py --address 5
-               python GPIB_Lifeline_CLI.py --dll "C:\\path\\to\\gpib-32.dll"
+ USAGE:        python GPIB_Lifeline_CLI.py --address 5
+               python GPIB_Lifeline_CLI.py --address 5 --board 0
+               python GPIB_Lifeline_CLI.py --address 5 --dll "C:\\path\\to\\gpib-32.dll"
  AUTHOR:       Prathamesh Deshmukh
- VERSION:      V: 1.0
+ VERSION:      V: 1.1
 ===============================================================================
 '''
 
@@ -78,13 +74,12 @@ IBERR_MEANINGS = {
 # Response padding the Novocontrol Alpha adds around EOI-terminated replies.
 RESPONSE_STRIP = b" \t\r\n\x00\x10"
 
-DLL_BASENAMES = ("gpib-32.dll", "gpib32.dll", "ni4882.dll")
-
 # --- Instrument safety -------------------------------------------------------
 # DC-bias writes are hard-blocked: the lab's Alpha-AN mainframe has no bias
-# hardware, and pica/novocontrol never transmits DCV/DCE either. Every other
-# state-changing write requires an explicit yes; queries ('?') pass freely.
-BLOCKED_WRITE_PREFIXES = ("DCV", "DCE")
+# hardware, and pica/novocontrol never transmits DCV/DCE either. RSTH is a
+# hard reset -- also blocked. Every other state-changing write requires an
+# explicit yes; queries ('?') pass freely.
+BLOCKED_WRITE_PREFIXES = ("DCV", "DCE", "RSTH")
 # Documented Novocontrol Alpha safe idle state, same order as
 # pica/novocontrol safe_state(): abort task, park generator, current input
 # to high impedance.
@@ -133,83 +128,34 @@ class Tee:
 def report_environment():
     bits = struct.calcsize("P") * 8
     print("== Environment ==")
-    print(f"  Python     : {sys.version.split()[0]} ({bits}-bit)  "
+    print(f"  Python : {sys.version.split()[0]} ({bits}-bit)  "
           f"{sys.executable}")
-    print(f"  OS         : {sys.platform}  "
+    print(f"  OS     : {sys.platform}  "
           f"{os.environ.get('OS', '')}".rstrip())
-    for package in ("pyvisa", "pyvisa_py", "gpib_ctypes", "serial"):
-        try:
-            module = __import__(package)
-            version = getattr(module, "__version__", "?")
-            print(f"  {package:<11}: installed ({version})")
-        except Exception as exc:
-            print(f"  {package:<11}: NOT importable ({exc})")
-    # The empty name-squatting 'pygpib' package shadows real gpib bindings.
     try:
-        import gpib as gpib_probe
-        if not (hasattr(gpib_probe, "ibln")
-                or hasattr(gpib_probe, "find_listeners")):
-            print("  WARNING    : a stub 'gpib' module is installed (likely "
-                  "the empty 'pygpib' package). Run: pip uninstall pygpib")
-    except Exception:
-        pass
+        import pyvisa
+        print(f"  pyvisa : installed ({getattr(pyvisa, '__version__', '?')})")
+    except Exception as exc:
+        print(f"  pyvisa : NOT importable ({exc})")
     print()
     return bits
 
 
 # -----------------------------------------------------------------------------
-# --- STEP 2: DLL HUNT ---
+# --- STEP 2: THE STANDARD NI-488.2 DLL ---
 # -----------------------------------------------------------------------------
 
-def find_dll_candidates(deep=False):
-    """Ordered list of existing candidate GPIB DLL paths."""
+def find_dll_candidates():
+    """The standard NI-488.2 DLL locations, tried once each -- no hunting."""
     windir = os.environ.get("SystemRoot", r"C:\Windows")
-    candidates = [
+    return [path for path in (
         os.path.join(windir, "System32", "gpib-32.dll"),
-        os.path.join(windir, "SysWOW64", "gpib-32.dll"),
-        r"C:\GPIB\gpib-32.dll",
-    ]
-
-    roots = {os.environ.get(key) for key in
-             ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432")}
-    for base in [root for root in roots if root] + ["C:\\"]:
-        try:
-            entries = os.listdir(base)
-        except OSError:
-            continue
-        for entry in entries:
-            lowered = entry.lower()
-            if not any(key in lowered for key in
-                       ("ines", "novocontrol", "windeta", "gpib",
-                        "national instruments")):
-                continue
-            for dirpath, _dirs, files in os.walk(os.path.join(base, entry)):
-                for fname in files:
-                    if fname.lower() in DLL_BASENAMES:
-                        candidates.append(os.path.join(dirpath, fname))
-
-    if deep:
-        print("  (--deep: walking C:\\ for GPIB DLLs, this can take a few "
-              "minutes...)")
-        skip = {"winsxs", "$recycle.bin", "windows.old", "node_modules",
-                ".git", "servicing"}
-        for dirpath, dirs, files in os.walk("C:\\"):
-            dirs[:] = [d for d in dirs if d.lower() not in skip]
-            for fname in files:
-                if fname.lower() in DLL_BASENAMES:
-                    candidates.append(os.path.join(dirpath, fname))
-
-    unique, seen = [], set()
-    for path in candidates:
-        key = os.path.normcase(path)
-        if key not in seen and os.path.isfile(path):
-            seen.add(key)
-            unique.append(path)
-    return unique
+        os.path.join(windir, "System32", "ni4882.dll"),
+    ) if os.path.isfile(path)]
 
 
 def classify_candidates(candidates, bits):
-    """Try-loads every candidate. Returns (loadable_paths, printed table)."""
+    """Try-loads every candidate. Returns the loadable paths."""
     loadable = []
     print("== GPIB DLL candidates ==")
     if not candidates:
@@ -258,11 +204,6 @@ class RawGpib:
         self.ibwrt = _bind(lib, "ibwrt", [c_int, ctypes.c_char_p, c_size_t])
         self.ibrd = _bind(lib, "ibrd", [c_int, ctypes.c_char_p, c_size_t])
         self.ibtmo = _bind(lib, "ibtmo", [c_int, c_int])
-        self.ibln = _bind(lib, "ibln",
-                          [c_int, c_int, c_int,
-                           ctypes.POINTER(ctypes.c_short)])
-        self.ibask = _bind(lib, "ibask",
-                           [c_int, c_int, ctypes.POINTER(c_int)])
 
         missing = [name for name in ("ibdev", "ibonl", "ibwrt", "ibrd")
                    if getattr(self, name) is None]
@@ -337,76 +278,6 @@ def decode(data):
     return data.strip(RESPONSE_STRIP).decode("ascii", "replace")
 
 
-def scan_bus(gpib, boards, probe_timeout_code):
-    """Finds listeners and their *IDN? replies. Returns [(board, pad, idn)].
-
-    Prefers ibln (fast, no timeouts); falls back to per-address *IDN?
-    probing, where a missing device fails fast with ENOL.
-    """
-    found = []
-    for board in boards:
-        controller_pad = None
-        if gpib.ibask is not None:
-            value = ctypes.c_int(0)
-            sta = gpib.ibask(board, 0x01, ctypes.byref(value))   # IbaPAD
-            if sta & ERR:
-                print(f"  GPIB{board}: no such board "
-                      f"({iberr_text(gpib.error_code())})")
-                continue
-            controller_pad = value.value
-            print(f"  GPIB{board}: board present, controller at PAD "
-                  f"{controller_pad}")
-
-        pads = None
-        if gpib.ibln is not None:
-            pads = []
-            for pad in range(0, 31):
-                if pad == controller_pad:
-                    continue
-                flag = ctypes.c_short(0)
-                sta = gpib.ibln(board, pad, 0, ctypes.byref(flag))
-                if sta & ERR:
-                    print(f"  GPIB{board}: ibln failed at PAD {pad} "
-                          f"({iberr_text(gpib.error_code())}); switching "
-                          "to write-probing.")
-                    pads = None
-                    break
-                if flag.value:
-                    pads.append(pad)
-
-        if pads is None:   # ibln unavailable or failing: probe by writing
-            pads = []
-            for pad in range(0, 31):
-                if pad == controller_pad:
-                    continue
-                handle = gpib.open_device(board, pad, probe_timeout_code)
-                if handle < 0:
-                    continue
-                try:
-                    sta = gpib.write(handle, "*IDN?")
-                    if not (sta & ERR):
-                        pads.append(pad)
-                finally:
-                    gpib.close_device(handle)
-
-        for pad in pads:
-            handle = gpib.open_device(board, pad, probe_timeout_code)
-            idn = ""
-            if handle >= 0:
-                try:
-                    sta = gpib.write(handle, "*IDN?")
-                    if not (sta & ERR):
-                        data, sta = gpib.read(handle)
-                        if data is not None:
-                            idn = decode(data)
-                finally:
-                    gpib.close_device(handle)
-            label = idn or "(listener present, no *IDN? reply)"
-            print(f"  GPIB{board}::{pad}  ->  {label}")
-            found.append((board, pad, idn))
-    return found
-
-
 # -----------------------------------------------------------------------------
 # --- STEP 4: INTERACTIVE TERMINAL ---
 # -----------------------------------------------------------------------------
@@ -415,7 +286,8 @@ def repl(gpib, handle, resource_label):
     print(f"\n== Interactive terminal on {resource_label} ==")
     print("   Command ending in '?' -> write + read; otherwise write only.")
     print("   SAFETY: queries send freely; state-changing writes ask for "
-          "confirmation; DCV/DCE (DC bias) writes are blocked outright.")
+          "confirmation; DCV/DCE (DC bias) and RSTH (hard reset) are "
+          "blocked outright.")
     print("   ':safe' parks a Novocontrol Alpha (MBK, ACV=0, ZCONSPL=0), "
           "':read' forces a read, ':quit' exits.")
     print("   (Novocontrol Alpha bring-up: *IDN? then INTTYP? -- both are "
@@ -445,8 +317,9 @@ def repl(gpib, handle, resource_label):
 
         if command.lower() != ":read" and not command.endswith("?"):
             if command.upper().startswith(BLOCKED_WRITE_PREFIXES):
-                print("  BLOCKED: DCV/DCE set the DC bias; this mainframe "
-                      "has no bias hardware and PICA never sends them.")
+                print("  BLOCKED: DCV/DCE set the DC bias (this mainframe "
+                      "has no bias hardware) and RSTH is a hard reset. "
+                      "Not sent.")
                 continue
             try:
                 answer = input(
@@ -488,20 +361,23 @@ def repl(gpib, handle, resource_label):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Raw NI-488.2 GPIB diagnostic + terminal (stdlib only)")
-    parser.add_argument("--dll", help="explicit path to the GPIB DLL")
-    parser.add_argument("--board", type=int, default=None,
-                        help="GPIB board index (default: scan 0-3)")
-    parser.add_argument("--address", type=int, default=None,
-                        help="primary address to connect to (default: first "
-                             "listener found)")
+        description="Raw NI-488.2 GPIB terminal (stdlib only, no bus scan): "
+                    "one *IDN? to the given address, then an interactive "
+                    "session.")
+    parser.add_argument("--address", type=int, required=True,
+                        help="primary GPIB address of the instrument "
+                             "(e.g. 5 for GPIB0::5::INSTR)")
+    parser.add_argument("--board", type=int, default=0,
+                        help="GPIB board index (default 0)")
+    parser.add_argument("--dll", help="explicit path to the GPIB DLL "
+                                      "(default: System32 gpib-32.dll / "
+                                      "ni4882.dll)")
     parser.add_argument("--timeout", type=float, default=3,
                         choices=sorted(TIMEOUT_CODES), help="I/O timeout in "
                         "seconds for the interactive session (default 3)")
-    parser.add_argument("--deep", action="store_true",
-                        help="walk all of C:\\ when hunting for GPIB DLLs")
     parser.add_argument("--no-repl", action="store_true",
-                        help="diagnose and scan only; no interactive session")
+                        help="send the single *IDN? only; no interactive "
+                             "session")
     args = parser.parse_args()
 
     if os.name != "nt":
@@ -520,21 +396,16 @@ def main():
 
         bits = report_environment()
 
-        candidates = ([args.dll] if args.dll
-                      else find_dll_candidates(deep=args.deep))
+        candidates = ([args.dll] if args.dll else find_dll_candidates())
         loadable = classify_candidates(candidates, bits)
 
         if not loadable:
             print("== VERDICT ==")
-            print("  No loadable NI-488.2 DLL. In order of preference:")
-            print("  1. Install the ines GPIB driver for x64 with its "
-                  "NI-488.2 compatibility component (Novocontrol cards are "
-                  "ines cards; driver via Novocontrol support / ines).")
-            print("  2. If only a 32-bit DLL exists: install 32-bit Python "
-                  "(py -3-32) and rerun THIS script with it -- it needs no "
-                  "pip packages at all.")
-            print("  3. Rerun with --deep to search the whole disk, then "
-                  "with --dll <path> to force a specific DLL.")
+            print("  No loadable NI-488.2 DLL (System32\\gpib-32.dll or "
+                  "ni4882.dll).")
+            print("  1. Install / repair the NI-488.2 driver (it places "
+                  "gpib-32.dll in System32).")
+            print("  2. Or point at a specific DLL: --dll <path>.")
             return 2
 
         gpib = None
@@ -549,38 +420,11 @@ def main():
             print("== VERDICT ==")
             print("  A DLL loads but none exposes the NI-488.2 entry points "
                   "(ibdev/ibwrt/ibrd). This is not a usable 488.2 driver -- "
-                  "install the ines NI-488.2 compatibility component.")
+                  "repair the NI-488.2 installation.")
             return 2
 
-        print("== Bus scan ==")
-        boards = [args.board] if args.board is not None else [0, 1, 2, 3]
-        probe_code = TIMEOUT_CODES[1]
-        listeners = scan_bus(gpib, boards, probe_code)
-        print()
-
-        if not listeners and args.address is None:
-            print("== VERDICT ==")
-            print("  Driver DLL works, but no instrument answered on the "
-                  "bus. Check, in order:")
-            print("  1. WinDETA (or any other GPIB program) is CLOSED.")
-            print("  2. The analyzer is powered on and the GPIB cable is "
-                  "seated at both ends.")
-            print("  3. The board is configured as GPIB0 (ines/driver "
-                  "configuration utility, or try --board 1).")
-            print("  4. Retry with an explicit address: --address 5 (or "
-                  "whatever WinDETA's device settings show).")
-            return 4
-
-        if args.address is not None:
-            board = args.board if args.board is not None else 0
-            target = (board, args.address)
-        else:
-            with_idn = [entry for entry in listeners if entry[2]]
-            chosen = (with_idn or listeners)[0]
-            target = (chosen[0], chosen[1])
-
-        label = f"GPIB{target[0]}::{target[1]}"
-        handle = gpib.open_device(target[0], target[1],
+        label = f"GPIB{args.board}::{args.address}"
+        handle = gpib.open_device(args.board, args.address,
                                   TIMEOUT_CODES[args.timeout])
         if handle < 0:
             print(f"Could not open {label} "
@@ -588,16 +432,31 @@ def main():
             return 4
 
         try:
+            # Single attempt, read-only. Nothing else on the bus is touched.
+            idn = None
             sta = gpib.write(handle, "*IDN?")
-            if not (sta & ERR):
+            if sta & ERR:
+                print(f"{label} *IDN? write failed: {sta_text(sta)}; "
+                      f"{iberr_text(gpib.error_code())}")
+            else:
                 data, sta = gpib.read(handle)
-                if data is not None:
-                    print(f"{label} *IDN? -> {decode(data)}")
+                if data is None:
+                    print(f"{label} *IDN? read failed: {sta_text(sta)}; "
+                          f"{iberr_text(gpib.error_code())}")
+                else:
+                    idn = decode(data)
+                    print(f"{label} *IDN? -> {idn}")
+
             print("\n== VERDICT ==")
-            print("  COMMUNICATION ESTABLISHED at the raw driver level.")
-            print("  The SCPI Console GUI (pyvisa-py backend, Term = EOI) "
-                  "should now work; if it does not, its scan log will say "
-                  "which layer disagrees.")
+            if idn:
+                print("  COMMUNICATION ESTABLISHED at the raw driver level.")
+                print("  The SCPI Console GUI (Term = EOI for the Alpha) "
+                      "should work too.")
+            else:
+                print("  No *IDN? reply (single attempt, no retry). Check: "
+                      "instrument power, GPIB cable, address "
+                      f"(--address {args.address}), and that no other GPIB "
+                      "program is running.")
             if not args.no_repl:
                 repl(gpib, handle, label)
         finally:
