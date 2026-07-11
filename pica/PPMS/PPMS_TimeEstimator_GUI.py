@@ -211,12 +211,12 @@ class TimeEstimatorGUI:
         se = ttk.LabelFrame(panel, text="2 ·  Start & End")
         se.pack(fill='x', pady=4)
         self.start_time_var = tk.StringVar(
-            value=datetime.now().strftime("%Y-%m-%d %H:%M"))
+            value=datetime.now().strftime("%Y-%m-%d %I:%M %p"))
         row = self._sentence(se, ["starting at",
-                                  (self.start_time_var, 15)])
+                                  (self.start_time_var, 19)])
         ttk.Button(row, text="now", width=5,
                    command=lambda: self.start_time_var.set(
-                       datetime.now().strftime("%Y-%m-%d %H:%M"))).pack(
+                       datetime.now().strftime("%Y-%m-%d %I:%M %p"))).pack(
             side='left', padx=4)
         self.init_temp_var = tk.StringVar(value="300")
         self.final_temp_var = tk.StringVar(value="300")
@@ -297,8 +297,8 @@ class TimeEstimatorGUI:
                                  height=8)
         self.tree.heading('#0', text='')
         self.tree.column('#0', width=30, stretch=False)
-        for c, w, t in [('desc', 430, 'Step'), ('start', 85, 'Start'),
-                        ('end', 85, 'End'), ('dur', 95, 'Duration')]:
+        for c, w, t in [('desc', 400, 'Step'), ('start', 105, 'Start'),
+                        ('end', 105, 'End'), ('dur', 90, 'Duration')]:
             self.tree.heading(c, text=t)
             self.tree.column(c, width=w, anchor='w')
         vsb = ttk.Scrollbar(steps, orient='vertical',
@@ -363,14 +363,25 @@ class TimeEstimatorGUI:
             self.root.after_cancel(self._recalc_job)
         self._recalc_job = self.root.after(500, self._recalc_now)
 
+    def _parse_start(self):
+        txt = self.start_time_var.get().strip().upper()
+        for fmt in ("%Y-%m-%d %I:%M %p",   # 12-hour with AM/PM
+                    "%Y-%m-%d %H:%M"):     # 24-hour still accepted
+            try:
+                return datetime.strptime(txt, fmt)
+            except ValueError:
+                continue
+        raise ValueError(
+            "Start time must be like 2026-07-11 09:30 PM "
+            "(or 24-hour 21:30)")
+
     def _recalc_now(self):
         self._recalc_job = None
         try:
-            start_dt = datetime.strptime(self.start_time_var.get().strip(),
-                                         "%Y-%m-%d %H:%M")
-        except ValueError:
+            start_dt = self._parse_start()
+        except ValueError as e:
             self.big_var.set("…")
-            self.detail_var.set("Start time must be YYYY-MM-DD HH:MM")
+            self.detail_var.set(str(e))
             return
         try:
             self._build_plan()
@@ -563,7 +574,7 @@ class TimeEstimatorGUI:
         finish = start_dt + timedelta(seconds=total)
         self.big_var.set(
             f"≈ {self._fmt_dur(total)}   —   finishes "
-            f"{finish:%a %d %b, %H:%M}")
+            f"{finish:%a %d %b, %I:%M %p}")
         self.detail_var.set(
             f"{n_blocks} block(s), {n_meas} measurement(s):  "
             f"measuring {self._fmt_dur(meas)} ({pct:.0f}%)  ·  "
@@ -633,7 +644,7 @@ class TimeEstimatorGUI:
         self.ax_H.set_ylabel("Field (Oe)")
         self.ax_H.set_xlabel("Time")
         self.ax_H.xaxis.set_major_formatter(
-            mdates.DateFormatter('%d %b\n%H:%M'))
+            mdates.DateFormatter('%d %b\n%I:%M %p'))
         self.figure.suptitle(
             f"Planned run  —  est. {self._fmt_dur(total)}",
             fontweight='bold')
@@ -677,7 +688,7 @@ class TimeEstimatorGUI:
         def clock(sec):
             dt = start_dt + timedelta(seconds=sec)
             days = (dt.date() - start_dt.date()).days
-            return dt.strftime('%H:%M') + (f" +{days}d" if days else "")
+            return dt.strftime('%I:%M %p') + (f" +{days}d" if days else "")
 
         parent = ''
         blk_iid = None

@@ -144,8 +144,11 @@ def parse_qd_dat(filepath):
     n_raw = 0
     for line in lines[data_start + 2:]:
         parts = line.rstrip('\n').split(',')
-        if len(parts) < ncol:
+        if len(parts) < max(2, ncol // 2):
             continue
+        if len(parts) < ncol:
+            # ACMS writers omit trailing empty fields — pad them back.
+            parts = parts + [''] * (ncol - len(parts))
         if len(parts) > ncol:
             # Extra commas live in the leading Comment field.
             extra = len(parts) - ncol
@@ -821,17 +824,18 @@ class PPMSPlotterGUI:
             return 'SEQ'
         if choice.startswith("Manual"):
             return 'MANUAL'
-        # Auto: mode with the most data points among selected files
+        # Auto: files with AC susceptibility columns are ACMS runs — the
+        # AC view is what those were measured for.
+        for fp in selected:
+            headers = self.file_data_cache[fp]['data']['headers']
+            if find_ac_columns(headers)[0]:
+                return 'AC'
+        # Otherwise the mode with the most data points among selected files
         counts = {'MT': 0, 'MH': 0}
         for fp in selected:
             for seg in self.file_data_cache.get(fp, {}).get('segments', []):
                 counts[seg['mode']] += seg['e'] - seg['s']
         if counts['MT'] == 0 and counts['MH'] == 0:
-            # No DC moment segments: an ACMS file, most likely.
-            for fp in selected:
-                headers = self.file_data_cache[fp]['data']['headers']
-                if find_ac_columns(headers)[0]:
-                    return 'AC'
             return 'MANUAL'
         return 'MT' if counts['MT'] >= counts['MH'] else 'MH'
 
