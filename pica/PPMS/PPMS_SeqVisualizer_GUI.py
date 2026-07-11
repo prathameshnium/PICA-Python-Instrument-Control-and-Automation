@@ -16,7 +16,7 @@ import matplotlib as mpl
 
 
 class SeqVisualizerGUI:
-    PROGRAM_VERSION = "1.2"
+    PROGRAM_VERSION = "1.3"
     CLR_BG = '#B8A392'
     CLR_HEADER = '#E5DCD3'
     CLR_FG = '#2C2825'
@@ -116,13 +116,14 @@ class SeqVisualizerGUI:
         main_pane.add(self._create_right_panel(main_pane), weight=3)
 
     def _create_left_panel(self, parent):
-        panel = ttk.Frame(parent, width=520)
-        panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(2, weight=5)
-        panel.grid_rowconfigure(3, weight=1)
+        # vertical PanedWindow: drag the divider above/below the step
+        # table to enlarge it against the inputs and the console
+        panel = ttk.PanedWindow(parent, orient='vertical', width=520)
+        top = ttk.Frame(panel)
+        top.grid_columnconfigure(0, weight=1)
 
         # --- Source & timing ---
-        src = ttk.LabelFrame(panel, text="Sequence Source & Timing")
+        src = ttk.LabelFrame(top, text="Sequence Source & Timing")
         src.grid(row=0, column=0, sticky='new', pady=5)
         src.grid_columnconfigure(1, weight=1)
 
@@ -177,7 +178,7 @@ class SeqVisualizerGUI:
             row=8, column=0, columnspan=2, sticky='ew', padx=10, pady=10)
 
         # --- Plain-language summary ---
-        summ = ttk.LabelFrame(panel, text="At a Glance")
+        summ = ttk.LabelFrame(top, text="At a Glance")
         summ.grid(row=1, column=0, sticky='new', pady=5)
         self.summary_var = tk.StringVar(
             value="Load a sequence to see what it does and how long "
@@ -186,13 +187,15 @@ class SeqVisualizerGUI:
                   justify='left', font=('Segoe UI', 10)).pack(
             fill='x', padx=10, pady=6)
 
+        panel.add(top, weight=0)
+
         # --- Step table ---
         steps = ttk.LabelFrame(panel,
                                text="Protocol Steps  (click a row to "
                                     "highlight it on the plot)")
-        steps.grid(row=2, column=0, sticky='nsew', pady=5)
         steps.grid_columnconfigure(0, weight=1)
         steps.grid_rowconfigure(0, weight=1)
+        panel.add(steps, weight=4)
         view_bar = tk.Frame(steps, bg=self.CLR_FRAME_BG)
         view_bar.grid(row=1, column=0, columnspan=2, sticky='w',
                       padx=5, pady=(0, 5))
@@ -208,7 +211,7 @@ class SeqVisualizerGUI:
                 side='left', padx=(10, 0))
         cols = ('n', 'cmd', 'desc', 'start', 'end', 'dur')
         self.tree = ttk.Treeview(steps, columns=cols, show='headings',
-                                 height=22)
+                                 height=14)
         for c, w, t in [('n', 30, '#'), ('cmd', 60, 'Cmd'),
                         ('desc', 260, 'Description'), ('start', 60, 'Start'),
                         ('end', 60, 'End'), ('dur', 65, 'Duration')]:
@@ -230,7 +233,7 @@ class SeqVisualizerGUI:
 
         # --- Console ---
         cons = ttk.LabelFrame(panel, text="Console")
-        cons.grid(row=3, column=0, sticky='nsew', pady=5)
+        panel.add(cons, weight=1)
         self.console = scrolledtext.ScrolledText(
             cons, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG,
             font=('Consolas', 9), wrap='word', borderwidth=0, height=4)
@@ -386,14 +389,16 @@ class SeqVisualizerGUI:
             if s.startswith('!'):
                 # MultiVu saves disabled sequence lines with a leading '!'
                 add(0, T, H, 'off',
-                    f"(disabled) {s[1:].strip()[:70]}", kind='off')
+                    f"(disabled) {s[1:].strip()[:70]}", kind='off',
+                    mv=f"! {s[1:].strip()[:70]}")
                 continue
             tok = s.split()
             cmd = tok[0].upper()
 
             if cmd == 'REM':
+                # MultiVu displays remark text verbatim
                 add(0, T, H, 'REM', s[4:].strip(' -.'), kind='rem',
-                    mv=f'Remark: "{s[4:].strip()}"')
+                    mv=s[4:].strip())
             elif cmd == 'TMP':
                 # TMP TEMP <target K> <rate K/min> <mode>
                 target, rate = float(tok[2]), float(tok[3])
@@ -404,7 +409,7 @@ class SeqVisualizerGUI:
                 add(dur, target, H, 'TMP',
                     f"{word.capitalize()} to {target:g}K at {rate:g}K/min "
                     f"(from {T:g}K, {mode})",
-                    mv=f"Set Temperature {target:g} K at {rate:g} K/min, "
+                    mv=f"Set Temperature {target:g}K at {rate:g}K/min. "
                        f"{mode}")
             elif cmd == 'FLD':
                 # FLD FIELD <target Oe> <rate Oe/s> <approach> <mode>
@@ -418,16 +423,20 @@ class SeqVisualizerGUI:
                 add(dur, T, target, 'FLD',
                     f"Change field to {target:g}Oe at {rate:g}Oe/sec "
                     f"({appr}, {endm})",
-                    mv=f"Set Field {target:g} Oe at {rate:g} Oe/sec, "
-                       f"{appr}, {endm}")
+                    # MultiVu leaves the end state blank for Persistent
+                    mv=f"Set Magnetic Field {target:.1f}Oe at "
+                       f"{rate:.1f}Oe/sec, {appr},"
+                       + ('' if endm == 'Persistent' else f" {endm}"))
             elif cmd == 'WAI':
                 # WAI WAITFOR <delay s> <T> <H> <pos> <chamber> <err>
                 # (layout verified on lab files: delay comes first).
                 # delay starts only AFTER the flagged items are stable,
                 # so add a user-adjustable settle estimate per flag set.
                 delay = float(tok[2])
-                names = {3: 'Temperature', 4: 'Field', 5: 'Position',
-                         6: 'Chamber'}
+                # flag order follows the MultiVu Wait dialog:
+                # Temperature, Field, Chamber, Position
+                names = {3: 'Temperature', 4: 'Field', 5: 'Chamber',
+                         6: 'Position'}
                 flags = [names[j] for j in (3, 4, 5, 6)
                          if len(tok) > j and tok[j] == '1']
                 err = {'0': 'No Action', '1': 'Abort Sequence',
@@ -437,11 +446,12 @@ class SeqVisualizerGUI:
                 base = (f"Wait For {', '.join(flags)} — " if flags
                         else "Wait — ")
                 extra = f" (+{settle:g}s settle est.)" if flags else ""
-                mv_cond = ', '.join(flags) if flags else 'Delay Only'
+                mins = f" ({delay / 60:.1f} mins)" if delay >= 60 else ""
+                mv_w = (f"Wait For {', '.join(flags)}, " if flags
+                        else "Wait For ")
                 add(dur, T, H, 'WAI',
                     f"{base}Delay {delay:g} secs{extra}", kind='wait',
-                    mv=f"Wait For {mv_cond}. Delay {delay:g} secs, "
-                       f"{err}")
+                    mv=f"{mv_w}Delay {delay:g} secs{mins}, {err}")
             elif cmd == 'VSMMT':
                 # VSMMT moment-vs-temperature sweep. Validated against
                 # MultiVu data files: tok[12]=start K, tok[13]=end K,
@@ -468,11 +478,17 @@ class SeqVisualizerGUI:
                                  f"but sequence T is {T:g} K — added "
                                  "implicit ramp.")
                     dur = abs(T_end - T_start) / rate * 60.0
+                    # the quoted "A/C,1,..." block is the AutoCenter
+                    # setting; MultiVu does not display the ramp rate
+                    ac = re.search(r'"A/C,(\d+)', s)
+                    acs = ('ON' if ac and ac.group(1) == '1'
+                           else 'OFF')
                     add(dur, T_end, H, 'VSMMT',
                         f"VSM: Moment vs Temperature {T_start:g}K to "
                         f"{T_end:g}K at {rate:g}K/min", kind='meas',
-                        mv=f"Moment vs. Temp. from {T_start:g} K to "
-                           f"{T_end:g} K at {rate:g} K/min")
+                        mv=f"VSM Moment vs Temperature  {T_start:g}K "
+                           f"to {T_end:g}K Sweep Linear  "
+                           f"AutoCenter {acs}")
                 else:
                     add(0, T, H, 'VSMMT',
                         "VSM: Moment vs Temperature "
@@ -481,27 +497,42 @@ class SeqVisualizerGUI:
                     self.log("WARNING: could not parse VSMMT sweep "
                              "parameters — duration not included.")
             elif cmd == 'VSMMH':
-                # M(H) loop at fixed T; duration from user estimate.
-                # Real-file layout: tok[14] and tok[16] bracket the
-                # field range (e.g. "... -5000 0 5000 ..."); the other
-                # tokens are not yet decoded.
-                h_lo = h_hi = None
-                if len(tok) > 16:
+                # Decoded on lab files + the MultiVu M(H) dialog:
+                # tok[14..16] = min / start / max field (Oe),
+                # tok[17] = field increment, tok[18] = repetitions,
+                # tok[19] = number of fields, tok[20] = sweep rate
+                # (Oe/s). Duration assumes a continuous-sweep full
+                # loop start -> max -> min -> max; falls back to the
+                # user estimate if the tokens don't parse.
+                h_lo = h_hi = h_st = rate = None
+                if len(tok) > 20:
                     try:
-                        a, b = float(tok[14]), float(tok[16])
-                        if abs(a) < 2e5 and abs(b) < 2e5 and a != b:
+                        a = float(tok[14])
+                        st = float(tok[15])
+                        b = float(tok[16])
+                        r = float(tok[20])
+                        if (abs(a) < 2e5 and abs(b) < 2e5 and a != b
+                                and 0 < r <= 1e4):
                             h_lo, h_hi = min(a, b), max(a, b)
+                            h_st, rate = st, r
                     except ValueError:
                         pass
-                rng = (f" {h_lo:g} to {h_hi:g} Oe"
-                       if h_lo is not None else "")
-                add(mh_est, T, H, 'VSMMH',
-                    f"VSM: Moment vs Field{rng} at {T:g}K (user est.)",
-                    kind='meas',
-                    mv=(f"Moment vs. Field from {h_lo:g} Oe to "
-                        f"{h_hi:g} Oe" if h_lo is not None else
-                        "Moment vs. Field (sweep parameters "
-                        "not decoded)"))
+                ac = re.search(r'"A/C,(\d+)', s)
+                acs = 'ON' if ac and ac.group(1) == '1' else 'OFF'
+                if rate is not None:
+                    travel = abs(h_hi - h_st) + 2 * (h_hi - h_lo)
+                    add(travel / rate, T, H, 'VSMMH',
+                        f"VSM: Moment vs Field loop {h_lo:g} to "
+                        f"{h_hi:g} Oe at {rate:g}Oe/s "
+                        f"({T:g}K, est. full loop)", kind='meas',
+                        mv=f"VSM Moment vs Field  {h_lo:g}Oe to "
+                           f"{h_hi:g}Oe  AutoCenter {acs}")
+                else:
+                    add(mh_est, T, H, 'VSMMH',
+                        f"VSM: Moment vs Field at {T:g}K (user est.)",
+                        kind='meas',
+                        mv="VSM Moment vs Field (parameters "
+                           "not decoded)")
             elif cmd == 'ACMSAC':
                 # AC susceptibility at current T, one point per frequency
                 fl = acms_freqs(s)
@@ -573,9 +604,10 @@ class SeqVisualizerGUI:
                         f"at {rate:g}{rate_u}, {npts} steps, {mode_n}")
                 mode_mv = {'0': 'Fast Settle', '1': "No O'Shoot",
                            '2': 'Sweep'}.get(approach, '?')
-                mv_scan = (f"Scan {thing} from {v0:g} {unit} to "
-                           f"{v1:g} {unit} at {rate:g} {rate_u} in "
-                           f"{npts} steps, {spacing}, {mode_mv} "
+                mv_scan = (f"Scan {'Temp' if what == 'SCANT' else 'Field'}"
+                           f" from {v0:g}{unit} to {v1:g}{unit} at "
+                           f"{rate:g}{rate_u}, in {npts} steps, "
+                           f"{spacing}, {mode_mv} "
                            f"[{len(body)} command(s) per step]")
                 if approach == '2':
                     # continuous sweep: duration set by ramp rate only;
@@ -615,7 +647,7 @@ class SeqVisualizerGUI:
                 m = re.search(r'"([^"]+)"', s)
                 fname = os.path.basename(m.group(1)) if m else '?'
                 add(0, T, H, cmd, f"New Datafile: {fname}",
-                    mv=f"New Datafile {m.group(1) if m else '?'}")
+                    mv=f'New Datafile "{m.group(1) if m else "?"}"')
             elif cmd == 'VSMLS':
                 add(0, T, H, cmd, "VSM: Locate Sample",
                     mv="VSM Locate Sample")
@@ -635,35 +667,38 @@ class SeqVisualizerGUI:
                 # per Commands-Manual-derived mapping — unverified
                 # against a real .seq file.
                 code = tok[-1] if len(tok) > 1 else '?'
-                name = {'0': 'Seal', '1': 'Purge & Seal',
-                        '2': 'Vent & Seal', '3': 'Pump Continuous',
-                        '4': 'Vent Continuous', '5': 'HiVac'}.get(
-                    code, f"code {code}")
+                # names/order match the MultiVu Chamber Operations dialog
+                name = {'0': 'Seal Immediate', '1': 'Purge/then Seal',
+                        '2': 'Vent/then Seal', '3': 'Pump Continuously',
+                        '4': 'Vent Continuously',
+                        '5': 'High Vacuum'}.get(code, f"code {code}")
                 add(0, T, H, 'CHM', f"Chamber: {name}",
                     mv=f"Chamber Operations: {name}")
             elif cmd == 'BEP':
-                # BEP BEEP <duration s> <frequency Hz>  (verified)
+                # BEP BEEP <duration s> <frequency Hz>  (verified;
+                # MultiVu displays just "Beep")
                 extra = (f" ({tok[2]}s, {tok[3]}Hz)"
                          if len(tok) > 3 else "")
-                add(0, T, H, 'BEP', f"Beep{extra}", mv=f"Beep{extra}")
+                add(0, T, H, 'BEP', f"Beep{extra}", mv="Beep")
             elif cmd in ('MES', 'MSG'):
-                # MES <timeout?> <flag> "message", "", ...  (verified
-                # label; timeout units not yet confirmed, so it is
-                # shown but not added to the timeline)
+                # MES <timeout min> <type> "message", "", ...
+                # (dialog confirms the timeout is in minutes)
                 m = re.search(r'"([^"]*)"', s)
                 txt = m.group(1) if m else ''
                 nums = re.findall(r'-?\d+\.?\d*', s.split('"')[0])
                 tmo = float(nums[0]) if nums else 0.0
-                add(0, T, H, 'MES',
-                    f'Message: "{txt}" — pauses until acknowledged '
-                    f'(timeout param {tmo:g}; time not included)',
-                    kind='wait',
-                    mv=f'Sequence Message "{txt}"')
-            elif cmd in ('SHT', 'SHUTDOWN'):
+                add(tmo * 60.0, T, H, 'MES',
+                    f'Message: "{txt}" — waits up to {tmo:g} min '
+                    f'for OK', kind='wait',
+                    mv=f'Sequence Message "{txt}", '
+                       f'Timeout {tmo:g} min')
+            elif cmd in ('SHT', 'SHUTDOWN', 'STB', 'STANDBY'):
+                # PPMS "Shutdown" / DynaCool "Standby": magnet to zero
+                # field and chamber sealed
+                nm = ('Standby' if cmd.startswith('ST') else 'Shutdown')
                 add(0, T, 0, 'SHT',
-                    "Shutdown — field to 0, heaters off, chamber "
-                    "sealed (ramp-down time not estimated)",
-                    mv="Shutdown")
+                    f"{nm} — field to 0, chamber sealed "
+                    "(ramp-down time not estimated)", mv=nm)
             elif cmd in ('LOG', 'SIG'):
                 nm = 'Log Data' if cmd == 'LOG' else 'Sigma Log Data'
                 add(0, T, H, cmd, f"{nm} (diagnostic logging)", mv=nm)
@@ -681,9 +716,11 @@ class SeqVisualizerGUI:
                 self.log("WARNING: Sample HC found — its relaxation-"
                          "based point timing is NOT estimated.")
             else:
+                # same phrasing MultiVu uses for commands it can't decode
                 add(0, T, H, cmd[:8],
                     f"Unrecognized command — time NOT included: "
-                    f"{s[:60]}", kind='warn')
+                    f"{s[:60]}", kind='warn',
+                    mv=f"Unrecognized Command [{s[:70]}]")
                 self.log(f"Unknown command '{cmd}' — shown in table, "
                          "but its duration is NOT included.")
 
