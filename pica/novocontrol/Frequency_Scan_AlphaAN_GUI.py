@@ -127,11 +127,16 @@ except ImportError:
 # checked against this before a single byte reaches the bus.
 FREQ_HW_MIN, FREQ_HW_MAX = 3e-5, 20e6
 
-# Generator AC amplitude ceiling (Vrms), from the ZG4 spec: up to 3 Vrms at
-# or below 10 MHz, dropping to 1 Vrms above 10 MHz. Frequency-dependent, so
-# it is enforced per-point rather than as one flat number.
-ACV_MAX_LOW_FREQ = 3.0        # <= 10 MHz
+# Generator AC amplitude ceiling (Vrms), from the ZG4 spec: 3 Vrms up to
+# 4 MHz, 2 Vrms from 4 to 10 MHz (ZG4 technical data chart), 1 Vrms above
+# 10 MHz. Frequency-dependent, so it is enforced per-point rather than as
+# one flat number. The 2 Vrms mid tier is the conservative reading of the
+# manual ("3 Vrms <= 10 MHz" in one place, "2 Vrms above 4 MHz" in the
+# ZG4 chart) - we take the lower of the two.
+ACV_MAX_LOW_FREQ = 3.0        # <= 4 MHz
+ACV_MAX_MID_FREQ = 2.0        # 4 - 10 MHz
 ACV_MAX_HIGH_FREQ = 1.0       # > 10 MHz
+ACV_FREQ_MID_HZ = 4e6
 ACV_FREQ_BREAK_HZ = 10e6
 
 # Integration time bounds (s). MTM=0 is legal and means "shortest available";
@@ -141,16 +146,39 @@ ACV_FREQ_BREAK_HZ = 10e6
 MTM_MIN_S, MTM_MAX_S = 0.01, 1000.0
 
 # ZRE? status field. 2 = Result Valid; anything else is not trustworthy.
+# Meanings verified against the Alpha manual.
 STATUS_RESULT_VALID = 2
 # Statuses that abort the whole sweep rather than just flagging one point.
 # 6 = the signal source was disconnected mid-measurement (hardware fault).
 STATUS_FATAL = frozenset({6})
 STATUS_MEANINGS = {
+    0: "Invalid (result buffer empty)",
+    1: "Measurement still in progress",
     2: "Result valid",
-    3: "Signal out of range (check ACV or sample)",
-    4: "Signal out of range (check ACV or sample)",
-    5: "Signal out of range (check ACV or sample)",
+    3: "Voltage V1 out of range for sample measurement (check ACV/sample)",
+    4: "Current out of range for sample measurement (check ACV/sample)",
+    5: "Voltage V1 out of range for reference measurement",
     6: "Signal source disconnected during measurement (hardware fault)",
+}
+
+# Acknowledgment strings a Novocontrol executable command leaves in the
+# result buffer. Every set command (ACV=, MTM=, GFR=, FRS=, ...) answers
+# "OK" on success or one of these codes on failure, and that response MUST
+# be read - otherwise it desynchronizes every later query. (MST is the
+# exception: it leaves no buffered ack; completion is SRQ + ZRE?.)
+CMD_ERROR_MEANINGS = {
+    "CA": "Cannot execute during an active calibration",
+    "CR": "Required test-interface calibration does not exist (Recalibrate)",
+    "CN": "Unavailable while the CE output of a POT/GAL interface is "
+          "connected",
+    "EC": "System connection test (CONCHECK) required",
+    "ER": "General command error",
+    "II": "Command not supported by the connected test interface",
+    "IM": "Measurement type not supported in the current mode",
+    "IP": "Invalid command parameter",
+    "MR": "Not allowed while a measurement/calibration is running",
+    "RE": "Command error (see manual)",
+    "UC": "Unknown command",
 }
 
 # ZG4 interface code reported by INTTYP? (the ZG4 is code 5, not a string).
@@ -169,7 +197,11 @@ WIRE_MODES = ("2", "3", "4")
 
 def acv_ceiling(freq_hz):
     """ZG4 AC-voltage ceiling (Vrms) at a given frequency."""
-    return ACV_MAX_LOW_FREQ if freq_hz <= ACV_FREQ_BREAK_HZ else ACV_MAX_HIGH_FREQ
+    if freq_hz <= ACV_FREQ_MID_HZ:
+        return ACV_MAX_LOW_FREQ
+    if freq_hz <= ACV_FREQ_BREAK_HZ:
+        return ACV_MAX_MID_FREQ
+    return ACV_MAX_HIGH_FREQ
 
 
 def status_message(status):
@@ -544,6 +576,38 @@ class AlphaAN_Backend:
         print(f"  Connected: {idn} | ZG4 interface code {code}")
         return idn, code
 
+    # --- command acknowledgment ---------------------------------------
+
+    def _exec(self, cmd):
+        """Send one executable command and consume its acknowledgment.
+
+        Every Novocontrol set command (ACV=, MTM=, GFR=, FRS=, ...) writes
+        'OK' (or an error code) into the result buffer, and that response
+        MUST be read - unread acks desynchronize every later query, e.g.
+        ZRE? would return a stale 'OK' instead of data. MST is the one
+        exception (no buffered ack; completion is SRQ + ZRE?) and is
+        written directly, never through here.
+        """
+        resp = self.instrument.query(cmd).strip(" \t\r\n\x00\x10")
+        if resp != "OK":
+            meaning = CMD_ERROR_MEANINGS.get(resp, "unrecognized response")
+            raise RuntimeError(
+                f"Command {cmd!r} failed: instrument answered {resp!r} "
+                f"({meaning})."
+            )
+
+    def _exec_tolerant(self, cmd):
+        """_exec for shutdown paths: never raises, reports success."""
+        try:
+            resp = self.instrument.query(cmd).strip(" \t\r\n\x00\x10")
+        except Exception as e:
+            print(f"  Warning: {cmd} failed during shutdown: {e}")
+            return False
+        if resp != "OK":
+            print(f"  Warning: {cmd} answered {resp!r} during shutdown.")
+            return False
+        return True
+
     # --- SRQ ------------------------------------------------------------
 
     def _wait_for_srq(self, timeout_s, context):
@@ -580,8 +644,12 @@ class AlphaAN_Backend:
         """
         state = "unavailable"
         try:
-            self.instrument.write("MBK")
+            # MBK is an executable command: read its ack like any other,
+            # but tolerate a non-OK answer - we are already in a fault path.
+            resp = self.instrument.query("MBK").strip(" \t\r\n\x00\x10")
             self._task_may_be_running = False
+            if resp != "OK":
+                state = f"MBK answered {resp!r}; "
         except Exception as e:
             return f"MBK failed: {e}"
         try:
@@ -607,21 +675,30 @@ class AlphaAN_Backend:
         # prior user settings cannot perturb it. *RST preserves the stored
         # calibration tables; it only resets operating parameters (and parks
         # the generator at ACV=0, DCE=0).
+        # *RST is IEEE-488.2 common: it leaves NO Novocontrol ack (JUMP
+        # queries *IDN? right after with no stale response in between).
         inst.write("*RST")
         time.sleep(1.0)
-        inst.write("MODE=IMP")
+        self._exec("MODE=IMP")
 
         code = parse_inttyp(inst.query("INTTYP?"))
         if code != ZG4_INTERFACE_CODE:
             raise ConnectionError(f"ZG4 not present (INTTYP code {code}).")
 
-        self._task_may_be_running = True
-        inst.write("ZRUNCAL=REF_INIT")
-        self._wait_for_srq(timeout_s, "REF_INIT")
+        # REF_INIT acknowledges IMMEDIATELY (no SRQ) - it only arms the
+        # calibration. REF is the actual task: its 'OK'/error ack is written
+        # to the buffer only when the task finishes, signalled by SRQ.
+        self._exec("ZRUNCAL=REF_INIT")
 
         self._task_may_be_running = True
         inst.write("ZRUNCAL=REF")
         self._wait_for_srq(timeout_s, "REF calibration")
+        ack = inst.read().strip(" \t\r\n\x00\x10")
+        if ack != "OK":
+            meaning = CMD_ERROR_MEANINGS.get(ack, "unrecognized response")
+            raise RuntimeError(
+                f"REF calibration finished with {ack!r} ({meaning})."
+            )
 
     # --- measurement setup ----------------------------------------------
 
@@ -644,38 +721,37 @@ class AlphaAN_Backend:
             raise ConnectionError("Instrument is not connected.")
 
         inst.write("*RST")
-        time.sleep(1.0)  # graceful reset
-        inst.write("MODE=IMP")
+        time.sleep(1.0)  # graceful reset; *RST leaves no Novocontrol ack
+        self._exec("MODE=IMP")
 
         code = parse_inttyp(inst.query("INTTYP?"))
         if code != ZG4_INTERFACE_CODE:
             raise ConnectionError(f"ZG4 not present (INTTYP code {code}).")
 
-        # Settings AFTER any calibration: ZRUNCAL resets ACV, DCE and MTM.
-        # ZREFMODE/ZLLCOR/ZSLCAL already hold these values after *RST; we
-        # write them anyway - defensive against a non-default state, and it
-        # documents intent at the call site.
+        # Settings AFTER any calibration: a calibration task may change
+        # MTM, ZTDEL, ACV, DCE, IAC and IRG. ZREFMODE/ZLLCOR/ZSLCAL already
+        # hold these values after *RST; we write them anyway - defensive
+        # against a non-default state, and it documents intent at the call
+        # site. Each _exec consumes the command's 'OK' ack, which also
+        # fully synchronizes the bus (no settle sleeps needed).
         #
-        # OPEN ITEM (manual unverified): ZREFMODE=-3 is believed to encode
-        # the mes_def's "Reference Measurement: Always, 3 auto capacitors
-        # max", but this mapping has not been re-checked against the
-        # Alpha-AN manual. Verify when the manual is at hand.
-        inst.write("ZREFMODE=-3")   # auto reference caps, up to 3
-        inst.write("ZLLCOR=1")      # low-loss correction on
-        inst.write("ZSLCAL=1")      # apply stored load-short cal data
-        # OPEN ITEM (manual unverified): the mes_def specifies "Low capacity
-        # open calibration: Off". That is the *RST default, so no command is
-        # sent - but the exact disable command could not be verified from the
-        # Alpha-AN manual or JUMP. Per the lab's gentle-bus policy we never
-        # send a guessed command; once the manual confirms the command name,
-        # send an explicit "=0" here beside ZSLCAL.
-        inst.write(f"FRS={p['wire_mode']}")
-        inst.write("DRS=0 0")       # driven shields off
-        time.sleep(0.2)
+        # ZREFMODE (verified against the manual): negative = auto reference
+        # mode, magnitude = max number of internal reference capacitors
+        # combined. -3 = auto, up to 3 caps = the mes_def's "Reference
+        # Measurement: Always, 3 auto capacitors max".
+        self._exec("ZREFMODE=-3")
+        self._exec("ZLLCOR=1")      # low-loss correction on
+        self._exec("ZSLCAL=1")      # apply stored load-short cal data
+        # "Low capacity open calibration: Off" (mes_def): RESOLVED - there
+        # is no analyzer command for it. Open calibration is a host-software
+        # correction (WinDETA measures Z_open and computes
+        # 1/Zs = 1/Zmes - 1/Zopen itself). This program does not implement
+        # it, so the mes_def's "Off" is matched by construction.
+        self._exec(f"FRS={p['wire_mode']}")
+        self._exec("DRS=0 0")       # driven shields off
 
-        inst.write(f"ACV={p['acv']:.6g}")
-        inst.write(f"MTM={p['mtm']:.6g}")
-        time.sleep(0.2)
+        self._exec(f"ACV={p['acv']:.6g}")
+        self._exec(f"MTM={p['mtm']:.6g}")
 
         # DCV / DCE are NEVER sent: this mainframe has no bias hardware.
 
@@ -694,11 +770,13 @@ class AlphaAN_Backend:
         if inst is None:
             raise ConnectionError("Instrument is not connected.")
 
-        inst.write(f"GFR={freq:.6e}")
+        self._exec(f"GFR={freq:.6e}")
         # Clear any stale status immediately before triggering, so a fast
         # point cannot let wait_for_srq latch onto a leftover completion.
         inst.read_stb()
         self._task_may_be_running = True
+        # MST leaves NO buffered ack (unlike set commands): completion is
+        # signalled by SRQ and the result is fetched with ZRE?.
         inst.write("MST")
         self._wait_for_srq(timeout_s, f"measurement at {freq:.6g} Hz")
 
@@ -721,16 +799,10 @@ class AlphaAN_Backend:
         if inst is None:
             return
         if self._task_may_be_running:
-            try:
-                inst.write("MBK")
+            if self._exec_tolerant("MBK"):
                 self._task_may_be_running = False
-            except Exception as e:
-                print(f"  Warning: MBK failed during safe_state: {e}")
         for cmd in ("ACV=0", "ZCONSPL=0"):
-            try:
-                inst.write(cmd)
-            except Exception as e:
-                print(f"  Warning: {cmd} failed during safe_state: {e}")
+            self._exec_tolerant(cmd)
 
     def close_instrument(self):
         """Safe-state, reset, release the session. Never leaves output live."""

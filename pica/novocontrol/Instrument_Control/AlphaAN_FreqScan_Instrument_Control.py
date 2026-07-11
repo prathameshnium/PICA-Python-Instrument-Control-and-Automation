@@ -35,21 +35,47 @@ import pyvisa
 
 # --- Safety constants. NEVER raise these to "make it work". -----------------
 FREQ_HW_MIN, FREQ_HW_MAX = 3e-5, 20e6
-# ZG4 AC-voltage ceiling: 3 Vrms up to 10 MHz, 1 Vrms above. Frequency-
-# dependent, so enforced per-point.
-ACV_MAX_LOW_FREQ, ACV_MAX_HIGH_FREQ, ACV_FREQ_BREAK_HZ = 3.0, 1.0, 10e6
+# ZG4 AC-voltage ceiling: 3 Vrms up to 4 MHz, 2 Vrms from 4 to 10 MHz (ZG4
+# technical data chart - conservative reading), 1 Vrms above 10 MHz.
+# Frequency-dependent, so enforced per-point.
+ACV_MAX_LOW_FREQ = 3.0        # <= 4 MHz
+ACV_MAX_MID_FREQ = 2.0        # 4 - 10 MHz
+ACV_MAX_HIGH_FREQ = 1.0       # > 10 MHz
+ACV_FREQ_MID_HZ = 4e6
+ACV_FREQ_BREAK_HZ = 10e6
 MTM_MIN_S, MTM_MAX_S = 0.01, 1000.0
 STATUS_RESULT_VALID = 2
 STATUS_FATAL = frozenset({6})   # signal source disconnected -> abort sweep
 STATUS_MEANINGS = {
+    0: "Invalid (result buffer empty)",
+    1: "Measurement still in progress",
     2: "Result valid",
-    3: "Signal out of range (check ACV or sample)",
-    4: "Signal out of range (check ACV or sample)",
-    5: "Signal out of range (check ACV or sample)",
+    3: "Voltage V1 out of range for sample measurement (check ACV/sample)",
+    4: "Current out of range for sample measurement (check ACV/sample)",
+    5: "Voltage V1 out of range for reference measurement",
     6: "Signal source disconnected during measurement (hardware fault)",
 }
 ZG4_INTERFACE_CODE = 5          # INTTYP? reports a numeric code, not "ZG4"
 SRQ_TIMEOUT_MEASURE_S = 120.0
+
+# Every Novocontrol executable command (ACV=, MTM=, GFR=, FRS=, ...) writes
+# 'OK' or one of these error codes into the result buffer; the response MUST
+# be read or later queries desynchronize. MST is the exception (no buffered
+# ack; completion is SRQ + ZRE?).
+CMD_ERROR_MEANINGS = {
+    "CA": "Cannot execute during an active calibration",
+    "CR": "Required test-interface calibration does not exist (Recalibrate)",
+    "CN": "Unavailable while the CE output of a POT/GAL interface is "
+          "connected",
+    "EC": "System connection test (CONCHECK) required",
+    "ER": "General command error",
+    "II": "Command not supported by the connected test interface",
+    "IM": "Measurement type not supported in the current mode",
+    "IP": "Invalid command parameter",
+    "MR": "Not allowed while a measurement/calibration is running",
+    "RE": "Command error (see manual)",
+    "UC": "Unknown command",
+}
 
 EPS0_SI = 8.8541878128e-12   # F/m  - geometric capacitance C0
 EPS0_CM = 8.8541878128e-14   # F/cm - so sigma lands in S/cm
@@ -57,7 +83,39 @@ EPS0_CM = 8.8541878128e-14   # F/cm - so sigma lands in S/cm
 
 def acv_ceiling(freq_hz):
     """ZG4 AC-voltage ceiling (Vrms) at a given frequency."""
-    return ACV_MAX_LOW_FREQ if freq_hz <= ACV_FREQ_BREAK_HZ else ACV_MAX_HIGH_FREQ
+    if freq_hz <= ACV_FREQ_MID_HZ:
+        return ACV_MAX_LOW_FREQ
+    if freq_hz <= ACV_FREQ_BREAK_HZ:
+        return ACV_MAX_MID_FREQ
+    return ACV_MAX_HIGH_FREQ
+
+
+def exec_cmd(inst, cmd):
+    """Send one executable command and consume its 'OK' acknowledgment.
+
+    Raises RuntimeError on an error-code answer. Never use for MST (which
+    leaves no buffered ack) or for queries.
+    """
+    resp = inst.query(cmd).strip(" \t\r\n\x00\x10")
+    if resp != "OK":
+        meaning = CMD_ERROR_MEANINGS.get(resp, "unrecognized response")
+        raise RuntimeError(
+            f"Command {cmd!r} failed: instrument answered {resp!r} "
+            f"({meaning})."
+        )
+
+
+def exec_tolerant(inst, cmd):
+    """exec_cmd for shutdown paths: never raises, reports success."""
+    try:
+        resp = inst.query(cmd).strip(" \t\r\n\x00\x10")
+    except Exception as e:
+        print(f"  Warning: {cmd} failed during shutdown: {e}")
+        return False
+    if resp != "OK":
+        print(f"  Warning: {cmd} answered {resp!r} during shutdown.")
+        return False
+    return True
 
 
 def status_message(status):
@@ -190,7 +248,9 @@ def abort_and_diagnose(inst):
     Calling it here is safe because MBK has already stopped the task.
     """
     try:
-        inst.write("MBK")
+        # MBK is an executable command: read its ack, but tolerate a
+        # non-OK answer - we are already in a fault path.
+        inst.query("MBK")
     except Exception as e:
         return f"MBK failed: {e}"
     try:
@@ -224,10 +284,7 @@ def safe_state(inst):
     if inst is None:
         return
     for cmd in ("MBK", "ACV=0", "ZCONSPL=0"):
-        try:
-            inst.write(cmd)
-        except Exception as e:
-            print(f"  Warning: {cmd} failed during safe_state: {e}")
+        exec_tolerant(inst, cmd)
 
 
 def shutdown(inst):
@@ -288,7 +345,7 @@ def main():
     parser.add_argument("--path", default=".", help="Output directory")
     parser.add_argument("--comment", default="Alpha-AN frequency scan",
                         help="Free text for the WinDETA header line")
-    parser.add_argument("--acv", type=float, default=0.5,
+    parser.add_argument("--acv", type=float, default=1.0,
                         help="AC voltage in Vrms")
     parser.add_argument("--mtm", type=float, default=0.5,
                         help="Integration time in seconds")
@@ -339,26 +396,31 @@ def main():
         # *RST preserves the stored calibration tables; it only resets
         # operating parameters. A scan therefore runs on the previous REF
         # calibration, by design. Run REF from the GUI when it is stale.
+        # *RST is IEEE-488.2 common: it leaves NO Novocontrol ack.
         inst.write("*RST")
         time.sleep(1.0)
-        inst.write("MODE=IMP")
 
         # Settings AFTER the reset: *RST (and ZRUNCAL) reset ACV and MTM.
-        inst.write("ZREFMODE=-3")
-        inst.write("ZLLCOR=1")
-        inst.write("ZSLCAL=1")
-        inst.write(f"FRS={args.wire_mode}")
-        inst.write("DRS=0 0")
-        time.sleep(0.2)
-        inst.write(f"ACV={args.acv:.6g}")
-        inst.write(f"MTM={args.mtm:.6g}")
-        time.sleep(0.2)
+        # exec_cmd consumes each command's mandatory 'OK' acknowledgment,
+        # which also fully synchronizes the bus (no settle sleeps needed).
+        # ZREFMODE=-3 = auto reference mode, up to 3 caps (verified).
+        exec_cmd(inst, "MODE=IMP")
+        exec_cmd(inst, "ZREFMODE=-3")
+        exec_cmd(inst, "ZLLCOR=1")
+        exec_cmd(inst, "ZSLCAL=1")
+        exec_cmd(inst, f"FRS={args.wire_mode}")
+        exec_cmd(inst, "DRS=0 0")
+        exec_cmd(inst, f"ACV={args.acv:.6g}")
+        exec_cmd(inst, f"MTM={args.mtm:.6g}")
         # DCV / DCE are NEVER sent: no bias hardware on this mainframe.
+        # "Low capacity open calibration" has no analyzer command - it is a
+        # host-software correction (not implemented here), matching the
+        # WinDETA mes_def's "Off" by construction.
 
-        # Date/time with NO zero-padding, matching the WinDETA reference
-        # export (e.g. "25.4.2025, 13:2").
-        date_str = f"{stamp.day}.{stamp.month}.{stamp.year}"
-        time_str = f"{stamp.hour}:{stamp.minute}"
+        # Date/time matching the WinDETA export style: space-padded day,
+        # zero-padded month and minute (e.g. " 9.07.2026, 20:00").
+        date_str = f"{stamp.day:2d}.{stamp.month:02d}.{stamp.year}"
+        time_str = f"{stamp.hour}:{stamp.minute:02d}"
         with open(out_path, "w", encoding="utf-8") as fh:
             fh.write(f"{args.comment}, {date_str}, {time_str}\n")
             fh.write(f"Fixed value(s) :  AC Volt  [Vrms]={args.acv:.4e}\n")
@@ -369,8 +431,9 @@ def main():
 
         n_flagged = 0
         for i, freq in enumerate(FREQUENCIES_HZ, 1):
-            inst.write(f"GFR={freq:.6e}")
+            exec_cmd(inst, f"GFR={freq:.6e}")
             inst.read_stb()   # clear stale status before triggering
+            # MST leaves NO buffered ack: completion is SRQ + ZRE?.
             inst.write("MST")
             wait_for_srq(inst, SRQ_TIMEOUT_MEASURE_S,
                          f"measurement at {freq:.6g} Hz")
