@@ -192,7 +192,7 @@ def parse_inttyp(response):
 # exactly 1 MHz. 115 points. Generated once, deliberately NOT recomputed at
 # runtime and NOT user-editable, so every scan in the lab is directly
 # comparable point-for-point.
-FREQUENCIES_HZ = (
+FREQUENCIES_115PT_1MHZ = (
     2.000000e+01, 2.200000e+01, 2.420000e+01, 2.662000e+01, 2.928200e+01,
     3.221020e+01, 3.543122e+01, 3.897434e+01, 4.287178e+01, 4.715895e+01,
     5.187485e+01, 5.706233e+01, 6.276857e+01, 6.904542e+01, 7.594997e+01,
@@ -218,23 +218,49 @@ FREQUENCIES_HZ = (
     7.148672e+05, 7.863539e+05, 8.649893e+05, 9.514882e+05, 1.000000e+06,
 )
 
+# Second frozen series: the WinDETA measurement definition
+# (data_file_for_ref/mes_def_Fscan.txt, LIST ORDERING). 20 Hz, x1.4 per
+# step, 40 points, final point exactly 10 MHz. Transcribed verbatim from
+# the mes_def - deliberately NOT recomputed and NOT user-editable.
+FREQUENCIES_40PT_10MHZ = (
+    2.000000e+01, 2.800000e+01, 3.920000e+01, 5.488000e+01, 7.683200e+01,
+    1.075648e+02, 1.505907e+02, 2.108270e+02, 2.951578e+02, 4.132209e+02,
+    5.785093e+02, 8.099130e+02, 1.133878e+03, 1.587430e+03, 2.222401e+03,
+    3.111362e+03, 4.355907e+03, 6.098269e+03, 8.537577e+03, 1.195261e+04,
+    1.673365e+04, 2.342711e+04, 3.279796e+04, 4.591714e+04, 6.428399e+04,
+    8.999759e+04, 1.259966e+05, 1.763953e+05, 2.469534e+05, 3.457347e+05,
+    4.840286e+05, 6.776401e+05, 9.486961e+05, 1.328175e+06, 1.859444e+06,
+    2.603222e+06, 3.644511e+06, 5.102316e+06, 7.143242e+06, 1.000000e+07,
+)
+
+# The only two scan recipes this program will run. Keys are the combobox
+# labels; the default preset is listed first.
+FREQ_PRESETS = {
+    "115 pts, 20 Hz - 1 MHz (x1.1)": FREQUENCIES_115PT_1MHZ,
+    "40 pts, 20 Hz - 10 MHz (x1.4)": FREQUENCIES_40PT_10MHZ,
+}
+DEFAULT_FREQ_PRESET = "115 pts, 20 Hz - 1 MHz (x1.1)"
+
 # Guardrail: refuse to even import with a frequency the hardware cannot reach.
-assert all(
-    FREQ_HW_MIN <= _f <= FREQ_HW_MAX for _f in FREQUENCIES_HZ
-), "FREQUENCIES_HZ contains a point outside the Alpha-AN hardware range."
+for _name, _series in FREQ_PRESETS.items():
+    assert all(
+        FREQ_HW_MIN <= _f <= FREQ_HW_MAX for _f in _series
+    ), f"Preset {_name!r} contains a point outside the Alpha-AN range."
 
 
 # WinDETA column header. Order and names are FIXED - WinFIT parses this
-# positionally. Do not add, remove or reorder columns.
+# positionally. Do not add, remove or reorder columns. Zp comes BEFORE Sig,
+# matching the WinDETA export paired with the mes_def
+# (data_file_for_ref/Fscan_data_Novo_Windeta.dat).
 WINDETA_HEADER = (
     " Freq. [Hz]\t Eps'    \t Eps''   \t Modulus'  \t Modulus''  \t"
-    " Sig' [S/cm]\t Sig'' [S/cm]\t Zp' [Ohms]\t Zp'' [Ohms]"
+    " Zp' [Ohms]\t Zp'' [Ohms]\t Sig' [S/cm]\t Sig'' [S/cm]"
 )
 
 # Same nine quantities, PICA-style header for the built-in Plotter.
 PICA_HEADER = (
     "Frequency\tEps'\tEps''\tModulus'\tModulus''\t"
-    "Sig'\tSig''\tZp'\tZp''"
+    "Zp'\tZp''\tSig'\tSig''"
 )
 
 
@@ -253,6 +279,19 @@ def compute_c0(diameter_mm, thickness_mm):
     t_m = thickness_mm * 1e-3
     area = math.pi * (d_m / 2.0) ** 2
     return EPS0_SI * area / t_m
+
+
+def compute_c0_from_area(area_cm2, thickness_mm):
+    """Geometric (empty-cell) capacitance from electrode AREA, in F.
+
+    For irregular electrodes where the area is known directly.
+    C0 = eps0 * A / d, with A in cm^2 and d in mm.
+    """
+    if area_cm2 <= 0 or thickness_mm <= 0:
+        raise ValueError("Area and thickness must both be positive.")
+    a_m2 = area_cm2 * 1e-4
+    t_m = thickness_mm * 1e-3
+    return EPS0_SI * a_m2 / t_m
 
 
 def parse_zre(response):
@@ -296,12 +335,19 @@ def impedance_to_dielectric(zr, zi, f_actual, c0):
         eps'' =  R / (w * C0 * |Z|^2)
         M'    =  eps'  / (eps'^2 + eps''^2)
         M''   =  eps'' / (eps'^2 + eps''^2)
-        sig'  =  w * eps0 * eps''     (eps0 in F/cm -> sigma in S/cm)
-        sig'' = -w * eps0 * eps'
+        sig'  =  w * eps0 * eps''        (eps0 in F/cm -> sigma in S/cm)
+        sig'' = -w * eps0 * (eps' - 1)
+
+    WinDETA's conductivity is sigma* = i*w*eps0*(eps* - 1): the vacuum
+    displacement is subtracted, so sig'' uses (eps' - 1), NOT eps'.
+    Verified against both reference exports - with bare eps' the .dat
+    disagrees by 12% at 10 MHz (eps' ~ 8); with (eps' - 1) every row of
+    both files matches to < 1e-4. sig' is unaffected (vacuum is lossless).
 
     The WinDETA Zp' / Zp'' columns are the PARALLEL-equivalent impedance,
-    NOT the series R / X (verified against a Novocontrol WinDETA export,
-    data_file_for_ref/Sample_Fscan_RT.TXT, to < 1e-5):
+    NOT the series R / X (verified against the Novocontrol WinDETA exports
+    data_file_for_ref/Sample_Fscan_RT.TXT and Fscan_data_Novo_Windeta.dat,
+    to < 1e-4):
 
         Zp'  = 1/G =  (R^2 + X^2) / R      # parallel resistance  Rp
         Zp'' = 1/B = -(R^2 + X^2) / X      # parallel reactance   1/(w*Cp)
@@ -328,7 +374,8 @@ def impedance_to_dielectric(zr, zi, f_actual, c0):
     m2 = eps2 / eps_sq_safe
 
     sig1 = omega * EPS0_CM * eps2
-    sig2 = -omega * EPS0_CM * eps1
+    # (eps1 - 1): WinDETA's sigma* = i*w*eps0*(eps* - 1), see docstring.
+    sig2 = -omega * EPS0_CM * (eps1 - 1.0)
 
     # Parallel-equivalent impedance (1/G and 1/B), matching WinDETA. These are
     # geometry-independent, so they do not use C0.
@@ -337,7 +384,7 @@ def impedance_to_dielectric(zr, zi, f_actual, c0):
     zp1 = z_mag_sq / zr_safe    # 1/G = parallel resistance
     zp2 = -z_mag_sq / zi_safe   # 1/B = parallel reactance
 
-    return (f_actual, eps1, eps2, m1, m2, sig1, sig2, zp1, zp2)
+    return (f_actual, eps1, eps2, m1, m2, zp1, zp2, sig1, sig2)
 
 
 def validate_parameters(params):
@@ -345,10 +392,14 @@ def validate_parameters(params):
 
     Raises ValueError on the first violation.
     """
+    frequencies = params["frequencies"]
+    if not frequencies:
+        raise ValueError("Frequency list is empty.")
+
     acv = params["acv"]
     # The ZG4 ceiling is frequency-dependent (3 Vrms <=10 MHz, 1 Vrms above),
     # so the binding limit is the lowest ceiling over the whole sweep.
-    max_acv = min(acv_ceiling(f) for f in FREQUENCIES_HZ)
+    max_acv = min(acv_ceiling(f) for f in frequencies)
     if not (0.0 < acv <= max_acv):
         raise ValueError(
             f"AC voltage {acv} Vrms outside the 0 < V <= {max_acv} Vrms "
@@ -364,13 +415,17 @@ def validate_parameters(params):
     if params["wire_mode"] not in WIRE_MODES:
         raise ValueError(f"Wire mode must be one of {WIRE_MODES}.")
 
-    if params["diameter_mm"] <= 0 or params["thickness_mm"] <= 0:
-        raise ValueError("Diameter and thickness must both be positive.")
+    if params["geometry_mode"] == "area":
+        if params["area_cm2"] <= 0 or params["thickness_mm"] <= 0:
+            raise ValueError("Area and thickness must both be positive.")
+    else:
+        if params["diameter_mm"] <= 0 or params["thickness_mm"] <= 0:
+            raise ValueError("Diameter and thickness must both be positive.")
 
     if params["delay"] < 0:
         raise ValueError("Initial delay cannot be negative.")
 
-    for f in FREQUENCIES_HZ:
+    for f in frequencies:
         if not (FREQ_HW_MIN <= f <= FREQ_HW_MAX):
             raise ValueError(
                 f"Frequency {f} Hz is outside the Alpha-AN range "
@@ -600,9 +655,20 @@ class AlphaAN_Backend:
         # ZREFMODE/ZLLCOR/ZSLCAL already hold these values after *RST; we
         # write them anyway - defensive against a non-default state, and it
         # documents intent at the call site.
+        #
+        # OPEN ITEM (manual unverified): ZREFMODE=-3 is believed to encode
+        # the mes_def's "Reference Measurement: Always, 3 auto capacitors
+        # max", but this mapping has not been re-checked against the
+        # Alpha-AN manual. Verify when the manual is at hand.
         inst.write("ZREFMODE=-3")   # auto reference caps, up to 3
         inst.write("ZLLCOR=1")      # low-loss correction on
         inst.write("ZSLCAL=1")      # apply stored load-short cal data
+        # OPEN ITEM (manual unverified): the mes_def specifies "Low capacity
+        # open calibration: Off". That is the *RST default, so no command is
+        # sent - but the exact disable command could not be verified from the
+        # Alpha-AN manual or JUMP. Per the lab's gentle-bus policy we never
+        # send a guessed command; once the manual confirms the command name,
+        # send an explicit "=0" here beside ZSLCAL.
         inst.write(f"FRS={p['wire_mode']}")
         inst.write("DRS=0 0")       # driven shields off
         time.sleep(0.2)
@@ -759,6 +825,7 @@ class AlphaAN_FreqScan_GUI:
         self.data_storage = {"freq": [], "eps1": [], "eps2": []}
         self.logo_image = None
         self.sweep_index = 0
+        self.sweep_frequencies = FREQ_PRESETS[DEFAULT_FREQ_PRESET]
         self.c0_farads = None
         self.cal_age_str = format_cal_age(read_last_ref_cal())
 
@@ -999,16 +1066,9 @@ class AlphaAN_FreqScan_GUI:
 
         self._vfloat_cmd = (frame.register(_vfloat), "%P")
 
-        # Row 0: no-DC-bias banner. This mainframe has no bias hardware.
-        tk.Label(
-            frame,
-            text="No DC bias hardware on this mainframe — DCV/DCE never sent",
-            bg="#8B0000",
-            fg="#FFFFFF",
-            font=self.FONT_BASE,
-        ).grid(
-            row=0, column=0, columnspan=2, padx=padx, pady=(8, 6), sticky="ew"
-        )
+        # No DC bias hardware on this mainframe - DCV/DCE are never sent.
+        # (Deliberately not shown in the UI; see the SAFETY note in the
+        # module docstring and initialize_instrument.)
 
         self._add_entry(
             frame, "Sample Name", "sample_name", 1, 0, colspan=2,
@@ -1019,36 +1079,57 @@ class AlphaAN_FreqScan_GUI:
             default="Alpha-AN frequency scan",
         )
         self._add_entry(
-            frame, "AC Voltage (Vrms)", "acv", 5, 0, default="0.5"
+            frame, "AC Voltage (Vrms)", "acv", 5, 0, default="1.0"
         )
         self._add_entry(
             frame, "Integration Time (s)", "mtm", 5, 1, default="0.5"
         )
-        self._add_entry(
-            frame, "Electrode Diameter (mm)", "diameter_mm", 7, 0,
-            default="10.0",
+
+        # Geometry can be given either as a round-plate DIAMETER or directly
+        # as an electrode AREA (irregular electrodes). Default is area mode
+        # with A = 1 cm^2, d = 1 mm.
+        self.geom_mode_var = tk.StringVar(value="area")
+        geom_radio_frame = ttk.Frame(frame)
+        geom_radio_frame.grid(
+            row=7, column=0, columnspan=2, padx=padx, pady=(2, 0), sticky="w"
         )
-        self._add_entry(
-            frame, "Sample Thickness (mm)", "thickness_mm", 7, 1,
+        Label(
+            geom_radio_frame, text="Geometry input:", font=self.FONT_BASE
+        ).pack(side="left")
+        ttk.Radiobutton(
+            geom_radio_frame, text="Area (cm²)", value="area",
+            variable=self.geom_mode_var, command=self._on_geom_mode_change,
+        ).pack(side="left", padx=(10, 0))
+        ttk.Radiobutton(
+            geom_radio_frame, text="Diameter (mm)", value="diameter",
+            variable=self.geom_mode_var, command=self._on_geom_mode_change,
+        ).pack(side="left", padx=(10, 0))
+
+        self.lbl_geom = self._add_entry(
+            frame, "Electrode Area (cm²)", "geom_value", 8, 0,
             default="1.0",
         )
         self._add_entry(
-            frame, "Initial Delay (s)", "delay", 9, 0, default="1.0"
+            frame, "Sample Thickness (mm)", "thickness_mm", 8, 1,
+            default="1.0",
+        )
+        self._add_entry(
+            frame, "Initial Delay (s)", "delay", 10, 0, default="1.0"
         )
 
         Label(
             frame, text="ZG4 Wire Mode (FRS):", font=self.FONT_BASE
-        ).grid(row=9, column=1, padx=padx, pady=(2, 0), sticky="w")
+        ).grid(row=10, column=1, padx=padx, pady=(2, 0), sticky="w")
         self.wire_combobox = ttk.Combobox(
             frame, font=self.FONT_BASE, state="readonly",
             values=list(WIRE_MODES),
         )
         self.wire_combobox.set("2")
         self.wire_combobox.grid(
-            row=10, column=1, padx=padx, pady=(0, 10), sticky="ew"
+            row=11, column=1, padx=padx, pady=(0, 10), sticky="ew"
         )
 
-        for key in ("acv", "mtm", "diameter_mm", "thickness_mm", "delay"):
+        for key in ("acv", "mtm", "geom_value", "thickness_mm", "delay"):
             self.entries[key].config(
                 validate="key", validatecommand=self._vfloat_cmd
             )
@@ -1058,33 +1139,50 @@ class AlphaAN_FreqScan_GUI:
             frame, text="C0 = --", font=self.FONT_BASE,
             foreground=self.CLR_TEXT_DARK,
         )
-        self.lbl_c0.grid(row=11, column=0, columnspan=2, padx=padx, sticky="w")
-        for key in ("diameter_mm", "thickness_mm"):
+        self.lbl_c0.grid(row=12, column=0, columnspan=2, padx=padx, sticky="w")
+        for key in ("geom_value", "thickness_mm"):
             self.entries[key].bind("<KeyRelease>", self._update_c0_label)
         self._update_c0_label()
+
+        # Two frozen scan recipes only - the lists themselves are never
+        # user-editable, so runs stay comparable point-for-point.
+        Label(
+            frame, text="Frequency List:", font=self.FONT_BASE
+        ).grid(
+            row=13, column=0, columnspan=2, padx=padx, pady=(10, 2), sticky="w"
+        )
+        self.freq_combobox = ttk.Combobox(
+            frame, font=self.FONT_BASE, state="readonly",
+            values=list(FREQ_PRESETS),
+        )
+        self.freq_combobox.set(DEFAULT_FREQ_PRESET)
+        self.freq_combobox.grid(
+            row=14, column=0, columnspan=2, padx=padx, pady=(0, 4),
+            sticky="ew",
+        )
 
         Label(
             frame, text="Alpha-AN VISA (GPIB):", font=self.FONT_BASE
         ).grid(
-            row=12, column=0, columnspan=2, padx=padx, pady=(10, 2), sticky="w"
+            row=15, column=0, columnspan=2, padx=padx, pady=(10, 2), sticky="w"
         )
         self.visa_combobox = ttk.Combobox(
             frame, font=self.FONT_BASE, state="readonly"
         )
         self.visa_combobox.grid(
-            row=13, column=0, columnspan=2, padx=padx, pady=(0, 10),
+            row=16, column=0, columnspan=2, padx=padx, pady=(0, 10),
             sticky="ew",
         )
 
         self.scan_button = ttk.Button(
             frame, text="Scan Instruments", command=self._scan_for_visa
         )
-        self.scan_button.grid(row=14, column=0, padx=padx, pady=5, sticky="ew")
+        self.scan_button.grid(row=17, column=0, padx=padx, pady=5, sticky="ew")
 
         ttk.Button(
             frame, text="Browse Save Loc...",
             command=self._browse_file_location,
-        ).grid(row=14, column=1, padx=padx, pady=5, sticky="ew")
+        ).grid(row=17, column=1, padx=padx, pady=5, sticky="ew")
 
         # REF calibration is a DELIBERATE, SEPARATE action. Start never
         # calibrates: the sample may be permanently mounted in the cell.
@@ -1093,7 +1191,7 @@ class AlphaAN_FreqScan_GUI:
             command=self.run_reference_calibration,
         )
         self.cal_button.grid(
-            row=15, column=0, columnspan=2, padx=padx, pady=(10, 2),
+            row=18, column=0, columnspan=2, padx=padx, pady=(10, 2),
             sticky="ew",
         )
 
@@ -1102,7 +1200,7 @@ class AlphaAN_FreqScan_GUI:
             foreground=self.CLR_TEXT_DARK,
         )
         self.lbl_cal_age.grid(
-            row=16, column=0, columnspan=2, padx=padx, sticky="w"
+            row=19, column=0, columnspan=2, padx=padx, sticky="w"
         )
 
         self.start_button = ttk.Button(
@@ -1110,14 +1208,14 @@ class AlphaAN_FreqScan_GUI:
             style="Start.TButton",
         )
         self.start_button.grid(
-            row=17, column=0, padx=(padx, 5), pady=15, sticky="ew"
+            row=20, column=0, padx=(padx, 5), pady=15, sticky="ew"
         )
         self.stop_button = ttk.Button(
             frame, text="Stop", command=self.stop_sweep,
             style="Stop.TButton", state="disabled",
         )
         self.stop_button.grid(
-            row=17, column=1, padx=(5, padx), pady=15, sticky="ew"
+            row=20, column=1, padx=(5, padx), pady=15, sticky="ew"
         )
 
         self.lbl_status = ttk.Label(
@@ -1125,14 +1223,14 @@ class AlphaAN_FreqScan_GUI:
             font=("Segoe UI", 12, "bold"),
             foreground=self.CLR_ACCENT_RED,
         )
-        self.lbl_status.grid(row=18, column=0, columnspan=2, pady=5)
+        self.lbl_status.grid(row=21, column=0, columnspan=2, pady=5)
 
         self.progress_bar = ttk.Progressbar(
             frame, orient="horizontal", mode="determinate",
             style="green.Horizontal.TProgressbar",
         )
         self.progress_bar.grid(
-            row=19, column=0, columnspan=2, padx=padx, pady=(5, 10),
+            row=22, column=0, columnspan=2, padx=padx, pady=(5, 10),
             sticky="ew",
         )
 
@@ -1160,7 +1258,7 @@ class AlphaAN_FreqScan_GUI:
         self.console_widget.pack(pady=5, padx=5, fill="both", expand=True)
         self.log(
             f"Alpha-AN Frequency Scan initialized. "
-            f"{len(FREQUENCIES_HZ)} points, 20 Hz to 1 MHz."
+            f"{len(FREQ_PRESETS)} frozen frequency presets available."
         )
         self.log(self.cal_age_str)
         return frame
@@ -1240,9 +1338,8 @@ class AlphaAN_FreqScan_GUI:
         self.console_widget.config(state="disabled")
 
     def _add_entry(self, parent, text, dict_key, r, c, colspan=1, default=""):
-        Label(
-            parent, text=f"{text}:", font=self.FONT_BASE
-        ).grid(row=r, column=c, padx=10, pady=(2, 0), sticky="w")
+        label = Label(parent, text=f"{text}:", font=self.FONT_BASE)
+        label.grid(row=r, column=c, padx=10, pady=(2, 0), sticky="w")
         entry = Entry(parent, font=self.FONT_BASE)
         entry.grid(
             row=r + 1, column=c, columnspan=colspan, padx=10,
@@ -1250,12 +1347,27 @@ class AlphaAN_FreqScan_GUI:
         )
         entry.insert(0, default)
         self.entries[dict_key] = entry
+        return label
+
+    def _on_geom_mode_change(self):
+        """Relabel the geometry entry when the Diameter/Area toggle flips."""
+        if self.geom_mode_var.get() == "area":
+            self.lbl_geom.config(text="Electrode Area (cm²):")
+        else:
+            self.lbl_geom.config(text="Electrode Diameter (mm):")
+        self._update_c0_label()
+
+    def _compute_c0_from_inputs(self, geom_value, thickness_mm):
+        """C0 from the current geometry mode and typed values."""
+        if self.geom_mode_var.get() == "area":
+            return compute_c0_from_area(geom_value, thickness_mm)
+        return compute_c0(geom_value, thickness_mm)
 
     def _update_c0_label(self, _event=None):
         try:
-            d = float(self.entries["diameter_mm"].get())
+            g = float(self.entries["geom_value"].get())
             t = float(self.entries["thickness_mm"].get())
-            self.c0_farads = compute_c0(d, t)
+            self.c0_farads = self._compute_c0_from_inputs(g, t)
             self.lbl_c0.config(text=f"C0 = {self.c0_farads:.5e} F")
         except (ValueError, ZeroDivisionError):
             self.c0_farads = None
@@ -1433,17 +1545,25 @@ class AlphaAN_FreqScan_GUI:
             if self.is_calibrating:
                 raise RuntimeError("A calibration is still running.")
 
+            geom_mode = self.geom_mode_var.get()
             params = {
                 "sample_name": self.entries["sample_name"].get().strip(),
                 "comment": self.entries["comment"].get().strip(),
                 "acv": float(self.entries["acv"].get()),
                 "mtm": float(self.entries["mtm"].get()),
-                "diameter_mm": float(self.entries["diameter_mm"].get()),
+                "geometry_mode": geom_mode,
                 "thickness_mm": float(self.entries["thickness_mm"].get()),
                 "delay": float(self.entries["delay"].get()),
                 "wire_mode": self.wire_combobox.get(),
                 "visa": self._selected_visa_address(),
+                "freq_preset": self.freq_combobox.get(),
+                "frequencies": FREQ_PRESETS[self.freq_combobox.get()],
             }
+            geom_value = float(self.entries["geom_value"].get())
+            if geom_mode == "area":
+                params["area_cm2"] = geom_value
+            else:
+                params["diameter_mm"] = geom_value
             if not all([params["sample_name"], params["visa"],
                         self.file_location_path]):
                 raise ValueError(
@@ -1454,8 +1574,8 @@ class AlphaAN_FreqScan_GUI:
             # Validate BEFORE opening the session: nothing unsafe ever
             # reaches the bus.
             validate_parameters(params)
-            self.c0_farads = compute_c0(
-                params["diameter_mm"], params["thickness_mm"]
+            self.c0_farads = self._compute_c0_from_inputs(
+                geom_value, params["thickness_mm"]
             )
 
             self.cal_age_str = format_cal_age(read_last_ref_cal())
@@ -1482,12 +1602,13 @@ class AlphaAN_FreqScan_GUI:
                 self.canvas.draw()
 
                 self.sweep_index = 0
+                self.sweep_frequencies = params["frequencies"]
                 self.progress_bar["value"] = 0
-                self.progress_bar["maximum"] = len(FREQUENCIES_HZ)
+                self.progress_bar["maximum"] = len(self.sweep_frequencies)
 
                 self.sweep_delay = params["delay"]
                 self.log(
-                    f"Starting frequency sweep: {len(FREQUENCIES_HZ)} points, "
+                    f"Starting frequency sweep: {params['freq_preset']}, "
                     f"C0 = {self.c0_farads:.5e} F"
                 )
 
@@ -1517,28 +1638,32 @@ class AlphaAN_FreqScan_GUI:
         self.dat_filepath = os.path.join(self.file_location_path, base + ".dat")
 
         now = datetime.now()
-        # WinDETA expects free text on line 1; the cal age rides along there
-        # because there is nowhere else to put it without breaking the parse.
-        comment = f"{params['comment']} | {self.cal_age_str}"
-        # Date/time with NO zero-padding, matching the WinDETA reference
-        # export (e.g. "25.4.2025, 13:2" -- not "25.04.2025, 13:02").
-        date_str = f"{now.day}.{now.month}.{now.year}"
-        time_str = f"{now.hour}:{now.minute}"
+        # Line 1 is the comment ONLY, exactly like the WinDETA exports; the
+        # cal age lives in the PICA .dat header and the console instead.
+        # Date/time matches Fscan_data_Novo_Windeta.dat: space-padded day,
+        # zero-padded month and minute (e.g. " 9.07.2026, 20:00").
+        date_str = f"{now.day:2d}.{now.month:02d}.{now.year}"
+        time_str = f"{now.hour}:{now.minute:02d}"
         with open(self.txt_filepath, "w", encoding="utf-8") as fh:
-            fh.write(f"{comment}, {date_str}, {time_str}\n")
+            fh.write(f"{params['comment']}, {date_str}, {time_str}\n")
             fh.write(
                 f"Fixed value(s) :  AC Volt  [Vrms]={params['acv']:.4e}\n"
             )
             fh.write(WINDETA_HEADER + "\n")
 
+        if params["geometry_mode"] == "area":
+            geometry_str = f"A = {params['area_cm2']} cm^2"
+        else:
+            geometry_str = f"D = {params['diameter_mm']} mm"
         with open(self.dat_filepath, "w", encoding="utf-8") as fh:
             fh.write(
                 f"# Sample: {params['sample_name']} | "
                 f"ACV: {params['acv']} Vrms | MTM: {params['mtm']} s | "
-                f"FRS: {params['wire_mode']}-wire\n"
+                f"FRS: {params['wire_mode']}-wire | "
+                f"List: {params['freq_preset']}\n"
             )
             fh.write(
-                f"# Geometry: D = {params['diameter_mm']} mm, "
+                f"# Geometry: {geometry_str}, "
                 f"d = {params['thickness_mm']} mm, "
                 f"C0 = {self.c0_farads:.5e} F\n"
             )
@@ -1559,7 +1684,7 @@ class AlphaAN_FreqScan_GUI:
             if self.sweep_delay > 0:
                 time.sleep(self.sweep_delay)
 
-            for i, target_f in enumerate(FREQUENCIES_HZ):
+            for i, target_f in enumerate(self.sweep_frequencies):
                 if self.stop_event.is_set():
                     break
 
