@@ -212,14 +212,12 @@ class RT_GUI_Active:
             'temperature': [],
             'voltage': [],
             'resistance': []}
-        # --- NEW: Blitting optimization ---
-        self.plot_bg = None
-        self.is_resizing = False
-        self.resize_timer = None
+        # Plot updates are decoupled from data acquisition: data callbacks
+        # only set this flag; _refresh_plot redraws on a fixed cadence.
+        self._plot_dirty = False
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
-        self.root.bind('<Configure>', self._on_resize)
 
     def setup_styles(self):
         style = ttk.Style(self.root)
@@ -504,7 +502,7 @@ class RT_GUI_Active:
 
         # Top plot: Resistance vs. Temperature
         self.line_main, = self.ax_main.plot(
-            [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-', animated=True)
+            [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=4, linestyle='-')
         self.ax_main.set_title("Live R-T and V-T Curves", fontweight='bold')
         self.ax_main.set_ylabel("Resistance (Ω)")
         self.ax_main.set_yscale('log')
@@ -512,14 +510,13 @@ class RT_GUI_Active:
 
         # Bottom plot: Voltage vs. Temperature
         self.line_sub, = self.ax_sub.plot(
-            [], [], color=self.CLR_ACCENT_BLUE, marker='o', markersize=4, linestyle='-', animated=True)
+            [], [], color=self.CLR_ACCENT_BLUE, marker='o', markersize=4, linestyle='-')
         self.ax_sub.set_xlabel("Temperature (K)")
         self.ax_sub.set_ylabel("Voltage (V)")
         self.ax_sub.grid(True, linestyle='--', alpha=0.6)
 
         self.canvas = FigureCanvasTkAgg(self.figure, container)
         self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
-        self.canvas.mpl_connect('draw_event', self._on_draw)
 
     def _create_params_panel(self, parent):
         container = ttk.Frame(parent)
@@ -620,21 +617,17 @@ class RT_GUI_Active:
             self.experiment_state = 'stabilizing'
             for key in self.data_storage:
                 self.data_storage[key].clear()
-            # --- MODIFIED: Plot setup for blitting ---
             self.line_main.set_data([], [])
+            self.line_sub.set_data([], [])
             self.ax_main.set_title(f"R-T Curve: {self.params['name']}")
             self.ax_main.set_yscale('log')
-            self.ax_main.relim()
-            self.ax_main.autoscale_view()
-            self.canvas.draw()  # Full draw to prepare background
-            self.plot_bg = self.canvas.copy_from_bbox(
-                self.ax_main.bbox)  # Cache background
-            # Set line to animated for blitting
-            self.line_main.set_animated(True)
+            self._plot_dirty = False
+            self.canvas.draw_idle()
 
             self.log(
                 f"Starting stabilization at {self.params['start_temp']} K...")
             self.root.after(100, self._experiment_loop)
+            self.root.after(250, self._refresh_plot)
 
         except Exception as e:
             self.log(f"ERROR: {traceback.format_exc()}")
@@ -649,10 +642,8 @@ class RT_GUI_Active:
         self.experiment_state = 'idle'
         self.backend.shutdown()
         self.set_ui_state(running=False)
-        # --- MODIFIED: Disable animation for final draw (both plots) ---
-        self.line_main.set_animated(False)
-        self.line_sub.set_animated(False)
-        self.plot_bg = None
+        # Final flush: state is already 'idle', so this won't reschedule.
+        self._refresh_plot()
         self.ax_main.set_title("Experiment stopped.")
         self.canvas.draw()
         if reason:
@@ -721,35 +712,7 @@ class RT_GUI_Active:
                     csv.writer(f).writerow(
                         [f"{temp:.4f}", f"{voltage:.6e}", f"{resistance:.6e}", f"{elapsed:.2f}"])
 
-                # --- MODIFIED: Use blitting for efficient plotting ---
-                if self.plot_bg:
-                    # Restore entire figure background
-                    self.canvas.restore_region(self.plot_bg)
-                    # Update data for both lines
-                    self.line_main.set_data(
-                        self.data_storage['temperature'],
-                        self.data_storage['resistance'])
-                    self.line_sub.set_data(
-                        self.data_storage['temperature'],
-                        self.data_storage['voltage'])
-                    # Autoscale and draw artists
-                    self.ax_main.relim()
-                    self.ax_main.autoscale_view()
-                    self.ax_sub.relim()
-                    self.ax_sub.autoscale_view()
-                    self.ax_main.draw_artist(self.line_main)
-                    self.ax_sub.draw_artist(self.line_sub)
-                    # Blit the entire figure
-                    self.canvas.blit(self.figure.bbox)
-                    self.canvas.flush_events()
-                else:  # Fallback to full redraw if blitting isn't ready
-                    self.line_main.set_data(
-                        self.data_storage['temperature'],
-                        self.data_storage['resistance'])
-                    self.line_sub.set_data(
-                        self.data_storage['temperature'],
-                        self.data_storage['voltage'])
-                    self.canvas.draw_idle()
+                self._plot_dirty = True
 
                 # Check end conditions
                 if temp >= self.params['cutoff']:
@@ -890,27 +853,61 @@ class RT_GUI_Active:
         cb.grid(row=row, column=1, sticky='ew', padx=10, pady=3, columnspan=3)
         return cb
 
-    # --- NEW: Blitting and resize handling methods ---
-    def _on_draw(self, event):
-        """Callback for draw events to cache the plot background."""
-        if self.is_resizing:
-            return
-        self.plot_bg = self.canvas.copy_from_bbox(self.figure.bbox)
+    def _refresh_plot(self):
+        """Redraws the plots at a fixed cadence, independent of data rate.
 
-    def _on_resize(self, event):
-        """Handle window resize events to trigger a full redraw."""
-        self.is_resizing = True
-        self.plot_bg = None  # Invalidate background
-        if self.resize_timer:
-            self.root.after_cancel(self.resize_timer)
-        self.resize_timer = self.root.after(300, self._finalize_resize)
+        A normal (non-blitted) draw is used so that the axes — ticks,
+        limits, gridlines and scale — always stay in sync with the data.
+        """
+        if self._plot_dirty:
+            self._plot_dirty = False
 
-    def _finalize_resize(self):
-        """Finalize the resize by performing a full redraw."""
-        self.is_resizing = False
-        self.resize_timer = None
-        if self.canvas:
+            temps = self.data_storage['temperature']
+            res = self.data_storage['resistance']
+            volts = self.data_storage['voltage']
+
+            self.line_main.set_data(temps, res)
+            self.line_sub.set_data(temps, volts)
+
+            # Recompute and apply limits on every axis.
+            self._autoscale_axis(self.ax_main, x=temps, y=res, log_y=True)
+            self._autoscale_axis(self.ax_sub, x=temps, y=volts)
+
+            # Full redraw keeps ticks/labels/gridlines correct and is
+            # resize-proof. draw_idle() coalesces redraws efficiently.
             self.canvas.draw_idle()
+
+        if self.experiment_state != 'idle':
+            self.root.after(250, self._refresh_plot)
+
+    def _autoscale_axis(self, ax, x, y, log_y=False, margin=0.05):
+        """Rescale an axis, ignoring non-finite and (for log) non-positive
+        values so the axis never collapses or freezes."""
+        import math
+
+        xs = [v for v in x if v is not None and math.isfinite(v)]
+        if log_y:
+            ys = [v for v in y if v is not None and math.isfinite(v) and v > 0]
+        else:
+            ys = [v for v in y if v is not None and math.isfinite(v)]
+
+        if not xs or not ys:
+            return
+
+        xmin, xmax = min(xs), max(xs)
+        ymin, ymax = min(ys), max(ys)
+
+        # X padding (linear)
+        xpad = (xmax - xmin) * margin or 0.5
+        ax.set_xlim(xmin - xpad, xmax + xpad)
+
+        # Y padding
+        if log_y:
+            # pad multiplicatively in log space
+            ax.set_ylim(ymin / (1 + margin), ymax * (1 + margin))
+        else:
+            ypad = (ymax - ymin) * margin or abs(ymax) * margin or 1e-12
+            ax.set_ylim(ymin - ypad, ymax + ypad)
 
     def _on_closing(self):
         if self.experiment_state != 'idle' and messagebox.askyesno(

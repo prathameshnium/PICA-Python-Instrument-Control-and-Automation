@@ -236,7 +236,10 @@ class Advanced_Delta_GUI:
         self.is_running = False
         self.is_stabilizing = False
         self.start_time = None
-        self.plot_backgrounds = None
+        # Plot updates are decoupled from data acquisition: data callbacks
+        # only set this flag; _refresh_plot redraws on a fixed cadence.
+        # Must be set before create_widgets() — _update_y_scale touches it.
+        self._plot_dirty = False
         self.data_file_handle = None
         self.backend = Active_Delta_Backend()
         self.file_location_path = ""
@@ -245,7 +248,8 @@ class Advanced_Delta_GUI:
             'temperature': [],
             'voltage': [],
             'resistance': []}
-        self.log_scale_var = tk.BooleanVar(value=True)
+        # Explicit master: don't rely on tkinter's implicit default root.
+        self.log_scale_var = tk.BooleanVar(master=self.root, value=True)
         self.current_heater_range = 'off'
         self.logo_image = None
         self.visa_queue = queue.Queue()
@@ -719,22 +723,21 @@ class Advanced_Delta_GUI:
         self.ax_sub1 = self.figure.add_subplot(gs[1, 0])
         self.ax_sub2 = self.figure.add_subplot(gs[1, 1])
 
-        # Set animated=True for blitting
         self.line_main, = self.ax_main.plot(
-            [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-', animated=True)
+            [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3, linestyle='-')
         self.ax_main.set_title("Resistance vs. Temperature", fontweight='bold')
         self.ax_main.set_ylabel("Resistance (Ω)")
         self._update_y_scale()
         self.ax_main.grid(True, which="both", linestyle='--', alpha=0.6)
 
         self.line_sub1, = self.ax_sub1.plot(
-            [], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=3, linestyle='-', animated=True)
+            [], [], color=self.CLR_ACCENT_GOLD, marker='.', markersize=3, linestyle='-')
         self.ax_sub1.set_xlabel("Temperature (K)")
         self.ax_sub1.set_ylabel("Voltage (V)")
         self.ax_sub1.grid(True, linestyle='--', alpha=0.6)
 
         self.line_sub2, = self.ax_sub2.plot(
-            [], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=3, linestyle='-', animated=True)
+            [], [], color=self.CLR_ACCENT_GREEN, marker='.', markersize=3, linestyle='-')
         self.ax_sub2.set_xlabel("Time (s)")
         self.ax_sub2.set_ylabel("Temperature (K)")
         self.ax_sub2.grid(True, linestyle='--', alpha=0.6)
@@ -745,16 +748,8 @@ class Advanced_Delta_GUI:
     def _update_y_scale(self):
         self.ax_main.set_yscale(
             'log' if self.log_scale_var.get() else 'linear')
-        # If the measurement is running, we need to redraw and recapture the
-        # background
-        if self.is_running and self.plot_backgrounds:
-            self.canvas.draw()
-            self.plot_backgrounds = [
-                self.canvas.copy_from_bbox(
-                    ax.bbox) for ax in [
-                    self.ax_main,
-                    self.ax_sub1,
-                    self.ax_sub2]]
+        self._plot_dirty = True
+        self.canvas.draw_idle()
 
     def log(self, message):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -817,11 +812,9 @@ class Advanced_Delta_GUI:
             self.ax_main.set_title(
                 f"R-T Curve: {self.params['sample_name']}",
                 fontweight='bold')
-            # Perform a single full redraw to clear plots and set the new title
-            for ax in [self.ax_main, self.ax_sub1, self.ax_sub2]:
-                ax.relim()
-                ax.autoscale_view()
-            self.canvas.draw()  # A single full draw is needed before capturing the background
+            # Single redraw to clear plots and show the new title.
+            self._plot_dirty = False
+            self.canvas.draw_idle()
 
             self.log("Starting stabilization process...")
             self.root.after(1000, self._stabilization_loop)
@@ -839,10 +832,9 @@ class Advanced_Delta_GUI:
                 self.data_file_handle = None
             self.start_button.config(state='normal')
             self.stop_button.config(state='disabled')
-            # Turn off animation for any final redraws
-            for line in [self.line_main, self.line_sub1, self.line_sub2]:
-                line.set_animated(False)
-            self.plot_backgrounds = None
+            # Final flush: is_running is already False, so this won't
+            # reschedule the timer.
+            self._refresh_plot()
             self.canvas.draw_idle()
             messagebox.showinfo(
                 "Info", "Measurement stopped and instruments disconnected.")
@@ -884,15 +876,9 @@ class Advanced_Delta_GUI:
         self.is_running = True
         self.start_time = time.time()
         self.root.after(1000, self._update_measurement_loop)
-
-        self.canvas.draw()
-        self.plot_backgrounds = [
-            self.canvas.copy_from_bbox(
-                ax.bbox) for ax in [
-                self.ax_main,
-                self.ax_sub1,
-                self.ax_sub2]]
-        self.log("Blitting enabled for fast graph updates.")
+        # Start the plot refresh timer here (not in start_measurement):
+        # _refresh_plot only reschedules while is_running is True.
+        self.root.after(250, self._refresh_plot)
 
     def _update_measurement_loop(self):
         if not self.is_running:
@@ -917,34 +903,7 @@ class Advanced_Delta_GUI:
             self.data_storage['voltage'].append(voltage)
             self.data_storage['resistance'].append(res)
 
-            if self.plot_backgrounds:
-                # Restore the clean background
-                self.canvas.restore_region(self.plot_backgrounds[0])
-                self.canvas.restore_region(self.plot_backgrounds[1])
-                self.canvas.restore_region(self.plot_backgrounds[2])
-
-                # Update data and redraw only the artists
-                self.line_main.set_data(
-                    self.data_storage['temperature'],
-                    self.data_storage['resistance'])
-                self.line_sub1.set_data(
-                    self.data_storage['temperature'],
-                    self.data_storage['voltage'])
-                self.line_sub2.set_data(
-                    self.data_storage['time'],
-                    self.data_storage['temperature'])
-
-                # Redraw the artists and blit the changes
-                for i, ax in enumerate(
-                        [self.ax_main, self.ax_sub1, self.ax_sub2]):
-                    ax.relim()
-                    ax.autoscale_view()
-                    ax.draw_artist(ax.get_lines()[0])
-
-                self.canvas.blit(self.figure.bbox)
-            else:
-                # Fallback to a full redraw if blitting isn't ready
-                self.canvas.draw_idle()
+            self._plot_dirty = True
 
             if temp >= self.params['cutoff']:
                 self.log(f"!!! SAFETY CUTOFF REACHED at {temp:.4f} K !!!")
@@ -958,6 +917,66 @@ class Advanced_Delta_GUI:
         except Exception:
             self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
             self.stop_measurement()
+
+    def _refresh_plot(self):
+        """Redraws the plots at a fixed cadence, independent of data rate.
+
+        A normal (non-blitted) draw is used so that the axes — ticks,
+        limits, gridlines and scale — always stay in sync with the data.
+        """
+        if self._plot_dirty:
+            self._plot_dirty = False
+
+            temps = self.data_storage['temperature']
+            res = self.data_storage['resistance']
+            volts = self.data_storage['voltage']
+            t = self.data_storage['time']
+
+            self.line_main.set_data(temps, res)
+            self.line_sub1.set_data(temps, volts)
+            self.line_sub2.set_data(t, temps)
+
+            # Recompute and apply limits on every axis.
+            self._autoscale_axis(self.ax_main, x=temps, y=res,
+                                 log_y=self.log_scale_var.get())
+            self._autoscale_axis(self.ax_sub1, x=temps, y=volts)
+            self._autoscale_axis(self.ax_sub2, x=t, y=temps)
+
+            # Full redraw keeps ticks/labels/gridlines correct and is
+            # resize-proof. draw_idle() coalesces redraws efficiently.
+            self.canvas.draw_idle()
+
+        if self.is_running:
+            self.root.after(250, self._refresh_plot)
+
+    def _autoscale_axis(self, ax, x, y, log_y=False, margin=0.05):
+        """Rescale an axis, ignoring non-finite and (for log) non-positive
+        values so the axis never collapses or freezes."""
+        import math
+
+        xs = [v for v in x if v is not None and math.isfinite(v)]
+        if log_y:
+            ys = [v for v in y if v is not None and math.isfinite(v) and v > 0]
+        else:
+            ys = [v for v in y if v is not None and math.isfinite(v)]
+
+        if not xs or not ys:
+            return
+
+        xmin, xmax = min(xs), max(xs)
+        ymin, ymax = min(ys), max(ys)
+
+        # X padding (linear)
+        xpad = (xmax - xmin) * margin or 0.5
+        ax.set_xlim(xmin - xpad, xmax + xpad)
+
+        # Y padding
+        if log_y:
+            # pad multiplicatively in log space
+            ax.set_ylim(ymin / (1 + margin), ymax * (1 + margin))
+        else:
+            ypad = (ymax - ymin) * margin or abs(ymax) * margin or 1e-12
+            ax.set_ylim(ymin - ypad, ymax + ypad)
 
     def start_visa_scan(self):
         """Starts the VISA scan in a separate thread to keep the GUI responsive."""
