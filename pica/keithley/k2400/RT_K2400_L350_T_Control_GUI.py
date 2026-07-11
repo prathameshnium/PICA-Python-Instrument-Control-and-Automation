@@ -333,7 +333,8 @@ class RT_GUI_Active:
         # FIX: pack_propagate(False) makes the requested width stick;
         # weight=0 keeps the left panel from being squeezed as the window
         # resizes, while the right (plot) panel absorbs all extra space.
-        left_panel_container = ttk.Frame(self.main_pane)
+        left_panel_container = ttk.Frame(
+            self.main_pane, width=self.LEFT_PANEL_WIDTH)
         left_panel_container.pack_propagate(False)
         self.main_pane.add(left_panel_container, weight=0)
         right_panel = ttk.Frame(self.main_pane, padding=5)

@@ -208,12 +208,55 @@ class Passthrough_IV_GUI:
 
         Label(header, text="K6221/2182 I-V Sweep", bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD, font=font_title_main).pack(side='left', padx=20, pady=10)
         self.main_pane = ttk.PanedWindow(self.root, orient='horizontal'); self.main_pane.pack(fill='both', expand=True, padx=10, pady=10)
-        # weight=0 keeps the left panel from being squeezed as the window resizes.
-        self.left_panel = ttk.PanedWindow(self.main_pane, orient='vertical', width=self.LEFT_PANEL_WIDTH); self.main_pane.add(self.left_panel, weight=0)
+
+        # pack_propagate(False) makes the requested width stick; weight=0
+        # keeps the left panel from being squeezed as the window resizes,
+        # while the right (plot) panel absorbs all extra space.
+        left_panel_container = ttk.Frame(
+            self.main_pane, width=self.LEFT_PANEL_WIDTH)
+        left_panel_container.pack_propagate(False)
+        self.main_pane.add(left_panel_container, weight=0)
+
+        # --- Make the left panel scrollable ---
+        canvas = Canvas(
+            left_panel_container,
+            bg=self.CLR_BG_DARK,
+            highlightthickness=0)
+        scrollbar = ttk.Scrollbar(
+            left_panel_container,
+            orient="vertical",
+            command=canvas.yview)
+        # This is the frame that will be scrolled
+        scrollable_frame = ttk.Frame(canvas)
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        window_id = canvas.create_window(
+            (0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Keep the inner frame exactly as wide as the canvas viewport, so
+        # widgets are never clipped on the right edge (they reflow instead),
+        # and remember the frame so the sash logic can measure its true width.
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfigure(window_id, width=e.width))
+        self.left_scrollable_frame = scrollable_frame
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
         right_panel = tk.Frame(self.main_pane, bg=self.CLR_GRAPH_BG); self.main_pane.add(right_panel, weight=1)
-        top_controls = ttk.Frame(self.left_panel); self.left_panel.add(top_controls, weight=0)
-        console_pane = self.create_console_frame(self.left_panel); self.left_panel.add(console_pane, weight=1)
-        self.create_info_frame(top_controls); self.create_input_frame(top_controls)
+
+        # Create the console frame first to initialize the logger, but
+        # don't pack it yet.
+        console_pane = self.create_console_frame(scrollable_frame)
+        self.create_info_frame(scrollable_frame); self.create_input_frame(scrollable_frame)
+        # Pack the console last so it appears at the bottom of the scroll area.
+        console_pane.pack(pady=5, padx=10, fill='x')
+
         self.create_graph_frame(right_panel)
 
         # sashpos() has no effect until the PanedWindow is actually mapped and
@@ -226,11 +269,11 @@ class Passthrough_IV_GUI:
     def _set_default_sash_position(self, attempt=0):
         try:
             self.root.update_idletasks()  # force geometry to be computed
-            # No canvas here, so the left panel's natural reqwidth reflects
-            # the true content width.
-            content_w = self.left_panel.winfo_reqwidth()
+            # Measure the actual content width: inner scrollable frame +
+            # vertical scrollbar + a little breathing room. Falls back to
+            # LEFT_PANEL_WIDTH if measurement isn't ready yet.
+            content_w = self.left_scrollable_frame.winfo_reqwidth()
             target = content_w + 30 if content_w > 1 else self.LEFT_PANEL_WIDTH
-            target = max(target, self.LEFT_PANEL_WIDTH)
             self.main_pane.sashpos(0, target)
             if abs(self.main_pane.sashpos(0) - target) > 5 and attempt < 10:
                 self.root.after(100, lambda: self._set_default_sash_position(attempt + 1))

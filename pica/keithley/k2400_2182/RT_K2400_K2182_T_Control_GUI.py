@@ -365,7 +365,7 @@ class VT_GUI_Active:
             left_panel_container,
             orient="vertical",
             command=canvas.yview)
-        left_panel = ttk.Frame(canvas, padding=5)
+        left_panel = ttk.Frame(canvas, padding=10)
         left_panel.bind(
             "<Configure>",
             lambda e: canvas.configure(
@@ -385,7 +385,7 @@ class VT_GUI_Active:
         scrollbar.pack(side="right", fill="y")
 
         right_panel = self._create_right_panel(self.main_pane)
-        self.main_pane.add(right_panel, weight=4)
+        self.main_pane.add(right_panel, weight=1)
         self._populate_left_panel(left_panel)
 
         # sashpos() has no effect until the PanedWindow is actually mapped and
@@ -513,10 +513,12 @@ class VT_GUI_Active:
     def _create_params_panel(self, parent, grid_row):
         container = ttk.Frame(parent)
         container.grid(row=grid_row, column=0, sticky='new', pady=5)
-        container.grid_columnconfigure((0, 1), weight=1, uniform="params")
+        # Sections stack vertically (like the k6517b/keysight panels) so the
+        # left panel stays narrow and the graph keeps the space.
+        container.grid_columnconfigure(0, weight=1)
         self.entries = {}
         temp_frame = ttk.LabelFrame(container, text='Temperature')
-        temp_frame.grid(row=0, column=0, sticky='nsew', padx=(0, 5))
+        temp_frame.grid(row=0, column=0, sticky='nsew')
         temp_frame.grid_columnconfigure(1, weight=1)
         self._create_entry(temp_frame, "Start Temp (K)", "300", 0)
         self._create_entry(temp_frame, "End Temp (K)", "310", 1)
@@ -525,7 +527,7 @@ class VT_GUI_Active:
         self.ls_cb = self._create_combobox(temp_frame, "Lakeshore VISA", 4)
 
         iv_frame = ttk.LabelFrame(container, text='Measurement Settings')
-        iv_frame.grid(row=0, column=1, sticky='nsew', padx=(5, 0))
+        iv_frame.grid(row=1, column=0, sticky='nsew', pady=(5, 0))
         iv_frame.grid_columnconfigure(1, weight=1)
         self._create_entry(iv_frame, "Source Current (mA)", "1", 0)
         self._create_entry(iv_frame, "Compliance (V)", "10", 1)
