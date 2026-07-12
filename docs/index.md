@@ -43,8 +43,10 @@ pica-gui
 ---
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 3
 :caption: Contents
 
 User_Manual
+Instruments_Manuals_Lists
+Novocontrol_GPIB_Runbook
 ```

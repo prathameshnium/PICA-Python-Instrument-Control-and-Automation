@@ -5,11 +5,13 @@
 ---
 
 :::{note}
- **v1.0.5 is now live!** This release includes general maintenance and bug fixes. Install or upgrade via pip:
+**v1.0.5 is now live!** Lakeshore enhancements, new utilities & core fixes. Install or upgrade via pip:
 
 ```bash
 pip install --upgrade pica-suite
 ```
+
+**v1.0.6 is coming soon** — bringing Novocontrol Alpha-A broadband dielectric spectroscopy (experimental), an interactive SCPI console, and plotting engine improvements.
 :::
 
 ---
@@ -24,11 +26,11 @@ pip install --upgrade pica-suite
 6. [Supported Measurement Modules](#6-supported-measurement-modules)
    * [Ultra Low Resistance Measurements](#61-ultra-low-resistance-measurements)
    * [General Transport (Standard I-V & R-T)](#62-general-transport-standard-i-v--r-t)
-   * [High Precision Transport](#63-high-precision-transport)
+   * [High Precision Transport](#63-high-precision-transport-mid-resistance-range)
    * [Electrometry & High Resistance](#64-electrometry--high-resistance)
-   * [Pyroelectric Measurements](#65-pyroelectric-measurements)
+   * [Pyroelectric Current Measurements](#65-pyroelectric-current-measurements)
    * [High Voltage Poling](#66-high-voltage-poling)
-   * [Capacitance Spectroscopy](#67-capacitance-spectroscopy)
+   * [Dielectric Spectroscopy](#67-dielectric-spectroscopy)
    * [Broadband Dielectric Spectroscopy](#68-broadband-dielectric-spectroscopy)
    * [Standalone Temperature Utilities](#69-standalone-temperature-utilities)
 7. [Releases and Versions](#7-releases-and-versions)
@@ -497,6 +499,8 @@ PICA also includes standalone utilities for monitoring and controlling temperatu
 
   * **Temperature Monitor:** A simple interface for logging temperature from multiple types of sensors.
   * **Temperature Control:** A dedicated module for setting temperature ramps, controlling heater outputs, and managing control loops.
+  * **Step-wise Control (Basic):** A step-sequence controller that ramps to each setpoint, waits for stabilization, and hands off to an external measurement.
+  * **Step-wise Control (Advanced)** *(new in v1.0.5)*: A self-contained advanced version of the step-sequence controller. It adds an **adaptive ramp rate** (computed per step and hard-capped by an editable low-temperature rate table, taming overshoot on LN2-dewar probes below 100 K), an optional **approach-from-one-side** mode for hysteresis-sensitive measurements, configurable **stability criteria** (tolerance band, rolling window, drift limit, timeout), and per-setpoint summary logging alongside safety features such as a hard kill-switch temperature and a soft Max-Temp limit with graceful abort.
 
 :::{figure} Images/screenshots/Lakeshore_Temp_Monitor.png
 :alt: Lakeshore Temp Monitor
@@ -616,7 +620,7 @@ The full preprint of the PICA software suite, detailing its design, implementati
   day          = 26,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {1.0.3},
+  version      = {1.0.5},
   url          = {https://doi.org/10.5281/zenodo.18377217}
 }
 ```
@@ -643,7 +647,7 @@ We plan to add more utility modules, such as a PID simulator for temperature con
 
 ## 12. Adding a New Instrument
 
-The procedure for adding a new instrument module to PICA is described in the [CONTRIBUTING.md](../CONTRIBUTING.md#adding-a-new-instrument-module) file. Please refer to that guide for detailed, step-by-step instructions.
+The procedure for adding a new instrument module to PICA is described in the [CONTRIBUTING.md](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/CONTRIBUTING.md#adding-a-new-instrument-module) file. Please refer to that guide for detailed, step-by-step instructions.
 
 
 ## 13. Authors & Acknowledgments
@@ -667,7 +671,7 @@ This project is licensed under the MIT License - see the [LICENSE](https://githu
 
 ## 15. Appendix A: Project File Structure
 
-For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.3).
+For developers and advanced users, the following reference outlines the PICA directory structure (abridged, v1.0.5).
 
 :::{note}
 Adding a new module to the main launcher into the GUI requires modifying `pica/main.py`.
