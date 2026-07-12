@@ -1,6 +1,6 @@
 # List of all manuals and documents relevenet to PICA  
 
-### **Keithley Instruments (Tektronix)**
+## **Keithley Instruments (Tektronix)**
 
 * **Model 6517B Electrometer User's Manual**
     * **Creator:** Keithley Instruments, LLC (A Tektronix Company)
@@ -29,7 +29,7 @@
     * **Edition:** 7th Edition
     * **Subject:** Precision DC Current, Voltage, and Resistance Measurements.
 
-### **Lake Shore Cryotronics**
+## **Lake Shore Cryotronics**
 
 * **Model 340 Temperature Controller User's Manual**
     * **Creator:** Lake Shore Cryotronics, Inc.
@@ -41,7 +41,7 @@
     * **Date:** 25 July 2017
     * **Version/Reference:** Rev. 1.6 (Part Number 119-057)
 
-### **PyMeasure Software**
+## **PyMeasure Software**
 
 * **PyMeasure Documentation (Development Build - August)**
     * **Creator:** PyMeasure Developers
@@ -59,7 +59,7 @@
     * **Type:** API Reference / Example excerpt
     * **Context:** Contains class documentation for `pymeasure.instruments.keithley.Keithley2400`.
 
-### **PyVISA Software**
+## **PyVISA Software**
 
 * **PyVISA Documentation (Full)**
     * **Creator:** PyVISA Developers
@@ -72,13 +72,13 @@
     * **Context:** A guide on using SCPI commands with a Keithley 2000 multimeter, including initializing the instrument and reading voltages. 
     ***Version Note:** The document notes that "1.12.0 is the latest version available" at the time of its creation.
 
-### **Keysight Technologies**
+## **Keysight Technologies**
 
 * **E4980A Precision LCR Meter 20 Hz to 2 MHz, E4980AL Precision LCR Meter 20 Hz to 300 kHz/500 kHz/1 MHz – Data Sheet**
     * **Creator:** Keysight Technologies
     * **Type:** Data Sheet
 
-### **Novocontrol Technologies**
+## **Novocontrol Technologies**
 
 * **Alpha-A / Alpha-AN High Performance Frequency Analyzer – User's Manual**
     * **Creator:** Novocontrol Technologies GmbH & Co. KG
