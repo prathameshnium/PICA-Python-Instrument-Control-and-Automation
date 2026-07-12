@@ -24,6 +24,11 @@
 
  RUN:          python tests/test_fscan_against_references.py
                (plain python), or with the repo suite: pytest tests/
+
+ NOTE:         The WinDETA reference files are LAB DATA, gitignored on
+               purpose, and must NEVER be committed. On machines without
+               them (e.g. CI) the reference-comparison checks skip; the
+               dry run and format checks always run.
 '''
 
 import importlib.util
@@ -45,10 +50,17 @@ MES_DEF = REF_DIR / "mes_def_Fscan.txt"
 DAT_REF = REF_DIR / "Fscan_data_Novo_Windeta.dat"   # ASCII, pairs w/ mes_def
 TXT_REF = REF_DIR / "Sample_Fscan_RT.TXT"
 
-# The WinDETA reference exports are deliberately gitignored (lab data, never
-# committed). Sections 1-3 compare against them, so they only run on a
-# machine that has them; the mock-instrument dry run (section 4) needs no
-# reference files and always runs (including CI).
+# ============================================================================
+# IMPORTANT: the WinDETA reference files above are LAB DATA and must NEVER
+# be committed to the repository. ALL data_file_for_ref/ folders, for every
+# instrument, are excluded globally by .gitignore (**/data_file_for_ref/) -
+# do NOT "fix" a CI failure by committing them, and do not add exceptions.
+#
+# Consequently they exist only on lab machines. Sections that compare
+# against them skip cleanly when the files are absent (e.g. on CI); the
+# mock-instrument dry run and the self-contained format checks need no
+# reference files and always run.
+# ============================================================================
 REFERENCES_PRESENT = all(p.exists() for p in (MES_DEF, DAT_REF, TXT_REF))
 REFS_MISSING_MSG = (
     "WinDETA reference exports not present (gitignored lab data) - "

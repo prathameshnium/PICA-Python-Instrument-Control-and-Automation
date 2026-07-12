@@ -121,8 +121,14 @@ pica/docs/Instruments_Manuals_Lists.md
 pica/README.md
 pica/LICENSE
 pica/CONTRIBUTING.md
-pica/keysight/data_file_for_ref/
 .claude/settings.json
-pica/novocontrol/data_file_for_ref/
 gpib_lifeline_report_*.txt
-pica/PPMS/data_file_for_ref
+
+# ============================================================================
+# STRICT RULE: data_file_for_ref/ folders are LAB REFERENCE DATA and must
+# NEVER be committed - for ANY instrument (novocontrol, keysight, PPMS,
+# keithley, ...). Do NOT add exceptions, and never "fix" a CI failure by
+# committing these files. Tests that compare against them (e.g.
+# tests/test_fscan_against_references.py) skip cleanly when they are absent.
+# ============================================================================
+**/data_file_for_ref/
