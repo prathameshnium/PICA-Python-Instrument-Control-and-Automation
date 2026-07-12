@@ -1716,7 +1716,11 @@ class AlphaAN_FreqScan_GUI:
         # zero-padded month and minute (e.g. " 9.07.2026, 20:00").
         date_str = f"{now.day:2d}.{now.month:02d}.{now.year}"
         time_str = f"{now.hour}:{now.minute:02d}"
-        with open(self.txt_filepath, "w", encoding="utf-8") as fh:
+        # newline="\r\n": WinDETA exports use CRLF. Explicit, so the files
+        # are byte-identical on any OS (Python's default translation would
+        # write LF on Linux).
+        with open(self.txt_filepath, "w", encoding="utf-8",
+                  newline="\r\n") as fh:
             fh.write(f"{params['comment']}, {date_str}, {time_str}\n")
             fh.write(
                 f"Fixed value(s) :  AC Volt  [Vrms]={params['acv']:.4e}\n"
@@ -1727,7 +1731,8 @@ class AlphaAN_FreqScan_GUI:
             geometry_str = f"A = {params['area_cm2']} cm^2"
         else:
             geometry_str = f"D = {params['diameter_mm']} mm"
-        with open(self.dat_filepath, "w", encoding="utf-8") as fh:
+        with open(self.dat_filepath, "w", encoding="utf-8",
+                  newline="\r\n") as fh:
             fh.write(
                 f"# Sample: {params['sample_name']} | "
                 f"ACV: {params['acv']} Vrms | MTM: {params['mtm']} s | "
@@ -1844,7 +1849,7 @@ class AlphaAN_FreqScan_GUI:
         """
         line = "\t".join(f"{v:.5e}" for v in row)
         for path in (self.txt_filepath, self.dat_filepath):
-            with open(path, "a", encoding="utf-8") as fh:
+            with open(path, "a", encoding="utf-8", newline="\r\n") as fh:
                 fh.write(line + "\n")
                 fh.flush()
 
