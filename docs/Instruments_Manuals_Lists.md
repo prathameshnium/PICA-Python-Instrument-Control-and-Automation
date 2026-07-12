@@ -1,4 +1,11 @@
-# List of all manuals and documents relevenet to PICA  
+---
+myst:
+  html_meta:
+    description: "Reference list of instrument manuals and datasheets used with PICA — Keithley 2400, 6221, 2182, 6517B, Keysight E4980A, Lakeshore 350/340, Novocontrol Alpha, and more."
+    keywords: "instrument manuals, Keithley reference manual, Keysight E4980A manual, Lakeshore 350 manual, SCPI programming reference"
+---
+
+# Instrument Manuals and Reference Documents
 
 ## **Keithley Instruments (Tektronix)**
 
