@@ -1,9 +1,29 @@
 go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases) and [tags](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tags), for the finalised released versions
 ## Instrument & Software Update Log
 ---
+### [1.0.6] - Upcoming (in testing)
+
+- **Novocontrol Alpha-A Support (experimental)**: New broadband dielectric spectroscopy frequency-scan module (GUI + `Instrument_Control` CLI template) with WinDETA-compatible exports and a dedicated GPIB runbook (`docs/Novocontrol_GPIB_Runbook.md`).
+- **SCPI Console**: Interactive console for raw SCPI commands to any VISA instrument.
+- **Plotting Engine**: Removed blitting (fixes high-DPI scaling issues), movable legends, scroll fixes, AM/PM timestamps.
+- **Launcher**: Tools categorised for easier navigation.
+- **PPMS Helper Utilities**: Plotter (transport & AC susceptibility channels), sequence visualizer, and time estimator.
+- **Testing**: Frequency-scan outputs validated against reference WinDETA exports; new plot-refresh and UI regression tests.
+
+---
+
 ### [1.0.5] - 2026-06-24  (Current)
 
 - **Project Version**:v1.0.5: Lakeshore Enhancements, New Utilities & Core Fixes.
+
+---
+
+### [1.0.4] - 2026-03-15
+
+- **Documentation Infrastructure**: Read the Docs integration added alongside the GitHub Pages site.
+- **Preprint & Publications**: Preprint page launched with downloadable PDF via an automated LaTeX build workflow (GitHub Actions); Academia.edu link added.
+- **CI/CD**: Workflows updated (Node.js 24 enforced, lint/docs workflow fixes, automated preprint build).
+- **Maintenance**: Requirements/dependency updates and README badge refresh.
 
 ---
 
