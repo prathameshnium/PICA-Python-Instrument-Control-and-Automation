@@ -421,7 +421,8 @@ def main():
         # zero-padded month and minute (e.g. " 9.07.2026, 20:00").
         date_str = f"{stamp.day:2d}.{stamp.month:02d}.{stamp.year}"
         time_str = f"{stamp.hour}:{stamp.minute:02d}"
-        with open(out_path, "w", encoding="utf-8") as fh:
+        # newline="\r\n": WinDETA exports use CRLF on every platform.
+        with open(out_path, "w", encoding="utf-8", newline="\r\n") as fh:
             fh.write(f"{args.comment}, {date_str}, {time_str}\n")
             fh.write(f"Fixed value(s) :  AC Volt  [Vrms]={args.acv:.4e}\n")
             fh.write(WINDETA_HEADER + "\n")
@@ -453,7 +454,7 @@ def main():
 
             # Convert with the ACTUAL frequency the analyzer used.
             row = impedance_to_dielectric(zr, zi, f_actual, c0)
-            with open(out_path, "a", encoding="utf-8") as fh:
+            with open(out_path, "a", encoding="utf-8", newline="\r\n") as fh:
                 fh.write("\t".join(f"{v:.5e}" for v in row) + "\n")
                 fh.flush()
 
