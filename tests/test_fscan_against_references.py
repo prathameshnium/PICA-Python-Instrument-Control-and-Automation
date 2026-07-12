@@ -45,6 +45,16 @@ MES_DEF = REF_DIR / "mes_def_Fscan.txt"
 DAT_REF = REF_DIR / "Fscan_data_Novo_Windeta.dat"   # ASCII, pairs w/ mes_def
 TXT_REF = REF_DIR / "Sample_Fscan_RT.TXT"
 
+# The WinDETA reference exports are deliberately gitignored (lab data, never
+# committed). Sections 1-3 compare against them, so they only run on a
+# machine that has them; the mock-instrument dry run (section 4) needs no
+# reference files and always runs (including CI).
+REFERENCES_PRESENT = all(p.exists() for p in (MES_DEF, DAT_REF, TXT_REF))
+REFS_MISSING_MSG = (
+    "WinDETA reference exports not present (gitignored lab data) - "
+    "skipping reference-comparison checks."
+)
+
 # mes_def_Fscan.txt SAMPLE section: round plate, D = 12.36 mm, d = 1 mm.
 MES_DEF_DIAMETER_MM = 12.36
 MES_DEF_THICKNESS_MM = 1.0
@@ -253,8 +263,6 @@ def base_params(geometry_mode="area"):
 def run_header_format():
     print("\n== 3. WinDETA .txt header / format ==")
 
-    ref_line1, ref_fixed, ref_header, _ = parse_export(DAT_REF)
-
     out_dir = Path(tempfile.mkdtemp(prefix="fscan_test_"))
     try:
         gui = make_headless_gui(out_dir)
@@ -279,26 +287,36 @@ def run_header_format():
             "line 1 carries no cal-age note",
             "calibration" not in lines[0].lower(),
         )
-        ref_pattern = re.sub(
-            r"[ \d]\d\.\d\d\.\d{4}, \d{1,2}:\d\d", "<DATE>", ref_line1
-        )
-        our_pattern = re.sub(
-            r"[ \d]\d\.\d\d\.\d{4}, \d{1,2}:\d\d", "<DATE>", lines[0]
-        )
+        if REFERENCES_PRESENT:
+            # Byte-level comparison against the real WinDETA export; only
+            # possible on a machine with the (gitignored) reference files.
+            ref_line1, ref_fixed, ref_header, _ = parse_export(DAT_REF)
+            ref_pattern = re.sub(
+                r"[ \d]\d\.\d\d\.\d{4}, \d{1,2}:\d\d", "<DATE>", ref_line1
+            )
+            our_pattern = re.sub(
+                r"[ \d]\d\.\d\d\.\d{4}, \d{1,2}:\d\d", "<DATE>", lines[0]
+            )
+            check(
+                "line 1 structure matches Fscan_data_Novo_Windeta.dat",
+                ref_pattern == our_pattern,
+                f"{ref_pattern!r} vs {our_pattern!r}",
+            )
+            check(
+                "Fixed value(s) line matches the reference (1.0 Vrms)",
+                lines[1] == ref_fixed.rstrip(),
+                f"{lines[1]!r} vs {ref_fixed.rstrip()!r}",
+            )
+            check(
+                "column header matches the .dat reference (Zp before Sig)",
+                lines[2] == ref_header.rstrip(),
+                f"{lines[2]!r}",
+            )
+        else:
+            print(f"  [SKIP] .dat byte-comparison checks: {REFS_MISSING_MSG}")
         check(
-            "line 1 structure matches Fscan_data_Novo_Windeta.dat",
-            ref_pattern == our_pattern,
-            f"{ref_pattern!r} vs {our_pattern!r}",
-        )
-        check(
-            "Fixed value(s) line matches the reference (1.0 Vrms)",
-            lines[1] == ref_fixed.rstrip(),
-            f"{lines[1]!r} vs {ref_fixed.rstrip()!r}",
-        )
-        check(
-            "column header matches the .dat reference (Zp before Sig)",
-            lines[2] == ref_header.rstrip(),
-            f"{lines[2]!r}",
+            "WINDETA_HEADER has Zp before Sig",
+            fscan.WINDETA_HEADER.split("\t")[5].strip().startswith("Zp'"),
         )
         check(
             "PICA_HEADER order mirrors WINDETA_HEADER (Zp before Sig)",
@@ -531,7 +549,10 @@ def run_dry_run():
 # silently pass a failing section.)
 # ---------------------------------------------------------------------------
 
-def _pytest_section(runner):
+def _pytest_section(runner, needs_refs=False):
+    if needs_refs and not REFERENCES_PRESENT:
+        import pytest
+        pytest.skip(REFS_MISSING_MSG)
     before = len(FAILURES)
     runner()
     new = FAILURES[before:]
@@ -539,14 +560,16 @@ def _pytest_section(runner):
 
 
 def test_numeric_regression():
-    _pytest_section(run_numeric_regression)
+    _pytest_section(run_numeric_regression, needs_refs=True)
 
 
 def test_frequency_presets():
-    _pytest_section(run_frequency_presets)
+    _pytest_section(run_frequency_presets, needs_refs=True)
 
 
 def test_header_format():
+    # Runs everywhere: the section itself skips only the byte-comparison
+    # checks when the reference exports are absent.
     _pytest_section(run_header_format)
 
 
@@ -560,8 +583,11 @@ def main():
     print(f"Program under test : {PROGRAM}")
     print(f"References         : {REF_DIR}")
 
-    run_numeric_regression()
-    run_frequency_presets()
+    if REFERENCES_PRESENT:
+        run_numeric_regression()
+        run_frequency_presets()
+    else:
+        print(f"\nSKIPPED sections 1-2: {REFS_MISSING_MSG}")
     run_header_format()
     run_dry_run()
 
