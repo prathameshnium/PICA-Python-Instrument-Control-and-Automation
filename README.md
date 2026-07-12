@@ -1,7 +1,9 @@
 # PICA: Advanced High-Precision Transport Measurement Automation with Python
 
+**Open-source Python suite for laboratory instrument control and automation** — GPIB/VISA & SCPI orchestration of Keithley, Keysight, Lakeshore, and Novocontrol instruments for cryogenic transport, resistivity, I-V, dielectric, and pyroelectric measurements.
+
 <p align="center">
-  <img src="pica/assets/LOGO/PICA_LOGO_NBG.png" alt="PICA Logo" width="250">
+  <img src="pica/assets/LOGO/PICA_LOGO_NBG.png" alt="PICA logo — Python Instrument Control and Automation suite" width="250">
 </p>
 
 <p align="center">
@@ -34,7 +36,9 @@
 
 ---
 
-> 🎉 **v1.0.5 is now live!** This release includes general maintenance and bug fixes. Install or upgrade via pip: `pip install --upgrade pica-suite`
+> **v1.0.5 is now live!** Lakeshore enhancements, new utilities & core fixes. Install or upgrade via pip: `pip install --upgrade pica-suite`
+>
+> **v1.0.6 is coming soon** — bringing Novocontrol Alpha-A broadband dielectric spectroscopy, an interactive SCPI console, plotting engine improvements, and more. See the [preview below](#coming-soon-in-v106).
 
 ---
 
@@ -42,7 +46,7 @@
 
 High-precision, low-noise transport measurements are essential for advancing research in spintronics and materials characterisation. **PICA (Python-based Instrument Control and Automation)** is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and material samples. It operates as a versatile framework capable of running on any standard laboratory workstation.
 
-PICA provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analyser, and temperature controllers. Built on the robust Python scientific ecosystem, PICA ensures that the entire hardware ecosystem functions seamlessly as a cohesive unit.
+PICA provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments — current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analysers, and temperature controllers such as the **Keithley 6221, 2182, 2400, and 6517B**, the **Keysight E4980A LCR meter**, the **Lakeshore 350/340**, and (experimentally) the **Novocontrol Alpha-A**. Built on the robust Python scientific ecosystem (PyVISA, NumPy, pandas, Matplotlib), PICA ensures that the entire hardware ecosystem functions seamlessly as a cohesive unit.
 
 The suite performs automated protocols including:
 * Temperature-dependent wide-range resistance measurement ($10^{-8}$ - $10^{16}$ Ω).
@@ -51,9 +55,9 @@ The suite performs automated protocols including:
 * Pyroelectric current measurement (resolution $10^{-15}$ A).
 
 <p align="center">
-  <img src="pica/assets/Images/screenshots/00_PICA_Launcher.png" alt="PICA Launcher" width="800">
+  <img src="pica/assets/Images/screenshots/00_PICA_Launcher.png" alt="PICA Launcher — Python GUI dashboard for laboratory instrument control and measurement automation" width="800">
   <br>
-  <em>PICA Launcher Interface (v1.0.3, Latte theme) for accessing all measurement modules.</em>
+  <em>PICA Launcher Interface (Latte theme) for accessing all measurement modules and utilities.</em>
 </p>
 
 > **More details here:**
@@ -63,24 +67,26 @@ The suite performs automated protocols including:
 ## Table of Contents
 
 - [Overview](#overview)
-- [What's New in v1.0.3](#whats-new-in-v103)
+- [What's New in v1.0.5](#whats-new-in-v105)
+- [Coming Soon in v1.0.6](#coming-soon-in-v106)
 - [Motivation](#motivation)
 - [Key Features](#key-features)
 - [Design and Implementation](#design-and-implementation)
 - [Supported Hardware Modules](#supported-hardware-modules)
+- [Utilities & Tools](#utilities--tools)
 - [Demonstration of PICA (Screencast)](#demonstration-of-pica-screencast)
 - [Getting Started](#getting-started)
 - [Running the Software](#running-the-software)
 - [Resources & Documentation](#resources--documentation)
 - [Citation](#citation)
-- [Authors & Acknowledgments](#authors--acknowledgments)
+- [Authors & Funding](#authors--funding)
 - [License](#license)
 
 ---
 
 ## What's New in v1.0.5
 
-**v1.0.5** is the latest release and is available on PyPI and GitHub Releases.
+**v1.0.5** (June 2026) is the latest release and is available on PyPI and GitHub Releases.
 
 ```bash
 pip install pica-suite==1.0.5
@@ -88,15 +94,25 @@ pip install pica-suite==1.0.5
 pip install --upgrade pica-suite
 ```
 
-### 🎨 Latte GUI Theme
-The GUI has been redesigned with a **Latte** theme — a lighter, warmer colour palette that replaces the previous darker interface. This makes PICA more comfortable for extended lab sessions and improves readability under typical laboratory lighting conditions.
+Highlights — *Lakeshore enhancements, new utilities & core fixes*:
 
-Key visual changes:
-* Lighter background and widget colours throughout all measurement modules.
-* Improved contrast for console log text.
-* Softer colour scheme for real-time plot backgrounds.
+* **Advanced Temperature Step Control (Lakeshore 350):** a new self-contained controller with adaptive ramp rates, an editable low-temperature rate-cap table (tames overshoot on LN2-dewar probes below 100 K), approach-from-one-side mode for hysteresis-sensitive measurements, configurable stability criteria, and per-setpoint summary logging. [Details below](#advanced-temperature-step-control-lakeshore-350).
+* **Upgraded Step Frequency Scan (Keysight E4980A):** the combined dielectric temperature-step / frequency-sweep program now embeds the same advanced ramp and stabilization logic for unattended overnight runs.
+* **Core fixes:** real-time plotting stability, safer instrument shutdown paths, and general maintenance across measurement modules.
 
 For the full changelog, see [`CHANGELOG.md`](CHANGELOG.md).
+
+### Coming Soon in v1.0.6
+
+The next release is in active daily testing on lab hardware and will add:
+
+* **Broadband Dielectric Spectroscopy (experimental):** a new **Novocontrol Alpha-A** frequency-scan module (GUI + CLI template) with WinDETA-compatible data exports, plus a dedicated [Novocontrol GPIB runbook](docs/Novocontrol_GPIB_Runbook.md).
+* **SCPI Console:** an interactive console for sending raw SCPI commands to any VISA instrument — ideal for debugging and driver development.
+* **Plotting engine improvements:** more robust scaling on high-DPI displays, movable plot legends, and smoother scrolling in long parameter panels.
+* **Expanded test suite:** frequency-scan outputs validated against reference WinDETA exports.
+* Plus smaller PPMS helper utilities (plotter, sequence visualizer, time estimator) and general maintenance.
+
+Watch the [releases page](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases) or `pip install --upgrade pica-suite` once it lands.
 
 ---
 
@@ -126,7 +142,7 @@ PICA is built on a modular architecture characterized by self-contained modules,
 ### Process Isolation and Concurrency
 Unlike simple script-based automation, PICA decouples the User Interface (UI) from the instrumentation control logic using Python's standard `multiprocessing` libraries.
 * **Stability:** If an instrument hangs, the isolated process can be terminated safely without freezing the main GUI or losing previous data.
-* **Responsiveness:** The `tkinter`-based frontend remains responsive for live data plotting (using `matplotlib` with blitting) even while the backend waits for hardware triggers.
+* **Responsiveness:** The `tkinter`-based frontend remains responsive for live `matplotlib` data plotting even while the backend waits for hardware triggers.
 * **Data Integrity:** A "write on acquisition" strategy using `pandas` saves data to CSV immediately after every acquisition point, preventing data loss during power failures.
 
 ### Hardware Abstraction Layer
@@ -152,6 +168,7 @@ The system is currently validated with industry-standard hardware, covering a re
 | **High-Resistance** | **Keithley 6517B** Electrometer + Lakeshore 350/340 | High bandgap materials, polymers, & ceramics. | 1 Ω - 10 PΩ |
 | **Capacitance Analysis** | **Keysight E4980A** + Lakeshore 350/340 | C-V Analysis and Magnetocapacitance characterisation. | 20 Hz - 2 MHz |
 | **Pyroelectric** | **K6517B** + Lakeshore 350/340 | Current vs Temp (detecting Curie temperature). | $10^{-15}$ A Resolution |
+| **Broadband Dielectric Spectroscopy** *(experimental, v1.0.6)* | **Novocontrol Alpha-A** + ZG4 interface | Frequency-domain dielectric & impedance spectroscopy with WinDETA-compatible exports. | Up to 10 MHz (tested) |
 
 *While the current implementation drives specific instruments, the underlying framework is highly customizable. Researchers need only replace specific SCPI commands to utilize the suite with different models.*
 
@@ -173,15 +190,26 @@ The combined dielectric-scan program `pica/keysight/Step_Frequency_Scan_E4980A_G
 ### Module Previews
 
 <p align="center">
-  <img src="pica/assets/Images/screenshots/K6221_RT_Control.png" alt="K6221 RT Control" width="600">
+  <img src="pica/assets/Images/screenshots/K6221_RT_Control.png" alt="Resistance vs temperature measurement GUI using Keithley 6221/2182 delta mode with Lakeshore 350 temperature control" width="600">
   <br>
   <em>R-T measurement interface using the K6221/2182 for low-resistance samples, employing the Ultra Low Resistance Measurement technique to cancel thermal EMFs.</em>
 </p>
 <p align="center">
-  <img src="pica/assets/Images/screenshots/K6517B_IV.png" alt="K6517B IV" width="600">
+  <img src="pica/assets/Images/screenshots/K6517B_IV.png" alt="High-resistance I-V characterization GUI using the Keithley 6517B electrometer" width="600">
   <br>
   <em>Interface for current-voltage (I-V) characterisation of high-impedance materials using the Keithley 6517B Electrometer.</em>
 </p>
+
+---
+
+## Utilities & Tools
+
+Beyond the measurement modules, PICA ships a growing set of standalone laboratory utilities, all accessible from the launcher:
+
+* **VISA Instrument Scanner** — queries the GPIB/USB/Ethernet bus (`*IDN?`) to map connected instrument addresses.
+* **PICA Plotter Utility** — multi-file data plotting for comparison and analysis during or after measurements.
+* **SCPI Console** *(v1.0.6)* — interactive terminal for sending raw SCPI commands to any VISA instrument.
+* **PPMS helper utilities** *(v1.0.6)* — plotter, sequence visualizer, and time estimator for Quantum Design PPMS workflows.
 
 ---
 
@@ -214,7 +242,7 @@ PICA is available on [PyPI](https://pypi.org/project/pica-suite/) and structured
 pip install pica-suite
 ```
 
-To upgrade to the latest version (currently **v1.0.3**):
+To upgrade to the latest version (currently **v1.0.5**):
 
 ```bash
 pip install --upgrade pica-suite
@@ -356,7 +384,10 @@ For downloadable release builds, please visit the [releases page](https://github
 
 PICA evolved from simple offline scripts in 2022 to a full-stack automated suite.
 
-  * **v1.0.3 (Latest):** GUI refreshed with the **Latte** theme — lighter, warmer, and less dark. Available on [PyPI](https://pypi.org/project/pica-suite/).
+  * **v1.0.6 (Upcoming):** Novocontrol Alpha-A broadband dielectric spectroscopy (experimental), SCPI console, and plotting engine improvements.
+  * **v1.0.5 (Latest):** Advanced Lakeshore temperature step control (adaptive ramp rates, low-temperature safety caps), upgraded step frequency scan, new utilities, and core fixes. Available on [PyPI](https://pypi.org/project/pica-suite/).
+  * **v1.0.4:** Documentation infrastructure release — Read the Docs integration, preprint page with automated PDF build, and CI/CD workflow updates.
+  * **v1.0.3:** GUI refreshed with the **Latte** theme — lighter, warmer, and less dark. First release published to PyPI.
   * **v1.0.1 / v1.0.0 (Initial Public Release):** Version numbering was reset from legacy development builds (v17.0) to v1.0.0 to standardize the package for public distribution and citation.
   * **v17.0:** Professional directory restructuring, Semantic Versioning, and documentation overhaul.
   * **v15.0:** JOSS submission preparation, CI/CD integration.
@@ -379,6 +410,7 @@ The project's earlier history and foundational development are outlined below:
 * **PyPI Package:** Install directly via [https://pypi.org/project/pica-suite/](https://pypi.org/project/pica-suite/).
 * **User Manual:** Details on the project and usage guides are available in the [User Manual](docs/User_Manual.md).
 * **Instrument Manuals:** A list of instrument manuals is available in [docs/Instruments_Manuals_Lists.md](docs/Instruments_Manuals_Lists.md).
+* **Novocontrol GPIB Runbook:** Setup and troubleshooting guide for the Alpha-A analyzer over GPIB in [docs/Novocontrol_GPIB_Runbook.md](docs/Novocontrol_GPIB_Runbook.md).
 * **GitLab Backup:** This project is manually backed up weekly to a [GitLab repository](https://gitlab.com/prathameshnium/pica-python-instrument-control-and-automation).
 * **Project Web Page:** [https://prathameshdeshmukh.site/pages/project-pica.html](https://prathameshdeshmukh.site/pages/project-pica.html).
 * **Preprint:** Access the full preprint and related materials at [https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/publications/](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/publications/) or download the [PDF directly](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/publications/pica-paper.pdf) (alternate link at [Academia.edu](https://www.academia.edu/165176821/PICA_Advanced_High_Precision_Transport_Measurement_Automation_with_Python)).
@@ -398,7 +430,7 @@ If you use this software in your research, please cite it:
   day          = 26,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {1.0.3},
+  version      = {1.0.5},
   doi          = {10.5281/zenodo.18377217},
   url          = {https://doi.org/10.5281/zenodo.18377217}
 }
@@ -417,3 +449,7 @@ We acknowledge the financial support provided under the **SERB-CRG project grant
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE file](LICENSE) for details.
+
+---
+
+<sub>**Keywords:** Python instrument control · laboratory automation · GPIB · PyVISA · SCPI · VISA · Keithley 2400 SourceMeter · Keithley 6221 current source · Keithley 2182 nanovoltmeter · Keithley 6517B electrometer · Keysight E4980A LCR meter · Lakeshore 350 temperature controller · Novocontrol Alpha-A · broadband dielectric spectroscopy · PPMS · cryogenics · transport measurements · resistivity vs temperature · I-V characterization · delta mode · magnetocapacitance · pyroelectric current · condensed matter physics · materials characterization</sub>
