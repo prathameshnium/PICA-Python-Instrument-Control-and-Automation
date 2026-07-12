@@ -132,3 +132,6 @@ gpib_lifeline_report_*.txt
 # tests/test_fscan_against_references.py) skip cleanly when they are absent.
 # ============================================================================
 **/data_file_for_ref/
+pica/keysight/data_file_for_ref/
+ica/novocontrol/data_file_for_ref/
+pica/PPMS/data_file_for_ref
