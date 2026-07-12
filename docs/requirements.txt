@@ -1,3 +1,5 @@
 sphinx>=7.0.0
 myst-parser
 sphinx-rtd-theme
+sphinx-sitemap
+sphinxext-opengraph

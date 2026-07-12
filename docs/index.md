@@ -1,13 +1,18 @@
+---
+myst:
+  html_meta:
+    description: "PICA is an open-source Python suite for laboratory instrument control and automation — GPIB/VISA and SCPI orchestration of Keithley, Keysight, Lakeshore, and Novocontrol instruments for cryogenic transport, resistivity, I-V, dielectric, and pyroelectric measurements."
+    keywords: "Python instrument control, laboratory automation, GPIB, PyVISA, SCPI, Keithley, Keysight E4980A, Lakeshore 350, cryogenics, transport measurements"
+---
+
 # PICA Documentation
 
-**Python Instrument Control and Automation**
+PICA (**Python Instrument Control and Automation**) is a modular, open-source Python suite for automating high-precision transport measurements. It supports a resistance range spanning **24 orders of magnitude** (10 nΩ – 10 PΩ), pyroelectric current detection down to 1 fA, and capacitance spectroscopy from 20 Hz – 2 MHz.
 
 [![GitHub Release](https://img.shields.io/github/v/release/prathameshnium/PICA-Python-Instrument-Control-and-Automation)](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18377217.svg)](https://doi.org/10.5281/zenodo.18377217)
 [![Read the Docs](https://readthedocs.org/projects/pica-python-instrument-control-and-automation/badge/?version=latest)](https://pica-python-instrument-control-and-automation.readthedocs.io/en/latest/)
-
-PICA is a modular, open-source Python suite for automating high-precision transport measurements. It supports a resistance range spanning **24 orders of magnitude** (10 nΩ – 10 PΩ), pyroelectric current detection down to 1 fA, and capacitance spectroscopy from 20 Hz – 2 MHz.
 
 ---
 
@@ -48,5 +53,4 @@ pica-gui
 
 User_Manual
 Instruments_Manuals_Lists
-Novocontrol_GPIB_Runbook
 ```
