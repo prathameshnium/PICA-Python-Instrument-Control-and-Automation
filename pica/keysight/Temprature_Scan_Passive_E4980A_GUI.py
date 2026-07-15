@@ -4,7 +4,10 @@ Purpose:             GUI module for Temperature-Dependent Dielectric
                      Measurement (Keysight E4980A + Lakeshore 350).
 Original Authors:    Prathamesh Deshmukh (template programs)
 Integrated by:       AI-assisted merge per design specification
-Version:             V: 1.2  (passive monitoring + thread-safe stop + per-point kill)
+Version:             V: 1.3  (multi-day hardening: 400 K kill switch,
+                     retry-forever comm recovery, fsync-per-point writes,
+                     timestamped T-log, bounded console, optional plot
+                     thinning, Windows keep-awake)
 """
 
 # ===============================================================================
@@ -20,6 +23,7 @@ import threading
 import queue
 import os
 import time
+import ctypes
 import math
 import traceback
 import atexit
@@ -216,7 +220,9 @@ class LCR_Backend:
             raise ConnectionError("VISA Resource Manager unavailable.")
 
         inst = self.rm.open_resource(p["lcr_visa"])
-        inst.timeout = 60000
+        # 15 s: LONG-aperture point time is < 1 s, so this is generous
+        # while letting the retry-forever loop detect a hung bus quickly.
+        inst.timeout = 15000
         inst.read_termination = "\n"
         inst.write_termination = "\n"
         self.instrument = inst
@@ -339,14 +345,14 @@ class LCR_Backend:
 
 # ===============================================================================
 # BACKEND: COMBINED  (Appendix A.1 — per-point temperature binding)
-#                  +  PASSIVE init + hardcoded 350 K safety kill switch
+#                  +  PASSIVE init + hardcoded 400 K safety kill switch
 # ===============================================================================
 
 class Combined_Backend:
     """Manages the Lakeshore 350 (read-only / passive) and the Keysight E4980A."""
 
     # HARDCODED SAFETY KILL SWITCH — do not expose in UI
-    SAFETY_KILL_TEMP_K = 350.0
+    SAFETY_KILL_TEMP_K = 400.0
 
     def __init__(self):
         self.lakeshore = None
@@ -374,7 +380,7 @@ class Combined_Backend:
         self.lcr.initialize_instrument(parameters)
 
     def check_safety_kill(self, temperature_k):
-        """Hardcoded kill switch: force heater OFF at/above 350 K.
+        """Hardcoded kill switch: force heater OFF at/above 400 K.
         Always fires, regardless of the zero-range checkbox."""
         if temperature_k >= self.SAFETY_KILL_TEMP_K:
             for attempt in range(3):
@@ -407,7 +413,20 @@ class Combined_Backend:
                 break
             R, X, status = self.lcr.perform_measurement(f, delay)
             points.append((temp, f, R, X, status))
-        return {'heater': htr, 'points': points}
+        return {'heater': htr, 'points': points,
+                'wall_time': datetime.now()}
+
+    def reconnect(self):
+        """Close both sessions and re-initialize from the stored params.
+        Used by the worker's retry-forever loop after a comm failure;
+        re-init restores the full LCR configuration (RX mode, aperture,
+        ALC, corrections, bias re-ramp) even after an instrument
+        power-cycle."""
+        try:
+            self.close_instruments()
+        except Exception as e:
+            print(f"  Pre-reconnect cleanup warning: {e}")
+        self.initialize_instruments(self.params)
 
     def close_instruments(self):
         print("\n--- [Backend] Closing all instrument connections. ---")
@@ -428,11 +447,21 @@ class Integrated_CT_GUI:
     Combines Lakeshore 350 temperature sensing with E4980A multi-frequency
     LCR measurement.  The Lakeshore is treated as a PASSIVE temperature
     sensor; the heater is never ramped or setpoint-driven from this GUI.
-    A hardcoded 350 K safety kill switch always forces RANGE 1,0.
+    A hardcoded 400 K safety kill switch always forces RANGE 1,0.
+    Built for unattended multi-day runs: comm errors auto-reconnect
+    forever, every data row is fsync'd to disk immediately, and heating/
+    cooling direction is never assumed — whatever temperature profile is
+    thrown at it is recorded as-is.
     """
 
-    PROGRAM_VERSION = "1.2"
+    PROGRAM_VERSION = "1.3"
     LOGO_SIZE = 110
+    CONSOLE_MAX_LINES = 2000   # bound console growth on multi-day runs
+    PLOT_MAX_POINTS = 10000    # halve plot buffers at this size (if enabled)
+
+    # SetThreadExecutionState flags (Windows keep-awake during a run)
+    ES_CONTINUOUS      = 0x80000000
+    ES_SYSTEM_REQUIRED = 0x00000001
 
     # --- Default frequency list (Section 4 of original instructions) ---
     DEFAULT_FREQS = (
@@ -495,7 +524,7 @@ class Integrated_CT_GUI:
         self._close_after_stop = False  # destroy window once worker exits
         self.start_time = None
         self._last_draw_time = 0.0
-        self._redraw_interval = 0.25   # seconds; redraw at most ~4×/sec
+        self._redraw_interval = 1.0    # seconds; 1 Hz is ample at 1-2 K/min
 
         # --- Backend ---
         self.backend = Combined_Backend()
@@ -505,14 +534,22 @@ class Integrated_CT_GUI:
         self.file_location_path = ""
         self.frequencies = []
         self.freq_filepaths = {}
+        self.t_log_path = None
         self.plot_freq = None
 
-        # --- Data storage (Appendix A.4: keyed per frequency, bounded) ---
+        # Rows that failed to reach disk (network share / disk hiccup);
+        # retried every cycle so measured data is never silently dropped.
+        self._pending_rows = deque(maxlen=20000)
+        self._write_error_logged = False
+
+        # --- Data storage (Appendix A.4: keyed per frequency) ---
+        # Plain lists: when plot thinning is enabled they are halved in
+        # place at PLOT_MAX_POINTS (plot-only; files keep every point).
         self.data_storage = {
-            'time': deque(maxlen=10000),
-            'temperature': deque(maxlen=10000),
-            'cp': {},   # {freq: {'T': deque, 'v': deque}}
-            'g':  {},   # {freq: {'T': deque, 'v': deque}}
+            'time': [],
+            'temperature': [],
+            'cp': {},   # {freq: {'T': list, 'v': list}}
+            'g':  {},   # {freq: {'T': list, 'v': list}}
         }
 
         # --- UI variables ---
@@ -735,7 +772,7 @@ class Integrated_CT_GUI:
             "Program Name: Dielectric vs. Temperature (Passive T-Monitor)\n"
             "Instruments: Lakeshore 350 (read-only), Keysight E4980A\n"
             "Function: FUNC:IMP RX, multi-frequency scan per T point\n"
-            "Safety: hardcoded 350 K heater kill switch")
+            "Safety: hardcoded 400 K heater kill switch")
         ttk.Label(frame, text=details_text, justify='left').grid(
             row=3, column=0, columnspan=2, padx=15, pady=(0, 10),
             sticky='w')
@@ -790,7 +827,7 @@ class Integrated_CT_GUI:
             row=r, column=1, padx=padx_val, pady=pady_val, sticky='w')
         r += 1
         self.entries["Delay"] = Entry(frame, font=self.FONT_BASE)
-        self.entries["Delay"].insert(0, "0.2")
+        self.entries["Delay"].insert(0, "0.1")
         self.entries["Delay"].grid(
             row=r, column=0, padx=(10, 5), pady=(0, 10), sticky='ew')
         self.aper_combobox = ttk.Combobox(
@@ -821,6 +858,16 @@ class Integrated_CT_GUI:
             frame,
             text="Set Range to Zero (fully passive; heater OFF)",
             variable=self.var_zero_range).grid(
+            row=r, column=0, columnspan=2, padx=padx_val, pady=2,
+            sticky='w')
+        r += 1
+
+        # --- Plot thinning for very long runs (plot-only; files keep all) ---
+        self.var_plot_thin = tk.BooleanVar(value=False)   # OFF by default
+        ttk.Checkbutton(
+            frame,
+            text="Thin plot points on long runs (halve when full)",
+            variable=self.var_plot_thin).grid(
             row=r, column=0, columnspan=2, padx=padx_val, pady=2,
             sticky='w')
         r += 1
@@ -1107,8 +1154,28 @@ class Integrated_CT_GUI:
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.console_widget.config(state='normal')
         self.console_widget.insert('end', f"[{timestamp}] {message}\n")
+        # Trim to the last CONSOLE_MAX_LINES: an unbounded Text widget is
+        # the main cause of Tk slowdown/freeze on multi-day runs.
+        try:
+            line_count = int(
+                self.console_widget.index('end-1c').split('.')[0])
+            if line_count > self.CONSOLE_MAX_LINES:
+                self.console_widget.delete(
+                    '1.0', f'{line_count - self.CONSOLE_MAX_LINES + 1}.0')
+        except tk.TclError:
+            pass
         self.console_widget.see('end')
         self.console_widget.config(state='disabled')
+
+    def _set_keep_awake(self, enable):
+        """Stop Windows from sleeping mid-run (display may still sleep).
+        Best-effort no-op on other platforms."""
+        try:
+            flags = self.ES_CONTINUOUS | (
+                self.ES_SYSTEM_REQUIRED if enable else 0)
+            ctypes.windll.kernel32.SetThreadExecutionState(flags)
+        except Exception:
+            pass
 
     def _handle_log_message(self, message):
         self.log(message)
@@ -1173,12 +1240,14 @@ class Integrated_CT_GUI:
             self.stop_button.config(state='normal')
             self.scan_button.config(state='disabled')
 
-            self.data_storage['time'] = deque(maxlen=10000)
-            self.data_storage['temperature'] = deque(maxlen=10000)
+            self.data_storage['time'] = []
+            self.data_storage['temperature'] = []
             self.data_storage['cp'] = {
-                f: {'T': deque(maxlen=10000), 'v': deque(maxlen=10000)} for f in self.frequencies}
+                f: {'T': [], 'v': []} for f in self.frequencies}
             self.data_storage['g'] = {
-                f: {'T': deque(maxlen=10000), 'v': deque(maxlen=10000)} for f in self.frequencies}
+                f: {'T': [], 'v': []} for f in self.frequencies}
+            self._pending_rows.clear()
+            self._write_error_logged = False
             self._decade_ylims.clear()  # fresh dataset re-snaps decades
 
             for line in (self.line_main, self.line_sub1, self.line_sub2):
@@ -1188,6 +1257,7 @@ class Integrated_CT_GUI:
             self.canvas.draw()
 
             self.stop_event.clear()
+            self._set_keep_awake(True)   # multi-day run: no system sleep
             self.log("Starting passive temperature-sensing measurement...")
 
             # --- Launch worker thread ---
@@ -1237,6 +1307,17 @@ class Integrated_CT_GUI:
         for f, path in self.freq_filepaths.items():
             with open(path, 'w', encoding='utf-8') as fh:
                 fh.write(self.DATA_HEADER + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+
+        # Timestamped temperature log (separate file so the legacy
+        # 19-column per-frequency format stays untouched).
+        self.t_log_path = os.path.join(
+            self.file_location_path, f"{sample_name}_T-log.txt")
+        with open(self.t_log_path, 'w', encoding='utf-8') as fh:
+            fh.write("DateTime\tElapsed_s\tTemperature_K\tHeater_pct\n")
+            fh.flush()
+            os.fsync(fh.fileno())
 
     # ------------------------------------------------------------------
     def _populate_plot_freq_dropdown(self):
@@ -1304,6 +1385,7 @@ class Integrated_CT_GUI:
         self._finalize_stop(from_user)
 
     def _finalize_stop(self, from_user):
+        self._set_keep_awake(False)  # allow system sleep again
         self.start_button.config(state='normal')
         self.scan_button.config(state='normal')
         try:
@@ -1322,7 +1404,8 @@ class Integrated_CT_GUI:
                 "Info", "Measurement stopped and instruments disconnected.")
 
     # ==================================================================
-    # WORKER THREAD  (Passive monitoring — no stabilization, no ramp)
+    # WORKER THREAD  (Passive monitoring — no stabilization, no ramp,
+    #                 no direction assumption; comm errors retry forever)
     # ==================================================================
     def _measurement_worker(self):
         params = self.backend.params
@@ -1330,23 +1413,64 @@ class Integrated_CT_GUI:
             self.start_time = time.time()
             self.data_queue.put("LOG:Passive monitoring started. "
                                 "Measuring until stopped by user.")
+            comm_failures = 0
             while self.is_running and not self.stop_event.is_set():
-                cycle = self.backend.measure_frequency_sweep(
-                    self.frequencies, params['delay'], self.stop_event)
+                try:
+                    cycle = self.backend.measure_frequency_sweep(
+                        self.frequencies, params['delay'], self.stop_event)
+                    comm_failures = 0
+                except Exception:
+                    # Comm glitch (GPIB/VISA/instrument power blip):
+                    # never give up — log, back off, reconnect, resume.
+                    comm_failures += 1
+                    self.data_queue.put(
+                        f"LOG:COMM ERROR (failure #{comm_failures}): "
+                        f"{traceback.format_exc(limit=3)}")
+                    if not self._reconnect_with_backoff(comm_failures):
+                        break   # stop requested during backoff
+                    continue
+
                 elapsed = time.time() - self.start_time
 
                 if cycle['points']:
                     self.data_queue.put(('CYCLE', cycle, elapsed))
                 else:
-                    break
+                    break   # stop_event aborted the sweep pre-first-point
 
-                # Hardcoded 350 K kill switch (checks max T in cycle)
+                # Hardcoded 400 K kill switch (checks max T in cycle)
                 max_temp = max(pt[0] for pt in cycle['points'])
                 if self.backend.check_safety_kill(max_temp):
                     self.data_queue.put("KILL")
                     break
         except Exception as e:
+            # Last-resort safety net for unexpected (non-comm) bugs only;
+            # comm errors are handled by the retry loop above.
             self.data_queue.put(e)
+
+    def _reconnect_with_backoff(self, attempt):
+        """Worker-thread helper: close and re-open both instruments,
+        escalating the wait between tries (5 -> 10 -> 30 -> 60 s cap).
+        Loops until reconnected; returns False only if Stop was
+        requested while waiting or reconnecting."""
+        backoffs = (5, 10, 30, 60)
+        while self.is_running and not self.stop_event.is_set():
+            delay_s = backoffs[min(attempt - 1, len(backoffs) - 1)]
+            self.data_queue.put(
+                f"LOG:Reconnect attempt in {delay_s} s "
+                "(Stop stays responsive)...")
+            deadline = time.time() + delay_s
+            while time.time() < deadline:
+                if self.stop_event.wait(1.0):
+                    return False
+            try:
+                self.backend.reconnect()
+                self.data_queue.put(
+                    "LOG:Reconnected. Resuming measurement.")
+                return True
+            except Exception as e:
+                attempt += 1
+                self.data_queue.put(f"LOG:Reconnect failed: {e}")
+        return False
 
     # ==================================================================
     # QUEUE PROCESSING (main thread)
@@ -1357,27 +1481,40 @@ class Integrated_CT_GUI:
             while not self.data_queue.empty():
                 data = self.data_queue.get_nowait()
 
-                if isinstance(data, str) and data.startswith("LOG:"):
-                    self._handle_log_message(data[4:])
-                elif isinstance(data, str) and data == "KILL":
-                    terminal = "KILL"          # defer; keep draining
-                elif isinstance(data, Exception):
-                    terminal = data
-                elif isinstance(data, tuple) and data[0] == 'CYCLE':
-                    _, cycle, elapsed = data
-                    self._process_cycle(cycle, elapsed)
+                try:
+                    if isinstance(data, str) and data.startswith("LOG:"):
+                        self._handle_log_message(data[4:])
+                    elif isinstance(data, str) and data == "KILL":
+                        terminal = "KILL"          # defer; keep draining
+                    elif isinstance(data, Exception):
+                        terminal = data
+                    elif isinstance(data, tuple) and data[0] == 'CYCLE':
+                        _, cycle, elapsed = data
+                        self._process_cycle(cycle, elapsed)
+                except Exception:
+                    # A GUI-side failure (plot/log/file) must never kill
+                    # this pump: acquisition continues in the worker and
+                    # the next items still get processed.
+                    try:
+                        self.log("GUI ERROR (non-fatal): "
+                                 f"{traceback.format_exc()}")
+                    except Exception:
+                        pass
         except queue.Empty:
             pass
-
-        if terminal == "KILL":
-            self._handle_kill_event()
-            return
-        if isinstance(terminal, Exception):
-            self._handle_runtime_error(terminal)
-            return
-
-        if self.is_running or self.is_stabilizing:
-            self.root.after(200, self._process_data_queue)
+        finally:
+            # Re-scheduling lives in a finally so the pump survives any
+            # unexpected error above — a frozen-looking-but-alive window
+            # silently dropping data is the worst multi-day failure mode.
+            try:
+                if terminal == "KILL":
+                    self._handle_kill_event()
+                elif isinstance(terminal, Exception):
+                    self._handle_runtime_error(terminal)
+                elif self.is_running or self.is_stabilizing:
+                    self.root.after(200, self._process_data_queue)
+            except tk.TclError:
+                pass   # window already destroyed
 
     # ------------------------------------------------------------------
     def _process_cycle(self, cycle, elapsed):
@@ -1397,6 +1534,9 @@ class Integrated_CT_GUI:
         # Appendix A.3: safe per-point file writing
         self._save_cycle_to_files(cycle)
 
+        # One timestamped T-log row per sweep (multi-day thermal history)
+        self._append_t_log(cycle, elapsed)
+
         # Update in-memory storage for plotting
         self._update_data_storage(cycle, elapsed)
 
@@ -1405,8 +1545,46 @@ class Integrated_CT_GUI:
 
     # ==================================================================
     # Appendix A.3: Safe per-point file writing (open / append / close)
+    # + fsync so a sudden power cut cannot lose OS-buffered rows
     # ==================================================================
+    def _durable_write(self, path, text):
+        """Append text and force it to the physical disk immediately."""
+        with open(path, 'a', encoding='utf-8') as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+
+    def _write_or_buffer(self, path, row_str):
+        """Write a row durably; on disk/share hiccup, buffer it for
+        retry next cycle so measured data is never silently dropped.
+        While rows are pending, new rows go straight to the buffer to
+        preserve per-file ordering."""
+        if self._pending_rows:
+            self._pending_rows.append((path, row_str))
+            return
+        try:
+            self._durable_write(path, row_str)
+        except OSError as e:
+            self._pending_rows.append((path, row_str))
+            if not self._write_error_logged:
+                self._write_error_logged = True
+                self.log(f"WRITE ERROR: {e} — buffering rows and "
+                         "retrying every cycle.")
+
+    def _flush_pending_rows(self):
+        while self._pending_rows:
+            path, row = self._pending_rows[0]
+            try:
+                self._durable_write(path, row)
+            except OSError:
+                return   # still failing; keep buffer, retry next cycle
+            self._pending_rows.popleft()
+        if self._write_error_logged:
+            self._write_error_logged = False
+            self.log("Write path recovered; buffered rows flushed.")
+
     def _save_cycle_to_files(self, cycle):
+        self._flush_pending_rows()
         for (temp, f, R, X, status) in cycle['points']:
             try:
                 calc = self.calculate_impedance_parameters(f, R, X)
@@ -1418,17 +1596,33 @@ class Integrated_CT_GUI:
             # Every value — including temperature — formatted as %.6E
             row_vals = [temp] + calc
             row_str = "\t".join("{:.6E}".format(v) for v in row_vals)
+            self._write_or_buffer(self.freq_filepaths[f], row_str + "\n")
 
-            # Open, append, close for every single point: if the program
-            # crashes mid-experiment, no data already written is lost.
-            with open(self.freq_filepaths[f], 'a',
-                      encoding='utf-8') as fh:
-                fh.write(row_str + "\n")
+    def _append_t_log(self, cycle, elapsed):
+        """One row per sweep: wall-clock, elapsed s, T, heater %."""
+        if not self.t_log_path:
+            return
+        wall = cycle.get('wall_time') or datetime.now()
+        last_temp = cycle['points'][-1][0]
+        row = (f"{wall.strftime('%Y-%m-%d %H:%M:%S')}\t{elapsed:.1f}\t"
+               f"{last_temp:.4f}\t{cycle['heater']:.2f}\n")
+        self._write_or_buffer(self.t_log_path, row)
 
     # ==================================================================
     # DATA STORAGE UPDATE (Appendix A.4: per-frequency keyed)
     # ==================================================================
+    @staticmethod
+    def _thin_pair(a, b):
+        """Halve two aligned plot lists (drop every other point) while
+        always keeping the newest point. Plot-only: the data files keep
+        every measured point. Both lists get the identical slice so
+        they stay aligned."""
+        if len(a) % 2 == 0:
+            return a[::2] + a[-1:], b[::2] + b[-1:]
+        return a[::2], b[::2]
+
     def _update_data_storage(self, cycle, elapsed):
+        thin = self.var_plot_thin.get()
         for (temp, f, R, X, status) in cycle['points']:
             try:
                 calc = self.calculate_impedance_parameters(f, R, X)
@@ -1436,13 +1630,20 @@ class Integrated_CT_GUI:
             except Exception:
                 cp, g = float('nan'), float('nan')
 
-            self.data_storage['cp'][f]['T'].append(temp)
-            self.data_storage['cp'][f]['v'].append(cp)
-            self.data_storage['g'][f]['T'].append(temp)
-            self.data_storage['g'][f]['v'].append(g)
+            for key, val in (('cp', cp), ('g', g)):
+                store = self.data_storage[key][f]
+                store['T'].append(temp)
+                store['v'].append(val)
+                if thin and len(store['T']) >= self.PLOT_MAX_POINTS:
+                    store['T'], store['v'] = self._thin_pair(
+                        store['T'], store['v'])
 
         self.data_storage['time'].append(elapsed)
         self.data_storage['temperature'].append(cycle['points'][-1][0])
+        if thin and len(self.data_storage['time']) >= self.PLOT_MAX_POINTS:
+            self.data_storage['time'], self.data_storage['temperature'] = \
+                self._thin_pair(self.data_storage['time'],
+                                self.data_storage['temperature'])
 
     # ==================================================================
     # PLOTTING (Appendix A.4: decoupled from acquisition)
@@ -1551,13 +1752,14 @@ class Integrated_CT_GUI:
     # EVENT HANDLERS
     # ==================================================================
     def _handle_kill_event(self):
-        self.log("!!! HARDCODED SAFETY KILL (350 K) TRIGGERED — "
+        kill_t = self.backend.SAFETY_KILL_TEMP_K
+        self.log(f"!!! HARDCODED SAFETY KILL ({kill_t:.0f} K) TRIGGERED — "
                  "heater forced OFF !!!")
         self._update_live_plots(force=True)
         self.stop_measurement(False)
         messagebox.showwarning(
             "SAFETY KILL",
-            "Temperature reached 350 K.\nHeater turned OFF and "
+            f"Temperature reached {kill_t:.0f} K.\nHeater turned OFF and "
             "measurement stopped.")
 
     # ------------------------------------------------------------------
