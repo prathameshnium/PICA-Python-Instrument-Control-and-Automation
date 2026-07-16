@@ -78,11 +78,33 @@ shared logic is embedded as a copy.
 ============================================================
 v1.0 — initial release (Tscan + Fscan master protocol)
 ============================================================
+
+============================================================
+v1.1 — SEQUENCE-GENERATOR ACCURACY
+============================================================
+  SEQ-1  TMP approach-mode toggles: separate GUI selectors for the
+         Tscan section (default Fast settle, mode 0 — as the reference
+         Dielectric_Tscan.seq) and the Fscan steps (default No
+         overshoot, mode 1 — as the reference Dielectric_Fscan.seq).
+  SEQ-2  validate_ppms_seq(): every non-comment line of a sequence is
+         checked against the exact MultiVu grammar (TMP TEMP / FLD
+         FIELD / WAI WAITFOR) with PPMS value ranges (T <= 400 K,
+         rate <= 20 K/min). Runs automatically on every generated
+         preview (a failure there is a program bug and is reported
+         loudly) and again on Save — so even MANUAL edits in the
+         preview box are caught before a faulty sequence can reach
+         MultiVu.
+  SEQ-3  Cooldown arithmetic made explicit: each run's cooldown wait
+         is reported as PPMS ramp time (span / cool rate) + probe
+         soak; a cooldown wait SHORTER than the ramp itself is
+         rejected at generation (the sequence would start warming
+         before base is ever reached).
 """
 
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, filedialog
 import os
+import re                        # SEQ-2: sequence grammar validation
 import time
 import math
 import queue
@@ -375,11 +397,16 @@ def generate_ppms_seq(cfg):
         TMP TEMP <target K> <rate K/min> <mode>
         FLD FIELD <target Oe> <rate Oe/s> <approach> <mode>
         WAI WAITFOR <delay s> <T> <H> <pos> <chamber> <err>
-    Tscan ramps use approach mode 0 (fast settle, as Dielectric_Tscan.seq);
-    Fscan steps use mode 1 (no overshoot, as Dielectric_Fscan.seq).
+    TMP approach modes are selectable (SEQ-1):
+        cfg['tscan_approach'] (default 0, fast settle — reference
+        Dielectric_Tscan.seq) for every Tscan-section TMP line;
+        cfg['fscan_approach'] (default 1, no overshoot — reference
+        Dielectric_Fscan.seq) for the Fscan step TMP lines.
     Field is SET at cfg['field_rate'] (reference: 50 Oe/s) and RESET at
     20 Oe/s with approach 2, exactly as the reference sequence does.
     """
+    tmode = int(cfg.get("tscan_approach", 0))
+    fmode = int(cfg.get("fscan_approach", 1))
     L = []
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     L.append(f"REM ==== PICA Dielectric Master protocol | "
@@ -387,14 +414,16 @@ def generate_ppms_seq(cfg):
     for i, run in enumerate(cfg["runs"], 1):
         L.append(f"REM ------------------------ Run {i}: {run['label']} "
                  f"------------------------")
-        L.append(f"TMP TEMP {cfg['base_temp']:.6f} {cfg['cool_rate']:.6f} 0")
+        L.append(f"TMP TEMP {cfg['base_temp']:.6f} {cfg['cool_rate']:.6f} "
+                 f"{tmode}")
         L.append(f"WAI WAITFOR {int(round(run['cooldown_wait_s']))} "
                  f"0 0 0 0 0")
         if abs(run["field_oe"]) > 0:
             L.append(f"FLD FIELD {run['field_oe']:.1f} "
                      f"{cfg['field_rate']:.1f} 0 0")
             L.append("WAI WAITFOR 120 0 1 0 0 0")
-        L.append(f"TMP TEMP {cfg['top_temp']:.6f} {cfg['warm_rate']:.6f} 0")
+        L.append(f"TMP TEMP {cfg['top_temp']:.6f} {cfg['warm_rate']:.6f} "
+                 f"{tmode}")
         L.append(f"WAI WAITFOR {int(round(cfg['top_hold_s']))} 1 0 0 0 0")
         if abs(run["field_oe"]) > 0:
             L.append("FLD FIELD 0.0 20.0 2 0")
@@ -402,18 +431,75 @@ def generate_ppms_seq(cfg):
     if cfg["schedule"]:
         L.append("REM ------------------------ Final cooldown "
                  "------------------------")
-        L.append(f"TMP TEMP {cfg['base_temp']:.6f} {cfg['cool_rate']:.6f} 0")
+        L.append(f"TMP TEMP {cfg['base_temp']:.6f} {cfg['cool_rate']:.6f} "
+                 f"{tmode}")
         L.append(f"WAI WAITFOR {int(round(cfg['final_cooldown_s']))} "
                  f"0 0 0 0 0")
         L.append("REM ------------------------ Step Fscan "
                  "------------------------")
         for T in cfg["schedule"]:
             L.append(f"REM -- {T:g} K step --")
-            L.append(f"TMP TEMP {T:.6f} {cfg['fscan_rate']:.6f} 1")
+            L.append(f"TMP TEMP {T:.6f} {cfg['fscan_rate']:.6f} {fmode}")
             L.append(f"WAI WAITFOR {int(round(cfg['step_wait_s']))} "
                      f"1 0 0 0 0")
     L.append("REM ==== Protocol end ====")
     return "\n".join(L) + "\n"
+
+
+# --- SEQ-2: strict sequence validation (grammar + PPMS value ranges) ---
+# MultiVu is unforgiving: one malformed line ruins an unattended run.
+# The validator accepts general decimal formatting (a hand-edited
+# "25.5" is as valid as the generator's "25.500000") but rejects any
+# line whose SHAPE or VALUES a PPMS could not execute.
+SEQ_TMP_RE = re.compile(
+    r"^TMP TEMP (\d+(?:\.\d+)?) (\d+(?:\.\d+)?) ([01])$")
+SEQ_FLD_RE = re.compile(
+    r"^FLD FIELD (-?\d+(?:\.\d+)?) (\d+(?:\.\d+)?) ([0-2]) ([01])$")
+SEQ_WAI_RE = re.compile(
+    r"^WAI WAITFOR (\d+(?:\.\d+)?) ([01]) ([01]) ([01]) ([01]) ([01])$")
+
+PPMS_MAX_TEMP_K = 400.0        # PPMS temperature range ends at 400 K
+PPMS_MAX_TRATE = 20.0          # PPMS max temperature rate (K/min)
+PPMS_MAX_FIELD_OE = 160000.0   # generous: covers any PPMS magnet
+
+
+def validate_ppms_seq(text):
+    """Check every line of a MultiVu sequence against the exact grammar
+    of the reference sequences. Returns a list of error strings (empty
+    list = the sequence is safe to save). Comment lines (REM), disabled
+    lines (! prefix), MES remarks and blank lines are passed through."""
+    errors = []
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        s = raw.strip()
+        if not s or s.startswith(("REM", "!", "MES")):
+            continue
+        m = SEQ_TMP_RE.match(s)
+        if m:
+            temp, rate = float(m.group(1)), float(m.group(2))
+            if not (0.0 < temp <= PPMS_MAX_TEMP_K):
+                errors.append(f"line {lineno}: temperature {temp:g} K "
+                              f"outside PPMS range (0, {PPMS_MAX_TEMP_K:g}]"
+                              f": {s!r}")
+            if not (0.0 < rate <= PPMS_MAX_TRATE):
+                errors.append(f"line {lineno}: temperature rate {rate:g} "
+                              f"K/min outside (0, {PPMS_MAX_TRATE:g}]: {s!r}")
+            continue
+        m = SEQ_FLD_RE.match(s)
+        if m:
+            field, rate = float(m.group(1)), float(m.group(2))
+            if abs(field) > PPMS_MAX_FIELD_OE:
+                errors.append(f"line {lineno}: field {field:g} Oe beyond "
+                              f"±{PPMS_MAX_FIELD_OE:g} Oe: {s!r}")
+            if rate <= 0:
+                errors.append(f"line {lineno}: field rate must be "
+                              f"positive: {s!r}")
+            continue
+        if SEQ_WAI_RE.match(s):
+            continue
+        errors.append(f"line {lineno}: does not match any known MultiVu "
+                      f"command (TMP TEMP / FLD FIELD / WAI WAITFOR / "
+                      f"REM / MES / !): {s!r}")
+    return errors
 
 
 # ============================================================
@@ -1057,6 +1143,27 @@ class PPMSMasterGUI:
         self.plot_freq_cb.bind("<<ComboboxSelected>>",
                                self._on_plot_freq_change)
 
+        # SEQ-1: TMP approach modes for the generated PPMS sequence.
+        # Defaults mirror the reference sequences exactly: Tscan ramps
+        # fast-settle (0), Fscan steps no-overshoot (1).
+        APPROACHES = ["Fast settle (0)", "No overshoot (1)"]
+        ttk.Label(frame, text="Tscan TMP approach:").grid(
+            row=12, column=0, sticky="w", padx=(10, 2), pady=2)
+        self.tscan_mode_cb = ttk.Combobox(frame, values=APPROACHES,
+                                          state="readonly", width=14)
+        self.tscan_mode_cb.set(APPROACHES[0])
+        self.tscan_mode_cb.grid(row=12, column=1, sticky="ew",
+                                padx=(2, 10), pady=2)
+        self._prerun_combos.append(self.tscan_mode_cb)
+        ttk.Label(frame, text="Fscan TMP approach:").grid(
+            row=12, column=2, sticky="w", padx=(10, 2), pady=2)
+        self.fscan_mode_cb = ttk.Combobox(frame, values=APPROACHES,
+                                          state="readonly", width=14)
+        self.fscan_mode_cb.set(APPROACHES[1])
+        self.fscan_mode_cb.grid(row=12, column=3, sticky="ew",
+                                padx=(2, 10), pady=(2, 6))
+        self._prerun_combos.append(self.fscan_mode_cb)
+
         self._runs_render()
 
     def _add_proto_entry(self, frame, label, key, default, r, c):
@@ -1623,13 +1730,44 @@ class PPMSMasterGUI:
             messagebox.showerror("Protocol", str(e))
             return
         text = generate_ppms_seq(cfg)
+        # SEQ-2 self-check: a generated sequence failing its own grammar
+        # is a program bug — refuse to present it as valid.
+        errors = validate_ppms_seq(text)
+        if errors:
+            self.log("CRITICAL: generated sequence failed validation "
+                     "(program bug — do NOT use):")
+            for err in errors:
+                self.log(f"  {err}")
+            messagebox.showerror(
+                "Sequence Generator Bug",
+                "The generated sequence failed its own validation — "
+                "see the console. Do not use it; please report this.")
+            return
         self.seq_text.delete("1.0", tk.END)
         self.seq_text.insert("1.0", text)
-        self.log(f"PPMS .seq generated: {len(cfg['runs'])} passive run(s), "
-                 f"{len(cfg['schedule'])} Fscan setpoint(s), step wait "
-                 f"{fmt_hms(cfg['step_wait_s'])} "
-                 "(= stability window + scan estimate + margin). Review / "
-                 "edit the preview, then 'Save .seq…'.")
+        # SEQ-3: cooldown arithmetic, spelled out per run.
+        ramp_s = ((cfg["top_temp"] - cfg["base_temp"])
+                  / cfg["cool_rate"] * 60.0)
+        for run in cfg["runs"]:
+            soak = run["cooldown_wait_s"] - ramp_s
+            self.log(f"  {run['label']}: cooldown "
+                     f"{fmt_hms(run['cooldown_wait_s'])} = PPMS ramp "
+                     f"{cfg['top_temp']:g}->{cfg['base_temp']:g} K at "
+                     f"{cfg['cool_rate']:g} K/min ({fmt_hms(ramp_s)}) "
+                     f"+ probe soak {fmt_hms(soak)}.")
+        if cfg["schedule"]:
+            soak = cfg["final_cooldown_s"] - ramp_s
+            self.log(f"  Final cooldown: {fmt_hms(cfg['final_cooldown_s'])} "
+                     f"= ramp {fmt_hms(ramp_s)} + probe soak "
+                     f"{fmt_hms(soak)}.")
+        self.log(f"PPMS .seq generated and VALIDATED "
+                 f"({len(cfg['runs'])} passive run(s), "
+                 f"{len(cfg['schedule'])} Fscan setpoint(s), Tscan TMP "
+                 f"mode {cfg['tscan_approach']}, Fscan TMP mode "
+                 f"{cfg['fscan_approach']}, step wait "
+                 f"{fmt_hms(cfg['step_wait_s'])} = stability window + "
+                 "scan estimate + margin). Review / edit the preview, "
+                 "then 'Save .seq…'.")
         self._preview_protocol()
 
     def _save_seq(self):
@@ -1639,6 +1777,22 @@ class PPMSMasterGUI:
             content = self.seq_text.get("1.0", tk.END).strip()
             if not content:
                 return
+        # SEQ-2: re-validate at save time — the preview is editable, so
+        # this catches manual typos before a faulty sequence can ever
+        # reach MultiVu. (Pre-run, user-initiated: a dialog is fine.)
+        errors = validate_ppms_seq(content)
+        if errors:
+            shown = "\n".join(errors[:8])
+            if len(errors) > 8:
+                shown += f"\n… and {len(errors) - 8} more."
+            messagebox.showerror(
+                "Invalid Sequence — NOT saved",
+                "The sequence in the preview has errors. A faulty "
+                "sequence would ruin the unattended run, so saving is "
+                f"blocked until they are fixed:\n\n{shown}")
+            self.log(f"Sequence save blocked: {len(errors)} validation "
+                     "error(s) — see the dialog.")
+            return
         sample = self.lcr_entries["sample_name"].get().strip() or "Sample"
         path = filedialog.asksaveasfilename(
             defaultextension=".seq",
@@ -2073,6 +2227,20 @@ class PPMSMasterGUI:
         if confirm_min < 0 or overdue_min <= 0:
             raise ValueError("Confirm must be >= 0; Overdue warn > 0.")
 
+        # SEQ-3: a cooldown WAITFOR shorter than the PPMS ramp itself is
+        # a faulty sequence — warming would start before base is reached.
+        ramp_s = (top_temp - base_temp) / cool_rate * 60.0
+        for i, run in enumerate(runs, 1):
+            if run["cooldown_wait_s"] < ramp_s:
+                raise ValueError(
+                    f"Run {i} cooldown ({fmt_hms(run['cooldown_wait_s'])}) "
+                    f"is SHORTER than the PPMS ramp {top_temp:g}->"
+                    f"{base_temp:g} K at {cool_rate:g} K/min "
+                    f"({fmt_hms(ramp_s)}). The sequence would start "
+                    "warming before base is ever reached — set cooldown = "
+                    "ramp time + probe soak (the probe needs extra time "
+                    "to bottom out).")
+
         tscan_freqs = self._parse_tscan_freqs()
         if runs and not tscan_freqs:
             raise ValueError("Tscan frequency list is empty but passive "
@@ -2082,6 +2250,11 @@ class PPMSMasterGUI:
         for t in schedule:
             if t <= 0:
                 raise ValueError(f"Fscan setpoint {t} K invalid.")
+        if schedule and final_cd_min * 60.0 < ramp_s:
+            raise ValueError(
+                f"Final cooldown ({fmt_hms(final_cd_min * 60.0)}) is "
+                f"SHORTER than the PPMS ramp {top_temp:g}->{base_temp:g} K "
+                f"at {cool_rate:g} K/min ({fmt_hms(ramp_s)}).")
 
         # Fscan step wait for the generated sequence / planning:
         # stability window + scan estimate + margin.
@@ -2106,6 +2279,8 @@ class PPMSMasterGUI:
             "final_cooldown_s": final_cd_min * 60.0,
             "field_rate": field_rate,
             "fscan_rate": fscan_rate,
+            "tscan_approach": 1 if "(1)" in self.tscan_mode_cb.get() else 0,
+            "fscan_approach": 1 if "(1)" in self.fscan_mode_cb.get() else 0,
             "base_arm": base_arm,
             "rise_k": rise_k,
             "top_arm_off": top_arm_off,
