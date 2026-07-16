@@ -125,11 +125,59 @@ v1.3 — UNATTENDED-RUN HARDENING (power cuts / comm errors)
   HARD-4 Defaults tuned for the PPMS probe: criterion = Flatness +
          band, Tolerance ±0.5 K, stabilization timeout 90 min
          (timeout proceeds with the sweep and flags the step).
+
+============================================================
+v1.4 — UNATTENDED POLICY + VALIDATED .seq EXPORT
+(backported from PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI.py)
+============================================================
+  UNAT-1 No modal dialogs during/after a run: the sequence-complete
+         messagebox is gone (it blocked the GUI queue pump — logs,
+         plots, worker_done — until someone clicked OK, and runs
+         execute overnight/holidays with nobody in the lab).
+         Completion = console log + banner + beep only.
+  SEQ-1  "Export .seq…" on the Timing / PPMS Suggestions tab renders
+         the editable per-step plan (each row's rate and wait) into a
+         real MultiVu sequence:
+             TMP TEMP <K> <K/min> <mode> + WAI WAITFOR <wait> 1 0 0 0 0
+         with a TMP approach toggle (No overshoot (1) default, as the
+         reference Dielectric_Fscan.seq; Fast settle (0) selectable).
+         The first setpoint (no ramp row) uses the temperature-aware
+         default rate.
+  SEQ-2  validate_ppms_seq(): every exported line is checked against
+         the exact MultiVu grammar with PPMS value ranges (T <= 400 K,
+         rate <= 20 K/min) BEFORE the file can be saved — a faulty
+         sequence ruins an unattended run.
+  SAFE-1 One-time loud console warning + beep if the sample reads
+         above 340 K (this program is read-only and cannot act).
+  SMART-1 Cooldown-end detection for the initial sleep (checkbox, ON
+         by default per user decision): the sleep ends as soon as the
+         probe dips below "Base arm" (default 30 K) and then rises
+         2 K off its observed minimum, held for 3 min (median-of-5
+         filtered) — i.e. the PPMS has finished its first cooldown
+         and is moving to the first setpoint. The timed sleep stays
+         as a fallback ceiling. Same "definitely sure" detector as
+         the Master module.
+  RATE-1 Sequence-plan default ramp rate is now a flat 1 K/min for
+         all setpoints, matching the reference Dielectric_Tscan.seq /
+         Dielectric_Fscan.seq (the PPMS owns the ramp; the old
+         temperature-tiered 0.5/1/2 K/min defaults were for the
+         LN2-dewar Lakeshore rig). Still clamped to Max rate and
+         per-cell editable.
+  FIX-1  The left "Timing & PPMS Suggestion" planner and the right
+         "Timing / PPMS Suggestions" table now always agree:
+         'Generate PPMS plan' RESETS the table to the computed plan
+         (stale cell edits no longer survive it), writes the solved
+         ramp rate into every ramp row, stores waits unrounded (was
+         a 0.01-min rounding drift), and mirrors a DISABLED initial
+         sleep as a zero initial wait. Same rates + same waits +
+         same initial wait = identical Total and projected finish
+         on both sides.
 """
 
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, filedialog
 import os
+import re                        # SEQ-2: sequence grammar validation
 import time
 import math
 import queue
@@ -292,6 +340,144 @@ def estimate_scan_seconds(freqs, freq_delay, aper):
         total += freq_delay + max(base, cycles / max(float(f), 1.0)) \
                  + VISA_OVERHEAD_S + TEMP_LOG_S
     return total
+
+
+# ============================================================
+# SEQ-1/SEQ-2: MultiVu sequence rendering + strict validation
+# (embedded copy from PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI.py —
+# PICA programs never import from each other)
+# ============================================================
+def render_fscan_seq(sample, steps, mode, initial_note=None):
+    """Render the per-step plan into a MultiVu sequence, in the exact
+    line format of the reference Dielectric_Fscan.seq:
+        TMP TEMP <target K> <rate K/min> <mode>
+        WAI WAITFOR <wait s> 1 0 0 0 0     (temperature-stable + delay)
+    steps: [(target_K, rate_K_per_min, wait_s), ...]
+    mode:  TMP approach — 0 fast settle, 1 no overshoot (reference).
+    """
+    L = []
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    L.append(f"REM ==== PICA PPMS-Sync Fscan plan | sample: {sample} | "
+             f"generated {stamp} ====")
+    if initial_note:
+        L.append(f"REM {initial_note}")
+    for i, (target, rate, wait_s) in enumerate(steps, 1):
+        L.append(f"REM -- step {i}: {target:g} K --")
+        L.append(f"TMP TEMP {target:.6f} {rate:.6f} {int(mode)}")
+        L.append(f"WAI WAITFOR {int(round(wait_s))} 1 0 0 0 0")
+    L.append("REM ==== End of Fscan plan ====")
+    return "\n".join(L) + "\n"
+
+
+# MultiVu is unforgiving: one malformed line ruins an unattended run.
+# The validator accepts general decimal formatting (a hand-edited
+# "25.5" is as valid as the generator's "25.500000") but rejects any
+# line whose SHAPE or VALUES a PPMS could not execute.
+SEQ_TMP_RE = re.compile(
+    r"^TMP TEMP (\d+(?:\.\d+)?) (\d+(?:\.\d+)?) ([01])$")
+SEQ_FLD_RE = re.compile(
+    r"^FLD FIELD (-?\d+(?:\.\d+)?) (\d+(?:\.\d+)?) ([0-2]) ([01])$")
+SEQ_WAI_RE = re.compile(
+    r"^WAI WAITFOR (\d+(?:\.\d+)?) ([01]) ([01]) ([01]) ([01]) ([01])$")
+
+PPMS_MAX_TEMP_K = 400.0        # PPMS temperature range ends at 400 K
+PPMS_MAX_TRATE = 20.0          # PPMS max temperature rate (K/min)
+PPMS_MAX_FIELD_OE = 160000.0   # generous: covers any PPMS magnet
+
+
+def validate_ppms_seq(text):
+    """Check every line of a MultiVu sequence against the exact grammar
+    of the reference sequences. Returns a list of error strings (empty
+    list = the sequence is safe to save). Comment lines (REM), disabled
+    lines (! prefix), MES remarks and blank lines are passed through."""
+    errors = []
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        s = raw.strip()
+        if not s or s.startswith(("REM", "!", "MES")):
+            continue
+        m = SEQ_TMP_RE.match(s)
+        if m:
+            temp, rate = float(m.group(1)), float(m.group(2))
+            if not (0.0 < temp <= PPMS_MAX_TEMP_K):
+                errors.append(f"line {lineno}: temperature {temp:g} K "
+                              f"outside PPMS range (0, {PPMS_MAX_TEMP_K:g}]"
+                              f": {s!r}")
+            if not (0.0 < rate <= PPMS_MAX_TRATE):
+                errors.append(f"line {lineno}: temperature rate {rate:g} "
+                              f"K/min outside (0, {PPMS_MAX_TRATE:g}]: {s!r}")
+            continue
+        m = SEQ_FLD_RE.match(s)
+        if m:
+            field, rate = float(m.group(1)), float(m.group(2))
+            if abs(field) > PPMS_MAX_FIELD_OE:
+                errors.append(f"line {lineno}: field {field:g} Oe beyond "
+                              f"±{PPMS_MAX_FIELD_OE:g} Oe: {s!r}")
+            if rate <= 0:
+                errors.append(f"line {lineno}: field rate must be "
+                              f"positive: {s!r}")
+            continue
+        if SEQ_WAI_RE.match(s):
+            continue
+        errors.append(f"line {lineno}: does not match any known MultiVu "
+                      f"command (TMP TEMP / FLD FIELD / WAI WAITFOR / "
+                      f"REM / MES / !): {s!r}")
+    return errors
+
+
+# ============================================================
+# SMART-1: cooldown-end detection for the initial sleep
+# (embedded copy from PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI.py)
+# ============================================================
+class TurnaroundDetector:
+    """Detects warming-start (rise off the minimum) from a stream of
+    probe temperatures. A median-of-5 filter on the incoming readings
+    makes single glitched values (sensor spike, comm hiccup) unable to
+    poison the tracked min/max or fake a turnaround."""
+
+    MEDIAN_N = 5
+
+    def __init__(self):
+        self._raw = deque(maxlen=self.MEDIAN_N)
+        self.min_T = float("inf")
+        self.max_T = float("-inf")
+        self.last_T = float("nan")   # median-filtered
+
+    def update(self, temp):
+        if temp is None or not math.isfinite(temp):
+            return self.last_T
+        self._raw.append(float(temp))
+        med = float(np.median(list(self._raw)))
+        self.last_T = med
+        if med < self.min_T:
+            self.min_T = med
+        if med > self.max_T:
+            self.max_T = med
+        return med
+
+    def warming_started(self, arm_below_k, rise_k):
+        """True once T dipped below arm_below_k and has since risen
+        rise_k off the observed minimum."""
+        return (self.min_T <= arm_below_k
+                and math.isfinite(self.last_T)
+                and (self.last_T - self.min_T) >= rise_k)
+
+
+class SustainedCondition:
+    """A condition must hold CONTINUOUSLY for hold_s seconds before it
+    counts — the phase only changes when it is definitely sure."""
+
+    def __init__(self, hold_s):
+        self.hold_s = max(0.0, float(hold_s))
+        self._since = None
+
+    def update(self, ok, now=None):
+        now = time.time() if now is None else now
+        if not ok:
+            self._since = None
+            return False
+        if self._since is None:
+            self._since = now
+        return (now - self._since) >= self.hold_s
 
 
 # ============================================================
@@ -527,7 +713,7 @@ class LCR_Backend:
 # FRONTEND: PPMS-synchronized GUI
 # ============================================================
 class PPMSSyncGUI:
-    PROGRAM_VERSION = "1.3-PPMS-Sync"  # unattended-run hardening (HARD-1..4)
+    PROGRAM_VERSION = "1.4-PPMS-Sync"  # unattended policy + .seq export
     LEFT_PANEL_WIDTH = 480
 
     # HARD-3: SetThreadExecutionState flags (Windows keep-awake during a run)
@@ -890,6 +1076,32 @@ class PPMSSyncGUI:
                        "stability detection.",
                   font=("Segoe UI", 8, "italic"), wraplength=420
                   ).grid(row=8, column=0, columnspan=4, sticky="w",
+                         padx=10, pady=(0, 5))
+
+        # SMART-1: temperature-inferred early end for the initial sleep
+        # (ON by default per user decision 2026-07-17 — the protocol
+        # always starts with the big cooldown, and detection beats a
+        # blind timer; the fixed time above stays a fallback ceiling).
+        self.var_smart_sleep = tk.BooleanVar(value=True)
+        self.chk_smart_sleep = ttk.Checkbutton(
+            frame, text="End sleep early when cooldown-end is detected:",
+            variable=self.var_smart_sleep)
+        self.chk_smart_sleep.grid(row=9, column=0, columnspan=2,
+                                  sticky="w", padx=10, pady=(2, 0))
+        ttk.Label(frame, text="Base arm (K):").grid(
+            row=9, column=2, sticky="e", padx=2, pady=(2, 0))
+        self.smart_arm_entry = ttk.Entry(frame, width=6)
+        self.smart_arm_entry.insert(0, "30")
+        self.smart_arm_entry.grid(row=9, column=3, sticky="w", padx=2,
+                                  pady=(2, 0))
+        ttk.Label(frame,
+                  text="Probe must dip below Base arm, then rise 2 K off "
+                       "its minimum, held 3 min (median-filtered) — the "
+                       "PPMS is moving to the first setpoint. The timed "
+                       "sleep above still ends the wait if detection "
+                       "never fires.",
+                  font=("Segoe UI", 8, "italic"), wraplength=420
+                  ).grid(row=10, column=0, columnspan=4, sticky="w",
                          padx=10, pady=(0, 5))
 
     def _generate_steps(self):
@@ -1290,6 +1502,26 @@ class PPMSSyncGUI:
             command=lambda: self._seq_set_all("wait", self.seq_wait_all))
         self.seq_wait_all_btn.pack(side="left", padx=(2, 0))
 
+        # --- SEQ-1: export the edited plan as a validated .seq file ---
+        exp = ttk.Frame(parent)
+        exp.pack(side="top", fill="x", padx=8, pady=(0, 2))
+        ttk.Label(exp, text="TMP approach:", background=self.CLR_BG_DARK,
+                  foreground=self.CLR_FG_LIGHT).pack(side="left")
+        self.seq_mode_cb = ttk.Combobox(
+            exp, values=["Fast settle (0)", "No overshoot (1)"],
+            state="readonly", width=14)
+        self.seq_mode_cb.set("No overshoot (1)")   # reference Fscan default
+        self.seq_mode_cb.pack(side="left", padx=(4, 12))
+        self.seq_export_btn = ttk.Button(exp, text="Export .seq…",
+                                         command=self._export_seq)
+        self.seq_export_btn.pack(side="left")
+        ttk.Label(exp,
+                  text="(validated line-by-line before saving — a faulty "
+                       "sequence ruins an unattended run)",
+                  font=("Segoe UI", 8, "italic"),
+                  background=self.CLR_BG_DARK,
+                  foreground=self.CLR_FG_LIGHT).pack(side="left", padx=8)
+
         # --- Live total / projected finish ---
         self.seq_total_lbl = ttk.Label(
             parent, text="Total: —  (click 'Load / reset from schedule')",
@@ -1323,7 +1555,8 @@ class PPMSSyncGUI:
         # Disabled during a run (pre-run planning aids)
         self.seq_controls = [self.seq_load_btn, self.seq_init_entry,
                              self.seq_rate_all, self.seq_rate_all_btn,
-                             self.seq_wait_all, self.seq_wait_all_btn]
+                             self.seq_wait_all, self.seq_wait_all_btn,
+                             self.seq_export_btn]
 
     def _on_y_scale_change(self):
         self._decade_ylims.clear()
@@ -1707,6 +1940,8 @@ class PPMSSyncGUI:
             "sleep_enabled": self.var_sleep_enabled.get(),
             "initial_sleep_min": parse_duration_min(
                 self.sleep_entry.get() or "0"),
+            "smart_sleep": self.var_smart_sleep.get(),
+            "smart_arm": float(self.smart_arm_entry.get() or "30"),
         }
         if not p["thermo_visa"]: raise ValueError("Select the thermometer VISA.")
         if p["tol"] <= 0: raise ValueError("Tolerance must be positive.")
@@ -1718,6 +1953,8 @@ class PPMSSyncGUI:
         if p["margin_min"] < 0: raise ValueError("Margin must be >= 0 min.")
         if p["initial_sleep_min"] < 0:
             raise ValueError("Initial sleep must be >= 0.")
+        if p["smart_arm"] <= 0:
+            raise ValueError("Base arm (K) must be positive.")
         for t in self.schedule:
             if t <= 0:
                 raise ValueError(f"Schedule setpoint {t} K invalid.")
@@ -1756,6 +1993,8 @@ class PPMSSyncGUI:
             rb.config(state=st)
         self.chk_sleep.config(state=st)
         self.sleep_entry.config(state=st)
+        self.chk_smart_sleep.config(state=st)
+        self.smart_arm_entry.config(state=st)
         # Pre-run suggestion generator would clobber measured rows mid-run
         self.suggest_button.config(state=st)
         # Clock-time ramp planner is pre-run only (advisory)
@@ -1793,6 +2032,10 @@ class PPMSSyncGUI:
                 w.config(state=st)
             except tk.TclError:
                 pass
+        # Comboboxes must go back to readonly, never editable "normal"
+        if getattr(self, "seq_mode_cb", None) is not None:
+            self.seq_mode_cb.config(
+                state="disabled" if running else "readonly")
 
     # ------------------------------------------------------------
     # Timing tab plumbing (main thread)
@@ -1840,7 +2083,11 @@ class PPMSSyncGUI:
             return False
         self._update_scan_estimate()
         sug = window_min * 60.0 + self._scan_est_s + margin_min * 60.0
-        self._fill_timing_tab(targets, sug)
+        # FIX-1: 'Generate PPMS plan' is authoritative — RESET the table
+        # to this plan (keep_edits would preserve stale cell edits and
+        # make the left planner and the right table disagree). Fine-tune
+        # cells by double-click AFTER generating.
+        self._fill_timing_tab(targets, sug, keep_edits=False)
         self.log(f"PPMS suggestion (pre-run, all setpoints): wait ≥ "
                  f"{fmt_hms(sug)} at each temperature "
                  f"(= window {window_min:g} min + scan "
@@ -1973,6 +2220,20 @@ class PPMSSyncGUI:
                 color = self.CLR_ACCENT_GOLD
             text = f"{head}\n{breakdown(ramp_s)}\n{tail}"
 
+        # FIX-1: write the solved rate into every ramp row of the
+        # sequence table, so the left planner and the right table show
+        # the SAME rates, the same Total and the same projected finish.
+        # (Infeasible window -> max rate, matching the 'earliest
+        # possible end' the label reports.)
+        if dT > 0:
+            applied = max_rate if ramp_budget_s <= 0 else rate
+            for i, r in enumerate(self.seq_rows):
+                if i > 0 and r.get("dT"):
+                    r["rate"] = applied
+            self._seq_render()
+            self.log(f"Sequence table: applied {applied:g} K/min to all "
+                     "ramp rows (matches the planner above).")
+
         self.ramp_sug_lbl.config(text=text, foreground=color)
         self.log("PPMS ramp planner ["
                  f"{fmt_clock(start_min)} → {fmt_clock(end_min)}]: "
@@ -1982,19 +2243,16 @@ class PPMSSyncGUI:
     # PPMS sequence builder (editable planning table)
     # ------------------------------------------------------------
     def _seq_default_rate(self, target, prev):
-        """Temperature-aware default ramp rate (K/min), clamped to Max
-        rate. Slower where it matters: the colder endpoint of the ramp
-        drives it (below 100 K a probe needs a gentle rate). Purely a
+        """Default ramp rate (K/min) for the PPMS plan, clamped to Max
+        rate. RATE-1: the reference Dielectric_Tscan.seq /
+        Dielectric_Fscan.seq drive every step at a flat 1 K/min — the
+        PPMS owns the ramp here, so that reference rate is the default
+        for all setpoints (the old temperature-tiered 0.5/1/2 K/min
+        defaults were for the LN2-dewar Lakeshore rig). Purely a
         starting suggestion — every cell is editable."""
         if prev is None:
             return None
-        coldest = min(target, prev)
-        if coldest < 100.0:
-            rate = 0.5
-        elif coldest < 200.0:
-            rate = 1.0
-        else:
-            rate = 2.0
+        rate = 1.0
         try:
             max_rate = float(self.entries["max_rate"]["entry"].get())
             if max_rate > 0:
@@ -2029,7 +2287,10 @@ class PPMSSyncGUI:
                 and [r["target"] for r in self.seq_rows] == targets):
             self._seq_render()
             return
-        wait_min = round(suggest_s / 60.0, 2)
+        # FIX-1: store the wait UNROUNDED so the table total agrees with
+        # the left planner to the second (was round(.., 2) -> up to
+        # 0.3 s/row drift between the two displays).
+        wait_min = suggest_s / 60.0
         rows = []
         prev = None
         for t in targets:
@@ -2043,11 +2304,14 @@ class PPMSSyncGUI:
         # Mirror the schedule's initial-sleep field as the initial wait.
         # Pre-run only: during a run seq_init_entry is disabled (writes
         # would be ignored) and the user's planned value must stand.
+        # FIX-1: mirror in BOTH states — a disabled sleep must zero the
+        # table's initial wait, or the two totals disagree.
         if (not self.is_running
-                and getattr(self, "seq_init_entry", None) is not None
-                and self.var_sleep_enabled.get()):
+                and getattr(self, "seq_init_entry", None) is not None):
             self.seq_init_entry.delete(0, tk.END)
-            self.seq_init_entry.insert(0, self.sleep_entry.get() or "0")
+            self.seq_init_entry.insert(
+                0, (self.sleep_entry.get() or "0")
+                if self.var_sleep_enabled.get() else "0")
         self._seq_render()
 
     def _seq_load_from_schedule(self):
@@ -2076,6 +2340,69 @@ class PPMSSyncGUI:
         self.log(f"PPMS sequence loaded ({len(targets)} setpoints): default "
                  f"wait {fmt_hms(sug_s)} per step, temperature-aware rates. "
                  f"Double-click Rate/Wait cells or use 'Set all' to edit.")
+
+    def _export_seq(self):
+        """SEQ-1: render the (edited) per-step plan into a MultiVu .seq
+        file. Every line is validated against the exact grammar before
+        the file can be saved (SEQ-2) — pre-run, user-initiated, so
+        dialogs are fine here."""
+        if self.is_running:
+            return
+        if not self.seq_rows:
+            messagebox.showinfo(
+                "Sequence", "No steps yet — click 'Load / reset from "
+                            "schedule' first.")
+            return
+        mode = 1 if "(1)" in self.seq_mode_cb.get() else 0
+        steps = []
+        for r in self.seq_rows:
+            target = float(r["target"])
+            rate = r.get("rate")
+            if not rate:
+                # First setpoint has no ramp row in the table; MultiVu
+                # still needs a rate — use the temperature-aware default.
+                rate = self._seq_default_rate(target, target) or 1.0
+            wait_min = r.get("wait") or 0.0
+            steps.append((target, float(rate), wait_min * 60.0))
+
+        note = None
+        init_txt = self.seq_init_entry.get().strip()
+        try:
+            if init_txt and parse_duration_min(init_txt) > 0:
+                note = (f"Initial wait {init_txt} is PC-side (this "
+                        "program's initial sleep) — each WAITFOR below "
+                        "starts only after the PPMS reports stable.")
+        except ValueError:
+            pass
+
+        sample = self.lcr_entries["sample_name"].get().strip() or "Sample"
+        text = render_fscan_seq(sample, steps, mode, initial_note=note)
+        errors = validate_ppms_seq(text)
+        if errors:
+            shown = "\n".join(errors[:8])
+            if len(errors) > 8:
+                shown += f"\n… and {len(errors) - 8} more."
+            messagebox.showerror(
+                "Invalid Sequence — NOT saved",
+                "The exported plan has errors (check per-step rates and "
+                f"waits in the table):\n\n{shown}")
+            self.log(f"Sequence export blocked: {len(errors)} validation "
+                     "error(s).")
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".seq",
+            initialfile=f"{sample}_Fscan.seq",
+            filetypes=[("MultiVu sequence", "*.seq"),
+                       ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            self.log(f"PPMS sequence exported and VALIDATED "
+                     f"({len(steps)} steps, TMP mode {mode}): {path}")
+        except OSError as e:
+            messagebox.showerror("Save failed", str(e))
 
     def _seq_render(self):
         """Redraw the sequence tree from self.seq_rows and refresh totals.
@@ -2327,8 +2654,14 @@ class PPMSSyncGUI:
                 elif t == "timing_row":
                     self._apply_timing_row(m)
                 elif t == "sequence_complete":
+                    # UNAT-1: never open a modal dialog from the queue
+                    # pump — it would block all further queue processing
+                    # (logs, plots, worker_done) until someone clicks OK,
+                    # and unattended runs have nobody in the lab.
                     self.set_ui_state(running=False)
-                    messagebox.showinfo("Sequence Complete", "All schedule steps measured.")
+                    self.log("★★★ SEQUENCE COMPLETE — all schedule steps "
+                             "measured. Data is on disk. ★★★")
+                    self._beep()
                 elif t == "worker_done":
                     self.set_ui_state(running=False)
                     self._update_status_ui("IDLE", self.CLR_HEADER)
@@ -2519,15 +2852,24 @@ class PPMSSyncGUI:
     def _sleep_phase(self, target, sleep_s):
         """Phase 0: ONE-TIME initial wait while the PPMS finishes its
         first cooldown. Pause freezes the countdown (deadline shifts);
-        Skip ends the sleep early. Returns (outcome, used_s);
-        outcome in "done" | "skipped" | "stopped"."""
+        Skip ends the sleep early. SMART-1: when enabled, the sleep also
+        ends as soon as cooldown-end is DETECTED from the probe (dip
+        below Base arm, rise 2 K off the minimum, held 3 min) — the
+        timed sleep then only acts as a fallback ceiling.
+        Returns (outcome, used_s);
+        outcome in "done" | "detected" | "skipped" | "stopped"."""
         p = self.params
         self._worker_phase = "SLEEP"
         phase_start = time.time()
         deadline = phase_start + sleep_s
+        smart = bool(p.get("smart_sleep"))
+        det = TurnaroundDetector()
+        confirm = SustainedCondition(180.0)   # 3 min "definitely sure"
         self._put_gui_msg("log",
             text=f"Initial sleep {fmt_hms(sleep_s)} before stability "
-                 f"detection at {target} K (skip with 'Skip Phase').")
+                 f"detection at {target} K (skip with 'Skip Phase')."
+                 + (f" Smart end armed: dip below {p['smart_arm']:g} K, "
+                    "rise 2 K, hold 3 min." if smart else ""))
         try:
             while self.is_running and time.time() < deadline:
                 if self._process_cmd_queue():
@@ -2537,17 +2879,33 @@ class PPMSSyncGUI:
                     self._put_gui_msg("log",
                         text="⏭ Sleep skipped — starting stability detection.")
                     return "skipped", time.time() - phase_start
-                self._log_temperature_point(target, measuring_flag=0)
+                temp = self._log_temperature_point(target, measuring_flag=0)
                 if self._paused:
                     deadline += p["delay"]   # paused time doesn't count
                     self._put_gui_msg("status",
                         text=f"PAUSED (sleeping, target {target} K)",
                         color=self.CLR_ACCENT_GOLD)
                 else:
+                    if smart:
+                        det.update(temp)
+                        if confirm.update(
+                                det.warming_started(p["smart_arm"], 2.0)):
+                            used = time.time() - phase_start
+                            self._put_gui_msg("log",
+                                text=f"COOLDOWN END DETECTED after "
+                                     f"{fmt_hms(used)} (min "
+                                     f"{det.min_T:.2f} K, now "
+                                     f"{det.last_T:.2f} K) — ending the "
+                                     f"initial sleep "
+                                     f"{fmt_hms(sleep_s)} early; starting "
+                                     "stability detection.")
+                            self._put_gui_msg("beep")
+                            return "detected", used
                     remaining = deadline - time.time()
                     self._put_gui_msg("status",
                         text=(f"SLEEPING — {fmt_hms(remaining)} left "
-                              f"(of {fmt_hms(sleep_s)}) | target {target} K"),
+                              f"(of {fmt_hms(sleep_s)}) | target {target} K"
+                              + (" | auto-end on warming" if smart else "")),
                         color=self.CLR_SLEEP)
                 time.sleep(p["delay"])
         finally:
@@ -2782,6 +3140,7 @@ class PPMSSyncGUI:
         return False
 
     _last_temp = float("nan")
+    _overtemp_warned = False
 
     def _log_temperature_point(self, target, measuring_flag):
         """Reads the probe thermometer, writes a durable CSV row, queues
@@ -2804,6 +3163,15 @@ class PPMSSyncGUI:
                         attempt):
                     return float("nan")   # Stop requested during recovery
         self._last_temp = temp
+        # SAFE-1: one-time loud overtemperature warning. This program is
+        # strictly read-only — it cannot act, only alert the console.
+        if temp > 340.0 and not self._overtemp_warned:
+            self._overtemp_warned = True
+            self._put_gui_msg("log",
+                text=f"⚠️⚠️ SAMPLE ABOVE 340 K ({temp:.2f} K)! This "
+                     "program is read-only and cannot act — check the "
+                     "PPMS sequence!")
+            self._put_gui_msg("beep")
         elapsed = time.time() - self.start_time
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         phase = "PAUSED" if self._paused else (self._worker_phase or "")
