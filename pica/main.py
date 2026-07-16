@@ -175,6 +175,7 @@ class PICALauncherApp:
         "LCR Temp. Scan (T_Control)": resource_path("keysight/Temprature_Scan_E4980A_GUI.py"), # Already present
         "LCR Temp. Scan (T_Sensing)": resource_path("keysight/Temprature_Scan_Passive_E4980A_GUI.py"), # Already present
         "PPMS Sync Freq. Scan": resource_path("keysight/PPMS_Sync_Freq_Scan_E4980A_GUI.py"),
+        "PPMS Dielectric Master": resource_path("keysight/PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI.py"),
         "Alpha-AN Freq. Scan": resource_path("novocontrol/Frequency_Scan_AlphaAN_GUI.py"),
         "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
         "PPMS Plotter Utility": resource_path("PPMS/PPMS_Plotter_GUI.py"),
@@ -666,6 +667,7 @@ class PICALauncherApp:
                                   ("Dielectric Frequency Scan", "LCR Frequency Scan"), # Already present
                                   ("Temp. Step Freq. Scan (T_Control)", "LCR Temp. Step Freq. Scan (T_Control)"), # Already present
                                   ("Temp. Step Freq. Scan (PPMS, T_Sensing)", "PPMS Sync Freq. Scan"),
+                                  ("Dielectric Master Tscan+Fscan (PPMS)", "PPMS Dielectric Master"),
                                   ("Dielectric Temp. Scan (T_Control)", "LCR Temp. Scan (T_Control)"), # Already present
                                   ("Dielectric Temp. Scan (T_Sensing)", "LCR Temp. Scan (T_Sensing)"), # Already present
                                   ])
