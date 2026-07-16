@@ -31,7 +31,7 @@ Stability criteria (radio selectable):
                          stabilization at the WRONG setpoint (e.g. a
                          misjudged sleep time left the PPMS at the
                          previous temperature).
-  - Flatness + band    : both checks.
+  - Flatness + band    : both checks (DEFAULT since v1.3).
 
 Timing intelligence:
   - Live scan-duration estimate from the sweep parameters (aperture,
@@ -101,6 +101,30 @@ v1.2 — EDITABLE PER-STEP PPMS SEQUENCE BUILDER
          clamped to the Max rate. During a run the MEASURED PPMS wait
          replaces each row's wait in place. Timer meridiem now defaults
          to AM/PM instead of 24h.
+
+============================================================
+v1.3 — UNATTENDED-RUN HARDENING (power cuts / comm errors)
+============================================================
+  HARD-1 Durable data writes: every row (TempLog CSV, TimingLog CSV
+         and the per-scan data file) is now written open/append/close
+         with flush + os.fsync, so a sudden power cut cannot lose
+         OS-buffered rows. A disk/share hiccup buffers rows in memory
+         and retries them on every subsequent write — measured data
+         is never silently dropped (pattern from
+         Temprature_Scan_Passive_E4980A_GUI.py).
+  HARD-2 Comm errors retry forever: a failed thermometer or E4980A
+         query no longer kills the run. The worker reconnects with
+         escalating backoff (5 → 10 → 30 → 60 s cap) and resumes at
+         the exact point it left off — the E4980A re-init restores
+         the full configuration (RX mode, aperture, ALC, corrections,
+         bias re-ramp) even after an instrument power-cycle. Stop
+         stays responsive throughout. LCR VISA timeout lowered
+         60 s → 15 s so a hung bus is detected quickly.
+  HARD-3 Windows keep-awake (SetThreadExecutionState) during a run so
+         the PC cannot sleep mid-sequence; released when idle.
+  HARD-4 Defaults tuned for the PPMS probe: criterion = Flatness +
+         band, Tolerance ±0.5 K, stabilization timeout 90 min
+         (timeout proceeds with the sweep and flags the step).
 """
 
 import tkinter as tk
@@ -108,12 +132,12 @@ from tkinter import ttk, messagebox, scrolledtext, filedialog
 import os
 import time
 import math
-import csv
 import queue
 import threading
 import atexit
 import traceback
 import platform
+import ctypes                    # HARD-3: Windows keep-awake during a run
 from datetime import datetime
 from collections import deque
 from multiprocessing import Process
@@ -279,6 +303,7 @@ class Probe_Thermometer_Backend:
 
     def __init__(self):
         self.lakeshore = None
+        self.visa_address = None
         self.rm = None
         if pyvisa:
             try:
@@ -289,6 +314,7 @@ class Probe_Thermometer_Backend:
     def connect(self, visa_address):
         if not self.rm:
             raise ConnectionError("VISA Resource Manager unavailable.")
+        self.visa_address = visa_address   # HARD-2: kept for reconnect()
         self.lakeshore = self.rm.open_resource(visa_address)
         self.lakeshore.timeout = 10000
         self.lakeshore.write("*CLS")
@@ -296,6 +322,16 @@ class Probe_Thermometer_Backend:
         if "350" not in idn:
             print(f"WARNING: IDN does not contain '350': {idn}")
         return idn
+
+    def reconnect(self):
+        """HARD-2: close and re-open the session from the stored address.
+        Used by the worker's retry-forever loop after a comm failure;
+        survives a controller power-cycle (still read-only afterwards)."""
+        try:
+            self.shutdown()
+        except Exception as e:
+            print(f"  Pre-reconnect cleanup warning: {e}")
+        return self.connect(self.visa_address)
 
     def get_temperature(self, channel, retries=2):
         """REL-1: retry transient VISA glitches (device clear + backoff)
@@ -376,7 +412,9 @@ class LCR_Backend:
         if not self.rm:
             raise ConnectionError("VISA Resource Manager unavailable.")
         inst = self.rm.open_resource(p["lcr_visa"])
-        inst.timeout = 60000
+        # HARD-2: 15 s — LONG-aperture point time is < 1 s, so this is
+        # generous while letting the retry loop detect a hung bus quickly.
+        inst.timeout = 15000
         inst.read_termination = "\n"
         inst.write_termination = "\n"
         self.instrument = inst
@@ -451,6 +489,18 @@ class LCR_Backend:
         status = int(vals[2]) if len(vals) > 2 else 0
         return R, X, status
 
+    def reconnect(self):
+        """HARD-2: close and fully re-initialize from the stored params.
+        Used by the worker's retry-forever loop after a comm failure;
+        re-init restores the whole configuration (RX mode, aperture,
+        ALC, corrections, bias re-ramp) even after an instrument
+        power-cycle."""
+        try:
+            self.close_instrument()
+        except Exception as e:
+            print(f"  Pre-reconnect cleanup warning: {e}")
+        self.initialize_instrument(self.params)
+
     def close_instrument(self):
         print("--- [LCR] Closing ---")
         if not self.instrument:
@@ -477,8 +527,12 @@ class LCR_Backend:
 # FRONTEND: PPMS-synchronized GUI
 # ============================================================
 class PPMSSyncGUI:
-    PROGRAM_VERSION = "1.2-PPMS-Sync"  # editable per-step PPMS sequence builder
+    PROGRAM_VERSION = "1.3-PPMS-Sync"  # unattended-run hardening (HARD-1..4)
     LEFT_PANEL_WIDTH = 480
+
+    # HARD-3: SetThreadExecutionState flags (Windows keep-awake during a run)
+    ES_CONTINUOUS = 0x80000000
+    ES_SYSTEM_REQUIRED = 0x00000001
 
     # --- FRZ-1 / FRZ-2 / FRZ-4 tuning knobs ---
     REDRAW_MS = 750
@@ -594,6 +648,13 @@ class PPMSSyncGUI:
         # the analytic model after the first completed sweep.
         self._measured_point_s = None
         self._scan_est_s = 0.0
+
+        # HARD-1: rows a failing disk could not take yet (worker thread
+        # only) — retried before every subsequent write, order preserved.
+        self._pending_rows = deque()
+        self._write_error_logged = False
+        self.tlog_path = None
+        self.timing_path = None
 
         self.setup_styles()
         self.create_widgets()
@@ -892,7 +953,7 @@ class PPMSSyncGUI:
             frame.grid_columnconfigure(i, weight=1 if i in (1, 4) else 0)
         self.entries = {}
 
-        self.stab_mode_var = tk.StringVar(value="flat")
+        self.stab_mode_var = tk.StringVar(value="flat_band")
         self.stab_mode_radios = []
         for c, (value, label) in enumerate(self.STAB_MODES):
             rb = ttk.Radiobutton(frame, text=label,
@@ -902,13 +963,13 @@ class PPMSSyncGUI:
                     columnspan=3, sticky="w", padx=10, pady=(5, 0))
             self.stab_mode_radios.append(rb)
 
-        self._create_grid_entry(frame, "Tolerance (±K):", "tol", "0.3", 2, 0)
+        self._create_grid_entry(frame, "Tolerance (±K):", "tol", "0.5", 2, 0)
         self._create_grid_entry(frame, "Window (min):", "window_min", "10", 2, 3)
         self._create_grid_entry(frame, "Drift Lim (K/min):", "drift", "0.05", 3, 0)
         self._create_grid_entry(frame, "Target guard (±K, 0=off):",
                                 "guard", "2.0", 3, 3)
         self._create_grid_entry(frame, "Timeout (min, 0=off):",
-                                "stab_timeout", "0", 4, 0)
+                                "stab_timeout", "90", 4, 0)
         self._create_grid_entry(frame, "Poll Delay (s):", "delay", "2", 4, 3)
 
         ttk.Label(frame,
@@ -1421,6 +1482,16 @@ class PPMSSyncGUI:
     def _update_status_ui(self, text, color):
         self.lbl_status.config(text=text, bg=color)
 
+    def _set_keep_awake(self, enable):
+        """HARD-3: stop Windows from sleeping mid-run (display may still
+        sleep). Best-effort no-op on other platforms."""
+        try:
+            flags = self.ES_CONTINUOUS | (
+                self.ES_SYSTEM_REQUIRED if enable else 0)
+            ctypes.windll.kernel32.SetThreadExecutionState(flags)
+        except Exception:
+            pass
+
     def _beep(self):
         """FRZ-3: main (Tk) thread only; worker beeps via gui_queue."""
         if HAS_WINSOUND and platform.system() == "Windows":
@@ -1671,6 +1742,8 @@ class PPMSSyncGUI:
         return p
 
     def set_ui_state(self, running: bool):
+        # HARD-3: keep-awake tracks the run state exactly
+        self._set_keep_awake(running)
         st = "disabled" if running else "normal"
         self.start_button.config(state=st)
         self.stop_button.config(state="normal" if running else "disabled")
@@ -2303,10 +2376,10 @@ class PPMSSyncGUI:
     # ============================================================
     def _hardware_worker_loop(self):
         self.start_time = time.time()
-        self.data_file = None
-        self.csv_writer = None
-        self.timing_file = None
-        self.timing_writer = None
+        self.tlog_path = None
+        self.timing_path = None
+        self._pending_rows.clear()
+        self._write_error_logged = False
         try:
             self._put_gui_msg("log", text="Connecting to probe thermometer "
                                           "(Lakeshore 350, read-only)…")
@@ -2318,33 +2391,29 @@ class PPMSSyncGUI:
             self.lcr_backend.initialize_instrument(self.lcr_params)
             self._put_gui_msg("log", text="E4980A initialized.")
 
+            # HARD-1: both logs are written open/append/close + fsync per
+            # row — no handle is held, so a power cut or disk hiccup can
+            # never lose or corrupt previously written rows.
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            tlog_path = os.path.join(
+            self.tlog_path = os.path.join(
                 self.save_dir,
                 f"{self.lcr_params['sample_name']}_{stamp}_TempLog.csv",
             )
-            self.data_file = open(tlog_path, "w", newline="")
-            self.csv_writer = csv.writer(self.data_file)
-            self.csv_writer.writerow(
+            self._write_or_buffer(self.tlog_path, self._csv_line(
                 ["Timestamp", "Elapsed_s", "Target_K", "Sample_T_K",
-                 "Measuring", "Phase"]
-            )
-            self.data_file.flush()
-            self._put_gui_msg("log", text=f"Temperature log: {tlog_path}")
+                 "Measuring", "Phase"]))
+            self._put_gui_msg("log", text=f"Temperature log: {self.tlog_path}")
 
-            timing_path = os.path.join(
+            self.timing_path = os.path.join(
                 self.save_dir,
                 f"{self.lcr_params['sample_name']}_{stamp}_TimingLog.csv",
             )
-            self.timing_file = open(timing_path, "w", newline="")
-            self.timing_writer = csv.writer(self.timing_file)
-            self.timing_writer.writerow(
+            self._write_or_buffer(self.timing_path, self._csv_line(
                 ["Step", "Target_K", "Step_start", "Sleep_used_s",
                  "Stab_wait_s", "Stab_outcome", "Scan_s",
                  "TempDriftDuringScan",
-                 "Suggested_PPMS_wait_s", "Suggested_PPMS_wait_hms"])
-            self.timing_file.flush()
-            self._put_gui_msg("log", text=f"Timing log: {timing_path}")
+                 "Suggested_PPMS_wait_s", "Suggested_PPMS_wait_hms"]))
+            self._put_gui_msg("log", text=f"Timing log: {self.timing_path}")
 
             total_pts = len(self.schedule) * len(self.sweep_frequencies)
             done_pts = 0
@@ -2629,22 +2698,118 @@ class PPMSSyncGUI:
             pass
         return False
 
+    # ------------------------------------------------------------
+    # HARD-1: durable, buffered file writes (worker thread only)
+    # ------------------------------------------------------------
+    @staticmethod
+    def _csv_line(fields):
+        """Comma-joined CSV row. Every field this program writes is
+        comma-free by construction (numbers, ISO timestamps, single
+        words), so no quoting is needed."""
+        return ",".join(str(v) for v in fields) + "\n"
+
+    @staticmethod
+    def _durable_append(path, text):
+        """Append text and force it to the physical disk immediately, so
+        a sudden power cut cannot lose OS-buffered rows."""
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+
+    def _write_or_buffer(self, path, text):
+        """Write a row durably; on a disk/share hiccup, buffer it for
+        retry on the next write so measured data is never silently
+        dropped. While rows are pending, new rows join the buffer to
+        preserve per-file ordering."""
+        self._flush_pending_rows()
+        if self._pending_rows:
+            self._pending_rows.append((path, text))
+            return
+        try:
+            self._durable_append(path, text)
+        except OSError as e:
+            self._pending_rows.append((path, text))
+            if not self._write_error_logged:
+                self._write_error_logged = True
+                self._put_gui_msg("log",
+                    text=f"⚠️ WRITE ERROR: {e} — buffering rows and "
+                         "retrying on every subsequent write.")
+
+    def _flush_pending_rows(self):
+        while self._pending_rows:
+            path, text = self._pending_rows[0]
+            try:
+                self._durable_append(path, text)
+            except OSError:
+                return   # still failing; keep buffer, retry next write
+            self._pending_rows.popleft()
+        if self._write_error_logged:
+            self._write_error_logged = False
+            self._put_gui_msg("log",
+                text="Write path recovered; buffered rows flushed.")
+
+    # ------------------------------------------------------------
+    # HARD-2: retry-forever comm recovery (worker thread only)
+    # ------------------------------------------------------------
+    def _reconnect_with_backoff(self, name, reconnect_fn, attempt):
+        """Reconnect one instrument with escalating waits between tries
+        (5 -> 10 -> 30 -> 60 s cap). Loops until reconnected; returns
+        False only if Stop was requested while waiting or reconnecting.
+        Stop stays responsive (cmd queue polled every second)."""
+        backoffs = (5, 10, 30, 60)
+        while self.is_running:
+            delay_s = backoffs[min(attempt - 1, len(backoffs) - 1)]
+            self._put_gui_msg("status",
+                text=f"COMM ERROR ({name}) — reconnecting…",
+                color=self.CLR_ACCENT_RED)
+            self._put_gui_msg("log",
+                text=f"Reconnect ({name}) attempt #{attempt} in {delay_s} s "
+                     "(Stop stays responsive)…")
+            deadline = time.time() + delay_s
+            while time.time() < deadline:
+                if self._process_cmd_queue():
+                    return False
+                time.sleep(1.0)
+            try:
+                reconnect_fn()
+                self._put_gui_msg("log",
+                    text=f"{name} reconnected. Resuming where it left off.")
+                return True
+            except Exception as e:
+                self._put_gui_msg("log", text=f"Reconnect ({name}) failed: {e}")
+                attempt += 1
+        return False
+
     _last_temp = float("nan")
 
     def _log_temperature_point(self, target, measuring_flag):
-        """Reads the probe thermometer, writes a CSV row, queues the plot
-        message. Read-only — no safety actions exist because this program
-        controls no heater."""
-        temp = self.thermo_backend.get_temperature(self.params["channel"])
+        """Reads the probe thermometer, writes a durable CSV row, queues
+        the plot message. On a comm failure the thermometer is
+        reconnected with escalating backoff, forever (HARD-2); returns
+        NaN only if Stop was requested during recovery. Read-only — no
+        safety actions exist because this program controls no heater."""
+        attempt = 0
+        while True:
+            try:
+                temp = self.thermo_backend.get_temperature(
+                    self.params["channel"])
+                break
+            except Exception as e:
+                attempt += 1
+                self._put_gui_msg("log",
+                    text=f"⚠️ THERMOMETER COMM ERROR (failure #{attempt}): {e}")
+                if not self._reconnect_with_backoff(
+                        "thermometer", self.thermo_backend.reconnect,
+                        attempt):
+                    return float("nan")   # Stop requested during recovery
         self._last_temp = temp
         elapsed = time.time() - self.start_time
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         phase = "PAUSED" if self._paused else (self._worker_phase or "")
-        self.csv_writer.writerow(
+        self._write_or_buffer(self.tlog_path, self._csv_line(
             [now_str, f"{elapsed:.2f}", f"{target:.4f}", f"{temp:.4f}",
-             measuring_flag, phase]
-        )
-        self.data_file.flush()
+             measuring_flag, phase]))
         self._put_gui_msg("temp_point", t=elapsed, temp=temp, target=target,
                           measuring=measuring_flag)
         return temp
@@ -2653,7 +2818,9 @@ class PPMSSyncGUI:
         """Runs the E4980A frequency sweep at one stable setpoint.
         Logs temperature (flag=1) interleaved between frequency points.
         Watches for the sample temperature leaving the stability band
-        mid-sweep (flag-only: the sweep always completes).
+        mid-sweep (flag-only: the sweep always completes). Comm errors
+        reconnect forever and resume at the same point (HARD-2); every
+        row is fsync'd to disk (HARD-1).
         Returns (done_pts, scan_s, drift_flag)."""
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         fname = (f"{self.lcr_params['sample_name']}_{target_temp:.2f}K_"
@@ -2669,77 +2836,91 @@ class PPMSSyncGUI:
             else self._last_temp
         drift_halfw = 2.0 * self.params["tol"]
         n_measured = 0
-        with open(fpath, "w", encoding="utf-8") as f:
-            f.write(f"# Sample: {self.lcr_params['sample_name']} | T_set = {target_temp} K | "
-                    f"AC: {self.lcr_params['ac_bias']} V | DC: {self.lcr_params['dc_bias']} V | "
-                    f"APER: {self.lcr_params['aper']}\n")
-            f.write(self.lcr_backend.DATA_HEADER + "\n")
-            self._worker_phase = "SCAN"
-            n_freqs = len(self.sweep_frequencies)
-            for i, freq in enumerate(self.sweep_frequencies):
-                if not self.is_running:
-                    break
+        self._write_or_buffer(
+            fpath,
+            f"# Sample: {self.lcr_params['sample_name']} | T_set = {target_temp} K | "
+            f"AC: {self.lcr_params['ac_bias']} V | DC: {self.lcr_params['dc_bias']} V | "
+            f"APER: {self.lcr_params['aper']}\n"
+            + self.lcr_backend.DATA_HEADER + "\n")
+        self._worker_phase = "SCAN"
+        n_freqs = len(self.sweep_frequencies)
+        for i, freq in enumerate(self.sweep_frequencies):
+            if not self.is_running:
+                break
+            if self._process_cmd_queue():
+                break
+            if not self.is_running:
+                break
+            if self._skip_requested:
+                self._skip_requested = False
+                self._put_gui_msg("log",
+                    text="⏭ Remaining sweep skipped by user.")
+                break
+            while self._paused and self.is_running:
+                pause_tick = time.time()
+                self._put_gui_msg("status",
+                    text=f"PAUSED (sweep at {target_temp} K)",
+                    color=self.CLR_ACCENT_GOLD)
                 if self._process_cmd_queue():
                     break
-                if not self.is_running:
-                    break
-                if self._skip_requested:
-                    self._skip_requested = False
-                    self._put_gui_msg("log",
-                        text="⏭ Remaining sweep skipped by user.")
-                    break
-                while self._paused and self.is_running:
-                    pause_tick = time.time()
-                    self._put_gui_msg("status",
-                        text=f"PAUSED (sweep at {target_temp} K)",
-                        color=self.CLR_ACCENT_GOLD)
-                    if self._process_cmd_queue():
-                        break
-                    time.sleep(1.0)
-                    paused_s += time.time() - pause_tick
-                if not self.is_running:
-                    break
+                time.sleep(1.0)
+                paused_s += time.time() - pause_tick
+            if not self.is_running:
+                break
+            # HARD-2: a comm failure never aborts the sweep — reconnect
+            # with backoff (re-init restores the full LCR config) and
+            # retry the SAME frequency point until it measures or Stop.
+            comm_attempt = 0
+            while True:
                 try:
                     R, X, status = self.lcr_backend.perform_measurement(
                         freq, self.lcr_params["delay"]
                     )
+                    break
                 except Exception as e:
-                    self._put_gui_msg("log", text=f"Meas error @ {freq} Hz: {e}")
-                    break
-                if status != 0:
+                    comm_attempt += 1
                     self._put_gui_msg("log",
-                        text=f"⚠️ E4980A status {status} @ {freq:.1f} Hz — row kept, check manual")
-                vals = self.calculate_impedance_parameters(freq, R, X)
-                row = [freq] + vals + [target_temp]
-                f.write("\t".join(f"{v:.6E}" for v in row) + "\n")
-                f.flush()
-                n_measured += 1
-                # Interleaved temperature log (flag=1) + mid-sweep drift watch
-                try:
-                    temp = self._log_temperature_point(target_temp,
-                                                       measuring_flag=1)
-                    if not drift_flag and abs(temp - ref_T) > drift_halfw:
-                        drift_flag = True
-                        self._put_gui_msg("log",
-                            text=f"⚠️⚠️ TEMPERATURE DRIFT DURING SCAN at "
-                                 f"{target_temp} K: sample moved to "
-                                 f"{temp:.3f} K (> ±{drift_halfw:g} K from "
-                                 f"{ref_T:.3f} K). PPMS probably moved on — "
-                                 f"increase its wait time. Sweep continues; "
-                                 f"step is flagged in the timing log.")
-                except RuntimeError:
-                    break
-                done_pts += 1
-                self._put_gui_msg("scan_point", freq=freq, cp=vals[4], g=vals[2],
-                                  progress=done_pts)
-                # Throttled ETA in the banner (every 10 points)
-                if i % 10 == 0 and i > 0:
-                    per_pt = (time.time() - sweep_start - paused_s) / max(n_measured, 1)
-                    eta = per_pt * (n_freqs - i - 1)
-                    self._put_gui_msg("status",
-                        text=(f"SCANNING AT {target_temp} K | "
-                              f"pt {i+1}/{n_freqs} | ETA {fmt_hms(eta)}"),
-                        color=self.CLR_ACCENT_GREEN)
+                        text=f"⚠️ LCR COMM ERROR @ {freq} Hz "
+                             f"(failure #{comm_attempt}): {e}")
+                    if not self._reconnect_with_backoff(
+                            "E4980A", self.lcr_backend.reconnect,
+                            comm_attempt):
+                        break   # Stop requested during recovery
+            if not self.is_running:
+                break
+            if status != 0:
+                self._put_gui_msg("log",
+                    text=f"⚠️ E4980A status {status} @ {freq:.1f} Hz — row kept, check manual")
+            vals = self.calculate_impedance_parameters(freq, R, X)
+            row = [freq] + vals + [target_temp]
+            self._write_or_buffer(
+                fpath, "\t".join(f"{v:.6E}" for v in row) + "\n")
+            n_measured += 1
+            # Interleaved temperature log (flag=1) + mid-sweep drift watch
+            temp = self._log_temperature_point(target_temp,
+                                               measuring_flag=1)
+            if not self.is_running:
+                break
+            if not drift_flag and abs(temp - ref_T) > drift_halfw:
+                drift_flag = True
+                self._put_gui_msg("log",
+                    text=f"⚠️⚠️ TEMPERATURE DRIFT DURING SCAN at "
+                         f"{target_temp} K: sample moved to "
+                         f"{temp:.3f} K (> ±{drift_halfw:g} K from "
+                         f"{ref_T:.3f} K). PPMS probably moved on — "
+                         f"increase its wait time. Sweep continues; "
+                         f"step is flagged in the timing log.")
+            done_pts += 1
+            self._put_gui_msg("scan_point", freq=freq, cp=vals[4], g=vals[2],
+                              progress=done_pts)
+            # Throttled ETA in the banner (every 10 points)
+            if i % 10 == 0 and i > 0:
+                per_pt = (time.time() - sweep_start - paused_s) / max(n_measured, 1)
+                eta = per_pt * (n_freqs - i - 1)
+                self._put_gui_msg("status",
+                    text=(f"SCANNING AT {target_temp} K | "
+                          f"pt {i+1}/{n_freqs} | ETA {fmt_hms(eta)}"),
+                    color=self.CLR_ACCENT_GREEN)
         self._worker_phase = None
         scan_s = time.time() - sweep_start - paused_s
         if n_measured >= 20:
@@ -2762,16 +2943,12 @@ class PPMSSyncGUI:
                   "forced": "forced by user"}.get(stab_outcome, stab_outcome)
         if drift_flag:
             status += " | DRIFT DURING SCAN"
-        try:
-            self.timing_writer.writerow(
-                [index + 1, f"{target:.4f}",
-                 step_start_dt.strftime("%Y-%m-%d %H:%M:%S"),
-                 f"{sleep_s:.1f}", f"{settle_s:.1f}", stab_outcome,
-                 f"{scan_s:.1f}", int(drift_flag),
-                 f"{suggest_s:.1f}", fmt_hms(suggest_s)])
-            self.timing_file.flush()
-        except Exception as e:
-            self._put_gui_msg("log", text=f"WARN: timing write failed: {e}")
+        self._write_or_buffer(self.timing_path, self._csv_line(
+            [index + 1, f"{target:.4f}",
+             step_start_dt.strftime("%Y-%m-%d %H:%M:%S"),
+             f"{sleep_s:.1f}", f"{settle_s:.1f}", stab_outcome,
+             f"{scan_s:.1f}", int(drift_flag),
+             f"{suggest_s:.1f}", fmt_hms(suggest_s)]))
         self._put_gui_msg("timing_row", index=index, target=target,
                           sleep_s=sleep_s, settle_s=settle_s, scan_s=scan_s,
                           suggest_s=suggest_s, status=status)
@@ -2781,17 +2958,19 @@ class PPMSSyncGUI:
                  f"{fmt_hms(scan_s)} + margin {p['margin_min']:g} min).")
 
     def _close_data_file(self):
-        for attr, label in (("data_file", "Temperature log"),
-                            ("timing_file", "Timing log")):
-            f = getattr(self, attr, None)
-            if f:
-                try:
-                    f.flush(); f.close()
-                    self._put_gui_msg("log", text=f"{label} closed.")
-                except Exception:
-                    pass
-                finally:
-                    setattr(self, attr, None)
+        """HARD-1: files are opened per append, so there is nothing to
+        close — just retry any rows a failing disk left buffered."""
+        try:
+            self._flush_pending_rows()
+        except Exception:
+            pass
+        n = len(self._pending_rows)
+        if n:
+            self._put_gui_msg("log",
+                text=f"WARNING: {n} data row(s) could not be written "
+                     "(disk error) — see the first WRITE ERROR above.")
+        else:
+            self._put_gui_msg("log", text="All data rows are on disk.")
 
     # ------------------------------------------------------------
     # Shutdown / close
