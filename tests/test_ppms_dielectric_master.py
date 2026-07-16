@@ -22,6 +22,8 @@ import os
 import re
 import sys
 
+import pytest
+
 # Setup path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
@@ -285,6 +287,9 @@ def test_validator_accepts_reference_tscan_seq():
     lines included."""
     ref = os.path.join(project_root, "pica", "PPMS", "data_file_for_ref",
                        "Dielectric_Tscan.seq")
+    if not os.path.exists(ref):
+        pytest.skip("PPMS reference sequences not present "
+                    "(gitignored lab data) - skipping reference check.")
     with open(ref, encoding="utf-8") as fh:
         text = fh.read()
     assert m.validate_ppms_seq(text) == []
@@ -368,6 +373,49 @@ def test_synthetic_trace_transitions_fire_in_order():
 
 
 # ------------------------------------------------------------------
+# Durable write buffering (same pattern as the parents; covered here
+# directly so the worker simulation may legitimately bypass fsync)
+# ------------------------------------------------------------------
+def test_write_buffer_mechanics():
+    import tempfile
+    from collections import deque
+
+    class H:
+        _csv_line = staticmethod(m.PPMSMasterGUI._csv_line)
+        _durable_append = staticmethod(m.PPMSMasterGUI._durable_append)
+        _write_or_buffer = m.PPMSMasterGUI._write_or_buffer
+        _flush_pending_rows = m.PPMSMasterGUI._flush_pending_rows
+
+        def __init__(self):
+            self._pending_rows = deque()
+            self._write_error_logged = False
+            self.msgs = []
+
+        def _put_gui_msg(self, t, **kw):
+            self.msgs.append(kw.get("text", t))
+
+    h = H()
+    d = tempfile.mkdtemp(prefix="pica_master_wb_")
+    good = os.path.join(d, "x.csv")
+    bad = os.path.join(d, "no_such_dir", "y.csv")
+
+    h._write_or_buffer(good, "a\n")              # straight to disk
+    h._write_or_buffer(bad, "b\n")               # fails -> buffered
+    assert h._pending_rows
+    assert any("WRITE ERROR" in s for s in h.msgs)
+    h._write_or_buffer(good, "c\n")              # joins buffer (ordering)
+    assert len(h._pending_rows) == 2
+
+    os.makedirs(os.path.dirname(bad))            # path recovers
+    h._write_or_buffer(good, "d\n")              # flushes buffer first
+    assert not h._pending_rows
+    with open(good, encoding="utf-8") as fh:
+        assert fh.read() == "a\nc\nd\n"          # order preserved
+    with open(bad, encoding="utf-8") as fh:
+        assert fh.read() == "b\n"
+
+
+# ------------------------------------------------------------------
 # Timing helpers
 # ------------------------------------------------------------------
 def test_parse_duration_and_fmt():
@@ -393,5 +441,11 @@ if __name__ == "__main__":
             except AssertionError as e:
                 failures += 1
                 print(f"FAIL  {name}: {e}")
+            except BaseException as e:
+                # pytest.skip raises Skipped (a BaseException subclass)
+                if type(e).__name__ == "Skipped":
+                    print(f"SKIP  {name}: {e}")
+                else:
+                    raise
     print(f"\n{failures} failure(s).")
     sys.exit(1 if failures else 0)

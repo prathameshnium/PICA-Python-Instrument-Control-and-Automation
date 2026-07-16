@@ -168,10 +168,77 @@ def test_hardening_plumbing_present():
     assert callable(m.Probe_Thermometer_Backend.reconnect)
     assert callable(m.LCR_Backend.reconnect)
     assert callable(m.PPMSSyncGUI._set_keep_awake)
-    assert m.PPMSSyncGUI.PROGRAM_VERSION.startswith("1.3")
+    assert m.PPMSSyncGUI.PROGRAM_VERSION.startswith("1.4")
     # Keep-awake flags match SetThreadExecutionState documentation
     assert m.PPMSSyncGUI.ES_CONTINUOUS == 0x80000000
     assert m.PPMSSyncGUI.ES_SYSTEM_REQUIRED == 0x00000001
+
+
+# ------------------------------------------------------------------
+# v1.4 backports from the Master module
+# ------------------------------------------------------------------
+def test_v14_no_modal_dialog_in_queue_pump():
+    """UNAT-1: a messagebox inside _process_gui_queue would block all
+    further queue processing until someone clicks OK — and unattended
+    runs have nobody in the lab."""
+    import inspect
+    src = inspect.getsource(m.PPMSSyncGUI._process_gui_queue)
+    assert "messagebox" not in src
+
+
+def test_v14_render_fscan_seq_exact_and_valid():
+    text = m.render_fscan_seq(
+        "S", [(25.0, 1.0, 3600.0), (30.0, 2.0, 1800.0)], 1,
+        initial_note="note")
+    assert "TMP TEMP 25.000000 1.000000 1" in text
+    assert "WAI WAITFOR 3600 1 0 0 0 0" in text
+    assert "TMP TEMP 30.000000 2.000000 1" in text
+    assert "WAI WAITFOR 1800 1 0 0 0 0" in text
+    assert "REM note" in text
+    assert m.validate_ppms_seq(text) == []
+    # Fast-settle toggle flips the mode digit
+    text0 = m.render_fscan_seq("S", [(25.0, 1.0, 60.0)], 0)
+    assert "TMP TEMP 25.000000 1.000000 0" in text0
+
+
+def test_v14_validator_catches_faults():
+    assert m.validate_ppms_seq("TMP TEMP 500.000000 3.000000 0\n")  # >400 K
+    assert m.validate_ppms_seq("TMP TEMP 10.000000 50.000000 0\n")  # >20 K/min
+    assert m.validate_ppms_seq("BOGUS 1 2 3\n")                     # unknown
+    assert m.validate_ppms_seq("TMP TEMP 25.5 1 1\n") == []         # loose fmt
+    assert m.validate_ppms_seq("REM x\n!TMP TEMP 10 3 0\nMES hi\n") == []
+    # The real reference sequence must validate clean when present
+    # (gitignored lab data — quietly nothing to check on CI).
+    ref = os.path.join(project_root, "pica", "PPMS", "data_file_for_ref",
+                       "Dielectric_Tscan.seq")
+    if os.path.exists(ref):
+        with open(ref, encoding="utf-8") as fh:
+            assert m.validate_ppms_seq(fh.read()) == []
+
+
+def test_v14_smart_sleep_detector_and_flat_rate():
+    # SMART-1 plumbing: the copied detector behaves
+    d = m.TurnaroundDetector()
+    for T in (35.0, 25.0, 21.0, 20.3, 20.1, 20.1, 20.2):
+        d.update(T)
+    assert not d.warming_started(30.0, 2.0)
+    for T in (20.6, 21.2, 21.9, 22.6, 23.3, 24.0, 24.7):
+        d.update(T)
+    assert d.warming_started(30.0, 2.0)
+    c = m.SustainedCondition(180.0)
+    assert not c.update(True, 0.0)
+    assert not c.update(False, 100.0)      # break resets the clock
+    assert not c.update(True, 120.0)
+    assert c.update(True, 301.0)
+
+    # RATE-1: flat 1 K/min default (reference sequences), no max_rate set
+    class H:
+        _seq_default_rate = m.PPMSSyncGUI._seq_default_rate
+        entries = {}
+    h = H()
+    assert h._seq_default_rate(25.0, None) is None
+    assert h._seq_default_rate(25.0, 310.0) == 1.0
+    assert h._seq_default_rate(250.0, 200.0) == 1.0
 
 
 if __name__ == "__main__":

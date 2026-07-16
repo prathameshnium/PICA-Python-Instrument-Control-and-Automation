@@ -18,6 +18,7 @@ Runnable as plain python too:
 """
 
 import glob
+import math
 import os
 import queue
 import sys
@@ -40,11 +41,21 @@ from pica.keysight import PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI as m
 # Fakes
 # ------------------------------------------------------------------
 class FakeThermometer:
-    """Plays back a scripted temperature profile, one value per read."""
+    """Time-based fake PPMS probe: temperature is a piecewise-linear
+    function of WALL TIME (compressed timescale), like the real world.
+    This makes the simulation independent of how fast the worker polls
+    — a per-read script would let a fast machine (or a slow CI runner)
+    consume the trajectory at the wrong rate and starve later phases.
+    All the worker's turnaround conditions are latched state (min/max
+    history), so arbitrarily sparse polling still detects every
+    transition."""
 
-    def __init__(self, script):
-        self.script = list(script)
-        self.i = 0
+    def __init__(self, segments):
+        # segments: [(duration_s, T_start, T_end), ...]; after the last
+        # segment the final temperature holds forever (with a tiny
+        # deterministic wobble so stability windows see realistic noise).
+        self.segments = list(segments)
+        self.t0 = None
         self.rm = None
 
     def connect(self, visa_address):
@@ -54,9 +65,16 @@ class FakeThermometer:
         return self.connect(None)
 
     def get_temperature(self, channel, retries=2):
-        v = self.script[min(self.i, len(self.script) - 1)]
-        self.i += 1
-        return v
+        now = time.time()
+        if self.t0 is None:
+            self.t0 = now
+        t = now - self.t0
+        for dur, T_a, T_b in self.segments:
+            if t <= dur:
+                return T_a + (T_b - T_a) * (t / dur)
+            t -= dur
+        last_T = self.segments[-1][2]
+        return last_T + 0.02 * math.sin(3.0 * t)
 
     def shutdown(self):
         pass
@@ -82,24 +100,35 @@ class FakeLCR:
         pass
 
 
-def build_script():
-    """The synthetic PPMS profile (one value per thermometer read)."""
-    s = []
-    s += list(np.arange(310.0, 20.0, -5.0))          # cooldown 1
-    s += [20.0 + 0.03 * (i % 3) for i in range(60)]  # sit at base
-    s += list(np.arange(20.0, 310.0, 2.0))           # warming (Tscan)
-    s += [310.0 - 0.05 * (i % 2) for i in range(60)]  # hold at top
-    s += list(np.arange(310.0, 20.0, -5.0))          # final cooldown
-    s += [20.0 + 0.02 * (i % 3) for i in range(40)]  # sit at base
-    s += list(np.arange(20.0, 25.0, 0.5))            # PPMS goes to 25 K
-    s += [25.0 + 0.02 * (i % 5 - 2) for i in range(100000)]  # stable 25 K
-    return s
+def build_profile():
+    """The synthetic PPMS run, compressed to ~25 s of wall time:
+    (duration_s, T_start, T_end) segments. After the last segment the
+    probe sits at 25 K (the Fscan setpoint) forever."""
+    return [
+        (4.0, 310.0, 20.0),    # cooldown 1
+        (2.0, 20.0, 20.0),     # sit at base
+        (10.0, 20.0, 310.0),   # warming (the Tscan run)
+        (2.0, 310.0, 310.0),   # hold at top
+        (4.0, 310.0, 20.0),    # final cooldown
+        (1.0, 20.0, 20.0),     # sit at base
+        (2.0, 20.0, 25.0),     # PPMS moves to the 25 K setpoint
+    ]
+
+
+def _plain_append(path, text):
+    """fsync-free replacement for _durable_append: the sim writes
+    thousands of rows and per-row fsync can exceed the test timeout on
+    slow CI disks. Durability mechanics are covered by the dedicated
+    write-buffer tests, not this simulation."""
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(text)
 
 
 def make_worker(tmpdir):
     """Assemble a worker harness around the real class methods."""
     gui = object.__new__(m.PPMSMasterGUI)
-    gui.thermo_backend = FakeThermometer(build_script())
+    gui._durable_append = _plain_append   # instance attr beats staticmethod
+    gui.thermo_backend = FakeThermometer(build_profile())
     gui.lcr_backend = FakeLCR()
     gui.cmd_queue = queue.Queue()
     gui.gui_queue = queue.Queue()
@@ -178,12 +207,12 @@ def test_full_protocol_simulation():
 
     t = threading.Thread(target=gui._hardware_worker_loop, daemon=True)
     t.start()
-    t.join(timeout=120)
+    t.join(timeout=300)   # generous: shared CI runners can be very slow
     if t.is_alive():
         gui.is_running = False
         t.join(timeout=10)
         raise AssertionError("worker did not finish the simulated "
-                             "protocol within 120 s")
+                             "protocol within 300 s")
 
     msgs = drain(gui)
     types = [x["type"] for x in msgs]
