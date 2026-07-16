@@ -54,6 +54,8 @@ def make_cfg(runs=True, schedule=True):
         "tscan_freqs": [1000.0, 10000.0, 100000.0],
         "schedule": [],
         "step_wait_s": 3600.0,
+        "tscan_approach": 0,     # fast settle, as Dielectric_Tscan.seq
+        "fscan_approach": 1,     # no overshoot, as Dielectric_Fscan.seq
     }
     if runs:
         cfg["runs"] = [
@@ -243,6 +245,66 @@ def test_seq_no_fscan_section_when_schedule_empty():
     text = m.generate_ppms_seq(make_cfg(schedule=False))
     assert "Step Fscan" not in text
     assert "Final cooldown" not in text
+
+
+def test_seq_approach_mode_toggles():
+    """SEQ-1: the TMP approach toggles must flip the mode digit on the
+    right lines — Tscan section vs Fscan steps independently."""
+    cfg = make_cfg()
+    cfg["tscan_approach"] = 1
+    cfg["fscan_approach"] = 0
+    text = m.generate_ppms_seq(cfg)
+    lines = [l for l in text.strip().splitlines() if l.startswith("TMP")]
+    # Tscan section: cooldowns + warmings + final cooldown, all mode 1
+    assert "TMP TEMP 10.000000 3.000000 1" in lines
+    assert "TMP TEMP 310.000000 1.000000 1" in lines
+    # Fscan steps now fast-settle (mode 0)
+    assert "TMP TEMP 25.000000 1.000000 0" in lines
+    assert not any(l == "TMP TEMP 25.000000 1.000000 1" for l in lines)
+    # Defaults (no keys) must reproduce the reference modes: 0 / 1.
+    cfg2 = make_cfg()
+    del cfg2["tscan_approach"], cfg2["fscan_approach"]
+    text2 = m.generate_ppms_seq(cfg2)
+    assert "TMP TEMP 10.000000 3.000000 0" in text2
+    assert "TMP TEMP 25.000000 1.000000 1" in text2
+
+
+# ------------------------------------------------------------------
+# validate_ppms_seq (SEQ-2) — the faulty-sequence gate
+# ------------------------------------------------------------------
+def test_validator_accepts_generated_sequences():
+    for cfg in (make_cfg(), make_cfg(schedule=False), make_cfg(runs=False)):
+        text = m.generate_ppms_seq(cfg)
+        assert m.validate_ppms_seq(text) == [], \
+            f"generator emitted an invalid sequence:\n{text}"
+
+
+def test_validator_accepts_reference_tscan_seq():
+    """The user's real reference sequence must validate clean — this
+    pins the validator to actual MultiVu output, commented-out (!)
+    lines included."""
+    ref = os.path.join(project_root, "pica", "PPMS", "data_file_for_ref",
+                       "Dielectric_Tscan.seq")
+    with open(ref, encoding="utf-8") as fh:
+        text = fh.read()
+    assert m.validate_ppms_seq(text) == []
+
+
+def test_validator_catches_faults():
+    # Malformed shapes
+    assert m.validate_ppms_seq("TMP TEMP 10.0 3.0\n")          # missing mode
+    assert m.validate_ppms_seq("WAI WAITFOR -5 0 0 0 0 0\n")   # negative wait
+    assert m.validate_ppms_seq("TEMP 10 3 0\n")                # unknown cmd
+    assert m.validate_ppms_seq("FLD FIELD 5000.0 50.0 5 0\n")  # bad approach
+    # Out-of-range values (grammar OK, PPMS could not execute)
+    assert m.validate_ppms_seq("TMP TEMP 500.000000 3.000000 0\n")  # >400 K
+    assert m.validate_ppms_seq("TMP TEMP 10.000000 50.000000 0\n")  # >20 K/min
+    assert m.validate_ppms_seq("FLD FIELD 999999.0 50.0 0 0\n")     # field
+    # Hand-edited decimals are fine (validator is format-agnostic)
+    assert m.validate_ppms_seq("TMP TEMP 25.5 1 1\n") == []
+    # Comments / disabled lines / MES remarks pass through
+    ok = "REM hello\n!TMP TEMP 10.000000 3.000000 0\nMES anything\n\n"
+    assert m.validate_ppms_seq(ok) == []
 
 
 # ------------------------------------------------------------------
