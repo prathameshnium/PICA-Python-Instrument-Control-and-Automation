@@ -3,9 +3,18 @@ Module: PPMS_TimeEstimator_GUI.py
 Purpose: Answer "how long will my PPMS run take, and when will it finish?"
          BEFORE writing the sequence. Describe the plan in plain terms —
          M(T) as ZFC / FCC / FCW at several fields, M(H) loops at several
-         temperatures — and the estimate updates live as you type.
+         temperatures, and/or the dielectric protocol (ε(T) warming runs
+         at several fields, optionally followed by the temperature-step
+         frequency scan) — and the estimate updates live as you type.
 Timing model calibrated against real MultiVu .seq/.DAT pairs (see
 PPMS_SeqVisualizer_GUI.py and pica/PPMS/data_file_for_ref).
+
+v2.1: dielectric section added — mirrors the PPMS Dielectric Master
+protocol (per field: cooldown at the sequence cool rate + probe soak,
+field set at base, continuous warming measurement, top hold; the
+optional "Full Master" Fscan adds, per setpoint: step ramp +
+stabilization wait + a frequency sweep estimated from the E4980A
+per-point timing model).
 """
 
 import tkinter as tk
@@ -19,8 +28,40 @@ import matplotlib.dates as mdates
 import matplotlib as mpl
 
 
+# E4980A per-point timing model for the dielectric Fscan estimate
+# (embedded copy from PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI.py —
+# PICA programs never import from each other).
+# t_meas = max(base, cycles/f): apertures have a fixed floor but are
+# period-limited at low frequency (dominates < ~1 kHz).
+APER_MEAS_MODEL = {          # aperture -> (base_s, cycles)
+    "SHOR": (0.02, 1.0),
+    "MED": (0.09, 4.0),
+    "LONG": (0.85, 32.0),
+}
+VISA_OVERHEAD_S = 0.25       # :FREQ + :TRIG:IMM + *OPC? + :FETC? round trips
+TEMP_LOG_S = 0.10            # one interleaved KRDG? per frequency point
+
+
+def estimate_fscan_sweep_seconds(n_points, aper, freq_delay,
+                                 f_lo=40.0, f_hi=2e6):
+    """One dielectric frequency sweep, in seconds: n_points log-spaced
+    between f_lo and f_hi through the per-point timing model."""
+    n = max(1, int(n_points))
+    base, cycles = APER_MEAS_MODEL.get(aper, APER_MEAS_MODEL["MED"])
+    if n == 1:
+        freqs = [f_lo]
+    else:
+        ratio = (f_hi / f_lo) ** (1.0 / (n - 1))
+        freqs = [f_lo * ratio ** i for i in range(n)]
+    total = 0.0
+    for f in freqs:
+        total += (freq_delay + max(base, cycles / max(f, 1.0))
+                  + VISA_OVERHEAD_S + TEMP_LOG_S)
+    return total
+
+
 class TimeEstimatorGUI:
-    PROGRAM_VERSION = "2.0"
+    PROGRAM_VERSION = "2.1"   # + dielectric ε(T)/Fscan estimator
     CLR_BG = '#B8A392'
     CLR_HEADER = '#E5DCD3'
     CLR_FG = '#2C2825'
@@ -205,6 +246,63 @@ class TimeEstimatorGUI:
         self.mh_temps_var = tk.StringVar(value="5, 100, 300")
         self._sentence(what, ["one loop at each temperature:",
                               (self.mh_temps_var, 14), "K"], padx=30)
+
+        ttk.Separator(what).pack(fill='x', padx=8, pady=2)
+
+        # ---------------- dielectric ε(T) / Fscan ----------------
+        self.di_on_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(what, text="ε(T)  —  dielectric (PPMS-synced)",
+                        variable=self.di_on_var,
+                        style='Section.TCheckbutton').pack(
+            anchor='w', padx=8, pady=(4, 0))
+        self.di_fields_var = tk.StringVar(value="0, 5000")
+        self._sentence(what, ["warming runs at fields:",
+                              (self.di_fields_var, 12), "Oe"], padx=30)
+        self.di_base_var = tk.StringVar(value="10")
+        self.di_top_var = tk.StringVar(value="310")
+        self.di_warm_var = tk.StringVar(value="1")
+        self.di_cool_var = tk.StringVar(value="3")
+        self._sentence(what, ["from base", (self.di_base_var, 5),
+                              "K  to top", (self.di_top_var, 5),
+                              "K  —  warm at", (self.di_warm_var, 4),
+                              "K/min, cool at", (self.di_cool_var, 4),
+                              "K/min"], padx=30)
+        self.di_hold_var = tk.StringVar(value="30")
+        self.di_soak_var = tk.StringVar(value="80")
+        self._sentence(what, ["hold", (self.di_hold_var, 4),
+                              "min at top,  soak", (self.di_soak_var, 4),
+                              "min at base before each run"], padx=30)
+        self.di_fscan_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(what,
+                        text="then step Fscan (Full Master protocol)",
+                        variable=self.di_fscan_var).pack(
+            anchor='w', padx=30, pady=(2, 0))
+        self.di_fscan_temps_var = tk.StringVar(value="15, 25, 50, 100")
+        self._sentence(what, ["step scans at:",
+                              (self.di_fscan_temps_var, 16), "K"],
+                       padx=48)
+        self.di_stab_var = tk.StringVar(value="30")
+        self.di_pts_var = tk.StringVar(value="377")
+        self.di_delay_var = tk.StringVar(value="0.2")
+        row = self._sentence(what, ["stabilize", (self.di_stab_var, 4),
+                                    "min  +  sweep", (self.di_pts_var, 5),
+                                    "points at"], padx=48)
+        self.di_aper_cb = ttk.Combobox(row, values=["SHOR", "MED", "LONG"],
+                                       state='readonly', width=6)
+        self.di_aper_cb.set("MED")
+        self.di_aper_cb.pack(side='left', padx=3)
+        self.di_aper_cb.bind("<<ComboboxSelected>>", self._schedule_recalc)
+        ttk.Label(row, text="aperture,").pack(side='left')
+        ttk.Entry(row, textvariable=self.di_delay_var, width=5,
+                  justify='center').pack(side='left', padx=3)
+        ttk.Label(row, text="s delay").pack(side='left')
+        ttk.Label(what,
+                  text="Mirrors the PPMS Dielectric Master: per field — "
+                       "cooldown at the cool rate + probe soak, field set "
+                       "at base, continuous warming measurement, top "
+                       "hold. Untick the Fscan for a Tscan-only protocol.",
+                  style='Hint.TLabel', wraplength=430,
+                  justify='left').pack(anchor='w', padx=30, pady=(0, 8))
         ttk.Frame(what, height=6).pack()
 
         # ---------------- start / end ----------------
@@ -352,6 +450,11 @@ class TimeEstimatorGUI:
                     self.fcw_var, self.mt_fields_var, self.mt_soak_var,
                     self.mh_on_var, self.mh_hmax_var, self.mh_frate_var,
                     self.mh_pts_var, self.mh_spp_var, self.mh_temps_var,
+                    self.di_on_var, self.di_fields_var, self.di_base_var,
+                    self.di_top_var, self.di_warm_var, self.di_cool_var,
+                    self.di_hold_var, self.di_soak_var, self.di_fscan_var,
+                    self.di_fscan_temps_var, self.di_stab_var,
+                    self.di_pts_var, self.di_delay_var,
                     self.start_time_var, self.init_temp_var,
                     self.final_temp_var, self.fast_rate_var,
                     self.slow_rate_var, self.slow_below_var,
@@ -547,6 +650,79 @@ class TimeEstimatorGUI:
                 add(settle, T, 0, "Wait for H stable (settle est.)",
                     kind='wait')
 
+        # ---------------- dielectric ε(T) runs + optional Fscan ----------
+        if self.di_on_var.get():
+            fields = self._parse_list(self.di_fields_var.get())
+            if not fields:
+                raise ValueError(
+                    "Dielectric is ticked but no fields are given.")
+            base = float(self.di_base_var.get())
+            top = float(self.di_top_var.get())
+            warm = float(self.di_warm_var.get())
+            cool = float(self.di_cool_var.get())
+            if not base < top:
+                raise ValueError("Dielectric: base must be below top.")
+            if warm <= 0 or cool <= 0:
+                raise ValueError("Dielectric: warm/cool rates must be "
+                                 "positive.")
+            hold_s = float(self.di_hold_var.get() or 0) * 60.0
+            soak_s = float(self.di_soak_var.get() or 0) * 60.0
+            if hold_s < 0 or soak_s < 0:
+                raise ValueError("Dielectric: hold/soak must be >= 0.")
+
+            def di_cooldown(why):
+                # The PPMS sequence owns this ramp — the dielectric cool
+                # rate applies, not the cryostat move rates.
+                if abs(T - base) > 0.5:
+                    add(abs(T - base) / cool * 60.0, base, H,
+                        f"Cool {T:g} → {base:g} K @ {cool:g} K/min "
+                        f"({why})")
+                if soak_s > 0:
+                    add(soak_s, T, H,
+                        f"Probe soak at base ({soak_s / 60:g} min)",
+                        kind='wait')
+
+            for F in fields:
+                add(0, T, H, f"ε(T) warming run at {F:g} Oe", kind='blk')
+                di_cooldown("dielectric cooldown")
+                goto_H(F, "set measuring field at base")
+                add((top - base) / warm * 60.0, top, H,
+                    f"ε(T) warming {base:g} → {top:g} K @ {warm:g} K/min",
+                    kind='meas')
+                if hold_s > 0:
+                    add(hold_s, T, H,
+                        f"Hold at top ({hold_s / 60:g} min)", kind='wait')
+                goto_H(0, "remove field")
+
+            if self.di_fscan_var.get():
+                temps = self._parse_list(self.di_fscan_temps_var.get())
+                if not temps:
+                    raise ValueError("Dielectric Fscan is ticked but no "
+                                     "setpoints are given.")
+                stab_s = float(self.di_stab_var.get() or 0) * 60.0
+                npts = int(float(self.di_pts_var.get() or 377))
+                fdelay = float(self.di_delay_var.get() or 0)
+                if stab_s < 0 or npts <= 0 or fdelay < 0:
+                    raise ValueError("Dielectric Fscan: check stabilize / "
+                                     "points / delay.")
+                sweep_s = estimate_fscan_sweep_seconds(
+                    npts, self.di_aper_cb.get(), fdelay)
+                add(0, T, H,
+                    f"ε(f) step Fscan ({len(temps)} setpoints)",
+                    kind='blk')
+                di_cooldown("final cooldown before the Fscan")
+                for Ti in temps:
+                    if abs(T - Ti) > 0.5:
+                        add(abs(Ti - T) / warm * 60.0, Ti, H,
+                            f"Step to {Ti:g} K @ {warm:g} K/min")
+                    if stab_s > 0:
+                        add(stab_s, T, H,
+                            f"Stabilize at {Ti:g} K "
+                            f"({stab_s / 60:g} min)", kind='wait')
+                    add(sweep_s, T, H,
+                        f"Frequency sweep at {Ti:g} K ({npts} pts, "
+                        f"{self.di_aper_cb.get()})", kind='meas')
+
         # ---------------- wrap up ----------------
         fin = self.final_temp_var.get().strip()
         if fin and abs(float(fin) - T) > 0.5:
@@ -556,7 +732,7 @@ class TimeEstimatorGUI:
 
         if not any(sg['kind'] == 'meas' for sg in self.segments):
             raise ValueError(
-                "Nothing to measure yet — tick M(T) and/or M(H).")
+                "Nothing to measure yet — tick M(T), M(H) and/or ε(T).")
 
     # ------------------------------------------------------------- output
     def _update_summary(self, start_dt):
