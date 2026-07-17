@@ -188,6 +188,7 @@ class PICALauncherApp:
         "Unit Converter": resource_path("utils/Unit_Converter_GUI.py"),
         "Sequence Visualizer": resource_path("PPMS/PPMS_SeqVisualizer_GUI.py"),
         "PPMS Time Estimator": resource_path("PPMS/PPMS_TimeEstimator_GUI.py"),
+        "MD Ratio Calculator": resource_path("utils/MD_Ratio_Calculator_GUI.py"),
     }
 
     def __init__(self, root):
@@ -905,6 +906,7 @@ class PICALauncherApp:
                 ("PPMS Plotter Utility", "PPMS Plotter Utility"),
                 ("Sequence Visualizer", "Sequence Visualizer"),
                 ("PPMS Time Estimator", "PPMS Time Estimator"),
+                ("MD Ratio Calculator", "MD Ratio Calculator"),
             ]),
             ("Mini Tools", [
                 ("Quick Calc", "Quick Calc"),
