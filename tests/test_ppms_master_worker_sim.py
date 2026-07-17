@@ -273,7 +273,126 @@ def test_full_protocol_simulation():
         rows = fh.read().strip().splitlines()
     assert len(rows) == 2                  # header + 1 step
 
+    # AID-1: RUNSTATE crash aid ends the run saying COMPLETE
+    runstates = glob.glob(os.path.join(tmpdir, "*_Master_RUNSTATE.txt"))
+    assert runstates, "RUNSTATE file was not written"
+    with open(runstates[0], encoding="utf-8") as fh:
+        state = fh.read()
+    assert "status: COMPLETE" in state, state
+    assert "phase: 4/4" in state, state
+
+
+# ------------------------------------------------------------------
+# FALL-1: WAIT_BASE fallback ceiling (v1.2)
+# ------------------------------------------------------------------
+def make_wait_base_harness(tmpdir, fallback_x, segments,
+                           expected_s, confirm_s=0.05):
+    """Minimal harness around the REAL _phase_wait_base."""
+    gui = object.__new__(m.PPMSMasterGUI)
+    gui._durable_append = _plain_append
+    gui.thermo_backend = FakeThermometer(segments)
+    gui.cmd_queue = queue.Queue()
+    gui.gui_queue = queue.Queue()
+    gui.is_running = True
+    gui._paused = False
+    gui._skip_requested = False
+    gui._worker_phase = None
+    gui._phase_index = 0
+    gui._pending_rows = deque()
+    gui._write_error_logged = False
+    gui.save_dir = tmpdir
+    gui.start_time = time.time()
+    gui.tlog_path = os.path.join(tmpdir, "TempLog.csv")
+    gui.params = {"delay": 0.01, "channel": "A"}
+    gui.cfg = {"base_arm": 30.0, "rise_k": 2.0, "confirm_s": confirm_s,
+               "overdue_s": 3600.0, "fallback_x": fallback_x}
+    phase = {"kind": "WAIT_BASE", "label": "Cooldown 1",
+             "detail": "test", "expected_s": expected_s, "run": None}
+    gui.protocol_phases = [phase]
+    return gui, phase
+
+
+def test_wait_base_fallback_ceiling_fires():
+    """Probe never dips below Base arm (detection can never fire): the
+    fallback ceiling must end the phase at fallback_x * expected."""
+    tmpdir = tempfile.mkdtemp(prefix="pica_fallback_")
+    gui, ph = make_wait_base_harness(
+        tmpdir, fallback_x=2.0, segments=[(9999.0, 300.0, 300.0)],
+        expected_s=0.4)
+    t0 = time.time()
+    outcome = gui._phase_wait_base(0, ph)
+    took = time.time() - t0
+    assert outcome == "fallback (time ceiling)", outcome
+    assert took >= 0.8, f"fired before the ceiling ({took:.2f} s)"
+    logs = [x.get("text", "") for x in drain(gui) if x["type"] == "log"]
+    assert any("FALLBACK" in t for t in logs), logs
+
+
+def test_wait_base_fallback_off_never_fires():
+    """fallback_x = 0 disables the ceiling: only detection or Stop can
+    end the phase (unattended never-abort policy unchanged)."""
+    tmpdir = tempfile.mkdtemp(prefix="pica_fallback_")
+    gui, ph = make_wait_base_harness(
+        tmpdir, fallback_x=0.0, segments=[(9999.0, 300.0, 300.0)],
+        expected_s=0.2)
+    threading.Timer(1.2, lambda: setattr(gui, "is_running", False)).start()
+    outcome = gui._phase_wait_base(0, ph)
+    assert outcome == "stopped", outcome   # waited well past 2x expected
+
+
+def test_wait_base_detection_wins_over_fallback():
+    """Warming detection stays primary: with a generous ceiling armed,
+    a real base-dip-then-rise must still confirm warming."""
+    tmpdir = tempfile.mkdtemp(prefix="pica_fallback_")
+    gui, ph = make_wait_base_harness(
+        tmpdir, fallback_x=2.0,
+        segments=[(0.3, 25.0, 20.0), (3.0, 20.0, 60.0)],
+        expected_s=100.0)
+    outcome = gui._phase_wait_base(0, ph)
+    assert outcome == "warming confirmed", outcome
+
+
+# ------------------------------------------------------------------
+# SKIP-1: Skip Freq Step (v1.2)
+# ------------------------------------------------------------------
+def test_skip_freq_only_arms_inside_fscan_step():
+    """The skip_freq command must be ignored outside WAIT_STABLE/SCAN —
+    a stale flag would silently skip the FIRST Fscan step hours later."""
+    tmpdir = tempfile.mkdtemp(prefix="pica_skipfreq_")
+    gui, _ = make_wait_base_harness(
+        tmpdir, 0.0, [(9999.0, 300.0, 300.0)], 1.0)
+
+    gui._worker_phase = "WAIT_BASE"          # a cooldown, not an Fscan step
+    gui.cmd_queue.put(("skip_freq",))
+    assert gui._process_cmd_queue() is False
+    assert gui._skip_step_requested is False
+    logs = [x.get("text", "") for x in drain(gui)]
+    assert any("ignored" in t for t in logs), logs
+
+    gui._worker_phase = "WAIT_STABLE"        # inside an Fscan step
+    gui.cmd_queue.put(("skip_freq",))
+    gui._process_cmd_queue()
+    assert gui._skip_step_requested is True
+
+
+def test_skip_freq_abandons_stability_wait():
+    """During the stability wait, Skip Freq Step returns 'step_skipped'
+    so the Fscan loop moves to the NEXT setpoint without sweeping."""
+    tmpdir = tempfile.mkdtemp(prefix="pica_skipfreq_")
+    gui, _ = make_wait_base_harness(
+        tmpdir, 0.0, [(9999.0, 25.0, 25.0)], 1.0)
+    gui._skip_step_requested = True
+    outcome, wait_s = gui._wait_for_stability(25.0)
+    assert outcome == "step_skipped", outcome
+    assert gui._skip_step_requested is False   # flag consumed
+
 
 if __name__ == "__main__":
-    test_full_protocol_simulation()
-    print("PASS  test_full_protocol_simulation")
+    for _name in ("test_full_protocol_simulation",
+                  "test_wait_base_fallback_ceiling_fires",
+                  "test_wait_base_fallback_off_never_fires",
+                  "test_wait_base_detection_wins_over_fallback",
+                  "test_skip_freq_only_arms_inside_fscan_step",
+                  "test_skip_freq_abandons_stability_wait"):
+        globals()[_name]()
+        print(f"PASS  {_name}")
