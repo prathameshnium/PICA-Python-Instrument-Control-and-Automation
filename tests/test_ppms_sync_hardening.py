@@ -168,7 +168,7 @@ def test_hardening_plumbing_present():
     assert callable(m.Probe_Thermometer_Backend.reconnect)
     assert callable(m.LCR_Backend.reconnect)
     assert callable(m.PPMSSyncGUI._set_keep_awake)
-    assert m.PPMSSyncGUI.PROGRAM_VERSION.startswith("1.4")
+    assert m.PPMSSyncGUI.PROGRAM_VERSION.startswith("1.5")
     # Keep-awake flags match SetThreadExecutionState documentation
     assert m.PPMSSyncGUI.ES_CONTINUOUS == 0x80000000
     assert m.PPMSSyncGUI.ES_SYSTEM_REQUIRED == 0x00000001
@@ -239,6 +239,54 @@ def test_v14_smart_sleep_detector_and_flat_rate():
     assert h._seq_default_rate(25.0, None) is None
     assert h._seq_default_rate(25.0, 310.0) == 1.0
     assert h._seq_default_rate(250.0, 200.0) == 1.0
+
+
+# ------------------------------------------------------------------
+# v1.5 — double-start race fix + ASCII-safe .seq
+# ------------------------------------------------------------------
+def test_v15_start_sequence_reentry_guard():
+    """HARD-5: with a run active, Start must be a no-op. The harness has
+    NO widgets — without the guard the method would crash on the first
+    widget access instead of returning quietly."""
+    gui = object.__new__(m.PPMSSyncGUI)
+    gui.is_running = True
+    assert gui.start_sequence() is None   # returns before touching any UI
+
+
+def test_v15_sequence_complete_does_not_reenable_ui():
+    """HARD-5: only worker_done may call set_ui_state(False). The worker
+    is still closing instruments when sequence_complete arrives; an
+    early re-enable lets a click launch a second worker on the same
+    VISA sessions."""
+    import inspect
+    src = inspect.getsource(m.PPMSSyncGUI._process_gui_queue)
+    seq_i = src.index('"sequence_complete"')
+    done_i = src.index('"worker_done"')
+    assert "set_ui_state" not in src[seq_i:done_i], \
+        "sequence_complete branch must not re-enable the UI"
+    assert "set_ui_state" in src[done_i:]
+
+
+def test_v15_validator_rejects_non_ascii():
+    """SEQ-3: DynaCool reads .seq as ANSI — a UTF-8 em-dash renders as
+    mojibake, so the validator must reject ANY non-ASCII character,
+    comments included."""
+    errs = m.validate_ppms_seq("REM note with an em—dash\n")
+    assert errs and "non-ASCII" in errs[0]
+    assert m.validate_ppms_seq("TMP TEMP 25.000000 1.000000 1 °\n")
+    assert m.validate_ppms_seq("REM plain ascii note\n") == []
+
+
+def test_v15_export_note_is_ascii_and_valid():
+    """The initial-wait REM note must survive the ASCII validator (the
+    old wording used an em-dash)."""
+    note = ("Initial wait 3:30 is a PC-side sleep in the measurement "
+            "program. Each WAITFOR below starts only after the PPMS "
+            "reports stable.")
+    text = m.render_fscan_seq("S", [(25.0, 1.0, 3600.0)], 1,
+                              initial_note=note)
+    assert text.isascii()
+    assert m.validate_ppms_seq(text) == []
 
 
 if __name__ == "__main__":

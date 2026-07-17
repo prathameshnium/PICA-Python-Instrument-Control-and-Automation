@@ -172,6 +172,23 @@ v1.4 — UNATTENDED POLICY + VALIDATED .seq EXPORT
          sleep as a zero initial wait. Same rates + same waits +
          same initial wait = identical Total and projected finish
          on both sides.
+
+============================================================
+v1.5 — DOUBLE-START RACE FIX + ASCII-SAFE .seq
+============================================================
+  HARD-5 start_sequence() now has a re-entry guard, and
+         sequence_complete no longer re-enables the UI — only
+         worker_done does. Previously the Start button came back
+         while the worker was still in its finally block closing
+         instruments (bias ramp-down takes seconds); a click in
+         that window launched a SECOND worker onto the same VISA
+         sessions.
+  SEQ-3  Exported .seq files are now guaranteed pure ASCII:
+         MultiVu/DynaCool reads .seq as ANSI, so the em-dash in
+         the initial-wait REM note rendered as mojibake in the
+         sequence editor. The note is reworded symbol-free and
+         validate_ppms_seq() now rejects ANY non-ASCII character
+         on any line (comments included), catching hand-edits too.
 """
 
 import tkinter as tk
@@ -389,9 +406,18 @@ def validate_ppms_seq(text):
     """Check every line of a MultiVu sequence against the exact grammar
     of the reference sequences. Returns a list of error strings (empty
     list = the sequence is safe to save). Comment lines (REM), disabled
-    lines (! prefix), MES remarks and blank lines are passed through."""
+    lines (! prefix), MES remarks and blank lines are passed through.
+    Every line (comments included) must be pure ASCII: MultiVu/DynaCool
+    reads .seq files as ANSI, so a UTF-8 em-dash or arrow turns into
+    mojibake in the sequence editor."""
     errors = []
     for lineno, raw in enumerate(text.splitlines(), 1):
+        if not raw.isascii():
+            bad = "".join(sorted({ch for ch in raw if not ch.isascii()}))
+            errors.append(f"line {lineno}: non-ASCII character(s) {bad!r} "
+                          f"- DynaCool reads .seq as ANSI and will "
+                          f"garble them: {raw!r}")
+            continue
         s = raw.strip()
         if not s or s.startswith(("REM", "!", "MES")):
             continue
@@ -713,7 +739,7 @@ class LCR_Backend:
 # FRONTEND: PPMS-synchronized GUI
 # ============================================================
 class PPMSSyncGUI:
-    PROGRAM_VERSION = "1.4-PPMS-Sync"  # unattended policy + .seq export
+    PROGRAM_VERSION = "1.5-PPMS-Sync"  # double-start race fix
     LEFT_PANEL_WIDTH = 480
 
     # HARD-3: SetThreadExecutionState flags (Windows keep-awake during a run)
@@ -1279,7 +1305,7 @@ class PPMSSyncGUI:
         self.pause_button = ttk.Button(bf, text="Pause", state="disabled",
                                        command=self._toggle_pause)
         self.pause_button.grid(row=1, column=0, sticky="ew", padx=2, pady=(4, 0))
-        self.skip_button = ttk.Button(bf, text="Skip Phase", state="disabled",
+        self.skip_button = ttk.Button(bf, text="Skip Step", state="disabled",
                                       command=self._skip_step)
         self.skip_button.grid(row=1, column=1, sticky="ew", padx=2, pady=(4, 0))
 
@@ -1796,7 +1822,7 @@ class PPMSSyncGUI:
         if not self.is_running:
             return
         self.cmd_queue.put(("skip",))
-        self.log("SKIP PHASE requested.")
+        self.log("SKIP STEP requested.")
 
     # ------------------------------------------------------------
     # VISA scan / file browse
@@ -1848,6 +1874,8 @@ class PPMSSyncGUI:
     # Start / Stop
     # ------------------------------------------------------------
     def start_sequence(self):
+        if self.is_running:
+            return   # HARD-5: re-entry guard — never launch a second worker
         try:
             self.schedule = self._get_targets()
         except ValueError as e:
@@ -2365,12 +2393,15 @@ class PPMSSyncGUI:
             wait_min = r.get("wait") or 0.0
             steps.append((target, float(rate), wait_min * 60.0))
 
+        # ASCII only: MultiVu/DynaCool reads .seq files as ANSI, so any
+        # non-ASCII character (em-dash, arrows, ...) shows up as mojibake
+        # like 'a-euro-' garbage in the sequence editor.
         note = None
         init_txt = self.seq_init_entry.get().strip()
         try:
             if init_txt and parse_duration_min(init_txt) > 0:
-                note = (f"Initial wait {init_txt} is PC-side (this "
-                        "program's initial sleep) — each WAITFOR below "
+                note = (f"Initial wait {init_txt} is a PC-side sleep in "
+                        "the measurement program. Each WAITFOR below "
                         "starts only after the PPMS reports stable.")
         except ValueError:
             pass
@@ -2658,7 +2689,10 @@ class PPMSSyncGUI:
                     # pump — it would block all further queue processing
                     # (logs, plots, worker_done) until someone clicks OK,
                     # and unattended runs have nobody in the lab.
-                    self.set_ui_state(running=False)
+                    # HARD-5: the UI is re-enabled ONLY on worker_done —
+                    # the worker is still closing instruments here, and a
+                    # re-enabled Start could launch a second worker onto
+                    # the same VISA sessions.
                     self.log("★★★ SEQUENCE COMPLETE — all schedule steps "
                              "measured. Data is on disk. ★★★")
                     self._beep()
@@ -2867,7 +2901,7 @@ class PPMSSyncGUI:
         confirm = SustainedCondition(180.0)   # 3 min "definitely sure"
         self._put_gui_msg("log",
             text=f"Initial sleep {fmt_hms(sleep_s)} before stability "
-                 f"detection at {target} K (skip with 'Skip Phase')."
+                 f"detection at {target} K (skip with 'Skip Step')."
                  + (f" Smart end armed: dip below {p['smart_arm']:g} K, "
                     "rise 2 K, hold 3 min." if smart else ""))
         try:

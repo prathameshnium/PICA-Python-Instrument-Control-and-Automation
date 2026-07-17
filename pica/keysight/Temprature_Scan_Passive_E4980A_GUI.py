@@ -4,10 +4,16 @@ Purpose:             GUI module for Temperature-Dependent Dielectric
                      Measurement (Keysight E4980A + Lakeshore 350).
 Original Authors:    Prathamesh Deshmukh (template programs)
 Integrated by:       AI-assisted merge per design specification
-Version:             V: 1.3  (multi-day hardening: 400 K kill switch,
-                     retry-forever comm recovery, fsync-per-point writes,
-                     timestamped T-log, bounded console, optional plot
-                     thinning, Windows keep-awake)
+Version:             V: 1.4  (v1.3 multi-day hardening: 400 K kill
+                     switch, retry-forever comm recovery, fsync-per-point
+                     writes, timestamped T-log, bounded console, optional
+                     plot thinning, Windows keep-awake;
+                     v1.4 unattended policy: the safety-kill and
+                     runtime-error handlers no longer open modal dialogs
+                     — console log + beeps only, so an unattended
+                     overnight run never ends behind a messagebox nobody
+                     is there to click. The user-clicked Stop info box is
+                     kept: that action is attended by definition.)
 """
 
 # ===============================================================================
@@ -25,6 +31,7 @@ import os
 import time
 import ctypes
 import math
+import platform
 import traceback
 import atexit
 from datetime import datetime
@@ -36,6 +43,13 @@ import matplotlib.gridspec as gridspec
 import matplotlib as mpl
 import runpy
 from multiprocessing import Process
+
+# --- winsound for unattended-run alerts (Windows; optional) ---
+try:
+    import winsound
+    HAS_WINSOUND = True
+except ImportError:
+    HAS_WINSOUND = False
 
 # --- Pillow for Logo Image ---
 try:
@@ -454,7 +468,7 @@ class Integrated_CT_GUI:
     thrown at it is recorded as-is.
     """
 
-    PROGRAM_VERSION = "1.3"
+    PROGRAM_VERSION = "1.4"
     LOGO_SIZE = 110
     CONSOLE_MAX_LINES = 2000   # bound console growth on multi-day runs
     PLOT_MAX_POINTS = 10000    # halve plot buffers at this size (if enabled)
@@ -1177,6 +1191,24 @@ class Integrated_CT_GUI:
         except Exception:
             pass
 
+    def _beep(self, times=1):
+        """Audible alert (main/Tk thread only). Beeps in a daemon thread
+        so the GUI never blocks; falls back to the Tk bell. Used instead
+        of modal dialogs on unattended-run events (kill switch, runtime
+        error) — a messagebox nobody is there to click must never linger
+        over a multi-day run."""
+        if HAS_WINSOUND and platform.system() == "Windows":
+            def _do_beep():
+                for _ in range(max(1, times)):
+                    winsound.Beep(1000, 500)
+                    time.sleep(0.2)
+            threading.Thread(target=_do_beep, daemon=True).start()
+        else:
+            try:
+                self.root.bell()
+            except Exception:
+                pass
+
     def _handle_log_message(self, message):
         self.log(message)
 
@@ -1752,23 +1784,26 @@ class Integrated_CT_GUI:
     # EVENT HANDLERS
     # ==================================================================
     def _handle_kill_event(self):
+        # UNATTENDED POLICY: no modal dialog — runs execute overnight
+        # with nobody at the PC. Loud console log + beeps only; the run
+        # is already stopped and every row is fsync'd on disk.
         kill_t = self.backend.SAFETY_KILL_TEMP_K
         self.log(f"!!! HARDCODED SAFETY KILL ({kill_t:.0f} K) TRIGGERED — "
                  "heater forced OFF !!!")
         self._update_live_plots(force=True)
         self.stop_measurement(False)
-        messagebox.showwarning(
-            "SAFETY KILL",
-            f"Temperature reached {kill_t:.0f} K.\nHeater turned OFF and "
-            "measurement stopped.")
+        self.log(f"Temperature reached {kill_t:.0f} K. Heater turned OFF "
+                 "and measurement stopped. Data is on disk.")
+        self._beep(times=5)
 
     # ------------------------------------------------------------------
     def _handle_runtime_error(self, exception):
+        # UNATTENDED POLICY: no modal dialog (see _handle_kill_event).
         self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
         self.stop_measurement(False)
-        messagebox.showerror(
-            "Runtime Error",
-            f"A critical error occurred: {exception}")
+        self.log(f"A critical error occurred: {exception}. Measurement "
+                 "stopped; all written data is on disk.")
+        self._beep(times=3)
 
     # ==================================================================
     # VISA SCAN (identity-aware, for BOTH instruments)

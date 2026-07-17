@@ -99,6 +99,36 @@ v1.1 — SEQUENCE-GENERATOR ACCURACY
          soak; a cooldown wait SHORTER than the ramp itself is
          rejected at generation (the sequence would start warming
          before base is ever reached).
+
+============================================================
+v1.2 — UNATTENDED-RUN RESCUE + CRASH AID + FSCAN STEP SKIP
+============================================================
+  FALL-1 Cooldown fallback ceiling (user decision 2026-07-17, ON by
+         default at 2x expected; 0 disables): a WAIT_BASE phase that
+         never detects warming (first Fscan setpoint at/below the
+         probe's bottom-out T, sensor quirk, mis-set Base arm) used
+         to wait FOREVER while the PPMS walked the rest of the
+         sequence alone — the whole unattended run was lost. Now the
+         phase also ends, loudly flagged ("fallback (time ceiling)"
+         in the ProtocolLog), at Fallback x its expected duration.
+         Turnaround detection stays primary.
+  AID-1  RUNSTATE crash/restart aid: a tiny
+         {sample}_{stamp}_Master_RUNSTATE.txt in the save dir is
+         rewritten (fsync'd) at every phase transition with the
+         current status, phase i/n and last probe T — after a power
+         cut the file shows exactly where the protocol died. Start
+         warns (console only) about RUNSTATE files of previous
+         unfinished runs in the same folder.
+  SKIP-1 New "Skip Freq Step" button (Fscan only): abandons the
+         CURRENT temperature step — stability wait or running sweep
+         — and moves to the NEXT schedule setpoint in one press.
+         "Skip Phase" is unchanged (cooldown -> next phase; Tscan ->
+         end run; stability wait -> sweep now; sweep -> abort rest).
+         Pressed outside an Fscan step it is ignored with a log line.
+  SEQ-4  validate_ppms_seq() now rejects ANY non-ASCII character on
+         any line (comments included): MultiVu/DynaCool reads .seq
+         files as ANSI, so a UTF-8 em-dash renders as mojibake in
+         the sequence editor.
 """
 
 import tkinter as tk
@@ -467,9 +497,18 @@ def validate_ppms_seq(text):
     """Check every line of a MultiVu sequence against the exact grammar
     of the reference sequences. Returns a list of error strings (empty
     list = the sequence is safe to save). Comment lines (REM), disabled
-    lines (! prefix), MES remarks and blank lines are passed through."""
+    lines (! prefix), MES remarks and blank lines are passed through.
+    Every line (comments included) must be pure ASCII: MultiVu/DynaCool
+    reads .seq files as ANSI, so a UTF-8 em-dash or arrow turns into
+    mojibake in the sequence editor."""
     errors = []
     for lineno, raw in enumerate(text.splitlines(), 1):
+        if not raw.isascii():
+            bad = "".join(sorted({ch for ch in raw if not ch.isascii()}))
+            errors.append(f"line {lineno}: non-ASCII character(s) {bad!r} "
+                          f"- DynaCool reads .seq as ANSI and will "
+                          f"garble them: {raw!r}")
+            continue
         s = raw.strip()
         if not s or s.startswith(("REM", "!", "MES")):
             continue
@@ -745,7 +784,7 @@ class LCR_Backend:
 # FRONTEND: PPMS Dielectric Master GUI
 # ============================================================
 class PPMSMasterGUI:
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "1.2"   # fallback ceiling + RUNSTATE + Skip Freq Step
     LEFT_PANEL_WIDTH = 500
 
     # SetThreadExecutionState flags (Windows keep-awake during a run)
@@ -860,6 +899,9 @@ class PPMSMasterGUI:
         # Pause/skip + band-patch state
         self._paused = False           # worker-only write
         self._skip_requested = False   # worker-only write
+        # Fscan-only: abandon the CURRENT temperature step (stability
+        # wait or running sweep) and move to the next setpoint.
+        self._skip_step_requested = False   # worker-only write
         self._band_params = None
         self._band_dirty = False
         self.band_patch = None
@@ -885,6 +927,7 @@ class PPMSMasterGUI:
         self.tlog_path = None
         self.timing_path = None
         self.protolog_path = None
+        self.runstate_path = None   # crash/restart aid (worker thread)
 
         # Protocol run state (set at Start)
         self.cfg = None
@@ -1235,6 +1278,10 @@ class PPMSMasterGUI:
         add("Fall (K):", "fall_k", "2", 1, 2)
         add("Confirm (min):", "confirm_min", "3", 2, 0)
         add("Overdue warn (min):", "overdue_min", "20", 2, 2)
+        # Fallback ceiling for cooldown waits (user decision 2026-07-17:
+        # ON by default at 2x) — a missed warming detection must never
+        # strand the whole holiday run in WAIT_BASE.
+        add("Fallback (×expected, 0=off):", "fallback_x", "2", 3, 0)
         ttk.Label(frame,
                   text="Cooldown ends: T dipped below Base arm, then rose "
                        "'Rise' K off its minimum. Warming run ends: T got "
@@ -1243,9 +1290,16 @@ class PPMSMasterGUI:
                        "turnaround must HOLD for 'Confirm' minutes before "
                        "the phase actually switches — the master only "
                        "moves on when it is definitely sure. Overdue "
-                       "phases warn loudly but NEVER abort.",
+                       "phases warn loudly but NEVER abort. Fallback: a "
+                       "cooldown wait additionally ends (loudly flagged) "
+                       "at Fallback × its expected time, so a missed "
+                       "detection can never strand the run. Note: charging "
+                       "the field at base can warm the probe a few K and "
+                       "fire warming-detection slightly early — harmless, "
+                       "the Tscan just starts with a few extra rows at "
+                       "base.",
                   font=("Segoe UI", 8, "italic"), wraplength=440
-                  ).grid(row=3, column=0, columnspan=4, sticky="w",
+                  ).grid(row=4, column=0, columnspan=4, sticky="w",
                          padx=10, pady=(0, 5))
 
     # ------------------------------------------------------------
@@ -1513,6 +1567,11 @@ class PPMSMasterGUI:
         self.skip_button = ttk.Button(bf, text="Skip Phase", state="disabled",
                                       command=self._skip_step)
         self.skip_button.grid(row=1, column=1, sticky="ew", padx=2, pady=(4, 0))
+        self.skip_freq_button = ttk.Button(bf, text="Skip Freq Step",
+                                           state="disabled",
+                                           command=self._skip_freq_step)
+        self.skip_freq_button.grid(row=1, column=2, sticky="ew", padx=2,
+                                   pady=(4, 0))
 
         b = ttk.Button(frame, text="Browse Save…", command=self._browse_save)
         b.grid(row=6, column=0, columnspan=4, sticky="ew", padx=5, pady=(0, 5))
@@ -2099,6 +2158,17 @@ class PPMSMasterGUI:
         self.cmd_queue.put(("skip",))
         self.log("SKIP PHASE requested.")
 
+    def _skip_freq_step(self):
+        """Fscan only: abandon the CURRENT temperature step — whether it
+        is still waiting for stability or already sweeping — and move to
+        the NEXT schedule setpoint. Ignored (with a log line) in every
+        other phase."""
+        if not self.is_running:
+            return
+        self.cmd_queue.put(("skip_freq",))
+        self.log("SKIP FREQ STEP requested (Fscan only: current setpoint "
+                 "is abandoned; protocol moves to the next one).")
+
     # ------------------------------------------------------------
     # VISA scan / file browse
     # ------------------------------------------------------------
@@ -2214,8 +2284,14 @@ class PPMSMasterGUI:
         fall_k = dget("fall_k", "Fall")
         confirm_min = dget("confirm_min", "Confirm")
         overdue_min = dget("overdue_min", "Overdue warn")
+        fallback_x = dget("fallback_x", "Fallback")
         if rise_k <= 0 or fall_k <= 0:
             raise ValueError("Rise / Fall must be positive (K).")
+        if fallback_x != 0 and fallback_x <= 1.25:
+            raise ValueError(
+                "Fallback must be 0 (off) or > 1.25 x expected — a "
+                "ceiling at/below the overdue threshold would cut "
+                "cooldowns short on normal timing jitter.")
         if base_arm <= base_temp:
             raise ValueError(
                 f"Base arm ({base_arm:g} K) should be ABOVE Base T "
@@ -2287,6 +2363,7 @@ class PPMSMasterGUI:
             "fall_k": fall_k,
             "confirm_s": confirm_min * 60.0,
             "overdue_s": overdue_min * 60.0,
+            "fallback_x": fallback_x,
             "tscan_freqs": tscan_freqs,
             "schedule": schedule,
             "step_wait_s": step_wait_s,
@@ -2363,6 +2440,11 @@ class PPMSMasterGUI:
                 "Add at least one passive run or Fscan setpoints.")
             return
 
+        # Crash/restart aid: warn (console only, never a modal) if a
+        # previous run in this folder died without finishing — its
+        # RUNSTATE file still shows the phase it was in.
+        self._warn_stale_runstates()
+
         self.cfg = cfg
         self.schedule = cfg["schedule"]
         self.tscan_freqs_list = cfg["tscan_freqs"]
@@ -2383,6 +2465,7 @@ class PPMSMasterGUI:
         self._phase_index = -1
         self._paused = False
         self._skip_requested = False
+        self._skip_step_requested = False
         self.pause_button.config(text="Pause")
 
         for L in (self.plot_t, self.plot_temp, self.plot_target,
@@ -2425,6 +2508,34 @@ class PPMSMasterGUI:
         self.worker_thread.start()
         self.root.after(50, self._process_gui_queue)
 
+    def _warn_stale_runstates(self):
+        """Crash/restart aid: list RUNSTATE files in the save dir whose
+        run never reached COMPLETE — a previous protocol died there
+        (power cut, crash) or was stopped. Console log only; best-effort."""
+        try:
+            for fn in sorted(os.listdir(self.save_dir)):
+                if not fn.endswith("_Master_RUNSTATE.txt"):
+                    continue
+                try:
+                    with open(os.path.join(self.save_dir, fn),
+                              encoding="utf-8") as fh:
+                        content = fh.read()
+                except OSError:
+                    continue
+                if "status: COMPLETE" in content:
+                    continue
+                status = next(
+                    (ln[len("status: "):] for ln in content.splitlines()
+                     if ln.startswith("status: ")), "unknown")
+                phase = next(
+                    (ln[len("phase: "):] for ln in content.splitlines()
+                     if ln.startswith("phase: ")), "?")
+                self.log(f"⚠️ PREVIOUS RUN DID NOT COMPLETE: {fn} — last "
+                         f"state '{status}' at phase {phase}. Its data "
+                         "files are still in this folder.")
+        except Exception:
+            pass
+
     def stop_protocol(self, reason=""):
         if not self.is_running:
             return
@@ -2441,6 +2552,8 @@ class PPMSMasterGUI:
         self.stop_button.config(state="normal" if running else "disabled")
         self.pause_button.config(state="normal" if running else "disabled")
         self.skip_button.config(state="normal" if running else "disabled")
+        self.skip_freq_button.config(
+            state="normal" if running else "disabled")
         if not running:
             self.pause_button.config(text="Pause")
         for w in self._prerun_simple:
@@ -2612,9 +2725,11 @@ class PPMSMasterGUI:
         self.tlog_path = None
         self.timing_path = None
         self.protolog_path = None
+        self.runstate_path = None
         self.fscan_dir = None
         self._pending_rows.clear()
         self._write_error_logged = False
+        runstate_finalized = False   # COMPLETE / CRITICAL already written
         try:
             self._put_gui_msg("log", text="Connecting to probe thermometer "
                                           "(Lakeshore 350, read-only)…")
@@ -2644,6 +2759,15 @@ class PPMSMasterGUI:
                  "Duration_s", "Outcome"]))
             self._put_gui_msg("log", text=f"Protocol log: {self.protolog_path}")
 
+            # Crash/restart aid: rewritten at every phase transition so a
+            # power cut leaves the last known protocol state on disk.
+            self.runstate_path = os.path.join(
+                self.save_dir, f"{sample}_{stamp}_Master_RUNSTATE.txt")
+            self._write_runstate("STARTED (connecting done, protocol "
+                                 "beginning)")
+            self._put_gui_msg("log", text=f"Run state file: "
+                                          f"{self.runstate_path}")
+
             if self.schedule:
                 self.timing_path = os.path.join(
                     self.save_dir, f"{sample}_{stamp}_Master_TimingLog.csv")
@@ -2661,6 +2785,8 @@ class PPMSMasterGUI:
                     break
                 self._phase_index = idx
                 self._put_gui_msg("phase_status", index=idx, status="ACTIVE")
+                self._write_runstate(
+                    "ACTIVE", detail=f"{ph['kind']} — {ph['label']}")
                 self._put_gui_msg("log",
                     text=f"=== {self._phase_banner(idx)}: {ph['label']} — "
                          f"{ph['detail']} ===")
@@ -2686,10 +2812,16 @@ class PPMSMasterGUI:
                 self._put_gui_msg("log",
                     text=f"=== {self._phase_banner(idx)} finished "
                          f"({outcome}) after {fmt_hms(dur)} ===")
+                self._write_runstate(
+                    f"phase finished: {outcome}",
+                    detail=f"{ph['kind']} — {ph['label']} "
+                           f"({fmt_hms(dur)})")
                 if outcome == "stopped" or not self.is_running:
                     break
 
             if self.is_running:
+                runstate_finalized = True
+                self._write_runstate("COMPLETE — all phases finished")
                 self._put_gui_msg("log", text="PROTOCOL COMPLETE — all "
                                               "phases finished.")
                 self._put_gui_msg("status", text="PROTOCOL COMPLETE",
@@ -2698,10 +2830,20 @@ class PPMSMasterGUI:
                 self._put_gui_msg("sequence_complete")
 
         except Exception as e:
+            runstate_finalized = True
+            self._write_runstate(f"CRITICAL ERROR: {e}",
+                                 detail="see console / ProtocolLog")
             self._put_gui_msg("log",
                 text=f"CRITICAL: {e}\n{traceback.format_exc()}")
             self._put_gui_msg("status", text="ERROR", color=self.CLR_ACCENT_RED)
         finally:
+            if not runstate_finalized:
+                # User stop — leave the last known state on disk. (A hard
+                # power cut writes nothing here; the last ACTIVE record
+                # survives, which is exactly the point of this file.)
+                self._write_runstate(
+                    "STOPPED BY USER (or window closed) — see console "
+                    "and ProtocolLog")
             try:
                 self.lcr_backend.close_instrument()
             except Exception as e:
@@ -2715,6 +2857,7 @@ class PPMSMasterGUI:
             self._worker_phase = None
             self._paused = False
             self._skip_requested = False
+            self._skip_step_requested = False
             self._put_gui_msg("worker_done")
 
     # ------------------------------------------------------------
@@ -2780,6 +2923,23 @@ class PPMSMasterGUI:
                               f"{cfg['base_arm']:g} K) | next: {next_label}"),
                         color=self.CLR_SLEEP)
                 elapsed = now - start
+                # FALLBACK ceiling (user-approved 2026-07-17, default 2x):
+                # detection stays primary, but a cooldown wait must NEVER
+                # strand the whole unattended protocol — if warming was
+                # not detected by fallback_x * expected, proceed loudly.
+                if (expected_s > 0 and cfg.get("fallback_x", 0) > 0
+                        and elapsed > cfg["fallback_x"] * expected_s):
+                    self._put_gui_msg("log",
+                        text=f"⚠️⚠️ FALLBACK: {ph['label']} hit its time "
+                             f"ceiling ({fmt_hms(elapsed)} elapsed > "
+                             f"{cfg['fallback_x']:g} × expected "
+                             f"{fmt_hms(expected_s)}) without warming "
+                             f"detection (T {temp:.2f} K, min "
+                             f"{det.min_T:.2f} K). Proceeding to "
+                             f"{next_label} anyway — CHECK THIS RUN'S "
+                             "DATA and the PPMS sequence.")
+                    self._put_gui_msg("beep")
+                    return "fallback (time ceiling)"
                 if (expected_s > 0
                         and elapsed > expected_s * 1.25 + 900
                         and now - last_warn >= cfg["overdue_s"]):
@@ -2974,6 +3134,17 @@ class PPMSMasterGUI:
             stab_outcome, settle_s = self._wait_for_stability(target, banner)
             if stab_outcome == "stopped" or not self.is_running:
                 return "stopped"
+            if stab_outcome == "step_skipped":
+                # Skip Freq Step during the stability wait: abandon this
+                # setpoint entirely — no sweep — and move to the next one.
+                self._put_gui_msg("log",
+                    text=f"⏭⏭ Step at {target} K abandoned by user (Skip "
+                         "Freq Step) — no sweep; moving to the next "
+                         "setpoint.")
+                self._write_timing_row(
+                    i, target, step_start_dt, 0.0, settle_s,
+                    stab_outcome, 0.0, False)
+                continue
             if stab_outcome == "timeout":
                 self._put_gui_msg("log",
                     text=f"⚠️⚠️ STABILIZATION TIMEOUT at {target} K after "
@@ -3055,7 +3226,7 @@ class PPMSMasterGUI:
     def _wait_for_stability(self, target, banner=""):
         """Rolling-window stabilization detection.
         Returns (outcome, wait_s) with outcome in
-        "stable" | "timeout" | "forced" | "stopped".
+        "stable" | "timeout" | "forced" | "step_skipped" | "stopped".
         wait_s excludes paused time."""
         p = self.params
         self._worker_phase = "WAIT_STABLE"
@@ -3073,6 +3244,10 @@ class PPMSMasterGUI:
                 if self._skip_requested:
                     self._skip_requested = False
                     return "forced", time.time() - phase_start - paused_s
+                if self._skip_step_requested:
+                    self._skip_step_requested = False
+                    return ("step_skipped",
+                            time.time() - phase_start - paused_s)
 
                 temp = self._log_temperature_point(target, measuring_flag=0)
                 now = time.time()
@@ -3165,6 +3340,15 @@ class PPMSMasterGUI:
                 self._skip_requested = False
                 self._put_gui_msg("log",
                     text="⏭ Remaining sweep skipped by user.")
+                break
+            if self._skip_step_requested:
+                # Mid-sweep, Skip Freq Step == abort the remainder of
+                # this sweep; the protocol then proceeds to the next
+                # setpoint exactly as Skip Phase would.
+                self._skip_step_requested = False
+                self._put_gui_msg("log",
+                    text="⏭⏭ Remaining sweep skipped (Skip Freq Step) — "
+                         "moving to the next setpoint.")
                 break
             while self._paused and self.is_running:
                 pause_tick = time.time()
@@ -3269,6 +3453,18 @@ class PPMSMasterGUI:
                     self._put_gui_msg("log", text="RESUMED.")
                 elif kind == "skip":
                     self._skip_requested = True
+                elif kind == "skip_freq":
+                    # Only meaningful inside an Fscan step; setting the
+                    # flag in any other phase would silently skip the
+                    # FIRST Fscan step hours later.
+                    if self._worker_phase in ("WAIT_STABLE", "SCAN"):
+                        self._skip_step_requested = True
+                    else:
+                        self._put_gui_msg("log",
+                            text="Skip Freq Step ignored — it only applies "
+                                 "during an Fscan step (stability wait or "
+                                 "sweep). Use Skip Phase for cooldowns / "
+                                 "Tscan.")
                 elif kind == "params":
                     updates = cmd[1]
                     self.params.update(updates)
@@ -3337,6 +3533,30 @@ class PPMSMasterGUI:
             self._put_gui_msg("log",
                 text="Write path recovered; buffered rows flushed.")
 
+    def _write_runstate(self, status, detail=""):
+        """Crash/restart aid: OVERWRITE a tiny RUNSTATE file on every
+        phase transition, so after a power cut the last known state of
+        the protocol is on disk next to the data. Best-effort only — a
+        failure here must never disturb the run."""
+        if not self.runstate_path:
+            return
+        try:
+            with open(self.runstate_path, "w", encoding="utf-8") as fh:
+                fh.write(
+                    "PICA Dielectric Master run state "
+                    "(rewritten at every phase transition)\n"
+                    f"updated: "
+                    f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"status: {status}\n"
+                    f"phase: {self._phase_index + 1}/"
+                    f"{len(self.protocol_phases)}\n"
+                    f"last_T_K: {self._last_temp:.3f}\n"
+                    + (f"detail: {detail}\n" if detail else ""))
+                fh.flush()
+                os.fsync(fh.fileno())
+        except Exception:
+            pass
+
     # ------------------------------------------------------------
     # Retry-forever comm recovery (worker thread only)
     # ------------------------------------------------------------
@@ -3369,7 +3589,11 @@ class PPMSMasterGUI:
                 attempt += 1
         return False
 
+    # Class-level defaults so minimal worker harnesses (tests) that build
+    # the object via object.__new__ still read sane values.
     _last_temp = float("nan")
+    _skip_step_requested = False
+    runstate_path = None
 
     def _log_temperature_point(self, target, measuring_flag):
         """Reads the probe thermometer, writes a durable CSV row, queues

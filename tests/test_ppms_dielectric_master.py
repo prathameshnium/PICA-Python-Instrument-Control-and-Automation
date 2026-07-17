@@ -312,6 +312,18 @@ def test_validator_catches_faults():
     assert m.validate_ppms_seq(ok) == []
 
 
+def test_validator_rejects_non_ascii():
+    """SEQ-4: DynaCool reads .seq as ANSI — a UTF-8 em-dash renders as
+    mojibake in the sequence editor, so ANY non-ASCII character (even in
+    a REM comment) must be rejected. The generator itself must emit
+    pure-ASCII sequences."""
+    errs = m.validate_ppms_seq("REM note with an em—dash\n")
+    assert errs and "non-ASCII" in errs[0]
+    assert m.validate_ppms_seq("TMP TEMP 25.000000 1.000000 1 °\n")
+    for cfg in (make_cfg(), make_cfg(schedule=False), make_cfg(runs=False)):
+        assert m.generate_ppms_seq(cfg).isascii()
+
+
 # ------------------------------------------------------------------
 # End-to-end synthetic trace through the detection logic
 # ------------------------------------------------------------------
