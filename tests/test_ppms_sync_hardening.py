@@ -168,7 +168,8 @@ def test_hardening_plumbing_present():
     assert callable(m.Probe_Thermometer_Backend.reconnect)
     assert callable(m.LCR_Backend.reconnect)
     assert callable(m.PPMSSyncGUI._set_keep_awake)
-    assert m.PPMSSyncGUI.PROGRAM_VERSION.startswith("1.6")
+    # Hardening arrived in 1.6; any later version must keep it.
+    assert float(m.PPMSSyncGUI.PROGRAM_VERSION.split("-")[0]) >= 1.6
     # Keep-awake flags match SetThreadExecutionState documentation
     assert m.PPMSSyncGUI.ES_CONTINUOUS == 0x80000000
     assert m.PPMSSyncGUI.ES_SYSTEM_REQUIRED == 0x00000001
@@ -313,9 +314,13 @@ def test_tol_from_table_interp_hold_extrapolate():
     assert abs(f(table, 35.0, 0.4) - 1.35) < 1e-9    # linear between
     assert f(table, 300.0, 0.4) == 0.4               # hold above top
     assert f(table, 200.0, 0.5) == 0.5               # max(base, table)
-    # Below the lowest entry: extrapolate the 30->40 slope upward
-    v20 = f(table, 20.0, 0.4)
-    assert abs(v20 - 1.8) < 1e-9, v20                # 1.5 + 0.03*10
+    # TOL-2: 20 and 25 K are now EXPLICIT entries, at exactly the
+    # values the old below-30 extrapolation produced.
+    assert abs(f(table, 20.0, 0.4) - 1.8) < 1e-9
+    assert abs(f(table, 25.0, 0.4) - 1.65) < 1e-9
+    # Below the (new) lowest entry: extrapolate the 20->25 slope upward
+    v15 = f(table, 15.0, 0.4)
+    assert abs(v15 - 1.95) < 1e-9, v15               # 1.8 + 0.03*5
     assert f(table, -500.0, 0.4) == m.TOL_EXTRAP_CAP_K   # capped
 
 
@@ -338,6 +343,63 @@ def test_window_check_low_t_offset_scenario():
     ok, _ = m.PPMSSyncGUI._window_check(
         None, [(now + i, 301.15) for i in range(6)], 300.0, p)
     assert not ok
+
+
+# ------------------------------------------------------------------
+# v1.7 — DATE-1: dated Start/End clock planner
+# ------------------------------------------------------------------
+def test_parse_date_opt():
+    from datetime import date
+    assert m.parse_date_opt("") is None
+    assert m.parse_date_opt("  ") is None
+    assert m.parse_date_opt("2026-07-19") == date(2026, 7, 19)
+    for bad in ("19-07-2026", "2026/07/19", "tomorrow", "2026-13-01"):
+        try:
+            m.parse_date_opt(bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"{bad!r} must raise")
+
+
+def test_resolve_start_end_windows():
+    from datetime import date, datetime
+    d = date(2026, 7, 19)
+    # Same-day window
+    s, e = m.resolve_start_end(9 * 60, 21 * 60, d, d)
+    assert (e - s).total_seconds() == 12 * 3600
+    # No end date: cross-midnight rolls to the next day (old behavior)
+    s, e = m.resolve_start_end(22 * 60, 6 * 60, d, None)
+    assert e == datetime(2026, 7, 20, 6, 0)
+    assert (e - s).total_seconds() == 8 * 3600
+    # Explicit end date: windows over 24 h become expressible
+    s, e = m.resolve_start_end(9 * 60, 9 * 60, d, date(2026, 7, 21))
+    assert (e - s).total_seconds() == 48 * 3600
+    # Start date defaults to today when omitted
+    s, _ = m.resolve_start_end(0, 60)
+    assert s.date() == date.today()
+    # Errors: identical undated times / end before start
+    for args in ((9 * 60, 9 * 60, d, None),
+                 (9 * 60, 8 * 60, d, d),
+                 (9 * 60, 9 * 60, d, d)):
+        try:
+            m.resolve_start_end(*args)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"{args!r} must raise")
+
+
+def test_fmt_clock_dt_day_marker():
+    from datetime import datetime
+    ref = datetime(2026, 7, 19, 22, 0)
+    same = datetime(2026, 7, 19, 23, 30)
+    next_day = datetime(2026, 7, 20, 6, 15)
+    assert m.fmt_clock_dt(same, ref) == "11:30 PM"
+    out = m.fmt_clock_dt(next_day, ref)
+    assert out.startswith("6:15 AM (") and "20 Jul" in out
+    # No reference -> plain clock
+    assert m.fmt_clock_dt(next_day) == "6:15 AM"
 
 
 if __name__ == "__main__":
