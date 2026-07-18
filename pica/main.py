@@ -127,6 +127,13 @@ class PICALauncherApp:
     CLR_FRAME_BG = '#E5DCD3'
     CLR_ACCENT_GOLD = '#BA6B5E'
     CLR_ACCENT_GREEN = '#B68B6E'
+    # Module family tints: light -> mid -> deep warm-brown intensity ramp
+    CLR_FAMILY_SENSING = '#C9AE99'   # T_Sensing  (lightest)
+    CLR_FAMILY_CONTROL = '#C98576'   # T_Control  (light terracotta)
+    CLR_FAMILY_MASTER = '#B58468'    # Master     (light warm brown)
+    # Universal hover highlight: deep maroon (same as the EXPERIMENTAL badge),
+    # darker and redder than any resting fill so "hovered" is unmistakable
+    CLR_HOVER = '#8B3A2F'
     CLR_TEXT = '#2C2825'
     CLR_TEXT_DARK = '#1A1A1A'
     CLR_CONSOLE_BG = '#E5DCD3'
@@ -251,10 +258,12 @@ class PICALauncherApp:
             borderwidth=0,
             focusthickness=0,
             focuscolor='none')
+        # One shared hover color for all launch buttons: deep maroon, darker
+        # than any resting fill, so "highlighted" is unmistakable.
         style.map(
             'App.TButton', background=[
-                ('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[
-                ('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
+                ('active', self.CLR_HOVER), ('hover', self.CLR_HOVER)], foreground=[
+                ('active', '#FFFFFF'), ('hover', '#FFFFFF')])
         style.configure(
             'Scan.TButton',
             font=self.FONT_BASE,
@@ -264,6 +273,49 @@ class PICALauncherApp:
         style.map(
             'Scan.TButton', background=[
                 ('active', '#8AB845'), ('hover', '#8AB845')])
+        # --- Module family tints (monochrome warm-brown intensity ramp) ---
+        # Sensing (T_Sensing) = lightest, Control (T_Control) = mid,
+        # Master = deepest. Same padding/borders as App.TButton so only the
+        # background depth changes per family.
+        style.configure(
+            'Sensing.TButton',
+            font=self.FONT_BASE,
+            padding=(10, 5),
+            foreground=self.CLR_TEXT_DARK,
+            background=self.CLR_FAMILY_SENSING,
+            borderwidth=0,
+            focusthickness=0,
+            focuscolor='none')
+        style.map(
+            'Sensing.TButton', background=[
+                ('active', self.CLR_HOVER), ('hover', self.CLR_HOVER)], foreground=[
+                ('active', '#FFFFFF'), ('hover', '#FFFFFF')])
+        style.configure(
+            'Control.TButton',
+            font=self.FONT_BASE,
+            padding=(10, 5),
+            foreground=self.CLR_TEXT_DARK,
+            background=self.CLR_FAMILY_CONTROL,
+            borderwidth=0,
+            focusthickness=0,
+            focuscolor='none')
+        style.map(
+            'Control.TButton', background=[
+                ('active', self.CLR_HOVER), ('hover', self.CLR_HOVER)], foreground=[
+                ('active', '#FFFFFF'), ('hover', '#FFFFFF')])
+        style.configure(
+            'Master.TButton',
+            font=self.FONT_BASE,
+            padding=(10, 5),
+            foreground=self.CLR_TEXT_DARK,
+            background=self.CLR_FAMILY_MASTER,
+            borderwidth=0,
+            focusthickness=0,
+            focuscolor='none')
+        style.map(
+            'Master.TButton', background=[
+                ('active', self.CLR_HOVER), ('hover', self.CLR_HOVER)], foreground=[
+                ('active', '#FFFFFF'), ('hover', '#FFFFFF')])
         style.configure(
             'Icon.TButton',
             font=('Segoe UI', 12),
@@ -273,8 +325,8 @@ class PICALauncherApp:
             borderwidth=0)
         style.map(
             'Icon.TButton', background=[
-                ('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)], foreground=[
-                ('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
+                ('active', self.CLR_HOVER), ('hover', self.CLR_HOVER)], foreground=[
+                ('active', '#FFFFFF'), ('hover', '#FFFFFF')])
         style.configure(
             "Vertical.TScrollbar",
             troughcolor=self.CLR_BG_DARK,
@@ -471,11 +523,19 @@ class PICALauncherApp:
         except Exception as e:
             self.log(f"ERROR: Failed to load logo. {e}")
 
-    def _create_launch_button(self, parent, text, script_key):
+    # Maps a module family tag to its button style; anything else -> default.
+    _FAMILY_STYLES = {
+        'sensing': 'Sensing.TButton',
+        'control': 'Control.TButton',
+        'master': 'Master.TButton',
+    }
+
+    def _create_launch_button(self, parent, text, script_key, family=None):
+        style = self._FAMILY_STYLES.get(family, 'App.TButton')
         return ttk.Button(
             parent,
             text=text,
-            style='App.TButton',
+            style=style,
             command=lambda: self.launch_script(
                 self.SCRIPT_PATHS[script_key]))
 
@@ -602,9 +662,9 @@ class PICALauncherApp:
                                  [("Sweep Mode I-V ",
                                    "Delta Mode I-V Sweep"),
                                   ("Delta Mode R vs. T (T_Control)",
-                                   "Delta Mode R-T"),
+                                   "Delta Mode R-T", "control"),
                                      ("Delta Mode R vs. T (T_Sensing)",
-                                      "Delta Mode R-T (T_Sensing)"),
+                                      "Delta Mode R-T (T_Sensing)", "sensing"),
                                   ])
         self._create_suite_frame(left_col,
                                  'Mid Resistance (100 µΩ to 200 MΩ)',
@@ -613,9 +673,9 @@ class PICALauncherApp:
                                  [("I-V Sweep",
                                    "K2400 I-V"),
                                   ("R vs. T (T_Control)",
-                                   "K2400 R-T"),
+                                   "K2400 R-T", "control"),
                                      ("R vs. T (T_Sensing)",
-                                      "K2400 R-T (T_Sensing)"),
+                                      "K2400 R-T (T_Sensing)", "sensing"),
                                   ])
         self._create_suite_frame(left_col,
                                  'Mid Resistance (Precision) (1 µΩ to 100 MΩ)',
@@ -624,9 +684,9 @@ class PICALauncherApp:
                                  [("I-V Sweep",
                                    "K2400_2182 I-V"),
                                   ("R vs. T (T_Control)",
-                                   "K2400_2182 R-T"),
+                                   "K2400_2182 R-T", "control"),
                                      ("R vs. T (T_Sensing)",
-                                      "K2400_2182 R-T (T_Sensing)"),
+                                      "K2400_2182 R-T (T_Sensing)", "sensing"),
                                   ])
 
         # --- Right Column Suites ---
@@ -637,9 +697,9 @@ class PICALauncherApp:
                                  [("I-V Sweep",
                                    "K6517B I-V"),
                                   ("R vs. T (T_Control)",
-                                   "K6517B R-T"),
+                                   "K6517B R-T", "control"),
                                      ("R vs. T (T_Sensing)",
-                                      "K6517B R-T (T_Sensing)"),
+                                      "K6517B R-T (T_Sensing)", "sensing"),
                                   ])
         self._create_suite_frame(
             right_col, 'Pyroelectric Measurement (Keithley 6517B)', "Current Sensing", None, [
@@ -650,15 +710,15 @@ class PICALauncherApp:
                                  "Control Utility",
                                  None,
                                  [("Temperature Ramp",
-                                   "Lakeshore Temp Control"),
+                                   "Lakeshore Temp Control", "control"),
                                   ("Step-wise Control (Basic)",
-                                   "Lakeshore Step Control"),
+                                   "Lakeshore Step Control", "control"),
                                   ("Step-wise Control (Advanced)",
-                                   "Lakeshore Step Control (Advanced)"),
+                                   "Lakeshore Step Control (Advanced)", "control"),
                                   ("Direct Control",
-                                   "Lakeshore Direct Control"),
+                                   "Lakeshore Direct Control", "control"),
                                   ("Temperature Monitor",
-                                   "Lakeshore Temp Monitor")])
+                                   "Lakeshore Temp Monitor", "sensing")])
         self._create_suite_frame(right_col,
                                  'Impedance Spectroscopy',
                                  "Voltage Driven",
@@ -666,11 +726,11 @@ class PICALauncherApp:
                                  [("C-V Measurement",
                                    "LCR C-V Measurement"),
                                   ("Dielectric Frequency Scan", "LCR Frequency Scan"), # Already present
-                                  ("Temp. Step Freq. Scan (T_Control)", "LCR Temp. Step Freq. Scan (T_Control)"), # Already present
-                                  ("Temp. Step Freq. Scan (PPMS, T_Sensing)", "PPMS Sync Freq. Scan"),
-                                  ("Dielectric Master Tscan+Fscan (PPMS)", "PPMS Dielectric Master"),
-                                  ("Dielectric Temp. Scan (T_Control)", "LCR Temp. Scan (T_Control)"), # Already present
-                                  ("Dielectric Temp. Scan (T_Sensing)", "LCR Temp. Scan (T_Sensing)"), # Already present
+                                  ("Temp. Step Freq. Scan (T_Control)", "LCR Temp. Step Freq. Scan (T_Control)", "control"), # Already present
+                                  ("Temp. Step Freq. Scan (PPMS, T_Sensing)", "PPMS Sync Freq. Scan", "sensing"),
+                                  ("Dielectric Master Tscan+Fscan (PPMS)", "PPMS Dielectric Master", "master"),
+                                  ("Dielectric Temp. Scan (T_Control)", "LCR Temp. Scan (T_Control)", "control"), # Already present
+                                  ("Dielectric Temp. Scan (T_Sensing)", "LCR Temp. Scan (T_Sensing)", "sensing"), # Already present
                                   ])
         self._create_suite_frame(right_col,
                                  'Broadband Dielectric Spectroscopy',
@@ -707,6 +767,7 @@ class PICALauncherApp:
 
         if measurement_type:
             badge_font = font.Font(family='Segoe UI', size=8, weight='bold')
+            # Maroon badge: distinct from the lighter button family tints
             badge = tk.Label(
                 left_header,
                 text=measurement_type.upper(),
@@ -756,11 +817,16 @@ class PICALauncherApp:
             row_idx += 1
 
         # --- Launch Buttons ---
-        for i, (btn_text, script_key) in enumerate(buttons):
+        # Each entry is (label, script_key) or (label, script_key, family),
+        # where family is 'sensing' | 'control' | 'master' for tinting.
+        for i, entry in enumerate(buttons):
+            btn_text, script_key = entry[0], entry[1]
+            family = entry[2] if len(entry) > 2 else None
             self._create_launch_button(
                 frame,
                 btn_text,
-                script_key).grid(
+                script_key,
+                family).grid(
                 row=row_idx + i,
                 column=0,
                 sticky='ew',
