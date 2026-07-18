@@ -189,6 +189,24 @@ v1.5 — DOUBLE-START RACE FIX + ASCII-SAFE .seq
          sequence editor. The note is reworded symbol-free and
          validate_ppms_seq() now rejects ANY non-ASCII character
          on any line (comments included), catching hand-edits too.
+
+============================================================
+v1.6 — TEMPERATURE-DEPENDENT TOLERANCE (low-T probe offset)
+============================================================
+  TOL-1  Measured 2026-07-18: the probe settles ABOVE the PPMS
+         setpoint at low T (~1.15 K at 30 K, ~1.0 at 40 K, ~0.55
+         at 50 K, ~0.3 at 60–70 K) — constant heat leak vs falling
+         link conductance. One fixed tolerance either fails the
+         band check down low or is too loose up high, and nobody
+         can raise it live overnight. New "Tolerance varies with
+         T" table (ON by default; presets "Safe (recommended)" /
+         "As used 2026-07-18" / Custom): linear between entries,
+         held above the top entry, slope-extrapolated (cap 3 K,
+         logged) below the lowest, effective Tol = max(base Tol,
+         table). Applies to the band check, flatness (2×tol), the
+         plotted band and the mid-sweep drift flag; the DRIFT
+         LIMIT is deliberately untouched — it stays the
+         offset-immune "still equilibrating" guard.
 """
 
 import tkinter as tk
@@ -448,6 +466,77 @@ def validate_ppms_seq(text):
                       f"command (TMP TEMP / FLD FIELD / WAI WAITFOR / "
                       f"REM / MES / !): {s!r}")
     return errors
+
+
+# ============================================================
+# TOL-1: temperature-dependent stability tolerance
+# (the probe settles ABOVE the PPMS setpoint at low T — measured
+# 2026-07-18: ~1.15 K high at 30 K, ~1.0 at 40 K, ~0.55 at 50 K,
+# ~0.3 at 60–70 K, small above 100 K — so a single tolerance either
+# fails the band check at low T or is too loose at high T)
+# ============================================================
+TOL_TABLE_PRESETS = {
+    # observed offset + ~0.3 K cushion, settling to the overnight-safe 0.4
+    "Safe (recommended)":
+        "30:1.5, 40:1.2, 50:0.8, 60:0.55, 70:0.45, 100:0.4",
+    # exactly the values used attended on 2026-07-18 (thin cushion)
+    "As used 2026-07-18":
+        "30:1.2, 40:1.2, 50:1.0, 60:0.5, 70:0.4, 100:0.4",
+}
+TOL_EXTRAP_CAP_K = 3.0   # ceiling for below-table extrapolation
+
+
+def parse_tol_table(text):
+    """'30:1.5, 40:1.2, …' -> sorted [(T_K, tol_K), …].
+    Raises ValueError on garbage, duplicate temperatures or
+    non-positive tolerances — a bad table must fail loudly at Start,
+    never silently mid-run."""
+    pairs = []
+    for tok in str(text).replace(";", ",").split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if ":" not in tok:
+            raise ValueError(f"Tolerance table entry '{tok}' must be "
+                             "T:tolerance (e.g. 30:1.5).")
+        a, b = tok.split(":", 1)
+        T, tol = float(a), float(b)
+        if tol <= 0:
+            raise ValueError(f"Tolerance at {T:g} K must be positive.")
+        pairs.append((T, tol))
+    if not pairs:
+        raise ValueError("Tolerance table is empty.")
+    pairs.sort()
+    temps = [p[0] for p in pairs]
+    if len(set(temps)) != len(temps):
+        raise ValueError("Tolerance table has duplicate temperatures.")
+    return pairs
+
+
+def tol_from_table(table, target, base_tol):
+    """Effective tolerance at a target temperature.
+
+    Inside the table: linear interpolation. Above the top entry: hold
+    the last value. Below the lowest entry: extrapolate the slope of
+    the two lowest entries (the probe offset keeps growing toward
+    base), never below the lowest entry and capped at
+    TOL_EXTRAP_CAP_K. The result is never below base_tol — the table
+    can only widen the tolerance, not tighten it."""
+    if not table:
+        return float(base_tol)
+    temps = [t for t, _ in table]
+    tols = [v for _, v in table]
+    if target >= temps[-1]:
+        v = tols[-1]
+    elif target <= temps[0]:
+        v = tols[0]
+        if target < temps[0] and len(table) >= 2:
+            slope = (tols[1] - tols[0]) / (temps[1] - temps[0])
+            v = tols[0] + slope * (target - temps[0])
+            v = min(max(v, tols[0]), TOL_EXTRAP_CAP_K)
+    else:
+        v = float(np.interp(target, temps, tols))
+    return max(float(base_tol), float(v))
 
 
 # ============================================================
@@ -739,7 +828,7 @@ class LCR_Backend:
 # FRONTEND: PPMS-synchronized GUI
 # ============================================================
 class PPMSSyncGUI:
-    PROGRAM_VERSION = "1.5-PPMS-Sync"  # double-start race fix
+    PROGRAM_VERSION = "1.6-PPMS-Sync"  # temperature-dependent tolerance
     LEFT_PANEL_WIDTH = 480
 
     # HARD-3: SetThreadExecutionState flags (Windows keep-awake during a run)
@@ -1210,19 +1299,109 @@ class PPMSSyncGUI:
                                 "stab_timeout", "90", 4, 0)
         self._create_grid_entry(frame, "Poll Delay (s):", "delay", "2", 4, 3)
 
+        # TOL-1: temperature-dependent tolerance table (ON by default —
+        # the probe settles above the PPMS setpoint at low T, so a single
+        # tolerance cannot serve 30 K and 300 K at once).
+        self.var_tol_table = tk.BooleanVar(value=True)
+        self.chk_tol_table = ttk.Checkbutton(
+            frame, text="Tolerance varies with T:",
+            variable=self.var_tol_table)
+        self.chk_tol_table.grid(row=5, column=0, columnspan=3,
+                                sticky="w", padx=10, pady=(4, 0))
+        self.tol_preset_cb = ttk.Combobox(
+            frame, state="readonly", width=18,
+            values=list(TOL_TABLE_PRESETS) + ["Custom"])
+        self.tol_preset_cb.set("Safe (recommended)")
+        self.tol_preset_cb.grid(row=5, column=3, columnspan=3,
+                                sticky="ew", padx=(2, 10), pady=(4, 0))
+        self.tol_preset_cb.bind("<<ComboboxSelected>>",
+                                self._on_tol_preset)
+        self.tol_table_entry = ttk.Entry(frame, font=self.FONT_BASE)
+        self.tol_table_entry.insert(
+            0, TOL_TABLE_PRESETS["Safe (recommended)"])
+        self.tol_table_entry.grid(row=6, column=0, columnspan=6,
+                                  sticky="ew", padx=10, pady=2)
+        self.tol_table_entry.bind(
+            "<KeyRelease>", lambda e: self.tol_preset_cb.set("Custom"))
+
+        # Live preview: the EFFECTIVE tolerance at every schedule
+        # setpoint (or example temperatures) — 20 K, 25 K, anything
+        # between table entries is spelled out, never left implicit.
+        self.tol_preview_lbl = ttk.Label(
+            frame, text="—", font=("Segoe UI", 8), wraplength=420,
+            foreground="#2A6B3A", justify="left")
+        self.tol_preview_lbl.grid(row=7, column=0, columnspan=6,
+                                  sticky="w", padx=10, pady=(0, 2))
+
         ttk.Label(frame,
                   text="Flatness: peak-to-peak ≤ 2×Tol over the window, "
                        "any offset from target. Guard rejects 'stable at "
-                       "the wrong setpoint'.",
+                       "the wrong setpoint'. Table: T:tol pairs, linear "
+                       "between entries, held above the top entry, "
+                       "extrapolated (cap 3 K) below the lowest; "
+                       "effective Tol = max(base Tol, table) — read at "
+                       "Start. Drift limit is unaffected.",
                   font=("Segoe UI", 8, "italic"), wraplength=420
-                  ).grid(row=5, column=0, columnspan=6, sticky="w",
+                  ).grid(row=8, column=0, columnspan=6, sticky="w",
                          padx=10, pady=(0, 2))
 
         ttk.Button(frame, text="Apply Live Updates",
                    command=self._send_live_updates
-                   ).grid(row=6, column=0, columnspan=6, sticky="ew",
+                   ).grid(row=9, column=0, columnspan=6, sticky="ew",
                           padx=10, pady=(2, 6))
         self._on_stab_mode_changed()
+        self.root.after(500, self._tol_preview_tick)
+
+    def _on_tol_preset(self, event=None):
+        name = self.tol_preset_cb.get()
+        preset = TOL_TABLE_PRESETS.get(name)
+        if preset is not None:
+            self.tol_table_entry.delete(0, tk.END)
+            self.tol_table_entry.insert(0, preset)
+        self._update_tol_preview()
+
+    def _tol_preview_tick(self):
+        """Cheap periodic refresh so the preview always reflects the
+        current table, base Tolerance and schedule."""
+        try:
+            self._update_tol_preview()
+        except Exception:
+            pass
+        self.root.after(1500, self._tol_preview_tick)
+
+    def _update_tol_preview(self):
+        if not self.var_tol_table.get():
+            self.tol_preview_lbl.config(
+                text="Table OFF — the single Tolerance above applies at "
+                     "every temperature.")
+            return
+        try:
+            table = parse_tol_table(self.tol_table_entry.get())
+            base = float(self.entries["tol"]["entry"].get())
+        except (ValueError, tk.TclError):
+            self.tol_preview_lbl.config(
+                text="Effective tolerance: — (fix the table / Tolerance "
+                     "entry first)")
+            return
+        try:
+            targets = self._get_targets()
+        except (ValueError, tk.TclError):
+            targets = []
+        if targets:
+            temps = sorted(set(targets))
+            prefix = "At your setpoints:  "
+        else:
+            temps = [20, 25, 30, 35, 40, 50, 60, 70, 80, 100, 200, 300]
+            prefix = "Examples (add setpoints to see yours):  "
+        parts = []
+        for T in temps:
+            tol = tol_from_table(table, T, base)
+            mark = "*" if T < table[0][0] else ""
+            parts.append(f"{T:g} K→±{tol:.2f}{mark}")
+        txt = prefix + "   ".join(parts)
+        if any(T < table[0][0] for T in temps):
+            txt += "   (* extrapolated below the table)"
+        self.tol_preview_lbl.config(text=txt)
 
     def _on_stab_mode_changed(self):
         # Target guard only matters for the flatness modes.
@@ -1970,6 +2149,9 @@ class PPMSSyncGUI:
                 self.sleep_entry.get() or "0"),
             "smart_sleep": self.var_smart_sleep.get(),
             "smart_arm": float(self.smart_arm_entry.get() or "30"),
+            # TOL-1: parsed once at Start; a bad table fails loudly here.
+            "tol_table": (parse_tol_table(self.tol_table_entry.get())
+                          if self.var_tol_table.get() else None),
         }
         if not p["thermo_visa"]: raise ValueError("Select the thermometer VISA.")
         if p["tol"] <= 0: raise ValueError("Tolerance must be positive.")
@@ -2023,6 +2205,11 @@ class PPMSSyncGUI:
         self.sleep_entry.config(state=st)
         self.chk_smart_sleep.config(state=st)
         self.smart_arm_entry.config(state=st)
+        # TOL-1: the tolerance table is read once at Start
+        self.chk_tol_table.config(state=st)
+        self.tol_table_entry.config(state=st)
+        self.tol_preset_cb.config(
+            state="readonly" if not running else "disabled")
         # Pre-run suggestion generator would clobber measured rows mid-run
         self.suggest_button.config(state=st)
         # Clock-time ramp planner is pre-run only (advisory)
@@ -2875,12 +3062,16 @@ class PPMSSyncGUI:
     # ------------------------------------------------------------
     def _send_band_msg(self, target):
         """Tolerance band drawn on the plot: ±tol around the target in the
-        band modes; ±guard (if set, else ±2·tol) in pure flatness mode."""
+        band modes; ±guard (if set, else ±2·tol) in pure flatness mode.
+        TOL-1: the plotted band uses the same per-target effective
+        tolerance as the stability check, so what you see is what is
+        tested."""
         p = self.params
+        tol = tol_from_table(p.get("tol_table"), target, p["tol"])
         if p["mode"] == "flat":
-            halfw = p["guard"] if p["guard"] > 0 else 2.0 * p["tol"]
+            halfw = p["guard"] if p["guard"] > 0 else 2.0 * tol
         else:
-            halfw = p["tol"]
+            halfw = tol
         self._put_gui_msg("band", center=target, halfw=halfw)
 
     def _sleep_phase(self, target, sleep_s):
@@ -2973,10 +3164,14 @@ class PPMSSyncGUI:
         metrics = {"span": span, "max_dev": max_dev, "pkpk": pkpk,
                    "mean": mean, "drift": drift}
 
+        # TOL-1: per-target effective tolerance (probe offset grows at
+        # low T). Drift limit is deliberately NOT table-widened — it is
+        # the offset-immune "still equilibrating" guard.
+        tol = tol_from_table(p.get("tol_table"), target, p["tol"])
         span_ok = span >= 0.95 * p["window_min"] * 60.0
         drift_ok = abs(drift) <= p["drift"]
-        band_ok = max_dev <= p["tol"]
-        flat_ok = pkpk <= 2.0 * p["tol"]
+        band_ok = max_dev <= tol
+        flat_ok = pkpk <= 2.0 * tol
         guard_ok = p["guard"] <= 0 or abs(mean - target) <= p["guard"]
 
         mode = p["mode"]
@@ -2999,6 +3194,16 @@ class PPMSSyncGUI:
         phase_start = time.time()
         paused_s = 0.0
         last_status = 0.0
+        # TOL-1: announce the effective tolerance for this step
+        eff_tol = tol_from_table(p.get("tol_table"), target, p["tol"])
+        if p.get("tol_table"):
+            note = ""
+            if target < p["tol_table"][0][0]:
+                note = (" (EXTRAPOLATED below the table's "
+                        f"{p['tol_table'][0][0]:g} K entry)")
+            self._put_gui_msg("log",
+                text=f"Effective tolerance at {target} K: "
+                     f"±{eff_tol:g} K [table]{note}")
         self._put_gui_msg("status",
             text=f"WAITING FOR STABILITY at {target} K",
             color=self.CLR_STABLE_WAIT)
@@ -3236,7 +3441,9 @@ class PPMSSyncGUI:
         # is the wrong reference there).
         ref_T = target_temp if self.params["mode"] == "band" \
             else self._last_temp
-        drift_halfw = 2.0 * self.params["tol"]
+        drift_halfw = 2.0 * tol_from_table(
+            self.params.get("tol_table"), target_temp,
+            self.params["tol"])
         n_measured = 0
         self._write_or_buffer(
             fpath,

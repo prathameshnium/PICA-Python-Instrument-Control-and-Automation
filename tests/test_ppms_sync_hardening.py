@@ -168,7 +168,7 @@ def test_hardening_plumbing_present():
     assert callable(m.Probe_Thermometer_Backend.reconnect)
     assert callable(m.LCR_Backend.reconnect)
     assert callable(m.PPMSSyncGUI._set_keep_awake)
-    assert m.PPMSSyncGUI.PROGRAM_VERSION.startswith("1.5")
+    assert m.PPMSSyncGUI.PROGRAM_VERSION.startswith("1.6")
     # Keep-awake flags match SetThreadExecutionState documentation
     assert m.PPMSSyncGUI.ES_CONTINUOUS == 0x80000000
     assert m.PPMSSyncGUI.ES_SYSTEM_REQUIRED == 0x00000001
@@ -287,6 +287,57 @@ def test_v15_export_note_is_ascii_and_valid():
                               initial_note=note)
     assert text.isascii()
     assert m.validate_ppms_seq(text) == []
+
+
+# ------------------------------------------------------------------
+# v1.6 — TOL-1: temperature-dependent tolerance (low-T probe offset)
+# ------------------------------------------------------------------
+def test_tol_table_parse_and_validation():
+    t = m.parse_tol_table("40:1.2, 30:1.5; 100:0.4")
+    assert t == [(30.0, 1.5), (40.0, 1.2), (100.0, 0.4)]   # sorted
+    for bad in ("", "30", "30:0", "30:-1", "30:1.5, 30:1.2", "abc:1"):
+        try:
+            m.parse_tol_table(bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"{bad!r} must raise")
+
+
+def test_tol_from_table_interp_hold_extrapolate():
+    table = m.parse_tol_table(
+        m.TOL_TABLE_PRESETS["Safe (recommended)"])
+    f = m.tol_from_table
+    assert f(None, 30.0, 0.5) == 0.5                 # table off
+    assert f(table, 30.0, 0.4) == 1.5                # exact entry
+    assert abs(f(table, 35.0, 0.4) - 1.35) < 1e-9    # linear between
+    assert f(table, 300.0, 0.4) == 0.4               # hold above top
+    assert f(table, 200.0, 0.5) == 0.5               # max(base, table)
+    # Below the lowest entry: extrapolate the 30->40 slope upward
+    v20 = f(table, 20.0, 0.4)
+    assert abs(v20 - 1.8) < 1e-9, v20                # 1.5 + 0.03*10
+    assert f(table, -500.0, 0.4) == m.TOL_EXTRAP_CAP_K   # capped
+
+
+def test_window_check_low_t_offset_scenario():
+    """The measured lab case: PPMS at 30 K, probe steady at ~31.15 K.
+    flat_band with the fixed 0.5 K tolerance fails the band; with the
+    Safe table it passes — and the drift guard still applies."""
+    import time as _t
+    now = _t.time()
+    window = [(now + i, 31.15 + 0.03 * ((i % 3) - 1)) for i in range(6)]
+    p = {"mode": "flat_band", "tol": 0.5, "window_min": 0.05,
+         "drift": 0.5, "guard": 2.0, "tol_table": None}
+    ok, metrics = m.PPMSSyncGUI._window_check(None, window, 30.0, p)
+    assert not ok and metrics["max_dev"] > 1.0       # fixed tol: fails
+    p["tol_table"] = m.parse_tol_table(
+        m.TOL_TABLE_PRESETS["Safe (recommended)"])
+    ok, _ = m.PPMSSyncGUI._window_check(None, window, 30.0, p)
+    assert ok                                        # table: passes
+    # Same offset at 300 K must still FAIL — the table narrows back
+    ok, _ = m.PPMSSyncGUI._window_check(
+        None, [(now + i, 301.15) for i in range(6)], 300.0, p)
+    assert not ok
 
 
 if __name__ == "__main__":
