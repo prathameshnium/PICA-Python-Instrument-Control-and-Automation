@@ -436,6 +436,31 @@ def test_parse_duration_and_fmt():
     assert m.fmt_hms(3661) == "1:01:01"
 
 
+# ------------------------------------------------------------------
+# TOL-1 (v1.3): temperature-dependent tolerance — embedded copy must
+# behave identically to the Sync original
+# ------------------------------------------------------------------
+def test_tol_table_copy_matches_sync():
+    from pica.keysight import PPMS_Sync_Freq_Scan_E4980A_GUI as sync
+    assert m.TOL_TABLE_PRESETS == sync.TOL_TABLE_PRESETS
+    table = m.parse_tol_table(m.TOL_TABLE_PRESETS["Safe (recommended)"])
+    for T in (20.0, 30.0, 35.0, 55.0, 100.0, 300.0):
+        assert m.tol_from_table(table, T, 0.4) == \
+            sync.tol_from_table(table, T, 0.4)
+    # The lab scenario: probe 1.15 K above a 30 K setpoint passes with
+    # the table, fails on the fixed tolerance.
+    import time as _t
+    now = _t.time()
+    window = [(now + i, 31.15) for i in range(6)]
+    p = {"mode": "flat_band", "tol": 0.5, "window_min": 0.05,
+         "drift": 0.05, "guard": 2.0, "tol_table": None}
+    ok, _ = m.PPMSMasterGUI._window_check(None, window, 30.0, p)
+    assert not ok
+    p["tol_table"] = table
+    ok, _ = m.PPMSMasterGUI._window_check(None, window, 30.0, p)
+    assert ok
+
+
 def test_estimate_scan_seconds_positive():
     est = m.estimate_scan_seconds([100.0, 1000.0, 1e6], 0.2, "MED")
     assert est > 0

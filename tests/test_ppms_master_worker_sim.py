@@ -303,7 +303,8 @@ def make_wait_base_harness(tmpdir, fallback_x, segments,
     gui.save_dir = tmpdir
     gui.start_time = time.time()
     gui.tlog_path = os.path.join(tmpdir, "TempLog.csv")
-    gui.params = {"delay": 0.01, "channel": "A"}
+    gui.params = {"delay": 0.01, "channel": "A", "tol": 0.5,
+                  "window_min": 0.05, "drift": 0.05, "guard": 2.0}
     gui.cfg = {"base_arm": 30.0, "rise_k": 2.0, "confirm_s": confirm_s,
                "overdue_s": 3600.0, "fallback_x": fallback_x}
     phase = {"kind": "WAIT_BASE", "label": "Cooldown 1",
