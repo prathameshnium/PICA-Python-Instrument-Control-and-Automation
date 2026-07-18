@@ -207,6 +207,30 @@ v1.6 — TEMPERATURE-DEPENDENT TOLERANCE (low-T probe offset)
          plotted band and the mid-sweep drift flag; the DRIFT
          LIMIT is deliberately untouched — it stays the
          offset-immune "still equilibrating" guard.
+
+============================================================
+v1.7 — DATED CLOCK PLANNER + EXPLICIT LOW-T TOLERANCES
+============================================================
+  DATE-1 The Start / End (est.) clock planner now also asks for the
+         DATE (YYYY-MM-DD next to each time). Start date defaults to
+         today ("Now" refreshes it); End date may be left blank,
+         meaning the first occurrence of that clock time after Start
+         (the old cross-midnight behavior). With the End date filled
+         the window is exact and may exceed 24 h (holiday plans).
+         Projected finishes are shown with the day whenever they land
+         on a different date than Start.
+  TOL-2  The tolerance presets now spell out 20 K and 25 K (and every
+         other point actually used) EXPLICITLY instead of relying on
+         below-table extrapolation, so they are directly editable:
+         "Safe (recommended)" gains 20:1.8, 25:1.65 — numerically
+         identical to what the old extrapolation produced, now
+         visible in the entry. Base Tolerance default 0.5 → 0.4
+         (matches the table's high-T floor). What happens BETWEEN
+         entries stays spelled out live by the preview label
+         (linear interpolation, e.g. 35 K → ±1.35).
+  SEQ-3  Default TMP approach for exported .seq steps is now
+         "Fast settle (0)" (user decision 2026-07-19; "No overshoot
+         (1)" — the reference-sequence value — stays selectable).
 """
 
 import tkinter as tk
@@ -221,7 +245,7 @@ import atexit
 import traceback
 import platform
 import ctypes                    # HARD-3: Windows keep-awake during a run
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from collections import deque
 from multiprocessing import Process
 import runpy
@@ -355,6 +379,56 @@ def fmt_clock(minutes):
     return f"{h12}:{m:02d} {ampm}"
 
 
+def parse_date_opt(text):
+    """DATE-1: '' -> None; 'YYYY-MM-DD' -> datetime.date.
+    Strict ISO so a typo fails loudly at plan time instead of silently
+    shifting the window by a day."""
+    s = str(text).strip()
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError(f"Date '{s}' must be YYYY-MM-DD "
+                         f"(e.g. {date.today():%Y-%m-%d}).")
+
+
+def resolve_start_end(start_min, end_min, start_date=None, end_date=None):
+    """DATE-1: clock minutes + optional dates -> (start_dt, end_dt).
+
+    start_date None -> today. end_date None -> the first occurrence of
+    the end clock time after Start (the pre-date cross-midnight
+    behavior); identical times then still error, because a 24 h window
+    needs an explicit End date. With both dates the window is exact and
+    may span any number of days; End must be after Start."""
+    d0 = start_date if start_date is not None else date.today()
+    day0 = datetime.combine(d0, datetime.min.time())
+    start_dt = day0 + timedelta(minutes=float(start_min))
+    if end_date is not None:
+        end_dt = (datetime.combine(end_date, datetime.min.time())
+                  + timedelta(minutes=float(end_min)))
+        if end_dt <= start_dt:
+            raise ValueError("End date/time is not after Start.")
+    else:
+        if int(end_min) == int(start_min):
+            raise ValueError("Start and End times are identical — "
+                             "fill the End date for a 24 h+ window.")
+        end_dt = day0 + timedelta(minutes=float(end_min))
+        if end_dt < start_dt:
+            end_dt += timedelta(days=1)
+    return start_dt, end_dt
+
+
+def fmt_clock_dt(dt, ref=None):
+    """DATE-1: datetime -> 'H:MM AM/PM', plus ' (Sun 20 Jul)' whenever
+    dt falls on a different day than ref — a projected finish must
+    never be ambiguous about which day it lands on."""
+    txt = fmt_clock(dt.hour * 60 + dt.minute)
+    if ref is not None and dt.date() != ref.date():
+        txt += dt.strftime(" (%a %d %b)")
+    return txt
+
+
 # Per-point timing model for the E4980A sweep (used until real data
 # replaces it). t_meas = max(base, cycles/f): apertures have a fixed
 # floor but are period-limited at low frequency (dominates < ~1 kHz).
@@ -476,12 +550,18 @@ def validate_ppms_seq(text):
 # fails the band check at low T or is too loose at high T)
 # ============================================================
 TOL_TABLE_PRESETS = {
-    # observed offset + ~0.3 K cushion, settling to the overnight-safe 0.4
+    # observed offset + ~0.3 K cushion, settling to the overnight-safe
+    # 0.4. TOL-2: 20 K and 25 K are EXPLICIT entries (numerically what
+    # the below-table extrapolation used to produce) so they can be
+    # edited directly instead of being implied.
     "Safe (recommended)":
-        "30:1.5, 40:1.2, 50:0.8, 60:0.55, 70:0.45, 100:0.4",
-    # exactly the values used attended on 2026-07-18 (thin cushion)
+        "20:1.8, 25:1.65, 30:1.5, 40:1.2, 50:0.8, 60:0.55, "
+        "70:0.45, 100:0.4",
+    # exactly the values used attended on 2026-07-18 (thin cushion);
+    # 20/25 K spelled out flat, matching the old flat extrapolation
     "As used 2026-07-18":
-        "30:1.2, 40:1.2, 50:1.0, 60:0.5, 70:0.4, 100:0.4",
+        "20:1.2, 25:1.2, 30:1.2, 40:1.2, 50:1.0, 60:0.5, "
+        "70:0.4, 100:0.4",
 }
 TOL_EXTRAP_CAP_K = 3.0   # ceiling for below-table extrapolation
 
@@ -828,7 +908,7 @@ class LCR_Backend:
 # FRONTEND: PPMS-synchronized GUI
 # ============================================================
 class PPMSSyncGUI:
-    PROGRAM_VERSION = "1.6-PPMS-Sync"  # temperature-dependent tolerance
+    PROGRAM_VERSION = "1.7-PPMS-Sync"  # dated planner + explicit low-T tols
     LEFT_PANEL_WIDTH = 480
 
     # HARD-3: SetThreadExecutionState flags (Windows keep-awake during a run)
@@ -1290,7 +1370,9 @@ class PPMSSyncGUI:
                     columnspan=3, sticky="w", padx=10, pady=(5, 0))
             self.stab_mode_radios.append(rb)
 
-        self._create_grid_entry(frame, "Tolerance (±K):", "tol", "0.5", 2, 0)
+        # TOL-2: base default 0.4 = the table's high-T floor, so table
+        # ON/OFF agree above 100 K.
+        self._create_grid_entry(frame, "Tolerance (±K):", "tol", "0.4", 2, 0)
         self._create_grid_entry(frame, "Window (min):", "window_min", "10", 2, 3)
         self._create_grid_entry(frame, "Drift Lim (K/min):", "drift", "0.05", 3, 0)
         self._create_grid_entry(frame, "Target guard (±K, 0=off):",
@@ -1336,10 +1418,12 @@ class PPMSSyncGUI:
         ttk.Label(frame,
                   text="Flatness: peak-to-peak ≤ 2×Tol over the window, "
                        "any offset from target. Guard rejects 'stable at "
-                       "the wrong setpoint'. Table: T:tol pairs, linear "
-                       "between entries, held above the top entry, "
-                       "extrapolated (cap 3 K) below the lowest; "
-                       "effective Tol = max(base Tol, table) — read at "
+                       "the wrong setpoint'. Table: T:tol pairs — BETWEEN "
+                       "entries the tolerance is linearly interpolated "
+                       "(e.g. 35 K, halfway 30→40, gives ±1.35); above "
+                       "the top entry the last value holds; below the "
+                       "lowest it is slope-extrapolated (cap 3 K). "
+                       "Effective Tol = max(base Tol, table) — read at "
                        "Start. Drift limit is unaffected.",
                   font=("Segoe UI", 8, "italic"), wraplength=420
                   ).grid(row=8, column=0, columnspan=6, sticky="w",
@@ -1531,14 +1615,22 @@ class PPMSSyncGUI:
             frame, values=["24h", "AM", "PM"], state="readonly", width=4)
         self.time_start_ampm.set("AM" if datetime.now().hour < 12 else "PM")
         self.time_start_ampm.grid(row=4, column=2, sticky="w", padx=2, pady=2)
+        # DATE-1: each clock time carries its date.
+        self.date_start_entry = ttk.Entry(frame, font=self.FONT_BASE,
+                                          width=11)
+        self.date_start_entry.insert(0, f"{date.today():%Y-%m-%d}")
+        self.date_start_entry.grid(row=4, column=3, columnspan=2,
+                                   sticky="w", padx=2, pady=2)
         # Editing Start also re-projects the sequence-builder finish clock.
         self.time_start_ampm.bind(
             "<<ComboboxSelected>>", lambda e: self._seq_recompute_total())
         self.time_start_entry.bind(
             "<KeyRelease>", lambda e: self._seq_recompute_total())
+        self.date_start_entry.bind(
+            "<KeyRelease>", lambda e: self._seq_recompute_total())
         self.time_now_button = ttk.Button(frame, text="Now", width=5,
                                           command=self._fill_start_now)
-        self.time_now_button.grid(row=4, column=3, sticky="w", padx=2, pady=2)
+        self.time_now_button.grid(row=4, column=5, sticky="w", padx=2, pady=2)
 
         ttk.Label(frame, text="End (est.):").grid(row=5, column=0, sticky="w",
                                                   padx=(10, 2), pady=2)
@@ -1548,23 +1640,30 @@ class PPMSSyncGUI:
             frame, values=["24h", "AM", "PM"], state="readonly", width=4)
         self.time_end_ampm.set("AM" if datetime.now().hour < 12 else "PM")
         self.time_end_ampm.grid(row=5, column=2, sticky="w", padx=2, pady=2)
-        ttk.Label(frame, text="(H:MM; end may roll past midnight)",
-                  font=("Segoe UI", 8, "italic")
-                  ).grid(row=5, column=3, columnspan=3, sticky="w", padx=2)
+        self.date_end_entry = ttk.Entry(frame, font=self.FONT_BASE, width=11)
+        self.date_end_entry.grid(row=5, column=3, columnspan=2,
+                                 sticky="w", padx=2, pady=2)
+        ttk.Label(frame,
+                  text="Times H:MM, dates YYYY-MM-DD. End date blank = "
+                       "first end-time after Start (may roll past "
+                       "midnight); fill it for windows over 24 h.",
+                  font=("Segoe UI", 8, "italic"), wraplength=420
+                  ).grid(row=6, column=0, columnspan=6, sticky="w",
+                         padx=10, pady=(0, 2))
 
         self._create_grid_entry(frame, "Max rate (K/min):", "max_rate", "12",
-                                6, 0, lockable=False)
+                                7, 0, lockable=False)
         self.suggest_button = ttk.Button(
             frame, text="Generate PPMS plan",
             command=self._generate_ppms_plan)
-        self.suggest_button.grid(row=6, column=3, columnspan=3,
+        self.suggest_button.grid(row=7, column=3, columnspan=3,
                                  sticky="ew", padx=(2, 10), pady=2)
 
         self.ramp_sug_lbl = ttk.Label(frame, text="Ramp suggestion: —",
                                       font=("Segoe UI", 9, "bold"),
                                       foreground=self.CLR_ACCENT_GOLD,
                                       wraplength=420, justify="left")
-        self.ramp_sug_lbl.grid(row=7, column=0, columnspan=6, sticky="w",
+        self.ramp_sug_lbl.grid(row=8, column=0, columnspan=6, sticky="w",
                                padx=10, pady=(2, 5))
 
     def _create_console_panel(self, parent, row):
@@ -1715,7 +1814,9 @@ class PPMSSyncGUI:
         self.seq_mode_cb = ttk.Combobox(
             exp, values=["Fast settle (0)", "No overshoot (1)"],
             state="readonly", width=14)
-        self.seq_mode_cb.set("No overshoot (1)")   # reference Fscan default
+        # SEQ-3: Fast settle default (user decision 2026-07-19);
+        # "No overshoot (1)" is the reference-Fscan value, selectable.
+        self.seq_mode_cb.set("Fast settle (0)")
         self.seq_mode_cb.pack(side="left", padx=(4, 12))
         self.seq_export_btn = ttk.Button(exp, text="Export .seq…",
                                          command=self._export_seq)
@@ -2216,6 +2317,8 @@ class PPMSSyncGUI:
         self.time_now_button.config(state=st)
         self.time_start_entry.config(state=st)
         self.time_end_entry.config(state=st)
+        self.date_start_entry.config(state=st)
+        self.date_end_entry.config(state=st)
         self.time_start_ampm.config(
             state="readonly" if not running else "disabled")
         self.time_end_ampm.config(
@@ -2316,6 +2419,10 @@ class PPMSSyncGUI:
         self.time_start_entry.delete(0, tk.END)
         self.time_start_entry.insert(0, f"{h12}:{now.minute:02d}")
         self.time_start_ampm.set("AM" if now.hour < 12 else "PM")
+        # DATE-1: "Now" also refreshes the Start date (the GUI may have
+        # been open since yesterday).
+        self.date_start_entry.delete(0, tk.END)
+        self.date_start_entry.insert(0, f"{now:%Y-%m-%d}")
 
     def _suggest_ramp_rate(self):
         """Back-solve the PPMS ramp rate from the start / estimated-end
@@ -2356,6 +2463,11 @@ class PPMSSyncGUI:
                                             self.time_start_ampm.get())
             end_min = parse_clock_minutes(self.time_end_entry.get(),
                                           self.time_end_ampm.get())
+            # DATE-1: dates make the window exact (and >24 h possible).
+            start_dt, end_dt = resolve_start_end(
+                start_min, end_min,
+                parse_date_opt(self.date_start_entry.get()),
+                parse_date_opt(self.date_end_entry.get()))
         except ValueError as e:
             messagebox.showerror("Timing", f"Start/End time: {e}")
             return
@@ -2369,10 +2481,9 @@ class PPMSSyncGUI:
                                  "Check Initial sleep (min or h:mm).")
             return
 
-        avail_s = ((end_min - start_min) % (24 * 60)) * 60.0
-        if avail_s <= 0:
-            messagebox.showerror("Timing",
-                                 "Start and End times are identical.")
+        avail_s = (end_dt - start_dt).total_seconds()
+        if avail_s <= 0:   # resolve_start_end guarantees > 0; keep the guard
+            messagebox.showerror("Timing", "End is not after Start.")
             return
 
         self._update_scan_estimate()
@@ -2392,14 +2503,21 @@ class PPMSSyncGUI:
                 parts.append(f"Initial delay {fmt_hms(sleep_s)}")
             return "  +  ".join(parts)
 
+        # DATE-1: projected finishes name the day when it differs from
+        # the Start date.
+        def fmt_finish(total_s):
+            return fmt_clock_dt(start_dt + timedelta(seconds=total_s),
+                                start_dt)
+
         if dT <= 0:
             total_s = sleep_s + stab_s
             head = "No ramping needed (single setpoint / zero span)."
             ok = total_s <= avail_s
             tail = (f"Total {fmt_hms(total_s)} → finishes "
-                    f"~{fmt_clock(start_min + total_s / 60.0)}"
+                    f"~{fmt_finish(total_s)}"
                     + ("" if ok else
-                       f" — LATER than requested {fmt_clock(end_min)}"))
+                       f" — LATER than requested "
+                       f"{fmt_clock_dt(end_dt, start_dt)}"))
             text = f"{head}\n{breakdown(0)}\n{tail}" if n > 1 else \
                    f"{head}\n{tail}"
             color = self.CLR_ACCENT_GOLD if ok else self.CLR_ACCENT_RED
@@ -2410,7 +2528,7 @@ class PPMSSyncGUI:
                     "rate can help.\n"
                     f"{breakdown(dT / max_rate * 60.0)}\n"
                     f"Earliest possible end (at max {max_rate:g} K/min): "
-                    f"~{fmt_clock(start_min + min_total_s / 60.0)} "
+                    f"~{fmt_finish(min_total_s)} "
                     f"(total {fmt_hms(min_total_s)}).")
             color = self.CLR_ACCENT_RED
         else:
@@ -2421,12 +2539,12 @@ class PPMSSyncGUI:
             rate = min(rate, max_rate)
             ramp_s = dT / rate * 60.0
             total_s = sleep_s + ramp_s + stab_s
-            finish = fmt_clock(start_min + total_s / 60.0)
+            finish = fmt_finish(total_s)
             if clamped:
                 head = (f"Needs {rate_needed:.1f} K/min — clamped to max "
                         f"{max_rate:g} K/min, end time will slip.")
                 tail = (f"Total {fmt_hms(total_s)} → finishes ~{finish} "
-                        f"(requested {fmt_clock(end_min)})")
+                        f"(requested {fmt_clock_dt(end_dt, start_dt)})")
                 color = self.CLR_ACCENT_RED
             else:
                 head = (f"Suggested PPMS rate: {rate:g} K/min "
@@ -2451,7 +2569,7 @@ class PPMSSyncGUI:
 
         self.ramp_sug_lbl.config(text=text, foreground=color)
         self.log("PPMS ramp planner ["
-                 f"{fmt_clock(start_min)} → {fmt_clock(end_min)}]: "
+                 f"{start_dt:%Y-%m-%d %H:%M} → {end_dt:%Y-%m-%d %H:%M}]: "
                  + text.replace("\n", " | "))
 
     # ------------------------------------------------------------
@@ -2679,8 +2797,14 @@ class PPMSSyncGUI:
             try:
                 start_min = parse_clock_minutes(
                     start_txt, self.time_start_ampm.get())
-                txt += ("   →  finishes ~ "
-                        f"{fmt_clock(start_min + total_s / 60.0)}")
+                # DATE-1: anchor the projection on the Start date so the
+                # finish names its day when it rolls past midnight.
+                d0 = (parse_date_opt(self.date_start_entry.get())
+                      or date.today())
+                start_dt = (datetime.combine(d0, datetime.min.time())
+                            + timedelta(minutes=start_min))
+                fin = start_dt + timedelta(seconds=total_s)
+                txt += f"   →  finishes ~ {fmt_clock_dt(fin, start_dt)}"
             except ValueError:
                 pass
         self.seq_total_lbl.config(text=txt)

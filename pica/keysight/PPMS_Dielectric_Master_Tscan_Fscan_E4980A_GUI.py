@@ -146,6 +146,21 @@ v1.3 — TEMPERATURE-DEPENDENT TOLERANCE (low-T probe offset)
          untouched — it stays the offset-immune "still
          equilibrating" guard. Embedded copy of the Sync v1.6
          TOL-1 logic.
+
+============================================================
+v1.4 — EXPLICIT LOW-T TOLERANCES + FAST-SETTLE DEFAULT
+============================================================
+  TOL-2  The tolerance presets now spell out 20 K and 25 K
+         EXPLICITLY (numerically identical to what the old
+         below-table extrapolation produced) so the low-T Fscan
+         setpoints are directly editable in the entry. Base
+         Tolerance default 0.5 → 0.4 (the table's high-T floor).
+         Mirrors Sync v1.7 — the two embedded copies must stay
+         identical (tested).
+  SEQ-3  The Fscan TMP approach now ALSO defaults to
+         "Fast settle (0)" (user decision 2026-07-19), matching
+         the Tscan default; the reference Fscan's
+         "No overshoot (1)" stays selectable.
 """
 
 import tkinter as tk
@@ -302,12 +317,18 @@ def estimate_scan_seconds(freqs, freq_delay, aper):
 # 60–70 K, small above 100 K)
 # ============================================================
 TOL_TABLE_PRESETS = {
-    # observed offset + ~0.3 K cushion, settling to the overnight-safe 0.4
+    # observed offset + ~0.3 K cushion, settling to the overnight-safe
+    # 0.4. TOL-2: 20 K and 25 K are EXPLICIT entries (numerically what
+    # the below-table extrapolation used to produce) so they can be
+    # edited directly instead of being implied.
     "Safe (recommended)":
-        "30:1.5, 40:1.2, 50:0.8, 60:0.55, 70:0.45, 100:0.4",
-    # exactly the values used attended on 2026-07-18 (thin cushion)
+        "20:1.8, 25:1.65, 30:1.5, 40:1.2, 50:0.8, 60:0.55, "
+        "70:0.45, 100:0.4",
+    # exactly the values used attended on 2026-07-18 (thin cushion);
+    # 20/25 K spelled out flat, matching the old flat extrapolation
     "As used 2026-07-18":
-        "30:1.2, 40:1.2, 50:1.0, 60:0.5, 70:0.4, 100:0.4",
+        "20:1.2, 25:1.2, 30:1.2, 40:1.2, 50:1.0, 60:0.5, "
+        "70:0.4, 100:0.4",
 }
 TOL_EXTRAP_CAP_K = 3.0   # ceiling for below-table extrapolation
 
@@ -872,7 +893,7 @@ class LCR_Backend:
 # FRONTEND: PPMS Dielectric Master GUI
 # ============================================================
 class PPMSMasterGUI:
-    PROGRAM_VERSION = "1.3"   # temperature-dependent tolerance table
+    PROGRAM_VERSION = "1.4"   # explicit 20/25 K tols, fast-settle default
     LEFT_PANEL_WIDTH = 500
 
     # SetThreadExecutionState flags (Windows keep-awake during a run)
@@ -1275,8 +1296,9 @@ class PPMSMasterGUI:
                                self._on_plot_freq_change)
 
         # SEQ-1: TMP approach modes for the generated PPMS sequence.
-        # Defaults mirror the reference sequences exactly: Tscan ramps
-        # fast-settle (0), Fscan steps no-overshoot (1).
+        # SEQ-3: BOTH default to fast-settle (0) (user decision
+        # 2026-07-19); the reference Fscan's no-overshoot (1) stays
+        # selectable.
         APPROACHES = ["Fast settle (0)", "No overshoot (1)"]
         ttk.Label(frame, text="Tscan TMP approach:").grid(
             row=12, column=0, sticky="w", padx=(10, 2), pady=2)
@@ -1290,7 +1312,7 @@ class PPMSMasterGUI:
             row=12, column=2, sticky="w", padx=(10, 2), pady=2)
         self.fscan_mode_cb = ttk.Combobox(frame, values=APPROACHES,
                                           state="readonly", width=14)
-        self.fscan_mode_cb.set(APPROACHES[1])
+        self.fscan_mode_cb.set(APPROACHES[0])
         self.fscan_mode_cb.grid(row=12, column=3, sticky="ew",
                                 padx=(2, 10), pady=(2, 6))
         self._prerun_combos.append(self.fscan_mode_cb)
@@ -1528,7 +1550,9 @@ class PPMSMasterGUI:
                     columnspan=3, sticky="w", padx=10, pady=(5, 0))
             self.stab_mode_radios.append(rb)
 
-        self._create_grid_entry(frame, "Tolerance (±K):", "tol", "0.5", 2, 0)
+        # TOL-2: base default 0.4 = the table's high-T floor, so table
+        # ON/OFF agree above 100 K.
+        self._create_grid_entry(frame, "Tolerance (±K):", "tol", "0.4", 2, 0)
         self._create_grid_entry(frame, "Window (min):", "window_min", "10", 2, 3)
         self._create_grid_entry(frame, "Drift Lim (K/min):", "drift", "0.05", 3, 0)
         self._create_grid_entry(frame, "Target guard (±K, 0=off):",
@@ -1582,10 +1606,12 @@ class PPMSMasterGUI:
                        "the wrong setpoint'. Poll Delay is also the "
                        "temperature poll for cooldown phases. Margin pads "
                        "the generated PPMS step waits. Table: T:tol "
-                       "pairs, linear between entries, held above the top "
-                       "entry, extrapolated (cap 3 K) below the lowest; "
-                       "effective Tol = max(base Tol, table) — read at "
-                       "Start. Drift limit is unaffected.",
+                       "pairs — BETWEEN entries the tolerance is linearly "
+                       "interpolated (e.g. 35 K, halfway 30→40, gives "
+                       "±1.35); above the top entry the last value holds; "
+                       "below the lowest it is slope-extrapolated (cap "
+                       "3 K). Effective Tol = max(base Tol, table) — read "
+                       "at Start. Drift limit is unaffected.",
                   font=("Segoe UI", 8, "italic"), wraplength=440
                   ).grid(row=9, column=0, columnspan=6, sticky="w",
                          padx=10, pady=(0, 2))
