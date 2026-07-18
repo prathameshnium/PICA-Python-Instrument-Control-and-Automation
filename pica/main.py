@@ -127,10 +127,12 @@ class PICALauncherApp:
     CLR_FRAME_BG = '#E5DCD3'
     CLR_ACCENT_GOLD = '#BA6B5E'
     CLR_ACCENT_GREEN = '#B68B6E'
-    # Module family tints: light -> mid -> deep warm-brown intensity ramp
-    CLR_FAMILY_SENSING = '#C9AE99'   # T_Sensing  (lightest)
-    CLR_FAMILY_CONTROL = '#C98576'   # T_Control  (light terracotta)
-    CLR_FAMILY_MASTER = '#B58468'    # Master     (light warm brown)
+    # Module family marker colors (thin bar at the left of launch buttons).
+    # Small marks tolerate strong colors: pale sand / vivid terracotta /
+    # dark espresso are unmistakable even at 5 px wide.
+    CLR_FAMILY_SENSING = '#D8C0A8'   # T_Sensing  (pale sand, lightest)
+    CLR_FAMILY_CONTROL = '#B04A38'   # T_Control  (vivid terracotta red)
+    CLR_FAMILY_MASTER = '#4A3222'    # Master     (dark espresso, darkest)
     # Universal hover highlight: deep maroon (same as the EXPERIMENTAL badge),
     # darker and redder than any resting fill so "hovered" is unmistakable
     CLR_HOVER = '#8B3A2F'
@@ -273,47 +275,20 @@ class PICALauncherApp:
         style.map(
             'Scan.TButton', background=[
                 ('active', '#8AB845'), ('hover', '#8AB845')])
-        # --- Module family tints (monochrome warm-brown intensity ramp) ---
-        # Sensing (T_Sensing) = lightest, Control (T_Control) = mid,
-        # Master = deepest. Same padding/borders as App.TButton so only the
-        # background depth changes per family.
+        # --- Launch buttons: cream body, left-aligned so the family marker
+        # bars line up down each column ---
         style.configure(
-            'Sensing.TButton',
+            'Launch.TButton',
             font=self.FONT_BASE,
             padding=(10, 5),
-            foreground=self.CLR_TEXT_DARK,
-            background=self.CLR_FAMILY_SENSING,
+            anchor='w',
+            foreground=self.CLR_ACCENT_GOLD,
+            background=self.CLR_FRAME_BG,
             borderwidth=0,
             focusthickness=0,
             focuscolor='none')
         style.map(
-            'Sensing.TButton', background=[
-                ('active', self.CLR_HOVER), ('hover', self.CLR_HOVER)], foreground=[
-                ('active', '#FFFFFF'), ('hover', '#FFFFFF')])
-        style.configure(
-            'Control.TButton',
-            font=self.FONT_BASE,
-            padding=(10, 5),
-            foreground=self.CLR_TEXT_DARK,
-            background=self.CLR_FAMILY_CONTROL,
-            borderwidth=0,
-            focusthickness=0,
-            focuscolor='none')
-        style.map(
-            'Control.TButton', background=[
-                ('active', self.CLR_HOVER), ('hover', self.CLR_HOVER)], foreground=[
-                ('active', '#FFFFFF'), ('hover', '#FFFFFF')])
-        style.configure(
-            'Master.TButton',
-            font=self.FONT_BASE,
-            padding=(10, 5),
-            foreground=self.CLR_TEXT_DARK,
-            background=self.CLR_FAMILY_MASTER,
-            borderwidth=0,
-            focusthickness=0,
-            focuscolor='none')
-        style.map(
-            'Master.TButton', background=[
+            'Launch.TButton', background=[
                 ('active', self.CLR_HOVER), ('hover', self.CLR_HOVER)], foreground=[
                 ('active', '#FFFFFF'), ('hover', '#FFFFFF')])
         style.configure(
@@ -523,19 +498,35 @@ class PICALauncherApp:
         except Exception as e:
             self.log(f"ERROR: Failed to load logo. {e}")
 
-    # Maps a module family tag to its button style; anything else -> default.
-    _FAMILY_STYLES = {
-        'sensing': 'Sensing.TButton',
-        'control': 'Control.TButton',
-        'master': 'Master.TButton',
+    # Maps a module family tag to its marker bar color; None -> transparent
+    # spacer so unmarked labels still line up with marked ones.
+    _FAMILY_COLORS = {
+        'sensing': CLR_FAMILY_SENSING,
+        'control': CLR_FAMILY_CONTROL,
+        'master': CLR_FAMILY_MASTER,
     }
 
+    def _get_family_marker(self, family):
+        """Returns a small PhotoImage bar in the family color (cached).
+        The image is 8px wide with a 5px colored bar and a transparent gap;
+        an unknown/None family yields a fully transparent spacer."""
+        if not hasattr(self, '_marker_images'):
+            self._marker_images = {}
+        if family not in self._marker_images:
+            img = tk.PhotoImage(master=self.root, width=8, height=18)
+            color = self._FAMILY_COLORS.get(family)
+            if color:
+                img.put(color, to=(0, 0, 5, 18))
+            self._marker_images[family] = img
+        return self._marker_images[family]
+
     def _create_launch_button(self, parent, text, script_key, family=None):
-        style = self._FAMILY_STYLES.get(family, 'App.TButton')
         return ttk.Button(
             parent,
             text=text,
-            style=style,
+            style='Launch.TButton',
+            image=self._get_family_marker(family),
+            compound='left',
             command=lambda: self.launch_script(
                 self.SCRIPT_PATHS[script_key]))
 
