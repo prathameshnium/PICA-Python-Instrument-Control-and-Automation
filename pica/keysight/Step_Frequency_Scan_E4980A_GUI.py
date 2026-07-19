@@ -183,6 +183,34 @@ v1.6 — ULTRA-SLOW PID BELOW 100 K (anti-windup)
          preset dropdown for manual use. Expect a slower final
          approach in exchange for reduced overshoot and much faster
          recovery.
+
+============================================================
+v1.7 — UNATTENDED-RUN HARDENING (Passive v1.4 pattern)
+============================================================
+  HARD-1 Windows keep-awake (SetThreadExecutionState) while a
+         sequence runs — an overnight run can no longer be killed
+         by system sleep. Display may still sleep.
+  HARD-2 RETRY-FOREVER COMM RECOVERY. Any VISA/comm failure in the
+         worker (Lakeshore status reads, E4980A measurements) now
+         enters a reconnect loop with escalating backoff
+         (5→10→30→60 s) instead of aborting the run: both sessions
+         are closed and re-opened (the E4980A is fully
+         re-configured, bias re-ramped; the Lakeshore reconnect is
+         SESSION-ONLY and never re-sends setpoints — the 350 keeps
+         executing its ramp while the link is down). The current
+         frequency point is retried after recovery. Stop stays
+         responsive throughout. REL-1's quick retries remain the
+         first line of defense.
+  HARD-3 FSYNC-PER-ROW writes: temperature-log rows, stabilization
+         summary rows and every sweep data row are forced to the
+         physical disk (flush + os.fsync) so a power cut cannot
+         lose OS-buffered data.
+  HARD-4 NO MODAL DIALOGS during/after a run (unattended policy):
+         the "Sequence Complete" messagebox is replaced by the
+         banner + log + triple beep; safety aborts and critical
+         errors also beep. `_beep(times=N)` upgraded to the
+         Passive v1.4 multi-beep helper. Start-time validation
+         dialogs and the exit confirm (user-clicked) remain.
 """
 
 import tkinter as tk
@@ -196,6 +224,7 @@ import threading
 import atexit
 import traceback
 import platform
+import ctypes                    # HARD-1: Windows keep-awake during a run
 from datetime import datetime
 from collections import deque
 from multiprocessing import Process
@@ -361,6 +390,7 @@ class Lakeshore_Backend:
 
     def __init__(self):
         self.lakeshore = None
+        self.last_visa = None    # HARD-2: remembered for reconnect()
         self.rm = None
         if pyvisa:
             try:
@@ -371,6 +401,7 @@ class Lakeshore_Backend:
     def connect(self, visa_address):
         if not self.rm:
             raise ConnectionError("VISA Resource Manager unavailable.")
+        self.last_visa = visa_address   # HARD-2: for reconnect()
         self.lakeshore = self.rm.open_resource(visa_address)
         self.lakeshore.timeout = 10000
         self.lakeshore.write("*CLS")  # do NOT *RST mid-run
@@ -379,6 +410,19 @@ class Lakeshore_Backend:
         if "350" not in idn:
             print(f"WARNING: IDN does not contain '350': {idn}")
         return idn
+
+    def reconnect(self):
+        """HARD-2: close and re-open the VISA session only. NEVER
+        touches heater range / ramp / setpoint — the 350 keeps
+        executing its last program while the PC link is down, and the
+        retry-forever loop must not disturb it on recovery."""
+        try:
+            if self.lakeshore:
+                self.lakeshore.close()
+        except Exception:
+            pass
+        self.lakeshore = None
+        return self.connect(self.last_visa)
 
     def set_heater_range(self, output, heater_range):
         try:
@@ -579,6 +623,17 @@ class LCR_Backend:
         self._check_errors("configuration")
         print(f"  E4980A configured: {idn}")
 
+    def reconnect(self):
+        """HARD-2: close and fully re-initialize from the stored params
+        (restores RX mode, aperture, ALC, corrections and the DC-bias
+        ramp even after an instrument power-cycle)."""
+        try:
+            self.close_instrument()
+        except Exception:
+            pass
+        self.instrument = None
+        self.initialize_instrument(self.params)
+
     def perform_measurement(self, freq, delay):
         if not self.instrument:
             raise ConnectionError("Instrument not connected.")
@@ -619,7 +674,11 @@ class LCR_Backend:
 # FRONTEND: Combined GUI
 # ============================================================
 class CombinedGUI:
-    PROGRAM_VERSION = "1.6-Combined"  # ultra-slow anti-windup PID below 100 K
+    PROGRAM_VERSION = "1.7-Combined"  # unattended hardening (HARD-1..4)
+
+    # HARD-1: SetThreadExecutionState flags (Windows keep-awake)
+    ES_CONTINUOUS      = 0x80000000
+    ES_SYSTEM_REQUIRED = 0x00000001
     LEFT_PANEL_WIDTH = 480  # default sash position so the left panel starts fully visible
 
     # --- FRZ-1 / FRZ-2 / FRZ-4 tuning knobs ---
@@ -1420,19 +1479,34 @@ class CombinedGUI:
     def _update_status_ui(self, text, color):
         self.lbl_status.config(text=text, bg=color)
 
-    def _beep(self):
+    def _beep(self, times=1):
         """FRZ-3: MUST only be called from the main (Tk) thread.
         winsound runs in a helper thread (it blocks); root.bell() is
-        called directly on the main thread — never from a worker."""
+        called directly on the main thread — never from a worker.
+        HARD-4: multi-beep (Passive v1.4 pattern) — used instead of
+        modal dialogs on unattended-run events; a messagebox nobody is
+        there to click must never linger over an overnight run."""
         if HAS_WINSOUND and platform.system() == "Windows":
-            threading.Thread(
-                target=lambda: winsound.Beep(1000, 500), daemon=True
-            ).start()
+            def _do_beep():
+                for _ in range(max(1, times)):
+                    winsound.Beep(1000, 500)
+                    time.sleep(0.2)
+            threading.Thread(target=_do_beep, daemon=True).start()
         else:
             try:
                 self.root.bell()
             except Exception:
                 pass
+
+    def _set_keep_awake(self, enable):
+        """HARD-1: stop Windows from sleeping mid-run (display may still
+        sleep). Best-effort no-op on other platforms."""
+        try:
+            flags = self.ES_CONTINUOUS | (
+                self.ES_SYSTEM_REQUIRED if enable else 0)
+            ctypes.windll.kernel32.SetThreadExecutionState(flags)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------
     # Sequence builder helpers (fix #9, #10, #13)
@@ -1691,6 +1765,7 @@ class CombinedGUI:
 
         self.worker_thread = threading.Thread(target=self._hardware_worker_loop, daemon=True)
         self.worker_thread.start()
+        self._set_keep_awake(True)   # HARD-1: overnight run, no system sleep
         self.root.after(50, self._process_gui_queue)
 
     def stop_sequence(self, reason=""):
@@ -1825,7 +1900,9 @@ class CombinedGUI:
                 elif t == "status":
                     self._update_status_ui(m["text"], m["color"])
                 elif t == "beep":
-                    self._beep()   # FRZ-3: beep executes on the Tk thread
+                    # FRZ-3: beep executes on the Tk thread. HARD-4: the
+                    # worker may ask for several (alarm-grade events).
+                    self._beep(times=m.get("times", 1))
                 elif t == "temp_point":
                     self.plot_t.append(m["t"])
                     self.plot_temp.append(m["temp"])
@@ -1870,9 +1947,14 @@ class CombinedGUI:
                     self.pid_preset_var.set("Custom")
                 elif t == "sequence_complete":
                     self.set_ui_state(running=False)
-                    messagebox.showinfo("Sequence Complete", "All setpoints measured.")
+                    # HARD-4: unattended policy — no modal on completion.
+                    # The worker already set the COMPLETE banner; log +
+                    # triple beep announce it audibly instead.
+                    self.log("SEQUENCE COMPLETE — all setpoints measured.")
+                    self._beep(times=3)
                 elif t == "worker_done":
                     self.set_ui_state(running=False)
+                    self._set_keep_awake(False)  # HARD-1: sleep allowed again
                     self._update_status_ui("IDLE", self.CLR_HEADER)
                     return  # worker is gone; stop polling
         except queue.Empty:
@@ -1919,6 +2001,58 @@ class CombinedGUI:
                 theta_deg, Rp, Y_mag, omega, Cp_dp, Cs_dp]
 
     # ============================================================
+    # HARD-2: retry-forever comm recovery (worker thread only;
+    # embedded Passive v1.3/1.4 pattern — PICA programs do not
+    # import from each other)
+    # ============================================================
+    def _comm_recover(self, context, err):
+        """Close and re-open BOTH sessions with escalating backoff
+        (5→10→30→60 s) until they respond or the user stops. The
+        Lakeshore keeps executing its last ramp while the link is
+        down — its reconnect is session-only and never re-sends
+        setpoints. Returns False only if Stop was requested."""
+        attempt = 1
+        self._put_gui_msg("log",
+            text=f"⚠️ COMM ERROR during {context}: {err} — entering "
+                 "retry-forever reconnect (Stop stays responsive).")
+        self._put_gui_msg("beep", times=2)
+        backoffs = (5, 10, 30, 60)
+        while self.is_running:
+            delay_s = backoffs[min(attempt - 1, len(backoffs) - 1)]
+            self._put_gui_msg("status",
+                text=f"COMM LOST — reconnect #{attempt} in {delay_s} s",
+                color=self.CLR_ACCENT_RED)
+            deadline = time.time() + delay_s
+            while time.time() < deadline:
+                if self._process_cmd_queue() or not self.is_running:
+                    return False
+                time.sleep(0.5)
+            try:
+                idn = self.ls_backend.reconnect()
+                self.lcr_backend.reconnect()
+                self._put_gui_msg("log",
+                    text=f"✅ Reconnected after {attempt} attempt(s) "
+                         f"(Lakeshore: {idn}). Resuming sequence.")
+                return True
+            except Exception as e:
+                self._put_gui_msg("log",
+                    text=f"Reconnect attempt #{attempt} failed: {e}")
+                attempt += 1
+        return False
+
+    def _get_status_hardened(self):
+        """HARD-2: get_status that survives a dead link. REL-1's quick
+        retries run first (inside get_status); on persistent failure the
+        retry-forever reconnect takes over. Raises RuntimeError only
+        when the user stops mid-recovery, so callers unwind cleanly."""
+        while True:
+            try:
+                return self.ls_backend.get_status()
+            except Exception as e:
+                if not self._comm_recover("Lakeshore status read", e):
+                    raise RuntimeError("Stopped during comm recovery.")
+
+    # ============================================================
     # WORKER THREAD (owns both instruments)
     # ============================================================
     def _hardware_worker_loop(self):
@@ -1953,6 +2087,7 @@ class CombinedGUI:
                  "Heater_pct", "Measuring", "Ramp_rate_K_min", "Phase"]
             )
             self.data_file.flush()
+            os.fsync(self.data_file.fileno())   # HARD-3
             self._put_gui_msg("log", text=f"Temperature log: {tlog_path}")
 
             # ADV-6: per-setpoint stabilization summary
@@ -1966,6 +2101,7 @@ class CombinedGUI:
                 ["Setpoint_K", "Ramp_rate_K_min", "Approach_mode",
                  "Start_time", "End_time", "Stabilization_s", "Outcome"])
             self.summary_file.flush()
+            os.fsync(self.summary_file.fileno())   # HARD-3
             self._put_gui_msg("log", text=f"Stabilization summary: {sum_path}")
 
             total_pts = len(self.setpoint_floats) * len(self.sweep_frequencies)
@@ -1980,7 +2116,7 @@ class CombinedGUI:
                                   tol=self.params["tol"])
 
                 # ADV-1: adaptive (or fixed) ramp rate for this step
-                temp_now, _, _ = self.ls_backend.get_status()
+                temp_now, _, _ = self._get_status_hardened()  # HARD-2
                 if self.params["adaptive"]:
                     rate, reason = compute_ramp_rate(
                         temp_now, target, self.params, is_first_step=(i == 0))
@@ -2041,10 +2177,12 @@ class CombinedGUI:
                 text=f"SAFETY ABORT: {e} Ramp stopped, heater off.")
             self._put_gui_msg("status", text="SAFETY ABORT (MAX TEMP)",
                               color=self.CLR_ACCENT_RED)
+            self._put_gui_msg("beep", times=5)   # HARD-4: alarm, no modal
         except Exception as e:
             self._put_gui_msg("log",
                 text=f"CRITICAL: {e}\n{traceback.format_exc()}")
             self._put_gui_msg("status", text="ERROR", color=self.CLR_ACCENT_RED)
+            self._put_gui_msg("beep", times=3)   # HARD-4: alarm, no modal
         finally:
             # §3f: crash-safe shutdown
             try:
@@ -2117,6 +2255,7 @@ class CombinedGUI:
                  datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                  f"{elapsed:.1f}", outcome])
             self.summary_file.flush()
+            os.fsync(self.summary_file.fileno())   # HARD-3
         except Exception as e:
             self._put_gui_msg("log", text=f"WARN: summary write failed: {e}")
 
@@ -2351,7 +2490,7 @@ class CombinedGUI:
         this function always reads the heater itself via get_status().
         Raises RuntimeError if the kill switch trips.
         """
-        temp, _, htr = self.ls_backend.get_status()
+        temp, _, htr = self._get_status_hardened()  # HARD-2
         if self.ls_backend.check_overtemp(temp):
             self._put_gui_msg("log",
                 text=f"!!! KILL SWITCH: {temp:.2f} K >= 340 K. Heater OFF. Aborting.")
@@ -2372,6 +2511,7 @@ class CombinedGUI:
              f"{self._current_rate:.3f}", phase]
         )
         self.data_file.flush()
+        os.fsync(self.data_file.fileno())   # HARD-3
         # CRIT-2: heater value rides on the queue msg; no worker-side list.
         self._put_gui_msg("temp_point", t=elapsed, temp=temp, target=target,
                           measuring=measuring_flag, heater=htr)
@@ -2391,7 +2531,11 @@ class CombinedGUI:
                     f"APER: {self.lcr_params['aper']}\n")
             f.write(self.lcr_backend.DATA_HEADER + "\n")
             self._worker_phase = "SWEEP"
-            for i, freq in enumerate(self.sweep_frequencies):
+            # HARD-2: while-loop so a frequency point can be RETRIED
+            # after a comm recovery instead of abandoning the sweep.
+            idx = 0
+            while idx < len(self.sweep_frequencies):
+                freq = self.sweep_frequencies[idx]
                 if not self.is_running:
                     break
                 # check for stop / pid updates mid-sweep
@@ -2420,8 +2564,12 @@ class CombinedGUI:
                         freq, self.lcr_params["delay"]
                     )
                 except Exception as e:
-                    self._put_gui_msg("log", text=f"Meas error @ {freq} Hz: {e}")
-                    break
+                    # HARD-2: reconnect forever, then retry THIS point
+                    # (was: log + abandon the rest of the sweep).
+                    if self._comm_recover(
+                            f"E4980A measurement @ {freq:g} Hz", e):
+                        continue
+                    break   # stop requested during recovery
                 # MIN-6: surface non-zero E4980A status words. Bits indicate
                 # overload/out-of-range/bridge warnings per the E4980A manual.
                 if status != 0:
@@ -2431,6 +2579,7 @@ class CombinedGUI:
                 row = [freq] + vals + [target_temp]
                 f.write("\t".join(f"{v:.6E}" for v in row) + "\n")
                 f.flush()
+                os.fsync(f.fileno())   # HARD-3: survive a power cut
                 # Interleaved temperature log (flag=1) — §3c/§3d
                 try:
                     self._log_temperature_point(target_temp, measuring_flag=1)
@@ -2441,6 +2590,7 @@ class CombinedGUI:
                 done_pts += 1
                 self._put_gui_msg("scan_point", freq=freq, cp=vals[4], g=vals[2],
                                   progress=done_pts)
+                idx += 1   # HARD-2: advance only after a completed point
         self._worker_phase = None
         self._put_gui_msg("log", text=f"Sweep saved: {fname}")
         return done_pts
