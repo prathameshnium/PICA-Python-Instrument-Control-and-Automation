@@ -161,6 +161,27 @@ v1.4 — EXPLICIT LOW-T TOLERANCES + FAST-SETTLE DEFAULT
          "Fast settle (0)" (user decision 2026-07-19), matching
          the Tscan default; the reference Fscan's
          "No overshoot (1)" stays selectable.
+  COOL-1 "Add Cooldown Only": a run-list entry that is JUST a
+         cooldown to base — no field tag, no warming Tscan
+         (used e.g. before taking M(H) manually during warming).
+         Contributes one WAIT_BASE phase and a TMP-to-base +
+         timed WAITFOR pair in the generated .seq, nothing else.
+         Unlike measurement cooldowns, standalone cooldowns end
+         ON TIME (when the planned wait — the .seq WAITFOR — is
+         over) with a LOUD tell (green banner + double beep:
+         "start the manual M(H) heating run NOW"), because the
+         next step is the user's; waiting for warming detection
+         would deadlock (the user waits for the signal, the
+         signal waits for their heating). Warming detection
+         stays as an early-out.
+  COOL-2 After the M(T) runs a FINAL COOLDOWN IS SET BY DEFAULT
+         even when no Fscan schedule exists (checkbox, ON): the
+         protocol always ends at base unless unticked, so the
+         manual M(H)-during-heating starts from base without
+         extra clicks. Uses the existing Final cooldown (h:mm)
+         duration; same timed end + loud tell as COOL-1. Its
+         duration is now validated against the cooldown ramp
+         time in this case too.
 """
 
 import tkinter as tk
@@ -476,11 +497,13 @@ def build_protocol_phases(cfg):
       label       short name shown in the protocol table / banner
       detail      one-line human description
       expected_s  planned duration (time-guard reference; 0 = no guard)
-      run         {'label','field_oe','cooldown_wait_s'} for TSCAN / the
-                  WAIT_BASE that precedes it, None otherwise
+      run         {'label','field_oe','cooldown_wait_s'[,'kind']} for
+                  TSCAN / the WAIT_BASE that precedes it, None otherwise
     Cooldown waits are PER RUN (the reference sequence uses 3 h before
     the 0 Oe run but 4 h before the 5000 Oe run, whose cooldown starts
     from a just-held 310 K).
+    COOL-1: a run with kind 'cool' is a STANDALONE cooldown — it
+    contributes only its WAIT_BASE phase (no TSCAN follows).
     """
     phases = []
     tscan_s = 0.0
@@ -489,6 +512,25 @@ def build_protocol_phases(cfg):
                    / max(cfg["warm_rate"], 1e-9) * 60.0
                    + cfg["top_hold_s"])
     for i, run in enumerate(cfg["runs"], 1):
+        if run.get("kind", "run") == "cool":
+            # COOL-1: standalone cooldown — the PPMS cools to base and
+            # this program only waits through it. No field tag, no
+            # warming Tscan (e.g. before a manual M(H) taken while
+            # heating). The wait ends exactly like every WAIT_BASE:
+            # detected warming, fallback ceiling, or Skip.
+            phases.append({
+                "kind": "WAIT_BASE",
+                "label": f"Cooldown {i} (standalone)",
+                "detail": (f"PPMS cools to {cfg['base_temp']:g} K — "
+                           "cooldown only, nothing is measured "
+                           "afterwards (e.g. before a manual M(H) "
+                           "warming run); ends when its planned wait "
+                           "is over (loud beep), or sooner if warming "
+                           "is detected"),
+                "expected_s": run["cooldown_wait_s"],
+                "run": run,
+            })
+            continue
         field_note = (f"field {run['field_oe']:g} Oe set at base"
                       if abs(run["field_oe"]) > 0 else "zero field")
         phases.append({
@@ -508,6 +550,25 @@ def build_protocol_phases(cfg):
                        f"{cfg['top_hold_s']/60.0:g} min hold"),
             "expected_s": tscan_s,
             "run": run,
+        })
+    if cfg["runs"] and not cfg["schedule"] \
+            and cfg.get("final_cd_no_fscan"):
+        # COOL-2: no Fscan section, but the protocol still ENDS at base
+        # by default — after the M(T) runs a final cooldown is set, so
+        # a manual M(H) taken during the next heating starts from base.
+        # kind 'cool' gives it the timed end + loud completion tell.
+        phases.append({
+            "kind": "WAIT_BASE",
+            "label": "Final cooldown",
+            "detail": (f"after the last run the PPMS cools to "
+                       f"{cfg['base_temp']:g} K (set by default) — "
+                       "cooldown only; ends when its planned wait is "
+                       "over (loud beep: start the manual M(H) heating "
+                       "then)"),
+            "expected_s": cfg["final_cooldown_s"],
+            "run": {"label": "FinalCooldown", "field_oe": 0.0,
+                    "cooldown_wait_s": cfg["final_cooldown_s"],
+                    "kind": "cool"},
         })
     if cfg["schedule"]:
         phases.append({
@@ -551,6 +612,18 @@ def generate_ppms_seq(cfg):
     L.append(f"REM ==== PICA Dielectric Master protocol | "
              f"sample: {cfg.get('sample', '?')} | generated {stamp} ====")
     for i, run in enumerate(cfg["runs"], 1):
+        if run.get("kind", "run") == "cool":
+            # COOL-1: cooldown only — TMP to base + timed WAITFOR,
+            # nothing else (the manual measurement that follows lives
+            # in the user's own sequence lines).
+            L.append(f"REM ------------------------ Run {i}: "
+                     f"{run['label']} (cooldown only) "
+                     f"------------------------")
+            L.append(f"TMP TEMP {cfg['base_temp']:.6f} "
+                     f"{cfg['cool_rate']:.6f} {tmode}")
+            L.append(f"WAI WAITFOR {int(round(run['cooldown_wait_s']))} "
+                     f"0 0 0 0 0")
+            continue
         L.append(f"REM ------------------------ Run {i}: {run['label']} "
                  f"------------------------")
         L.append(f"TMP TEMP {cfg['base_temp']:.6f} {cfg['cool_rate']:.6f} "
@@ -567,6 +640,16 @@ def generate_ppms_seq(cfg):
         if abs(run["field_oe"]) > 0:
             L.append("FLD FIELD 0.0 20.0 2 0")
             L.append("WAI WAITFOR 20 0 1 0 0 0")
+    if cfg["runs"] and not cfg["schedule"] \
+            and cfg.get("final_cd_no_fscan"):
+        # COOL-2: end at base by default (manual M(H) follows in the
+        # user's own sequence lines).
+        L.append("REM ------------------------ Final cooldown "
+                 "(after last run) ------------------------")
+        L.append(f"TMP TEMP {cfg['base_temp']:.6f} {cfg['cool_rate']:.6f} "
+                 f"{tmode}")
+        L.append(f"WAI WAITFOR {int(round(cfg['final_cooldown_s']))} "
+                 f"0 0 0 0 0")
     if cfg["schedule"]:
         L.append("REM ------------------------ Final cooldown "
                  "------------------------")
@@ -1242,18 +1325,26 @@ class PPMSMasterGUI:
         self._prerun_simple.append(self.run_cool_entry)
 
         b = ttk.Button(frame, text="Add Run", command=self._add_run)
-        b.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=2)
+        b.grid(row=2, column=0, sticky="ew", padx=(10, 2), pady=2)
+        self._prerun_simple.append(b)
+        # COOL-1: a standalone cooldown row (no warming measurement).
+        b = ttk.Button(frame, text="Add Cooldown Only",
+                       command=self._add_cooldown_only)
+        b.grid(row=2, column=1, columnspan=2, sticky="ew", padx=2, pady=2)
         self._prerun_simple.append(b)
         b = ttk.Button(frame, text="Remove Selected",
                        command=self._remove_run)
-        b.grid(row=2, column=2, columnspan=2, sticky="ew", padx=10, pady=2)
+        b.grid(row=2, column=3, sticky="ew", padx=(2, 10), pady=2)
         self._prerun_simple.append(b)
 
         ttk.Label(frame,
                   text="Field values are FILE TAGS ONLY (this PC cannot "
                        "see the PPMS field) — run order must match the "
                        "PPMS sequence. Cooldown = the WAITFOR the "
-                       "sequence uses before that run's warming.",
+                       "sequence uses before that run's warming. "
+                       "'Add Cooldown Only' adds just a cooldown to base "
+                       "with NO measurement after it — e.g. before taking "
+                       "M(H) manually during warming.",
                   font=("Segoe UI", 8, "italic"), wraplength=440
                   ).grid(row=3, column=0, columnspan=4, sticky="w",
                          padx=10, pady=(0, 4))
@@ -1276,21 +1367,34 @@ class PPMSMasterGUI:
         self._add_proto_entry(frame, "Fscan ramp (K/min):", "fscan_rate",
                               "1", 8, 2)
 
+        # COOL-2: after the M(T) warming runs a final cooldown is SET BY
+        # DEFAULT even when there is no Fscan section — so a manual
+        # M(H)-during-heating can start from base without extra clicks.
+        self.var_final_cd_always = tk.BooleanVar(value=True)
+        cb = ttk.Checkbutton(
+            frame,
+            text="After the last run: final cooldown to base (default ON "
+                 "— e.g. ready for M(H) taken during the next heating)",
+            variable=self.var_final_cd_always)
+        cb.grid(row=9, column=0, columnspan=4, sticky="w",
+                padx=10, pady=(4, 0))
+        self._prerun_simple.append(cb)
+
         ttk.Label(frame, text="Tscan frequencies (Hz, comma-separated):"
-                  ).grid(row=9, column=0, columnspan=4, sticky="w",
+                  ).grid(row=10, column=0, columnspan=4, sticky="w",
                          padx=10, pady=(6, 0))
         self.tscan_freq_text = tk.Text(frame, font=self.FONT_BASE,
                                        height=3, wrap="word",
                                        bg=self.CLR_INPUT_BG,
                                        fg=self.CLR_TEXT_DARK)
         self.tscan_freq_text.insert("1.0", self.DEFAULT_TSCAN_FREQS)
-        self.tscan_freq_text.grid(row=10, column=0, columnspan=4,
+        self.tscan_freq_text.grid(row=11, column=0, columnspan=4,
                                   sticky="ew", padx=10, pady=(0, 4))
 
         ttk.Label(frame, text="Tscan live-plot frequency:").grid(
-            row=11, column=0, columnspan=2, sticky="w", padx=10)
+            row=12, column=0, columnspan=2, sticky="w", padx=10)
         self.plot_freq_cb = ttk.Combobox(frame, state="disabled", width=12)
-        self.plot_freq_cb.grid(row=11, column=2, columnspan=2, sticky="ew",
+        self.plot_freq_cb.grid(row=12, column=2, columnspan=2, sticky="ew",
                                padx=10, pady=(0, 6))
         self.plot_freq_cb.bind("<<ComboboxSelected>>",
                                self._on_plot_freq_change)
@@ -1301,19 +1405,19 @@ class PPMSMasterGUI:
         # selectable.
         APPROACHES = ["Fast settle (0)", "No overshoot (1)"]
         ttk.Label(frame, text="Tscan TMP approach:").grid(
-            row=12, column=0, sticky="w", padx=(10, 2), pady=2)
+            row=13, column=0, sticky="w", padx=(10, 2), pady=2)
         self.tscan_mode_cb = ttk.Combobox(frame, values=APPROACHES,
                                           state="readonly", width=14)
         self.tscan_mode_cb.set(APPROACHES[0])
-        self.tscan_mode_cb.grid(row=12, column=1, sticky="ew",
+        self.tscan_mode_cb.grid(row=13, column=1, sticky="ew",
                                 padx=(2, 10), pady=2)
         self._prerun_combos.append(self.tscan_mode_cb)
         ttk.Label(frame, text="Fscan TMP approach:").grid(
-            row=12, column=2, sticky="w", padx=(10, 2), pady=2)
+            row=13, column=2, sticky="w", padx=(10, 2), pady=2)
         self.fscan_mode_cb = ttk.Combobox(frame, values=APPROACHES,
                                           state="readonly", width=14)
         self.fscan_mode_cb.set(APPROACHES[0])
-        self.fscan_mode_cb.grid(row=12, column=3, sticky="ew",
+        self.fscan_mode_cb.grid(row=13, column=3, sticky="ew",
                                 padx=(2, 10), pady=(2, 6))
         self._prerun_combos.append(self.fscan_mode_cb)
 
@@ -1332,11 +1436,17 @@ class PPMSMasterGUI:
     def _runs_render(self):
         self.runs_lb.delete(0, tk.END)
         for i, r in enumerate(self.run_rows, 1):
-            label = make_run_label(i, r["field_oe"])
-            self.runs_lb.insert(
-                tk.END,
-                f"Run {i}:  {r['field_oe']:g} Oe   "
-                f"(cooldown {r['cooldown']})   ->  {label}")
+            if r.get("kind", "run") == "cool":
+                self.runs_lb.insert(
+                    tk.END,
+                    f"Run {i}:  COOLDOWN ONLY   "
+                    f"(cooldown {r['cooldown']})   ->  no measurement")
+            else:
+                label = make_run_label(i, r["field_oe"])
+                self.runs_lb.insert(
+                    tk.END,
+                    f"Run {i}:  {r['field_oe']:g} Oe   "
+                    f"(cooldown {r['cooldown']})   ->  {label}")
 
     def _add_run(self):
         try:
@@ -1354,6 +1464,23 @@ class PPMSMasterGUI:
             return
         self.run_rows.append({"field_oe": field, "cooldown": cool})
         self.run_field_entry.delete(0, tk.END)
+        self._runs_render()
+
+    def _add_cooldown_only(self):
+        """COOL-1: append a standalone cooldown — the PPMS cools to base
+        and this program waits through it, then moves on. No field tag,
+        no Tscan (used e.g. before taking M(H) manually while heating).
+        Uses the same Cooldown (h:mm) entry as Add Run."""
+        cool = self.run_cool_entry.get().strip() or "3:00"
+        try:
+            if parse_duration_min(cool) < 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Protocol",
+                                 "Cooldown must be minutes or h:mm.")
+            return
+        self.run_rows.append({"field_oe": 0.0, "cooldown": cool,
+                              "kind": "cool"})
         self._runs_render()
 
     def _remove_run(self):
@@ -2451,9 +2578,12 @@ class PPMSMasterGUI:
             cd_min = parse_duration_min(r["cooldown"])
             if cd_min < 0:
                 raise ValueError(f"Run {i}: cooldown must be >= 0.")
-            runs.append({"label": make_run_label(i, r["field_oe"]),
+            kind = r.get("kind", "run")
+            runs.append({"label": (f"Cooldown{i}_only" if kind == "cool"
+                                   else make_run_label(i, r["field_oe"])),
                          "field_oe": float(r["field_oe"]),
-                         "cooldown_wait_s": cd_min * 60.0})
+                         "cooldown_wait_s": cd_min * 60.0,
+                         "kind": kind})
 
         def fget(key, name):
             try:
@@ -2525,7 +2655,9 @@ class PPMSMasterGUI:
                     "to bottom out).")
 
         tscan_freqs = self._parse_tscan_freqs()
-        if runs and not tscan_freqs:
+        # COOL-1: cooldown-only rows need no Tscan frequencies.
+        if any(r.get("kind", "run") == "run" for r in runs) \
+                and not tscan_freqs:
             raise ValueError("Tscan frequency list is empty but passive "
                              "runs are defined.")
 
@@ -2533,7 +2665,11 @@ class PPMSMasterGUI:
         for t in schedule:
             if t <= 0:
                 raise ValueError(f"Fscan setpoint {t} K invalid.")
-        if schedule and final_cd_min * 60.0 < ramp_s:
+        # COOL-2: the final cooldown also exists (by default) when there
+        # is no Fscan section — validate its duration in both cases.
+        final_cd_used = bool(schedule) or (
+            bool(runs) and self.var_final_cd_always.get())
+        if final_cd_used and final_cd_min * 60.0 < ramp_s:
             raise ValueError(
                 f"Final cooldown ({fmt_hms(final_cd_min * 60.0)}) is "
                 f"SHORTER than the PPMS ramp {top_temp:g}->{base_temp:g} K "
@@ -2574,6 +2710,9 @@ class PPMSMasterGUI:
             "tscan_freqs": tscan_freqs,
             "schedule": schedule,
             "step_wait_s": step_wait_s,
+            # COOL-2: default ON — end with a cooldown to base even
+            # without an Fscan section (ready for manual M(H) etc.).
+            "final_cd_no_fscan": bool(self.var_final_cd_always.get()),
         }
 
     def _validate_params(self):
@@ -3078,7 +3217,15 @@ class PPMSMasterGUI:
         self._worker_phase = "WAIT_BASE"
         det = TurnaroundDetector()
         confirm = SustainedCondition(cfg["confirm_s"])
-        next_label = ph["run"]["label"] if ph["run"] else "step Fscan"
+        run = ph["run"]
+        if run is None:
+            next_label = "step Fscan"
+        elif run.get("kind", "run") == "cool":
+            # COOL-1: nothing measured after a standalone cooldown —
+            # the next thing is whatever phase (or manual work) follows.
+            next_label = "the next phase (cooldown only, no measurement)"
+        else:
+            next_label = run["label"]
         expected_s = ph["expected_s"]
         banner = self._phase_banner(idx)
         start = time.time()
@@ -3133,6 +3280,31 @@ class PPMSMasterGUI:
                               f"{cfg['base_arm']:g} K) | next: {next_label}"),
                         color=self.CLR_SLEEP)
                 elapsed = now - start
+                # COOL-1/2: a standalone/final cooldown ends ON TIME —
+                # its .seq WAITFOR ends at exactly this moment, and what
+                # follows is the USER's own step (e.g. M(H) taken during
+                # heating). Waiting for warming detection here would
+                # deadlock: the user waits for this signal while the
+                # signal waits for their heating. Detection stays as an
+                # early-out (heating already started). Loud tell so the
+                # M(H) can start without delay.
+                if (run is not None and run.get("kind", "run") == "cool"
+                        and expected_s > 0 and elapsed >= expected_s):
+                    min_txt = (f"{det.min_T:.2f} K"
+                               if math.isfinite(det.min_T) else "—")
+                    self._put_gui_msg("log",
+                        text=f"✅ {ph['label']} DONE: planned wait "
+                             f"{fmt_hms(expected_s)} is over — T "
+                             f"{temp:.2f} K (min {min_txt}). The PPMS "
+                             "sequence has moved past this WAITFOR: "
+                             "start the manual M(H) heating run NOW.")
+                    self._put_gui_msg("status",
+                        text=f"{banner} — COOLDOWN DONE — ready for "
+                             "manual M(H)",
+                        color=self.CLR_ACCENT_GREEN)
+                    self._put_gui_msg("beep")
+                    self._put_gui_msg("beep")
+                    return "timed wait complete"
                 # FALLBACK ceiling (user-approved 2026-07-17, default 2x):
                 # detection stays primary, but a cooldown wait must NEVER
                 # strand the whole unattended protocol — if warming was
