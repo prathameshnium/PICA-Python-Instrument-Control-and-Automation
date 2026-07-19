@@ -181,6 +181,66 @@ def test_make_run_label():
     assert m.make_run_label(3, 2500.5) == "Run3_2500.5Oe"
 
 
+def test_cooldown_only_run():
+    """COOL-1: a kind='cool' run gives exactly one WAIT_BASE phase (no
+    TSCAN) and exactly a TMP-to-base + timed WAITFOR pair in the .seq —
+    no FLD, no warming, no top hold."""
+    cfg = make_cfg(schedule=False)
+    cfg["runs"].append({"label": "Cooldown3_only", "field_oe": 0.0,
+                        "cooldown_wait_s": 7200.0, "kind": "cool"})
+    phases = m.build_protocol_phases(cfg)
+    kinds = [p["kind"] for p in phases]
+    assert kinds == ["WAIT_BASE", "TSCAN", "WAIT_BASE", "TSCAN",
+                     "WAIT_BASE"]
+    assert phases[-1]["expected_s"] == 7200.0
+    assert "cooldown only" in phases[-1]["detail"]
+    assert phases[-1]["run"]["kind"] == "cool"
+
+    text = m.generate_ppms_seq(cfg)
+    assert m.validate_ppms_seq(text) == []
+    lines = text.strip().splitlines()
+    i3 = next(i for i, l in enumerate(lines) if "Run 3" in l)
+    body_after = [l for l in lines[i3:] if not l.startswith("REM")]
+    assert body_after == ["TMP TEMP 10.000000 3.000000 0",
+                         "WAI WAITFOR 7200 0 0 0 0 0"]
+    # Runs without 'kind' (older saved rows) still behave as full runs.
+    assert "TMP TEMP 310.000000 1.000000 0" in lines
+
+
+def test_final_cooldown_by_default_without_fscan():
+    """COOL-2: with final_cd_no_fscan set, a Tscan-only protocol still
+    ENDS with a cooldown to base (phase + .seq lines); without the flag
+    (older configs) nothing changes."""
+    cfg = make_cfg(schedule=False)
+    cfg["final_cd_no_fscan"] = True
+    phases = m.build_protocol_phases(cfg)
+    kinds = [p["kind"] for p in phases]
+    assert kinds == ["WAIT_BASE", "TSCAN", "WAIT_BASE", "TSCAN",
+                     "WAIT_BASE"]
+    last = phases[-1]
+    assert last["run"]["kind"] == "cool"          # timed end + loud tell
+    assert last["expected_s"] == cfg["final_cooldown_s"]
+
+    text = m.generate_ppms_seq(cfg)
+    assert m.validate_ppms_seq(text) == []
+    assert "Final cooldown (after last run)" in text
+    body = [l for l in text.strip().splitlines() if not l.startswith("REM")]
+    assert body[-2:] == ["TMP TEMP 10.000000 3.000000 0",
+                         "WAI WAITFOR 10800 0 0 0 0 0"]
+
+    # Flag absent -> exactly the old behavior (no trailing cooldown).
+    old = make_cfg(schedule=False)
+    assert "Final cooldown" not in m.generate_ppms_seq(old)
+    assert [p["kind"] for p in m.build_protocol_phases(old)] == \
+        ["WAIT_BASE", "TSCAN", "WAIT_BASE", "TSCAN"]
+    # With a schedule, the pre-Fscan final cooldown stays single (the
+    # COOL-2 block must not double it).
+    full = make_cfg()
+    full["final_cd_no_fscan"] = True
+    lines = m.generate_ppms_seq(full).splitlines()
+    assert sum("Final cooldown" in l for l in lines) == 1
+
+
 # ------------------------------------------------------------------
 # generate_ppms_seq — must match the reference MultiVu grammar
 # ------------------------------------------------------------------
