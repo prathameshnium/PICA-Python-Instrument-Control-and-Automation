@@ -181,7 +181,11 @@ v1.4 — EXPLICIT LOW-T TOLERANCES + FAST-SETTLE DEFAULT
          extra clicks. Uses the existing Final cooldown (h:mm)
          duration; same timed end + loud tell as COOL-1. Its
          duration is now validated against the cooldown ramp
-         time in this case too.
+         time in this case too. The run LIST shows it as an
+         explicit trailing line ("then (default): FINAL
+         COOLDOWN to base (3:00) -> e.g. take M(H) while
+         heating"), live-updated with the checkbox and the
+         duration entry, so what will happen is never implicit.
 """
 
 import tkinter as tk
@@ -1379,6 +1383,12 @@ class PPMSMasterGUI:
         cb.grid(row=9, column=0, columnspan=4, sticky="w",
                 padx=10, pady=(4, 0))
         self._prerun_simple.append(cb)
+        # COOL-2: toggling the checkbox or editing the duration redraws
+        # the run list so its "then: FINAL COOLDOWN" line stays honest.
+        self.var_final_cd_always.trace_add(
+            "write", lambda *a: self._runs_render())
+        self.proto["final_cooldown"].bind(
+            "<KeyRelease>", lambda e: self._runs_render())
 
         ttk.Label(frame, text="Tscan frequencies (Hz, comma-separated):"
                   ).grid(row=10, column=0, columnspan=4, sticky="w",
@@ -1447,6 +1457,20 @@ class PPMSMasterGUI:
                     tk.END,
                     f"Run {i}:  {r['field_oe']:g} Oe   "
                     f"(cooldown {r['cooldown']})   ->  {label}")
+        # COOL-2: the default final cooldown is part of the protocol, so
+        # LIST it explicitly — the user must see what happens after the
+        # last run without having to remember the checkbox. Info line
+        # only (not in run_rows; Remove Selected ignores it).
+        if self.run_rows and getattr(self, "var_final_cd_always", None) \
+                and self.var_final_cd_always.get():
+            try:
+                dur = self.proto["final_cooldown"].get().strip() or "?"
+            except (KeyError, tk.TclError):
+                dur = "?"
+            self.runs_lb.insert(
+                tk.END,
+                f"then (default):  FINAL COOLDOWN to base ({dur})   "
+                "->  e.g. take M(H) while heating")
 
     def _add_run(self):
         try:
