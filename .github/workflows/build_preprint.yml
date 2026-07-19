@@ -9,7 +9,7 @@ jobs:
     name: Build Preprint PDF
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4.1.7
+        uses: actions/checkout@v7
 
       - name: Install apt packages
         run: |
@@ -136,7 +136,7 @@ jobs:
           rm paper_cleaned.md
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4.3.4
+        uses: actions/upload-artifact@v7
         with:
           name: professional-preprint
           path: |
