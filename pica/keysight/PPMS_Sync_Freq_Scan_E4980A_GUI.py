@@ -1801,7 +1801,7 @@ class PPMSSyncGUI:
                   ).grid(row=6, column=0, columnspan=6, sticky="w",
                          padx=10, pady=(0, 2))
 
-        self._create_grid_entry(frame, "Max rate (K/min):", "max_rate", "12",
+        self._create_grid_entry(frame, "Max rate (K/min):", "max_rate", "8",
                                 7, 0, lockable=False)
         self.suggest_button = ttk.Button(
             frame, text="Generate PPMS plan",
@@ -2517,7 +2517,9 @@ class PPMSSyncGUI:
                 if w["lock"] is not None:
                     w["entry"].config(state="disabled" if w["locked"] else "normal")
                 else:
-                    w["entry"].config(state="normal")
+                    # Non-lockable entries (max_rate) feed only the
+                    # pre-run planner — read-only while running.
+                    w["entry"].config(state="disabled")
             else:
                 w["entry"].config(state="disabled" if w["locked"] else "normal")
             if w["lock"] is not None:
@@ -2527,6 +2529,12 @@ class PPMSSyncGUI:
         self.ls_cb.config(state="readonly" if not running else "disabled")
         self.lcr_cb.config(state="readonly" if not running else "disabled")
         self.channel_cb.config(state="readonly" if not running else "disabled")
+        # LCR settings are read once at Start (lcr_params) — editable
+        # fields during a run would suggest live effect they don't have.
+        for e in self.lcr_entries.values():
+            e.config(state=st)
+        self.aper_cb.config(state="readonly" if not running else "disabled")
+        self.cable_cb.config(state="readonly" if not running else "disabled")
         # Sequence-builder controls are pre-run planning aids
         for w in getattr(self, "seq_controls", []):
             try:
@@ -3240,7 +3248,7 @@ class PPMSSyncGUI:
                 elif t == "worker_done":
                     self.set_ui_state(running=False)
                     self._update_status_ui("IDLE", self.CLR_HEADER)
-                    return
+                    break
         except queue.Empty:
             pass
         if self.worker_thread and self.worker_thread.is_alive():
@@ -3488,9 +3496,12 @@ class PPMSSyncGUI:
         smart = bool(p.get("smart_sleep"))
         det = TurnaroundDetector()
         confirm = SustainedCondition(180.0)   # 3 min "definitely sure"
+        # AGNOS-1: no schedule -> target is NaN; name the mode instead.
+        target_txt = (f"{target} K" if math.isfinite(target)
+                      else "first plateau (agnostic)")
         self._put_gui_msg("log",
             text=f"Initial sleep {fmt_hms(sleep_s)} before stability "
-                 f"detection at {target} K (skip with 'Skip Step')."
+                 f"detection at {target_txt} (skip with 'Skip Step')."
                  + (f" Smart end armed: dip below {p['smart_arm']:g} K, "
                     "rise 2 K, hold 3 min." if smart else ""))
         try:
@@ -3506,7 +3517,7 @@ class PPMSSyncGUI:
                 if self._paused:
                     deadline += p["delay"]   # paused time doesn't count
                     self._put_gui_msg("status",
-                        text=f"PAUSED (sleeping, target {target} K)",
+                        text=f"PAUSED (sleeping, target {target_txt})",
                         color=self.CLR_ACCENT_GOLD)
                 else:
                     if smart:
@@ -3527,7 +3538,7 @@ class PPMSSyncGUI:
                     remaining = deadline - time.time()
                     self._put_gui_msg("status",
                         text=(f"SLEEPING — {fmt_hms(remaining)} left "
-                              f"(of {fmt_hms(sleep_s)}) | target {target} K"
+                              f"(of {fmt_hms(sleep_s)}) | {target_txt}"
                               + (" | auto-end on warming" if smart else "")),
                         color=self.CLR_SLEEP)
                 time.sleep(p["delay"])
@@ -4116,9 +4127,16 @@ class PPMSSyncGUI:
                     color=self.CLR_ACCENT_GOLD)
                 if self._process_cmd_queue():
                     break
+                if self._skip_requested:
+                    break   # Skip must be able to break out of a pause too
                 time.sleep(1.0)
                 paused_s += time.time() - pause_tick
             if not self.is_running:
+                break
+            if self._skip_requested:
+                self._skip_requested = False
+                self._put_gui_msg("log",
+                    text="⏭ Remaining sweep skipped by user.")
                 break
             # HARD-2: a comm failure never aborts the sweep — reconnect
             # with backoff (re-init restores the full LCR config) and
