@@ -232,14 +232,19 @@ def test_v14_smart_sleep_detector_and_flat_rate():
     assert not c.update(True, 120.0)
     assert c.update(True, 301.0)
 
-    # RATE-1: flat 1 K/min default (reference sequences), no max_rate set
+    # RATE-2: slope-matched default, tiered by the WARMER end of the
+    # ramp (direction-neutral — same tier whether warming or cooling):
+    # 0.8 K/min below 120 K, 0.5 for 120-150 K, 0.3 above 150 K.
     class H:
         _seq_default_rate = m.PPMSSyncGUI._seq_default_rate
         entries = {}
     h = H()
     assert h._seq_default_rate(25.0, None) is None
-    assert h._seq_default_rate(25.0, 310.0) == 1.0
-    assert h._seq_default_rate(250.0, 200.0) == 1.0
+    assert h._seq_default_rate(25.0, 310.0) == 0.3     # warmer end 310 K
+    assert h._seq_default_rate(250.0, 200.0) == 0.3    # warmer end 250 K
+    assert h._seq_default_rate(100.0, 50.0) == 0.8     # warmer end 100 K
+    assert h._seq_default_rate(150.0, 120.0) == 0.5    # warmer end 150 K
+    assert h._seq_default_rate(120.0, 100.0) == 0.5    # descending, still 120 K tier
 
 
 # ------------------------------------------------------------------
@@ -314,13 +319,14 @@ def test_tol_from_table_interp_hold_extrapolate():
     assert abs(f(table, 35.0, 0.4) - 1.35) < 1e-9    # linear between
     assert f(table, 300.0, 0.4) == 0.4               # hold above top
     assert f(table, 200.0, 0.5) == 0.5               # max(base, table)
-    # TOL-2: 20 and 25 K are now EXPLICIT entries, at exactly the
-    # values the old below-30 extrapolation produced.
-    assert abs(f(table, 20.0, 0.4) - 1.8) < 1e-9
-    assert abs(f(table, 25.0, 0.4) - 1.65) < 1e-9
-    # Below the (new) lowest entry: extrapolate the 20->25 slope upward
+    # TOL-3 (2026-07-23): 20 and 25 K widened to 3.0/2.5 (user decision
+    # — the old 1.8/1.65 was too tight near base T in practice).
+    assert abs(f(table, 20.0, 0.4) - 3.0) < 1e-9
+    assert abs(f(table, 25.0, 0.4) - 2.5) < 1e-9
+    # Below the (new) lowest entry: extrapolate the 20->25 slope upward,
+    # capped at TOL_EXTRAP_CAP_K (3.0 + 0.1*5 = 3.5 -> capped to 3.0).
     v15 = f(table, 15.0, 0.4)
-    assert abs(v15 - 1.95) < 1e-9, v15               # 1.8 + 0.03*5
+    assert abs(v15 - m.TOL_EXTRAP_CAP_K) < 1e-9, v15
     assert f(table, -500.0, 0.4) == m.TOL_EXTRAP_CAP_K   # capped
 
 
