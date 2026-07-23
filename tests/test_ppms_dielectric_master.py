@@ -321,10 +321,12 @@ def test_dwell_table_floors_fscan_waits():
     assert not m.validate_ppms_seq(text)
     phases = m.build_protocol_phases(cfg)
     assert phases[-1]["expected_s"] == 1800.0 + 2100.0 + 2700.0
-    # No table -> flat waits, exactly as before
+    # No table -> flat waits, exactly as before (count only the Step
+    # Fscan section — the runs' top-hold WAITFORs are also 1800 s)
     cfg["dwell_table"] = None
     assert m.fscan_step_wait_s(cfg, 310.0) == 1800.0
-    assert m.generate_ppms_seq(cfg).count("WAI WAITFOR 1800 1 0 0 0 0") == 3
+    fscan_part = m.generate_ppms_seq(cfg).split("Step Fscan")[1]
+    assert fscan_part.count("WAI WAITFOR 1800 1 0 0 0 0") == 3
 
 
 def test_seq_no_fscan_section_when_schedule_empty():
