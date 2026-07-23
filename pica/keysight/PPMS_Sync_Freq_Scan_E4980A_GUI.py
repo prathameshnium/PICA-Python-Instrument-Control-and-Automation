@@ -2174,16 +2174,21 @@ class PPMSSyncGUI:
             w["entry"].config(state="disabled"); w["lock"].config(text="🔒"); w["locked"] = True
 
     def log(self, msg):
-        ts = datetime.now().strftime("%H:%M:%S")
-        self.console.config(state="normal")
-        self.console.insert("end", f"[{ts}] {msg}\n")
         try:
-            if int(self.console.index("end-1c").split(".")[0]) > 5000:
-                self.console.delete("1.0", "1000.0")
-        except Exception:
-            pass
-        self.console.see("end")
-        self.console.config(state="disabled")
+            ts = datetime.now().strftime("%H:%M:%S")
+            self.console.config(state="normal")
+            self.console.insert("end", f"[{ts}] {msg}\n")
+            try:
+                if int(self.console.index("end-1c").split(".")[0]) > 5000:
+                    self.console.delete("1.0", "1000.0")
+            except Exception:
+                pass
+            self.console.see("end")
+            self.console.config(state="disabled")
+        except tk.TclError:
+            # Window mid-destroy — a late log line must never block
+            # shutdown (root.destroy would otherwise never run).
+            print(f"[log during teardown] {msg}")
 
     def _update_status_ui(self, text, color):
         self.lbl_status.config(text=text, bg=color)
@@ -2346,6 +2351,13 @@ class PPMSSyncGUI:
         self._worker_phase = None
         self._paused = False
         self._skip_requested = False
+        # GLITCH-1: fresh probe-validation state per run — a stale
+        # _last_temp from a previous run at a very different T would
+        # make the new run's first reading look like a >20 K jump.
+        self._last_temp = float("nan")
+        self._glitch_candidate = None
+        self._glitch_total = 0
+        self._overtemp_warned = False
         self.pause_button.config(text="Pause")
 
         for L in (self.plot_t, self.plot_temp, self.plot_target,
@@ -4092,7 +4104,8 @@ class PPMSSyncGUI:
         # modes settle at an offset from the target, so the target itself
         # is the wrong reference there).
         ref_T = target_temp if self.params["mode"] == "band" \
-            else self._last_temp
+            else (self._last_temp if math.isfinite(self._last_temp)
+                  else target_temp)
         drift_halfw = 2.0 * tol_from_table(
             self.params.get("tol_table"), target_temp,
             self.params["tol"])

@@ -159,8 +159,9 @@ def test_phase_order_full_protocol():
     assert phases[4]["expected_s"] == 10800.0
     # Tscan expected: 300 K at 1 K/min + 30 min hold.
     assert abs(phases[1]["expected_s"] - (300 * 60 + 1800)) < 1e-6
-    # Fscan expected: 3 setpoints x step wait.
-    assert abs(phases[5]["expected_s"] - 3 * 3600.0) < 1e-6
+    # Fscan expected: 3 setpoints x step wait + the PPMS ramps
+    # (base 10 -> 25 -> 30 -> 50 K = 40 K at 1 K/min = 2400 s).
+    assert abs(phases[5]["expected_s"] - (3 * 3600.0 + 2400.0)) < 1e-6
 
 
 def test_phase_order_without_fscan():
@@ -320,7 +321,10 @@ def test_dwell_table_floors_fscan_waits():
     assert "WAI WAITFOR 2700 1 0 0 0 0" in text
     assert not m.validate_ppms_seq(text)
     phases = m.build_protocol_phases(cfg)
-    assert phases[-1]["expected_s"] == 1800.0 + 2100.0 + 2700.0
+    # waits + ramps (base 10 -> 25 -> 205 -> 310 K = 300 K at
+    # 1 K/min = 18000 s)
+    assert phases[-1]["expected_s"] == (1800.0 + 2100.0 + 2700.0
+                                        + 18000.0)
     # No table -> flat waits, exactly as before (count only the Step
     # Fscan section — the runs' top-hold WAITFORs are also 1800 s)
     cfg["dwell_table"] = None
