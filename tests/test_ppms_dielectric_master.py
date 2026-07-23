@@ -303,6 +303,30 @@ def test_seq_fscan_steps_no_overshoot_and_wait():
     assert lines.count("WAI WAITFOR 3600 1 0 0 0 0") == 3
 
 
+def test_dwell_table_floors_fscan_waits():
+    """DWELL-1: a wait-vs-T table floors each generated Fscan WAITFOR
+    (hold outside the table, interpolate inside); without a table the
+    flat step_wait_s stands. Also feeds the FSCAN phase's expected_s."""
+    cfg = make_cfg()
+    cfg["schedule"] = [25.0, 205.0, 310.0]
+    cfg["step_wait_s"] = 1800.0            # 30 min computed wait
+    cfg["dwell_table"] = m.parse_tol_table("200:30, 210:40, 310:45")
+    assert m.fscan_step_wait_s(cfg, 25.0) == 1800.0    # table 30 = base
+    assert m.fscan_step_wait_s(cfg, 205.0) == 2100.0   # interp 35 min
+    assert m.fscan_step_wait_s(cfg, 310.0) == 2700.0   # hold 45 min
+    text = m.generate_ppms_seq(cfg)
+    assert "WAI WAITFOR 1800 1 0 0 0 0" in text
+    assert "WAI WAITFOR 2100 1 0 0 0 0" in text
+    assert "WAI WAITFOR 2700 1 0 0 0 0" in text
+    assert not m.validate_ppms_seq(text)
+    phases = m.build_protocol_phases(cfg)
+    assert phases[-1]["expected_s"] == 1800.0 + 2100.0 + 2700.0
+    # No table -> flat waits, exactly as before
+    cfg["dwell_table"] = None
+    assert m.fscan_step_wait_s(cfg, 310.0) == 1800.0
+    assert m.generate_ppms_seq(cfg).count("WAI WAITFOR 1800 1 0 0 0 0") == 3
+
+
 def test_seq_no_fscan_section_when_schedule_empty():
     text = m.generate_ppms_seq(make_cfg(schedule=False))
     assert "Step Fscan" not in text
