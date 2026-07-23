@@ -298,6 +298,13 @@ always PPMS-controlled; only the labels were wrong.
            let the scanner fall 3+ steps behind per timeout. On
            every .seq export the log prints the matched timeout
            computed from that actual plan.
+  FNAME-1  Scan filenames (both modes) carry the MEASURED temperature,
+           with 'p' as the decimal mark (Sample_80p05K_<stamp>_
+           FreqScan.txt — a dot inside the stem reads as a bogus
+           extension to some tools). The file is created under a
+           provisional name from the start-of-sweep reading and
+           atomically renamed to the sweep MEDIAN on completion; the
+           commanded setpoint appears only in the '#' header.
   COOL-1   Verified direction-neutral for cooling runs (descending
            setpoint ladders): stability, guard, resync, plateau
            separation and drift checks all use |differences|; the
@@ -712,6 +719,13 @@ GLITCH_CONFIRM_K = 2.0   # two consecutive "jumped" reads this close = real
 # below what was explicitly entered)
 # ============================================================
 DWELL_TABLE_DEFAULT = "200:30, 210:40, 310:45"
+
+
+def fmt_temp_p(T):
+    """FNAME-1: 80.05 -> '80p05' — a dot inside a filename stem reads
+    as a bogus extension to some tools, so the decimal mark becomes
+    'p' in scan filenames (the real values live in the header)."""
+    return f"{float(T):.2f}".replace(".", "p")
 
 
 def dwell_from_table(table, target):
@@ -4050,7 +4064,14 @@ class PPMSSyncGUI:
         row is fsync'd to disk (HARD-1).
         Returns (done_pts, scan_s, drift_flag)."""
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        fname = (f"{self.lcr_params['sample_name']}_{target_temp:.2f}K_"
+        # FNAME-1: the filename carries the MEASURED temperature, both
+        # in scheduled and agnostic mode ('p' decimal mark). Provisional
+        # name = start-of-sweep probe reading; _finalize_scan_header
+        # renames to the sweep MEDIAN when the sweep completes. The
+        # commanded setpoint lives only in the header.
+        name_T = self._last_temp if math.isfinite(self._last_temp) \
+            else target_temp
+        fname = (f"{self.lcr_params['sample_name']}_{fmt_temp_p(name_T)}K_"
                  f"{stamp}_FreqScan.txt")
         fpath = os.path.join(self.save_dir, fname)
         sweep_start = time.time()
@@ -4161,9 +4182,10 @@ class PPMSSyncGUI:
                     color=self.CLR_ACCENT_GREEN)
         self._worker_phase = None
         scan_s = time.time() - sweep_start - paused_s
-        # DATA-1: the sweep's true (median) temperature goes into the
-        # TOP comments — no footers (user decision 2026-07-23).
-        self._finalize_scan_header(fpath, target_temp, sweep_temps)
+        # DATA-1/FNAME-1: median into the TOP comments (no footers) and
+        # the file renamed to the median measured temperature.
+        fname = self._finalize_scan_header(
+            fpath, target_temp, sweep_temps, stamp) or fname
         if n_measured >= 20:
             # Refine the live scan estimate with real per-point timing
             self._put_gui_msg("point_time", avg=scan_s / n_measured)
@@ -4171,19 +4193,27 @@ class PPMSSyncGUI:
                                       f"({n_measured} pts, {fmt_hms(scan_s)}).")
         return done_pts, scan_s, drift_flag
 
-    def _finalize_scan_header(self, fpath, target_temp, sweep_temps):
-        """DATA-1: after the sweep, insert the measured MEDIAN sample
-        temperature as a second '#' comment at the TOP of the scan file
-        (no footers — user decision 2026-07-23). Atomic rewrite (temp
-        file + os.replace): a crash mid-rewrite leaves the original
-        intact, a crash mid-sweep just leaves the file without the
-        median line."""
+    def _finalize_scan_header(self, fpath, target_temp, sweep_temps,
+                              stamp):
+        """DATA-1/FNAME-1: after the sweep, (a) insert the measured
+        MEDIAN sample temperature as a second '#' comment at the TOP of
+        the scan file (no footers — user decision 2026-07-23) and
+        (b) rename the file so its name carries that median
+        ('p' decimal mark, e.g. Sample_80p05K_<stamp>_FreqScan.txt).
+        One atomic step: the updated content is written to a temp file
+        and os.replace'd onto the FINAL name, then the provisional file
+        is removed — a crash at any point leaves a complete file under
+        one of the two names, never a corrupt one.
+        Returns the final filename, or None if nothing was finalized."""
         if not sweep_temps:
-            return
+            return None
         med_T = float(np.median(sweep_temps))
         line = (f"# T_sample_median = {med_T:.4f} K over "
                 f"{len(sweep_temps)} readings | T_set = {target_temp} K "
                 f"| deviation = {med_T - target_temp:+.4f} K\n")
+        new_fname = (f"{self.lcr_params['sample_name']}_"
+                     f"{fmt_temp_p(med_T)}K_{stamp}_FreqScan.txt")
+        new_path = os.path.join(self.save_dir, new_fname)
         try:
             with open(fpath, "r", encoding="utf-8") as fh:
                 lines = fh.readlines()
@@ -4193,15 +4223,23 @@ class PPMSSyncGUI:
                 fh.writelines(lines)
                 fh.flush()
                 os.fsync(fh.fileno())
-            os.replace(tmp, fpath)
+            os.replace(tmp, new_path)
+            if os.path.abspath(new_path) != os.path.abspath(fpath):
+                try:
+                    os.remove(fpath)
+                except OSError:
+                    pass   # provisional copy left behind is harmless
             self._put_gui_msg("log",
-                text=f"Scan header updated: T_sample_median "
+                text=f"Scan finalized as {new_fname}: T_sample_median "
                      f"{med_T:.3f} K (T_set {target_temp} K, deviation "
                      f"{med_T - target_temp:+.3f} K).")
+            return new_fname
         except OSError as e:
             self._put_gui_msg("log",
-                text=f"⚠️ Could not update the scan header ({e}) — "
-                     f"median for this sweep: {med_T:.4f} K.")
+                text=f"⚠️ Could not finalize the scan file ({e}) — data "
+                     f"is intact under its provisional name; median for "
+                     f"this sweep: {med_T:.4f} K.")
+            return None
 
     def _write_timing_row(self, index, target, step_start_dt, sleep_s,
                           settle_s, stab_outcome, scan_s, drift_flag):
