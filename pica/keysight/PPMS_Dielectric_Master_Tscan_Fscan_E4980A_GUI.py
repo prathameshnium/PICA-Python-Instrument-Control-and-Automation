@@ -1102,7 +1102,7 @@ class LCR_Backend:
 # FRONTEND: PPMS Dielectric Master GUI
 # ============================================================
 class PPMSMasterGUI:
-    PROGRAM_VERSION = "1.4"   # explicit 20/25 K tols, fast-settle default
+    PROGRAM_VERSION = "1.5"   # desync-recovery backport (Sync v1.8)
     LEFT_PANEL_WIDTH = 500
 
     # SetThreadExecutionState flags (Windows keep-awake during a run)
