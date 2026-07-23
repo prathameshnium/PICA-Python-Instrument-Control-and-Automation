@@ -135,3 +135,6 @@ gpib_lifeline_report_*.txt
 pica/keysight/data_file_for_ref/
 ica/novocontrol/data_file_for_ref/
 pica/PPMS/data_file_for_ref
+
+# UI prototypes (quick HTML mockups, not shipped code)
+prototypes/
