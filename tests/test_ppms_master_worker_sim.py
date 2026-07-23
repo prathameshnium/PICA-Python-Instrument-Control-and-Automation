@@ -252,19 +252,29 @@ def test_full_protocol_simulation():
     assert os.path.exists(os.path.join(
         run_dir, "SimSample_Run1_0Oe_T-log.txt"))
 
-    # Fscan folder: one sweep file at 25 K with T_set as column 20
+    # Fscan folder: one sweep file at 25 K. DATA-1: column 20 is the
+    # MEASURED probe temperature (sim probe sits at 25 K ± wobble);
+    # FNAME-1: the filename carries the measured median with a 'p'
+    # decimal mark, and the median is a second '#' TOP comment.
     fscan_dir = os.path.join(tmpdir, "SimSample_Fscan")
     assert os.path.isdir(fscan_dir)
     sweeps = glob.glob(os.path.join(fscan_dir, "*_FreqScan.txt"))
     assert len(sweeps) == 1
+    temp_token = os.path.basename(sweeps[0]).split("_")[1]
+    assert temp_token.endswith("K") and "p" in temp_token \
+        and "." not in temp_token, temp_token   # e.g. '25p01K'
     with open(sweeps[0], encoding="utf-8") as fh:
         lines = fh.read().strip().splitlines()
-    assert lines[1].startswith("Frequency\tQ\tD")
+    assert lines[0].startswith("#") and "T_set = 25.0" in lines[0]
+    assert lines[1].startswith("# T_sample_median")
+    assert lines[2].startswith("Frequency\tQ\tD")
+    assert lines[2].rstrip().endswith("T_sample(K)")
     data = [l for l in lines if not l.startswith(("#", "Frequency"))]
     assert len(data) == 5                  # 5 sweep frequencies
     cols = data[0].split("\t")
     assert len(cols) == 20
-    assert abs(float(cols[-1]) - 25.0) < 1e-6   # T_set column
+    # measured T ≈ the 25 K plateau (± sim wobble), not an exact label
+    assert abs(float(cols[-1]) - 25.0) < 0.5
 
     # Timing log has the one Fscan step row
     timing = glob.glob(os.path.join(tmpdir, "*_Master_TimingLog.csv"))
