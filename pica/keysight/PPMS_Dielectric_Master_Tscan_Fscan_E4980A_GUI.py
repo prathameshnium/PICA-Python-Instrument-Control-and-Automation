@@ -692,14 +692,21 @@ def build_protocol_phases(cfg):
             "expected_s": cfg["final_cooldown_s"],
             "run": None,
         })
+        # Expected duration = per-step WAITFORs plus the PPMS ramps
+        # between setpoints (base -> first, then step to step) — waits
+        # alone systematically underestimate the phase.
+        sched = cfg["schedule"]
+        ramp_s = sum(abs(b - a) / max(cfg["fscan_rate"], 1e-9) * 60.0
+                     for a, b in zip([cfg["base_temp"]] + sched[:-1],
+                                     sched))
         phases.append({
             "kind": "FSCAN",
             "label": "Step Fscan",
-            "detail": (f"{len(cfg['schedule'])} setpoints "
-                       f"{cfg['schedule'][0]:g}->{cfg['schedule'][-1]:g} K: "
+            "detail": (f"{len(sched)} setpoints "
+                       f"{sched[0]:g}->{sched[-1]:g} K: "
                        "stabilize, then 40 Hz-2 MHz sweep"),
-            "expected_s": sum(fscan_step_wait_s(cfg, T)
-                              for T in cfg["schedule"]),
+            "expected_s": ramp_s + sum(fscan_step_wait_s(cfg, T)
+                                       for T in sched),
             "run": None,
         })
     return phases
@@ -2302,12 +2309,11 @@ class PPMSMasterGUI:
                 "", "pending"))
         now = datetime.now()
         finish_min = now.hour * 60 + now.minute + total_s / 60.0
-        self.proto_total_lbl.config(
-            text=f"Planned total ≈ {fmt_hms(total_s)}   →  if started now, "
-                 f"finishes ~ {fmt_clock(finish_min)} "
-                 f"(+{int(total_s // 86400)} d)" if total_s >= 86400 else
-                 f"Planned total ≈ {fmt_hms(total_s)}   →  if started now, "
-                 f"finishes ~ {fmt_clock(finish_min)}")
+        txt = (f"Planned total ≈ {fmt_hms(total_s)}   →  if started now, "
+               f"finishes ~ {fmt_clock(finish_min)}")
+        if total_s >= 86400:
+            txt += f" (+{int(total_s // 86400)} d)"
+        self.proto_total_lbl.config(text=txt)
 
     def _generate_seq_preview(self):
         try:
@@ -2584,16 +2590,21 @@ class PPMSMasterGUI:
             w["lock"].config(text="🔒"); w["locked"] = True
 
     def log(self, msg):
-        ts = datetime.now().strftime("%H:%M:%S")
-        self.console.config(state="normal")
-        self.console.insert("end", f"[{ts}] {msg}\n")
         try:
-            if int(self.console.index("end-1c").split(".")[0]) > 5000:
-                self.console.delete("1.0", "1000.0")
-        except Exception:
-            pass
-        self.console.see("end")
-        self.console.config(state="disabled")
+            ts = datetime.now().strftime("%H:%M:%S")
+            self.console.config(state="normal")
+            self.console.insert("end", f"[{ts}] {msg}\n")
+            try:
+                if int(self.console.index("end-1c").split(".")[0]) > 5000:
+                    self.console.delete("1.0", "1000.0")
+            except Exception:
+                pass
+            self.console.see("end")
+            self.console.config(state="disabled")
+        except tk.TclError:
+            # Window mid-destroy — a late log line must never block
+            # shutdown (root.destroy would otherwise never run).
+            print(f"[log during teardown] {msg}")
 
     def _update_status_ui(self, text, color):
         self.lbl_status.config(text=text, bg=color)
@@ -3022,6 +3033,12 @@ class PPMSMasterGUI:
         self._paused = False
         self._skip_requested = False
         self._skip_step_requested = False
+        # GLITCH-1: fresh probe-validation state per run — a stale
+        # _last_temp from a previous run at a very different T would
+        # make the new run's first reading look like a >20 K jump.
+        self._last_temp = float("nan")
+        self._glitch_candidate = None
+        self._glitch_total = 0
         self.pause_button.config(text="Pause")
 
         for L in (self.plot_t, self.plot_temp, self.plot_target,
@@ -3565,8 +3582,11 @@ class PPMSMasterGUI:
             os.path.join(self.save_dir, f"{lp['sample_name']}_{label}"))
         freq_files = {}
         for f in cfg["tscan_freqs"]:
+            # int() would collapse 1500.0 and 1500.5 onto ONE file name
+            # (silent overwrite); :g keeps fractional Hz distinct.
+            ftxt = f"{int(f)}" if f == int(f) else f"{f:g}".replace(".", "p")
             path = os.path.join(
-                folder, f"{lp['sample_name']}_{label}-{int(f)}Hz.txt")
+                folder, f"{lp['sample_name']}_{label}-{ftxt}Hz.txt")
             self._write_or_buffer(path,
                                   LCR_Backend.TSCAN_DATA_HEADER + "\n")
             freq_files[f] = path
@@ -4183,7 +4203,8 @@ class PPMSMasterGUI:
         # modes settle at an offset from the target, so the target itself
         # is the wrong reference there).
         ref_T = target_temp if self.params["mode"] == "band" \
-            else self._last_temp
+            else (self._last_temp if math.isfinite(self._last_temp)
+                  else target_temp)
         drift_halfw = 2.0 * tol_from_table(
             self.params.get("tol_table"), target_temp,
             self.params["tol"])
