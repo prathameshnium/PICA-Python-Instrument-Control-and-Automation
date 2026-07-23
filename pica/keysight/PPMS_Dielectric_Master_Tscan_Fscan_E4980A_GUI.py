@@ -186,6 +186,61 @@ v1.4 — EXPLICIT LOW-T TOLERANCES + FAST-SETTLE DEFAULT
          COOLDOWN to base (3:00) -> e.g. take M(H) while
          heating"), live-updated with the checkbox and the
          duration entry, so what will happen is never implicit.
+
+============================================================
+v1.5 — DESYNC-RECOVERY BACKPORT (from Sync v1.8, 2026-07-24)
+============================================================
+Backport of the Co-07 Fscan-at-Tstep forensic fixes; the two
+embedded copies stay behaviorally identical where the programs
+overlap (Fscan phase).
+  DATA-1   Fscan rows carry the MEASURED probe temperature
+           (T_sample(K), read right before each row); the
+           commanded setpoint appears ONLY in the '#' header.
+           After the sweep the median measured T is inserted as
+           a second TOP comment (no footers — user decision).
+  FNAME-1  Fscan filenames carry the measured temperature with
+           'p' as the decimal mark (Sample_80p05K_..._FreqScan
+           .txt); provisional name from the start-of-sweep
+           reading, atomically renamed to the sweep MEDIAN.
+  GLITCH-1 Probe readings validated before use: T ≤ 1 K
+           (Lake Shore dropout) or a > 20 K one-poll jump is an
+           INVALID READ — TempLog phase '|GLITCH', never fed to
+           stability windows, turnaround detectors' data rows or
+           plots. A real step is accepted once two consecutive
+           reads agree (±2 K).
+  DESYNC-1 Loud MISLABEL-RISK banner + beep when a stabilization
+           timeout ends with the sample outside the guard around
+           the target (no modal dialogs — unattended policy).
+  TIME-1   Stabilization Timeout default 90 → 35 min: it must
+           stay below one PPMS Fscan step period (ramp + step
+           wait) minus the scan, or one timeout leaves the
+           scanner a full step behind the PPMS.
+  RATE-2   Fscan ramp default 1 → 0.5 K/min: the probe follows
+           the block at only ~0.3-0.5 K/min above 120 K
+           (measured, Co-07 TempLog) — faster commanded ramps
+           only build probe lag.
+  RESYNC-1 "Re-sync to PPMS on timeout" checkbox (OFF by
+           default): on a diverged stabilization timeout the
+           Fscan step counter jumps forward to the later
+           setpoint the sample actually sits at; skipped steps
+           become SKIPPED-resync TimingLog rows.
+  AGNOS-1  "Setpoint-agnostic Fscan" checkbox (OFF by default):
+           the generated .seq still steps the schedule, but the
+           scanner scans each detected plateau (self-referenced
+           flatness + drift) and labels it with the measured
+           MEDIAN — nothing can desync. Completes after one
+           plateau per schedule entry; Min ΔT separates
+           plateaus; Skip Wait scans the current window, Skip
+           Freq Step abandons one plateau slot.
+  DWELL-1  "Fscan PPMS wait varies with T" (T:min pairs, ON by
+           default, 200:30 210:40 310:45): each generated Fscan
+           WAITFOR becomes max(computed step wait, table) — the
+           .seq under-waits nowhere even though probe settle
+           time grows with T (the PPMS's own temp-stable gate
+           fires while the probe still lags).
+  UI fixes worker_done drains the GUI queue tail; Skip can break
+           out of a mid-sweep Pause; non-lockable entries are
+           read-only while running.
 """
 
 import tkinter as tk
@@ -414,6 +469,58 @@ def tol_from_table(table, target, base_tol):
 
 
 # ============================================================
+# GLITCH-1: probe-reading validation thresholds
+# (embedded copy from PPMS_Sync_Freq_Scan_E4980A_GUI.py — the Co-07
+# run logged 39 stray 0.000 K reads plus a few non-zero garbage
+# spikes: brief Lake Shore glitches, never real temperature)
+# ============================================================
+GLITCH_LOW_K = 1.0       # PPMS base T is 1.8 K; anything ≤ 1 K is a dropout
+GLITCH_JUMP_K = 20.0     # > 20 K in one ~2 s poll is physically impossible
+GLITCH_CONFIRM_K = 2.0   # two consecutive "jumped" reads this close = real
+
+
+def fmt_temp_p(T):
+    """FNAME-1: 80.05 -> '80p05' — a dot inside a filename stem reads
+    as a bogus extension to some tools, so the decimal mark becomes
+    'p' in scan filenames (the real values live in the header)."""
+    return f"{float(T):.2f}".replace(".", "p")
+
+
+# ============================================================
+# DWELL-1: temperature-dependent PPMS Fscan wait (WAITFOR) floor
+# (same T:value syntax and parser as the tolerance table; different
+# lookup: hold below the first entry, interpolate between entries,
+# hold above the last — no extrapolation, a dwell must never shrink
+# below what was explicitly entered)
+# ============================================================
+DWELL_TABLE_DEFAULT = "200:30, 210:40, 310:45"
+
+
+def dwell_from_table(table, target):
+    """Suggested PPMS wait (minutes) at a target temperature.
+    Below the first entry / above the last: hold that entry's value;
+    between entries: linear interpolation."""
+    temps = [t for t, _ in table]
+    waits = [v for _, v in table]
+    if target <= temps[0]:
+        return float(waits[0])
+    if target >= temps[-1]:
+        return float(waits[-1])
+    return float(np.interp(target, temps, waits))
+
+
+def fscan_step_wait_s(cfg, target):
+    """DWELL-1: the WAITFOR seconds for one Fscan step — the computed
+    step wait (window + scan + margin), floored by the wait-vs-T table
+    when one is present in cfg."""
+    base = float(cfg["step_wait_s"])
+    table = cfg.get("dwell_table")
+    if table:
+        return max(base, dwell_from_table(table, target) * 60.0)
+    return base
+
+
+# ============================================================
 # PROTOCOL LOGIC (pure, instrument-free — unit-testable)
 # ============================================================
 class TurnaroundDetector:
@@ -591,7 +698,8 @@ def build_protocol_phases(cfg):
             "detail": (f"{len(cfg['schedule'])} setpoints "
                        f"{cfg['schedule'][0]:g}->{cfg['schedule'][-1]:g} K: "
                        "stabilize, then 40 Hz-2 MHz sweep"),
-            "expected_s": len(cfg["schedule"]) * cfg["step_wait_s"],
+            "expected_s": sum(fscan_step_wait_s(cfg, T)
+                              for T in cfg["schedule"]),
             "run": None,
         })
     return phases
@@ -668,7 +776,9 @@ def generate_ppms_seq(cfg):
         for T in cfg["schedule"]:
             L.append(f"REM -- {T:g} K step --")
             L.append(f"TMP TEMP {T:.6f} {cfg['fscan_rate']:.6f} {fmode}")
-            L.append(f"WAI WAITFOR {int(round(cfg['step_wait_s']))} "
+            # DWELL-1: per-temperature wait floor (probe settle time
+            # grows with T; a flat wait under-waits the high-T steps).
+            L.append(f"WAI WAITFOR {int(round(fscan_step_wait_s(cfg, T)))} "
                      f"1 0 0 0 0")
     L.append("REM ==== Protocol end ====")
     return "\n".join(L) + "\n"
@@ -813,10 +923,13 @@ class Probe_Thermometer_Backend:
 # (copied from PPMS_Sync_Freq_Scan_E4980A_GUI.py)
 # ============================================================
 class LCR_Backend:
-    # Fscan per-setpoint files (frequency sweep at fixed T):
+    # Fscan per-setpoint files (frequency sweep at fixed T).
+    # DATA-1 (2026-07-24, from the Sync GUI): the last column is the
+    # MEASURED probe temperature per row; the commanded setpoint lives
+    # only in the '#' header — a label can never silently desync.
     FSCAN_DATA_HEADER = (
         "Frequency\tQ\tD\tG(1/Rp)\tB\tCp\tLp\tCs\tLs\tlZl\ttheta\tchi\t"
-        "R(Rs)\ttheta(deg.)\tRp\t1/lZl\tOmega\tCp''\tCs''\tT_set(K)"
+        "R(Rs)\ttheta(deg.)\tRp\t1/lZl\tOmega\tCp''\tCs''\tT_sample(K)"
     )
     # Tscan per-frequency files (legacy 19-column format of
     # Temprature_Scan_Passive_E4980A_GUI.py):
@@ -1370,8 +1483,11 @@ class PPMSMasterGUI:
                               "final_cooldown", "3:00", 7, 2)
         self._add_proto_entry(frame, "Field set rate (Oe/s):", "field_rate",
                               "50", 8, 0)
+        # RATE-2 (Co-07 forensic): the probe follows the block at only
+        # ~0.3-0.5 K/min above 120 K — 1 K/min just built lag that the
+        # step wait then had to absorb. Editable per protocol as always.
         self._add_proto_entry(frame, "Fscan ramp (K/min):", "fscan_rate",
-                              "1", 8, 2)
+                              "0.5", 8, 2)
 
         # COOL-2: after the M(T) warming runs a final cooldown is SET BY
         # DEFAULT even when there is no Fscan section — so a manual
@@ -1710,8 +1826,11 @@ class PPMSMasterGUI:
         self._create_grid_entry(frame, "Drift Lim (K/min):", "drift", "0.05", 3, 0)
         self._create_grid_entry(frame, "Target guard (±K, 0=off):",
                                 "guard", "2.0", 3, 3)
+        # TIME-1 (Co-07 forensic, from the Sync GUI): the timeout must
+        # stay below one PPMS step period (ramp + WAITFOR) minus the
+        # scan — 90 min let the scanner fall multiple steps behind.
         self._create_grid_entry(frame, "Timeout (min, 0=off):",
-                                "stab_timeout", "90", 4, 0)
+                                "stab_timeout", "35", 4, 0)
         self._create_grid_entry(frame, "Poll Delay (s):", "delay", "2", 4, 3)
         self._create_grid_entry(frame, "Margin (min):", "margin_min",
                                 "10", 5, 0)
@@ -1769,9 +1888,57 @@ class PPMSMasterGUI:
                   ).grid(row=9, column=0, columnspan=6, sticky="w",
                          padx=10, pady=(0, 2))
 
+        # RESYNC-1 (from Sync v1.8): jump the step counter forward on a
+        # diverged timeout (OFF by default — new behavior is opt-in).
+        self.var_resync = tk.BooleanVar(value=False)
+        self.chk_resync = ttk.Checkbutton(
+            frame, text="Re-sync to PPMS on timeout (jump to the later "
+                        "setpoint the sample actually sits at)",
+            variable=self.var_resync)
+        self.chk_resync.grid(row=10, column=0, columnspan=6,
+                             sticky="w", padx=10, pady=(4, 0))
+        self._prerun_simple.append(self.chk_resync)
+
+        # AGNOS-1 (from Sync v1.8): setpoint-agnostic Fscan phase (OFF
+        # by default). The generated .seq still steps the schedule; the
+        # SCANNER stops trusting labels — it scans each detected plateau
+        # and labels it with the measured median. Completes after as
+        # many plateaus as schedule entries.
+        self.var_agnostic = tk.BooleanVar(value=False)
+        self.chk_agnostic = ttk.Checkbutton(
+            frame, text="Setpoint-agnostic Fscan: scan every plateau the "
+                        "PPMS makes (label = measured median; ends after "
+                        "one plateau per schedule entry).  Min ΔT (K):",
+            variable=self.var_agnostic)
+        self.chk_agnostic.grid(row=11, column=0, columnspan=5,
+                               sticky="w", padx=10, pady=(2, 0))
+        self._prerun_simple.append(self.chk_agnostic)
+        self.agn_dt_entry = ttk.Entry(frame, width=6)
+        self.agn_dt_entry.insert(0, "2.0")
+        self.agn_dt_entry.grid(row=11, column=5, sticky="w",
+                               padx=(2, 10), pady=(2, 0))
+        self._prerun_simple.append(self.agn_dt_entry)
+
+        # DWELL-1 (from Sync v1.8): per-temperature floor for the
+        # generated Fscan WAITFORs — Co-07 showed probe settle time
+        # GROWS with T while a single step wait is flat.
+        self.var_dwell_table = tk.BooleanVar(value=True)
+        self.chk_dwell_table = ttk.Checkbutton(
+            frame, text="Fscan PPMS wait varies with T (T:min pairs — "
+                        "floor under the computed step wait):",
+            variable=self.var_dwell_table)
+        self.chk_dwell_table.grid(row=12, column=0, columnspan=4,
+                                  sticky="w", padx=10, pady=(2, 0))
+        self._prerun_simple.append(self.chk_dwell_table)
+        self.dwell_table_entry = ttk.Entry(frame, width=24)
+        self.dwell_table_entry.insert(0, DWELL_TABLE_DEFAULT)
+        self.dwell_table_entry.grid(row=12, column=4, columnspan=2,
+                                    sticky="ew", padx=(2, 10), pady=(2, 0))
+        self._prerun_simple.append(self.dwell_table_entry)
+
         b = ttk.Button(frame, text="Apply Live Updates",
                        command=self._send_live_updates)
-        b.grid(row=10, column=0, columnspan=6, sticky="ew",
+        b.grid(row=13, column=0, columnspan=6, sticky="ew",
                padx=10, pady=(2, 6))
         self._on_stab_mode_changed()
         self.root.after(500, self._tol_preview_tick)
@@ -2712,6 +2879,14 @@ class PPMSMasterGUI:
         step_wait_s = window_min * 60.0 + self._scan_est_s \
             + margin_min * 60.0
 
+        # DWELL-1: wait-vs-T floor for the generated Fscan WAITFORs.
+        dwell_table = None
+        if self.var_dwell_table.get():
+            try:
+                dwell_table = parse_tol_table(self.dwell_table_entry.get())
+            except ValueError as e:
+                raise ValueError(f"Fscan wait-vs-T table: {e}")
+
         return {
             "sample": self.lcr_entries["sample_name"].get().strip()
                       or "Sample",
@@ -2736,6 +2911,7 @@ class PPMSMasterGUI:
             "tscan_freqs": tscan_freqs,
             "schedule": schedule,
             "step_wait_s": step_wait_s,
+            "dwell_table": dwell_table,   # DWELL-1: None = table off
             # COOL-2: default ON — end with a cooldown to base even
             # without an Fscan section (ready for manual M(H) etc.).
             "final_cd_no_fscan": bool(self.var_final_cd_always.get()),
@@ -2759,6 +2935,9 @@ class PPMSMasterGUI:
             # TOL-1: parsed once at Start; a bad table fails loudly here.
             "tol_table": (parse_tol_table(self.tol_table_entry.get())
                           if self.var_tol_table.get() else None),
+            "resync": self.var_resync.get(),        # RESYNC-1
+            "agnostic": self.var_agnostic.get(),    # AGNOS-1
+            "agn_min_dT": float(self.agn_dt_entry.get() or "2"),
         }
         if not p["thermo_visa"]:
             raise ValueError("Select the thermometer VISA.")
@@ -2771,6 +2950,8 @@ class PPMSMasterGUI:
             raise ValueError("Timeout must be >= 0 (0 disables).")
         if p["delay"] <= 0: raise ValueError("Poll delay must be positive.")
         if p["margin_min"] < 0: raise ValueError("Margin must be >= 0 min.")
+        if p["agnostic"] and p["agn_min_dT"] <= 0:
+            raise ValueError("Min ΔT between plateau scans must be > 0 K.")
         return p
 
     def _validate_lcr_params(self):
@@ -2954,7 +3135,9 @@ class PPMSMasterGUI:
                     w["entry"].config(
                         state="disabled" if w["locked"] else "normal")
                 else:
-                    w["entry"].config(state="normal")
+                    # Non-lockable entries are pre-run-only — read-only
+                    # while running (kept in sync with the Sync GUI).
+                    w["entry"].config(state="disabled")
             else:
                 w["entry"].config(
                     state="disabled" if w["locked"] else "normal")
@@ -3050,7 +3233,7 @@ class PPMSMasterGUI:
                 elif t == "worker_done":
                     self.set_ui_state(running=False)
                     self._update_status_ui("IDLE", self.CLR_HEADER)
-                    return
+                    break
         except queue.Empty:
             pass
         if self.worker_thread and self.worker_thread.is_alive():
@@ -3446,18 +3629,22 @@ class PPMSMasterGUI:
                             text=f"⚠️ E4980A status {status_code} @ "
                                  f"{f:.1f} Hz (T {temp:.3f} K) — row kept")
                     vals = self.calculate_impedance_parameters(f, R, X)
-                    row = [temp] + vals
+                    # GLITCH-1: a rejected read (NaN) falls back to the
+                    # last valid temperature for the data row.
+                    row_T = temp if math.isfinite(temp) else self._last_temp
+                    row = [row_T] + vals
                     self._write_or_buffer(
                         freq_files[f],
                         "\t".join(f"{v:.6E}" for v in row) + "\n")
-                    cycle_points.append((f, temp, vals[4], vals[2]))
+                    cycle_points.append((f, row_T, vals[4], vals[2]))
 
                 if cycle_points:
                     cycles += 1
                     elapsed = time.time() - self.start_time
+                    tlog_T = temp if math.isfinite(temp) else self._last_temp
                     self._write_or_buffer(run_tlog,
                         f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\t"
-                        f"{elapsed:.1f}\t{temp:.4f}\n")
+                        f"{elapsed:.1f}\t{tlog_T:.4f}\n")
                     self._put_gui_msg("tscan_cycle", points=cycle_points)
 
                 now = time.time()
@@ -3531,9 +3718,18 @@ class PPMSMasterGUI:
         total_pts = len(self.schedule) * len(self.sweep_frequencies)
         done_pts = 0
         n_steps = len(self.schedule)
-        for i, target in enumerate(self.schedule):
-            if not self.is_running:
-                return "stopped"
+
+        # AGNOS-1: setpoint-agnostic Fscan — the PPMS still runs the
+        # generated schedule, but the scanner stops trusting labels:
+        # it scans each detected plateau and labels it with the
+        # measured median. One plateau per schedule entry, so the
+        # protocol still terminates.
+        if self.params.get("agnostic"):
+            return self._phase_fscan_agnostic(banner, n_steps, total_pts)
+
+        i = 0
+        while self.is_running and i < n_steps:
+            target = self.schedule[i]
             self._put_gui_msg("log",
                 text=f"--- Fscan step {i+1}/{n_steps}: target {target} K ---")
             self._send_band_msg(target)
@@ -3552,6 +3748,7 @@ class PPMSMasterGUI:
                 self._write_timing_row(
                     i, target, step_start_dt, 0.0, settle_s,
                     stab_outcome, 0.0, False)
+                i += 1
                 continue
             if stab_outcome == "timeout":
                 self._put_gui_msg("log",
@@ -3559,6 +3756,39 @@ class PPMSMasterGUI:
                          f"{settle_s/60.0:.1f} min — proceeding with the "
                          f"sweep anyway (unattended-run policy). "
                          f"Check this data point!")
+                # DESYNC-1 (from the Sync GUI): loud mislabel-risk alarm
+                # whenever the sample sits outside the guard around the
+                # target — the PPMS has probably run ahead.
+                p = self.params
+                eff_tol = tol_from_table(p.get("tol_table"), target,
+                                         p["tol"])
+                halfw = p["guard"] if p["guard"] > 0 else 2.0 * eff_tol
+                if math.isfinite(self._last_temp) \
+                        and abs(self._last_temp - target) > halfw:
+                    self._put_gui_msg("log",
+                        text=f"⚠️⚠️ DESYNC / MISLABEL RISK: sample reads "
+                             f"{self._last_temp:.2f} K but this step is "
+                             f"labelled {target} K (> ±{halfw:g} K). The "
+                             f"PPMS has probably run ahead of this "
+                             f"scanner — lengthen its WAITFOR dwells!")
+                    self._put_gui_msg("beep")
+                    if p.get("resync"):
+                        j = self._resync_step(i)
+                        if j is not None:
+                            for k in range(i, j):
+                                if not self.timing_path:
+                                    break
+                                # skipped steps: explicit TimingLog rows
+                                self._write_or_buffer(
+                                    self.timing_path, self._csv_line(
+                                        [k + 1,
+                                         f"{self.schedule[k]:.4f}",
+                                         step_start_dt.strftime(
+                                             "%Y-%m-%d %H:%M:%S"),
+                                         "0.0", "0.0", "SKIPPED-resync",
+                                         "0.0", 0, "0.0", "-"]))
+                            i = j
+                            continue   # redo stability at the new target
             elif stab_outcome == "forced":
                 self._put_gui_msg("log",
                     text=f"⏭ Stability wait skipped by user at {target} K "
@@ -3583,7 +3813,209 @@ class PPMSMasterGUI:
             self._put_gui_msg("scan_done", target=target)
             self._put_gui_msg("log",
                 text=f"Sweep done at {target} K. Proceeding.")
-        return "complete"
+            i += 1
+        return "complete" if self.is_running else "stopped"
+
+    def _resync_step(self, i):
+        """RESYNC-1 (from Sync v1.8): called on a diverged stabilization
+        timeout at step i. Returns the index j > i of the LATER schedule
+        setpoint the measured temperature fits best — only if it fits
+        strictly better than the current step's setpoint — else None."""
+        T = self._last_temp
+        if not math.isfinite(T):
+            return None
+        best, best_d = None, abs(self.schedule[i] - T)
+        for j in range(i + 1, len(self.schedule)):
+            d = abs(self.schedule[j] - T)
+            if d < best_d:
+                best, best_d = j, d
+        if best is not None:
+            self._put_gui_msg("log",
+                text=f"⏩ RESYNC: sample at {T:.2f} K matches setpoint "
+                     f"{self.schedule[best]:g} K (step {best+1}) better "
+                     f"than {self.schedule[i]:g} K (step {i+1}) — jumping "
+                     f"forward; steps {i+1}..{best} logged as SKIPPED. "
+                     f"Redoing stability detection at the new target.")
+            self._put_gui_msg("beep")
+        return best
+
+    def _phase_fscan_agnostic(self, banner, n_steps, total_pts):
+        """AGNOS-1 (from Sync v1.8): scan every plateau the PPMS makes,
+        label each with the measured MEDIAN temperature, complete after
+        n_steps plateaus (one per schedule entry — the generated .seq
+        makes exactly that many). Nothing can desync because no plateau
+        carries a schedule label. Skip Wait scans the current window
+        immediately; Skip Freq Step abandons one plateau slot."""
+        p = self.params
+        done_pts = 0
+        scanned = 0
+        last_label = None
+        self._put_gui_msg("log",
+            text=f"AGNOSTIC FSCAN: no setpoint labels — every detected "
+                 f"plateau (peak-to-peak ≤ 2×Tol AND |drift| ≤ limit over "
+                 f"the {p['window_min']:g}-min window) is scanned and "
+                 f"labelled with the measured MEDIAN. Next plateau must "
+                 f"differ by ≥ {p['agn_min_dT']:g} K. Completes after "
+                 f"{n_steps} plateaus.")
+        while self.is_running and scanned < n_steps:
+            step_start_dt = datetime.now()
+            outcome, label_T, settle_s = self._wait_for_plateau(
+                last_label, banner)
+            if outcome == "slot_skipped":
+                scanned += 1
+                self._put_gui_msg("log",
+                    text=f"⏭⏭ Plateau slot {scanned}/{n_steps} abandoned "
+                         "by user (Skip Freq Step) — no sweep.")
+                continue
+            if outcome != "plateau" or not self.is_running:
+                return "stopped"
+            scanned += 1
+            self._put_gui_msg("log",
+                text=f"Plateau {scanned}/{n_steps} detected at "
+                     f"{label_T:.3f} K after {fmt_hms(settle_s)} — "
+                     f"starting sweep.")
+            self._put_gui_msg("status",
+                text=f"{banner} — SCANNING AT {label_T:.2f} K",
+                color=self.CLR_ACCENT_GREEN)
+            self._put_gui_msg("beep")
+            self._put_gui_msg("scan_reset", target=label_T)
+            done_pts, scan_s, drift_flag = self._run_frequency_sweep(
+                label_T, done_pts, total_pts, banner)
+            self._write_timing_row(
+                scanned - 1, label_T, step_start_dt, 0.0,
+                settle_s, "plateau", scan_s, drift_flag)
+            if not self.is_running:
+                return "stopped"
+            self._put_gui_msg("scan_done", target=label_T)
+            last_label = label_T
+            if scanned < n_steps:
+                self._put_gui_msg("log",
+                    text=f"Sweep done at {label_T:.3f} K. Watching for "
+                         f"plateau {scanned + 1}/{n_steps} "
+                         f"(≥ {p['agn_min_dT']:g} K away)…")
+        return "complete" if self.is_running else "stopped"
+
+    def _wait_for_plateau(self, last_label, banner=""):
+        """AGNOS-1 stability wait: SELF-referenced — no target. The
+        rolling window must span the configured length with peak-to-peak
+        ≤ 2×Tol (tolerance table evaluated at the window MEAN) and
+        |drift| ≤ the limit. A plateau within agn_min_dT of the last
+        scanned one does not count (still the same plateau). The
+        stabilization timeout only logs a heads-up here — with no label
+        to get wrong there is nothing to force. Skip Wait scans the
+        current window immediately; Skip Freq Step abandons the slot.
+        Returns (outcome, label_T, wait_s); outcome
+        'plateau' | 'slot_skipped' | 'stopped'; label_T = window median."""
+        p = self.params
+        self._worker_phase = "WAIT_STABLE"
+        window = deque()
+        phase_start = time.time()
+        paused_s = 0.0
+        last_status = 0.0
+        timeout_warned = False
+
+        def window_median():
+            return float(np.median([w[1] for w in window]))
+
+        try:
+            while self.is_running:
+                if self._process_cmd_queue():
+                    break
+                if self._skip_requested:
+                    self._skip_requested = False
+                    if window:
+                        self._put_gui_msg("log",
+                            text="⏭ Plateau wait skipped by user — "
+                                 "scanning the current temperature.")
+                        return ("plateau", window_median(),
+                                time.time() - phase_start - paused_s)
+                if self._skip_step_requested:
+                    self._skip_step_requested = False
+                    return ("slot_skipped", float("nan"),
+                            time.time() - phase_start - paused_s)
+                temp = self._log_temperature_point(float("nan"),
+                                                   measuring_flag=0)
+                now = time.time()
+                if self._paused:
+                    paused_s += p["delay"]
+                    window.clear()
+                    self._put_gui_msg("status",
+                        text=f"{banner} — PAUSED (plateau watch)",
+                        color=self.CLR_ACCENT_GOLD)
+                    time.sleep(p["delay"])
+                    continue
+                if math.isfinite(temp):   # GLITCH-1 filtered upstream
+                    window.append((now, temp))
+                soak_s = p["window_min"] * 60.0
+                while window and (now - window[0][0]) > soak_s:
+                    window.popleft()
+
+                ok = False
+                m = None
+                if len(window) >= 5:
+                    t0 = window[0][0]
+                    temps = np.array([w[1] for w in window])
+                    times = np.array([w[0] - t0 for w in window])
+                    span = window[-1][0] - t0
+                    pkpk = float(np.max(temps) - np.min(temps))
+                    mean = float(np.mean(temps))
+                    med = float(np.median(temps))
+                    drift = 0.0
+                    if span > 1.0:
+                        drift = float(np.polyfit(times, temps, 1)[0]) * 60.0
+                    tol = tol_from_table(p.get("tol_table"), mean, p["tol"])
+                    m = {"span": span, "pkpk": pkpk, "mean": mean,
+                         "med": med, "drift": drift, "tol": tol}
+                    ok = (span >= 0.95 * soak_s
+                          and pkpk <= 2.0 * tol
+                          and abs(drift) <= p["drift"])
+                    if ok and last_label is not None \
+                            and abs(med - last_label) < p["agn_min_dT"]:
+                        ok = False   # still sitting on the scanned plateau
+                if ok:
+                    wait_s = time.time() - phase_start - paused_s
+                    self._put_gui_msg("log",
+                        text=f"PLATEAU at {m['med']:.3f} K (median; mean "
+                             f"{m['mean']:.3f} K, p-p {m['pkpk']:.3f} K, "
+                             f"drift {m['drift']:+.3f} K/min, tol "
+                             f"±{m['tol']:g} K) after {fmt_hms(wait_s)}.")
+                    return "plateau", m["med"], wait_s
+
+                if now - last_status > 3.0:
+                    last_status = now
+                    if m is not None:
+                        fill = min(100.0, 100.0 * m["span"] / soak_s)
+                        extra = ""
+                        if last_label is not None \
+                                and abs(m["med"] - last_label) \
+                                < p["agn_min_dT"]:
+                            extra = (f" | still at scanned "
+                                     f"{last_label:.2f} K plateau")
+                        self._put_gui_msg("status",
+                            text=(f"{banner} — PLATEAU WATCH "
+                                  f"~{m['med']:.2f} K | "
+                                  f"window {fill:.0f}% | "
+                                  f"p-p {m['pkpk']:.3f} K | "
+                                  f"drift {m['drift']:+.3f} K/min"
+                                  + extra),
+                            color=self.CLR_STABLE_WAIT)
+                        # band drawn around the CURRENT median
+                        self._put_gui_msg("band", center=m["med"],
+                                          halfw=m["tol"])
+
+                if (not timeout_warned and p["stab_timeout"] > 0
+                        and (now - phase_start - paused_s)
+                        > p["stab_timeout"] * 60.0):
+                    timeout_warned = True
+                    self._put_gui_msg("log",
+                        text=f"Note: no plateau within "
+                             f"{p['stab_timeout']:g} min — still watching "
+                             "(agnostic mode has no label to get wrong).")
+
+                time.sleep(p["delay"])
+        finally:
+            self._worker_phase = None
+        return "stopped", float("nan"), time.time() - phase_start - paused_s
 
     # ------------------------------------------------------------
     # Fscan worker phases (copied from PPMS_Sync)
@@ -3688,7 +4120,8 @@ class PPMSMasterGUI:
                     time.sleep(p["delay"])
                     continue
 
-                window.append((now, temp))
+                if math.isfinite(temp):   # GLITCH-1: never poison the window
+                    window.append((now, temp))
                 soak_s = p["window_min"] * 60.0
                 while window and (now - window[0][0]) > soak_s:
                     window.popleft()
@@ -3734,7 +4167,13 @@ class PPMSMasterGUI:
         reconnect forever and resume at the same point; every row is
         fsync'd to disk. Returns (done_pts, scan_s, drift_flag)."""
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        fname = (f"{self.lcr_params['sample_name']}_{target_temp:.2f}K_"
+        # FNAME-1: the filename carries the MEASURED temperature ('p'
+        # decimal mark). Provisional name = start-of-sweep probe reading;
+        # _finalize_scan_header renames to the sweep MEDIAN when the
+        # sweep completes. The commanded setpoint lives only in the header.
+        name_T = self._last_temp if math.isfinite(self._last_temp) \
+            else target_temp
+        fname = (f"{self.lcr_params['sample_name']}_{fmt_temp_p(name_T)}K_"
                  f"{stamp}_FreqScan.txt")
         fpath = os.path.join(self.fscan_dir, fname)
         sweep_start = time.time()
@@ -3749,9 +4188,12 @@ class PPMSMasterGUI:
             self.params.get("tol_table"), target_temp,
             self.params["tol"])
         n_measured = 0
+        sweep_temps = []   # DATA-1: valid measured T over the sweep
         self._write_or_buffer(
             fpath,
-            f"# Sample: {self.lcr_params['sample_name']} | T_set = {target_temp} K | "
+            f"# Sample: {self.lcr_params['sample_name']} | T_set = {target_temp} K "
+            f"(commanded setpoint; T_sample(K) column = measured probe) | "
+            f"T_sample_start = {self._last_temp:.4f} K | "
             f"AC: {self.lcr_params['ac_bias']} V | DC: {self.lcr_params['dc_bias']} V | "
             f"APER: {self.lcr_params['aper']}\n"
             + LCR_Backend.FSCAN_DATA_HEADER + "\n")
@@ -3785,9 +4227,22 @@ class PPMSMasterGUI:
                     color=self.CLR_ACCENT_GOLD)
                 if self._process_cmd_queue():
                     break
+                if self._skip_requested or self._skip_step_requested:
+                    break   # Skip must be able to break out of a pause too
                 time.sleep(1.0)
                 paused_s += time.time() - pause_tick
             if not self.is_running:
+                break
+            if self._skip_requested:
+                self._skip_requested = False
+                self._put_gui_msg("log",
+                    text="⏭ Remaining sweep skipped by user.")
+                break
+            if self._skip_step_requested:
+                self._skip_step_requested = False
+                self._put_gui_msg("log",
+                    text="⏭⏭ Remaining sweep skipped (Skip Freq Step) — "
+                         "moving to the next setpoint.")
                 break
             res = self._lcr_measure_forever(freq)
             if res is None:
@@ -3798,16 +4253,22 @@ class PPMSMasterGUI:
                     text=f"⚠️ E4980A status {status} @ {freq:.1f} Hz — "
                          "row kept, check manual")
             vals = self.calculate_impedance_parameters(freq, R, X)
-            row = [freq] + vals + [target_temp]
+            # DATA-1: read the probe BEFORE writing the row so each row
+            # carries the temperature at which that point was measured;
+            # a glitched read (NaN) falls back to the last valid value.
+            temp = self._log_temperature_point(target_temp,
+                                               measuring_flag=1)
+            row_T = temp if math.isfinite(temp) else self._last_temp
+            if math.isfinite(row_T):
+                sweep_temps.append(row_T)
+            row = [freq] + vals + [row_T]
             self._write_or_buffer(
                 fpath, "\t".join(f"{v:.6E}" for v in row) + "\n")
             n_measured += 1
-            # Interleaved temperature log (flag=1) + mid-sweep drift watch
-            temp = self._log_temperature_point(target_temp,
-                                               measuring_flag=1)
             if not self.is_running:
                 break
-            if not drift_flag and abs(temp - ref_T) > drift_halfw:
+            if math.isfinite(temp) and not drift_flag \
+                    and abs(temp - ref_T) > drift_halfw:
                 drift_flag = True
                 self._put_gui_msg("log",
                     text=f"⚠️⚠️ TEMPERATURE DRIFT DURING SCAN at "
@@ -3830,12 +4291,65 @@ class PPMSMasterGUI:
                     color=self.CLR_ACCENT_GREEN)
         self._worker_phase = None
         scan_s = time.time() - sweep_start - paused_s
+        # DATA-1/FNAME-1: median into the TOP comments (no footers) and
+        # the file renamed to the median measured temperature.
+        fname = self._finalize_scan_header(
+            fpath, target_temp, sweep_temps, stamp) or fname
         if n_measured >= 20:
             # Refine the live scan estimate with real per-point timing
             self._put_gui_msg("point_time", avg=scan_s / n_measured)
         self._put_gui_msg("log", text=f"Sweep saved: {fname} "
                                       f"({n_measured} pts, {fmt_hms(scan_s)}).")
         return done_pts, scan_s, drift_flag
+
+    def _finalize_scan_header(self, fpath, target_temp, sweep_temps,
+                              stamp):
+        """DATA-1/FNAME-1 (from the Sync GUI): after the sweep,
+        (a) insert the measured MEDIAN sample temperature as a second
+        '#' comment at the TOP of the scan file (no footers — user
+        decision 2026-07-23) and (b) rename the file so its name
+        carries that median ('p' decimal mark, e.g.
+        Sample_80p05K_<stamp>_FreqScan.txt). One atomic step: the
+        updated content is written to a temp file and os.replace'd onto
+        the FINAL name, then the provisional file is removed — a crash
+        at any point leaves a complete file under one of the two names,
+        never a corrupt one.
+        Returns the final filename, or None if nothing was finalized."""
+        if not sweep_temps:
+            return None
+        med_T = float(np.median(sweep_temps))
+        line = (f"# T_sample_median = {med_T:.4f} K over "
+                f"{len(sweep_temps)} readings | T_set = {target_temp} K "
+                f"| deviation = {med_T - target_temp:+.4f} K\n")
+        new_fname = (f"{self.lcr_params['sample_name']}_"
+                     f"{fmt_temp_p(med_T)}K_{stamp}_FreqScan.txt")
+        new_path = os.path.join(self.fscan_dir, new_fname)
+        try:
+            with open(fpath, "r", encoding="utf-8") as fh:
+                lines = fh.readlines()
+            lines.insert(1, line)
+            tmp = fpath + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.writelines(lines)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, new_path)
+            if os.path.abspath(new_path) != os.path.abspath(fpath):
+                try:
+                    os.remove(fpath)
+                except OSError:
+                    pass   # provisional copy left behind is harmless
+            self._put_gui_msg("log",
+                text=f"Scan finalized as {new_fname}: T_sample_median "
+                     f"{med_T:.3f} K (T_set {target_temp} K, deviation "
+                     f"{med_T - target_temp:+.3f} K).")
+            return new_fname
+        except OSError as e:
+            self._put_gui_msg("log",
+                text=f"⚠️ Could not finalize the scan file ({e}) — data "
+                     f"is intact under its provisional name; median for "
+                     f"this sweep: {med_T:.4f} K.")
+            return None
 
     def _write_timing_row(self, index, target, step_start_dt, sleep_s,
                           settle_s, stab_outcome, scan_s, drift_flag):
@@ -4022,6 +4536,32 @@ class PPMSMasterGUI:
     _last_temp = float("nan")
     _skip_step_requested = False
     runstate_path = None
+    _glitch_candidate = None   # GLITCH-1: last rejected "jump" reading
+    _glitch_total = 0
+
+    def _validate_probe_reading(self, raw):
+        """GLITCH-1: True if the reading is physically plausible.
+        Rejects the Lake Shore 0.000-K dropout (raw ≤ 1 K) and any
+        jump > GLITCH_JUMP_K from the last valid reading in one poll.
+        A REAL large step (e.g. after a long comm outage) is accepted
+        once two consecutive readings agree within GLITCH_CONFIRM_K."""
+        if raw is None or not math.isfinite(raw) or raw <= GLITCH_LOW_K:
+            self._glitch_candidate = None
+            return False
+        if math.isfinite(self._last_temp) \
+                and abs(raw - self._last_temp) > GLITCH_JUMP_K:
+            cand = self._glitch_candidate
+            if cand is not None and abs(raw - cand) <= GLITCH_CONFIRM_K:
+                self._glitch_candidate = None
+                self._put_gui_msg("log",
+                    text=f"Large temperature step CONFIRMED by two "
+                         f"consecutive readings ({cand:.2f} / {raw:.2f} K) "
+                         f"— accepting.")
+                return True
+            self._glitch_candidate = raw
+            return False
+        self._glitch_candidate = None
+        return True
 
     def _log_temperature_point(self, target, measuring_flag):
         """Reads the probe thermometer, writes a durable CSV row, queues
@@ -4044,20 +4584,36 @@ class PPMSMasterGUI:
                         "thermometer", self.thermo_backend.reconnect,
                         attempt):
                     return float("nan")   # Stop requested during recovery
-        self._last_temp = temp
+        # GLITCH-1: validate before ANYTHING uses the reading. Invalid
+        # reads are still logged (flagged) but never become _last_temp,
+        # never enter a stability window and never reach the plot.
+        valid = self._validate_probe_reading(temp)
+        if valid:
+            self._last_temp = temp
+        else:
+            self._glitch_total += 1
+            if self._glitch_total <= 5 or self._glitch_total % 25 == 0:
+                self._put_gui_msg("log",
+                    text=f"⚠️ INVALID PROBE READ #{self._glitch_total}: "
+                         f"{temp:.3f} K (last valid "
+                         f"{self._last_temp:.3f} K) — ignored, logged "
+                         f"as GLITCH in the TempLog.")
         elapsed = time.time() - self.start_time
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         phase = "PAUSED" if self._paused else (self._worker_phase or "")
+        if not valid:
+            phase = (phase + "|GLITCH") if phase else "GLITCH"
         no_target = (target is None
                      or (isinstance(target, float) and math.isnan(target)))
         tgt_txt = "" if no_target else f"{target:.4f}"
         self._write_or_buffer(self.tlog_path, self._csv_line(
             [now_str, f"{elapsed:.2f}", tgt_txt, f"{temp:.4f}",
              measuring_flag, phase]))
-        self._put_gui_msg("temp_point", t=elapsed, temp=temp,
-                          target=(float("nan") if no_target else target),
-                          measuring=measuring_flag)
-        return temp
+        if valid:
+            self._put_gui_msg("temp_point", t=elapsed, temp=temp,
+                              target=(float("nan") if no_target else target),
+                              measuring=measuring_flag)
+        return temp if valid else float("nan")
 
     def _lcr_measure_forever(self, freq):
         """One E4980A measurement with retry-forever comm recovery.
