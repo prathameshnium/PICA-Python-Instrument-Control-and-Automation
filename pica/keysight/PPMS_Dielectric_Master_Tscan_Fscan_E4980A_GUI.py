@@ -345,9 +345,11 @@ TOL_TABLE_PRESETS = {
     # observed offset + ~0.3 K cushion, settling to the overnight-safe
     # 0.4. TOL-2: 20 K and 25 K are EXPLICIT entries (numerically what
     # the below-table extrapolation used to produce) so they can be
-    # edited directly instead of being implied.
+    # edited directly instead of being implied. TOL-3 (2026-07-23):
+    # 20/25 K widened to 3.0/2.5 — kept numerically identical to the
+    # PPMS_Sync copy (test_tol_table_copy_matches_sync).
     "Safe (recommended)":
-        "20:1.8, 25:1.65, 30:1.5, 40:1.2, 50:0.8, 60:0.55, "
+        "20:3.0, 25:2.5, 30:1.5, 40:1.2, 50:0.8, 60:0.55, "
         "70:0.45, 100:0.4",
     # exactly the values used attended on 2026-07-18 (thin cushion);
     # 20/25 K spelled out flat, matching the old flat extrapolation
