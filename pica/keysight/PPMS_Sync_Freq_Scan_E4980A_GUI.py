@@ -1030,7 +1030,7 @@ class LCR_Backend:
 # FRONTEND: PPMS-synchronized GUI
 # ============================================================
 class PPMSSyncGUI:
-    PROGRAM_VERSION = "1.7-PPMS-Sync"  # dated planner + explicit low-T tols
+    PROGRAM_VERSION = "1.8-PPMS-Sync"  # desync recovery (Co-07 forensic)
     LEFT_PANEL_WIDTH = 480
 
     # HARD-3: SetThreadExecutionState flags (Windows keep-awake during a run)
