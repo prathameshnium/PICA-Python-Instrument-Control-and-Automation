@@ -553,6 +553,14 @@ class PlotterAppGUI:
             title="Select a data file",
             filetypes=(("Data Files", "*.csv *.dat *.txt"), ("All files", "*.*"))
         )
+        self.add_files(filepaths)
+
+    def add_files(self, filepaths):
+        """Add data files to the session.
+
+        Used by Browse and by files passed on the command line, so that
+        'File > Open Data as Graph' in the launcher opens them plotted.
+        """
         if not filepaths:
             return
 
@@ -1079,4 +1087,11 @@ if __name__ == '__main__':
 
     root = tk.Tk()
     app = PlotterAppGUI(root)
+
+    # Data files given on the command line are loaded and plotted once the
+    # window exists (the PICA launcher uses this for "Open Data as Graph").
+    preload = [p for p in sys.argv[1:] if os.path.exists(p)]
+    if preload:
+        root.after(250, lambda: app.add_files(preload))
+
     root.mainloop()

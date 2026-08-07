@@ -43,15 +43,19 @@ except ImportError:
     PYVISA_AVAILABLE = False
 
 
-def run_script_process(script_path):
+def run_script_process(script_path, argv=None):
     """
     Wrapper function to execute a script using runpy in its own directory.
     This becomes the target for the new, isolated process.
     Note: os.chdir is acceptable here because this runs in a separate spawned process
     and does not affect the launcher's working directory.
+
+    'argv' is an optional list of command-line arguments (e.g. data files to
+    pre-load); it is placed in sys.argv exactly as a shell invocation would.
     """
     try:
         os.chdir(os.path.dirname(script_path))
+        sys.argv = [script_path] + list(argv or [])
         runpy.run_path(script_path, run_name="__main__")
     except Exception as e:
         print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")

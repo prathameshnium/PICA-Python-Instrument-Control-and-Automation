@@ -299,6 +299,7 @@ class PICALauncherV2:
     FONT_WORDMARK = ('Segoe UI', FONT_SIZE_BASE + 10, 'bold')  # v1 FONT_TITLE
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 6, 'bold')    # v1 FONT_INSTITUTE
     FONT_CARD = ('Segoe UI', FONT_SIZE_BASE + 1, 'bold')     # v1 FONT_SUBTITLE
+    FONT_INSTITUTE = ('Segoe UI', FONT_SIZE_BASE + 4, 'bold')
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)                 # v1 FONT_INFO
     FONT_INFO_BOLD = ('Segoe UI', FONT_SIZE_BASE, 'bold')
     FONT_STAT = ('Consolas', FONT_SIZE_BASE + 4, 'bold')
@@ -333,6 +334,9 @@ class PICALauncherV2:
         # Browse-grid layout state, set before the first <Configure> fires.
         self._browse_cols = 2
         self._browse_width = 900
+        self._rendering = False
+        # Folder the File menu's pickers open in (last one the user visited).
+        self._last_data_dir = os.getcwd()
         self.chip_widgets = {}
         self.launched_processes = []
 
@@ -370,6 +374,8 @@ class PICALauncherV2:
         # Dim.TLabel is the 10 pt style used for status-strip captions.
         style.configure('Info.TLabel', background=self.CLR_PANEL, foreground=self.CLR_TEXT,
                         font=self.FONT_INFO)
+        style.configure('Institute.TLabel', background=self.CLR_PANEL, foreground=self.CLR_TEXT,
+                        font=self.FONT_INSTITUTE)
         style.configure('InfoBold.TLabel', background=self.CLR_PANEL, foreground=self.CLR_TEXT,
                         font=self.FONT_INFO_BOLD)
 
@@ -411,14 +417,30 @@ class PICALauncherV2:
     def _build_menubar(self):
         menubar = tk.Menu(self.root)
 
+        # Classic File menu: opening things comes first, then the app commands.
         file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="Open Data File…", accelerator="Ctrl+O",
+                              command=self.open_data_file)
+        file_menu.add_command(label="Open Data as Graph…", accelerator="Ctrl+G",
+                              command=self.open_data_as_graph)
+        file_menu.add_command(label="Open Data in Text Editor…",
+                              command=self.open_data_in_editor)
+        file_menu.add_separator()
+        file_menu.add_command(label="Open Folder…", accelerator="Ctrl+Shift+O",
+                              command=self.open_folder)
+        file_menu.add_command(label="Open PICA Folder", command=self.open_pica_folder)
+        file_menu.add_separator()
         file_menu.add_command(label="Reload Instrument Status", command=self.start_scan)
         file_menu.add_command(label="Refresh Module List", command=self._rebuild_browse)
         file_menu.add_separator()
         file_menu.add_command(label="Open Legacy Launcher (v1)", command=self.open_legacy_launcher)
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.root.destroy)
+        file_menu.add_command(label="Exit", accelerator="Alt+F4", command=self.root.destroy)
         menubar.add_cascade(label="File", menu=file_menu)
+
+        self.root.bind_all("<Control-o>", lambda _e: self.open_data_file())
+        self.root.bind_all("<Control-g>", lambda _e: self.open_data_as_graph())
+        self.root.bind_all("<Control-O>", lambda _e: self.open_folder())
 
         tools_menu = tk.Menu(menubar, tearoff=0)
         tools_menu.add_command(label="GPIB / VISA Scanner", command=self._launch_gpib_scanner)
@@ -559,8 +581,11 @@ class PICALauncherV2:
         self.logo_canvas.pack(anchor='w', pady=(0, 12))
         self.root.after(60, self._load_logo)
 
-        ttk.Label(pad, text="UGC-DAE Consortium for\nScientific Research, Mumbai Centre",
-                  style='Info.TLabel', justify='left').pack(anchor='w', pady=(0, 10))
+        # Wraps to the rail width rather than at hardcoded newlines, so the
+        # institute name can carry a larger size without overflowing.
+        ttk.Label(pad, text="UGC-DAE Consortium for Scientific Research, Mumbai Centre",
+                  style='Institute.TLabel', justify='left',
+                  wraplength=self.RAIL_WIDTH - 32).pack(anchor='w', pady=(0, 10))
         # Wordmark carries the largest type (v1 title size); the expansion sits
         # under it as a subtitle -- the acronym is what the eye lands on first.
         ttk.Label(pad, text="PICA", background=self.CLR_PANEL,
@@ -653,6 +678,8 @@ class PICALauncherV2:
 
     def _reflow_cards(self, width):
         """Re-lay the card grid if the available width changed the column count."""
+        if self._rendering:
+            return
         cols = max(1, min(self.MAX_CARD_COLS, width // self.CARD_MIN_WIDTH))
         self._browse_width = width
         if cols != self._browse_cols:
@@ -660,6 +687,19 @@ class PICALauncherV2:
             self._render_cards()
 
     def _render_cards(self):
+        # Guard: the masonry pass calls update_idletasks, which can dispatch the
+        # canvas <Configure> and re-enter this method mid-build.
+        if self._rendering:
+            return
+        self._rendering = True
+        try:
+            self._render_cards_inner()
+        finally:
+            self._rendering = False
+        # A resize that arrived while we were building is applied now.
+        self._reflow_cards(self._browse_width)
+
+    def _render_cards_inner(self):
         for w in self.browse_frame.winfo_children():
             w.destroy()
         cols = self._browse_cols
@@ -668,9 +708,20 @@ class PICALauncherV2:
                 c, weight=1 if c < cols else 0, uniform='cols' if c < cols else '')
         # Titles wrap inside their own column, not at a fixed 2-column width.
         wrap = max(180, self._browse_width // cols - 90)
-        for i, cat in enumerate(CATALOG):
-            self._make_card(self.browse_frame, cat, wrap).grid(
-                row=i // cols, column=i % cols, sticky='new', padx=6, pady=6)
+
+        # Masonry layout. A grid row is as tall as its tallest card, so a
+        # 1-module card next to a 7-module one left ~200 px of dead space under
+        # it. Independent columns let each card sit right under the previous
+        # one; every card goes to whichever column is currently shortest.
+        columns = []
+        for c in range(cols):
+            col = tk.Frame(self.browse_frame, bg=self.CLR_APP)
+            col.grid(row=0, column=c, sticky='new', padx=6)
+            columns.append(col)
+        for cat in CATALOG:
+            self.browse_frame.update_idletasks()   # settle heights before choosing
+            target = min(columns, key=lambda f: f.winfo_reqheight())
+            self._make_card(target, cat, wrap).pack(fill='x', pady=(0, 12))
 
     def _rebuild_browse(self):
         self._render_cards()
@@ -914,7 +965,7 @@ class PICALauncherV2:
                  f"across {len(r['resources'])} VISA resource(s).")
 
     # ----------------------------------------------------------- launching
-    def launch_script(self, script_key):
+    def launch_script(self, script_key, argv=None):
         script_path = self.SCRIPT_PATHS.get(script_key)
         if not script_path:
             self.log(f"ERROR: Unknown module key '{script_key}'.")
@@ -926,13 +977,74 @@ class PICALauncherV2:
             messagebox.showerror("File Not Found", f"Script not found:\n\n{abs_path}")
             return
         try:
-            proc = Process(target=run_script_process, args=(abs_path,))
+            proc = Process(target=run_script_process, args=(abs_path, argv or []))
             proc.start()
             self.launched_processes.append(proc)
             self.log(f"Launched '{os.path.basename(abs_path)}' in a new process.")
         except Exception as e:
             self.log(f"ERROR: Failed to launch. {e}")
             messagebox.showerror("Launch Error", f"Could not launch the module:\n\n{e}")
+
+    # -------------------------------------------------------- File menu actions
+    DATA_FILETYPES = [("Data files", "*.txt *.csv *.dat"),
+                      ("Text files", "*.txt"),
+                      ("CSV files", "*.csv"),
+                      ("All files", "*.*")]
+
+    def _ask_data_files(self, title, multiple=False):
+        """Common data-file picker; remembers the last folder used."""
+        ask = filedialog.askopenfilenames if multiple else filedialog.askopenfilename
+        chosen = ask(title=title, initialdir=self._last_data_dir,
+                     filetypes=self.DATA_FILETYPES)
+        if not chosen:
+            return [] if multiple else None
+        first = chosen[0] if multiple else chosen
+        self._last_data_dir = os.path.dirname(first)
+        return list(chosen) if multiple else chosen
+
+    def open_data_file(self):
+        """Open a data file in whatever application Windows associates with it."""
+        path = self._ask_data_files("Open data file")
+        if path:
+            self.log(f"Opening '{os.path.basename(path)}'.")
+            self._open_path(path)
+
+    def open_data_in_editor(self):
+        """Open a data file in Notepad (a plain text editor on other platforms)."""
+        path = self._ask_data_files("Open data file in text editor")
+        if not path:
+            return
+        try:
+            if platform.system() == "Windows":
+                subprocess.Popen(["notepad.exe", os.path.abspath(path)])
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", "-e", os.path.abspath(path)])
+            else:
+                subprocess.Popen(["xdg-open", os.path.abspath(path)])
+            self.log(f"Opened '{os.path.basename(path)}' in a text editor.")
+        except Exception as e:
+            self.log(f"ERROR: Could not open the text editor. {e}")
+            messagebox.showerror("Error", f"Could not open a text editor:\n\n{e}")
+
+    def open_data_as_graph(self):
+        """Plot one or more data files by handing them to the Plotter Utility."""
+        paths = self._ask_data_files("Open data as graph", multiple=True)
+        if not paths:
+            return
+        self.log(f"Plotting {len(paths)} file(s) in the Plotter Utility.")
+        self.launch_script("Plotter Utility", argv=[os.path.abspath(p) for p in paths])
+
+    def open_folder(self):
+        """Open any folder in the system file browser."""
+        folder = filedialog.askdirectory(title="Open folder",
+                                         initialdir=self._last_data_dir)
+        if folder:
+            self._last_data_dir = folder
+            self._open_path(folder)
+
+    def open_pica_folder(self):
+        """Open the PICA installation folder itself."""
+        self._open_path(os.path.dirname(os.path.abspath(self.README_FILE)))
 
     def open_script_folder(self, script_key):
         script_path = self.SCRIPT_PATHS.get(script_key)
