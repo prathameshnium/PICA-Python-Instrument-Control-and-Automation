@@ -68,6 +68,9 @@ except ImportError:
 # Each entry: friendly name -> substrings that identify it in a *IDN? reply.
 KNOWN_INSTRUMENTS = [
     ("Lakeshore 350",   ["MODEL350", "MODEL 350", "LSCI"]),
+    # Cryo-con replies e.g. "Cryocon Model 34 Rev 3.18A". Match on the maker
+    # name plus the model so a Model 32/24C on the bus is not mistaken for it.
+    ("Cryocon 34",      ["CRYOCON MODEL 34", "CRYO-CON MODEL 34"]),
     ("Keithley 2400",   ["MODEL 2400"]),
     ("Keithley 6221",   ["MODEL 6221"]),
     ("Keithley 2182",   ["MODEL 2182"]),
@@ -109,6 +112,7 @@ def scan_instruments():
         'resources': [],
         'detected': {name: None for name, _ in KNOWN_INSTRUMENTS},
         'temperature': None,
+        'temp_units': 'K',
         'temp_source': None,
         'timestamp': datetime.now().strftime("%H:%M:%S"),
     }
@@ -125,6 +129,7 @@ def scan_instruments():
 
     result['resources'] = resources
     lakeshore_resource = None
+    cryocon_resource = None
 
     for res in resources:
         addr = _gpib_address_of(res)
@@ -153,8 +158,11 @@ def scan_instruments():
                 result['detected'][name] = res
                 if name == "Lakeshore 350":
                     lakeshore_resource = res
+                elif name == "Cryocon 34":
+                    cryocon_resource = res
 
-    # One temperature snapshot from the Lakeshore, if present.
+    # One temperature snapshot: the Lakeshore if present, otherwise the
+    # Cryocon. Both are single read-only queries; nothing is configured.
     if lakeshore_resource:
         try:
             inst = rm.open_resource(lakeshore_resource)
@@ -162,6 +170,21 @@ def scan_instruments():
             temp = inst.query("KRDG? A").strip()
             result['temperature'] = float(temp)
             result['temp_source'] = "Lakeshore 350 · Input A"
+            inst.close()
+        except Exception:
+            result['temperature'] = None
+
+    if result['temperature'] is None and cryocon_resource:
+        try:
+            inst = rm.open_resource(cryocon_resource)
+            inst.timeout = TEMP_TIMEOUT_MS
+            # INPUT? reports in the channel's own display units, so the
+            # units are read too rather than assumed to be Kelvin.
+            temp = inst.query("INPUT? A").strip()
+            units = inst.query("INPUT A:UNITS?").strip().upper()
+            result['temperature'] = float(temp)
+            result['temp_units'] = units[:1] or 'K'
+            result['temp_source'] = "Cryocon 34 · Input A"
             inst.close()
         except Exception:
             result['temperature'] = None
@@ -950,11 +973,12 @@ class PICALauncherV2:
 
         # Temperature snapshot
         if r['temperature'] is not None:
-            self.temp_value.config(text=f"{r['temperature']:.2f} K")
+            units = r.get('temp_units', 'K')
+            self.temp_value.config(text=f"{r['temperature']:.2f} {units}")
             self.temp_sub.config(text=f"{r['temp_source']} · as of {r['timestamp']}")
         else:
             self.temp_value.config(text="—")
-            self.temp_sub.config(text="no Lakeshore reading")
+            self.temp_sub.config(text="no Lakeshore / Cryocon reading")
 
         # Chips
         for name, (dot, lbl, manual) in self.chip_widgets.items():
