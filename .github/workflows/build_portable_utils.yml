@@ -1,0 +1,70 @@
+name: Build Portable PICA Utils
+
+# Freezes pica_utils_portable.py into a single Windows .exe that needs no
+# Python and no packages on the target machine. Run it by hand from the
+# Actions tab, or push a v* tag to also attach the exe to that release.
+on:
+  workflow_dispatch:
+  push:
+    # Tags only, with no path filter: GitHub ANDs tag and path filters, so a
+    # release tag would otherwise be skipped unless those files also changed.
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'pica_utils_portable.py'
+      - 'PICA_Utils_Portable.spec'
+      - '.github/workflows/build_portable_utils.yml'
+
+permissions:
+  contents: write   # needed only by the release step on a tag
+
+jobs:
+  build:
+    name: Build standalone EXE (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install build dependencies
+        # Only what the eight bundled utilities actually import — the VISA /
+        # instrument stack is deliberately left out of this build.
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller numpy pandas matplotlib Pillow
+
+      - name: Freeze to a single EXE
+        run: pyinstaller --noconfirm --clean PICA_Utils_Portable.spec
+
+      - name: Smoke-test the EXE
+        # The exe is windowed, so it has no stdout to read: --selftest imports
+        # all eight tools inside the bundle, writes the detail to a file and
+        # reports through the exit code. A missing module fails the build
+        # instead of shipping an exe that dies on the first button press.
+        run: |
+          $p = Start-Process -FilePath ".\dist\PICA_Utils_Portable.exe" `
+                             -ArgumentList '--selftest','selftest.log' `
+                             -Wait -PassThru
+          if (Test-Path selftest.log) { Get-Content selftest.log | Write-Host }
+          if ($p.ExitCode -ne 0) { throw "selftest failed (exit $($p.ExitCode))" }
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PICA_Utils_Portable-windows
+          path: dist/PICA_Utils_Portable.exe
+          if-no-files-found: error
+
+      - name: Attach EXE to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/PICA_Utils_Portable.exe

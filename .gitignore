@@ -27,6 +27,8 @@ dist/
 
 # PyInstaller
 *.spec
+# ...except the portable-utils spec: the build workflow needs it in the repo.
+!PICA_Utils_Portable.spec
 
 # Test & Coverage
 .pytest_cache/
