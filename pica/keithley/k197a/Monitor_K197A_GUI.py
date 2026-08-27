@@ -102,8 +102,7 @@ DEFAULT_VISA_ADDRESS = "GPIB0::7::INSTR"
 
 # UNVERIFIED: the reply format of the 197A is not documented to us. This
 # regex pulls the first floating point number out of whatever comes back.
-# Confirm the real format from the 1973/1972 interface manual, or by using
-# the raw command box on the panel against the meter.
+# Confirm the real format from the 1973/1972 interface manual.
 NUMBER_RE = re.compile(r'[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?')
 
 NO_RESPONSE_MESSAGE = (
@@ -235,19 +234,6 @@ class Keithley197A_Backend:
         # needs a trigger command first. Confirm from the interface manual.
         return self.instrument.read().strip()
 
-    def send_raw(self, command_string):
-        """Writes an arbitrary string and returns whatever comes back.
-
-        Used by the raw command box. No parsing whatsoever.
-        """
-        self.instrument.write(command_string)
-        try:
-            return self.instrument.read().strip()
-        except Exception as e:
-            if pyvisa is not None and isinstance(e, pyvisa.errors.VisaIOError):
-                return "(no reply within timeout)"
-            raise
-
     def close(self):
         """Closes the connection to the instrument."""
         if self.instrument:
@@ -322,11 +308,6 @@ class K197AMonitorGUI:
         self.log("Keithley 197A monitor ready.")
         self.log("The 197A needs a Model 1973A / 1972A IEEE-488 card to be "
                  "controllable at all.")
-        self.log(f"Default address is the placeholder {DEFAULT_VISA_ADDRESS}. "
-                 "If that is wrong, run the GPIB Scanner utility (the keypad "
-                 "button at the top right) to see what is on the bus.")
-        self.log("Command table in this module is UNVERIFIED. Use the Raw "
-                 "Command box to confirm the real command letters.")
 
     def setup_styles(self):
         style = ttk.Style(self.root)
@@ -442,7 +423,6 @@ class K197AMonitorGUI:
         self.create_info_frame(scrollable_frame)
         self.create_console_frame(scrollable_frame)
         self.create_input_frame(scrollable_frame)
-        self.create_raw_frame(scrollable_frame)
         self.create_status_frame(scrollable_frame)
 
         self.create_graph_frame(right_panel)
@@ -589,14 +569,6 @@ class K197AMonitorGUI:
             row=row, column=0, columnspan=2, padx=10, pady=(0, 5), sticky='ew')
         row += 1
 
-        ttk.Label(frame, text="Operator (optional):").grid(
-            row=row, column=0, columnspan=2, padx=10, pady=pady_val, sticky='w')
-        row += 1
-        self.entries["Operator"] = ttk.Entry(frame, font=self.FONT_BASE)
-        self.entries["Operator"].grid(
-            row=row, column=0, columnspan=2, padx=10, pady=(0, 5), sticky='ew')
-        row += 1
-
         ttk.Label(frame, text="VISA Address:").grid(
             row=row, column=0, columnspan=2, padx=10, pady=pady_val, sticky='w')
         row += 1
@@ -664,29 +636,6 @@ class K197AMonitorGUI:
             style='Stop.TButton',
             state='disabled')
         self.stop_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
-
-    def create_raw_frame(self, parent):
-        """The raw command box. Until the command table above is confirmed
-        against the printed 1973/1972 manual, this is the most useful control
-        on the panel: it writes exactly what is typed and shows the reply
-        verbatim, with no parsing."""
-        frame = ttk.LabelFrame(parent, text='Raw Command (unparsed)')
-        frame.pack(pady=5, padx=10, fill='x')
-        frame.columnconfigure(0, weight=1)
-
-        ttk.Label(
-            frame,
-            text="Sent verbatim, reply shown verbatim in the console.",
-            font=self.FONT_SUB_LABEL).grid(
-            row=0, column=0, columnspan=2, padx=10, pady=(5, 2), sticky='w')
-
-        self.raw_entry = ttk.Entry(frame, font=self.FONT_BASE)
-        self.raw_entry.grid(row=1, column=0, padx=(10, 5), pady=(0, 10), sticky='ew')
-        self.raw_entry.bind("<Return>", lambda e: self.send_raw_command())
-
-        self.raw_button = ttk.Button(
-            frame, text="Send", command=self.send_raw_command)
-        self.raw_button.grid(row=1, column=1, padx=(0, 10), pady=(0, 10), sticky='ew')
 
     def create_status_frame(self, parent):
         frame = ttk.LabelFrame(parent, text='Live Status')
@@ -808,27 +757,9 @@ class K197AMonitorGUI:
                  "reply above does not prove the instrument is a 197A.")
         return True
 
-    def send_raw_command(self):
-        """Writes whatever is in the raw box and logs the reply verbatim."""
-        command_string = self.raw_entry.get()
-        if not command_string:
-            self.log("Raw command box is empty.")
-            return
-        if not self.backend:
-            if not self.connect_instrument():
-                return
-        try:
-            reply = self.backend.send_raw(command_string)
-            self.log(f"RAW SENT: {command_string}")
-            self.log(f"RAW REPLY: {reply!r}")
-        except Exception as e:
-            self.log(f"RAW SENT: {command_string}")
-            self.log(f"RAW ERROR: {e}")
-
     def start_measurement(self):
         try:
             sample_name = self.entries["Sample Name"].get().strip()
-            operator = self.entries["Operator"].get().strip()
             address = self.entries["Address"].get().strip()
             function_name = self.function_cb.get()
             range_name = self.range_cb.get()
@@ -857,9 +788,8 @@ class K197AMonitorGUI:
                 writer = csv.writer(f)
                 writer.writerow(["# PICA - Keithley 197A monitor"])
                 writer.writerow(
-                    [f"# Module: Monitor_K197A_GUI.py, version {self.PROGRAM_VERSION}"])
+                    [f"# Module: Monitor_K197A_GUI.py version {self.PROGRAM_VERSION}"])
                 writer.writerow([f"# Sample: {sample_name}"])
-                writer.writerow([f"# Operator: {operator}"])
                 writer.writerow([f"# Instrument: Keithley 197A at {address}"])
                 writer.writerow(
                     ["# Interface: Model 1973A / 1972A IEEE-488 (assumed; "
