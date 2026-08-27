@@ -87,9 +87,12 @@ KNOWN_INSTRUMENTS = [
     ("Keysight E4980A", ["E4980"]),
 ]
 
-# Instruments that must never be auto-probed. Shown on the strip but always as
-# "manual" -- the launcher does not send them anything.
-NEVER_PROBED_INSTRUMENTS = ["Novocontrol Alpha-AN"]
+# Instruments that must never be auto-probed. Each gets a permanently greyed
+# "(manual)" chip on the status strip: the launcher never sends them anything,
+# so it never has a state to report. Empty by default -- a chip that can only
+# ever say "I did not look" is noise on the strip. This list is cosmetic; the
+# protection that actually keeps a probe off the bus is SKIP_GPIB_ADDRESSES.
+NEVER_PROBED_INSTRUMENTS = []
 
 # GPIB primary addresses that must be skipped during the scan even if VISA lists
 # them. Put the Novocontrol Alpha's address here (e.g. {20}) so a stray *IDN? is
