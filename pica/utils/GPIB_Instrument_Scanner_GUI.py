@@ -238,6 +238,8 @@ Nanovoltmeters, LCR Meters & Amplifiers
   • Keithley 2182:      GPIB0::7::INSTR
   • Keysight E4980A:    GPIB0::17::INSTR
   • SRS SR830 Lock-in:  GPIB0::8::INSTR
+  • Keithley 197A DMM:  GPIB0::7::INSTR  (UNCONFIRMED; needs a
+                        Model 1973A / 1972A IEEE-488 card fitted)
 
 \n---------------------------------------------
 """
