@@ -204,6 +204,7 @@ class PICALauncherApp:
         "PPMS Sync Freq. Scan": resource_path("keysight/PPMS_Sync_Freq_Scan_E4980A_GUI.py"),
         "PPMS Dielectric Master": resource_path("keysight/PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI.py"),
         "Alpha-AN Freq. Scan": resource_path("novocontrol/Frequency_Scan_AlphaAN_GUI.py"),
+        "Alpha-AN Freq. Scan (32-bit)": resource_path("novocontrol/Frequency_Scan_AlphaAN_32bit_GUI.py"),
         "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
         "PPMS Plotter Utility": resource_path("PPMS/PPMS_Plotter_GUI.py"),
         "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
@@ -759,7 +760,9 @@ class PICALauncherApp:
                                  "Voltage Driven",
                                  "Instrument: Novocontrol Alpha-AN + ZG4",
                                  [("Frequency Scan (fixed T)",
-                                   "Alpha-AN Freq. Scan")],
+                                   "Alpha-AN Freq. Scan"),
+                                  ("Frequency Scan (fixed T, 32-bit GPIB)",
+                                   "Alpha-AN Freq. Scan (32-bit)")],
                                  experimental=True)
 
         return main_container
