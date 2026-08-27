@@ -40,6 +40,7 @@ pip install --upgrade pica-suite
    * [Dielectric Spectroscopy](#67-dielectric-spectroscopy)
    * [Broadband Dielectric Spectroscopy](#68-broadband-dielectric-spectroscopy)
    * [Standalone Temperature Utilities](#69-standalone-temperature-utilities)
+   * [Bench Multimeter Logging (Keithley 197A)](#610-bench-multimeter-logging-keithley-197a)
 7. [Releases and Versions](#7-releases-and-versions)
 8. [Common Issues & Troubleshooting](#8-common-issues--troubleshooting)
 9. [Technical Reference](#9-technical-reference)
@@ -525,6 +526,58 @@ The standalone Temperature Monitor utility, used for logging data from a Lakesho
 The standalone Temperature Control utility, providing a dedicated interface for managing temperature ramps and heater outputs on a Lakeshore 350.
 :::
 
+### 6.10 Bench Multimeter Logging (Keithley 197A)
+
+**Target Hardware:** Keithley 197A Autoranging Microvolt DMM.
+
+A single-instrument logger for the Keithley 197A. It sets the measurement
+function and range, then polls the meter and records the reading against time
+with a live plot, until stopped. All seven functions are exposed (DC volts,
+AC volts, 2-wire ohms, 4-wire ohms, DC amps, AC amps and dB), with autorange
+as the default. The module ships in the usual two forms, a Tkinter GUI
+(`Monitor_K197A_GUI.py`) and a headless twin
+(`Monitor_K197A_Instrument_Control.py`).
+
+Two things set this module apart from every other one in PICA, and both matter
+before you use it:
+
+  * **The interface card is required.** The 197A has no built-in IEEE-488 bus.
+    Remote control is only possible with an add-on Model 1973A (or 1972A)
+    interface fitted to the meter. Those cards speak IEEE-488-1978, which
+    predates both IEEE 488.2 and SCPI, so there is no `*IDN?` identify query
+    and no colon-prefixed command anywhere in this module. If nothing answers
+    at the configured address, the module reports a plain diagnosis naming the
+    missing card rather than raising an error, and points you at the GPIB
+    Scanner utility.
+  * **The command table is UNVERIFIED.** The single-letter device-dependent
+    commands (`F` for function, `R` for range, `X` to execute) are collected in
+    one dictionary at the top of each file, marked as unverified. They have not
+    been confirmed against hardware or against a machine-readable manual; the
+    authoritative source is the printed Model 1973/1972 IEEE-488 Interface
+    Instruction Manual. Correct that one dictionary from the manual before
+    trusting any reading. Every data file written by the module carries the line
+    `# Command table verified against manual: NO` in its header as a reminder.
+
+To help confirm the real command letters at the rack, the panel carries a
+**Raw Command** box: it writes whatever string you type and shows the reply
+verbatim in the console with no parsing at all. The headless twin offers the
+same thing through `--raw`, which works even when nothing else does.
+
+The reply format is likewise undocumented to us, so readings are parsed
+defensively: the first floating point number in the reply is taken as the
+value, and both the parsed value and the full raw string are written to the
+data file. A reply with no number in it is logged and written with a blank
+value rather than stopping the run. Units come from the selected function, not
+from the reply.
+
+The poll interval is a GUI field defaulting to 1.0 s, with a hard floor of
+0.34 s because the meter's own maximum is 3 readings per second. Anything
+faster is clamped, and the clamp is announced in the console.
+
+The default VISA address is the placeholder `GPIB0::7::INSTR`. It is editable
+in the GUI, and it is very likely wrong on your rack; run the GPIB Scanner
+utility to find the real one.
+
 ## 7. Releases and Versions
 
 For downloadable release builds, please visit the [Releases page](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases).
@@ -757,7 +810,9 @@ PICA (Root Directory)/
             T_Sensing_L350_GUI.py
             Instrument_Control/
         lockin/                 <-- Lock-in Amplifiers (Experimental)
-            BasicTest_S830_Instrument_Control.py
+            sr830/
+                Comms_SR830_GUI.py
+                Instrument_Control/
         utils/                  <-- Core Utilities
             GPIB_Instrument_Scanner_GUI.py
             GUI_Basic_Format.py

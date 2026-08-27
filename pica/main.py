@@ -187,6 +187,7 @@ class PICALauncherApp:
         "K6517B R-T": resource_path("keithley/k6517b/High_Resistance/RT_K6517B_L350_T_Control_GUI.py"),
         "K6517B R-T (T_Sensing)": resource_path("keithley/k6517b/High_Resistance/RT_K6517B_L350_T_Sensing_GUI.py"),
         "K6517B R-T (T_Sensing, CC34)": resource_path("keithley/k6517b/High_Resistance/RT_K6517B_CC34_T_Sensing_GUI.py"),
+        "K197A Monitor": resource_path("keithley/k197a/Monitor_K197A_GUI.py"),
         "Pyroelectric Current": resource_path("keithley/k6517b/Pyroelectricity/Pyroelectric_K6517B_L350_GUI.py"),
         "K6517B Polling (Bias)": resource_path("keithley/k6517b/Pyroelectricity/Polling_K6517B_GUI.py"),
         "Lakeshore Temp Control": resource_path("lakeshore/T_Control_L350_RangeControl_GUI.py"),
@@ -203,6 +204,7 @@ class PICALauncherApp:
         "LCR Temp. Scan (T_Sensing)": resource_path("keysight/Temprature_Scan_Passive_E4980A_GUI.py"), # Already present
         "PPMS Sync Freq. Scan": resource_path("keysight/PPMS_Sync_Freq_Scan_E4980A_GUI.py"),
         "PPMS Dielectric Master": resource_path("keysight/PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI.py"),
+        "SR830 Lock-in Comms": resource_path("lockin/sr830/Comms_SR830_GUI.py"),
         "Alpha-AN Freq. Scan": resource_path("novocontrol/Frequency_Scan_AlphaAN_GUI.py"),
         "Alpha-AN Freq. Scan (32-bit)": resource_path("novocontrol/Frequency_Scan_AlphaAN_32bit_GUI.py"),
         "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
@@ -724,6 +726,10 @@ class PICALauncherApp:
             right_col, 'Pyroelectric Measurement (Keithley 6517B)', "Current Sensing", None, [
                 ("PyroCurrent vs. T", "Pyroelectric Current"),
                 ("Voltage Polling (Bias)", "K6517B Polling (Bias)")])
+        self._create_suite_frame(
+            right_col, 'Bench Multimeter Logging (Keithley 197A)', "Passive Logging",
+            "Requires a Model 1973A / 1972A IEEE-488 interface card", [
+                ("197A Reading Monitor", "K197A Monitor", "sensing")])
         self._create_suite_frame(right_col,
                                  'Temperature Utilities (Lakeshore 350 / Cryocon 34)',
                                  "Control Utility",
@@ -763,6 +769,13 @@ class PICALauncherApp:
                                    "Alpha-AN Freq. Scan"),
                                   ("Frequency Scan (fixed T, 32-bit GPIB)",
                                    "Alpha-AN Freq. Scan (32-bit)")],
+                                 experimental=True)
+        self._create_suite_frame(right_col,
+                                 'Lock-in Amplifier',
+                                 "Communication",
+                                 "Instrument: SRS SR830 DSP Lock-in",
+                                 [("Comms and Control",
+                                   "SR830 Lock-in Comms")],
                                  experimental=True)
 
         return main_container

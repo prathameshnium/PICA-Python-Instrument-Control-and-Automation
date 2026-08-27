@@ -186,13 +186,36 @@ class TestDeepSimulation(unittest.TestCase):
         with patch('pyvisa.ResourceManager') as MockRM:
             spy = MockRM.return_value.open_resource.return_value
 
+            # Replies in the exact order Comms_SR830_Instrument_Control
+            # queries them under --identify: *IDN?, then SETTINGS_QUERIES,
+            # then the two status bytes.
             spy.query.side_effect = [
                 "SRS,SR830,s/n12345,ver1.07",  # *IDN?
-                "15",                         # SENS?
-                "1.23,4.56"                   # SNAP? 3,4
+                "1",          # FMOD?  internal
+                "1000.000",   # FREQ?
+                "1",          # HARM?
+                "0.100",      # SLVL?
+                "0.00",       # PHAS?
+                "1",          # RSLP?
+                "0",          # ISRC?  A
+                "0",          # ICPL?  AC
+                "1",          # IGND?  ground
+                "3",          # ILIN?  both notches
+                "0",          # SYNC?  off
+                "20",         # SENS?  10 mV/nA
+                "9",          # OFLT?  300 ms
+                "1",          # OFSL?  12 dB/oct
+                "1",          # RMOD?  normal
+                "0",          # LIAS?
+                "0",          # ERRS?
             ]
-            self.run_module_safely(
-                "pica.lockin.BasicTest_S830_Instrument_Control", {})
+            with patch.object(
+                    sys, 'argv',
+                    ['Comms_SR830_Instrument_Control.py', '--identify',
+                     '--address', 'GPIB0::8::INSTR']):
+                self.run_module_safely(
+                    "pica.lockin.sr830.Instrument_Control."
+                    "Comms_SR830_Instrument_Control", {})
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_08_combined_2400_2182(self):
@@ -244,6 +267,34 @@ class TestDeepSimulation(unittest.TestCase):
             with patch('builtins.input', side_effect=inputs), \
                  patch('builtins.open', mock_open()):
                 self.run_module_safely("pica.keithley.k6517b.High_Resistance.Instrument_Control.IV_K6517B_Simple_Instrument_Control", {})
+
+    @pytest.mark.usefixtures("mock_tkinter")
+    def test_12_k197a_monitor_backend(self):
+        # The 197A is pre-SCPI: no *IDN?, so the mock only needs a canned
+        # reading string for the bare read() the module does.
+        mock_sleep = patch('time.sleep', side_effect=self.get_circuit_breaker(5))
+        mock_sleep.start()
+        self.addCleanup(mock_sleep.stop)
+        with patch('pyvisa.ResourceManager') as MockRM:
+            spy = MockRM.return_value.open_resource.return_value
+            spy.read.return_value = "NDCV+1.23456E-3"
+
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmpdir:
+                test_args = [
+                    '-m',
+                    '--address', 'GPIB0::7::INSTR',
+                    '--function', 'DC volts',
+                    '--range', 'auto',
+                    '--interval', '1.0',
+                    '--duration', '0',
+                    '--sample', 'test_sample',
+                    '--path', tmpdir,
+                ]
+                with patch('sys.argv', test_args):
+                    self.run_module_safely(
+                        "pica.keithley.k197a.Instrument_Control.Monitor_K197A_Instrument_Control", {})
+                spy.write.assert_any_call("F0R0X")
 
     @pytest.mark.usefixtures("mock_tkinter")
     def test_11_gpib_scanner(self):
