@@ -21,6 +21,14 @@ import runpy
 import multiprocessing
 from multiprocessing import Process
 
+# Run this file directly (python pica/main.py) and sys.path[0] is the pica
+# folder, not the repo root, so "import pica.utils..." can bind to an older
+# copy installed in site-packages instead of the one sitting next to this
+# file. Put the repo root first so the launcher always uses its own tree.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
 # IMPORT THE UTILS MODULE TO FIND ITS PATH AUTOMATICALLY
 try:
     import pica.utils.GPIB_Instrument_Scanner_GUI as gpib_scanner_module
@@ -199,6 +207,7 @@ class PICALauncherApp:
         "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
         "PPMS Plotter Utility": resource_path("PPMS/PPMS_Plotter_GUI.py"),
         "GPIB Scanner": resource_path("utils/GPIB_Instrument_Scanner_GUI.py"),
+        "GPIB Scanner (32-bit)": resource_path("utils/GPIB_Scanner_32bit_GUI.py"),
         "SCPI Console": resource_path("utils/SCPI_Console_GUI.py"),
         "PICA Help": resource_path("README.md"),
         "PE Plotter": resource_path("utils/PE_plotter.py"),
@@ -979,6 +988,7 @@ class PICALauncherApp:
         tool_groups = [
             ("Communication", [
                 ("GPIB Scanner", "GPIB Scanner"),
+                ("GPIB Scanner (32-bit)", "GPIB Scanner (32-bit)"),
                 ("SCPI Console", "SCPI Console"),
             ]),
             ("PPMS Utilities", [

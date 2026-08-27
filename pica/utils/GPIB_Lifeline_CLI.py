@@ -31,7 +31,7 @@
                python GPIB_Lifeline_CLI.py --address 5 --board 0
                python GPIB_Lifeline_CLI.py --address 5 --dll "C:\\path\\to\\gpib-32.dll"
  AUTHOR:       Prathamesh Deshmukh
- VERSION:      V: 1.1
+ VERSION:      V: 1.2
 ===============================================================================
 '''
 
@@ -130,6 +130,9 @@ def report_environment():
     print("== Environment ==")
     print(f"  Python : {sys.version.split()[0]} ({bits}-bit)  "
           f"{sys.executable}")
+    if bits == 64:
+        print("           NOTE: a 32-bit-only GPIB stack cannot be driven "
+              "from here. Re-run with 'py -3.10-32'.")
     print(f"  OS     : {sys.platform}  "
           f"{os.environ.get('OS', '')}".rstrip())
     try:
@@ -146,12 +149,28 @@ def report_environment():
 # -----------------------------------------------------------------------------
 
 def find_dll_candidates():
-    """The standard NI-488.2 DLL locations, tried once each -- no hunting."""
+    """The standard NI-488.2 DLL locations, tried once each -- no hunting.
+
+    On 64-bit Windows the loader redirects a 32-bit process's System32 path to
+    SysWOW64, so the System32 entry is what actually delivers the 32-bit
+    gpib-32.dll to a 32-bit interpreter (the only usable stack on the
+    Novocontrol BDS PC). SysWOW64 is listed explicitly as well so that a
+    64-bit interpreter can at least report that a 32-bit DLL exists; it will
+    refuse to load it with WinError 193, which is itself the diagnosis.
+    """
     windir = os.environ.get("SystemRoot", r"C:\Windows")
-    return [path for path in (
+    paths = (
         os.path.join(windir, "System32", "gpib-32.dll"),
         os.path.join(windir, "System32", "ni4882.dll"),
-    ) if os.path.isfile(path)]
+        os.path.join(windir, "SysWOW64", "gpib-32.dll"),
+    )
+    seen, ordered = set(), []
+    for path in paths:
+        key = os.path.normcase(path)
+        if key not in seen and os.path.isfile(path):
+            seen.add(key)
+            ordered.append(path)
+    return ordered
 
 
 def classify_candidates(candidates, bits):
