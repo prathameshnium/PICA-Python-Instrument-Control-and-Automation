@@ -83,7 +83,7 @@ PROGRAM_VERSION = "1.0"
 
 # UNVERIFIED: the reply format of the 197A is not documented to us. This
 # regex pulls the first floating point number out of whatever comes back.
-# Confirm the real format from the 1973/1972 interface manual, or with --raw.
+# Confirm the real format from the 1973/1972 interface manual.
 NUMBER_RE = re.compile(r'[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?')
 
 NO_RESPONSE_MESSAGE = (
@@ -157,16 +157,6 @@ class Keithley197A_Backend:
         # needs a trigger command first. Confirm from the interface manual.
         return self.instrument.read().strip()
 
-    def send_raw(self, command_string):
-        """Writes an arbitrary string and returns whatever comes back."""
-        self.instrument.write(command_string)
-        try:
-            return self.instrument.read().strip()
-        except Exception as e:
-            if pyvisa is not None and isinstance(e, pyvisa.errors.VisaIOError):
-                return "(no reply within timeout)"
-            raise
-
     def close(self):
         """Closes the connection to the instrument."""
         if self.instrument:
@@ -217,8 +207,6 @@ def build_parser():
     parser.add_argument("--sample", help="Sample name for the file header.")
     parser.add_argument("--path", help="Output folder. Defaults to a 'data' "
                                        "folder beside the script.")
-    parser.add_argument("--raw", help="Send one raw command string, print the "
-                                      "reply, and exit.")
     return parser
 
 
@@ -227,26 +215,6 @@ def main():
 
     if not PYVISA_AVAILABLE:
         print("[ERROR] PyVISA is not installed.")
-        return
-
-    # --- The raw escape hatch. Works even when nothing else does, and it is
-    # how the real command letters get confirmed at the rack. ---
-    if args.raw is not None:
-        address = args.address if args.address else DEFAULT_VISA_ADDRESS
-        try:
-            backend = Keithley197A_Backend(address)
-        except Exception as e:
-            print(f"[ERROR] Could not open {address}: {e}")
-            return
-        try:
-            reply = backend.send_raw(args.raw)
-            print(f"RAW SENT : {args.raw}")
-            print(f"RAW REPLY: {reply!r}")
-        except Exception as e:
-            print(f"RAW SENT : {args.raw}")
-            print(f"RAW ERROR: {e}")
-        finally:
-            backend.close()
         return
 
     default_path = os.path.join(
@@ -317,10 +285,9 @@ def main():
         writer = csv.writer(f)
         writer.writerow(["# PICA - Keithley 197A monitor"])
         writer.writerow(
-            [f"# Module: Monitor_K197A_Instrument_Control.py, version "
+            [f"# Module: Monitor_K197A_Instrument_Control.py version "
              f"{PROGRAM_VERSION}"])
         writer.writerow([f"# Sample: {sample_name}"])
-        writer.writerow(["# Operator: "])
         writer.writerow([f"# Instrument: Keithley 197A at {address}"])
         writer.writerow(
             ["# Interface: Model 1973A / 1972A IEEE-488 (assumed; not "

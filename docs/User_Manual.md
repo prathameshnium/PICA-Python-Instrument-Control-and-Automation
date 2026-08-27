@@ -555,13 +555,9 @@ before you use it:
     been confirmed against hardware or against a machine-readable manual; the
     authoritative source is the printed Model 1973/1972 IEEE-488 Interface
     Instruction Manual. Correct that one dictionary from the manual before
-    trusting any reading. Every data file written by the module carries the line
+    trusting any reading. Use the SCPI Console utility if you need to try
+    command strings against the meter by hand. Every data file written by the module carries the line
     `# Command table verified against manual: NO` in its header as a reminder.
-
-To help confirm the real command letters at the rack, the panel carries a
-**Raw Command** box: it writes whatever string you type and shows the reply
-verbatim in the console with no parsing at all. The headless twin offers the
-same thing through `--raw`, which works even when nothing else does.
 
 The reply format is likewise undocumented to us, so readings are parsed
 defensively: the first floating point number in the reply is taken as the

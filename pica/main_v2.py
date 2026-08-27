@@ -264,6 +264,14 @@ CATALOG = [
         ],
     },
     {
+        'category': "Bench Multimeter Logging",
+        'type': "Passive Logging",
+        'instruments': "Keithley 197A · Model 1973A / 1972A IEEE-488 card",
+        'modules': [
+            ("197A Reading Monitor", "K197A Monitor", "sensing"),
+        ],
+    },
+    {
         'category': "Temperature Utilities",
         'type': "Control Utility",
         'instruments': "Lakeshore 350 · Cryocon 34",
@@ -300,6 +308,15 @@ CATALOG = [
             ("Frequency Scan (fixed T)", "Alpha-AN Freq. Scan", None),
             ("Frequency Scan (fixed T, 32-bit GPIB)",
              "Alpha-AN Freq. Scan (32-bit)", None),
+        ],
+    },
+    {
+        'category': "Lock-in Amplifier",
+        'type': "Communication",
+        'instruments': "SRS SR830 DSP Lock-in",
+        'experimental': True,
+        'modules': [
+            ("Comms and Control", "SR830 Lock-in Comms", None),
         ],
     },
 ]

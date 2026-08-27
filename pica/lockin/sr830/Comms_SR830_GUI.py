@@ -3,8 +3,7 @@
  PROGRAM:      PICA SR830 Lock-in Communication and Control
  PURPOSE:      A panel for talking to a Stanford Research Systems SR830 DSP
                lock-in amplifier: connect and identify, read back and change
-               every important setting, watch X, Y, R and Theta live, and send
-               raw commands.
+               every important setting, and watch X, Y, R and Theta live.
 
                This is a communication and control module, NOT a measurement
                module. There is deliberately no sweep and no acquisition loop.
@@ -26,7 +25,6 @@ import os
 import time
 import threading
 import queue
-from collections import deque
 from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -414,12 +412,6 @@ class SR830Backend:
         """Run AGAN, ARSV, APHS or 'AOFF i'. All of them are write only."""
         self.instrument.write(command)
 
-    def write_raw(self, command):
-        self.instrument.write(command)
-
-    def query_raw(self, command):
-        return self.instrument.query(command)
-
     def reset(self):
         """Send *RST, then re-select GPIB because the reset clears OUTX."""
         self.instrument.write('*RST')
@@ -446,7 +438,6 @@ class SR830CommsGUI:
     DEFAULT_ADDRESS = "GPIB0::8::INSTR"
     LOGO_SIZE = 110
     LEFT_PANEL_WIDTH = 520
-    RAW_SCROLLBACK = 200
 
     try:
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -512,7 +503,6 @@ class SR830CommsGUI:
         self.is_monitoring = False
         self.start_time = None
         self.data_storage = {'time': [], 'r': []}
-        self.raw_history = deque(maxlen=self.RAW_SCROLLBACK)
         self.file_location_path = ""
         self.data_filepath = None
         self.logo_image = None
@@ -659,7 +649,6 @@ class SR830CommsGUI:
         self.create_console_frame(scrollable_frame)
 
         self.create_readout_frame(right_panel)
-        self.create_raw_frame(right_panel)
         self.create_graph_frame(right_panel)
 
         self._set_controls_enabled(False)
@@ -936,36 +925,6 @@ class SR830CommsGUI:
             command=self._browse_file_location).grid(
             row=1, column=5, padx=(12, 0), pady=3, sticky='e')
 
-    def create_raw_frame(self, parent):
-        frame = ttk.LabelFrame(parent, text='Raw Command Console')
-        frame.pack(side='bottom', fill='x', padx=5, pady=(0, 5))
-
-        self.raw_widget = scrolledtext.ScrolledText(
-            frame, state='disabled', height=9, bg=self.CLR_CONSOLE_BG,
-            fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word',
-            bd=0, relief='flat')
-        self.raw_widget.pack(fill='x', padx=8, pady=(8, 4))
-
-        entry_row = ttk.Frame(frame)
-        entry_row.pack(fill='x', padx=8, pady=(0, 8))
-        entry_row.columnconfigure(0, weight=1)
-
-        self.raw_entry = ttk.Entry(entry_row, font=self.FONT_CONSOLE)
-        self.raw_entry.grid(row=0, column=0, sticky='ew', padx=(0, 6))
-        self.raw_entry.bind('<Return>', lambda e: self.send_raw())
-
-        self.raw_read_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            entry_row, text="Read reply",
-            variable=self.raw_read_var).grid(row=0, column=1, padx=(0, 6))
-        self.raw_send_button = ttk.Button(
-            entry_row, text="Send", command=self.send_raw)
-        self.raw_send_button.grid(row=0, column=2)
-
-        self._raw_log(
-            "Type an SR830 command and press Send. Untick 'Read reply' for "
-            "write-only commands, a blind query on those will hang.")
-
     def create_graph_frame(self, parent):
         graph_container = ttk.LabelFrame(parent, text='R vs. Time')
         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
@@ -992,15 +951,6 @@ class SR830CommsGUI:
         self.console_widget.insert('end', f"[{timestamp}] {message}\n")
         self.console_widget.see('end')
         self.console_widget.config(state='disabled')
-
-    def _raw_log(self, message):
-        """Append to the raw console, keeping only the last N exchanges."""
-        self.raw_history.append(message)
-        self.raw_widget.config(state='normal')
-        self.raw_widget.delete('1.0', 'end')
-        self.raw_widget.insert('end', "\n".join(self.raw_history) + "\n")
-        self.raw_widget.see('end')
-        self.raw_widget.config(state='disabled')
 
     # --------------------------------------------------------- worker plumbing
     def _submit(self, func, description, on_success=None):
@@ -1050,8 +1000,6 @@ class SR830CommsGUI:
             entry.config(state=state)
         for child in self.settings_frame.winfo_children():
             self._set_button_state(child, state)
-        self.raw_send_button.config(state=state)
-        self.raw_entry.config(state=state)
         self.monitor_start_button.config(state=state)
         self.connect_button.config(state='disabled' if connected else 'normal')
         self.disconnect_button.config(state=state)
@@ -1211,41 +1159,6 @@ class SR830CommsGUI:
         self._submit(
             lambda: self.backend.auto_function(command),
             f"Sent {command}   ({label})")
-
-    # ----------------------------------------------------------- raw console
-    def send_raw(self):
-        if not self._require_connection():
-            return
-        command = self.raw_entry.get().strip()
-        if not command:
-            return
-        read_reply = self.raw_read_var.get()
-        self._raw_log(f">> {command}")
-        self.raw_entry.delete(0, 'end')
-
-        def task():
-            if read_reply:
-                return self.backend.query_raw(command)
-            self.backend.write_raw(command)
-            return None
-
-        def show(reply):
-            if reply is None:
-                self._raw_log("<< (write only, no read attempted)")
-            else:
-                self._raw_log(f"<< {reply.strip()}")
-
-        def worker():
-            try:
-                with self.io_lock:
-                    result = task()
-            except Exception as exc:
-                self.action_queue.put(
-                    ('ok', None, f"<< ERROR: {exc}", self._raw_log))
-                return
-            self.action_queue.put(('ok', None, result, show))
-
-        threading.Thread(target=worker, daemon=True).start()
 
     # ------------------------------------------------------------- monitoring
     def start_monitor(self):

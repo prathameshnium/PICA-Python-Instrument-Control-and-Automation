@@ -3,8 +3,8 @@
  PROGRAM:      PICA SR830 Communication and Control (headless twin)
  PURPOSE:      Talk to a Stanford Research Systems SR830 DSP lock-in amplifier
                from a terminal: identify it, dump every important setting with
-               the physical value beside the raw code, change settings, watch
-               X, Y, R and Theta, or send a single raw command.
+               the physical value beside the raw code, change settings, and
+               watch X, Y, R and Theta.
 
                This is a communication and control module, NOT a measurement
                module. There is deliberately no sweep and no acquisition loop.
@@ -383,12 +383,6 @@ class SR830Backend:
         """Run AGAN, ARSV, APHS or 'AOFF i'. All of them are write only."""
         self.instrument.write(command)
 
-    def write_raw(self, command):
-        self.instrument.write(command)
-
-    def query_raw(self, command):
-        return self.instrument.query(command)
-
     def reset(self):
         """Send *RST, then re-select GPIB because the reset clears OUTX."""
         self.instrument.write('*RST')
@@ -455,16 +449,6 @@ def do_set(backend, items):
             print("[ERROR] %s" % exc)
             continue
         print("[SET] %-32s -> %s" % (text, command))
-
-
-def do_raw(backend, command, read_reply=True):
-    print("[TX] %s" % command)
-    if read_reply:
-        reply = backend.query_raw(command)
-        print("[RX] %s" % reply.strip())
-    else:
-        backend.write_raw(command)
-        print("[RX] (write only, no read attempted)")
 
 
 def do_monitor(backend, interval, sample, path):
@@ -534,9 +518,6 @@ def main():
     parser.add_argument(
         "--path", default="",
         help="Output folder, defaults to a 'data' folder beside this script.")
-    parser.add_argument(
-        "--raw", default=None,
-        help="Send one raw command string, print the reply, then exit.")
     args = parser.parse_args()
 
     address = args.address
@@ -546,21 +527,18 @@ def main():
     interval = args.interval
     sample = args.sample
     path = args.path or default_data_dir()
-    raw_command = args.raw
 
     # Any flag not supplied falls back to an interactive prompt that shows the
     # default in brackets and accepts a bare Enter.
-    if not (identify or set_items or monitor or raw_command):
+    if not (identify or set_items or monitor):
         address = prompt_default("VISA address", address)
         action = prompt_default(
-            "Action: identify, set, monitor or raw", "identify").lower()
+            "Action: identify, set or monitor", "identify").lower()
         if action == "set":
             entered = prompt_default(
                 "Settings as KEY=VALUE, comma separated", "")
             set_items = [part.strip()
                          for part in entered.split(",") if part.strip()]
-        elif action == "raw":
-            raw_command = prompt_default("Raw command", "*IDN?")
         elif action == "monitor":
             monitor = True
             interval = float(
@@ -587,9 +565,6 @@ def main():
     try:
         if identify:
             do_identify(backend)
-            return
-        if raw_command:
-            do_raw(backend, raw_command, read_reply="?" in raw_command)
             return
         if set_items:
             do_set(backend, set_items)
