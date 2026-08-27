@@ -295,6 +295,8 @@ CATALOG = [
         'experimental': True,
         'modules': [
             ("Frequency Scan (fixed T)", "Alpha-AN Freq. Scan", None),
+            ("Frequency Scan (fixed T, 32-bit GPIB)",
+             "Alpha-AN Freq. Scan (32-bit)", None),
         ],
     },
 ]

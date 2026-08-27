@@ -121,6 +121,29 @@ explicitly, and only those:
 
        py -3.10-32 pica\utils\GPIB_Scanner_32bit_CLI.py --idn 24
 
+3. **Then measure.** The frequency scan has a 32-bit twin,
+   `pica\novocontrol\Frequency_Scan_AlphaAN_32bit_GUI.py`, listed in both
+   launchers as **Alpha-AN Freq. Scan (32-bit GPIB)**. It is the same program
+   as the VISA edition with the transport swapped for raw NI-488.2: same
+   command flow, same safety ceilings, same ack protocol, same WinDETA
+   export. Differences worth knowing:
+
+   - It needs matplotlib (and Pillow for the logo) installed in the 32-bit
+     interpreter. A 64-bit run refuses to open and says so.
+   - **Scan Instruments** lists listeners via `ibln` and sends nothing; it no
+     longer auto-selects by `*IDN?`. Pick the Alpha's address and press
+     Connect, which sends the same read-only `*IDN?` and `INTTYP?` pair as
+     before.
+   - The 60 s VISA timeout becomes T100s, because NI-488.2 timeouts are
+     discrete and rounding down onto T30s would abort slow low-frequency
+     points.
+   - `wait_for_srq` becomes `ibwait` on the RQS mask, and `read_stb` becomes
+     `ibrsp`. Completion is still SRQ-driven, so `ZTSTAT?` is still never
+     polled during a measurement.
+
+   The two editions are separate files, so a fix to the sweep logic, the
+   safety ceilings or the export format has to be made in **both**.
+
 Note on DLL location: from a 32-bit process Windows redirects
 `C:\Windows\System32` to `SysWOW64`, so the System32 path is what actually
 loads the 32-bit `gpib-32.dll`. Both tools also list `SysWOW64` explicitly, so
