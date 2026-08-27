@@ -78,3 +78,51 @@ fully explained. All PICA tooling therefore follows these rules:
 - In the lifeline terminal, `:safe` parks the analyzer with the documented
   sequence `MBK, ACV=0, ZCONSPL=0` (same order as
   `pica/novocontrol` `safe_state()`).
+
+## When the PC has only a 32-bit GPIB stack (no usable VISA)
+
+Some Novocontrol PCs end up with a working 32-bit `gpib-32.dll` and no VISA
+GPIB interface at all. There, `pyvisa.ResourceManager().list_resources()`
+returns `()` however healthy the bus is, so the SCPI Console and the Scanner
+GUI show nothing. Neither of the two tools below uses pyvisa or VISA: both are
+stdlib-only ctypes onto the driver DLL, and both run under 32-bit and 64-bit
+Python. They report which they are, and a 64-bit interpreter that finds a
+32-bit DLL says `WRONG BITNESS` rather than failing obscurely.
+
+1. **Census first — nothing is spoken to.** Either the window or the CLI:
+
+       py -3.10-32 pica\utils\GPIB_Scanner_32bit_GUI.py
+       py -3.10-32 pica\utils\GPIB_Scanner_32bit_CLI.py
+
+   The window is also in both launchers, under Tools and PICA Utils, as
+   **GPIB Scanner (32-bit)**. The launchers start it in their own
+   interpreter, so if the launcher itself is 64-bit the window will say so
+   and offer **Reopen in 32-bit Python**, which restarts it through
+   `py -3.10-32`. Nothing is scanned until you press **Scan the bus**, and
+   `*IDN?` is only ever sent to one address at a time, by the button beside
+   it.
+
+   Probes primary addresses 1 to 30 on boards 0 and 1 with `ibln` only: it
+   asserts a listen address and watches the NDAC handshake line. No data, no
+   `*IDN?`, no device clear, no interface clear. An Alpha that answers only
+   its own command set still shows up as a listener. Output is teed to
+   `gpib_scan_report_<timestamp>.txt`.
+
+2. **Then talk to the one address the census found.**
+
+       py -3.10-32 pica\utils\GPIB_Lifeline_CLI.py --address 5
+
+   Single read-only `*IDN?`, then the interactive terminal with the usual
+   safety rules. For the Alpha, silence to `*IDN?` is not a fault: try
+   `INTTYP?`, which should report interface code 5 for the ZG4.
+
+The scanner will also send one read-only `*IDN?` to addresses you name
+explicitly, and only those:
+
+       py -3.10-32 pica\utils\GPIB_Scanner_32bit_CLI.py --idn 24
+
+Note on DLL location: from a 32-bit process Windows redirects
+`C:\Windows\System32` to `SysWOW64`, so the System32 path is what actually
+loads the 32-bit `gpib-32.dll`. Both tools also list `SysWOW64` explicitly, so
+a 64-bit run at least reports that the 32-bit library is present. `--dll
+<path>` overrides the search in either tool.

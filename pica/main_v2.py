@@ -38,6 +38,15 @@ import multiprocessing
 from multiprocessing import Process
 from datetime import datetime
 
+# Run this file directly (python pica/main_v2.py) and sys.path[0] is the pica
+# folder, not the repo root, so "import pica.main" can bind to an older copy
+# installed in site-packages instead of the one sitting next to this file. A
+# launcher that half-loads a stale twin reports things like "Unknown module
+# key" for modules that plainly exist, so put the repo root first.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
 # Reuse the proven helpers from the legacy launcher so the launch path and the
 # resolved script locations stay identical between v1 and v2.
 from pica.main import (
@@ -473,6 +482,8 @@ class PICALauncherV2:
 
         tools_menu = tk.Menu(menubar, tearoff=0)
         tools_menu.add_command(label="GPIB / VISA Scanner", command=self._launch_gpib_scanner)
+        tools_menu.add_command(label="GPIB Scanner (32-bit, no VISA)",
+                               command=lambda: self.launch_script("GPIB Scanner (32-bit)"))
         tools_menu.add_command(label="SCPI Console", command=lambda: self.launch_script("SCPI Console"))
         tools_menu.add_command(label="Plotter Utility", command=launch_plotter_utility)
         tools_menu.add_separator()
@@ -1113,6 +1124,7 @@ class PICALauncherV2:
                                 ("PPMS Time Estimator", "PPMS Time Estimator"),
                                 ("MD Ratio Calculator", "MD Ratio Calculator")]),
             ("Communication", [("GPIB / VISA Scanner", self._launch_gpib_scanner),
+                               ("GPIB Scanner (32-bit)", "GPIB Scanner (32-bit)"),
                                ("SCPI Console", "SCPI Console")]),
             ("Calculators", [("Quick Calc", "Quick Calc"),
                              ("Time Utility", "Time Utility"),
