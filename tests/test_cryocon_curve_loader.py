@@ -73,12 +73,44 @@ SOURCE = open(MODULE_PATH, encoding="utf-8").read()
 
 
 class SkipTest(Exception):
-    """Raised when a test needs the untracked Lake Shore CD files."""
+    """Raised when a test needs something this machine does not have."""
+
+
+def _skip(reason):
+    """Skip under pytest; skip cleanly when run as plain Python too."""
+    try:
+        import pytest
+    except ImportError:
+        raise SkipTest(reason)
+    pytest.skip(reason)
 
 
 def _need_cal_files():
     if not HAVE_CAL_FILES:
-        raise SkipTest(f"Lake Shore calibration files not present in {CAL_DIR}")
+        _skip(f"Lake Shore calibration files not present in {CAL_DIR}")
+
+
+# One Tk root for the whole module. Creating and destroying several Tk roots
+# in a single process is unreliable -- the second one can fail to find
+# tk.tcl -- so the tests that need a live window each get a Toplevel on this
+# shared root and destroy only that.
+_SHARED_ROOT = None
+_SHARED_ROOT_FAILED = False
+
+
+def _shared_root():
+    global _SHARED_ROOT, _SHARED_ROOT_FAILED
+    if _SHARED_ROOT_FAILED:
+        _skip("no display for a Tk root")
+    if _SHARED_ROOT is None:
+        try:
+            import tkinter as tk
+            _SHARED_ROOT = tk.Tk()
+            _SHARED_ROOT.withdraw()
+        except Exception as exc:
+            _SHARED_ROOT_FAILED = True
+            _skip(f"no display for a Tk root: {exc}")
+    return _SHARED_ROOT
 
 
 # ---------------------------------------------------------------------------
@@ -333,9 +365,17 @@ def test_a_crv_round_trips_through_its_own_reader():
         "CX1030 X17680", "R8K10UA", -1.0, "LOGOHM", points)
     header, read_back = LOADER.parse_crv_text(LOADER.crv_file_text(lines))
 
-    assert header == {"name": "CX1030 X17680", "sensor_type": "R8K10UA",
-                      "multiplier": -1.0, "units": "LOGOHM"}
-    comparison = LOADER.compare_curves(points, read_back)
+    assert header["name"] == "CX1030 X17680"
+    assert header["sensor_type"] == "R8K10UA"
+    assert header["multiplier"] == -1.0
+    assert header["units"] == "LOGOHM"
+    # The numerals as printed are kept so the readback can be checked at the
+    # precision the instrument actually offers.
+    assert len(header["point_texts"]) == len(points)
+    assert all(len(pair) == 2 for pair in header["point_texts"])
+
+    comparison = LOADER.compare_curves(points, read_back,
+                                       read_texts=header["point_texts"])
     assert comparison["matched"], comparison["problems"]
     # Six significant digits is what the instrument keeps, so that is the
     # most the writer should throw away.
@@ -764,6 +804,198 @@ def test_disconnect_is_non_destructive():
 
 
 # ---------------------------------------------------------------------------
+# Threading: the two defects found on re-verification, 29 Aug 2026
+# ---------------------------------------------------------------------------
+#
+# Both were invisible to a check that called the methods directly, because
+# both only bite where the code really runs: on a worker thread, with Tk's
+# event loop servicing the callbacks. These drive the whole path.
+
+class SimulatedModel34:
+    """Stores a CALCUR block and reads it back, one line per message."""
+
+    def __init__(self, fail_with=None):
+        self.idn = "Cryocon,34,204683,3.03A"
+        self.timeout = None
+        self.slots = {}
+        self._buffer = []
+        self._slot = None
+        self._pending = []
+        self.closed = False
+        self.writes = []
+        self.raw_writes = []
+        self._fail_with = fail_with
+
+    def write_raw(self, payload):
+        if self._fail_with:
+            raise self._fail_with
+        line = payload.decode("ascii").strip()
+        self.raw_writes.append(payload)
+        if line.upper().startswith("CALCUR "):
+            self._slot = int(line.split()[1])
+            self._buffer = []
+        elif line == ";":
+            self.slots[self._slot] = list(self._buffer) + [";"]
+            self._slot = None
+        elif self._slot is not None:
+            self._buffer.append(line)
+
+    def write(self, command):
+        self.writes.append(command)
+        if command.upper().startswith("CALCUR?"):
+            self._pending = list(self.slots.get(int(command.split()[-1]), []))
+
+    def query(self, command):
+        return (self.idn if command.strip() == "*IDN?" else "0") + "\n"
+
+    def read(self):
+        if not self._pending:
+            raise IOError("VI_ERROR_TMO: Timeout expired")
+        return self._pending.pop(0) + "\n"
+
+    def close(self):
+        self.closed = True
+
+
+def _gui_on_a_real_tk_root(instrument):
+    """A live GUI wired to a simulated Model 34. Caller destroys the window."""
+    _need_cal_files()
+    import tkinter as tk
+    root = tk.Toplevel(_shared_root())
+    root.withdraw()
+    app = LOADER.CurveLoaderGUI(root)
+    app._load_file(LS340_17680)
+    root.update()
+
+    link = LOADER.CryoconLink.__new__(LOADER.CryoconLink)
+    link.address = "GPIB0::12::INSTR"
+    link.instrument = instrument
+    link.idn = instrument.idn
+    link._log = lambda message: None
+    link._last_io = 0.0
+    link.rm = None
+    link.timeout_ms = LOADER.CRYOCON_TIMEOUT_MS
+    app.backend.link = link
+    app.is_connected = True
+    return root, app
+
+
+def _pump(root, app, seconds=15.0):
+    """Run Tk's event loop until the worker finishes, as the app really does."""
+    import time
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        root.update()
+        if not app.busy:
+            root.update()
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def _send_without_dialogs(root, app):
+    """Press Send, answering the confirmation and capturing any dialog."""
+    import tkinter.messagebox as messagebox
+    shown = []
+    saved = (messagebox.askyesno, messagebox.showerror, messagebox.showinfo)
+    messagebox.askyesno = lambda *a, **k: True
+    messagebox.showerror = lambda title, text=None, **k: shown.append(
+        ("error", title, text))
+    messagebox.showinfo = lambda title, text=None, **k: shown.append(
+        ("info", title, text))
+    # These are read when they are needed rather than bound as default
+    # arguments, which is what makes overriding them here work at all.
+    paced = (LOADER.CURVE_LINE_GAP_S, LOADER.CURVE_SETTLE_S,
+             LOADER.CRYOCON_MIN_GAP_S)
+    LOADER.CURVE_LINE_GAP_S = LOADER.CURVE_SETTLE_S = 0.0
+    LOADER.CRYOCON_MIN_GAP_S = 0.0
+    messages = []
+    app.log = lambda text: messages.append(text)
+    try:
+        app._send_curve()
+        finished = _pump(root, app)
+    finally:
+        (messagebox.askyesno, messagebox.showerror,
+         messagebox.showinfo) = saved
+        (LOADER.CURVE_LINE_GAP_S, LOADER.CURVE_SETTLE_S,
+         LOADER.CRYOCON_MIN_GAP_S) = paced
+    return finished, messages, shown
+
+
+def test_verification_runs_on_a_worker_without_touching_a_widget():
+    """Regression: _verify_against read Tk variables from the worker thread.
+
+    Tk variables belong to the thread running the event loop; reading one
+    from a worker raises 'main thread is not in main loop'. It did so
+    immediately AFTER the curve had transferred, so on real hardware the
+    curve would load and then the check that is the entire point of this
+    module would die. The header is snapshotted on the Tk thread now.
+    """
+    instrument = SimulatedModel34()
+    root, app = _gui_on_a_real_tk_root(instrument)
+    try:
+        app.verify_var.set(True)
+        finished, messages, shown = _send_without_dialogs(root, app)
+        assert finished, "the worker never finished"
+        joined = "\n".join(messages)
+        assert "main thread is not in main loop" not in joined, joined
+        assert "RuntimeError" not in joined, joined
+        assert any(text.startswith("VERIFIED.") for text in messages), joined
+        # 1 command + 4 header lines + 129 points + 1 terminator
+        assert len(instrument.raw_writes) == 135
+        assert [kind for kind, _, _ in shown] == ["info"], shown
+    finally:
+        root.destroy()
+
+
+def test_a_worker_failure_reaches_the_operator():
+    """Regression: the error dialog closed over 'exc', which Python unbinds.
+
+    'except ... as exc' deletes the name when the block ends, so a lambda
+    handed to root.after() raised NameError on the Tk thread instead of
+    showing the dialog -- losing the only report of the failure. The message
+    is copied out on the worker thread now.
+    """
+    instrument = SimulatedModel34(
+        fail_with=IOError("VI_ERROR_TMO: the instrument stopped accepting "
+                          "bytes"))
+    root, app = _gui_on_a_real_tk_root(instrument)
+    try:
+        finished, messages, shown = _send_without_dialogs(root, app)
+        assert finished, "the worker never finished"
+        joined = "\n".join(messages)
+        assert "NameError" not in joined, joined
+        assert "FAILED" in joined, joined
+        errors = [entry for entry in shown if entry[0] == "error"]
+        assert errors, "the operator was never told the transfer failed"
+        assert "VI_ERROR_TMO" in str(errors[-1][2]), errors
+        # And the window is usable again rather than stuck on 'busy'.
+        assert not app.busy
+    finally:
+        root.destroy()
+
+
+def test_the_verification_compares_against_what_was_sent():
+    """The snapshot is taken before the transfer, not read back off the form.
+
+    If the operator edits the sensor type while the curve is going out, the
+    check must still compare against what actually went out.
+    """
+    instrument = SimulatedModel34()
+    root, app = _gui_on_a_real_tk_root(instrument)
+    try:
+        expected = app._expected_header()
+        assert expected["sensor_type"] == "R8K10UA"
+        assert expected["units"] == "LOGOHM"
+        app.type_var.set("Diode")          # operator changes their mind
+        root.update()
+        assert expected["sensor_type"] == "R8K10UA", (
+            "the snapshot moved with the form")
+    finally:
+        root.destroy()
+
+
+# ---------------------------------------------------------------------------
 # What the module must never do
 # ---------------------------------------------------------------------------
 
@@ -837,6 +1069,181 @@ def test_the_model_34_limits_are_the_ones_in_the_manual():
     assert (LOADER.MIN_NAME_CHARS, LOADER.MAX_NAME_CHARS) == (4, 15)
     assert LOADER.SENIX_OFFSET == 9
     assert LOADER.CURVE_UNITS == ("LOGOHM", "OHMS", "VOLTS")
+
+
+# ---------------------------------------------------------------------------
+# Using both Lake Shore files together
+# ---------------------------------------------------------------------------
+
+def test_the_340_and_the_dat_can_be_combined():
+    """The .340's dense certified table, extended by the .dat's outer points.
+
+    Neither file alone is best for a CCR running to 3-5 K: the .340 stops at
+    the certified 4.000 K and the .dat is sparser but reaches 3.5913 K. The
+    merge keeps the .340 exactly as it is and adds only what lies beyond its
+    ends.
+    """
+    _need_cal_files()
+    dat = LOADER.load_sensor_file(DAT_17680)
+    ref = LOADER.load_sensor_file(LS340_17680)
+
+    merged, added, notes = LOADER.extend_curve(
+        ref["points"], dat["points"], "LOGOHM", "OHMS")
+
+    # 3 points below 4 K and 2 above 325 K, from the .dat's 71.
+    assert len(added) == 5
+    assert len(merged) == 129 + 5
+    temperatures = sorted(t for t, _ in merged)
+    assert math.isclose(temperatures[0], 3.59132424209341, rel_tol=1e-9)
+    assert math.isclose(temperatures[-1], 330.027223722539, rel_tol=1e-9)
+    assert len(merged) <= LOADER.MAX_CURVE_POINTS
+
+    # Every original .340 point survives untouched: the interpolation inside
+    # the certified range must still be purely Lake Shore's table.
+    for point in ref["points"]:
+        assert point in merged
+    assert any("3.59132" in note for note in notes)
+
+
+def test_merging_never_touches_the_middle_of_the_main_curve():
+    """A second file contributes at the ends or not at all."""
+    main = [(300.0, 1.60), (100.0, 2.00), (10.0, 2.50)]
+    # Every one of these sits inside 10-300 K, so none may be taken.
+    inside = [(200.0, 1.80), (50.0, 2.20), (299.0, 1.61)]
+    merged, added, notes = LOADER.extend_curve(main, inside, "LOGOHM",
+                                               "LOGOHM")
+    assert added == []
+    assert merged == main
+    assert any("adds nothing" in note for note in notes)
+
+
+def test_merging_refuses_two_files_that_disagree():
+    """A point beyond the ends in temperature must also be beyond in reading.
+
+    If it is not, the two files describe different behaviour for the same
+    sensor, and stitching them together would build a curve that doubles back
+    on itself.
+    """
+    main = [(300.0, 1.60), (100.0, 2.00), (10.0, 2.50)]
+    # 5 K is colder than the main curve, but its reading lands mid-curve
+    # instead of beyond 2.50 -- the two files disagree.
+    contradictory = [(5.0, 2.20)]
+    try:
+        LOADER.extend_curve(main, contradictory, "LOGOHM", "LOGOHM")
+    except LOADER.CurveFileError as exc:
+        assert "disagree" in str(exc)
+    else:
+        raise AssertionError("two disagreeing files were merged")
+
+
+def test_merging_converts_the_second_files_units():
+    """The .dat is in ohms and the .340 in log-ohms; the merge handles that."""
+    main = [(300.0, 2.0), (100.0, 2.5)]          # log-ohm
+    extra = [(10.0, 1000.0)]                     # ohms -> log-ohm 3.0
+    merged, added, _ = LOADER.extend_curve(main, extra, "LOGOHM", "OHMS")
+    assert len(added) == 1
+    assert math.isclose(added[0][1], 3.0, abs_tol=1e-12)
+    assert (10.0, 3.0) in merged
+
+
+# ---------------------------------------------------------------------------
+# Coverage against the range the sensor will actually be used over
+# ---------------------------------------------------------------------------
+
+def test_a_curve_that_stops_short_of_the_working_range_warns():
+    """X17680 is certified 4.00-325 K. A CCR going to 3 K is not covered.
+
+    Below the coldest breakpoint a Cryo-con shows a run of dots rather than a
+    temperature, and that is worth being told at the desk rather than on a
+    cold cryostat.
+    """
+    _need_cal_files()
+    source = LOADER.load_sensor_file(LS340_17680)
+    errors, warnings, stats = LOADER.analyse_curve(
+        source["points"], "LOGOHM", "R8K10UA", -1.0, "CX1030 X17680",
+        working_range=(3.0, 325.0))
+    assert errors == [], errors
+    assert any("3 K" in message and "dots" in message
+               for message in warnings), warnings
+    assert stats["working_range"] == (3.0, 325.0)
+
+
+def test_a_curve_that_covers_the_working_range_does_not_warn():
+    _need_cal_files()
+    source = LOADER.load_sensor_file(LS340_17680)
+    _, warnings, _ = LOADER.analyse_curve(
+        source["points"], "LOGOHM", "R8K10UA", -1.0, "CX1030 X17680",
+        working_range=(10.0, 300.0))
+    assert not any("dots" in message for message in warnings), warnings
+
+
+def test_no_working_range_means_no_coverage_check():
+    _need_cal_files()
+    source = LOADER.load_sensor_file(LS340_17680)
+    _, warnings, stats = LOADER.analyse_curve(
+        source["points"], "LOGOHM", "R8K10UA", -1.0, "CX1030 X17680")
+    assert not any("dots" in message for message in warnings)
+    assert "working_range" not in stats
+
+
+# ---------------------------------------------------------------------------
+# Checking the readback at the precision the instrument actually prints
+# ---------------------------------------------------------------------------
+
+def test_printed_tolerance_is_half_the_last_place():
+    assert LOADER.printed_tolerance("1.64523") == 0.5e-5
+    assert LOADER.printed_tolerance("1.6452") == 0.5e-4
+    assert LOADER.printed_tolerance("325") == 0.5
+    assert LOADER.printed_tolerance("  325.0  ") == 0.05
+    assert LOADER.printed_tolerance("1.6e-3") is None
+
+
+def test_a_reply_with_fewer_digits_is_not_called_a_mismatch():
+    """The instrument's print precision is not a fault in the curve.
+
+    A fixed relative tolerance would fail a perfectly good transfer whenever
+    the firmware echoes fewer digits than were sent, and a verification that
+    cries wolf is one the operator learns to ignore.
+    """
+    sent = [(325.0, 1.645230), (4.0, 2.946990)]
+    read = [(325.0, 1.6452), (4.0, 2.9470)]
+    texts = [("1.6452", "325.0"), ("2.9470", "4.0")]
+    comparison = LOADER.compare_curves(sent, read, read_texts=texts)
+    assert comparison["matched"], comparison["problems"]
+    # And the check says how closely it actually confirmed the curve rather
+    # than implying the comparison was exact.
+    assert comparison["worst_reading_limit"] == 0.5e-4
+    assert comparison["worst_temperature_limit"] == 0.05
+
+
+def test_a_real_difference_still_fails_even_at_coarse_precision():
+    """Loose printing must not become a licence to accept a wrong curve."""
+    sent = [(325.0, 1.6452), (4.0, 2.9470)]
+    read = [(325.0, 1.6452), (4.0, 2.9100)]      # far beyond the last place
+    texts = [("1.6452", "325.0"), ("2.9100", "4.0")]
+    comparison = LOADER.compare_curves(sent, read, read_texts=texts)
+    assert not comparison["matched"]
+    # It is the SECOND point that differs; worst_point is 1-based.
+    assert comparison["worst_point"] == 2
+
+
+def test_the_written_file_verifies_against_the_curve_it_came_from():
+    """A .crv round trip passes at its own printed precision.
+
+    The points going in are full precision and the file holds six
+    significant digits, so the difference is the rounding the writer does on
+    purpose -- well inside the last place the file prints, which is exactly
+    what the precision-aware check should accept.
+    """
+    points = _cernox_curve()
+    lines = LOADER.build_crv_lines(
+        "CX1030 X17680", "R8K10UA", -1.0, "LOGOHM", points)
+    header, read_back = LOADER.parse_crv_text(LOADER.crv_file_text(lines))
+    comparison = LOADER.compare_curves(points, read_back,
+                                       read_texts=header["point_texts"])
+    assert comparison["matched"], comparison["problems"]
+    assert comparison["worst_reading_error"] < 1e-5
+    assert comparison["worst_temperature_error"] < 1e-5
 
 
 def test_the_direct_control_module_can_reach_the_loader():
