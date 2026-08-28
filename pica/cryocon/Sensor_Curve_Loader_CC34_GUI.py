@@ -107,18 +107,31 @@ User curve slots and sensor index (p.220, Appendix A):
     its own.
 
 Lake Shore source files (Lake Shore Sensor CD v1.1, Calibration Data/1068/):
+  X17680.340  PREFER THIS ONE. Lake Shore's own 129-breakpoint curve for a
+              Model 340: already in log-ohm, already reading-first, covering
+              4.000 to 325.000 K, with the sensor model, serial and the sign
+              of the temperature coefficient in its header.
   X17680.dat  the raw calibration: "Temperature (Kelvin)" then "Resistance
               (Ohms)", two header lines and a blank line, then 71 points from
-              3.5913 K / 977.25 ohm to 330.03 K / 43.761 ohm. Prefer this
-              file: it is the measurement itself, and 71 points is well
-              inside the 200-point limit.
+              3.5913 K / 977.25 ohm to 330.03 K / 43.761 ohm.
   X17680.tbl  the same calibration interpolated onto a tidy grid, with
               sensitivity columns this module ignores.
-  X17680.340  Lake Shore's own 129-breakpoint curve for a Model 340, already
-              in log-ohm, but clipped to 4.000-325.000 K.
   X17680.crv  not on the CD; written by this module.
   The .cof, .91C, .234 and .330 files are for other instruments and are not
   read here.
+
+Why the .340 rather than the raw .dat, when the .dat is the measurement and
+the .340 is derived from it: a Cryo-con interpolates linearly between the
+breakpoints it stores, and a .340 file is a breakpoint table built for exactly
+that kind of instrument, so Lake Shore placed its 129 points where the
+interpolation error is worst rather than where the measurement happened to
+land. Tested by leave-one-out against the 71 measured points of X17680 (see
+tests/test_cryocon_curve_loader.py), the worst error the instrument would make
+between breakpoints is about 23 mK with the .340 and about 39 mK with the
+.dat. Both are far below what the sensor itself is calibrated to, so this is
+not a decision worth agonising over; it is simply the better of two good
+options. The .dat is the one to use if the 3.59-4.0 K or 325-330 K ends of the
+range are actually wanted, since the .340 does not reach them.
 
 Column order is never guessed. Each Lake Shore format is identified by its own
 header text and the columns are located by name, so a file whose columns are
@@ -382,13 +395,24 @@ def fmt6(value):
     Exponent notation is avoided because the firmware's number parser is not
     documented, and a value written as '1e-05' that were read as '1' would be
     wrong by five orders of magnitude without looking wrong.
+
+    Every value keeps a decimal point for the same reason. The manual's own
+    examples are all written that way ('-1.0', '300.1205'), and it warns that
+    a header field the instrument cannot identify is replaced with a default
+    rather than reported: the multiplier silently becomes -1.0 and the sensor
+    type silently becomes Diode. A decimal point costs one byte and removes
+    any question of how a bare integer is read.
     """
     if not math.isfinite(value):
         raise ValueError(f"{value!r} is not a finite number")
     text = f"{value:.6g}"
     if 'e' in text or 'E' in text:
         text = f"{value:.12f}".rstrip('0').rstrip('.')
-    return text if text else "0"
+    if not text:
+        text = "0"
+    if '.' not in text:
+        text += ".0"
+    return text
 
 
 def _clean_lines(raw_text):
@@ -1713,8 +1737,12 @@ class CurveLoaderGUI:
         ttk.Label(
             frame,
             text=("Pick the Lake Shore file for the sensor, for example\n"
-                  "X17680.dat from the calibration CD. The .dat file is the\n"
-                  "raw calibration and is the one to prefer."),
+                  "X17680.340 from the calibration CD.\n\n"
+                  "The .340 is the one to prefer: it is Lake Shore's own\n"
+                  "129-breakpoint table, laid out for an instrument that\n"
+                  "interpolates between breakpoints, which is what this one\n"
+                  "does. Use the .dat instead if you need below 4 K or\n"
+                  "above 325 K, which the .340 does not reach."),
             background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
             justify='left').grid(row=0, column=0, sticky='w',
                                  padx=10, pady=(5, 5))
@@ -2109,9 +2137,9 @@ class CurveLoaderGUI:
         path = filedialog.askopenfilename(
             title="Choose a Lake Shore sensor file",
             filetypes=[
+                ("Lake Shore 340 breakpoint curve (preferred)", "*.340"),
                 ("Lake Shore raw calibration", "*.dat"),
                 ("Lake Shore table", "*.tbl"),
-                ("Lake Shore 340 / 330 curve", "*.340 *.330"),
                 ("Cryo-con curve", "*.crv"),
                 ("All files", "*.*"),
             ])
@@ -2341,7 +2369,7 @@ class CurveLoaderGUI:
                 f"{stats['coefficient']} temperature coefficient.")
             if units == 'LOGOHM':
                 detail.append(
-                    f"Stored as log₁₀(ohm) "
+                    f"Stored as log10(ohm) "
                     f"{stats['r_min']:.6g} to {stats['r_max']:.6g}, which is "
                     f"{10 ** stats['r_min']:,.4g} to "
                     f"{10 ** stats['r_max']:,.4g} ohm.")
@@ -2365,9 +2393,9 @@ class CurveLoaderGUI:
 
         problems = []
         for message in self.curve_errors:
-            problems.append(f"✖  {message}")
+            problems.append(f"PROBLEM  {message}")
         for message in self.curve_warnings:
-            problems.append(f"⚠  {message}")
+            problems.append(f"CHECK    {message}")
         self.problem_label.config(
             text="\n".join(problems),
             foreground=(self.CLR_STATUS_BAD if self.curve_errors
@@ -2405,7 +2433,7 @@ class CurveLoaderGUI:
             axes.set_xscale('log')
             axes.set_xlabel("Temperature / K")
             units = self.units_var.get()
-            axes.set_ylabel({'LOGOHM': "log₁₀(R / ohm)",
+            axes.set_ylabel({'LOGOHM': "log10(R / ohm)",
                              'OHMS': "R / ohm",
                              'VOLTS': "V"}.get(units, units))
             axes.grid(True, which='both', alpha=0.3)

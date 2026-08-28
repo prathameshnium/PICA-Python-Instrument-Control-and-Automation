@@ -204,6 +204,50 @@ def launch_gpib_scanner():
     launch_pica_utility("GPIB_Instrument_Scanner_GUI.py", "GPIB Scanner")
 
 
+def pica_sibling(*parts):
+    """Absolute path to a module inside the pica package, or ''.
+
+    pica_utility() only reaches pica/utils. The curve loader is a Cryo-con
+    module and lives beside this one, so it needs its own resolver rather
+    than a hard-wired '..' that breaks the moment a file is moved.
+    """
+    if not PICA_ROOT:
+        return ""
+    path = os.path.join(PICA_ROOT, *parts)
+    return path if os.path.exists(path) else ""
+
+
+def launch_curve_loader():
+    """Open the sensor curve loader in its own process.
+
+    A Model 34 has no Cernox curve of its own, so a calibrated Cernox has to
+    be installed as one of its twelve user curves before the Sensor Index
+    field above can point at it. That is what the loader does; this window
+    cannot, because sending a curve is a 130-line CALCUR transfer rather than
+    a single command.
+
+    Launched as a separate process, like every other utility here, so a
+    curve transfer never shares a VISA session with the control panel.
+    """
+    path = pica_sibling("cryocon", "Sensor_Curve_Loader_CC34_GUI.py")
+    if not path:
+        messagebox.showerror(
+            "Sensor Curve Loader Not Available",
+            "Sensor_Curve_Loader_CC34_GUI.py could not be found.\n\n"
+            "This module is running outside the pica package, so its sibling "
+            "modules are not reachable. Everything else in this window works "
+            "normally; copy the loader into pica/cryocon/ to get this button "
+            "back.")
+        return False
+    try:
+        Process(target=run_script_process, args=(path,)).start()
+        return True
+    except Exception as e:
+        messagebox.showerror("Launch Error",
+                             f"Failed to launch the Sensor Curve Loader: {e}")
+        return False
+
+
 # ---------------------------------------------------------------------------
 # BACKEND: Cryocon Model 34 Instrument Control
 # ---------------------------------------------------------------------------
@@ -1764,7 +1808,11 @@ class DirectControlGUI:
             frame,
             text=("Sensor index selects the calibration curve.\n"
                   "Factory curves use ISENIX (0 disables the\n"
-                  "channel); user curves use USENIX, index 0-3."),
+                  "channel); user curves use USENIX, index 0-3.\n\n"
+                  "A user curve has to be installed before an index\n"
+                  "can point at it. The Model 34 has no Cernox curve\n"
+                  "of its own, so a calibrated Cernox needs loading\n"
+                  "first — that is what the button below does."),
             background=self.CLR_FRAME_BG,
             font=('Segoe UI', 9),
             justify='left').grid(
@@ -1829,6 +1877,14 @@ class DirectControlGUI:
             text="Read Input Config",
             command=self._read_input_config).grid(
             row=1, column=1, sticky='ew', padx=5, pady=(5, 0))
+        # Opens in its own process and holds its own VISA session, so a
+        # 130-line curve transfer never shares this window's connection.
+        ttk.Button(
+            btn_frame,
+            text="Load a Sensor Curve (Cernox, RuOx ...)",
+            command=launch_curve_loader).grid(
+            row=2, column=0, columnspan=2, sticky='ew',
+            padx=5, pady=(8, 0))
 
     def _create_alarm_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Input Alarms')
