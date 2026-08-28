@@ -220,7 +220,7 @@ PROBE_RESOURCE_PREFIXES = ("GPIB", "USB", "TCPIP")
 
 # Factory address, used only as a last-resort hint. Identification is by
 # *IDN? content, so a re-addressed Cryocon is still found.
-CRYOCON_ADDRESS_HINT = "GPIB1::12"
+CRYOCON_ADDRESS_HINT = "GPIB0::12"
 
 # Short timeout for the identification pass so one silent address cannot
 # stall the whole scan.

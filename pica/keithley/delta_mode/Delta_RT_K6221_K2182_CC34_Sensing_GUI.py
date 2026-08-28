@@ -24,6 +24,7 @@ import tkinter as tk
 from tkinter import ttk, Label, Entry, LabelFrame, messagebox, scrolledtext, Canvas, filedialog
 import sys
 import os
+import re
 import time
 import traceback
 from datetime import datetime
@@ -49,6 +50,217 @@ try:
     import pyvisa
 except ImportError:
     pyvisa = None
+
+
+# ===============================================================================
+# CRYOCON LINK HARDENING  (read-only; inlined so each module stays standalone)
+# ===============================================================================
+#
+# Three failures seen on a Cryo-con Model 34 Rev 3.03A, 28 Aug 2026:
+#
+#   1. The bus scan identified the instrument, and the very next session's
+#      '*IDN?' died inside viWrite with VI_ERROR_TMO. Pressing Start again
+#      connected normally. A timeout on the WRITE means the instrument stopped
+#      accepting bytes for a moment, not that it is absent or at another
+#      address, so the cure is to wait and ask again instead of giving up.
+#      Handled by CRYOCON_OPEN_SETTLE_S plus the retry loop in CryoconLink.
+#
+#   2. A reading query answered with a Cryo-con status string instead of a
+#      number and float() raised, which killed the worker thread. The front
+#      panel shows dashes for a sensor fault and dots for a reading that is
+#      inside the instrument's range but off the sensor's calibration curve;
+#      over the bus those arrive as the literal strings below. A reply can
+#      also carry a trailing unit character, as in '77.350K', which float()
+#      rejects outright. Handled by parse_cryocon_number(), which names the
+#      condition instead of raising a bare ValueError.
+#
+#   3. The Cryocon was picked by address alone. It is at GPIB0::12 as of
+#      29 Aug 2026, and the Lakeshore 350 now sits on GPIB1::12 -- the
+#      Cryo-con's own factory address. Selection is by '*IDN?' content, so a
+#      re-addressed Cryocon is still found and a stranger on the factory
+#      address is not mistaken for one.
+#
+# Nothing in this block writes to the instrument.
+
+# Factory address, used only as a last-resort hint when nothing answers.
+CRYOCON_ADDRESS_HINT = "GPIB0::12"
+CRYOCON_IDN_MARKERS = ("CRYOCON", "CRYO-CON", "CRYO CON")
+
+CRYOCON_TIMEOUT_MS = 10000          # per-operation VISA timeout
+CRYOCON_OPEN_SETTLE_S = 0.30        # pause after open, before the first command
+CRYOCON_MIN_GAP_S = 0.08            # minimum gap between consecutive operations
+CRYOCON_CONNECT_ATTEMPTS = 3        # tries for the first '*IDN?'
+CRYOCON_RETRY_WAIT_S = 1.5          # pause between those tries
+
+# Timeout for the identification pass, matched to the standalone GPIB
+# scanner so this module does not call an instrument silent that the scanner
+# reads without trouble.
+IDN_SCAN_TIMEOUT_MS = 2000
+PROBE_RESOURCE_PREFIXES = ("GPIB", "USB", "TCPIP")
+
+# Literal replies that are status, not data.
+CRYOCON_STATUS_STRINGS = {
+    '-------': "sensor fault: the sensor is open, disconnected or shorted",
+    '.......': ("the reading is within the instrument's range but outside "
+                "the sensor's calibration curve"),
+    'N/A': "the channel is disabled, or the value does not apply",
+    'NACK': "the instrument did not acknowledge the command",
+}
+
+# Leading signed decimal, with or without an exponent. Used to peel a trailing
+# unit character off replies such as '77.350K'.
+_CRYOCON_NUMBER_RE = re.compile(r'[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?')
+
+# The dash and dot runs are as long as the display resolution setting makes
+# them, so they are matched by shape rather than by a fixed seven characters.
+_CRYOCON_FAULT_RE = re.compile(r'^-{2,}$')
+_CRYOCON_RANGE_RE = re.compile(r'^\.{2,}$')
+
+
+class CryoconStatusError(ValueError):
+    """A query returned a Cryo-con status string where a number was expected."""
+
+
+def parse_cryocon_number(raw, what, channel=None):
+    """Turn a Cryo-con reply into a float, or say precisely why it is not one.
+
+    Handles three things the plain float() call did not: status strings, a
+    trailing unit character, and multi-channel replies, which come back as
+    fields separated by semicolons.
+    """
+    text = str(raw).strip()
+    where = f" on channel {channel}" if channel else ""
+    if ';' in text:
+        text = text.split(';')[0].strip()
+    if text in CRYOCON_STATUS_STRINGS:
+        raise CryoconStatusError(
+            f"Cryocon {what}{where} returned '{text}': "
+            f"{CRYOCON_STATUS_STRINGS[text]}.")
+    if _CRYOCON_FAULT_RE.match(text):
+        raise CryoconStatusError(
+            f"Cryocon {what}{where} returned '{text}': "
+            f"{CRYOCON_STATUS_STRINGS['-------']}.")
+    if _CRYOCON_RANGE_RE.match(text):
+        raise CryoconStatusError(
+            f"Cryocon {what}{where} returned '{text}': sensor fault, no "
+            f"sensor, or {CRYOCON_STATUS_STRINGS['.......']}.")
+    if not text:
+        raise CryoconStatusError(
+            f"Cryocon {what}{where} returned an empty reply.")
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    match = _CRYOCON_NUMBER_RE.match(text)
+    if match:
+        return float(match.group(0))
+    raise CryoconStatusError(
+        f"Cryocon {what}{where} returned '{text}' "
+        "(sensor fault, no sensor, or reading out of range).")
+
+
+def is_cryocon_idn(idn):
+    """True if a '*IDN?' reply came from a Cryo-con temperature instrument."""
+    return any(marker in str(idn).upper() for marker in CRYOCON_IDN_MARKERS)
+
+
+def open_cryocon_session(visa_address, log=None):
+    """Open a Cryo-con session, retrying the first '*IDN?'.
+
+    Returns (instrument, idn). Raises ConnectionError if nothing answers, or
+    if what answers is not a Cryo-con: this module logs the temperature that
+    the whole run is indexed by, so reading it off the wrong instrument is
+    worse than not running at all.
+    """
+    if pyvisa is None:
+        raise ConnectionError(
+            "PyVISA is not available. Install pyvisa and a VISA backend "
+            "(NI-VISA or pyvisa-py).")
+    say = log if callable(log) else (lambda msg: print(msg))
+    rm = pyvisa.ResourceManager()
+    last_error = None
+    for attempt in range(1, CRYOCON_CONNECT_ATTEMPTS + 1):
+        inst = None
+        try:
+            inst = rm.open_resource(visa_address)
+            inst.timeout = CRYOCON_TIMEOUT_MS
+            # The Cryocon GPIB port frames lines with EOI and no EOS
+            # character, so the PyVISA termination defaults are left alone.
+            time.sleep(CRYOCON_OPEN_SETTLE_S)
+            idn = inst.query('*IDN?').strip()
+            if not idn:
+                raise ConnectionError(
+                    f"{visa_address} accepted the command but sent no "
+                    "identification.")
+            if not is_cryocon_idn(idn):
+                inst.close()
+                raise ConnectionError(
+                    f"{visa_address} is not a Cryo-con: it identifies itself "
+                    f"as '{idn}'. Scan the bus and pick the Cryocon's actual "
+                    f"address (it does not have to be "
+                    f"{CRYOCON_ADDRESS_HINT}).")
+            if attempt > 1:
+                say(f"  Cryocon answered on attempt {attempt}.")
+            return inst, idn
+        except ConnectionError:
+            # Wrong instrument, or a silent one. Retrying will not change
+            # the answer, so let it out immediately.
+            if inst is not None:
+                try:
+                    inst.close()
+                except Exception:
+                    pass
+            raise
+        except Exception as exc:
+            last_error = exc
+            if inst is not None:
+                try:
+                    inst.close()
+                except Exception:
+                    pass
+            if attempt < CRYOCON_CONNECT_ATTEMPTS:
+                say(f"  Cryocon did not answer at {visa_address} "
+                    f"(attempt {attempt} of {CRYOCON_CONNECT_ATTEMPTS}): "
+                    f"{type(exc).__name__}. Retrying in "
+                    f"{CRYOCON_RETRY_WAIT_S:.1f} s.")
+                time.sleep(CRYOCON_RETRY_WAIT_S)
+    raise ConnectionError(
+        f"No reply from a Cryo-con at {visa_address} after "
+        f"{CRYOCON_CONNECT_ATTEMPTS} attempts. Last error: {last_error}. "
+        "Check that the instrument is powered, that its SYS menu has "
+        "RIO-Port set to GPIB rather than RS-232, and that RIO-Address "
+        "matches this VISA address.")
+
+
+def identify_resources(rm, resources):
+    """Return {resource: idn} for every resource that answers '*IDN?'.
+
+    Never raises: an address that is busy, silent or not SCPI simply does not
+    appear in the result. Serial resources are not probed at all.
+    """
+    found = {}
+    for res in resources:
+        if not str(res).upper().startswith(PROBE_RESOURCE_PREFIXES):
+            continue
+        inst = None
+        try:
+            inst = rm.open_resource(res)
+            inst.timeout = IDN_SCAN_TIMEOUT_MS
+            idn = inst.query('*IDN?').strip()
+            if idn:
+                found[res] = idn
+        except Exception:
+            pass
+        finally:
+            if inst is not None:
+                try:
+                    inst.close()
+                except Exception:
+                    pass
+                # Let the address settle before the next one is addressed.
+                time.sleep(0.05)
+    return found
+
 
 try:
     # Dynamically find the project root and add it to the path
@@ -168,10 +380,13 @@ class Combined_Backend:
             # The Cryocon GPIB port frames lines with EOI and no EOS
             # character, so the PyVISA termination defaults are left alone.
             print("  Connecting to Cryocon 34 for passive monitoring...")
-            self.cryocon = self.rm.open_resource(
+            # A settle delay and a retried first '*IDN?': on 28 Aug 2026 the
+            # very first query of a session died inside viWrite with
+            # VI_ERROR_TMO seconds after a bus scan had identified the
+            # instrument. open_cryocon_session also refuses a non-Cryocon.
+            self.cryocon, cc_idn = open_cryocon_session(
                 self.params['cryocon_visa'])
-            self.cryocon.timeout = 10000
-            print(f"    Connected to: {self.cryocon.query('*IDN?').strip()}")
+            print(f"    Connected to: {cc_idn}")
             self._verify_units()
             print("  Cryocon 34 connection is passive. No settings will be changed.")
 
@@ -219,13 +434,11 @@ class Combined_Backend:
 
     def read_temperature(self):
         """Read the Cryocon channel in Kelvin."""
+        # parse_cryocon_number names the condition and copes with a reply
+        # such as '77.350K', which the plain float() call rejected outright.
         raw = self.cryocon.query(f'INPUT? {self.CC_CHANNEL}').strip()
-        try:
-            return float(raw)
-        except ValueError:
-            raise ValueError(
-                f"Cryocon channel {self.CC_CHANNEL} returned '{raw}' "
-                "(sensor fault, no sensor, or reading out of range).")
+        return parse_cryocon_number(raw, "temperature",
+                                    channel=self.CC_CHANNEL)
 
     def close_instruments(self):
         """Safely shuts down and disconnects from all instruments."""
@@ -891,9 +1104,11 @@ class MeasurementAppGUI:
                 self.data_queue.put((res, volt, temp, elapsed))
                 time.sleep(1)  # Control the measurement frequency
             except Exception as e:
-                # If an error occurs, put it in the queue to be handled by the
-                # main thread
-                self.data_queue.put(e)
+                # Ship the worker's own traceback. Calling format_exc() on
+                # the GUI thread renders 'NoneType: None', because no
+                # exception is live there -- that is what hid the original
+                # fault on 28 Aug 2026.
+                self.data_queue.put((e, traceback.format_exc()))
                 break
         if not self.is_running:
             # Signal that the thread is done
@@ -904,9 +1119,20 @@ class MeasurementAppGUI:
         try:
             while not self.data_queue.empty():
                 data = self.data_queue.get_nowait()
+                # The worker sends (exception, formatted traceback).
+                if isinstance(data, tuple) and len(data) == 2 and isinstance(
+                        data[0], Exception):
+                    exc, tb_text = data
+                    self.log(f"RUNTIME ERROR in worker thread: {exc}")
+                    self.log(tb_text)
+                    self.stop_measurement()
+                    messagebox.showerror(
+                        "Runtime Error",
+                        f"A critical error occurred in the measurement "
+                        f"thread:\n{exc}")
+                    return  # Stop processing
                 if isinstance(data, Exception):
-                    self.log(
-                        f"RUNTIME ERROR in worker thread: {traceback.format_exc()}")
+                    self.log(f"RUNTIME ERROR in worker thread: {data}")
                     self.stop_measurement()
                     messagebox.showerror(
                         "Runtime Error",
@@ -1014,7 +1240,10 @@ class MeasurementAppGUI:
         try:
             rm = pyvisa.ResourceManager()
             resources = rm.list_resources()
-            self.visa_queue.put(resources)
+            # Ask every address what it is while still off the GUI thread,
+            # so the Cryocon can be picked by identity rather than address.
+            identities = identify_resources(rm, resources)
+            self.visa_queue.put((resources, identities))
         except Exception as e:
             self.visa_queue.put(e)
 
@@ -1022,18 +1251,54 @@ class MeasurementAppGUI:
         """Checks the queue for results from the VISA scan worker."""
         try:
             result = self.visa_queue.get_nowait()
+            identities = {}
+            if isinstance(result, tuple) and len(result) == 2:
+                result, identities = result
             if isinstance(result, Exception):
                 self.log(f"ERROR during VISA scan: {result}")
             elif result:
                 self.log(f"Found: {result}")
                 self.cryocon_cb['values'] = result
                 self.keithley_cb['values'] = result
-                # Auto-select common addresses
                 for res in result:
-                    if "GPIB1::12" in res:
-                        self.cryocon_cb.set(res)
-                    if "GPIB0::13" in res:
-                        self.keithley_cb.set(res)
+                    self.log(f"  {res}  ->  {identities.get(res, 'no reply')}")
+
+                # Pick the Cryocon by what it says it is, not by where it
+                # sits. It moved to GPIB0::12 and the Lakeshore 350 now
+                # answers on GPIB1::12, which is the Cryocon's own factory
+                # address -- selecting by address would log the wrong
+                # instrument's temperature against every resistance point.
+                cryocon = next(
+                    (r for r in result
+                     if is_cryocon_idn(identities.get(r, ''))), None)
+                if cryocon:
+                    self.cryocon_cb.set(cryocon)
+                    self.log(f"Cryocon identified at {cryocon} and selected.")
+                else:
+                    hint = next(
+                        (r for r in result
+                         if CRYOCON_ADDRESS_HINT in r), None)
+                    if hint:
+                        self.cryocon_cb.set(hint)
+                        self.log(
+                            f"WARNING: no Cryo-con answered *IDN?. Selected "
+                            f"{hint} on the factory address alone -- check "
+                            f"the instrument is powered and in remote.")
+                    else:
+                        self.log(
+                            "WARNING: no Cryo-con found on the bus. Pick an "
+                            "address manually if you know it.")
+
+                keithley = next(
+                    (r for r in result
+                     if '6221' in str(identities.get(r, ''))), None)
+                if keithley:
+                    self.keithley_cb.set(keithley)
+                    self.log(f"Keithley 6221 identified at {keithley}.")
+                else:
+                    for res in result:
+                        if "GPIB0::13" in res:
+                            self.keithley_cb.set(res)
             else:
                 self.log("No VISA instruments found.")
 
