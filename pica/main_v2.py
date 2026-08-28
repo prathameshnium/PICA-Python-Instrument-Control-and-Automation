@@ -546,6 +546,12 @@ class PICALauncherV2:
     FONT_STRIP = ('Segoe UI', FONT_SIZE_BASE - 4)            # chip / caption text
     FONT_STRIP_CAP = ('Segoe UI', FONT_SIZE_BASE - 5, 'bold')  # tile headings
     FONT_STRIP_STAT = ('Consolas', FONT_SIZE_BASE, 'bold')   # tile big numbers
+    # Browse cards keep the v1 sizes. The base bump was for the menus and the
+    # chrome; inside a card it only forced titles onto a second line and
+    # pushed the instrument line off the right edge.
+    FONT_CARD_TITLE = ('Segoe UI', FONT_SIZE_BASE - 1, 'bold')   # 13
+    FONT_MOD = ('Segoe UI', FONT_SIZE_BASE - 2)                  # 12, v1 row size
+    FONT_CARD_META = ('Consolas', FONT_SIZE_BASE - 5)            # 9, instrument line
 
     SCRIPT_PATHS = PICALauncherApp.SCRIPT_PATHS
     LOGO_FILE = resource_path("assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
@@ -629,7 +635,7 @@ class PICALauncherV2:
         style.configure('StripStat.TLabel', background=self.CLR_PANEL,
                         foreground=self.CLR_TEXT, font=self.FONT_STRIP_STAT)
         style.configure('CardTitle.TLabel', background=self.CLR_PANEL, foreground=self.CLR_TEXT,
-                        font=self.FONT_CARD)
+                        font=self.FONT_CARD_TITLE)
         style.configure('Mono.TLabel', background=self.CLR_PANEL, foreground=self.CLR_TEXT_DIM,
                         font=self.FONT_MONO)
         # Rail identity lines (institute, credits) read at full base size --
@@ -649,7 +655,7 @@ class PICALauncherV2:
                                                 ('disabled', self.CLR_BORDER_STRONG)])
 
         # Module row button (flat, left-aligned; maroon hover like v1)
-        style.configure('Mod.TButton', font=self.FONT_BASE, anchor='w',
+        style.configure('Mod.TButton', font=self.FONT_MOD, anchor='w',
                         foreground=self.CLR_TEXT, background=self.CLR_PANEL,
                         borderwidth=0, focusthickness=0, focuscolor='none', padding=(8, 6))
         style.map('Mod.TButton', background=[('active', self.CLR_HOVER)],
@@ -1092,7 +1098,7 @@ class PICALauncherV2:
         top = tk.Frame(head, bg=self.CLR_PANEL)
         top.pack(fill='x')
         tk.Label(top, text=cat['category'], bg=self.CLR_PANEL, fg=self.CLR_TEXT,
-                 font=self.FONT_CARD, anchor='w', justify='left',
+                 font=self.FONT_CARD_TITLE, anchor='w', justify='left',
                  wraplength=wrap).pack(side='left', anchor='w')
         first_key = cat['modules'][0][1]
         ttk.Button(top, text="📁", style='Aux.TButton', width=3,
@@ -1104,7 +1110,7 @@ class PICALauncherV2:
                          fg=self.CLR_TEXT_DARK, font=self.FONT_LABEL, padx=6, pady=2)
         badge.pack(side='left')
         tk.Label(meta, text=cat['instruments'], bg=self.CLR_PANEL, fg=self.CLR_TEXT_DIM,
-                 font=self.FONT_MONO).pack(side='left', padx=(8, 0))
+                 font=self.FONT_CARD_META).pack(side='left', padx=(8, 0))
         if cat.get('experimental'):
             tk.Label(meta, text="EXPERIMENTAL", bg=self.CLR_WARN, fg=self.CLR_TEXT_LIGHT,
                      font=self.FONT_LABEL, padx=6, pady=2).pack(side='left', padx=(8, 0))
