@@ -228,31 +228,40 @@ instrument's front panel. Always take the address from the scan above, never
 from this list. PICA's modules identify instruments from their *IDN? reply
 rather than their address for exactly this reason.
 
-Temperature Controllers
+Confirmed on the bus -- scan of 29 Aug 2026, controller GPIB1
+  • Lakeshore 350:      GPIB1::12::INSTR   (LSCI,MODEL350,...,1.7)
+  • Keithley 6221:      GPIB1::13::INSTR   (...,MODEL 6221,...,D04 /700x)
+  • Keithley 2400:      GPIB1::24::INSTR   (...,MODEL 2400,...,C20 /H/H)
+  • SRS SR830 Lock-in:  GPIB1::8::INSTR    (Stanford_Research_Systems,SR830)
+  • Tektronix AFG3022B: GPIB1::11::INSTR   (function generator; it answered
+                        the 15:31 scan but not the 15:19 one, so it is
+                        switched on and off at the rack.)
+  • Keithley 197A DMM:  GPIB1::20::INSTR   (PROBABLE. It has no *IDN? -- the
+                        1973A/1972A card just hands back a pending reading,
+                        and this address answered "OOHM+9.99999E+9", i.e. an
+                        overflow ohms reading in 197 dialect. Confirm on the
+                        meter's front panel before writing to it.)
+
+Not seen on those scans -- the addresses below are stale hints only
   • Lakeshore 340:      GPIB0::12::INSTR
-  • Lakeshore 350:      GPIB1::15::INSTR
-  • Cryocon 34:         GPIB1::12::INSTR
-
-Source-Measure Units (SMU) & Electrometers
-  • Keithley 2400:      GPIB1::4::INSTR
-  • Keithley 6221:      GPIB0::13::INSTR
+  • Cryocon 34:         GPIB1::12::INSTR  (that address now answers as the
+                        Lakeshore 350, so the Cryocon has been re-addressed or
+                        is off the bus. Take its address from a live scan.)
   • Keithley 6517B:     GPIB1::27::INSTR
-
-Nanovoltmeters, LCR Meters & Amplifiers
   • Keithley 2182:      GPIB0::7::INSTR
   • Keysight E4980A:    GPIB0::17::INSTR
-  • SRS SR830 Lock-in:  GPIB0::8::INSTR
-  • Keithley 197A DMM:  GPIB0::7::INSTR  (UNCONFIRMED placeholder, and it
-                        CLASHES with the Keithley 2182 above -- both cannot
-                        be on 7 at once. The 197A also needs a Model 1973A /
-                        1972A IEEE-488 card fitted, and answers no *IDN?, so
-                        it will not appear in the scan above at all.)
 
 Broadband Dielectric
   • Novocontrol Alpha-AN: answers *IDN? but uses its own command set, not
                         SCPI. The v2 launcher records its address the first
                         time it sees it and never probes it again. If it is
                         on this bus, note its address and leave it alone.
+
+A timeout is not an empty address. In the 15:31 scan of 29 Aug 2026 the 6221,
+the 197A and the 2400 all returned VI_ERROR_TMO while the L350 and SR830
+answered normally: an instrument already held open by a running PICA module,
+or left mid-transfer, times out here. Close the other program and rescan
+before concluding anything has moved.
 
 \n---------------------------------------------
 """

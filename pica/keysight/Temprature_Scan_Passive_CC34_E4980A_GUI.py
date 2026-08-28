@@ -238,7 +238,7 @@ CRYOCON_HEATER_LOOP = '1'
 
 # Factory address, used only as a last-resort hint. Identification is by
 # *IDN? content, so a re-addressed Cryocon is still found.
-CRYOCON_ADDRESS_HINT = "GPIB1::12"
+CRYOCON_ADDRESS_HINT = "GPIB0::12"
 
 # --- SAFETY: what happens at the 400 K limit -----------------------------
 # The Lakeshore version forces RANGE 1,0 and keeps going. The equivalent

@@ -442,7 +442,7 @@ def test_neither_module_hardcodes_the_address_as_the_only_route():
     """The factory address may be a hint, but identity must decide."""
     for module in (sensing, control):
         assert hasattr(module, "is_cryocon_idn")
-        assert module.CRYOCON_ADDRESS_HINT == "GPIB1::12"
+        assert module.CRYOCON_ADDRESS_HINT == "GPIB0::12"
     assert "identify_resources" in SENSING_SOURCE
     assert "identify_resources" in CONTROL_SOURCE
 

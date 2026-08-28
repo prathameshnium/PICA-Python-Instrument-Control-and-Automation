@@ -104,6 +104,13 @@ KNOWN_INSTRUMENTS = [
     ("Keithley 6517B",  ["MODEL 6517"]),
     ("Keysight E4980A", ["E4980"]),
     ("SR830 Lock-in",   ["SR830"]),
+    ("Tektronix AFG3022B", ["AFG3022"]),
+    # The 197A has no *IDN?: the 1973A/1972A card simply hands back whatever
+    # reading is pending, e.g. "OOHM+9.99999E+9" (overflow, ohms) as seen on
+    # the 29 Aug 2026 scan at GPIB1::20. The 4-character function prefix is
+    # the identity -- any of these substrings means a 197-dialect DMM, and
+    # none of them appear in an IEEE-488.2 vendor/model field.
+    ("Keithley 197A",   ["DCV+", "ACV+", "DCA+", "ACA+", "OHM+"]),
 ]
 
 
@@ -792,10 +799,10 @@ class PICALauncherV2:
         chips = tk.Frame(inner, bg=self.CLR_PANEL)
         chips.pack(side='left', fill='x', expand=True)
         chip_names = [n for n, _ in KNOWN_INSTRUMENTS] + NEVER_PROBED_INSTRUMENTS
-        # Five natural-width columns: nine chips land in two rows instead of
-        # three, and dropping the uniform sizing stops the long protected-
-        # instrument label from being clipped by an equal-share column.
-        cols = 5
+        # Six natural-width columns: eleven chips land in two rows, and
+        # dropping the uniform sizing stops the long protected-instrument
+        # label from being clipped by an equal-share column.
+        cols = 6
         for i, name in enumerate(chip_names):
             chip = tk.Frame(chips, bg=self.CLR_PANEL)
             chip.grid(row=i // cols, column=i % cols, sticky='w', padx=(0, 10))
