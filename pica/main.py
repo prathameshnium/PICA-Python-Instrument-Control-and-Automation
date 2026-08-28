@@ -202,6 +202,7 @@ class PICALauncherApp:
         "LCR Temp. Step Freq. Scan (T_Control)": resource_path("keysight/Step_Frequency_Scan_E4980A_GUI.py"), # Already present
         "LCR Temp. Scan (T_Control)": resource_path("keysight/Temprature_Scan_E4980A_GUI.py"), # Already present
         "LCR Temp. Scan (T_Sensing)": resource_path("keysight/Temprature_Scan_Passive_E4980A_GUI.py"), # Already present
+        "LCR Temp. Scan (T_Sensing, CC34)": resource_path("keysight/Temprature_Scan_Passive_CC34_E4980A_GUI.py"),
         "PPMS Sync Freq. Scan": resource_path("keysight/PPMS_Sync_Freq_Scan_E4980A_GUI.py"),
         "PPMS Dielectric Master": resource_path("keysight/PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI.py"),
         "SR830 Lock-in Comms": resource_path("lockin/sr830/Comms_SR830_GUI.py"),
@@ -759,7 +760,8 @@ class PICALauncherApp:
                                   ("Temp. Step Freq. Scan (PPMS, T_Sensing)", "PPMS Sync Freq. Scan", "sensing"),
                                   ("Dielectric Master Tscan+Fscan (PPMS)", "PPMS Dielectric Master", "master"),
                                   ("Dielectric Temp. Scan (T_Control)", "LCR Temp. Scan (T_Control)", "control"), # Already present
-                                  ("Dielectric Temp. Scan (T_Sensing)", "LCR Temp. Scan (T_Sensing)", "sensing"), # Already present
+                                  ("Dielectric Temp. Scan (T_Sensing, L350)", "LCR Temp. Scan (T_Sensing)", "sensing"), # Already present
+                                  ("Dielectric Temp. Scan (T_Sensing, Cryocon 34)", "LCR Temp. Scan (T_Sensing, CC34)", "sensing"),
                                   ])
         self._create_suite_frame(right_col,
                                  'Broadband Dielectric Spectroscopy',

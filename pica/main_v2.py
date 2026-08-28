@@ -453,7 +453,8 @@ CATALOG = [
             ("Temp. Step Freq. Scan (PPMS, T Sensing)", "PPMS Sync Freq. Scan", "sensing"),
             ("Dielectric Master Tscan+Fscan (PPMS)", "PPMS Dielectric Master", "master"),
             ("Dielectric Temp. Scan (T Control)", "LCR Temp. Scan (T_Control)", "control"),
-            ("Dielectric Temp. Scan (T Sensing)", "LCR Temp. Scan (T_Sensing)", "sensing"),
+            ("Dielectric Temp. Scan (T Sensing, L350)", "LCR Temp. Scan (T_Sensing)", "sensing"),
+            ("Dielectric Temp. Scan (T Sensing, Cryocon 34)", "LCR Temp. Scan (T_Sensing, CC34)", "sensing"),
         ],
     },
     {

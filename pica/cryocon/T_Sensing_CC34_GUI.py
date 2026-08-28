@@ -1,6 +1,21 @@
 """
 Module: T_Sensing_CC34_GUI.py
-Purpose: GUI module for T Sensing CC34 GUI v1.
+Purpose: GUI module for T Sensing CC34 GUI v1.1.
+
+         v1.1, 28 Aug 2026. Three fixes, all driven by a failed run on a
+         Model 34 Rev 3.03A at GPIB1::12:
+           - the first '*IDN?' after a bus scan could time out inside
+             viWrite; the session is now opened with a settle delay and the
+             first query is retried, which is what pressing Start twice was
+             doing by hand;
+           - a worker-thread failure was logged as 'NoneType: None' because
+             traceback.format_exc() ran in the GUI thread, where no exception
+             is live. The worker now hands its own formatted traceback across
+             the queue, so the real cause is printed;
+           - the sensor channel is selectable (A, B, C or D) instead of being
+             fixed at A, and both the units check and a trial reading happen
+             at Start, so an empty or faulted channel is named there rather
+             than one second later inside the logging loop.
 
          Cryocon Model 34 equivalent of T_Sensing_L350_GUI.py. Logs
          temperature vs. time from Cryocon input channel A with the same
@@ -24,6 +39,7 @@ common to the Model 32/32B/34 family:
 import tkinter as tk
 from tkinter import ttk, Label, filedialog, messagebox, scrolledtext, Canvas
 import os
+import re
 import time
 import traceback
 import threading
@@ -67,40 +83,110 @@ def run_script_process(script_path):
         print("-------------------------")
 
 
+# ===============================================================================
+# PICA RESOURCE RESOLUTION  (self-contained; inlined in every module)
+# ===============================================================================
+#
+# These modules are run three ways: from inside the installed pica package,
+# from a copy of the repository tree, and as a single file dropped somewhere
+# on its own. The logo and the sibling utility scripts used to be reached by
+# a fixed number of "..", so a file that moved lost its logo and its Scan
+# button, and in one place a missing logo crashed the window before the
+# console existed to report it.
+#
+# find_pica_root() looks for the package in three ways and gives up quietly.
+# Everything downstream treats a missing resource as a disabled feature, never
+# as an error: no instrument code depends on any of it.
+
+def find_pica_root():
+    """Absolute path of the pica package directory, or None.
+
+    Tried in order: the installed package, then each directory above this
+    file, then a 'pica' directory inside each of those. A directory counts as
+    the package root when it holds both 'assets' and 'utils'.
+    """
+    def looks_like_root(path):
+        return (os.path.isdir(os.path.join(path, "assets")) and
+                os.path.isdir(os.path.join(path, "utils")))
+
+    try:
+        import pica as _pica_pkg
+        pkg_dir = os.path.dirname(os.path.abspath(_pica_pkg.__file__))
+        if looks_like_root(pkg_dir):
+            return pkg_dir
+    except Exception:
+        pass
+
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        here = os.path.abspath(os.getcwd())
+
+    candidate = here
+    for _ in range(5):
+        if looks_like_root(candidate):
+            return candidate
+        nested = os.path.join(candidate, "pica")
+        if os.path.isdir(nested) and looks_like_root(nested):
+            return nested
+        parent = os.path.dirname(candidate)
+        if parent == candidate:
+            break
+        candidate = parent
+    return None
+
+
+PICA_ROOT = find_pica_root()
+
+
+def pica_asset(*parts):
+    """Absolute path to a file under pica/assets, or '' if unavailable."""
+    if not PICA_ROOT:
+        return ""
+    path = os.path.join(PICA_ROOT, "assets", *parts)
+    return path if os.path.exists(path) else ""
+
+
+def pica_utility(script_name):
+    """Absolute path to a script under pica/utils, or '' if unavailable."""
+    if not PICA_ROOT:
+        return ""
+    path = os.path.join(PICA_ROOT, "utils", script_name)
+    return path if os.path.exists(path) else ""
+
+
+def launch_pica_utility(script_name, friendly_name):
+    """Run a pica/utils script in its own process.
+
+    Says plainly what is missing rather than reporting a path that was only
+    ever a guess. Returns True if the process was started.
+    """
+    path = pica_utility(script_name)
+    if not path:
+        messagebox.showerror(
+            f"{friendly_name} Not Available",
+            f"{friendly_name} could not be found.\n\n"
+            "This module is running outside the pica package, so the shared "
+            "utilities in pica/utils are not reachable. Everything else in "
+            "this window works normally; copy the file into pica/<folder>/ "
+            "to get the utility buttons back.")
+        return False
+    try:
+        Process(target=run_script_process, args=(path,)).start()
+        return True
+    except Exception as e:
+        messagebox.showerror("Launch Error", f"Failed to launch {friendly_name}: {e}")
+        return False
+
+
 def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        # Go up 1 level: cryocon -> pica
-        plotter_path = os.path.join(
-            script_dir,
-            "..", "utils", "PlotterUtil_GUI.py")
-        if not os.path.exists(plotter_path):
-            messagebox.showerror(
-                "File Not Found",
-                f"Plotter utility not found at expected path:\n{plotter_path}")
-            return
-        Process(target=run_script_process, args=(plotter_path,)).start()
-    except Exception as e:
-        messagebox.showerror("Launch Error", f"Failed to launch Plotter Utility: {e}")
+    launch_pica_utility("PlotterUtil_GUI.py", "Plotter Utility")
 
 
 def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        # Go up 1 level: cryocon -> pica
-        scanner_path = os.path.join(
-            script_dir,
-            "..", "utils", "GPIB_Instrument_Scanner_GUI.py")
-        if not os.path.exists(scanner_path):
-            messagebox.showerror(
-                "File Not Found",
-                f"GPIB Scanner not found at expected path:\n{scanner_path}")
-            return
-        Process(target=run_script_process, args=(scanner_path,)).start()
-    except Exception as e:
-        messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
+    launch_pica_utility("GPIB_Instrument_Scanner_GUI.py", "GPIB Scanner")
 
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
@@ -116,6 +202,13 @@ CRYOCON_IDN_MARKERS = ("CRYOCON", "CRYO-CON")
 # as an instrument, and a *IDN? at one of those blocks for the whole timeout.
 PROBE_RESOURCE_PREFIXES = ("GPIB", "USB", "TCPIP")
 
+# How many times the logging loop will try to re-open a dropped link
+# before it gives up. Set to 0 to stop at the first communication error.
+CRYOCON_WORKER_RETRIES = 5
+
+# Input channels on a Model 34.
+CRYOCON_INPUT_CHANNELS = ('A', 'B', 'C', 'D')
+
 # Factory address, used only as a last-resort hint. Identification is by
 # *IDN? content, so a re-addressed Cryocon is still found.
 CRYOCON_ADDRESS_HINT = "GPIB1::12"
@@ -125,9 +218,219 @@ CRYOCON_ADDRESS_HINT = "GPIB1::12"
 IDN_SCAN_TIMEOUT_MS = 1200
 
 
+# ===============================================================================
+# CRYOCON LINK HARDENING  (read-only; inlined so each module stays standalone)
+# ===============================================================================
+#
+# Two failures seen on a Cryo-con Model 34 Rev 3.03A at GPIB1::12, 28 Aug 2026:
+#
+#   1. The bus scan identified the instrument, and the very next session's
+#      '*IDN?' died inside viWrite with VI_ERROR_TMO. Pressing Start again
+#      connected normally. A timeout on the WRITE means the instrument stopped
+#      accepting bytes for a moment, not that it is absent or at another
+#      address, so the cure is to wait and ask again instead of giving up.
+#      Handled by CRYOCON_OPEN_SETTLE_S plus the retry loop in CryoconLink.
+#
+#   2. A reading query answered with a Cryo-con status string instead of a
+#      number and float() raised, which killed the worker thread. The front
+#      panel shows seven dashes for a sensor fault and seven dots for a
+#      reading that is inside the instrument's range but off the sensor's
+#      calibration curve; over the bus those arrive as the literal strings
+#      below. Handled by parse_cryocon_number(), which names the condition
+#      instead of raising a bare ValueError.
+#
+# Nothing in this block writes to the instrument. GPIB device clear is an
+# interface message rather than a SCPI command, but its effect is
+# device-dependent and the Cryo-con guide does not document it, so it stays
+# off unless ALLOW_DEVICE_CLEAR_ON_RETRY is turned on deliberately.
+
+CRYOCON_TIMEOUT_MS = 10000          # per-operation VISA timeout
+CRYOCON_OPEN_SETTLE_S = 0.30        # pause after open, before the first command
+CRYOCON_MIN_GAP_S = 0.08            # minimum gap between consecutive operations
+CRYOCON_CONNECT_ATTEMPTS = 3        # tries for the first '*IDN?'
+CRYOCON_RETRY_WAIT_S = 1.5          # pause between those tries
+ALLOW_DEVICE_CLEAR_ON_RETRY = False # see note above
+
+# Literal replies that are status, not data.
+CRYOCON_STATUS_STRINGS = {
+    '-------': "sensor fault: the sensor is open, disconnected or shorted",
+    '.......': ("the reading is within the instrument's range but outside "
+                "the sensor's calibration curve"),
+    'N/A': "the channel is disabled, or the value does not apply",
+    'NACK': "the instrument did not acknowledge the command",
+}
+
+# Leading signed decimal, with or without an exponent. Used to peel a trailing
+# unit character off replies such as '77.350K'.
+_CRYOCON_NUMBER_RE = re.compile(r'[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?')
+
+# The dash and dot runs are as long as the display resolution setting makes
+# them, so they are matched by shape rather than by a fixed seven characters.
+_CRYOCON_FAULT_RE = re.compile(r'^-{2,}$')
+_CRYOCON_RANGE_RE = re.compile(r'^\.{2,}$')
+
+
+class CryoconStatusError(ValueError):
+    """A query returned a Cryo-con status string where a number was expected."""
+
+
+def parse_cryocon_number(raw, what, channel=None):
+    """Turn a Cryo-con reply into a float, or say precisely why it is not one.
+
+    Handles three things the plain float() call did not: status strings, a
+    trailing unit character, and multi-channel replies, which come back as
+    fields separated by semicolons.
+    """
+    text = str(raw).strip()
+    where = f" on channel {channel}" if channel else ""
+    if ';' in text:
+        text = text.split(';')[0].strip()
+    if text in CRYOCON_STATUS_STRINGS:
+        raise CryoconStatusError(
+            f"Cryocon {what}{where} returned '{text}': "
+            f"{CRYOCON_STATUS_STRINGS[text]}.")
+    if _CRYOCON_FAULT_RE.match(text):
+        raise CryoconStatusError(
+            f"Cryocon {what}{where} returned '{text}': "
+            f"{CRYOCON_STATUS_STRINGS['-------']}.")
+    if _CRYOCON_RANGE_RE.match(text):
+        raise CryoconStatusError(
+            f"Cryocon {what}{where} returned '{text}': sensor fault, no "
+            f"sensor, or {CRYOCON_STATUS_STRINGS['.......']}.")
+    if not text:
+        raise CryoconStatusError(
+            f"Cryocon {what}{where} returned an empty reply.")
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    match = _CRYOCON_NUMBER_RE.match(text)
+    if match:
+        return float(match.group(0))
+    raise CryoconStatusError(
+        f"Cryocon {what}{where} returned '{text}' "
+        "(sensor fault, no sensor, or reading out of range).")
+
+
 def is_cryocon_idn(idn):
-    """True if a *IDN? reply came from a Cryo-con temperature instrument."""
+    """True if a '*IDN?' reply came from a Cryo-con temperature instrument."""
     return any(marker in str(idn).upper() for marker in CRYOCON_IDN_MARKERS)
+
+
+class CryoconLink:
+    """One paced VISA session to a Cryo-con, opened with retries.
+
+    Every method is a query unless the caller explicitly asks for write().
+    The monitor and the dielectric scan never call write().
+    """
+
+    def __init__(self, visa_address, timeout_ms=CRYOCON_TIMEOUT_MS,
+                 log=None):
+        # Gate on the module object, not on the import-time flag: the test
+        # harness swaps in a fake pyvisa after import, and a flag frozen at
+        # import would lock it out.
+        if pyvisa is None:
+            raise ConnectionError(
+                "PyVISA is not available. Install pyvisa and a VISA backend "
+                "(NI-VISA or pyvisa-py).")
+        self.address = visa_address
+        self.timeout_ms = timeout_ms
+        self.instrument = None
+        self.idn = ""
+        self._log = log if callable(log) else (lambda msg: print(msg))
+        self._last_io = 0.0
+        self.rm = pyvisa.ResourceManager()
+        self._open_and_identify()
+
+    # -- session handling --
+
+    def _drop_session(self):
+        if self.instrument is not None:
+            try:
+                self.instrument.close()
+            except Exception:
+                pass
+            finally:
+                self.instrument = None
+
+    def _open_and_identify(self):
+        last_error = None
+        for attempt in range(1, CRYOCON_CONNECT_ATTEMPTS + 1):
+            try:
+                self.instrument = self.rm.open_resource(self.address)
+                self.instrument.timeout = self.timeout_ms
+                # The Cryocon GPIB port frames lines with EOI and no EOS
+                # character, so the PyVISA termination defaults are left alone.
+                time.sleep(CRYOCON_OPEN_SETTLE_S)
+                if attempt > 1 and ALLOW_DEVICE_CLEAR_ON_RETRY:
+                    try:
+                        self.instrument.clear()
+                        time.sleep(CRYOCON_OPEN_SETTLE_S)
+                    except Exception as exc:
+                        self._log(f"  Device clear declined: {exc}")
+                self.idn = self.query('*IDN?')
+                if not self.idn:
+                    raise ConnectionError(
+                        f"{self.address} accepted the command but sent no "
+                        "identification.")
+                if attempt > 1:
+                    self._log(f"  Cryocon answered on attempt {attempt}.")
+                return
+            except Exception as exc:
+                last_error = exc
+                self._drop_session()
+                if attempt < CRYOCON_CONNECT_ATTEMPTS:
+                    self._log(
+                        f"  Cryocon did not answer at {self.address} "
+                        f"(attempt {attempt} of {CRYOCON_CONNECT_ATTEMPTS}): "
+                        f"{type(exc).__name__}. Retrying in "
+                        f"{CRYOCON_RETRY_WAIT_S:.1f} s.")
+                    time.sleep(CRYOCON_RETRY_WAIT_S)
+        raise ConnectionError(
+            f"No reply from a Cryo-con at {self.address} after "
+            f"{CRYOCON_CONNECT_ATTEMPTS} attempts. Last error: {last_error}. "
+            "Check that the instrument is powered, that its SYS menu has "
+            "RIO-Port set to GPIB rather than RS-232, and that RIO-Address "
+            "matches this VISA address.")
+
+    # -- paced I/O --
+
+    def _pace(self):
+        """Hold a minimum gap between operations. Rev 3.03A firmware is slow
+        and back-to-back traffic is what provoked the write timeout."""
+        gap = CRYOCON_MIN_GAP_S - (time.time() - self._last_io)
+        if gap > 0:
+            time.sleep(gap)
+
+    def query(self, command):
+        if self.instrument is None:
+            raise ConnectionError("Not connected to the Cryocon.")
+        self._pace()
+        try:
+            reply = self.instrument.query(command)
+        finally:
+            self._last_io = time.time()
+        return reply.strip()
+
+    # There is deliberately no write() on this class. This module is a
+    # passive monitor, and a write path that exists is a write path that can
+    # be called by mistake. The direct-control module carries its own.
+
+    def reconnect(self):
+        """Drop the session and open a fresh one. Sends no SCPI beyond
+        '*IDN?'; used after a comm failure mid-run."""
+        self._drop_session()
+        time.sleep(CRYOCON_RETRY_WAIT_S)
+        self._open_and_identify()
+
+    @property
+    def is_connected(self):
+        return self.instrument is not None
+
+    def close(self):
+        """Close the session only. No *RST, no STOP, no heater, loop or
+        setpoint command, so whatever is driving the cryostat carries on."""
+        self._drop_session()
 
 
 def identify_resources(rm, resources):
@@ -155,6 +458,8 @@ def identify_resources(rm, resources):
                     inst.close()
                 except Exception:
                     pass
+                # Let the address settle before the next one is addressed.
+                time.sleep(0.05)
     return found
 
 
@@ -165,72 +470,86 @@ class Cryocon34_Backend:
     instrument, so its control loops, heater and settings are untouched.
     """
 
-    def __init__(self, visa_address):
-        self.instrument = None
-        rm = pyvisa.ResourceManager()
-        # The Cryocon GPIB port frames lines with EOI and no EOS character,
-        # so the PyVISA termination defaults are left alone.
-        self.instrument = rm.open_resource(visa_address)
-        self.instrument.timeout = 10000
+    def __init__(self, visa_address, channel='A', log=None):
+        self.channel = (str(channel).strip().upper() or 'A')
+        self.log = log if callable(log) else (lambda msg: print(msg))
+        self.link = CryoconLink(visa_address, log=self.log)
+        self.idn = self.link.idn
         # Confirm what actually answered before treating its numbers as
         # temperatures. GPIB addresses get changed; if this one now holds a
         # Lakeshore or a Keithley, its reply to INPUT? would be logged as a
         # sample temperature. Refuse rather than log the wrong instrument.
-        self.idn = self.instrument.query('*IDN?').strip()
         if not is_cryocon_idn(self.idn):
-            try:
-                self.instrument.close()
-            finally:
-                self.instrument = None
+            self.link.close()
             raise ValueError(
                 f"{visa_address} is not a Cryo-con: it identifies itself as "
                 f"'{self.idn}'. Scan the bus and pick the Cryocon's actual "
                 f"address (it does not have to be {CRYOCON_ADDRESS_HINT}).")
-        print(f"Cryocon Connected: {self.idn}")
+        self.log(f"Cryocon connected: {self.idn}")
 
-    def configure_for_monitoring(self, sensor='A'):
-        """Confirm the channel reports Kelvin. Writes nothing.
+    @property
+    def instrument(self):
+        """Kept so older callers that poke at .instrument still work."""
+        return self.link.instrument
+
+    def configure_for_monitoring(self, sensor=None):
+        """Confirm the channel reports Kelvin and can be read. Writes nothing.
 
         No *RST is sent: on a Cryocon that is a ~15 s hardware reset back to
         power-up defaults, which would disturb a running experiment.
 
         INPUT? returns the reading in the channel's own display units, so a
         channel left in C or F would silently log wrong numbers -- hence the
-        units check.
+        units check. The trial reading is here so that an empty or faulted
+        channel is reported at Start, by name, instead of killing the worker
+        thread one second later.
         """
-        units = self.instrument.query(
-            f'INPUT {sensor}:UNITS?').strip().upper()
+        ch = (str(sensor).strip().upper() if sensor else self.channel)
+        self.channel = ch
+        units = self.link.query(f'INPUT {ch}:UNITS?').upper()
         if not units.startswith('K'):
             raise ValueError(
-                f"Cryocon channel {sensor} is reporting in '{units}', not "
-                "Kelvin. Set that channel to K on the Cryocon front panel "
-                "(this program never writes to it).")
-        print(
-            f"Cryocon connected for passive monitoring on channel {sensor} "
+                f"Cryocon channel {ch} is reporting in '{units}', not "
+                "Kelvin. Either set that channel to K on the Cryocon front "
+                "panel (this program never writes to it), or pick the "
+                "channel your sensor is actually on.")
+        self.log(
+            f"Cryocon connected for passive monitoring on channel {ch} "
             "(units K). Heater and loop state are unchanged.")
 
-    def get_temperature(self, sensor='A'):
+    def probe_channel(self, sensor=None):
+        """Take one trial reading so a dead channel is named at Start.
+
+        Kept separate from configure_for_monitoring so that the units check
+        stays a single query, and so this can be skipped without touching
+        the units rule. This is the check that would have said 'channel A
+        has no sensor' instead of letting the worker thread die a second
+        into the run.
+        """
+        ch = (str(sensor).strip().upper() if sensor else self.channel)
+        value = self.get_temperature(ch)
+        self.log(f"  Trial reading on channel {ch}: {value:.4f} K.")
+        return value
+
+    def get_temperature(self, sensor=None):
         """Reads the temperature from a specified sensor."""
-        raw = self.instrument.query(f'INPUT? {sensor}').strip()
-        try:
-            return float(raw)
-        except ValueError:
-            raise ValueError(
-                f"Cryocon channel {sensor} returned '{raw}' "
-                "(sensor fault, no sensor, or reading out of range).")
+        ch = (str(sensor).strip().upper() if sensor else self.channel)
+        raw = self.link.query(f'INPUT? {ch}')
+        return parse_cryocon_number(raw, 'temperature reading', ch)
+
+    def reconnect(self):
+        """Re-open the session after a communication failure. Queries only."""
+        self.link.reconnect()
 
     def close(self):
         """Closes the connection to the instrument."""
-        if self.instrument:
+        if self.link:
             try:
                 # Passive: close the session only. No STOP and no heater or
                 # loop command, so the Cryocon carries on undisturbed.
-                time.sleep(0.5)
-                self.instrument.close()
+                self.link.close()
             except Exception as e:
                 print(f"Warning: Issue during Cryocon shutdown: {e}")
-            finally:
-                self.instrument = None
 
 # -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---
@@ -238,20 +557,13 @@ class Cryocon34_Backend:
 
 
 class TempMonitorGUI:
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "1.1"
     LOGO_SIZE = 110
     LEFT_PANEL_WIDTH = 500  # default sash position so the left panel starts fully visible
 
-    try:
-        SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-        LOGO_FILE_PATH = os.path.join(
-            SCRIPT_DIR,
-            "..",
-            "assets",
-            "LOGO",
-            "UGC_DAE_CSR_NBG.jpeg")
-    except NameError:
-        LOGO_FILE_PATH = "../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
+    # Resolved wherever the file happens to live; '' when the package is
+    # not reachable, which the header code treats as "draw the placeholder".
+    LOGO_FILE_PATH = pica_asset("LOGO", "UGC_DAE_CSR_NBG.jpeg")
 
     # --- Modern Dark Theme (PICA Standard) ---
     CLR_BG_DARK = '#B8A392'
@@ -273,6 +585,7 @@ class TempMonitorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Cryocon 34 Passive Temperature Monitor")
+        self.channel_cb = None
         self.root.state('zoomed')  # Launch maximized
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1200, 850)
@@ -283,6 +596,8 @@ class TempMonitorGUI:
         self.file_location_path = ""
         self.data_storage = {'time': [], 'temperature': []}
         self.logo_image = None
+        self.console_widget = None
+        self._pending_notes = []
         self.data_queue = queue.Queue()
 
         self.setup_styles()
@@ -518,7 +833,10 @@ class TempMonitorGUI:
                     self.LOGO_SIZE / 2,
                     image=self.logo_image)
             except Exception as e:
-                self.log(f"ERROR: Failed to load logo. {e}")
+                # create_header runs before the console exists, so this used
+                # to raise AttributeError inside the error handler and take
+                # the whole window down over a missing image file.
+                self._early_note(f"Failed to load logo: {e}")
                 logo_canvas.create_text(
                     self.LOGO_SIZE / 2,
                     self.LOGO_SIZE / 2,
@@ -527,7 +845,8 @@ class TempMonitorGUI:
                     fill=self.CLR_FG_LIGHT,
                     justify='center')
         else:
-            self.log(f"Warning: Logo not found at '{self.LOGO_FILE_PATH}'")
+            self._early_note("Logo not found; running outside the pica "
+                             "package tree.")
             logo_canvas.create_text(
                 self.LOGO_SIZE / 2,
                 self.LOGO_SIZE / 2,
@@ -590,6 +909,7 @@ class TempMonitorGUI:
         frame = ttk.LabelFrame(parent, text='Experiment Parameters')
         frame.pack(pady=5, padx=10, fill='x')
         frame.columnconfigure(0, weight=1)
+        frame.columnconfigure(1, weight=1)
 
         self.entries = {}
         pady_val = (5, 5)
@@ -621,6 +941,25 @@ class TempMonitorGUI:
             row=3, column=0, padx=10, pady=(
                 0, 5), sticky='ew')
         self.entries["Delay"].insert(0, "1.0")
+
+        # Which input the sample sensor is wired to. A Model 34 has four.
+        # Fixing this at A was why a correctly connected instrument still
+        # produced a runtime error: channel A was not the one in use.
+        ttk.Label(
+            frame,
+            text="Sensor Channel:").grid(
+            row=2,
+            column=1,
+            padx=10,
+            pady=pady_val,
+            sticky='w')
+        self.channel_cb = ttk.Combobox(
+            frame, font=self.FONT_BASE, state='readonly',
+            values=CRYOCON_INPUT_CHANNELS)
+        self.channel_cb.set(CRYOCON_INPUT_CHANNELS[0])
+        self.channel_cb.grid(
+            row=3, column=1, padx=10, pady=(
+                0, 5), sticky='ew')
 
         ttk.Label(
             frame,
@@ -712,6 +1051,13 @@ class TempMonitorGUI:
         self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
         self.log(
             "Console initialized. Configure parameters and scan for instruments.")
+        for note in getattr(self, '_pending_notes', []):
+            self.log(note)
+        self._pending_notes = []
+        if not PICA_ROOT:
+            self.log("Note: running outside the pica package. Measurement is "
+                     "unaffected; the Plotter and Scanner utility buttons are "
+                     "not available.")
         if not PYVISA_AVAILABLE:
             self.log("CRITICAL: PyVISA not found.")
         return frame
@@ -735,6 +1081,14 @@ class TempMonitorGUI:
         self.figure.tight_layout(pad=3.0)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
+    def _early_note(self, message):
+        """Queue a note raised before the console widget exists."""
+        if getattr(self, 'console_widget', None) is None:
+            self._pending_notes = getattr(self, '_pending_notes', [])
+            self._pending_notes.append(message)
+        else:
+            self.log(message)
+
     def log(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.console_widget.config(state='normal')
@@ -747,15 +1101,21 @@ class TempMonitorGUI:
             params = {
                 'sample_name': self.entries["Sample Name"].get(),
                 'delay': float(self.entries["Delay"].get()),
-                'cryocon_visa': self.cryocon_cb.get()
+                'cryocon_visa': self.cryocon_cb.get(),
+                'channel': self.channel_cb.get(),
             }
             if not all(params.values()) or not self.file_location_path:
                 raise ValueError(
                     "All fields, VISA address, and save location are required.")
 
-            self.backend = Cryocon34_Backend(params['cryocon_visa'])
+            self.backend = Cryocon34_Backend(
+                params['cryocon_visa'], channel=params['channel'],
+                log=self.log)
             self.backend.configure_for_monitoring()
-            self.log(f"Backend initialized for: {params['sample_name']}")
+            self.backend.probe_channel()
+            self.log(f"Backend initialized for: {params['sample_name']} "
+                     f"(Cryocon 34 at {params['cryocon_visa']}, channel "
+                     f"{params['channel']})")
 
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             file_name = f"{params['sample_name']}_{ts}_Temp_passive.dat"
@@ -765,6 +1125,9 @@ class TempMonitorGUI:
             with open(self.data_filepath, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([f"# Log File: {params['sample_name']}"])
+                writer.writerow([f"# Instrument: Cryocon 34 at "
+                                 f"{params['cryocon_visa']}, input channel "
+                                 f"{params['channel']} (read only)"])
                 writer.writerow(
                     ["Timestamp", "Elapsed Time (s)", "Temperature (K)"])
             self.log(
@@ -809,29 +1172,70 @@ class TempMonitorGUI:
                 "Info", "Logging stopped and instrument disconnected.")
 
     def _measurement_worker(self):
-        """Worker thread for handling blocking instrument calls."""
+        """Worker thread for handling blocking instrument calls.
+
+        A dropped GPIB link is retried rather than treated as fatal: a
+        temperature log that survives a cable knock is worth more than one
+        that stops at the first timeout. A sensor fault is different, and
+        stops the run, because the channel is telling us it has nothing to
+        report.
+        """
         delay_s = float(self.entries["Delay"].get())
+        comm_failures = 0
         while self.is_running:
             try:
                 temp = self.backend.get_temperature()
+                comm_failures = 0
                 elapsed = time.time() - self.start_time
                 self.data_queue.put((elapsed, temp))
                 time.sleep(delay_s)
-            except Exception as e:
-                self.data_queue.put(e)
+            except CryoconStatusError as e:
+                # The instrument answered; the channel has no valid reading.
+                self.data_queue.put((e, traceback.format_exc()))
                 break
+            except Exception as e:
+                comm_failures += 1
+                if comm_failures > CRYOCON_WORKER_RETRIES:
+                    self.data_queue.put((e, traceback.format_exc()))
+                    break
+                self.data_queue.put(
+                    f"LOG:Communication error ({type(e).__name__}); "
+                    f"reconnect attempt {comm_failures} of "
+                    f"{CRYOCON_WORKER_RETRIES}.")
+                try:
+                    self.backend.reconnect()
+                except Exception:
+                    pass
 
     def _process_data_queue(self):
         """Processes data from the worker thread to update the GUI."""
         try:
             while not self.data_queue.empty():
                 data = self.data_queue.get_nowait()
-                if isinstance(data, Exception):
-                    self.log(
-                        f"RUNTIME ERROR in worker thread: {traceback.format_exc()}")
+
+                # Plain string: a status line from the worker, not data.
+                if isinstance(data, str) and data.startswith("LOG:"):
+                    self.log(data[4:])
+                    continue
+
+                # The worker sends (exception, formatted traceback). Calling
+                # traceback.format_exc() here would print 'NoneType: None',
+                # because no exception is live in this thread -- that is
+                # exactly what hid the original fault.
+                if isinstance(data, tuple) and data and isinstance(
+                        data[0], Exception):
+                    exc, tb_text = data[0], data[1]
+                    self.log(f"RUNTIME ERROR in worker thread: {exc}")
+                    self.log(tb_text)
                     self.stop_measurement()
                     messagebox.showerror(
-                        "Runtime Error", "A critical error occurred. Check console.")
+                        "Runtime Error", f"{exc}\n\nSee console for detail.")
+                    return
+                if isinstance(data, Exception):
+                    self.log(f"RUNTIME ERROR in worker thread: {data}")
+                    self.stop_measurement()
+                    messagebox.showerror(
+                        "Runtime Error", f"{data}\n\nSee console for detail.")
                     return
 
                 elapsed, temp = data
@@ -878,6 +1282,9 @@ class TempMonitorGUI:
             # different instrument sitting at that address cannot be picked
             # by mistake.
             identities = identify_resources(rm, resources)
+            # Give the bus a moment after the identification pass: the first
+            # command of the next session is the one that timed out.
+            time.sleep(CRYOCON_OPEN_SETTLE_S)
             for res in resources:
                 self.log(f"  {res}  ->  {identities.get(res, 'no reply')}")
 
