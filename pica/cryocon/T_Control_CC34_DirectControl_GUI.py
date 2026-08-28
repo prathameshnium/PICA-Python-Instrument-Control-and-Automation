@@ -116,6 +116,30 @@ def launch_gpib_scanner():
 # BACKEND: Cryocon Model 34 Instrument Control
 # ---------------------------------------------------------------------------
 
+# A Cryo-con replies to *IDN? with something like
+# "Cryocon,Model 34,204683,3.18A". Both spellings of the maker name are in
+# circulation, so both are accepted.
+CRYOCON_IDN_MARKERS = ("CRYOCON", "CRYO-CON")
+
+# VISA resource kinds worth probing during a scan. Serial ports are left
+# alone: on a Windows rack ASRL1 is as likely to be a UPS or a Bluetooth port
+# as an instrument, and a *IDN? at one of those blocks for the whole timeout.
+PROBE_RESOURCE_PREFIXES = ("GPIB", "USB", "TCPIP")
+
+# Factory address, used only as a last-resort hint. Identification is by
+# *IDN? content, so a re-addressed Cryocon is still found.
+CRYOCON_ADDRESS_HINT = "GPIB1::12"
+
+# Short timeout for the identification pass so one silent address cannot
+# stall the whole scan.
+IDN_SCAN_TIMEOUT_MS = 1200
+
+
+def is_cryocon_idn(idn):
+    """True if a *IDN? reply came from a Cryo-con temperature instrument."""
+    return any(marker in str(idn).upper() for marker in CRYOCON_IDN_MARKERS)
+
+
 class Cryocon34Backend:
     """
     Backend for Cryocon Model 34 communication.
@@ -191,7 +215,47 @@ class Cryocon34Backend:
         self.cryocon = self.rm.open_resource(visa_address)
         self.cryocon.timeout = 10000
         idn = self.cryocon.query('*IDN?').strip()
+        # This module drives heaters, setpoints and control loops. GPIB
+        # addresses get changed, so confirm what actually answered before
+        # sending it a LOOP or CONTROL command; refuse anything that is not a
+        # Cryo-con rather than write control commands into a stranger.
+        if not is_cryocon_idn(idn):
+            self.disconnect()
+            raise ConnectionError(
+                f"{visa_address} is not a Cryo-con: it identifies itself as "
+                f"'{idn}'. Refusing to send control commands. Scan the bus "
+                f"and pick the Cryocon's actual address (it does not have to "
+                f"be {CRYOCON_ADDRESS_HINT}).")
         return idn
+
+    def identify_resources(self, resources):
+        """Return {resource: idn} for every resource that answers *IDN?.
+
+        Never raises: an address that is busy, silent or not SCPI simply does
+        not appear in the result. Serial resources are not probed at all.
+        """
+        found = {}
+        if not self.rm:
+            return found
+        for res in resources:
+            if not str(res).upper().startswith(PROBE_RESOURCE_PREFIXES):
+                continue
+            inst = None
+            try:
+                inst = self.rm.open_resource(res)
+                inst.timeout = IDN_SCAN_TIMEOUT_MS
+                idn = inst.query('*IDN?').strip()
+                if idn:
+                    found[res] = idn
+            except Exception:
+                pass
+            finally:
+                if inst is not None:
+                    try:
+                        inst.close()
+                    except Exception:
+                        pass
+        return found
 
     def disconnect(self):
         """
@@ -2017,20 +2081,43 @@ class DirectControlGUI:
             self.log(f"Scan error: {e}")
             return
 
-        if resources:
-            self.log(f"Found {len(resources)} resource(s):")
-            for r in resources:
-                self.log(f"  {r}")
-            self.visa_cb['values'] = list(resources)
-            # Auto-select the Cryocon's factory GPIB address (12).
-            for r in resources:
-                if 'GPIB1::12' in r:
-                    self.visa_cb.set(r)
-                    break
-            if not self.visa_cb.get():
-                self.visa_cb.set(resources[0])
-        else:
+        resources = list(resources)
+        if not resources:
             self.log("No VISA instruments found.")
+            return
+
+        self.log(f"Found {len(resources)} resource(s):")
+        self.visa_cb['values'] = resources
+
+        # Identify by *IDN? rather than by address: the Cryocon does not have
+        # to be at its factory address for this to find it, and a different
+        # instrument sitting at that address cannot be picked by mistake.
+        identities = self.backend.identify_resources(resources)
+        for r in resources:
+            self.log(f"  {r}  ->  {identities.get(r, 'no reply')}")
+
+        cryocon = next(
+            (r for r in resources if is_cryocon_idn(identities.get(r, ''))),
+            None)
+        if cryocon:
+            self.visa_cb.set(cryocon)
+            self.log(f"Cryocon identified at {cryocon} and selected.")
+            return
+
+        # Nothing identified itself as a Cryo-con. Offer the factory address
+        # as a hint only -- connect() checks *IDN? again and refuses anything
+        # that is not a Cryo-con, so this can never start driving a heater on
+        # the wrong instrument.
+        hint = next(
+            (r for r in resources if CRYOCON_ADDRESS_HINT in r), None)
+        if hint:
+            self.visa_cb.set(hint)
+            self.log(f"WARNING: no Cryo-con answered *IDN?. Selected {hint} "
+                     f"on the factory address alone — check the instrument "
+                     f"is powered and in remote.")
+        else:
+            self.log("WARNING: no Cryo-con found on the bus. Pick an address "
+                     "manually if you know it.")
 
     def _do_connect(self):
         """Connect to the selected VISA address."""

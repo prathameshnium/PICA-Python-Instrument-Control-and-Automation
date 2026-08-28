@@ -62,7 +62,11 @@ CMD = {
         "DC amps":     "F3",
         "AC amps":     "F4",
         "dB":          "F5",
-        "4-wire ohms": "F6",   # verify: may not exist as its own function code
+        # NO 4-wire ohms entry. The 197A is a 2-wire meter: it has no sense
+        # terminals, so there is no 4-wire function to select and F6 does not
+        # mean 4-wire ohms on this family. An earlier revision of this table
+        # listed one; selecting it would have set some other function while
+        # the log column still said "Ohm".
     },
     "range": {             # R<n>X ; R0 is autorange on this family
         "auto": "R0", "1": "R1", "2": "R2", "3": "R3",
@@ -77,14 +81,13 @@ FUNCTION_UNITS = {
     "DC volts": "V",
     "AC volts": "V",
     "2-wire ohms": "Ohm",
-    "4-wire ohms": "Ohm",
     "DC amps": "A",
     "AC amps": "A",
     "dB": "dB",
 }
 
 FUNCTION_NAMES = [
-    "DC volts", "AC volts", "2-wire ohms", "4-wire ohms",
+    "DC volts", "AC volts", "2-wire ohms",
     "DC amps", "AC amps", "dB",
 ]
 
@@ -187,6 +190,39 @@ class NoResponseError(Exception):
     print a diagnosis instead of a traceback."""
 
 
+class WrongInstrumentError(Exception):
+    """Raised when the address answers, but not like a 197A.
+
+    The reference address table has the 197A sharing GPIB0::7 with a Keithley
+    2182, and any address can be changed on the rack. Without this check a
+    mis-set address would have the meter's 197-dialect commands ("F0R0X")
+    written into whatever else is sitting there, and its replies logged as
+    readings.
+    """
+
+
+def looks_like_reading(raw):
+    """True if a reply is shaped like a 197A reading, not an identity string.
+
+    A 197A answers with a number, optionally behind a 4-character function
+    prefix ("NDCV+1.23456E+0"). A modern SCPI instrument that has been left
+    with a pending *IDN? answers a comma-separated vendor string, which also
+    contains digits -- so the comma count, not the presence of a number, is
+    what separates them.
+    """
+    value, _ = parse_reading(raw)
+    if value is None:
+        return False
+    return str(raw).count(',') < 2
+
+
+WRONG_INSTRUMENT_MESSAGE = (
+    "The instrument at {addr} answered {reply!r}, which is not a 197A "
+    "reading. That address is holding something else -- the reference table "
+    "has a Keithley 2182 on GPIB0::7 as well. Run the GPIB Scanner utility "
+    "and use the 197A's actual address. Nothing was sent to the instrument.")
+
+
 class Keithley197A_Backend:
     """Talks to a Keithley 197A through a Model 1973A / 1972A interface.
 
@@ -211,12 +247,19 @@ class Keithley197A_Backend:
         """
         try:
             self.instrument.write(CMD["execute"])
-            return self.instrument.read().strip()
+            reply = self.instrument.read().strip()
         except Exception as e:
             if pyvisa is not None and isinstance(e, pyvisa.errors.VisaIOError):
                 raise NoResponseError(
                     NO_RESPONSE_MESSAGE.format(addr=self.visa_address))
             raise
+        # Something answered. Confirm it answered like a meter before any
+        # 197-dialect command is written to it.
+        if not looks_like_reading(reply):
+            raise WrongInstrumentError(
+                WRONG_INSTRUMENT_MESSAGE.format(
+                    addr=self.visa_address, reply=reply))
+        return reply
 
     def configure(self, function_name, range_name):
         """Sets function and range in one concatenated command string."""
@@ -746,6 +789,10 @@ class K197AMonitorGUI:
             self.log(str(e))
             backend.close()
             return False
+        except WrongInstrumentError as e:
+            self.log(f"ERROR: {e}")
+            backend.close()
+            return False
         except Exception as e:
             self.log(f"ERROR while probing {address}: {e}")
             backend.close()
@@ -753,8 +800,10 @@ class K197AMonitorGUI:
 
         self.backend = backend
         self.log(f"Address {address} answered. Raw reply: {reply!r}")
-        self.log("Note: there is no identify query on this interface, so the "
-                 "reply above does not prove the instrument is a 197A.")
+        self.log("Note: this interface has no identify query. The reply was "
+                 "checked for a meter-like shape, which rules out a modern "
+                 "SCPI instrument at this address but does not prove the "
+                 "meter is specifically a 197A.")
         return True
 
     def start_measurement(self):

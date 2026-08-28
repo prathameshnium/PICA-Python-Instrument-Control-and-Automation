@@ -223,11 +223,15 @@ class GPIB_Instrument_Scanner_GUI:
         """Displays a list of common instrument addresses in the console."""
         guide_text = """
 --- PICA Instrument Address Guide ---
-Note: These are typical addresses. Use the scan results for exact values.
+THESE ARE HINTS, NOT FACTS. Any address on the rack can be changed from an
+instrument's front panel. Always take the address from the scan above, never
+from this list. PICA's modules identify instruments from their *IDN? reply
+rather than their address for exactly this reason.
 
 Temperature Controllers
   • Lakeshore 340:      GPIB0::12::INSTR
   • Lakeshore 350:      GPIB1::15::INSTR
+  • Cryocon 34:         GPIB1::12::INSTR
 
 Source-Measure Units (SMU) & Electrometers
   • Keithley 2400:      GPIB1::4::INSTR
@@ -238,8 +242,17 @@ Nanovoltmeters, LCR Meters & Amplifiers
   • Keithley 2182:      GPIB0::7::INSTR
   • Keysight E4980A:    GPIB0::17::INSTR
   • SRS SR830 Lock-in:  GPIB0::8::INSTR
-  • Keithley 197A DMM:  GPIB0::7::INSTR  (UNCONFIRMED; needs a
-                        Model 1973A / 1972A IEEE-488 card fitted)
+  • Keithley 197A DMM:  GPIB0::7::INSTR  (UNCONFIRMED placeholder, and it
+                        CLASHES with the Keithley 2182 above -- both cannot
+                        be on 7 at once. The 197A also needs a Model 1973A /
+                        1972A IEEE-488 card fitted, and answers no *IDN?, so
+                        it will not appear in the scan above at all.)
+
+Broadband Dielectric
+  • Novocontrol Alpha-AN: answers *IDN? but uses its own command set, not
+                        SCPI. The v2 launcher records its address the first
+                        time it sees it and never probes it again. If it is
+                        on this bus, note its address and leave it alone.
 
 \n---------------------------------------------
 """

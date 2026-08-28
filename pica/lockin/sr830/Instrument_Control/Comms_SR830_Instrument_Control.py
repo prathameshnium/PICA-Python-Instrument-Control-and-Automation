@@ -33,6 +33,16 @@ except ImportError:
 PROGRAM_VERSION = "1.0"
 MODULE_NAME = "Comms_SR830_Instrument_Control.py"
 DEFAULT_ADDRESS = "GPIB0::8::INSTR"
+
+# An SR830 answers *IDN? with "Stanford_Research_Systems,SR830,s/n,ver".
+# Identification is by this string, never by address: the default above is
+# only a starting value in the address box.
+SR830_IDN_MARKER = "SR830"
+
+
+def is_sr830_idn(idn):
+    """True if a *IDN? reply came from an SR830 lock-in amplifier."""
+    return SR830_IDN_MARKER in str(idn).upper()
 DEFAULT_INTERVAL = 0.5
 
 # -----------------------------------------------------------------------------
@@ -332,6 +342,20 @@ class SR830Backend:
         # Unlike some older instruments the SR830 does answer *IDN?, so it
         # doubles as the connection check.
         self.idn = self.instrument.query('*IDN?').strip()
+
+        # This module writes SLVL (sine amplitude into the sample) and AUXV
+        # (up to +/-10.5 V on the rear DC outputs). GPIB addresses get
+        # changed, so confirm what actually answered before any of that can
+        # be sent to it.
+        if not is_sr830_idn(self.idn):
+            try:
+                self.instrument.close()
+            finally:
+                self.instrument = None
+            raise ConnectionError(
+                "%s is not an SR830: it identifies itself as '%s'. Refusing "
+                "to send lock-in commands. Scan the bus and use the SR830's "
+                "actual address." % (visa_address, self.idn))
 
     def read_settings(self):
         """Read the whole instrument state in the canonical order."""
