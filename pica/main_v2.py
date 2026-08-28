@@ -504,13 +504,21 @@ class PICALauncherV2:
     CLR_BORDER = '#C4B2A0'
     CLR_BORDER_STRONG = '#B8A392'
     CLR_OK = '#5B7A3F'           # olive green = connected (semantic status)
+    # Status dots need to read as "alive" from across the lab bench, which the
+    # muted olive above cannot do at dot size. The pair below is the blink:
+    # bright on-phase, dimmer green off-phase (never grey, so an idle blink is
+    # still obviously "connected" rather than "lost").
+    CLR_LIVE = '#12D64B'         # vivid green = instrument answering now
+    CLR_LIVE_DIM = '#3E8B4A'     # off-phase of the blink
     CLR_WARN = '#8B3A2F'         # deep maroon = experimental (matches v1)
     CLR_FAMILY_SENSING = '#D8C0A8'   # pale sand   (v1)
     CLR_FAMILY_CONTROL = '#B04A38'   # terracotta  (v1)
     CLR_FAMILY_MASTER = '#4A3222'    # espresso    (v1)
 
     # --- Type scale: anchored on the same base size as the v1 launcher ---
-    FONT_SIZE_BASE = PICALauncherApp.FONT_SIZE_BASE          # 12
+    # v2 runs two points larger than v1: the module rows, tab labels and menus
+    # are read from a standing position at the rig, not from a desk chair.
+    FONT_SIZE_BASE = PICALauncherApp.FONT_SIZE_BASE + 2      # 12 -> 14
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_SMALL = ('Segoe UI', FONT_SIZE_BASE - 2)
     FONT_LABEL = ('Segoe UI', FONT_SIZE_BASE - 3, 'bold')
@@ -521,7 +529,15 @@ class PICALauncherV2:
     FONT_INFO = ('Segoe UI', FONT_SIZE_BASE)                 # v1 FONT_INFO
     FONT_INFO_BOLD = ('Segoe UI', FONT_SIZE_BASE, 'bold')
     FONT_STAT = ('Consolas', FONT_SIZE_BASE + 4, 'bold')
-    FONT_MONO = ('Consolas', 10)                             # v1 FONT_CONSOLE
+    FONT_MONO = ('Consolas', 11)                             # v1 FONT_CONSOLE
+    FONT_MENU = ('Segoe UI', FONT_SIZE_BASE)                 # menu / sub-menu items
+    # The status strip runs against the type scale rather than with it: it is a
+    # glanceable band, not reading matter, and at the v2 base size it ate three
+    # rows of window height. Its own smaller scale keeps it to one compact band.
+    FONT_DOT = ('Segoe UI', FONT_SIZE_BASE + 1)              # status dot glyph
+    FONT_STRIP = ('Segoe UI', FONT_SIZE_BASE - 4)            # chip / caption text
+    FONT_STRIP_CAP = ('Segoe UI', FONT_SIZE_BASE - 5, 'bold')  # tile headings
+    FONT_STRIP_STAT = ('Consolas', FONT_SIZE_BASE, 'bold')   # tile big numbers
 
     SCRIPT_PATHS = PICALauncherApp.SCRIPT_PATHS
     LOGO_FILE = resource_path("assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
@@ -556,6 +572,9 @@ class PICALauncherV2:
         # Folder the File menu's pickers open in (last one the user visited).
         self._last_data_dir = os.getcwd()
         self.chip_widgets = {}
+        # Names whose dot is currently blinking (detected on the last scan).
+        self._live_chips = set()
+        self._blink_on = True
         self.launched_processes = []
         # Addresses this session has learned must not be probed again. Seeded
         # from the persistent file so a Novocontrol identified on a previous
@@ -570,6 +589,7 @@ class PICALauncherV2:
         self.log(f"PICA Launcher v{self.PROGRAM_VERSION} initialized.")
         # First (and only automatic) instrument scan, shortly after the UI draws.
         self.root.after(400, self.start_scan)
+        self._blink_tick()
         # The VISA/GPIB scanner opens by itself at startup, as in v1: the
         # first thing anyone needs is the list of what is actually on the bus
         # with its real addresses. It runs in its own process and does its own
@@ -593,6 +613,13 @@ class PICALauncherV2:
                         font=self.FONT_LABEL)
         style.configure('Stat.TLabel', background=self.CLR_PANEL, foreground=self.CLR_TEXT,
                         font=self.FONT_STAT)
+        # Status-strip variants: same colours, tighter type.
+        style.configure('StripCap.TLabel', background=self.CLR_PANEL,
+                        foreground=self.CLR_TEXT_FAINT, font=self.FONT_STRIP_CAP)
+        style.configure('StripDim.TLabel', background=self.CLR_PANEL,
+                        foreground=self.CLR_TEXT_DIM, font=self.FONT_STRIP)
+        style.configure('StripStat.TLabel', background=self.CLR_PANEL,
+                        foreground=self.CLR_TEXT, font=self.FONT_STRIP_STAT)
         style.configure('CardTitle.TLabel', background=self.CLR_PANEL, foreground=self.CLR_TEXT,
                         font=self.FONT_CARD)
         style.configure('Mono.TLabel', background=self.CLR_PANEL, foreground=self.CLR_TEXT_DIM,
@@ -649,10 +676,10 @@ class PICALauncherV2:
 
     # --------------------------------------------------------------- menu bar
     def _build_menubar(self):
-        menubar = tk.Menu(self.root)
+        menubar = tk.Menu(self.root, font=self.FONT_MENU)
 
         # Classic File menu: opening things comes first, then the app commands.
-        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
         file_menu.add_command(label="Open Data File…", accelerator="Ctrl+O",
                               command=self.open_data_file)
         file_menu.add_command(label="Open Data as Graph…", accelerator="Ctrl+G",
@@ -688,7 +715,7 @@ class PICALauncherV2:
         self.root.bind_all("<Control-p>",
                            lambda _e: self.open_ppms_data_as_plot())
 
-        tools_menu = tk.Menu(menubar, tearoff=0)
+        tools_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
         tools_menu.add_command(label="GPIB / VISA Scanner", command=self._launch_gpib_scanner)
         tools_menu.add_command(label="GPIB Scanner (32-bit, no VISA)",
                                command=lambda: self.launch_script("GPIB Scanner (32-bit)"))
@@ -698,14 +725,14 @@ class PICALauncherV2:
         tools_menu.add_command(label="PICA Utils…", command=self.open_tools_popup)
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
-        view_menu = tk.Menu(menubar, tearoff=0)
+        view_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
         view_menu.add_command(label="Browse All Modules", command=lambda: self.notebook.select(0))
         view_menu.add_command(label="Quick Select", command=lambda: self.notebook.select(1))
         view_menu.add_separator()
         view_menu.add_checkbutton(label="Show Console", variable=self._make_console_var())
         menubar.add_cascade(label="View", menu=view_menu)
 
-        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
         help_menu.add_command(label="User Manual", command=lambda: self._open_path(self.MANUAL_FILE))
         help_menu.add_command(label="README", command=lambda: self._open_path(self.README_FILE))
         help_menu.add_command(label="Change Log", command=lambda: self._open_path(self.CHANGELOG_FILE))
@@ -727,61 +754,81 @@ class PICALauncherV2:
                        highlightbackground=self.CLR_BORDER)
         bar.pack(side='top', fill='x')
         inner = tk.Frame(bar, bg=self.CLR_PANEL)
-        inner.pack(fill='x', padx=14, pady=8)
+        inner.pack(fill='x', padx=10, pady=4)
 
         # Temperature snapshot tile
         temp_tile = tk.Frame(inner, bg=self.CLR_PANEL)
-        temp_tile.pack(side='left', padx=(0, 18))
-        ttk.Label(temp_tile, text="TEMPERATURE (SNAPSHOT)", style='Faint.TLabel').pack(anchor='w')
+        temp_tile.pack(side='left', padx=(0, 12))
+        ttk.Label(temp_tile, text="TEMPERATURE", style='StripCap.TLabel').pack(anchor='w')
         # Fixed width: the value grows from "—" to "300.00 K" on every scan and
         # an elastic tile would shove the rest of the strip sideways each time.
-        self.temp_value = ttk.Label(temp_tile, text="—", style='Stat.TLabel',
+        self.temp_value = ttk.Label(temp_tile, text="—", style='StripStat.TLabel',
                                     width=10, anchor='w')
         self.temp_value.pack(anchor='w', fill='x')
-        self.temp_sub = ttk.Label(temp_tile, text="not scanned yet", style='Dim.TLabel')
+        self.temp_sub = ttk.Label(temp_tile, text="not scanned yet", style='StripDim.TLabel')
         self.temp_sub.pack(anchor='w')
 
-        tk.Frame(inner, bg=self.CLR_BORDER, width=1).pack(side='left', fill='y', padx=(0, 18))
+        tk.Frame(inner, bg=self.CLR_BORDER, width=1).pack(side='left', fill='y', padx=(0, 12))
 
         # GPIB link tile
         link_tile = tk.Frame(inner, bg=self.CLR_PANEL)
-        link_tile.pack(side='left', padx=(0, 18))
-        ttk.Label(link_tile, text="GPIB / VISA LINK", style='Faint.TLabel').pack(anchor='w')
-        self.link_value = ttk.Label(link_tile, text="—", style='Stat.TLabel',
+        link_tile.pack(side='left', padx=(0, 12))
+        ttk.Label(link_tile, text="GPIB / VISA", style='StripCap.TLabel').pack(anchor='w')
+        self.link_value = ttk.Label(link_tile, text="—", style='StripStat.TLabel',
                                     width=4, anchor='w')
         self.link_value.pack(anchor='w', fill='x')
-        self.link_sub = ttk.Label(link_tile, text="press Reload to scan", style='Dim.TLabel')
+        self.link_sub = ttk.Label(link_tile, text="press Reload to scan", style='StripDim.TLabel')
         self.link_sub.pack(anchor='w')
 
-        tk.Frame(inner, bg=self.CLR_BORDER, width=1).pack(side='left', fill='y', padx=(0, 18))
+        tk.Frame(inner, bg=self.CLR_BORDER, width=1).pack(side='left', fill='y', padx=(0, 12))
 
         # Reload is packed before the elastic chip grid so pack reserves its
         # width at the right edge instead of letting the chips squeeze it out.
         self.reload_btn = ttk.Button(inner, text="⟳ Reload", style='Aux.TButton',
                                      command=self.start_scan)
-        self.reload_btn.pack(side='right', padx=(18, 0))
+        self.reload_btn.pack(side='right', padx=(12, 0))
 
         # Instrument chips
         chips = tk.Frame(inner, bg=self.CLR_PANEL)
         chips.pack(side='left', fill='x', expand=True)
         chip_names = [n for n, _ in KNOWN_INSTRUMENTS] + NEVER_PROBED_INSTRUMENTS
-        # Uniform columns keep the status dots on a vertical line instead of
-        # letting the longest name in each column set its own indent.
-        chips.columnconfigure(tuple(range(4)), weight=1, uniform='chip')
+        # Five natural-width columns: nine chips land in two rows instead of
+        # three, and dropping the uniform sizing stops the long protected-
+        # instrument label from being clipped by an equal-share column.
+        cols = 5
         for i, name in enumerate(chip_names):
             chip = tk.Frame(chips, bg=self.CLR_PANEL)
-            chip.grid(row=i // 4, column=i % 4, sticky='w', padx=(0, 16), pady=2)
+            chip.grid(row=i // cols, column=i % cols, sticky='w', padx=(0, 10))
             dot = tk.Label(chip, text="●", bg=self.CLR_PANEL, fg=self.CLR_TEXT_FAINT,
-                           font=self.FONT_SMALL)
-            dot.pack(side='left', padx=(0, 5))
+                           font=self.FONT_DOT)
+            dot.pack(side='left', padx=(0, 4))
             lbl = tk.Label(chip, text=name, bg=self.CLR_PANEL, fg=self.CLR_TEXT_DIM,
-                           font=self.FONT_SMALL)
+                           font=self.FONT_STRIP)
             lbl.pack(side='left')
             manual = name in NEVER_PROBED_INSTRUMENTS
             if manual:
                 dot.config(fg=self.CLR_TEXT_FAINT)
-                lbl.config(text=f"{name} (protected)")
+                lbl.config(text=f"{name} (prot.)")
             self.chip_widgets[name] = (dot, lbl, manual)
+
+    def _blink_tick(self):
+        """Pulse the dots of the instruments that answered the last scan.
+
+        Only live chips blink -- absent and protected instruments keep their
+        static colour, so motion in the strip always means "this one is on the
+        bus right now". Rescheduled unconditionally; a destroyed root simply
+        stops the chain when Tk raises on the next config.
+        """
+        self._blink_on = not self._blink_on
+        colour = self.CLR_LIVE if self._blink_on else self.CLR_LIVE_DIM
+        try:
+            for name in self._live_chips:
+                widgets = self.chip_widgets.get(name)
+                if widgets:
+                    widgets[0].config(fg=colour)
+            self.root.after(650, self._blink_tick)
+        except tk.TclError:
+            pass
 
     # ------------------------------------------------------------------- body
     def _build_body(self):
@@ -1262,9 +1309,11 @@ class PICALauncherV2:
             if manual:
                 continue
             if detected.get(name):
-                dot.config(fg=self.CLR_OK)
+                self._live_chips.add(name)
+                dot.config(fg=self.CLR_LIVE)
                 lbl.config(fg=self.CLR_TEXT)
             else:
+                self._live_chips.discard(name)
                 dot.config(fg=self.CLR_TEXT_FAINT)
                 lbl.config(fg=self.CLR_TEXT_DIM)
 
