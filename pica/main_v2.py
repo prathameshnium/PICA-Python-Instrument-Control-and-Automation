@@ -477,11 +477,12 @@ CATALOG = [
     },
     {
         'category': "Lock-in Amplifier",
-        'type': "Communication",
-        'instruments': "SRS SR830 DSP Lock-in",
+        'type': "AC Current Driven",
+        'instruments': "Keithley 6221 · SRS SR830 DSP Lock-in",
         'experimental': True,
         'modules': [
             ("Comms and Control", "SR830 Lock-in Comms", None),
+            ("AC Resistivity (4-probe)", "SR830 AC Resistivity", None),
         ],
     },
 ]

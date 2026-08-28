@@ -206,6 +206,7 @@ class PICALauncherApp:
         "PPMS Sync Freq. Scan": resource_path("keysight/PPMS_Sync_Freq_Scan_E4980A_GUI.py"),
         "PPMS Dielectric Master": resource_path("keysight/PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI.py"),
         "SR830 Lock-in Comms": resource_path("lockin/sr830/Comms_SR830_GUI.py"),
+        "SR830 AC Resistivity": resource_path("lockin/sr830/AC_Resistivity_K6221_SR830_GUI.py"),
         "Alpha-AN Freq. Scan": resource_path("novocontrol/Frequency_Scan_AlphaAN_GUI.py"),
         "Alpha-AN Freq. Scan (32-bit)": resource_path("novocontrol/Frequency_Scan_AlphaAN_32bit_GUI.py"),
         "Plotter Utility": resource_path("utils/PlotterUtil_GUI.py"),
@@ -774,10 +775,12 @@ class PICALauncherApp:
                                  experimental=True)
         self._create_suite_frame(right_col,
                                  'Lock-in Amplifier',
-                                 "Communication",
-                                 "Instrument: SRS SR830 DSP Lock-in",
+                                 "AC Current Driven",
+                                 "Instruments: Keithley 6221 + SRS SR830",
                                  [("Comms and Control",
-                                   "SR830 Lock-in Comms")],
+                                   "SR830 Lock-in Comms"),
+                                  ("AC Resistivity (4-probe)",
+                                   "SR830 AC Resistivity")],
                                  experimental=True)
 
         return main_container
