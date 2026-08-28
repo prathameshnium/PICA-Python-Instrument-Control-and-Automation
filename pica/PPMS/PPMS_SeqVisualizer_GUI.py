@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import os
 import re
+import sys
 import traceback
 from datetime import datetime, timedelta
 from matplotlib.figure import Figure
@@ -283,9 +284,17 @@ class SeqVisualizerGUI:
             filetypes=(("Sequence Files", "*.seq *.txt *.dat"),
                        ("All files", "*.*")))
         if fp:
-            self.filepath = fp
-            self.file_var.set(os.path.basename(fp))
-            self.parse_and_plot()
+            self.load_file(fp)
+
+    def load_file(self, filepath):
+        """Select a sequence file and draw it, without going via the dialog.
+
+        The launcher's File > Open Sequence hands the path straight to this,
+        so the user does not have to pick the same file twice.
+        """
+        self.filepath = filepath
+        self.file_var.set(os.path.basename(filepath))
+        self.parse_and_plot()
 
     def parse_and_plot(self):
         if not self.filepath:
@@ -916,4 +925,12 @@ class SeqVisualizerGUI:
 if __name__ == '__main__':
     root = tk.Tk()
     app = SeqVisualizerGUI(root)
+
+    # A sequence file given on the command line is loaded once the window
+    # exists (the PICA launcher uses this for File > Open Sequence). Only the
+    # first is used: this window visualises one sequence at a time.
+    _preload = [p for p in sys.argv[1:] if os.path.exists(p)]
+    if _preload:
+        root.after(250, lambda: app.load_file(_preload[0]))
+
     root.mainloop()

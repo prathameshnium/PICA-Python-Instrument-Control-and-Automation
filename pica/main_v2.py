@@ -15,10 +15,16 @@
                disturbed -- Reload therefore warns and asks for confirmation if
                any measurement launched from this window is still alive.
 
-               The Novocontrol Alpha-AN is NEVER auto-probed: it uses a custom
-               command-ack protocol and a stray *IDN? would desync it. Its
-               address (if known) can be listed in SKIP_GPIB_ADDRESSES so it is
-               skipped even when discovered on the bus.
+               The Novocontrol Alpha-AN is spoken to AT MOST ONCE, ever. The
+               scan identifies instruments by the content of their *IDN? reply
+               rather than by address, so a re-addressed instrument is still
+               found; the first time an Alpha answers, its GPIB address is
+               written to launcher_protected_gpib.json and every later scan
+               skips it outright. Pre-seed that file (or SKIP_GPIB_ADDRESSES)
+               to protect it before the first scan.
+
+               Serial (ASRL) resources are never probed at all -- see
+               PROBE_RESOURCE_PREFIXES.
 
  AUTHOR:       Prathamesh Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
@@ -27,6 +33,7 @@
 '''
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, font, scrolledtext, Toplevel
+import json
 import os
 import re
 import sys
@@ -75,54 +82,176 @@ except ImportError:
 #  Instrument identification (read-only, startup / reload only)
 # -----------------------------------------------------------------------------
 # Each entry: friendly name -> substrings that identify it in a *IDN? reply.
+#
+# Identification is by *IDN? CONTENT, never by GPIB address: an instrument that
+# has been re-addressed since the reference table was written is still found,
+# and two instruments that swap addresses cannot be confused for one another.
+# A pattern is either a substring, or a tuple of substrings that must ALL be
+# present. Patterns are matched against the identity head (see _idn_head), not
+# the whole reply, so a serial number that happens to contain "2400" or "34"
+# cannot masquerade as a model number.
 KNOWN_INSTRUMENTS = [
     ("Lakeshore 350",   ["MODEL350", "MODEL 350", "LSCI"]),
-    # Cryo-con replies e.g. "Cryocon Model 34 Rev 3.18A". Match on the maker
-    # name plus the model so a Model 32/24C on the bus is not mistaken for it.
-    ("Cryocon 34",      ["CRYOCON MODEL 34", "CRYO-CON MODEL 34"]),
+    # A Cryo-con answers either IEEE-488.2 style ("Cryocon,34,204683,3.18A")
+    # or as free text ("Cryocon Model 34 Rev 3.18A"), and both spellings of
+    # the maker name are in circulation. Matching maker AND model as separate
+    # tokens covers every one of those; a single contiguous "CRYOCON MODEL 34"
+    # matched none of the comma-separated forms.
+    ("Cryocon 34",      [("CRYOCON", "34"), ("CRYO-CON", "34")]),
     ("Keithley 2400",   ["MODEL 2400"]),
     ("Keithley 6221",   ["MODEL 6221"]),
     ("Keithley 2182",   ["MODEL 2182"]),
     ("Keithley 6517B",  ["MODEL 6517"]),
     ("Keysight E4980A", ["E4980"]),
+    ("SR830 Lock-in",   ["SR830"]),
 ]
 
-# Instruments that must never be auto-probed. Each gets a permanently greyed
-# "(manual)" chip on the status strip: the launcher never sends them anything,
-# so it never has a state to report. Empty by default -- a chip that can only
-# ever say "I did not look" is noise on the strip. This list is cosmetic; the
-# protection that actually keeps a probe off the bus is SKIP_GPIB_ADDRESSES.
-NEVER_PROBED_INSTRUMENTS = []
 
-# GPIB primary addresses that must be skipped during the scan even if VISA lists
-# them. Put the Novocontrol Alpha's address here (e.g. {20}) so a stray *IDN? is
-# never sent to it. Leave empty only if the Alpha is powered off / disconnected.
+def _idn_head(idn):
+    """The vendor+model part of a *IDN? reply, upper-cased.
+
+    An IEEE-488.2 reply is <vendor>,<model>,<serial>,<firmware>, so the first
+    two fields are the identity and everything after is a serial number that
+    must not be pattern-matched -- a serial containing "34" would otherwise
+    read as a Model 34. Instruments that answer free text have no commas and
+    so no serial field to confuse, and are matched whole.
+    """
+    parts = idn.upper().split(",")
+    return ",".join(parts[:2]) if len(parts) > 2 else idn.upper()
+
+
+def _idn_matches(head, pattern):
+    """True if one KNOWN_INSTRUMENTS pattern matches an identity head."""
+    if isinstance(pattern, (tuple, list)):
+        return all(part.upper() in head for part in pattern)
+    return pattern.upper() in head
+
+# A reply carrying any of these is a Novocontrol mainframe. It is recorded,
+# never talked to again, and written into the protected-address file so that
+# no later scan -- in this session or a future one -- probes it at all.
+NOVOCONTROL_IDN_MARKERS = ("NOVOCONTROL", "ALPHA-AN", "ALPHA-A", "BDS")
+NOVOCONTROL_CHIP = "Novocontrol Alpha-AN"
+
+# Instruments that must never be auto-probed. Each gets a permanently greyed
+# "(protected)" chip on the status strip: the launcher never sends them
+# anything, so it never has a state to report.
+NEVER_PROBED_INSTRUMENTS = [NOVOCONTROL_CHIP]
+
+# GPIB primary addresses that must be skipped during the scan even if VISA
+# lists them. Anything here is never opened and never written to. This is the
+# in-source override; PROTECTED_ADDRESS_FILE below is the persistent one the
+# launcher maintains itself.
 SKIP_GPIB_ADDRESSES = set()
 
-# Short per-resource *IDN? timeout so a non-responding address does not stall the
-# whole scan. The Lakeshore temperature read gets a little longer.
+# Persistent record of addresses that must not be probed. The launcher writes
+# the Novocontrol Alpha's address here the first (and only) time it identifies
+# it, so from then on the Alpha is skipped outright rather than being sent a
+# *IDN? it did not ask for. Hand-edit it to protect anything else:
+#     {"skip_addresses": [5, 20]}
+PROTECTED_ADDRESS_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "launcher_protected_gpib.json")
+
+# VISA resource kinds that are safe to probe. ASRL (serial) is deliberately
+# excluded: on a Windows rack ASRL1 is as likely to be a UPS, a Bluetooth port
+# or a modem as an instrument, and a *IDN? at one of those either blocks for
+# the whole timeout or wedges the port. Serial resources are still listed in
+# the resource count -- they are just not spoken to.
+PROBE_RESOURCE_PREFIXES = ("GPIB", "USB", "TCPIP")
+
+# Short per-resource *IDN? timeout so a non-responding address does not stall
+# the whole scan. The Lakeshore temperature read gets a little longer.
 IDN_TIMEOUT_MS = 900
 TEMP_TIMEOUT_MS = 1500
 
 
 def _gpib_address_of(resource):
-    """Return the integer GPIB primary address of a VISA resource, or None."""
-    m = re.search(r'GPIB\d+::(\d+)::', resource.upper())
+    """Return the integer GPIB primary address of a VISA resource, or None.
+
+    Handles the full form (GPIB0::12::INSTR), the bare form (GPIB0::12) and
+    a secondary address (GPIB0::12::7::INSTR, whose primary is still 12).
+    """
+    m = re.search(r'GPIB\d+::(\d+)(?:::|$)', resource.upper())
     return int(m.group(1)) if m else None
 
 
-def scan_instruments():
+def _is_probeable(resource):
+    """True if this resource kind may be sent a *IDN?.
+
+    See PROBE_RESOURCE_PREFIXES for why serial is left alone.
+    """
+    return resource.upper().startswith(PROBE_RESOURCE_PREFIXES)
+
+
+def load_protected_addresses(path=None):
+    """Read the persistent protected-address list. Never raises.
+
+    A missing, empty or corrupt file simply means "nothing extra protected".
+    A launcher that refused to start because a cache file was malformed would
+    be worse than one that falls back to the in-source skip list.
+    """
+    path = path or PROTECTED_ADDRESS_FILE
+    try:
+        with open(path, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+    except Exception:
+        return set()
+    addresses = data.get('skip_addresses') if isinstance(data, dict) else None
+    if not isinstance(addresses, list):
+        return set()
+    out = set()
+    for item in addresses:
+        try:
+            out.add(int(item))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def save_protected_addresses(addresses, path=None):
+    """Persist the protected-address list. Returns True on success.
+
+    Never raises: an installed copy may sit in a read-only folder, and losing
+    the persistence is not a reason to fail a scan -- the in-memory skip set
+    still holds for the rest of the session.
+    """
+    path = path or PROTECTED_ADDRESS_FILE
+    try:
+        with open(path, 'w', encoding='utf-8') as fh:
+            json.dump({
+                "_comment": "GPIB primary addresses the PICA launcher must "
+                            "never probe. The Novocontrol Alpha is added "
+                            "automatically the first time it is identified.",
+                "skip_addresses": sorted(int(a) for a in addresses),
+            }, fh, indent=2)
+        return True
+    except Exception:
+        return False
+
+
+def scan_instruments(skip_addresses=None):
     """Perform a one-shot, read-only VISA scan.
 
     Runs in a worker thread -- must not touch any Tk object. Returns a plain
-    dict the GUI can apply on the main thread. Never probes SKIP_GPIB_ADDRESSES
-    and never talks to the Novocontrol Alpha.
+    dict the GUI can apply on the main thread.
+
+    Never probes an address listed in SKIP_GPIB_ADDRESSES, in the persistent
+    protected-address file, or in the caller-supplied 'skip_addresses'. If a
+    Novocontrol mainframe is nonetheless identified (because its address was
+    not yet known), its address comes back in 'protect' so the caller can
+    record it and never come back.
     """
+    protected = set(SKIP_GPIB_ADDRESSES)
+    protected |= load_protected_addresses()
+    protected |= set(skip_addresses or ())
+
     result = {
         'available': PYVISA_AVAILABLE,
         'error': None,
         'resources': [],
+        'skipped': [],
         'detected': {name: None for name, _ in KNOWN_INSTRUMENTS},
+        'novocontrol': None,
+        'protect': set(),
         'temperature': None,
         'temp_units': 'K',
         'temp_source': None,
@@ -132,6 +261,7 @@ def scan_instruments():
         result['error'] = "PyVISA not installed"
         return result
 
+    rm = None
     try:
         rm = pyvisa.ResourceManager()
         resources = list(rm.list_resources())
@@ -143,63 +273,90 @@ def scan_instruments():
     lakeshore_resource = None
     cryocon_resource = None
 
-    for res in resources:
-        addr = _gpib_address_of(res)
-        if addr is not None and addr in SKIP_GPIB_ADDRESSES:
-            continue  # never probe a protected address (e.g. the Alpha)
+    try:
+        for res in resources:
+            addr = _gpib_address_of(res)
+            if addr is not None and addr in protected:
+                result['skipped'].append(res)   # protected: never opened
+                continue
+            if not _is_probeable(res):
+                result['skipped'].append(res)   # serial and friends
+                continue
 
-        idn = None
-        try:
-            inst = rm.open_resource(res)
-            inst.timeout = IDN_TIMEOUT_MS
-            idn = inst.query("*IDN?").strip()
-        except Exception:
             idn = None
-        finally:
+            inst = None
             try:
+                inst = rm.open_resource(res)
+                inst.timeout = IDN_TIMEOUT_MS
+                idn = inst.query("*IDN?").strip()
+            except Exception:
+                idn = None
+            finally:
+                # 'inst' stays None when open_resource itself failed, so this
+                # can never close a stale handle from an earlier iteration.
+                if inst is not None:
+                    try:
+                        inst.close()
+                    except Exception:
+                        pass
+
+            if not idn:
+                continue
+
+            up = idn.upper()
+            head = _idn_head(idn)
+
+            # Novocontrol first: identifying it is the last thing this
+            # launcher ever does to it. The address is handed back so the
+            # caller can protect it permanently. This one is matched against
+            # the WHOLE reply, not the identity head -- a false negative here
+            # means probing it again, so it errs toward matching.
+            if any(marker in up for marker in NOVOCONTROL_IDN_MARKERS):
+                result['novocontrol'] = res
+                if addr is not None:
+                    result['protect'].add(addr)
+                continue
+
+            for name, subs in KNOWN_INSTRUMENTS:
+                if any(_idn_matches(head, s) for s in subs):
+                    result['detected'][name] = res
+                    if name == "Lakeshore 350":
+                        lakeshore_resource = res
+                    elif name == "Cryocon 34":
+                        cryocon_resource = res
+
+        # One temperature snapshot: the Lakeshore if present, otherwise the
+        # Cryocon. Both are single read-only queries; nothing is configured.
+        if lakeshore_resource:
+            try:
+                inst = rm.open_resource(lakeshore_resource)
+                inst.timeout = TEMP_TIMEOUT_MS
+                temp = inst.query("KRDG? A").strip()
+                result['temperature'] = float(temp)
+                result['temp_source'] = "Lakeshore 350 · Input A"
                 inst.close()
             except Exception:
-                pass
+                result['temperature'] = None
 
-        if not idn:
-            continue
-
-        up = idn.upper()
-        for name, subs in KNOWN_INSTRUMENTS:
-            if any(s.upper() in up for s in subs):
-                result['detected'][name] = res
-                if name == "Lakeshore 350":
-                    lakeshore_resource = res
-                elif name == "Cryocon 34":
-                    cryocon_resource = res
-
-    # One temperature snapshot: the Lakeshore if present, otherwise the
-    # Cryocon. Both are single read-only queries; nothing is configured.
-    if lakeshore_resource:
+        if result['temperature'] is None and cryocon_resource:
+            try:
+                inst = rm.open_resource(cryocon_resource)
+                inst.timeout = TEMP_TIMEOUT_MS
+                # INPUT? reports in the channel's own display units, so the
+                # units are read too rather than assumed to be Kelvin.
+                temp = inst.query("INPUT? A").strip()
+                units = inst.query("INPUT A:UNITS?").strip().upper()
+                result['temperature'] = float(temp)
+                result['temp_units'] = units[:1] or 'K'
+                result['temp_source'] = "Cryocon 34 · Input A"
+                inst.close()
+            except Exception:
+                result['temperature'] = None
+    finally:
         try:
-            inst = rm.open_resource(lakeshore_resource)
-            inst.timeout = TEMP_TIMEOUT_MS
-            temp = inst.query("KRDG? A").strip()
-            result['temperature'] = float(temp)
-            result['temp_source'] = "Lakeshore 350 · Input A"
-            inst.close()
+            rm.close()
         except Exception:
-            result['temperature'] = None
-
-    if result['temperature'] is None and cryocon_resource:
-        try:
-            inst = rm.open_resource(cryocon_resource)
-            inst.timeout = TEMP_TIMEOUT_MS
-            # INPUT? reports in the channel's own display units, so the
-            # units are read too rather than assumed to be Kelvin.
-            temp = inst.query("INPUT? A").strip()
-            units = inst.query("INPUT A:UNITS?").strip().upper()
-            result['temperature'] = float(temp)
-            result['temp_units'] = units[:1] or 'K'
-            result['temp_source'] = "Cryocon 34 · Input A"
-            inst.close()
-        except Exception:
-            result['temperature'] = None
+            pass
 
     return result
 
@@ -399,6 +556,10 @@ class PICALauncherV2:
         self._last_data_dir = os.getcwd()
         self.chip_widgets = {}
         self.launched_processes = []
+        # Addresses this session has learned must not be probed again. Seeded
+        # from the persistent file so a Novocontrol identified on a previous
+        # run is skipped from the very first scan of this one.
+        self._session_protected = load_protected_addresses()
 
         self._setup_styles()
         self._build_menubar()
@@ -408,6 +569,11 @@ class PICALauncherV2:
         self.log(f"PICA Launcher v{self.PROGRAM_VERSION} initialized.")
         # First (and only automatic) instrument scan, shortly after the UI draws.
         self.root.after(400, self.start_scan)
+        # The VISA/GPIB scanner opens by itself at startup, as in v1: the
+        # first thing anyone needs is the list of what is actually on the bus
+        # with its real addresses. It runs in its own process and does its own
+        # scan, so it does not interfere with the status strip's.
+        self.root.after(900, self._auto_launch_gpib_scanner)
 
     # ---------------------------------------------------------------- styling
     def _setup_styles(self):
@@ -459,6 +625,13 @@ class PICALauncherV2:
         style.map('Aux.TButton', foreground=[('active', self.CLR_ACCENT)],
                   background=[('active', self.CLR_ACCENT_SOFT)])
 
+        # Icon button for the top-right toolbar (v1 'Icon.TButton')
+        style.configure('Icon.TButton', font=('Segoe UI', self.FONT_SIZE_BASE),
+                        foreground=self.CLR_TEXT, background=self.CLR_PANEL,
+                        borderwidth=0, focusthickness=0, focuscolor='none',
+                        padding=(4, 2))
+        style.map('Icon.TButton', background=[('active', self.CLR_ACCENT_SOFT)])
+
         style.configure('TNotebook', background=self.CLR_APP, borderwidth=0)
         style.configure('TNotebook.Tab', font=('Segoe UI', self.FONT_SIZE_BASE - 1, 'bold'),
                         padding=(16, 8), background=self.CLR_APP, foreground=self.CLR_TEXT)
@@ -486,6 +659,15 @@ class PICALauncherV2:
         file_menu.add_command(label="Open Data in Text Editor…",
                               command=self.open_data_in_editor)
         file_menu.add_separator()
+        # PPMS files go to the tool that understands their format: a .seq to
+        # the Sequence Visualizer, a QD .dat to the PPMS Plotter. The generic
+        # "Open Data as Graph" above still routes to the Plotter Utility.
+        file_menu.add_command(label="Open Sequence…", accelerator="Ctrl+Q",
+                              command=self.open_sequence_file)
+        file_menu.add_command(label="Open PPMS Data as Plot…",
+                              accelerator="Ctrl+P",
+                              command=self.open_ppms_data_as_plot)
+        file_menu.add_separator()
         file_menu.add_command(label="Open Folder…", accelerator="Ctrl+Shift+O",
                               command=self.open_folder)
         file_menu.add_command(label="Open PICA Folder", command=self.open_pica_folder)
@@ -501,6 +683,9 @@ class PICALauncherV2:
         self.root.bind_all("<Control-o>", lambda _e: self.open_data_file())
         self.root.bind_all("<Control-g>", lambda _e: self.open_data_as_graph())
         self.root.bind_all("<Control-O>", lambda _e: self.open_folder())
+        self.root.bind_all("<Control-q>", lambda _e: self.open_sequence_file())
+        self.root.bind_all("<Control-p>",
+                           lambda _e: self.open_ppms_data_as_plot())
 
         tools_menu = tk.Menu(menubar, tearoff=0)
         tools_menu.add_command(label="GPIB / VISA Scanner", command=self._launch_gpib_scanner)
@@ -594,7 +779,7 @@ class PICALauncherV2:
             manual = name in NEVER_PROBED_INSTRUMENTS
             if manual:
                 dot.config(fg=self.CLR_TEXT_FAINT)
-                lbl.config(text=f"{name} (manual)")
+                lbl.config(text=f"{name} (protected)")
             self.chip_widgets[name] = (dot, lbl, manual)
 
     # ------------------------------------------------------------------- body
@@ -609,11 +794,13 @@ class PICALauncherV2:
         # Right side: notebook with two views
         right = ttk.Frame(body)
         right.grid(row=0, column=1, sticky='nsew', padx=(0, 12), pady=12)
-        right.rowconfigure(0, weight=1)
+        right.rowconfigure(1, weight=1)
         right.columnconfigure(0, weight=1)
 
+        self._build_toolbar(right)
+
         self.notebook = ttk.Notebook(right)
-        self.notebook.grid(row=0, column=0, sticky='nsew')
+        self.notebook.grid(row=1, column=0, sticky='nsew')
 
         self.browse_tab = ttk.Frame(self.notebook)
         self.quick_tab = ttk.Frame(self.notebook)
@@ -622,6 +809,57 @@ class PICALauncherV2:
 
         self._build_browse(self.browse_tab)
         self._build_quick(self.quick_tab)
+
+    def _build_toolbar(self, parent):
+        """Top-right icon buttons, carried over from the v1 launcher.
+
+        v1 put the VISA/GPIB scanner and the Plotter Utility one click away
+        instead of two menu levels down, and they are the two utilities that
+        get used at the start and the end of every session. Same icons, same
+        order, same tooltips, so muscle memory transfers.
+        """
+        toolbar = ttk.Frame(parent)
+        toolbar.grid(row=0, column=0, sticky='e', pady=(0, 4))
+
+        plotter_button = ttk.Button(toolbar, text="📈", width=3,
+                                    style='Icon.TButton',
+                                    command=launch_plotter_utility)
+        plotter_button.pack(side='right', padx=(2, 0))
+        self._add_tooltip(plotter_button, "Plotter Utility")
+
+        gpib_button = ttk.Button(toolbar, text="📟", width=3,
+                                 style='Icon.TButton',
+                                 command=self._launch_gpib_scanner)
+        gpib_button.pack(side='right', padx=(0, 2))
+        self._add_tooltip(gpib_button, "VISA/GPIB Scanner")
+
+    def _add_tooltip(self, widget, text):
+        """Hover tooltip, same behaviour as the v1 launcher's."""
+        tip = {'win': None}
+
+        def show(_event):
+            if tip['win'] is not None:
+                return
+            x = widget.winfo_rootx() + widget.winfo_width() // 2
+            y = widget.winfo_rooty() + widget.winfo_height() + 4
+            win = Toplevel(widget)
+            win.wm_overrideredirect(True)
+            win.wm_geometry(f"+{x}+{y}")
+            tk.Label(win, text=text, bg=self.CLR_PANEL2, fg=self.CLR_TEXT,
+                     font=self.FONT_SMALL, bd=1, relief='solid',
+                     padx=6, pady=2).pack()
+            tip['win'] = win
+
+        def hide(_event):
+            if tip['win'] is not None:
+                tip['win'].destroy()
+                tip['win'] = None
+
+        widget.bind("<Enter>", show)
+        widget.bind("<Leave>", hide)
+        # A tooltip left parented to a destroyed button would linger on top of
+        # every other window, so it is torn down with the button itself.
+        widget.bind("<Destroy>", hide)
 
     def _build_rail(self, parent):
         # Rail is wide enough for the 140 px logo plus the v1-scale title type.
@@ -977,7 +1215,7 @@ class PICALauncherV2:
         threading.Thread(target=self._scan_worker, daemon=True).start()
 
     def _scan_worker(self):
-        results = scan_instruments()
+        results = scan_instruments(skip_addresses=self._session_protected)
         # Marshal back to the Tk thread.
         self.root.after(0, lambda: self._apply_scan(results))
 
@@ -997,6 +1235,11 @@ class PICALauncherV2:
             self.link_sub.config(text=r['error'])
             self.log(f"Scan error: {r['error']}")
             return
+
+        # A Novocontrol mainframe answered this scan, so its address was not
+        # yet in the protected list. Record it -- in memory and on disk -- so
+        # this launcher never sends it anything again.
+        self._record_protected(r)
 
         detected = r['detected']
         n_found = sum(1 for v in detected.values() if v)
@@ -1024,8 +1267,38 @@ class PICALauncherV2:
                 dot.config(fg=self.CLR_TEXT_FAINT)
                 lbl.config(fg=self.CLR_TEXT_DIM)
 
+        skipped = r.get('skipped') or []
+        tail = f", {len(skipped)} not probed" if skipped else ""
         self.log(f"Scan complete — {n_found}/{n_known} instruments detected "
-                 f"across {len(r['resources'])} VISA resource(s).")
+                 f"across {len(r['resources'])} VISA resource(s){tail}.")
+
+    def _record_protected(self, r):
+        """Learn the Novocontrol's address from a scan and never probe it again.
+
+        The Alpha answers *IDN? like any IEEE-488.2 device, so it can be
+        identified once -- but it uses a command-ack protocol of its own and
+        unsolicited bus traffic during a measurement degrades point accuracy.
+        One identification, then permanent silence.
+        """
+        new = set(r.get('protect') or ())
+        if r.get('novocontrol'):
+            chip = self.chip_widgets.get(NOVOCONTROL_CHIP)
+            if chip:
+                chip[1].config(text=f"{NOVOCONTROL_CHIP} (protected)",
+                               fg=self.CLR_TEXT)
+            self.log(f"Novocontrol mainframe identified at "
+                     f"{r['novocontrol']} — it will not be probed again.")
+        new -= self._session_protected
+        if not new:
+            return
+        self._session_protected |= new
+        listed = ", ".join(str(a) for a in sorted(new))
+        if save_protected_addresses(self._session_protected):
+            self.log(f"GPIB address(es) {listed} added to the protected list "
+                     f"({os.path.basename(PROTECTED_ADDRESS_FILE)}).")
+        else:
+            self.log(f"GPIB address(es) {listed} protected for this session "
+                     f"(could not write {PROTECTED_ADDRESS_FILE}).")
 
     # ----------------------------------------------------------- launching
     def launch_script(self, script_key, argv=None):
@@ -1097,6 +1370,42 @@ class PICALauncherV2:
         self.log(f"Plotting {len(paths)} file(s) in the Plotter Utility.")
         self.launch_script("Plotter Utility", argv=[os.path.abspath(p) for p in paths])
 
+    SEQ_FILETYPES = [("PPMS sequence files", "*.seq"),
+                     ("Sequence-like text", "*.seq *.txt *.dat"),
+                     ("All files", "*.*")]
+    PPMS_DATA_FILETYPES = [("Quantum Design data", "*.dat"),
+                           ("Data files", "*.dat *.txt *.csv"),
+                           ("All files", "*.*")]
+
+    def _ask_one_file(self, title, filetypes):
+        """Single-file picker that remembers the folder the user was last in."""
+        chosen = filedialog.askopenfilename(
+            title=title, initialdir=self._last_data_dir, filetypes=filetypes)
+        if chosen:
+            self._last_data_dir = os.path.dirname(chosen)
+        return chosen
+
+    def open_sequence_file(self):
+        """Open a PPMS .seq file in the Sequence Visualizer."""
+        path = self._ask_one_file("Open PPMS sequence file", self.SEQ_FILETYPES)
+        if not path:
+            return
+        self.log(f"Opening '{os.path.basename(path)}' in the "
+                 f"Sequence Visualizer.")
+        self.launch_script("Sequence Visualizer", argv=[os.path.abspath(path)])
+
+    def open_ppms_data_as_plot(self):
+        """Plot Quantum Design PPMS/VSM .dat files in the PPMS Plotter."""
+        paths = filedialog.askopenfilenames(
+            title="Open PPMS data as plot", initialdir=self._last_data_dir,
+            filetypes=self.PPMS_DATA_FILETYPES)
+        if not paths:
+            return
+        self._last_data_dir = os.path.dirname(paths[0])
+        self.log(f"Plotting {len(paths)} PPMS file(s) in the PPMS Plotter.")
+        self.launch_script("PPMS Plotter Utility",
+                           argv=[os.path.abspath(p) for p in paths])
+
     def open_folder(self):
         """Open any folder in the system file browser."""
         folder = filedialog.askdirectory(title="Open folder",
@@ -1132,6 +1441,23 @@ class PICALauncherV2:
                                  "The 'pyvisa' library is required.\n\npip install pyvisa pyvisa-py")
             return
         launch_gpib_scanner()
+
+    def _auto_launch_gpib_scanner(self):
+        """Open the VISA/GPIB scanner at startup (v1 behaviour).
+
+        Startup must never be blocked by a missing dependency or a spawn
+        failure, so this reports to the console and gives up rather than
+        raising a dialog the way the menu command does.
+        """
+        if not PYVISA_AVAILABLE:
+            self.log("VISA/GPIB scanner not auto-opened: pyvisa is not "
+                     "installed.")
+            return
+        self.log("Auto-launching the VISA/GPIB scanner…")
+        try:
+            launch_gpib_scanner()
+        except Exception as e:
+            self.log(f"ERROR: could not auto-open the VISA/GPIB scanner. {e}")
 
     # -------------------------------------------------------- tools popup
     # Every standalone utility PICA ships, grouped by what it is used for.

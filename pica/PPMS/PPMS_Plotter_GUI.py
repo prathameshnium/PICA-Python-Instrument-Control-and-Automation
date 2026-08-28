@@ -647,6 +647,14 @@ class PPMSPlotterGUI:
             filetypes=(("QD Data Files", "*.dat *.DAT"), ("All files", "*.*")))
         if not filepaths:
             return
+        self.add_files(filepaths)
+
+    def add_files(self, filepaths):
+        """Load and plot the given files, without going via the dialog.
+
+        The launcher's File > Open PPMS Data as Plot hands paths straight to
+        this, so the user does not have to pick the same files twice.
+        """
         for fp in filepaths:
             if fp not in self.file_data_cache:
                 if self._load_file(fp):
@@ -1174,4 +1182,12 @@ if __name__ == '__main__':
     multiprocessing.freeze_support()
     root = tk.Tk()
     app = PPMSPlotterGUI(root)
+
+    # Data files given on the command line are loaded and plotted once the
+    # window exists (the PICA launcher uses this for File > Open PPMS Data as
+    # Plot).
+    _preload = [p for p in sys.argv[1:] if os.path.exists(p)]
+    if _preload:
+        root.after(250, lambda: app.add_files(_preload))
+
     root.mainloop()
