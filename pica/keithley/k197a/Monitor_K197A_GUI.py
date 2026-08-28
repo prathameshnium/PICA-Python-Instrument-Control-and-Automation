@@ -329,7 +329,13 @@ class K197AMonitorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Keithley 197A Monitor")
-        self.root.state('zoomed')
+        try:
+            self.root.state('zoomed')  # Launch maximized
+        except tk.TclError:
+            # 'zoomed' is a Windows-only window state; X11 (including the
+            # xvfb display CI runs under) rejects it. Not being maximised is
+            # not a reason to refuse to open.
+            pass
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1200, 850)
 
