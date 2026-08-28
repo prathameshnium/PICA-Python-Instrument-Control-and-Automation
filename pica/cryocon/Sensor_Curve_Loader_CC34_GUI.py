@@ -149,6 +149,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, scrolledtext, Canvas
 import math
 import os
+import queue
 import re
 import time
 import threading
@@ -692,6 +693,7 @@ def parse_crv_text(text, source_name=".crv data"):
             f"'{lines[3]}'.")
 
     points = []
+    texts = []
     terminated = False
     for line in lines[4:]:
         if line.startswith(';'):
@@ -704,6 +706,7 @@ def parse_crv_text(text, source_name=".crv data"):
                 "entry is the sensor reading then the temperature in Kelvin.")
         reading, temperature = float(tokens[0]), float(tokens[1])
         points.append((temperature, reading))
+        texts.append((tokens[0], tokens[1]))
 
     if not terminated:
         raise CurveFileError(
@@ -715,6 +718,13 @@ def parse_crv_text(text, source_name=".crv data"):
         'sensor_type': sensor_type,
         'multiplier': multiplier,
         'units': units,
+        # The numerals exactly as they were printed, reading then temperature.
+        # Kept because how many digits the instrument prints is the limit on
+        # how closely a readback can be checked, and that is not recoverable
+        # once the text has been turned into a float. compare_curves() uses
+        # them so the check is made at the precision the instrument actually
+        # offers rather than at one this module assumed.
+        'point_texts': texts,
     }
     return header, points
 
@@ -785,6 +795,86 @@ def convert_units(points, from_units, to_units):
             from_units=from_units, to_units=to_units))
 
 
+def extend_curve(primary, extra, primary_units, extra_units):
+    """Extend a curve at its ends with points from a second file.
+
+    Written for the lab Cernox, where neither Lake Shore file alone is the
+    best answer:
+
+      X17680.340  129 breakpoints Lake Shore placed for an interpolating
+                  controller, over the certified 4.000-325.000 K.
+      X17680.dat  the 71 raw measured points, reaching 3.5913 K and 330.03 K
+                  but sparser in between.
+
+    Taking the .340 as the curve and adding the .dat points that lie beyond
+    its ends gives the dense certified table AND the extra reach at the cold
+    end, which is what matters on a CCR running to 3-5 K.
+
+    The rules are deliberately narrow, because merging two derivations of the
+    same calibration is a good way to build a curve that is worse than either:
+
+      * every point of `primary` is kept exactly as it is;
+      * a point from `extra` is added ONLY if it lies outside `primary`'s
+        temperature span. Nothing is interleaved, so the interpolation inside
+        the certified range is still purely Lake Shore's table;
+      * an added point must also lie beyond `primary`'s span in SENSOR
+        READING. For a monotonic sensor that is automatic; if it fails, the
+        two files disagree about the same sensor and the merge is refused
+        rather than papered over.
+
+    Returns (points, added, notes) where `added` is the list of points taken
+    from `extra`, so the caller can say exactly what came from where.
+    """
+    if not primary:
+        raise CurveFileError("The main curve is empty, so there is nothing "
+                             "to extend.")
+    converted = convert_units(extra, extra_units, primary_units)
+
+    temperatures = [t for t, _ in primary]
+    readings = [r for _, r in primary]
+    t_low, t_high = min(temperatures), max(temperatures)
+    r_low, r_high = min(readings), max(readings)
+
+    added = []
+    notes = []
+    for temperature, reading in converted:
+        if t_low <= temperature <= t_high:
+            continue                      # inside the main curve; not ours
+        beyond_reading = reading < r_low or reading > r_high
+        if not beyond_reading:
+            raise CurveFileError(
+                f"The second file has a point at {temperature:.6g} K, "
+                f"outside the main curve's {t_low:.6g}-{t_high:.6g} K span, "
+                f"whose sensor reading {reading:.6g} falls back INSIDE the "
+                f"main curve's {r_low:.6g}-{r_high:.6g}. The two files "
+                "disagree about this sensor, so they are not merged. Use "
+                "one file on its own.")
+        added.append((temperature, reading))
+
+    if not added:
+        notes.append(
+            "The second file adds nothing: every one of its points lies "
+            f"inside the {t_low:.6g}-{t_high:.6g} K span the main curve "
+            "already covers.")
+        return list(primary), [], notes
+
+    merged = sorted(list(primary) + added, key=lambda pair: pair[1])
+    cold = [t for t, _ in added if t < t_low]
+    hot = [t for t, _ in added if t > t_high]
+    if cold:
+        notes.append(
+            f"{len(cold)} point(s) added below the main curve: it now "
+            f"reaches {min(cold):.6g} K instead of {t_low:.6g} K.")
+    if hot:
+        notes.append(
+            f"{len(hot)} point(s) added above the main curve: it now "
+            f"reaches {max(hot):.6g} K instead of {t_high:.6g} K.")
+    notes.append(
+        "Nothing inside the main curve's own span was changed, so the "
+        "interpolation there is still exactly the main file's.")
+    return merged, added, notes
+
+
 def thin_points(points, limit):
     """Reduce a curve to at most `limit` points, keeping both ends.
 
@@ -792,6 +882,10 @@ def thin_points(points, limit):
     through the list rather than by any cleverness, so what survives is a
     plain subset of the calibration and nothing is invented by interpolation.
     """
+    if limit < MIN_CURVE_POINTS:
+        raise ValueError(
+            f"A curve cannot be thinned to {limit} points; the instrument "
+            f"needs at least {MIN_CURVE_POINTS}.")
     count = len(points)
     if count <= limit:
         return list(points), 0
@@ -801,8 +895,18 @@ def thin_points(points, limit):
     return thinned, count - len(thinned)
 
 
-def analyse_curve(points, units, sensor_type, multiplier, name):
+def analyse_curve(points, units, sensor_type, multiplier, name,
+                  working_range=None):
     """Check a curve against everything the manual requires of one.
+
+    `working_range` is an optional (lowest, highest) pair of temperatures in
+    Kelvin that the sensor will actually be used over. Where it is given, the
+    curve's coverage is checked against it. This is not a Cryo-con rule; it
+    is here because a curve that simply stops before the cold end of a run is
+    not a fault the instrument reports as one. Below its lowest breakpoint a
+    Cryo-con shows a run of dots -- "reading is within the instrument's range
+    but outside the sensor's calibration curve" -- and if nobody was told to
+    expect it, that is discovered on a cold cryostat at two in the morning.
 
     Returns (errors, warnings, stats). Errors block the transfer; warnings do
     not, but each one names something worth a second look.
@@ -843,8 +947,9 @@ def analyse_curve(points, units, sensor_type, multiplier, name):
         errors.append(
             "The curve contains a temperature of zero or below. Cryo-con "
             "curve temperatures are absolute, in Kelvin.")
-    if units in ('OHMS', 'LOGOHM') and units == 'OHMS' and \
-            any(reading <= 0 for reading in readings):
+    if units == 'OHMS' and any(reading <= 0 for reading in readings):
+        # LOGOHM is deliberately not checked this way: its values are
+        # logarithms, so a negative one only means a resistance below 1 ohm.
         errors.append("The curve contains a resistance of zero or below.")
 
     # Duplicate sensor readings make the curve ambiguous: the instrument
@@ -956,6 +1061,26 @@ def analyse_curve(points, units, sensor_type, multiplier, name):
             "interpolates between breakpoints, and in plain ohms the curve "
             "is steep enough for that to lose accuracy at the cold end.")
 
+    if working_range:
+        wanted_low, wanted_high = working_range
+        stats['working_range'] = (wanted_low, wanted_high)
+        if wanted_low < stats['t_min']:
+            warnings.append(
+                f"This curve stops at {stats['t_min']:.4g} K, but the sensor "
+                f"is to be used down to {wanted_low:.4g} K. Between "
+                f"{wanted_low:.4g} K and {stats['t_min']:.4g} K the "
+                "instrument has no curve to read: the channel will show a "
+                "run of dots, not a temperature. Nothing here can invent "
+                "that data. Either use a source file that reaches lower, "
+                "have the sensor recalibrated, or use a second thermometer "
+                "for the cold end.")
+        if wanted_high > stats['t_max']:
+            warnings.append(
+                f"This curve stops at {stats['t_max']:.4g} K, but the sensor "
+                f"is to be used up to {wanted_high:.4g} K. Above "
+                f"{stats['t_max']:.4g} K the channel will show a run of "
+                "dots, not a temperature.")
+
     return errors, warnings, stats
 
 
@@ -986,15 +1111,53 @@ def crv_file_text(lines):
     return text
 
 
-def compare_curves(sent_points, read_points, tolerance=1e-4):
+def printed_tolerance(text):
+    """Half a unit in the last decimal place a number was printed to.
+
+    A readback can only be checked as closely as the instrument prints. If it
+    answers '1.6452' for a value sent as '1.64523', the two agree as well as
+    that reply can express, and calling it a mismatch would be wrong. If it
+    answers '325' for 325.0 K, then this check cannot see an error smaller
+    than half a Kelvin, and saying so is more use than a tolerance invented
+    here.
+
+    Returns None for exponent notation, where the last-place argument does
+    not hold; the caller falls back to a relative tolerance.
+    """
+    body = text.strip()
+    if 'e' in body.lower():
+        return None
+    decimals = len(body.split('.', 1)[1]) if '.' in body else 0
+    return 0.5 * 10.0 ** (-decimals)
+
+
+def compare_curves(sent_points, read_points, read_texts=None,
+                   relative_tolerance=1e-6):
     """Compare the curve that was sent with the curve read back.
 
-    Both lists are sorted by sensor reading first, because that is the order
-    the instrument stores them in regardless of the order they arrived.
+    Both lists are sorted by sensor reading before comparing, because the
+    instrument sorts the curve itself and stores it that way regardless of
+    the order the points arrived in.
 
-    Returns a dict describing the comparison. The tolerance is relative and
-    generous next to the six significant digits that were sent, so a failure
-    here means a real difference and not a rounding artefact.
+    Where `read_texts` is given -- the numerals as the instrument printed
+    them, which parse_crv_text() returns in header['point_texts'] -- each
+    point is checked against the precision of its own reply rather than
+    against a fixed tolerance. This matters in both directions:
+
+      * too tight a fixed tolerance fails a perfectly good curve whenever the
+        instrument prints fewer digits than were sent, and a verification
+        that cries wolf is one the operator learns to ignore;
+      * too loose a fixed tolerance passes a real error. A relative tolerance
+        of 1e-4 on a log-ohm value sounds tiny, but at 300 K on this Cernox
+        it corresponds to about 0.18 K, which is not a rounding artefact by
+        any standard worth applying to a thermometer.
+
+    'worst_reading_limit' and 'worst_temperature_limit' are the loosest
+    tolerances that were applied anywhere in the curve, so the caller can say
+    how closely the transfer was actually confirmed. Note that a trailing
+    zero stripped from an exact value ('325.0' for 325) widens the nominal
+    last place without losing anything, so these are a floor on what the
+    check could see, not a claim that the instrument is imprecise.
     """
     sent = sorted(sent_points, key=lambda pair: pair[1])
     read = sorted(read_points, key=lambda pair: pair[1])
@@ -1004,7 +1167,9 @@ def compare_curves(sent_points, read_points, tolerance=1e-4):
         'matched': False,
         'worst_reading_error': 0.0,
         'worst_temperature_error': 0.0,
-        'worst_index': None,
+        'worst_point': None,
+        'worst_reading_limit': 0.0,
+        'worst_temperature_limit': 0.0,
         'problems': [],
     }
     if len(sent) != len(read):
@@ -1014,21 +1179,51 @@ def compare_curves(sent_points, read_points, tolerance=1e-4):
             "parse, so a shortfall means some lines did not arrive intact.")
         return result
 
-    for index, ((sent_t, sent_r), (read_t, read_r)) in \
-            enumerate(zip(sent, read)):
-        reading_error = abs(sent_r - read_r) / max(abs(sent_r), 1e-12)
-        temperature_error = abs(sent_t - read_t) / max(abs(sent_t), 1e-12)
-        if reading_error > result['worst_reading_error'] or \
-                temperature_error > result['worst_temperature_error']:
-            if max(reading_error, temperature_error) > \
-                    max(result['worst_reading_error'],
-                        result['worst_temperature_error']):
-                result['worst_index'] = index
-            result['worst_reading_error'] = max(
-                result['worst_reading_error'], reading_error)
-            result['worst_temperature_error'] = max(
-                result['worst_temperature_error'], temperature_error)
-        if reading_error > tolerance or temperature_error > tolerance:
+    texts = read_texts if read_texts and len(read_texts) == len(read) else None
+    if texts is not None:
+        # read_texts arrives in the order the lines were read; the points were
+        # sorted, so the texts are sorted the same way to stay paired with
+        # them. Sorting on the parsed value keeps the two in step even if the
+        # instrument returned the curve in some other order.
+        texts = [pair for _, pair in
+                 sorted(zip([r for _, r in read_points], read_texts),
+                        key=lambda item: item[0])]
+
+    worst_overall = -1.0
+    for index in range(len(sent)):
+        sent_t, sent_r = sent[index]
+        read_t, read_r = read[index]
+        reading_gap = abs(sent_r - read_r)
+        temperature_gap = abs(sent_t - read_t)
+
+        reading_limit = temperature_gap_limit = None
+        if texts is not None:
+            reading_limit = printed_tolerance(texts[index][0])
+            temperature_gap_limit = printed_tolerance(texts[index][1])
+        if reading_limit is None:
+            reading_limit = abs(sent_r) * relative_tolerance
+        if temperature_gap_limit is None:
+            temperature_gap_limit = abs(sent_t) * relative_tolerance
+
+        # The loosest tolerance applied anywhere, so the caller can state
+        # how closely the curve was actually confirmed instead of implying
+        # the comparison was exact.
+        result['worst_reading_limit'] = max(
+            result['worst_reading_limit'], reading_limit)
+        result['worst_temperature_limit'] = max(
+            result['worst_temperature_limit'], temperature_gap_limit)
+
+        reading_error = reading_gap / max(abs(sent_r), 1e-12)
+        temperature_error = temperature_gap / max(abs(sent_t), 1e-12)
+        result['worst_reading_error'] = max(
+            result['worst_reading_error'], reading_error)
+        result['worst_temperature_error'] = max(
+            result['worst_temperature_error'], temperature_error)
+        if max(reading_error, temperature_error) > worst_overall:
+            worst_overall = max(reading_error, temperature_error)
+            result['worst_point'] = index + 1
+
+        if reading_gap > reading_limit or temperature_gap > temperature_gap_limit:
             if len(result['problems']) < 8:
                 result['problems'].append(
                     f"Point {index + 1}: sent "
@@ -1075,6 +1270,11 @@ CURVE_LINE_GAP_S = 0.06
 CURVE_SETTLE_S = 1.0                # after the semicolon, while flash is written
 CURVE_READ_TIMEOUT_MS = 4000        # per line of a CALCUR? reply
 CURVE_READ_MAX_LINES = MAX_CURVE_POINTS + 12
+
+# How often the window drains the worker-event queue. Fast enough that the
+# console keeps up with a curve going out line by line, slow enough to be
+# invisible.
+EVENT_POLL_MS = 50
 
 CRYOCON_STATUS_STRINGS = {
     '-------': "sensor fault: the sensor is open, disconnected or shorted",
@@ -1165,8 +1365,16 @@ class CryoconLink:
 
     # -- paced I/O --
 
-    def _pace(self, gap=CRYOCON_MIN_GAP_S):
-        """Hold a minimum gap between operations."""
+    def _pace(self, gap=None):
+        """Hold a minimum gap between operations.
+
+        The gap is looked up when it is needed, not bound as a default
+        argument at import: a default would freeze the module constant at the
+        value it had when this file was first read, so slowing the bus down
+        for a sulky firmware revision -- or speeding it up under test --
+        would silently do nothing.
+        """
+        gap = CRYOCON_MIN_GAP_S if gap is None else gap
         wait = gap - (time.time() - self._last_io)
         if wait > 0:
             time.sleep(wait)
@@ -1190,7 +1398,7 @@ class CryoconLink:
         finally:
             self._last_io = time.time()
 
-    def write_line(self, line, ending, gap=CURVE_LINE_GAP_S):
+    def write_line(self, line, ending, gap=None):
         """Send one line of a CALCUR block, byte for byte.
 
         write_raw is used rather than write() because the manual is specific
@@ -1203,7 +1411,7 @@ class CryoconLink:
         if self.instrument is None:
             raise ConnectionError("Not connected to the Cryocon.")
         payload = line.encode('ascii') + (ending or b'')
-        self._pace(gap)
+        self._pace(CURVE_LINE_GAP_S if gap is None else gap)
         try:
             self.instrument.write_raw(payload)
         finally:
@@ -1537,6 +1745,14 @@ class CurveLoaderGUI:
         self.root.minsize(1200, 780)
         self.root.configure(bg=self.CLR_BG_DARK)
 
+        # Everything a worker thread wants the window to do goes through
+        # this queue and is carried out by _drain_events() on the Tk thread.
+        # Tkinter is not thread-safe, and root.after() is not an escape from
+        # that: called from a worker it raises 'main thread is not in main
+        # loop' unless the main thread happens to be inside mainloop(), so a
+        # window driven any other way loses the callback outright. The
+        # sibling Cryocon modules queue for the same reason.
+        self._events = queue.Queue()
         self.backend = CurveLoaderBackend(log=self.log)
         self.logo_image = None
         self.is_connected = False
@@ -1545,6 +1761,10 @@ class CurveLoaderGUI:
         # The loaded file, and the curve derived from it.
         self.source = None            # whatever load_sensor_file returned
         self.source_path = ""
+        # Optional second file, used only to extend the ends of the first.
+        self.second_source = None
+        self.second_source_path = ""
+        self.merge_notes = []
         self.curve_points = []        # (temperature, reading) in target units
         self.curve_lines = []         # the CALCUR block body
         self.curve_errors = []
@@ -1556,6 +1776,7 @@ class CurveLoaderGUI:
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+        self._drain_events()          # starts the main-thread event pump
         self._describe_starting_point()
 
     # -----------------------------------------------------------------------
@@ -1756,6 +1977,35 @@ class CurveLoaderGUI:
             font=('Segoe UI', 9, 'italic'), wraplength=480, justify='left')
         self.file_label.grid(row=2, column=0, sticky='w', padx=10, pady=(0, 8))
 
+        ttk.Separator(frame, orient='horizontal').grid(
+            row=3, column=0, sticky='ew', padx=10, pady=4)
+        ttk.Label(
+            frame,
+            text=("You can use both files together. Pick the .340 above,\n"
+                  "then add the .dat here: its measured points BEYOND the\n"
+                  "ends of the .340 are added, and nothing inside the .340\n"
+                  "is touched. For X17680 that gives the dense certified\n"
+                  "table plus reach down to 3.59 K, which is what a CCR\n"
+                  "running to 3-5 K needs."),
+            background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
+            justify='left').grid(row=4, column=0, sticky='w',
+                                 padx=10, pady=(4, 4))
+        second_row = ttk.Frame(frame)
+        second_row.grid(row=5, column=0, sticky='ew', padx=10, pady=(0, 4))
+        second_row.grid_columnconfigure(0, weight=1)
+        ttk.Button(second_row, text="Extend the ends from another file…",
+                   command=self._choose_second_file).grid(
+            row=0, column=0, sticky='ew')
+        ttk.Button(second_row, text="Clear",
+                   command=self._clear_second_file, width=7).grid(
+            row=0, column=1, sticky='e', padx=(6, 0))
+        self.second_file_label = ttk.Label(
+            frame, text="Not using a second file.",
+            background=self.CLR_FRAME_BG, font=('Segoe UI', 9, 'italic'),
+            wraplength=480, justify='left')
+        self.second_file_label.grid(row=6, column=0, sticky='w',
+                                    padx=10, pady=(0, 8))
+
     def _create_header_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Step 2  ·  How to store it')
         frame.grid(row=grid_row, column=0, sticky='new', pady=5, padx=10)
@@ -1807,15 +2057,41 @@ class CurveLoaderGUI:
         units_combo.bind('<<ComboboxSelected>>',
                          lambda *_: self._rebuild_curve())
 
+        range_frame = ttk.Frame(frame)
+        range_frame.grid(row=6, column=0, columnspan=2, sticky='w',
+                         padx=10, pady=(8, 2))
+        ttk.Label(range_frame, text="I will use this sensor from",
+                  background=self.CLR_FRAME_BG).pack(side='left')
+        self.use_low_var = tk.StringVar(value="")
+        ttk.Entry(range_frame, textvariable=self.use_low_var,
+                  width=7).pack(side='left', padx=4)
+        ttk.Label(range_frame, text="K to",
+                  background=self.CLR_FRAME_BG).pack(side='left')
+        self.use_high_var = tk.StringVar(value="")
+        ttk.Entry(range_frame, textvariable=self.use_high_var,
+                  width=7).pack(side='left', padx=4)
+        ttk.Label(range_frame, text="K",
+                  background=self.CLR_FRAME_BG).pack(side='left')
+        self.use_low_var.trace_add('write', lambda *_: self._rebuild_curve())
+        self.use_high_var.trace_add('write', lambda *_: self._rebuild_curve())
+        ttk.Label(
+            frame,
+            text=("Optional. Fill this in and the curve's coverage is\n"
+                  "checked against it, so a gap at the cold end is said\n"
+                  "here rather than found on the cryostat."),
+            background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
+            justify='left').grid(row=7, column=0, columnspan=2, sticky='w',
+                                 padx=10, pady=(0, 6))
+
         ttk.Label(frame, text="User curve slot:").grid(
-            row=6, column=0, sticky='w', padx=10, pady=4)
+            row=8, column=0, sticky='w', padx=10, pady=4)
         self.slot_var = tk.StringVar(value="1")
         slot_combo = ttk.Combobox(
             frame, textvariable=self.slot_var,
             values=[str(n) for n in
                     range(MIN_USER_CURVE, MAX_USER_CURVE + 1)],
             state='readonly', width=6)
-        slot_combo.grid(row=6, column=1, sticky='w', padx=10, pady=4)
+        slot_combo.grid(row=8, column=1, sticky='w', padx=10, pady=4)
         slot_combo.bind('<<ComboboxSelected>>', lambda *_: self._refresh_slot())
 
         self.slot_hint = ttk.Label(
@@ -1824,7 +2100,7 @@ class CurveLoaderGUI:
                   "whatever is in that slot."),
             background=self.CLR_FRAME_BG, font=('Segoe UI', 9, 'italic'),
             wraplength=480, justify='left')
-        self.slot_hint.grid(row=7, column=0, columnspan=2, sticky='w',
+        self.slot_hint.grid(row=9, column=0, columnspan=2, sticky='w',
                             padx=10, pady=(0, 8))
 
     def _create_save_panel(self, parent, grid_row):
@@ -2079,27 +2355,63 @@ class CurveLoaderGUI:
     # -----------------------------------------------------------------------
 
     def log(self, message):
-        """Append a timestamped message to the console.
+        """Append a timestamped message to the console. Safe from any thread.
 
-        Safe to call from the worker thread: Tk is only touched on the main
-        thread, via after().
+        The message is only queued here; _drain_events() writes it into the
+        console on the Tk thread. Timestamping happens here, so the console
+        shows when something happened rather than when it was drawn.
         """
         timestamp = datetime.now().strftime("%H:%M:%S")
-        text = f"[{timestamp}] {message}\n"
+        self._events.put(('log', f"[{timestamp}] {message}\n"))
 
-        def append():
+    def _post(self, *event):
+        """Queue one request for the Tk thread. Safe from any thread."""
+        self._events.put(event)
+
+    def _drain_events(self, reschedule=True):
+        """Carry out queued work. MAIN THREAD ONLY, driven by after().
+
+        This is the only place a worker's request reaches a widget. One bad
+        event must never stop the pump: an exception escaping here would
+        freeze the console and the busy flag for the rest of the session.
+        """
+        pending = []
+        try:
+            while True:
+                pending.append(self._events.get_nowait())
+        except queue.Empty:
+            pass
+
+        for event in pending:
+            try:
+                self._apply_event(event)
+            except Exception as exc:          # never let the pump die
+                print(f"Curve loader event {event[0]!r} failed: {exc}")
+
+        if reschedule:
+            try:
+                self.root.after(EVENT_POLL_MS, self._drain_events)
+            except tk.TclError:
+                pass                          # the window is closing
+
+    def _apply_event(self, event):
+        """One queued request, carried out on the Tk thread."""
+        kind = event[0]
+        if kind == 'log':
             self.console.config(state='normal')
-            self.console.insert('end', text)
+            self.console.insert('end', event[1])
             self.console.see('end')
             self.console.config(state='disabled')
-
-        try:
-            if threading.current_thread() is threading.main_thread():
-                append()
-            else:
-                self.root.after(0, append)
-        except Exception:
-            print(text, end='')
+        elif kind == 'busy':
+            self._set_busy(event[1])
+        elif kind == 'progress':
+            self.progress['maximum'] = event[2]
+            self.progress['value'] = event[1]
+        elif kind == 'dialog':
+            _, level, title, text = event
+            {'info': messagebox.showinfo,
+             'warning': messagebox.showwarning,
+             'error': messagebox.showerror}[level](title, text)
 
     def _describe_starting_point(self):
         self.log("Cryocon 34 sensor curve loader ready.")
@@ -2148,6 +2460,15 @@ class CurveLoaderGUI:
         self._load_file(path)
 
     def _load_file(self, path):
+        if self.second_source:
+            # The second file was chosen to extend a particular main curve;
+            # carrying it onto a different sensor would silently merge two
+            # sensors' data.
+            self.second_source = None
+            self.second_source_path = ""
+            self.second_file_label.config(text="Not using a second file.")
+            self.log("The second file was cleared: it belonged to the "
+                     "previous main file.")
         self.source_path = path
         name = os.path.basename(path)
         self.log(f"Reading {name} ...")
@@ -2235,6 +2556,72 @@ class CurveLoaderGUI:
             candidate += "_"
         return candidate
 
+    def _choose_second_file(self):
+        """Pick the file whose ends will extend the main curve."""
+        if not self.source:
+            messagebox.showerror(
+                "Choose the Main File First",
+                "Pick the main curve file above before choosing one to "
+                "extend it with. The second file only contributes points "
+                "beyond the ends of the first, so there has to be a first.")
+            return
+        path = filedialog.askopenfilename(
+            title="Choose a file to extend the ends of the curve",
+            initialdir=(os.path.dirname(self.source_path)
+                        if self.source_path else None),
+            filetypes=[
+                ("Lake Shore raw calibration", "*.dat"),
+                ("Lake Shore 340 breakpoint curve", "*.340"),
+                ("Lake Shore table", "*.tbl"),
+                ("Cryo-con curve", "*.crv"),
+                ("All files", "*.*"),
+            ])
+        if not path:
+            return
+        name = os.path.basename(path)
+        self.log(f"Reading {name} to extend the ends of the curve ...")
+        try:
+            extra = load_sensor_file(path)
+        except CurveFileError as exc:
+            self.log(f"REFUSED: {exc}")
+            messagebox.showerror("File Not Read", str(exc))
+            return
+        except Exception as exc:
+            self.log(f"ERROR reading {name}: {traceback.format_exc()}")
+            messagebox.showerror("File Not Read",
+                                 f"{name} could not be read:\n{exc}")
+            return
+        self.second_source = extra
+        self.second_source_path = path
+        self._rebuild_curve()
+
+    def _clear_second_file(self):
+        if not self.second_source:
+            return
+        self.second_source = None
+        self.second_source_path = ""
+        self.log("Second file cleared; the main file is used on its own.")
+        self._rebuild_curve()
+
+    def _working_range(self):
+        """The temperatures the sensor will be used over, or None.
+
+        Both boxes have to hold sensible numbers before the coverage check
+        runs. A half-filled or mistyped pair is treated as "not stated"
+        rather than guessed at, because a wrong range would produce a
+        confident warning about the wrong thing.
+        """
+        try:
+            low = float(self.use_low_var.get().strip())
+            high = float(self.use_high_var.get().strip())
+        except (ValueError, AttributeError):
+            return None
+        if not (math.isfinite(low) and math.isfinite(high)):
+            return None
+        if low <= 0 or high <= low:
+            return None
+        return (low, high)
+
     def _apply_cernox_defaults(self):
         """The Cernox row of Table 4 in the manual, in one press."""
         self.type_var.set(CERNOX_DEFAULTS['sensor_type'])
@@ -2281,6 +2668,7 @@ class CurveLoaderGUI:
         self.curve_warnings = []
         self.curve_stats = {}
         self.dropped_points = 0
+        self.merge_notes = []
 
         if not self.source:
             self._render_summary()
@@ -2290,6 +2678,19 @@ class CurveLoaderGUI:
         try:
             points = convert_units(self.source['points'],
                                    self.source['units'], target_units)
+            if self.second_source:
+                points, added, self.merge_notes = extend_curve(
+                    points, self.second_source['points'],
+                    target_units, self.second_source['units'])
+                second_name = os.path.basename(self.second_source_path)
+                if added:
+                    self.second_file_label.config(
+                        text=(f"{second_name}: {len(added)} point(s) added "
+                              f"beyond the ends of the main curve."))
+                else:
+                    self.second_file_label.config(
+                        text=(f"{second_name}: adds nothing, every point is "
+                              "inside the main curve."))
         except CurveFileError as exc:
             self.curve_errors = [str(exc)]
             self._render_summary()
@@ -2312,7 +2713,10 @@ class CurveLoaderGUI:
         name = self.name_var.get().strip()
         sensor_type = self.type_var.get().strip()
         errors, warnings, stats = analyse_curve(
-            points, target_units, sensor_type, multiplier, name)
+            points, target_units, sensor_type, multiplier, name,
+            working_range=self._working_range())
+        for note in self.merge_notes:
+            warnings.append(note)
         if dropped:
             warnings.append(
                 f"{dropped} point(s) were dropped to fit the instrument's "
@@ -2578,21 +2982,27 @@ class CurveLoaderGUI:
             try:
                 function()
             except Exception as exc:
-                self.log(f"{description} FAILED: {type(exc).__name__}: {exc}")
+                # The message is copied out of the exception here, on this
+                # thread, and the traceback is formatted here too. Python
+                # unbinds the name in 'except ... as exc' when the block ends,
+                # so a lambda that closed over 'exc' and ran later on the Tk
+                # thread would raise NameError instead of showing the dialog,
+                # losing the very report it was meant to deliver. Same reason
+                # the traceback is formatted here: format_exc() on the Tk
+                # thread has no live exception and prints 'NoneType: None'.
+                message = f"{type(exc).__name__}: {exc}"
+                self.log(f"{description} FAILED: {message}")
                 self.log(traceback.format_exc())
-                self.root.after(
-                    0, lambda: messagebox.showerror(
-                        f"{description} Failed", f"{exc}"))
+                self._post('dialog', 'error', f"{description} Failed",
+                           message)
             finally:
-                self.root.after(0, lambda: self._set_busy(False))
+                self._post('busy', False)
 
         threading.Thread(target=target, daemon=True).start()
 
     def _set_progress(self, done, total):
-        def apply():
-            self.progress['maximum'] = total
-            self.progress['value'] = done
-        self.root.after(0, apply)
+        """Move the progress bar. Safe from the worker thread."""
+        self._post('progress', done, total)
 
     # -----------------------------------------------------------------------
     # STEP 5: SEND AND VERIFY
@@ -2671,6 +3081,8 @@ class CurveLoaderGUI:
         verify = self.verify_var.get()
         also_name = self.set_name_var.get()
         name = self.name_var.get().strip()
+        # Snapshot on this, the Tk thread. See _expected_header().
+        expected = self._expected_header()
 
         def job():
             self.log(f"Sending {len(lines) + 1} lines to user curve {slot} "
@@ -2691,7 +3103,7 @@ class CurveLoaderGUI:
                     self.log(f"  SENTYPE {senix}:NAME was refused: {exc}. "
                              "The name in the CALCUR header still stands.")
             if verify:
-                self._verify_against(points, slot)
+                self._verify_against(points, slot, expected)
             else:
                 self.log("Verification was switched off. Nothing has "
                          "confirmed what the instrument actually stored.")
@@ -2709,12 +3121,32 @@ class CurveLoaderGUI:
             return
         slot = int(self.slot_var.get())
         points = list(self.curve_points)
-        self._run_in_worker("Reading the curve back",
-                            lambda: self._verify_against(points, slot))
+        expected = self._expected_header()
+        self._run_in_worker(
+            "Reading the curve back",
+            lambda: self._verify_against(points, slot, expected))
 
-    def _verify_against(self, sent_points, slot):
+    def _expected_header(self):
+        """The four header fields, read off the form. MAIN THREAD ONLY.
+
+        Tk variables belong to the thread running the event loop: reading one
+        from a worker raises 'main thread is not in main loop'. The
+        verification runs on a worker, so it is handed a plain dict captured
+        here instead of reaching back into the widgets. Snapshotting also
+        means the check compares against what was actually sent, not against
+        whatever the operator has since typed into the form.
+        """
+        return {
+            'name': self.name_var.get().strip(),
+            'sensor_type': self.type_var.get().strip(),
+            'multiplier': self.multiplier_var.get().strip(),
+            'units': self.units_var.get().strip(),
+        }
+
+    def _verify_against(self, sent_points, slot, expected):
         """Read the slot back and compare it, point by point, with what was
-        sent. Runs on the worker thread."""
+        sent. Runs on the worker thread, so it touches no widget: `expected`
+        is the snapshot taken by _expected_header() before the job started."""
         senix = CurveLoaderBackend.senix_for_user_curve(slot)
         self.log(f"Reading user curve {slot} back with CALCUR? {slot} ...")
         text = self.backend.read_curve(slot)
@@ -2736,7 +3168,7 @@ class CurveLoaderGUI:
                  f"{header['multiplier']:+g}, units {header['units']}.")
 
         problems = []
-        wanted_type = self.type_var.get().strip()
+        wanted_type = expected['sensor_type']
         if header['sensor_type'].strip().upper() != wanted_type.upper():
             problems.append(
                 f"the sensor type came back as '{header['sensor_type']}' "
@@ -2746,31 +3178,43 @@ class CurveLoaderGUI:
                     "and 'Diode' is what the manual says the instrument "
                     "substitutes when it does not recognise a type, so this "
                     "sensor type is not supported by this firmware")
-        if header['units'].strip().upper() != self.units_var.get().upper():
+        if header['units'].strip().upper() != expected['units'].upper():
             problems.append(
                 f"the units came back as '{header['units']}' where "
-                f"'{self.units_var.get()}' was sent")
+                f"'{expected['units']}' was sent")
         try:
-            wanted_multiplier = float(self.multiplier_var.get())
+            wanted_multiplier = float(expected['multiplier'])
             if abs(header['multiplier'] - wanted_multiplier) > 1e-4:
                 problems.append(
                     f"the multiplier came back as {header['multiplier']:+g} "
                     f"where {wanted_multiplier:+g} was sent")
         except ValueError:
             pass
-        if header['name'].strip() != self.name_var.get().strip():
+        if header['name'].strip() != expected['name']:
             problems.append(
                 f"the name came back as '{header['name']}' where "
-                f"'{self.name_var.get().strip()}' was sent")
+                f"'{expected['name']}' was sent")
 
-        comparison = compare_curves(sent_points, read_points)
+        # Checked against the precision the instrument printed, not against a
+        # tolerance chosen here; see compare_curves().
+        comparison = compare_curves(sent_points, read_points,
+                                    read_texts=header.get('point_texts'))
         self.log(f"  {comparison['sent_count']} points sent, "
                  f"{comparison['read_count']} read back.")
         if comparison['read_count'] == comparison['sent_count']:
             self.log("  Largest difference in any sensor reading: "
                      f"{comparison['worst_reading_error']:.2e} relative; "
                      "in any temperature: "
-                     f"{comparison['worst_temperature_error']:.2e}.")
+                     f"{comparison['worst_temperature_error']:.2e} "
+                     f"(worst at point {comparison['worst_point']}).")
+            self.log(
+                "  Each point was compared at the precision its own reply "
+                "was printed to; the loosest that got anywhere in this "
+                f"curve was {comparison['worst_temperature_limit']:.3g} K "
+                "in temperature and "
+                f"{comparison['worst_reading_limit']:.3g} in the sensor "
+                "reading.")
+
         for message in comparison['problems']:
             self.log(f"  {message}")
 
@@ -2781,11 +3225,14 @@ class CurveLoaderGUI:
             self.log(f"  To use it, set an input channel to sensor index "
                      f"{senix} (step 6, or the Sensors key on the front "
                      "panel).")
-            self.root.after(0, lambda: messagebox.showinfo(
-                "Curve Verified",
-                f"User curve {slot} matches what was sent, point for "
-                f"point.\n\nSet an input channel to sensor index {senix} to "
-                "use it."))
+            caveat = (
+                "\n\nEach point was compared at the precision its own reply "
+                f"was printed to, the loosest being "
+                f"{comparison['worst_temperature_limit']:.3g} K.")
+            self._post('dialog', 'info', "Curve Verified",
+                       f"User curve {slot} matches what was sent, point for "
+                       f"point.\n\nSet an input channel to sensor index "
+                       f"{senix} to use it.{caveat}")
             return
 
         summary = []
@@ -2801,12 +3248,12 @@ class CurveLoaderGUI:
                  "Advanced and send again. If only the sensor type differs, "
                  "the firmware does not accept that name; try another from "
                  "the list.")
-        self.root.after(0, lambda: messagebox.showerror(
-            "Curve Not Verified",
+        self._post(
+            'dialog', 'error', "Curve Not Verified",
             f"User curve {slot} does not match what was sent.\n\n" +
             "\n".join(summary) +
             "\n\nThe console lists the differences. Do not use this sensor "
-            "until this is resolved."))
+            "until this is resolved.")
 
     # -----------------------------------------------------------------------
     # STEP 6: CHANNEL ASSIGNMENT
@@ -2866,11 +3313,10 @@ class CurveLoaderGUI:
                     "set the sensor from the front panel with the Sensors "
                     "key, or press 'Show what each channel is using now' to "
                     "see how this unit numbers them.")
-                self.root.after(0, lambda: messagebox.showwarning(
-                    "Assignment Not Confirmed",
-                    f"Input {channel} reads back as {reported}, not "
-                    f"{senix}.\n\nNo further command was sent. Set the "
-                    "sensor from the front panel instead."))
+                self._post('dialog', 'warning', "Assignment Not Confirmed",
+                           f"Input {channel} reads back as {reported}, not "
+                           f"{senix}.\n\nNo further command was sent. Set "
+                           "the sensor from the front panel instead.")
                 return
             reading = self.backend.read_channel_temperature(channel)
             self.log(f"  Input {channel} now reads: {reading}")
