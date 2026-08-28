@@ -4,6 +4,8 @@
  PURPOSE:      A panel for talking to a Stanford Research Systems SR830 DSP
                lock-in amplifier: connect and identify, read back and change
                every important setting, and watch X, Y, R and Theta live.
+               X (in phase), Y (quadrature) and R (magnitude) are plotted
+               against time; R and Theta are X and Y in polar form.
 
                This is a communication and control module, NOT a measurement
                module. There is deliberately no sweep and no acquisition loop.
@@ -482,6 +484,11 @@ class SR830CommsGUI:
     CLR_ACCENT_RED = '#BA6B5E'
     CLR_CONSOLE_BG = '#E5DCD3'
     CLR_GRAPH_BG = '#F4EFEA'
+    # Three distinguishable traces on the cream graph background. X and Y can
+    # both be negative and R never is, so they share one volts axis.
+    CLR_TRACE_X = '#BA6B5E'
+    CLR_TRACE_Y = '#5E7C8A'
+    CLR_TRACE_R = '#4A3F35'
     FONT_SIZE_BASE = 11
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_SUB_LABEL = ('Segoe UI', FONT_SIZE_BASE - 2)
@@ -528,7 +535,7 @@ class SR830CommsGUI:
         self.data_queue = queue.Queue()
         self.is_monitoring = False
         self.start_time = None
-        self.data_storage = {'time': [], 'r': []}
+        self.data_storage = {'time': [], 'x': [], 'y': [], 'r': []}
         self.file_location_path = ""
         self.data_filepath = None
         self.logo_image = None
@@ -952,23 +959,70 @@ class SR830CommsGUI:
             row=1, column=5, padx=(12, 0), pady=3, sticky='e')
 
     def create_graph_frame(self, parent):
-        graph_container = ttk.LabelFrame(parent, text='R vs. Time')
+        """X, Y and R against time, each on its own switchable trace.
+
+        X is the component in phase with the reference and Y the quadrature
+        component; R = sqrt(X^2+Y^2) is the two of them in polar form. R alone
+        hides the sign and hides which of the two the signal is sitting in, so
+        a phase problem (everything in Y, nothing in X) is invisible on an R
+        plot and obvious here. All three are volts, so one axis carries them.
+        """
+        graph_container = ttk.LabelFrame(parent, text='X, Y and R vs. Time')
         graph_container.pack(fill='both', expand=True, padx=5, pady=5)
+
+        trace_row = ttk.Frame(graph_container)
+        trace_row.pack(fill='x', padx=8, pady=(6, 0))
+        ttk.Label(trace_row, text="Traces:", style='Sub.TLabel').pack(
+            side='left', padx=(0, 8))
 
         self.figure = Figure(figsize=(7, 4), dpi=100,
                              facecolor=self.CLR_GRAPH_BG)
         self.canvas = FigureCanvasTkAgg(self.figure, graph_container)
         self.ax_main = self.figure.add_subplot(1, 1, 1)
-        self.line_main, = self.ax_main.plot(
-            [], [], color=self.CLR_ACCENT_RED, marker='o', markersize=3,
-            linestyle='-')
-        self.ax_main.set_title("Magnitude R vs. Time", fontweight='bold')
+
+        self.trace_lines = {}
+        self.trace_vars = {}
+        traces = [
+            ('x', 'X (in phase)', self.CLR_TRACE_X, 'o'),
+            ('y', 'Y (quadrature)', self.CLR_TRACE_Y, 's'),
+            ('r', 'R (magnitude)', self.CLR_TRACE_R, '^'),
+        ]
+        for key, label, colour, marker in traces:
+            line, = self.ax_main.plot(
+                [], [], color=colour, marker=marker, markersize=3,
+                linestyle='-', label=label)
+            self.trace_lines[key] = line
+            variable = tk.BooleanVar(value=True)
+            self.trace_vars[key] = variable
+            ttk.Checkbutton(
+                trace_row, text=label, variable=variable,
+                command=self._refresh_traces).pack(side='left', padx=(0, 12))
+
+        self.ax_main.set_title("X, Y and R vs. Time", fontweight='bold')
         self.ax_main.set_xlabel("Elapsed Time (s)")
-        self.ax_main.set_ylabel("R (V)")
+        self.ax_main.set_ylabel("Signal (V)")
         self.ax_main.grid(True, linestyle='--', alpha=0.6)
+        self.ax_main.legend(loc='best', fontsize=self.FONT_SIZE_BASE - 2)
         self.figure.tight_layout(pad=3.0)
         self.canvas.get_tk_widget().pack(
             fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    def _refresh_traces(self):
+        """Redraw from the stored points, showing only the ticked traces.
+
+        An unticked trace is given empty data rather than just hidden, so it
+        stops pulling the autoscale: with X and Y switched off the axis fits
+        R alone, which is the point of switching them off.
+        """
+        for key, line in self.trace_lines.items():
+            if self.trace_vars[key].get():
+                line.set_data(self.data_storage['time'],
+                              self.data_storage[key])
+            else:
+                line.set_data([], [])
+        self.ax_main.relim()
+        self.ax_main.autoscale_view()
+        self.canvas.draw_idle()
 
     # ---------------------------------------------------------------- logging
     def log(self, message):
@@ -1218,8 +1272,7 @@ class SR830CommsGUI:
         self.monitor_stop_button.config(state='normal')
         for values in self.data_storage.values():
             values.clear()
-        self.line_main.set_data([], [])
-        self.canvas.draw_idle()
+        self._refresh_traces()
         self.start_time = time.time()
         self.monitor_interval = interval
         self.log(f"Live readout started, polling SNAP? every {interval} s.")
@@ -1286,12 +1339,10 @@ class SR830CommsGUI:
                             elapsed, x, y, r, theta))
 
                 self.data_storage['time'].append(elapsed)
+                self.data_storage['x'].append(x)
+                self.data_storage['y'].append(y)
                 self.data_storage['r'].append(r)
-                self.line_main.set_data(
-                    self.data_storage['time'], self.data_storage['r'])
-                self.ax_main.relim()
-                self.ax_main.autoscale_view()
-                self.canvas.draw_idle()
+                self._refresh_traces()
         except queue.Empty:
             pass
 
