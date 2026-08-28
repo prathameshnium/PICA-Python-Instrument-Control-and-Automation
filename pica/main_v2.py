@@ -447,6 +447,7 @@ CATALOG = [
             ("Temperature Monitor (L350)", "Lakeshore Temp Monitor", "sensing"),
             ("Direct Control (Cryocon 34)", "Cryocon Direct Control", "control"),
             ("Temperature Monitor (Cryocon 34)", "Cryocon Temp Monitor", "sensing"),
+            ("Sensor Curve Loader (Cryocon 34)", "Cryocon Sensor Curve Loader", "control"),
         ],
     },
     {

@@ -197,6 +197,7 @@ class PICALauncherApp:
         "Lakeshore Temp Monitor": resource_path("lakeshore/T_Sensing_L350_GUI.py"),
         "Cryocon Direct Control": resource_path("cryocon/T_Control_CC34_DirectControl_GUI.py"),
         "Cryocon Temp Monitor": resource_path("cryocon/T_Sensing_CC34_GUI.py"),
+        "Cryocon Sensor Curve Loader": resource_path("cryocon/Sensor_Curve_Loader_CC34_GUI.py"),
         "LCR C-V Measurement": resource_path("keysight/CV_KE4980A_GUI.py"),
         "LCR Frequency Scan": resource_path("keysight/Frequency_Scan_E4980A_GUI.py"), # Already present
         "LCR Temp. Step Freq. Scan (T_Control)": resource_path("keysight/Step_Frequency_Scan_E4980A_GUI.py"), # Already present
@@ -751,7 +752,9 @@ class PICALauncherApp:
                                   ("Direct Control (Cryocon 34)",
                                    "Cryocon Direct Control", "control"),
                                   ("Temperature Monitor (Cryocon 34)",
-                                   "Cryocon Temp Monitor", "sensing")])
+                                   "Cryocon Temp Monitor", "sensing"),
+                                  ("Sensor Curve Loader (Cryocon 34)",
+                                   "Cryocon Sensor Curve Loader", "control")])
         self._create_suite_frame(right_col,
                                  'Impedance Spectroscopy',
                                  "Voltage Driven",
