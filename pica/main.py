@@ -204,7 +204,9 @@ class PICALauncherApp:
         "LCR Temp. Scan (T_Sensing)": resource_path("keysight/Temprature_Scan_Passive_E4980A_GUI.py"), # Already present
         "LCR Temp. Scan (T_Sensing, CC34)": resource_path("keysight/Temprature_Scan_Passive_CC34_E4980A_GUI.py"),
         "PPMS Sync Freq. Scan": resource_path("keysight/PPMS_Sync_Freq_Scan_E4980A_GUI.py"),
+        "PPMS Sync Freq. Scan (CC34)": resource_path("keysight/PPMS_Sync_Freq_Scan_CC34_E4980A_GUI.py"),
         "PPMS Dielectric Master": resource_path("keysight/PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI.py"),
+        "PPMS Dielectric Master (CC34)": resource_path("keysight/PPMS_Dielectric_Master_Tscan_Fscan_CC34_E4980A_GUI.py"),
         "SR830 Lock-in Comms": resource_path("lockin/sr830/Comms_SR830_GUI.py"),
         "SR830 AC Resistivity": resource_path("lockin/sr830/AC_Resistivity_K6221_SR830_GUI.py"),
         "Alpha-AN Freq. Scan": resource_path("novocontrol/Frequency_Scan_AlphaAN_GUI.py"),
@@ -758,8 +760,10 @@ class PICALauncherApp:
                                    "LCR C-V Measurement"),
                                   ("Dielectric Frequency Scan", "LCR Frequency Scan"), # Already present
                                   ("Temp. Step Freq. Scan (T_Control)", "LCR Temp. Step Freq. Scan (T_Control)", "control"), # Already present
-                                  ("Temp. Step Freq. Scan (PPMS, T_Sensing)", "PPMS Sync Freq. Scan", "sensing"),
-                                  ("Dielectric Master Tscan+Fscan (PPMS)", "PPMS Dielectric Master", "master"),
+                                  ("Temp. Step Freq. Scan (PPMS, T_Sensing, L350)", "PPMS Sync Freq. Scan", "sensing"),
+                                  ("Temp. Step Freq. Scan (PPMS, T_Sensing, Cryocon 34)", "PPMS Sync Freq. Scan (CC34)", "sensing"),
+                                  ("Dielectric Master Tscan+Fscan (PPMS, L350)", "PPMS Dielectric Master", "master"),
+                                  ("Dielectric Master Tscan+Fscan (PPMS, Cryocon 34)", "PPMS Dielectric Master (CC34)", "master"),
                                   ("Dielectric Temp. Scan (T_Control)", "LCR Temp. Scan (T_Control)", "control"), # Already present
                                   ("Dielectric Temp. Scan (T_Sensing, L350)", "LCR Temp. Scan (T_Sensing)", "sensing"), # Already present
                                   ("Dielectric Temp. Scan (T_Sensing, Cryocon 34)", "LCR Temp. Scan (T_Sensing, CC34)", "sensing"),
