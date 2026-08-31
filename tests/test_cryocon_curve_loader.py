@@ -438,10 +438,17 @@ def test_a_zero_resistance_has_no_logarithm():
 # ---------------------------------------------------------------------------
 
 def test_the_lab_cernox_passes_every_check_with_the_manuals_settings():
-    """Table 4 of the manual: Cernox is R8K10UA, multiplier -1, LogOhms."""
+    """Table 4 of the manual: Cernox is R8K10UA, multiplier -1, LogOhms.
+
+    v1.3: R8K10UA is the SENTYPE:TYPE name, and SENTYPE:TYPE is what sets
+    the input range, so the full-scale check keys on `sentype_type` rather
+    than on the CALCUR header type. It has to be passed for that check to
+    run at all; without it analyse_curve says so instead of passing silently.
+    """
     points = _cernox_curve()
     errors, warnings, stats = LOADER.analyse_curve(
-        points, "LOGOHM", "R8K10UA", -1.0, "CX1030 X17680")
+        points, "LOGOHM", "R8K10UA", -1.0, "CX1030 X17680",
+        sentype_type="R8K10UA")
     assert errors == [], errors
     assert stats["count"] == 71
     assert stats["coefficient"] == "negative"
@@ -467,11 +474,27 @@ def test_a_zero_multiplier_is_an_error():
 
 
 def test_a_sensor_type_whose_full_scale_is_too_small_is_an_error():
-    """R312R1MA is a 312 ohm Platinum range; the Cernox reaches 977 ohm."""
+    """R312R1MA is a 312 ohm Platinum range; the Cernox reaches 977 ohm.
+
+    v1.3: the range belongs to the SENTYPE:TYPE input configuration, so it
+    is passed as `sentype_type` while the header carries a CALCUR type.
+    """
     points = _cernox_curve()
     errors, _, _ = LOADER.analyse_curve(
-        points, "LOGOHM", "R312R1MA", -1.0, "CX1030 X17680")
+        points, "LOGOHM", "ACR", -1.0, "CX1030 X17680",
+        sentype_type="R312R1MA")
     assert any("full scale" in message for message in errors), errors
+
+
+def test_no_input_type_means_the_range_check_is_said_to_be_skipped():
+    """Silence is not the same as a pass, so the gap is stated as a warning."""
+    points = _cernox_curve()
+    errors, warnings, stats = LOADER.analyse_curve(
+        points, "LOGOHM", "ACR", -1.0, "CX1030 X17680")
+    assert errors == [], errors
+    assert "full_scale" not in stats
+    assert any("no input type was named" in message
+               for message in warnings), warnings
 
 
 def test_a_voltage_sensor_type_on_a_resistance_curve_is_an_error():

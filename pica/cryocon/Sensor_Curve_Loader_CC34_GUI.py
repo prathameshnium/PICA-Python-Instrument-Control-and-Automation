@@ -40,7 +40,7 @@ CALCUR command (p.181-183):
     curve points, then a line holding a single semicolon:
         CALCUR 1
         <sensor name>        4 to 15 ASCII characters
-        <sensor type>        enumeration, see SENSOR_TYPES below
+        <sensor type>        enumeration, see CALCUR_SENSOR_TYPES below
         <multiplier>         signed float; the sign is the temperature coeff.
         <curve units>        OHMS | VOLTS | LOGOHM
         <reading> <temp K>   2 to 200 of these
@@ -68,29 +68,57 @@ CALCUR command (p.181-183):
     CURVE_SETTLE_S waits a full second, which costs nothing and covers both.
   - Factory curves cannot be changed or deleted by these commands.
 
-Sensor types (p.22 "Supported Sensor Types", p.26 Table 4, p.197 SENTYPE:TYPE):
-  - The Model 34 names a sensor type by its full-scale input and its
-    excitation current: R8K10UA, R625R1MA and so on. SENSOR_TYPES below is
-    Table 1 in full.
-  - Table 4, "Resistor Sensor Configuration", is explicit for our sensor:
+Sensor types: THE MANUAL USES TWO DIFFERENT VOCABULARIES, ONE PER COMMAND.
+This was the cause of the 29 Aug 2026 failure and it is the reason this
+module now keeps two separate lists instead of one.
+
+  1. The CALCUR curve header. Printed p.173, under "CALCUR: Calibration
+     Curve Set or Query":
+        "<sensor type> is from the following list: Diode, ACR, 31kR, 3.1kR,
+         312R, 625R, TC80, TC40 and None. If the sensor type cannot be
+         identified, Diode is used."
+     R8K10UA IS NOT ON THAT LIST. Putting it in a CALCUR header is by
+     definition unidentifiable, and the documented consequence is the silent
+     diode substitution. For an NTC resistor -- Cernox, Ruthenium-Oxide,
+     Germanium, Carbon Glass, thermistors -- the CALCUR spelling is ACR.
+     CALCUR_SENSOR_TYPES below is that list in full.
+
+  2. The SENTYPE:TYPE input configuration. Printed p.187:
+        "Diode for Silicon Diodes. R16K10UA, R8K10UA, R6K100UA, R2K100UA,
+         R625R1MA and R312R1MA for resistor sensors. Snone to disable the
+         input channel. TC80 ... TC40 ..."
+     This is where R8K10UA belongs, and it is a separate command sent after
+     the curve has landed and verified. SENTYPE_SENSOR_TYPES below.
+
+  - Table 4, "Resistor Sensor Configuration" (printed p.15), gives the input
+    configuration for our sensor:
         Cernox  ->  R8K10UA,  10 uA excitation,  (-) coefficient,  LogOhms
     X17680 runs from 43.76 ohm at 330 K to 977.25 ohm at 3.59 K, so the 8
-    kohm full-scale range fits it with room to spare.
+    kohm full-scale range fits it with room to spare. That row describes the
+    SENTYPE:TYPE step, not the CALCUR header.
+  - So a Cernox takes TWO commands, in this order:
+        CALCUR <n>   with header type ACR      (the curve itself)
+        SENTYPE <n+9>:TYPE R8K10UA             (the input range and current)
+    run_full_sequence() does them in that order and verifies each.
   - LOGOHM is the base-10 log of ohms. The manual asks for it on Cernox,
     Ruthenium-Oxide, Germanium, Carbon Glass and thermistors because their
     resistance curve is far more linear in log form, and the instrument
-    interpolates between breakpoints (p.24, p.100).
-  - DANGER, and the reason this module verifies: p.109 says "If the controller
-    receives a sensor type that it does not support, the 'Diode' type is
-    selected." That substitution is silent, and a Cernox running on a diode
-    input configuration reads nonsense. read_curve() reports the type the
-    instrument actually kept.
-  - The CALCUR page itself (p.183) lists an older, Model-32-era spelling of
-    the type field: "Diode, ACR, 31kR, 3.1kR, 312R, 625R, TC80, TC40, None".
-    The Supported Sensors table and the SENTYPE page, both written for the
-    Model 34, use the R8K10UA family. The R-names are offered first here; ACR
-    is kept in the list in case a firmware revision wants the old spelling,
-    and either way the readback settles which one was accepted.
+    interpolates between breakpoints.
+  - DANGER, and the reason this module verifies: an unrecognised type is
+    replaced silently, and a Cernox running on a diode input configuration
+    reads nonsense. read_curve() reports the type the instrument actually
+    kept, and the Rev 3.03A unit in this lab spells its diode type
+    'SiDiode', which Edition 4 does not print anywhere.
+
+What a failed readback means (added 31 Aug 2026, from a real failure):
+  - If ONLY the sensor type differs, the block landed and the type was
+    substituted. Fix the type and resend.
+  - If the NAME, the UNITS and the TYPE all differ at once, the block did
+    NOT land at all and the slot still holds whatever was there before.
+    A short point count in that case is meaningless: it is the point count
+    of somebody else's curve, not evidence that lines were lost, and
+    changing the line ending will not help. classify_verify() draws that
+    distinction so the console stops giving the wrong advice.
 
 User curve slots and sensor index (p.220, Appendix A):
         Senix index 10 11 12 13 14 15 16 17 18 19 20 21
@@ -143,6 +171,23 @@ every operation, because back-to-back traffic is what made that firmware stop
 accepting bytes in the middle of a write.
 
 v1.0, 29 Aug 2026.
+v1.1, 31 Aug 2026. The 29 Aug transfer to X17680 failed and this is what
+      came out of it:
+        - the CALCUR header type and the SENTYPE:TYPE input type are two
+          different vocabularies in the manual and are now two separate
+          lists and two separate fields. R8K10UA in a CALCUR header is now
+          a blocking error, not a warning;
+        - Cernox defaults are ACR for the header and R8K10UA for the input
+          type, sent as two commands in that order;
+        - the slot is read BEFORE the send, so an unchanged readback is
+          reported as 'nothing was written' instead of as lost points;
+        - classify_verify() replaces the old advice, which told the
+          operator to change the line ending in exactly the case where
+          the line ending was irrelevant;
+        - run_full_sequence(): every instrument step in order, each checked
+          before the next, stopping at the first failure, with a summary;
+        - run_self_test(): 21 offline checks, four of them regressions on
+          the above. Run with --selftest or from the Advanced panel.
 """
 
 import tkinter as tk
@@ -150,6 +195,7 @@ from tkinter import ttk, messagebox, filedialog, scrolledtext, Canvas
 import math
 import os
 import queue
+import sys
 import re
 import time
 import threading
@@ -305,57 +351,161 @@ def launch_gpib_scanner():
 # --- Limits from the CALCUR section of the manual --------------------------
 MIN_USER_CURVE = 1
 MAX_USER_CURVE = 12          # Model 34 and Model 62; the Model 32 has 4
-SENIX_OFFSET = 9             # user curve n is Master Sensor Table index n + 9
 MIN_CURVE_POINTS = 2
 MAX_CURVE_POINTS = 200
 MIN_NAME_CHARS = 4
 MAX_NAME_CHARS = 15
 
+# ---------------------------------------------------------------------------
+# THE SENSOR TABLE IS MAPPED, NOT ASSUMED  (added v1.2, 31 Aug 2026)
+# ---------------------------------------------------------------------------
+#
+# Appendix A of the Edition 4 manual contradicts itself and the instrument
+# contradicts both halves of it.
+#
+#   * "Factory Installed Curves" (printed p.209) runs 0 to 13 and ends with
+#     four thermocouples: 10 TC type K, 11 TC type E, 12 TC type T,
+#     13 AuFe 0.07%.
+#   * "User Installed Sensor Curves" on the next page claims Senix 10 to 21
+#     for user curves 1 to 12. Those two tables both claim index 10.
+#   * The Rev 3.03A unit in this lab answers SENTYPE? 10 with
+#     'TC E Extern', type TC80, multiplier 0.1. That is a thermocouple, so
+#     the user block does not start at 10 -- but it is the manual's index 11
+#     entry, not its index 10 entry, so the factory table is off by one too.
+#
+# Three printed claims, none of which survives contact with the instrument.
+# So SENIX_OFFSET_DEFAULT is a starting guess and nothing more, every use of
+# it is labelled unconfirmed until scan_sensor_table() has been run, and the
+# module refuses to write to an index the scan says is a factory entry.
+SENIX_OFFSET_DEFAULT = 9     # what Appendix A claims; NOT trusted
+SENIX_OFFSET = SENIX_OFFSET_DEFAULT      # kept for callers that predate v1.2
+MASTER_TABLE_SCAN_MAX = 31   # how far up to walk when mapping the table
+
+# Whether the number after CALCUR is the user-curve number or the Master
+# Sensor Table index. The manual says the former (printed p.210). The
+# 29 and 31 Aug failures are both consistent with the latter, where CALCUR 1
+# addressed a protected factory diode curve and was discarded in silence,
+# which is what p.172 says happens: "Factory installed calibration curves may
+# not be changed or deleted with these commands." Neither reading is assumed;
+# the operator picks, and the scan tells them which to pick.
+CALCUR_ADDRESSING = {
+    'user': "user curve number, 1 to 12 (what Appendix A says)",
+    'senix': "Master Sensor Table index (what the failures suggest)",
+}
+
+# Factory names as Appendix A prints them, used ONLY to recognise a factory
+# entry in a scan result. Not used to compute any index.
+APPENDIX_A_FACTORY_NAMES = (
+    'none', 'cryocon s700', 'ls dt-670', 'ls dt-470', 'si 410 diode',
+    'pt100 385', 'pt1k 385', 'pt10k 385', 'ruox 1k ohm', 'ruox 2k ohm',
+    'tc type k', 'tc type e', 'tc type t', 'aufe 0.07%',
+)
+
+# Substrings that mark an entry as factory-installed whatever it is called.
+# 'Lakeshore 10' is the Curve 10 DT-470 diode table; 'TC E Extern' is this
+# firmware's spelling of the type E thermocouple. Both were found in slots
+# Appendix A promised were free.
+FACTORY_NAME_MARKERS = (
+    'lakeshore', 'cryocon', 'dt-470', 'dt-670', 'dt470', 'dt670',
+    'si 410', 'si410', 'pt100', 'pt1k', 'pt10k', 'ruox', 'ro-105', 'ro-600',
+    'rhfe', 'aufe', 'tc type', 'tc k', 'tc e', 'tc t', 'thermocouple',
+    'extern', 'none',
+)
+
+# What an untouched user slot is called before anything is put in it.
+USER_SLOT_NAME_RE = re.compile(
+    r'^\s*user\s*(?:sensor|curve)\s*([0-9A-Ca-c])\s*$', re.I)
+
 # Sensor units the CALCUR header will accept. LOGOHM is base-10 log of ohms.
 CURVE_UNITS = ('LOGOHM', 'OHMS', 'VOLTS')
 
-# Supported Sensor Types, Model 34 manual Table 1 (p.22), with the full-scale
-# input each one presents. The full scale is what makes a sensor type wrong or
-# right for a given curve, so it is carried here and checked against the data.
+# ---------------------------------------------------------------------------
+# THE TWO SENSOR-TYPE VOCABULARIES
+# ---------------------------------------------------------------------------
 #
-# Two quirks of the printed table are preserved deliberately:
-#   - R3K100UA is named for 3 kohm but Table 1 gives its full scale as 2 kohm.
-#     The table value is used, because that is the number the instrument was
-#     specified against, and it is the conservative one.
-#   - 'ACR' is not in Table 1. It is the Model 32 / 24C spelling for a generic
-#     AC resistance sensor and appears in the CALCUR page's own type list. It
-#     is offered last, as a fallback if a firmware revision rejects R8K10UA.
+# These are two different lists in the manual, for two different commands, and
+# they are NOT interchangeable. Sending a name from one list to the other is
+# what broke the 29 Aug 2026 transfer: R8K10UA went into a CALCUR header, the
+# firmware could not identify it, and it silently substituted a diode type.
 #
 # fields: (full scale, unit of that full scale, what it is for)
-SENSOR_TYPES = {
-    'R8K10UA':   (8.0e3,  'ohm',
-                  "8 kohm FS, 10 uA - Cernox, RuOx, Germanium, Carbon Glass, "
-                  "thermistors (manual Table 4)"),
-    'R16K10UA':  (16.0e3, 'ohm', "16 kohm FS, 10 uA - PTC/NTC resistors, Pt 10k"),
-    'R31K10UA':  (31.3e3, 'ohm', "31.3 kohm FS, 10 uA - Pt 10k / NTC resistors"),
-    'R62K10UA':  (62.5e3, 'ohm', "62.5 kohm FS, 10 uA - Pt 10k / NTC resistors"),
-    'R25K100UA': (25.0e3, 'ohm', "25 kohm FS, 100 uA - PTC/NTC resistors"),
-    'R12K100UA': (12.5e3, 'ohm', "12.5 kohm FS, 100 uA - Platinum 1000"),
-    'R6K100UA':  (6.25e3, 'ohm', "6.25 kohm FS, 100 uA - Platinum 1000"),
-    'R3K100UA':  (2.0e3,  'ohm',
-                  "2 kohm FS per Table 1, 100 uA - Platinum 1000"),
-    'R625R1MA':  (625.0,  'ohm', "625 ohm FS, 1 mA - Platinum 100 above 800 K"),
-    'R312R1MA':  (312.0,  'ohm', "312 ohm FS, 1 mA - Platinum 100 below 800 K"),
-    'R156R1MA':  (156.0,  'ohm', "156 ohm FS, 1 mA - Rhodium-Iron"),
-    'Diode':     (2.5,    'V',   "2.5 V FS, 10 uA - silicon and GaAlAs diodes"),
-    'TC80':      (0.078,  'V',   "78 mV FS - thermocouple"),
-    'TC40':      (0.039,  'V',   "39 mV FS - thermocouple"),
-    'ACR':       (None,   '',
-                  "Model 32 / 24C spelling for a generic AC resistance "
-                  "sensor; try only if R8K10UA is rejected"),
+
+# 1. What the CALCUR header will accept. Manual, printed p.173, verbatim:
+#    "Diode, ACR, 31kR, 3.1kR, 312R, 625R, TC80, TC40 and None. If the sensor
+#     type cannot be identified, Diode is used."
+#    ACR is the entry for every NTC resistor: Cernox, Ruthenium-Oxide,
+#    Germanium, Carbon Glass and thermistors. It has no single full scale
+#    because the AC bridge autoranges, so the full-scale check is skipped for
+#    it while the ohms-versus-volts check still runs.
+CALCUR_SENSOR_TYPES = {
+    'ACR':    (None,   'ohm',
+               "AC resistance bridge - Cernox, RuOx, Germanium, Carbon "
+               "Glass, thermistors. THE CALCUR SPELLING FOR AN NTC SENSOR"),
+    'Diode':  (2.5,    'V',   "2.5 V FS - silicon and GaAlAs diodes"),
+    '31kR':   (31.3e3, 'ohm', "31.3 kohm FS - Pt 10k / high-value resistors"),
+    '3.1kR':  (3.13e3, 'ohm', "3.13 kohm FS - Platinum 1000 and similar"),
+    '625R':   (625.0,  'ohm', "625 ohm FS - Platinum 100 above 800 K"),
+    '312R':   (312.0,  'ohm', "312 ohm FS - Platinum 100 below 800 K"),
+    'TC80':   (0.080,  'V',   "80 mV FS - thermocouple"),
+    'TC40':   (0.040,  'V',   "40 mV FS - thermocouple"),
+    'None':   (None,   '',    "no sensor; turns the entry off"),
 }
 
-# What the Cernox needs, from Table 4 of the manual. Used by the one-click
-# "recommended settings" button so the operator does not have to transcribe it.
+# 2. What SENTYPE <index>:TYPE will accept. Manual, printed p.187:
+#    "Diode ... R16K10UA, R8K10UA, R6K100UA, R2K100UA, R625R1MA and R312R1MA
+#     for resistor sensors. Snone to disable the input channel. TC80 ...
+#     TC40 ..."
+#    This command sets the input RANGE and EXCITATION, which is what Table 4
+#    (printed p.15) specifies for a Cernox. It is sent after the curve.
+SENTYPE_SENSOR_TYPES = {
+    'R8K10UA':  (8.0e3,  'ohm',
+                 "8 kohm FS, 10 uA - Cernox, RuOx, Germanium, Carbon Glass, "
+                 "thermistors (manual Table 4)"),
+    'R16K10UA': (16.0e3, 'ohm', "16 kohm FS, 10 uA - Pt 10k / NTC resistors"),
+    'R6K100UA': (6.25e3, 'ohm', "6.25 kohm FS, 100 uA - Platinum 1000"),
+    'R2K100UA': (2.0e3,  'ohm', "2 kohm FS, 100 uA - Platinum 1000"),
+    'R625R1MA': (625.0,  'ohm', "625 ohm FS, 1 mA - Platinum 100 above 800 K"),
+    'R312R1MA': (312.0,  'ohm', "312 ohm FS, 1 mA - Platinum 100 below 800 K"),
+    'Diode':    (2.5,    'V',   "2.5 V FS, 10 uA - silicon and GaAlAs diodes"),
+    'TC80':     (0.080,  'V',   "80 mV FS - thermocouple"),
+    'TC40':     (0.040,  'V',   "40 mV FS - thermocouple"),
+    'Snone':    (None,   '',    "disable the input channel"),
+}
+
+# v1.3: the scan of 31 Aug reopened the type question. SENTYPE? reported
+# SNONE, SIDIODE, R312R1MA, R2K100UA and TC80 across the factory table, so
+# the R-name family IS this firmware's own vocabulary and 'ACR' appears
+# nowhere in it. The 29 Aug send that used R8K10UA went to table index 1,
+# 'Lakeshore 10', which is a factory entry that cannot be written, so that
+# failure never tested the type at all. Neither name is now assumed to be
+# right, both are offered for the CALCUR header, and probe_calcur_type()
+# settles it against the instrument in about a second per candidate.
+CALCUR_MANUAL_TYPE_LIST = tuple(CALCUR_SENSOR_TYPES)
+CALCUR_SENSOR_TYPES.update(SENTYPE_SENSOR_TYPES)
+
+# Header types worth trying for an NTC resistor, best first. The firmware's
+# own spelling leads; the manual's CALCUR page follows.
+CALCUR_TYPE_CANDIDATES = ('R8K10UA', 'ACR', 'Diode')
+
+# Every name this module recognises anywhere, for full-scale lookups and for
+# callers that predate the split. Membership in this does NOT mean a name is
+# legal in a CALCUR header; only CALCUR_SENSOR_TYPES does.
+SENSOR_TYPES = dict(SENTYPE_SENSOR_TYPES)
+SENSOR_TYPES.update(CALCUR_SENSOR_TYPES)
+
+# Type strings this firmware is known to report when it has substituted a
+# diode for a type it could not identify. Edition 4 prints only 'Diode'; the
+# Rev 3.03A unit in this lab answers 'SiDiode'.
+DIODE_SUBSTITUTION_STRINGS = ('diode', 'sidiode', 'si diode', 'sidiod')
+
+# What the Cernox needs. Two commands, two vocabularies, in this order.
+#   sensor_type   goes in the CALCUR header       (manual p.173 list)
+#   sentype_type  goes in SENTYPE <senix>:TYPE    (manual p.187 list, Table 4)
 CERNOX_DEFAULTS = {
     'sensor_type': 'R8K10UA',
     'multiplier': '-1.0',
     'units': 'LOGOHM',
+    'sentype_type': 'R8K10UA',
 }
 
 # How each line of a CALCUR block is terminated on the wire.
@@ -896,8 +1046,15 @@ def thin_points(points, limit):
 
 
 def analyse_curve(points, units, sensor_type, multiplier, name,
-                  working_range=None):
+                  working_range=None, sentype_type=None):
     """Check a curve against everything the manual requires of one.
+
+    `sentype_type` is the input type that will be sent afterwards with
+    SENTYPE <index>:TYPE. It is what actually sets the input range and
+    excitation, so it, not the CALCUR header type, is what the curve's peak
+    resistance has to fit inside. Splitting the two vocabularies moved that
+    check here; without it, an ACR header would sail past a curve that is
+    off the top of an 8 kohm input.
 
     `working_range` is an optional (lowest, highest) pair of temperatures in
     Kelvin that the sensor will actually be used over. Where it is given, the
@@ -1014,36 +1171,27 @@ def analyse_curve(points, units, sensor_type, multiplier, name,
 
     # Sensor type against the data. This is the check that catches a Cernox
     # about to be installed on a 312 ohm Platinum range.
-    if sensor_type not in SENSOR_TYPES:
+    if sensor_type in SENTYPE_SENSOR_TYPES and \
+            sensor_type not in CALCUR_MANUAL_TYPE_LIST:
         warnings.append(
-            f"'{sensor_type}' is not one of the sensor types listed for the "
-            "Model 34. If the instrument does not recognise it, the manual "
-            "says it silently substitutes 'Diode'. The readback will show "
-            "what it actually kept.")
+            f"'{sensor_type}' is this firmware's own type name, reported by "
+            "SENTYPE? across the factory table, but the manual's CALCUR page "
+            "(printed p.173) prints a different list for the header: "
+            f"{', '.join(CALCUR_MANUAL_TYPE_LIST)}. Which of the two the "
+            "header parser wants is not settled. Nothing here can decide it; "
+            "the readback will, and the type probe settles it in one press.")
+    elif sensor_type not in CALCUR_SENSOR_TYPES:
+        errors.append(
+                f"'{sensor_type}' is not one of the types the CALCUR header "
+                f"accepts ({', '.join(CALCUR_SENSOR_TYPES)}, manual printed "
+                "p.173). The manual says an unidentified type is silently "
+                "replaced by Diode, so this would install the curve on a "
+                "diode input configuration.")
     else:
-        full_scale, full_scale_unit, _ = SENSOR_TYPES[sensor_type]
-        if full_scale is not None:
-            peak_ohms = None
-            if units == 'OHMS':
-                peak_ohms = stats['r_max']
-            elif units == 'LOGOHM':
-                peak_ohms = 10.0 ** stats['r_max']
-            if peak_ohms is not None and full_scale_unit == 'ohm':
-                stats['peak_ohms'] = peak_ohms
-                stats['full_scale'] = full_scale
-                if peak_ohms > full_scale:
-                    errors.append(
-                        f"The curve reaches {peak_ohms:,.1f} ohm but sensor "
-                        f"type {sensor_type} has a full scale of "
-                        f"{full_scale:,.0f} ohm. The coldest part of the "
-                        "curve would be off the top of the input range.")
-                elif peak_ohms > 0.9 * full_scale:
-                    warnings.append(
-                        f"The curve reaches {peak_ohms:,.1f} ohm, which is "
-                        f"{100 * peak_ohms / full_scale:.0f}% of the "
-                        f"{full_scale:,.0f} ohm full scale of {sensor_type}. "
-                        "There is little headroom below the coldest "
-                        "calibrated point.")
+        full_scale, full_scale_unit, _ = CALCUR_SENSOR_TYPES[sensor_type]
+        # The ohms-versus-volts check does not need a full-scale number, so it
+        # runs for ACR too, where the AC bridge autoranges and there is none.
+        if full_scale_unit:
             if units == 'VOLTS' and full_scale_unit != 'V':
                 errors.append(
                     f"The curve is in VOLTS but sensor type {sensor_type} is "
@@ -1052,6 +1200,47 @@ def analyse_curve(points, units, sensor_type, multiplier, name,
                 errors.append(
                     f"The curve is in {units} but sensor type "
                     f"{sensor_type} is a voltage input.")
+
+
+    # Input range headroom. The CALCUR header type does not set a range on
+    # this instrument -- SENTYPE:TYPE does -- so the curve's peak resistance
+    # is checked against the input type that will be sent afterwards. Where
+    # no input type is named, the check is skipped and said to be skipped
+    # rather than quietly passed.
+    peak_ohms = None
+    if units == 'OHMS':
+        peak_ohms = stats['r_max']
+    elif units == 'LOGOHM':
+        peak_ohms = 10.0 ** stats['r_max']
+    if peak_ohms is not None:
+        stats['peak_ohms'] = peak_ohms
+    if peak_ohms is not None and sentype_type in SENTYPE_SENSOR_TYPES:
+        range_scale, range_unit, _ = SENTYPE_SENSOR_TYPES[sentype_type]
+        if range_unit != 'ohm':
+            errors.append(
+                f"The curve is in {units} but the input type "
+                f"{sentype_type} is not a resistance input. The channel "
+                "would be configured for the wrong kind of sensor.")
+        elif range_scale is not None:
+            stats['full_scale'] = range_scale
+            if peak_ohms > range_scale:
+                errors.append(
+                    f"The curve reaches {peak_ohms:,.1f} ohm but the input "
+                    f"type {sentype_type} has a full scale of "
+                    f"{range_scale:,.0f} ohm. The coldest part of the curve "
+                    "would be off the top of the input range.")
+            elif peak_ohms > 0.9 * range_scale:
+                warnings.append(
+                    f"The curve reaches {peak_ohms:,.1f} ohm, which is "
+                    f"{100 * peak_ohms / range_scale:.0f}% of the "
+                    f"{range_scale:,.0f} ohm full scale of {sentype_type}. "
+                    "There is little headroom below the coldest calibrated "
+                    "point.")
+    elif peak_ohms is not None and units in ('OHMS', 'LOGOHM'):
+        warnings.append(
+            f"The curve peaks at {peak_ohms:,.1f} ohm, but no input type was "
+            "named, so nothing here has checked that it fits the input "
+            "range. Pick an input type (SENTYPE) to have that checked.")
 
     if units == 'OHMS' and stats['r_max'] > 0 and stats['r_min'] > 0 and \
             stats['r_max'] / stats['r_min'] > 20:
@@ -1082,6 +1271,138 @@ def analyse_curve(points, units, sensor_type, multiplier, name,
                 "dots, not a temperature.")
 
     return errors, warnings, stats
+
+
+def looks_like_factory_entry(name):
+    """True if this Master Sensor Table name is a factory curve.
+
+    Deliberately generous. A false positive costs one refused write and a
+    question to the operator; a false negative overwrites a factory curve, or
+    tries to and is discarded in silence, which is the failure this whole
+    version exists to stop.
+    """
+    text = str(name or '').strip().lower()
+    if not text:
+        return False
+    if USER_SLOT_NAME_RE.match(text):
+        return False
+    if text in APPENDIX_A_FACTORY_NAMES:
+        return True
+    return any(marker in text for marker in FACTORY_NAME_MARKERS)
+
+
+def looks_like_empty_user_slot(name):
+    """True if this is an untouched user slot, e.g. 'User Sensor 3'."""
+    return bool(USER_SLOT_NAME_RE.match(str(name or '').strip()))
+
+
+def analyse_sensor_table(entries):
+    """Work out the shape of the Master Sensor Table from a scan.
+
+    `entries` is what scan_sensor_table() returns: a list of dicts with
+    'index' and 'name', and optionally 'type' and 'multiplier'.
+
+    Returns a dict:
+        user_block_start   index of user curve 1, or None if not established
+        senix_offset       user_block_start - 1, or None
+        factory_indices    every index that looks factory-installed
+        user_indices       every index that looks like an untouched user slot
+        named_indices      indices holding something that is neither
+        confidence         'confirmed' | 'partial' | 'unknown'
+        notes              plain-language findings, in reading order
+
+    'confirmed' means a run of untouched user slots was found whose numbers
+    count up from 1 in step with their indices. Anything less says so.
+    """
+    result = {'user_block_start': None, 'senix_offset': None,
+              'factory_indices': [], 'user_indices': [], 'named_indices': [],
+              'confidence': 'unknown', 'notes': []}
+    if not entries:
+        result['notes'].append("The scan returned nothing.")
+        return result
+
+    numbered = {}
+    for entry in entries:
+        index, name = entry.get('index'), entry.get('name')
+        if index is None or name is None:
+            continue
+        match = USER_SLOT_NAME_RE.match(str(name).strip())
+        if match:
+            result['user_indices'].append(index)
+            token = match.group(1).upper()
+            # User Sensor 1..9 then A, B, C for 10, 11, 12 (Appendix A).
+            number = int(token) if token.isdigit() else 10 + ord(token) - 65
+            numbered[index] = number
+        elif looks_like_factory_entry(name):
+            result['factory_indices'].append(index)
+        else:
+            result['named_indices'].append(index)
+
+    if result['factory_indices']:
+        result['notes'].append(
+            f"Factory entries at index "
+            f"{_render_index_run(result['factory_indices'])}.")
+    if result['named_indices']:
+        result['notes'].append(
+            f"Index {_render_index_run(result['named_indices'])} "
+            "hold something that is neither a factory name nor an untouched "
+            "user slot. Those are most likely user slots somebody has "
+            "already filled, but nothing here can tell that from a factory "
+            "curve this module does not recognise, so they are left alone.")
+
+    if numbered:
+        # Every untouched slot implies where user curve 1 sits. If they all
+        # agree, that is as good as this can get without writing anything.
+        implied = {index - number + 1 for index, number in numbered.items()}
+        if len(implied) == 1:
+            start = implied.pop()
+            result['user_block_start'] = start
+            result['senix_offset'] = start - 1
+            result['confidence'] = 'confirmed'
+            result['notes'].append(
+                f"User curve 1 is Master Sensor Table index {start}: "
+                f"{len(numbered)} untouched user slot(s) all agree, so the "
+                f"offset is {start - 1}, not the {SENIX_OFFSET_DEFAULT} "
+                "Appendix A gives.")
+        else:
+            result['confidence'] = 'partial'
+            result['notes'].append(
+                "The untouched user slots disagree about where the block "
+                "starts: they imply " +
+                ", ".join(str(value) for value in sorted(implied)) +
+                ". Nothing is assumed from that. Read the front panel "
+                "Sensors list and say which index is user curve 1.")
+    else:
+        result['notes'].append(
+            "No untouched 'User Sensor n' entry was found anywhere in the "
+            "scanned range, so where the user block starts cannot be "
+            "established from names alone. Either every slot is already "
+            "filled, or this firmware names them differently. Read the "
+            "front panel Sensors list before writing anything.")
+
+    if result['senix_offset'] is not None and \
+            result['senix_offset'] != SENIX_OFFSET_DEFAULT:
+        result['notes'].append(
+            f"This does NOT match the manual. Appendix A gives an offset of "
+            f"{SENIX_OFFSET_DEFAULT}; this instrument uses "
+            f"{result['senix_offset']}. The instrument wins.")
+    return result
+
+
+def _render_index_run(indices):
+    """'0-9, 13, 15-17' from a list of integers. Cosmetic only."""
+    if not indices:
+        return "(none)"
+    ordered = sorted(set(indices))
+    runs, start, previous = [], ordered[0], ordered[0]
+    for value in ordered[1:]:
+        if value == previous + 1:
+            previous = value
+            continue
+        runs.append((start, previous))
+        start = previous = value
+    runs.append((start, previous))
+    return ", ".join(str(a) if a == b else f"{a}-{b}" for a, b in runs)
 
 
 def build_crv_lines(name, sensor_type, multiplier, units, points):
@@ -1232,6 +1553,159 @@ def compare_curves(sent_points, read_points, read_texts=None,
 
     result['matched'] = not result['problems']
     return result
+
+
+def compare_headers(expected, header):
+    """Which of the four CALCUR header fields survived the round trip.
+
+    Returns a dict of field -> (sent, read, matched). The multiplier is
+    compared numerically, the three strings case-insensitively after
+    stripping, because the instrument is free to echo its own casing.
+    """
+    fields = {}
+
+    sent_name = str(expected.get('name', '')).strip()
+    read_name = str(header.get('name', '')).strip()
+    fields['name'] = (sent_name, read_name, sent_name == read_name)
+
+    sent_type = str(expected.get('sensor_type', '')).strip()
+    read_type = str(header.get('sensor_type', '')).strip()
+    fields['sensor_type'] = (sent_type, read_type,
+                             sent_type.upper() == read_type.upper())
+
+    sent_units = str(expected.get('units', '')).strip()
+    read_units = str(header.get('units', '')).strip()
+    fields['units'] = (sent_units, read_units,
+                       sent_units.upper() == read_units.upper())
+
+    sent_mult_text = str(expected.get('multiplier', '')).strip()
+    read_mult = header.get('multiplier')
+    try:
+        sent_mult = float(sent_mult_text)
+        matched = (read_mult is not None and
+                   abs(float(read_mult) - sent_mult) <= 1e-4)
+        sent_shown = f"{sent_mult:+g}"
+    except (TypeError, ValueError):
+        # An unparseable multiplier is a form problem, not a transfer
+        # problem, and the form checks catch it. Do not report it as a
+        # mismatch here and send the operator after the wrong thing.
+        matched, sent_shown = True, sent_mult_text
+    read_shown = f"{float(read_mult):+g}" if read_mult is not None else ""
+    fields['multiplier'] = (sent_shown, read_shown, matched)
+    return fields
+
+
+def classify_verify(expected, header, comparison, baseline_header=None):
+    """Work out WHAT went wrong, not just THAT something did.
+
+    This exists because of the 29 Aug 2026 failure, where the console
+    reported '129 points sent, 124 read back' and advised changing the line
+    ending. Both were wrong. All four header fields had come back as a
+    different curve entirely, which meant the block never landed and the slot
+    still held its previous contents. The 124 points were that other curve's
+    points, not 129 of ours with five lost, and no line ending would have
+    changed anything.
+
+    `baseline_header` is what the slot held BEFORE the send, where the caller
+    read it first. When the readback equals the baseline the conclusion is no
+    longer an inference at all, and the verdict says so.
+
+    Returns (verdict, headline, advice) where verdict is one of:
+        'verified'      everything matched
+        'not_written'   the slot holds a different curve; nothing landed
+        'type_only'     the block landed, the sensor type was substituted
+        'points'        the header is right but points differ or are missing
+        'mixed'         some header fields differ, no clean story
+    """
+    fields = compare_headers(expected, header)
+    header_ok = all(matched for _, _, matched in fields.values())
+    points_ok = comparison['matched']
+    read_type = fields['sensor_type'][1].strip().lower()
+    substituted = read_type in DIODE_SUBSTITUTION_STRINGS
+
+    if header_ok and points_ok:
+        return ('verified', "", "")
+
+    identical_to_baseline = False
+    if baseline_header:
+        identical_to_baseline = all(
+            str(baseline_header.get(key, '')).strip().upper() ==
+            str(header.get(key, '')).strip().upper()
+            for key in ('name', 'sensor_type', 'units'))
+
+    wholly_different = (not fields['name'][2] and
+                        not fields['sensor_type'][2] and
+                        not fields['units'][2])
+
+    if identical_to_baseline or wholly_different:
+        if identical_to_baseline:
+            headline = (
+                "NOTHING WAS WRITTEN. The slot reads back exactly as it did "
+                "before the send: same name, same type, same units. The "
+                "instrument discarded the whole block.")
+        else:
+            headline = (
+                "NOTHING WAS WRITTEN. The name, the sensor type and the "
+                "units all came back different, so the slot still holds "
+                "another curve entirely and the block was discarded.")
+        advice = (
+            "The point count is NOT evidence here: those points belong to "
+            "the curve that was already in the slot, so a shortfall means "
+            "nothing and changing the line ending will not help. Check, in "
+            "this order: (1) the sensor type is one the CALCUR header "
+            "accepts -- " + ", ".join(CALCUR_SENSOR_TYPES) + " -- because a "
+            "SENTYPE name such as R8K10UA is not; (2) the name is 4 to 15 "
+            "printable ASCII characters; (3) the units are OHMS, VOLTS or "
+            "LOGOHM. Only if all three are already right is the line ending "
+            "worth trying.")
+        return ('not_written', headline, advice)
+
+    if substituted and fields['name'][2] and fields['units'][2]:
+        headline = (
+            f"The curve landed, but the sensor type came back as "
+            f"'{fields['sensor_type'][1]}' where "
+            f"'{fields['sensor_type'][0]}' was sent. The name and the units "
+            "survived, so the block was parsed and only the type was "
+            "replaced.")
+        advice = (
+            "That is the documented silent substitution: the firmware could "
+            "not identify the type and used a diode instead. A Cernox on a "
+            "diode input configuration reads nonsense. Set the type to ACR, "
+            "which is the CALCUR spelling for an NTC resistor, and resend; "
+            "then set the input range separately with "
+            "SENTYPE <index>:TYPE R8K10UA.")
+        return ('type_only', headline, advice)
+
+    if header_ok and not points_ok:
+        if comparison['read_count'] != comparison['sent_count']:
+            headline = (
+                f"The header is correct but {comparison['sent_count']} "
+                f"points were sent and {comparison['read_count']} came back.")
+            advice = (
+                "The header arrived, so the block is being parsed and the "
+                "loss is in the point lines themselves. The instrument "
+                "deletes entries whose numeric fields it cannot parse. Try "
+                "another line ending under Advanced, and raise "
+                "CURVE_LINE_GAP_S if this firmware is dropping bytes under "
+                "back-to-back traffic.")
+        else:
+            headline = ("The header is correct but some points differ from "
+                        "what was sent.")
+            advice = ("The differences are listed above. Do not use this "
+                      "sensor: an interpolation table that is wrong in the "
+                      "middle gives a plausible temperature that is not the "
+                      "right one.")
+        return ('points', headline, advice)
+
+    differing = [name for name, (_, _, matched) in fields.items()
+                 if not matched]
+    headline = ("Header fields that did not survive: " +
+                ", ".join(differing) + ".")
+    advice = ("This does not match either known failure mode, so nothing "
+              "here should be guessed at. Read the slot back with the "
+              "inspect button, compare it with the .crv on disk, and check "
+              "the raw reply printed above before sending anything else.")
+    return ('mixed', headline, advice)
 
 
 # ===============================================================================
@@ -1561,10 +2035,15 @@ class CurveLoaderBackend:
         """
         if not self.link:
             raise ConnectionError("Not connected to instrument.")
-        if not (MIN_USER_CURVE <= index <= MAX_USER_CURVE):
+        # v1.2: the number after CALCUR is no longer assumed to be 1-12. On
+        # this firmware it may be a Master Sensor Table index, which runs
+        # higher, so the range check is against the table rather than the
+        # user-curve count. The caller works out the number; refuse_factory
+        # is what stops it being a protected slot.
+        if not (0 <= index <= MASTER_TABLE_SCAN_MAX):
             raise ValueError(
-                f"User curve index must be {MIN_USER_CURVE} to "
-                f"{MAX_USER_CURVE} on a Model 34, not {index}.")
+                f"CALCUR index must be 0 to {MASTER_TABLE_SCAN_MAX}, "
+                f"not {index}.")
         ending = self.resolve_line_ending(line_ending)
         block = [f"CALCUR {index}"] + list(lines)
         for position, line in enumerate(block):
@@ -1593,10 +2072,10 @@ class CurveLoaderBackend:
         """
         if not self.link:
             raise ConnectionError("Not connected to instrument.")
-        if not (MIN_USER_CURVE <= index <= MAX_USER_CURVE):
+        if not (0 <= index <= MASTER_TABLE_SCAN_MAX):
             raise ValueError(
-                f"User curve index must be {MIN_USER_CURVE} to "
-                f"{MAX_USER_CURVE} on a Model 34, not {index}.")
+                f"CALCUR index must be 0 to {MASTER_TABLE_SCAN_MAX}, "
+                f"not {index}.")
 
         instrument = self.link.instrument
         previous_timeout = instrument.timeout
@@ -1627,9 +2106,50 @@ class CurveLoaderBackend:
     # -- sensor table and channel assignment --
 
     @staticmethod
-    def senix_for_user_curve(index):
-        """Master Sensor Table index for user curve `index` (manual p.220)."""
-        return index + SENIX_OFFSET
+    def senix_for_user_curve(index, offset=None):
+        """Master Sensor Table index for user curve `index`.
+
+        `offset` comes from a scan where one has been run. Where it has not,
+        this falls back to the Appendix A value, which this lab's Rev 3.03A
+        is known to disagree with, so every caller that uses the fallback
+        must say so rather than print the number as if it were established.
+        """
+        return index + (SENIX_OFFSET_DEFAULT if offset is None else offset)
+
+    def scan_sensor_table(self, limit=MASTER_TABLE_SCAN_MAX, progress=None):
+        """Walk the Master Sensor Table and report what is in it.
+
+        READ-ONLY. Three queries per index and not one write: no CALCUR, no
+        SENTYPE set, no loop, setpoint, heater or reset command. Safe to run
+        with a cryostat controlling.
+
+        CALCUR? is deliberately NOT used here. On this firmware one of those
+        takes about twelve seconds, so thirty-two of them is six minutes on
+        the bus; SENTYPE? answers in well under a second and gives the name,
+        which is what identifies a slot. Read the curve itself afterwards,
+        at the one or two indices that matter.
+
+        Returns a list of dicts with 'index', 'name', 'type', 'multiplier'.
+        An index that will not answer is included with None fields rather
+        than dropped, because a gap in the table is itself informative.
+        """
+        if not self.link:
+            raise ConnectionError("Not connected to instrument.")
+        entries = []
+        for index in range(0, limit + 1):
+            entry = {'index': index}
+            for key, command in (('name', f"SENTYPE? {index}"),
+                                 ('type', f"SENTYPE {index}:TYPE?"),
+                                 ('multiplier', f"SENTYPE {index}:MULTIPLY?")):
+                try:
+                    value = self.link.query(command)
+                    entry[key] = value if value else None
+                except Exception:
+                    entry[key] = None
+            entries.append(entry)
+            if progress:
+                progress(index + 1, limit + 1, entry)
+        return entries
 
     def get_sensor_table_entry(self, senix):
         """Name, type and multiplier of one Master Sensor Table entry.
@@ -1657,6 +2177,96 @@ class CurveLoaderBackend:
         self.link.write(f'SENTYPE {senix}:NAME "{name}"')
         time.sleep(CRYOCON_MIN_GAP_S)
         return self.link.query(f"SENTYPE {senix}:NAME?")
+
+    def set_sensor_type(self, senix, stype):
+        """Set the input range and excitation for a user sensor.
+
+        This is the SECOND half of installing a Cernox and it is a different
+        command with a different vocabulary from the CALCUR header. The
+        manual (printed p.187) lists R16K10UA, R8K10UA, R6K100UA, R2K100UA,
+        R625R1MA, R312R1MA, Diode, Snone, TC80 and TC40 here. Table 4
+        (printed p.15) gives R8K10UA for a Cernox: 8 kohm full scale, 10 uA.
+
+        Writes, then reads back, then returns what the instrument says. It
+        does not judge the answer; the caller compares, because a firmware
+        revision that spells its types differently should be reported rather
+        than worked around silently.
+        """
+        if not self.link:
+            raise ConnectionError("Not connected to instrument.")
+        if stype not in SENTYPE_SENSOR_TYPES:
+            raise ValueError(
+                f"'{stype}' is not one of the SENTYPE:TYPE names the manual "
+                f"lists ({', '.join(SENTYPE_SENSOR_TYPES)}).")
+        self.link.write(f"SENTYPE {senix}:TYPE {stype}")
+        time.sleep(CRYOCON_MIN_GAP_S)
+        return self.link.query(f"SENTYPE {senix}:TYPE?")
+
+    def probe_calcur_type(self, index, candidates, units, multiplier,
+                          points, line_ending, log=None):
+        """Find out which header type spelling this firmware actually keeps.
+
+        Sends a MINIMAL two-point curve for each candidate to `index` and
+        reads the header back. Two points is the manual's minimum, so each
+        round is seven writes rather than a hundred and thirty, and the whole
+        probe takes seconds. The two points are the real curve's own ends, so
+        the values are in range and in the right units.
+
+        This DOES write, to `index` only, and the caller is responsible for
+        having confirmed that index is a user slot. Whatever ends up there is
+        rubbish either way and is meant to be overwritten by the real curve
+        immediately afterwards.
+
+        Returns a list of (candidate, kept_type, name_survived, units_kept),
+        in the order tried.
+        """
+        if not self.link:
+            raise ConnectionError("Not connected to instrument.")
+        ordered = sorted(points, key=lambda pair: pair[1])
+        ends = [ordered[0], ordered[-1]]
+        results = []
+        for candidate in candidates:
+            probe_name = "PROBE " + candidate[:9]
+            lines = build_crv_lines(probe_name, candidate, multiplier,
+                                    units, ends)
+            if log:
+                log(f"  Trying header type '{candidate}' as "
+                    f"'{probe_name}' ...")
+            self.send_curve(index, lines, line_ending)
+            header, _, raw = self.read_slot_curve(index)
+            if header is None:
+                results.append((candidate, None, False, None))
+                if log:
+                    log("    nothing readable came back.")
+                continue
+            kept = header['sensor_type'].strip()
+            name_ok = header['name'].strip() == probe_name
+            units_kept = header['units'].strip()
+            results.append((candidate, kept, name_ok, units_kept))
+            if log:
+                verdict = ("the block landed" if name_ok
+                           else "the block was DISCARDED")
+                log(f"    name back as '{header['name'].strip()}', type "
+                    f"'{kept}', units '{units_kept}' -- {verdict}.")
+        return results
+
+    def read_slot_curve(self, index):
+        """Read a slot and parse it. Returns (header, points, raw_text).
+
+        header and points are None when the slot is empty or the reply is not
+        a curve; raw_text is always whatever came back, so the caller can
+        print it. Used for the before-and-after snapshots that let
+        classify_verify() say 'nothing was written' as a fact rather than an
+        inference.
+        """
+        text = self.read_curve(index)
+        if not text.strip():
+            return None, None, text
+        try:
+            header, points = parse_crv_text(text, f"slot {index}")
+        except CurveFileError:
+            return None, None, text
+        return header, points, text
 
     def get_channel_sensor_index(self, channel):
         """What sensor index a channel is using.
@@ -1711,7 +2321,7 @@ class CurveLoaderGUI:
     what would be sent, so nothing goes to the instrument unseen.
     """
 
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "1.3"
     PROGRAM_NAME = "Cryocon 34 Sensor Curve Loader"
 
     # Colour scheme, shared with the sibling Cryocon modules.
@@ -1767,6 +2377,11 @@ class CurveLoaderGUI:
         self.merge_notes = []
         self.curve_points = []        # (temperature, reading) in target units
         self.curve_lines = []         # the CALCUR block body
+        # v1.2 sensor-table state. senix_offset stays None until a scan has
+        # established it, so nothing prints an offset as fact that came from
+        # a manual this instrument disagrees with.
+        self.table_map = None
+        self.senix_offset = None
         self.curve_errors = []
         self.curve_warnings = []
         self.curve_stats = {}
@@ -2023,11 +2638,12 @@ class CurveLoaderGUI:
         name_entry.grid(row=1, column=1, sticky='ew', padx=10, pady=4)
         self.name_var.trace_add('write', lambda *_: self._rebuild_curve())
 
-        ttk.Label(frame, text="Sensor type:").grid(
+        ttk.Label(frame, text="Curve type (CALCUR):").grid(
             row=2, column=0, sticky='w', padx=10, pady=4)
         self.type_var = tk.StringVar(value=CERNOX_DEFAULTS['sensor_type'])
         type_combo = ttk.Combobox(frame, textvariable=self.type_var,
-                                  values=list(SENSOR_TYPES), state='normal')
+                                  values=list(CALCUR_SENSOR_TYPES),
+                                  state='normal')
         type_combo.grid(row=2, column=1, sticky='ew', padx=10, pady=4)
         type_combo.bind('<<ComboboxSelected>>',
                         lambda *_: self._rebuild_curve())
@@ -2038,6 +2654,28 @@ class CurveLoaderGUI:
             font=('Segoe UI', 9, 'italic'), wraplength=480, justify='left')
         self.type_hint.grid(row=3, column=0, columnspan=2, sticky='w',
                             padx=10, pady=(0, 4))
+
+        ttk.Label(frame, text="Input type (SENTYPE):").grid(
+            row=31, column=0, sticky='w', padx=10, pady=4)
+        self.sentype_var = tk.StringVar(
+            value=CERNOX_DEFAULTS['sentype_type'])
+        sentype_combo = ttk.Combobox(
+            frame, textvariable=self.sentype_var,
+            values=['(leave alone)'] + list(SENTYPE_SENSOR_TYPES),
+            state='readonly')
+        sentype_combo.grid(row=31, column=1, sticky='ew', padx=10, pady=4)
+        ttk.Label(
+            frame,
+            text=("Two different lists, two different commands. The curve\n"
+                  "type above goes in the CALCUR header and its list is\n"
+                  "Diode, ACR, 31kR, 3.1kR, 312R, 625R, TC80, TC40, None.\n"
+                  "The input type here goes in SENTYPE <index>:TYPE and sets\n"
+                  "the range and excitation; Table 4 gives R8K10UA for a\n"
+                  "Cernox. Sending a SENTYPE name in a CALCUR header is what\n"
+                  "makes the instrument silently store a diode instead."),
+            background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
+            justify='left').grid(row=32, column=0, columnspan=2, sticky='w',
+                                 padx=10, pady=(0, 6))
 
         ttk.Label(frame, text="Multiplier:").grid(
             row=4, column=0, sticky='w', padx=10, pady=4)
@@ -2083,21 +2721,26 @@ class CurveLoaderGUI:
             justify='left').grid(row=7, column=0, columnspan=2, sticky='w',
                                  padx=10, pady=(0, 6))
 
-        ttk.Label(frame, text="User curve slot:").grid(
+        ttk.Label(frame, text="Target table index:").grid(
             row=8, column=0, sticky='w', padx=10, pady=4)
-        self.slot_var = tk.StringVar(value="1")
-        slot_combo = ttk.Combobox(
+        # v1.3: the target is a Master Sensor Table index, not a user curve
+        # number. Both CALCUR? 1 and CALCUR? 15 came back holding the entry
+        # at that table index, so the index is what the instrument speaks,
+        # and the user-curve number is only a label for it. The list is
+        # rebuilt from the scan so the operator picks a slot by its name.
+        self.slot_var = tk.StringVar(value="16")
+        self.slot_combo = ttk.Combobox(
             frame, textvariable=self.slot_var,
-            values=[str(n) for n in
-                    range(MIN_USER_CURVE, MAX_USER_CURVE + 1)],
-            state='readonly', width=6)
-        slot_combo.grid(row=8, column=1, sticky='w', padx=10, pady=4)
-        slot_combo.bind('<<ComboboxSelected>>', lambda *_: self._refresh_slot())
+            values=[str(n) for n in range(0, MASTER_TABLE_SCAN_MAX + 1)],
+            state='readonly', width=34)
+        self.slot_combo.grid(row=8, column=1, sticky='w', padx=10, pady=4)
+        self.slot_combo.bind('<<ComboboxSelected>>',
+                             lambda *_: self._refresh_slot())
 
         self.slot_hint = ttk.Label(
             frame,
-            text=("Slot 1 is Master Sensor Table index 10. Sending overwrites "
-                  "whatever is in that slot."),
+            text=("Master Sensor Table index. Map the table to see what each "
+                  "one holds. Sending overwrites whatever is in it."),
             background=self.CLR_FRAME_BG, font=('Segoe UI', 9, 'italic'),
             wraplength=480, justify='left')
         self.slot_hint.grid(row=9, column=0, columnspan=2, sticky='w',
@@ -2156,6 +2799,40 @@ class CurveLoaderGUI:
                    command=self._inspect_slot).grid(
             row=3, column=0, columnspan=2, sticky='ew', padx=10, pady=(0, 8))
 
+        ttk.Separator(frame, orient='horizontal').grid(
+            row=4, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
+        ttk.Label(
+            frame,
+            text=("Appendix A of the manual contradicts itself about where\n"
+                  "the user curves live, and this firmware disagrees with\n"
+                  "both halves of it. Map the table before writing anything.\n"
+                  "This sends queries only: no CALCUR, no SENTYPE set, no\n"
+                  "loop, setpoint or heater command. Safe with a cryostat\n"
+                  "controlling."),
+            background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
+            justify='left').grid(row=5, column=0, columnspan=2, sticky='w',
+                                 padx=10, pady=(0, 4))
+        ttk.Button(frame, text="Map the Master Sensor Table (read only)",
+                   command=self._scan_table).grid(
+            row=6, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
+        self.table_label = ttk.Label(
+            frame, text="Not mapped. The offset below is the manual's guess.",
+            font=('Segoe UI', 9, 'italic'), background=self.CLR_FRAME_BG,
+            foreground=self.CLR_STATUS_WARN, wraplength=480, justify='left')
+        self.table_label.grid(row=7, column=0, columnspan=2, sticky='w',
+                              padx=10, pady=(0, 6))
+
+        ttk.Label(
+            frame,
+            text=("Settled 31 Aug: CALCUR? 1 returned the entry at table\n"
+                  "index 1 and CALCUR? 15 returned the entry at index 15, so\n"
+                  "the number after CALCUR is a Master Sensor Table index,\n"
+                  "not a user curve number. Appendix A is wrong about this.\n"
+                  "The target is picked by index in step 2."),
+            background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
+            justify='left').grid(row=8, column=0, columnspan=2, sticky='w',
+                                 padx=10, pady=(0, 8))
+
     def _create_send_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Step 5  ·  Send and check')
         frame.grid(row=grid_row, column=0, sticky='new', pady=5, padx=10)
@@ -2177,8 +2854,49 @@ class CurveLoaderGUI:
                    command=self._verify_only).grid(
             row=2, column=0, sticky='ew', padx=10, pady=(0, 6))
 
+        ttk.Separator(frame, orient='horizontal').grid(
+            row=3, column=0, sticky='ew', padx=10, pady=6)
+        ttk.Label(
+            frame,
+            text=("Or run every step in order, each one checked before the\n"
+                  "next, stopping at the first failure. This is the one to\n"
+                  "use: it reads the slot BEFORE sending, so a readback that\n"
+                  "comes back unchanged is reported as 'nothing was written'\n"
+                  "rather than as a point mismatch."),
+            background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
+            justify='left').grid(row=4, column=0, sticky='w',
+                                 padx=10, pady=(0, 4))
+
+        self.sequence_assign_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            frame,
+            text=("Include the channel step: put the curve on the channel "
+                  "chosen in step 6"),
+            variable=self.sequence_assign_var).grid(
+            row=5, column=0, sticky='w', padx=10, pady=(0, 4))
+
+        ttk.Button(frame,
+                   text="Probe which header type this firmware accepts",
+                   command=self._probe_type).grid(
+            row=55, column=0, sticky='ew', padx=10, pady=(0, 6))
+        ttk.Label(
+            frame,
+            text=("Writes a throwaway two-point curve to the target index,\n"
+                  "once per candidate spelling, and reads the header back.\n"
+                  "Seconds, not minutes. Overwrite it with the real curve\n"
+                  "immediately afterwards."),
+            background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
+            justify='left').grid(row=56, column=0, sticky='w',
+                                 padx=10, pady=(0, 6))
+
+        self.sequence_btn = ttk.Button(
+            frame, text="Run the whole sequence and check every step",
+            style='Send.TButton', command=self._run_full_sequence)
+        self.sequence_btn.grid(row=6, column=0, sticky='ew', padx=10,
+                               pady=(0, 6))
+
         self.progress = ttk.Progressbar(frame, mode='determinate')
-        self.progress.grid(row=3, column=0, sticky='ew', padx=10, pady=(0, 8))
+        self.progress.grid(row=7, column=0, sticky='ew', padx=10, pady=(0, 8))
 
     def _create_channel_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(
@@ -2258,6 +2976,36 @@ class CurveLoaderGUI:
             background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
             justify='left').grid(row=3, column=0, columnspan=2, sticky='w',
                                  padx=10, pady=(0, 8))
+
+        ttk.Separator(self.advanced_frame, orient='horizontal').grid(
+            row=4, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
+        ttk.Button(self.advanced_frame,
+                   text="Run the built-in checks (no instrument needed)",
+                   command=self._run_self_test).grid(
+            row=5, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
+        ttk.Label(
+            self.advanced_frame,
+            text=("Twenty-one checks on the file readers, the unit maths, "
+                  "the two sensor-type\nlists and the readback classifier, "
+                  "run on made-up data. Worth a press after\nany edit to "
+                  "this file, and before a session on a cold cryostat."),
+            background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
+            justify='left').grid(row=6, column=0, columnspan=2, sticky='w',
+                                 padx=10, pady=(0, 8))
+
+    def _run_self_test(self):
+        """Run the offline checks and print them in the console."""
+        self.log("")
+        passed = run_self_test(report=self.log)
+        if passed:
+            self._post('dialog', 'info', "Checks Passed",
+                       "Every built-in check passed. The console has the "
+                       "list.")
+        else:
+            self._post('dialog', 'error', "Checks Failed",
+                       "At least one built-in check failed. The console "
+                       "names them. Do not send a curve until this is "
+                       "resolved.")
 
     def _toggle_advanced(self):
         if self.advanced_visible:
@@ -2407,6 +3155,21 @@ class CurveLoaderGUI:
         elif kind == 'progress':
             self.progress['maximum'] = event[2]
             self.progress['value'] = event[1]
+        elif kind == 'table_mapped':
+            analysis = event[1]
+            self._repopulate_slot_choices()
+            self._refresh_slot()
+            if analysis['confidence'] == 'confirmed':
+                self.table_label.config(
+                    text=(f"Mapped. User curve 1 is index "
+                          f"{analysis['user_block_start']}, offset "
+                          f"{analysis['senix_offset']}."),
+                    foreground=self.CLR_STATUS_OK)
+            else:
+                self.table_label.config(
+                    text=("Mapped, but where the user block starts is still "
+                          "unsettled. See the console."),
+                    foreground=self.CLR_STATUS_WARN)
         elif kind == 'dialog':
             _, level, title, text = event
             {'info': messagebox.showinfo,
@@ -2623,36 +3386,307 @@ class CurveLoaderGUI:
         return (low, high)
 
     def _apply_cernox_defaults(self):
-        """The Cernox row of Table 4 in the manual, in one press."""
+        """The Cernox settings from the manual, in one press.
+
+        Two fields from two different pages: the CALCUR header type from the
+        curve-transfer page, and the input type from Table 4. They are not
+        the same name and putting one where the other belongs is what makes
+        the instrument store a diode instead.
+        """
         self.type_var.set(CERNOX_DEFAULTS['sensor_type'])
         self.multiplier_var.set(CERNOX_DEFAULTS['multiplier'])
         self.units_var.set(CERNOX_DEFAULTS['units'])
-        self.log("Applied the manual's Cernox settings: "
+        self.sentype_var.set(CERNOX_DEFAULTS['sentype_type'])
+        self.log("Applied the manual's Cernox settings: CALCUR header type "
                  f"{CERNOX_DEFAULTS['sensor_type']}, multiplier "
                  f"{CERNOX_DEFAULTS['multiplier']}, "
-                 f"{CERNOX_DEFAULTS['units']} "
-                 "(Model 34 manual Table 4, 10 uA excitation).")
+                 f"{CERNOX_DEFAULTS['units']}; input type "
+                 f"{CERNOX_DEFAULTS['sentype_type']} for SENTYPE:TYPE "
+                 "(Table 4, 8 kohm full scale, 10 uA excitation).")
         self._rebuild_curve()
 
     def _update_type_hint(self):
         chosen = self.type_var.get().strip()
-        if chosen in SENSOR_TYPES:
-            self.type_hint.config(text=SENSOR_TYPES[chosen][2])
+        if chosen in CALCUR_SENSOR_TYPES:
+            self.type_hint.config(text=CALCUR_SENSOR_TYPES[chosen][2])
+        elif chosen in SENTYPE_SENSOR_TYPES:
+            self.type_hint.config(
+                text=(f"'{chosen}' is a SENTYPE:TYPE name and the CALCUR "
+                      "header will not recognise it, so the instrument would "
+                      "silently store a diode. Use ACR here for an NTC "
+                      f"sensor and put {chosen} in the input type field "
+                      "below."))
         else:
             self.type_hint.config(
-                text=("Not one of the Model 34's listed types. If the "
-                      "instrument does not recognise it, the manual says it "
-                      "silently uses 'Diode' instead."))
+                text=("Not one of the types the CALCUR header accepts "
+                      f"({', '.join(CALCUR_SENSOR_TYPES)}). The manual says "
+                      "an unidentified type is silently replaced by Diode."))
+
+    # -----------------------------------------------------------------------
+    # WHERE THE SLOT ACTUALLY IS  (v1.2)
+    # -----------------------------------------------------------------------
+
+    def _check_target_before_send(self, slot):
+        """Refuse a write that the scan says would hit a factory entry.
+
+        Returns the CALCUR index to use, or None if the operator should not
+        send. Also warns, but does not block, when no scan has been run:
+        blocking there would be wrong, because the scan needs a connection
+        and the operator may have mapped the table in an earlier session.
+        """
+        calcur_index = self._calcur_index_for(slot)
+        reason = self._target_is_protected(calcur_index)
+        if reason:
+            self.log("REFUSED. " + reason)
+            self._post('dialog', 'error', "Protected Slot",
+                       reason + "\n\nNothing was sent. Map the table, pick "
+                       "an index the scan calls an empty user slot, or "
+                       "switch how the CALCUR index is interpreted.")
+            return None
+        if not self._offset_is_confirmed():
+            if not messagebox.askyesno(
+                    "Table Not Mapped",
+                    "The Master Sensor Table has not been mapped in this "
+                    "session, so where the user curves live is taken from "
+                    "Appendix A, which this firmware is known to disagree "
+                    "with.\n\nThe worst case is a write that is silently "
+                    "discarded, which is recoverable and is exactly what the "
+                    "readback will report.\n\nSend anyway?"):
+                self.log("Send cancelled: the table has not been mapped.")
+                return None
+        return calcur_index
+
+    @staticmethod
+    def _slot_index(raw):
+        """The table index out of whatever the picker is showing.
+
+        The combobox shows '16 - User Sensor 2 [empty user slot]' once the
+        table has been mapped, so the number is taken off the front rather
+        than assuming the whole string is one.
+        """
+        return int(str(raw).strip().split()[0])
+
+    def _senix_for(self, slot):
+        """The Master Sensor Table index. In v1.3 that IS the target.
+
+        Earlier versions computed this from a user-curve number and an
+        offset. That was the wrong shape: the instrument answers CALCUR? and
+        SENTYPE? on the same table index, so the index is the real address
+        and the user-curve number is a name for it. Kept as a method so the
+        rest of the module reads the same.
+        """
+        return self._slot_index(slot)
+
+    def _user_curve_number_for(self, index):
+        """Which user curve an index is, where the scan established that."""
+        if self.senix_offset is None:
+            return None
+        number = self._slot_index(index) - self.senix_offset
+        return number if MIN_USER_CURVE <= number <= MAX_USER_CURVE else None
+
+    def _offset_is_confirmed(self):
+        return self.senix_offset is not None
+
+    def _calcur_index_for(self, slot):
+        """The number to put after CALCUR for this user curve.
+
+        Two readings of the manual, and the operator picks. 'user' is what
+        Appendix A says; 'senix' is what both failed transfers are consistent
+        with, where CALCUR 1 addressed a protected factory diode and was
+        discarded without a word.
+        """
+        return self._senix_for(slot)
+
+    def _target_is_protected(self, calcur_index):
+        """Why this index must not be written to, or '' if it is fine.
+
+        Checked against the scan, so it can only speak about indices the scan
+        covered. An index nothing is known about returns '' and the baseline
+        read in the sequence is the next line of defence.
+        """
+        if not self.table_map:
+            return ""
+        for entry in self.table_map:
+            if entry.get('index') != calcur_index:
+                continue
+            name = entry.get('name')
+            if looks_like_factory_entry(name):
+                return (f"Master Sensor Table index {calcur_index} holds "
+                        f"'{name}', which is a factory entry. The manual "
+                        "(printed p.172) says factory curves cannot be "
+                        "changed or deleted by these commands, and this "
+                        "firmware discards such a write without reporting "
+                        "an error. That is what happened on 29 and 31 "
+                        "August.")
+            return ""
+        return ""
+
+    def _scan_table(self):
+        """Map the Master Sensor Table. Queries only, no writes."""
+        if not self._require_connection():
+            return
+        limit = MASTER_TABLE_SCAN_MAX
+
+        def job():
+            self.log("")
+            self.log(f"Mapping the Master Sensor Table, index 0 to {limit}. "
+                     "This sends queries only: no CALCUR, no SENTYPE set, no "
+                     "loop, setpoint or heater command.")
+            entries = self.backend.scan_sensor_table(
+                limit,
+                progress=lambda done, total, entry: self._set_progress(
+                    done, total))
+            self.table_map = entries
+            for entry in entries:
+                name = entry.get('name')
+                if name is None:
+                    self.log(f"  {entry['index']:>3}  (no answer)")
+                    continue
+                mark = "factory" if looks_like_factory_entry(name) else \
+                       ("empty user slot"
+                        if looks_like_empty_user_slot(name) else "in use")
+                self.log(f"  {entry['index']:>3}  {name:<16} "
+                         f"type={entry.get('type')}  "
+                         f"mult={entry.get('multiplier')}   [{mark}]")
+            analysis = analyse_sensor_table(entries)
+            self.log("")
+            for note in analysis['notes']:
+                self.log(f"  {note}")
+            self.senix_offset = analysis['senix_offset']
+            self._post('table_mapped', analysis)
+
+        self._run_in_worker("Mapping the sensor table", job)
+
+    def _probe_type(self):
+        """Settle the header-type question against the instrument."""
+        if not self.curve_points:
+            messagebox.showerror(
+                "Nothing Loaded",
+                "Load the sensor file first. The probe uses that curve's own "
+                "end points so the values it sends are in range.")
+            return
+        if not self._require_connection():
+            return
+        index = self._check_target_before_send(
+            self.slot_var.get())
+        if index is None:
+            return
+        candidates = list(CALCUR_TYPE_CANDIDATES)
+        if not messagebox.askyesno(
+                "Probe the header type?",
+                f"This writes a throwaway two-point curve to table index "
+                f"{index}, once for each of {', '.join(candidates)}, and "
+                "reads the header back each time.\n\nWhichever spelling "
+                "comes back with its name intact is the one this firmware "
+                "accepts. Whatever is left in the slot afterwards is "
+                "rubbish and must be overwritten by the real curve.\n\n"
+                "No loop, setpoint, heater or reset command is sent.\n\n"
+                "Go ahead?"):
+            self.log("Type probe cancelled.")
+            return
+
+        units = self.units_var.get().strip()
+        try:
+            multiplier = float(self.multiplier_var.get())
+        except ValueError:
+            multiplier = -1.0
+        points = list(self.curve_points)
+        ending = LINE_ENDINGS[self.ending_var.get()]
+
+        def job():
+            self.log("")
+            self.log(f"Probing which CALCUR header type index {index} "
+                     "accepts.")
+            results = self.backend.probe_calcur_type(
+                index, candidates, units, multiplier, points, ending,
+                log=self.log)
+            landed = [row for row in results if row[2]]
+            self.log("")
+            self.log("PROBE RESULT")
+            for candidate, kept, name_ok, units_kept in results:
+                mark = "ACCEPTED" if name_ok else "discarded"
+                self.log(f"  {candidate:<10} -> {mark}"
+                         + (f", stored as type '{kept}', units "
+                            f"'{units_kept}'" if kept else ""))
+            if not landed:
+                self.log("  None of them landed. The header type is not the "
+                         "obstacle: the block is being rejected for some "
+                         "other reason, or this index cannot be written. Try "
+                         "another index the scan calls an empty user slot, "
+                         "and if that also fails, try a different line "
+                         "ending under Advanced.")
+                self._post('dialog', 'warning', "No Candidate Accepted",
+                           "None of the header types landed. The console "
+                           "says what to try next. Nothing usable is in the "
+                           "slot.")
+                return
+            best = landed[0]
+            self.log(f"  Use '{best[0]}' in the curve type box. The "
+                     f"instrument stored it as '{best[1]}'.")
+            if best[1] and best[1].strip().lower() in \
+                    DIODE_SUBSTITUTION_STRINGS and \
+                    best[0].strip().lower() not in ('diode',):
+                self.log("  Note: the block landed but the type was still "
+                         "substituted for a diode, so the curve would be "
+                         "stored on a diode input configuration. Set the "
+                         "input type with SENTYPE afterwards and check it "
+                         "reads back.")
+            self._post('dialog', 'info', "Probe Complete",
+                       f"'{best[0]}' is accepted by this firmware.\n\n"
+                       f"Put it in the curve type box, then send the real "
+                       f"curve to index {index} to overwrite the probe "
+                       "leftovers.")
+
+        self._run_in_worker("Probing the header type", job)
+
+    def _repopulate_slot_choices(self):
+        """Show each table index with what it holds, so the pick is informed.
+
+        Factory entries stay in the list rather than being hidden. Hiding
+        them would make an operator wonder where index 1 went; showing them
+        marked, and refusing the write, says why.
+        """
+        if not self.table_map:
+            return
+        values = []
+        for entry in self.table_map:
+            name = entry.get('name')
+            if name is None:
+                continue
+            mark = ("factory" if looks_like_factory_entry(name) else
+                    "empty user slot" if looks_like_empty_user_slot(name)
+                    else "in use")
+            values.append(f"{entry['index']}  {name}  [{mark}]")
+        if values:
+            self.slot_combo['values'] = values
 
     def _refresh_slot(self):
         try:
-            slot = int(self.slot_var.get())
-        except ValueError:
+            slot = self._slot_index(self.slot_var.get())
+        except (ValueError, IndexError):
             return
-        senix = CurveLoaderBackend.senix_for_user_curve(slot)
-        self.slot_hint.config(
-            text=(f"User curve {slot} is Master Sensor Table index {senix}. "
-                  "Sending overwrites whatever is in that slot."))
+        senix = calcur = slot
+        held, kind = "", ""
+        for entry in (self.table_map or []):
+            if entry.get('index') == slot:
+                held = entry.get('name') or "(no answer)"
+                kind = ("a FACTORY entry, which cannot be written"
+                        if looks_like_factory_entry(held) else
+                        "an untouched user slot"
+                        if looks_like_empty_user_slot(held) else
+                        "already holding a curve somebody put there")
+                break
+        number = self._user_curve_number_for(slot)
+        label = (f" (user curve {number})" if number else "")
+        if held:
+            text = (f"CALCUR {calcur} addresses table index {senix}{label}, "
+                    f"which currently holds '{held}': {kind}. Sending "
+                    "overwrites it.")
+        else:
+            text = (f"CALCUR {calcur} addresses table index {senix}{label}. "
+                    "The table has not been mapped, so nothing here knows "
+                    "what is in it. Map it before sending.")
+        self.slot_hint.config(text=text)
 
     def _rebuild_curve(self):
         """Recompute the curve from the file and the header fields.
@@ -2714,7 +3748,8 @@ class CurveLoaderGUI:
         sensor_type = self.type_var.get().strip()
         errors, warnings, stats = analyse_curve(
             points, target_units, sensor_type, multiplier, name,
-            working_range=self._working_range())
+            working_range=self._working_range(),
+            sentype_type=self.sentype_var.get().strip())
         for note in self.merge_notes:
             warnings.append(note)
         if dropped:
@@ -3011,10 +4046,10 @@ class CurveLoaderGUI:
     def _inspect_slot(self):
         if not self._require_connection():
             return
-        slot = int(self.slot_var.get())
+        slot = self._slot_index(self.slot_var.get())
 
         def job():
-            senix = CurveLoaderBackend.senix_for_user_curve(slot)
+            senix = self._senix_for(slot)
             self.log(f"Reading user curve slot {slot} "
                      f"(sensor table index {senix}) ...")
             entry = self.backend.get_sensor_table_entry(senix)
@@ -3022,7 +4057,7 @@ class CurveLoaderGUI:
                 self.log(f"  SENTYPE {key}: {entry.get(key)}")
                 if entry.get(f"{key}_error"):
                     self.log(f"    ({entry[f'{key}_error']})")
-            text = self.backend.read_curve(slot)
+            text = self.backend.read_curve(self._calcur_index_for(slot))
             if not text.strip():
                 self.log(f"  Slot {slot} returned nothing. It is probably "
                          "empty, which is fine if you are about to fill it.")
@@ -3054,8 +4089,8 @@ class CurveLoaderGUI:
         if not self._require_connection():
             return
 
-        slot = int(self.slot_var.get())
-        senix = CurveLoaderBackend.senix_for_user_curve(slot)
+        slot = self._slot_index(self.slot_var.get())
+        senix = self._senix_for(slot)
         warning_text = ""
         if self.curve_warnings:
             warning_text = ("\n\nThere are warnings on this curve:\n  - " +
@@ -3075,6 +4110,9 @@ class CurveLoaderGUI:
             self.log("Send cancelled.")
             return
 
+        calcur_index = self._check_target_before_send(slot)
+        if calcur_index is None:
+            return
         lines = list(self.curve_lines)
         points = list(self.curve_points)
         ending = LINE_ENDINGS[self.ending_var.get()]
@@ -3085,10 +4123,28 @@ class CurveLoaderGUI:
         expected = self._expected_header()
 
         def job():
+            # Snapshot the slot first. Without it a readback that comes back
+            # as somebody else's curve can only be inferred to mean the send
+            # failed; with it, that is a comparison. It costs one query.
+            baseline_header = None
+            try:
+                baseline_header, baseline_points, _ = \
+                    self.backend.read_slot_curve(calcur_index)
+            except Exception as exc:
+                self.log(f"  Could not read the slot before sending: {exc}. "
+                         "Carrying on; the check afterwards will be a little "
+                         "less definite.")
+            if baseline_header is not None:
+                self.log(f"  Slot {slot} currently holds "
+                         f"'{baseline_header['name']}', "
+                         f"{baseline_header['sensor_type']}, "
+                         f"{baseline_header['units']}, "
+                         f"{len(baseline_points)} points. That is what is "
+                         "about to be overwritten.")
             self.log(f"Sending {len(lines) + 1} lines to user curve {slot} "
-                     f"(CALCUR {slot}) ...")
+                     f"(CALCUR {calcur_index}) ...")
             self.backend.send_curve(
-                slot, lines, ending,
+                calcur_index, lines, ending,
                 progress=lambda done, total, line: self._set_progress(
                     done, total))
             self.log(f"  All lines sent. Waited {CURVE_SETTLE_S:.1f} s for "
@@ -3103,7 +4159,8 @@ class CurveLoaderGUI:
                     self.log(f"  SENTYPE {senix}:NAME was refused: {exc}. "
                              "The name in the CALCUR header still stands.")
             if verify:
-                self._verify_against(points, slot, expected)
+                self._verify_against(points, slot, expected,
+                                     baseline_header=baseline_header)
             else:
                 self.log("Verification was switched off. Nothing has "
                          "confirmed what the instrument actually stored.")
@@ -3119,7 +4176,7 @@ class CurveLoaderGUI:
             return
         if not self._require_connection():
             return
-        slot = int(self.slot_var.get())
+        slot = self._slot_index(self.slot_var.get())
         points = list(self.curve_points)
         expected = self._expected_header()
         self._run_in_worker(
@@ -3141,59 +4198,54 @@ class CurveLoaderGUI:
             'sensor_type': self.type_var.get().strip(),
             'multiplier': self.multiplier_var.get().strip(),
             'units': self.units_var.get().strip(),
+            'sentype_type': self.sentype_var.get().strip(),
         }
 
-    def _verify_against(self, sent_points, slot, expected):
-        """Read the slot back and compare it, point by point, with what was
-        sent. Runs on the worker thread, so it touches no widget: `expected`
-        is the snapshot taken by _expected_header() before the job started."""
-        senix = CurveLoaderBackend.senix_for_user_curve(slot)
-        self.log(f"Reading user curve {slot} back with CALCUR? {slot} ...")
-        text = self.backend.read_curve(slot)
+    def _verify_against(self, sent_points, slot, expected,
+                        baseline_header=None):
+        """Read the slot back and compare it with what was sent.
+
+        Runs on the worker thread, so it touches no widget: `expected` is the
+        snapshot taken by _expected_header() before the job started.
+
+        `baseline_header` is what the slot held BEFORE the send, where the
+        caller took that snapshot. With it, "nothing was written" stops being
+        an inference and becomes a comparison.
+
+        Returns the verdict string from classify_verify() so a caller running
+        a sequence can decide whether to carry on.
+        """
+        senix = self._senix_for(slot)
+        index = self._calcur_index_for(slot)
+        self.log(f"Reading table index {index} back with "
+                 f"CALCUR? {index} ...")
+        text = self.backend.read_curve(self._calcur_index_for(slot))
         if not text.strip():
             self.log("VERIFY FAILED: the instrument sent nothing back. The "
                      "curve may not have been stored. Check the front panel "
                      "(Sensors key) before using this sensor.")
-            return
+            return 'empty'
         try:
             header, read_points = parse_crv_text(text, f"slot {slot}")
         except CurveFileError as exc:
             self.log(f"VERIFY FAILED: the reply could not be read as a "
                      f"curve: {exc}")
             self.log(f"  Raw reply, first 400 characters:\n{text[:400]}")
-            return
+            return 'unreadable'
 
         self.log(f"  The instrument reports: name '{header['name']}', type "
                  f"'{header['sensor_type']}', multiplier "
                  f"{header['multiplier']:+g}, units {header['units']}.")
 
-        problems = []
-        wanted_type = expected['sensor_type']
-        if header['sensor_type'].strip().upper() != wanted_type.upper():
-            problems.append(
-                f"the sensor type came back as '{header['sensor_type']}' "
-                f"where '{wanted_type}' was sent")
-            if header['sensor_type'].strip().lower() == 'diode':
-                problems.append(
-                    "and 'Diode' is what the manual says the instrument "
-                    "substitutes when it does not recognise a type, so this "
-                    "sensor type is not supported by this firmware")
-        if header['units'].strip().upper() != expected['units'].upper():
-            problems.append(
-                f"the units came back as '{header['units']}' where "
-                f"'{expected['units']}' was sent")
-        try:
-            wanted_multiplier = float(expected['multiplier'])
-            if abs(header['multiplier'] - wanted_multiplier) > 1e-4:
-                problems.append(
-                    f"the multiplier came back as {header['multiplier']:+g} "
-                    f"where {wanted_multiplier:+g} was sent")
-        except ValueError:
-            pass
-        if header['name'].strip() != expected['name']:
-            problems.append(
-                f"the name came back as '{header['name']}' where "
-                f"'{expected['name']}' was sent")
+        # Field by field, so the console says which ones survived rather than
+        # only that something did not.
+        fields = compare_headers(expected, header)
+        for label, key in (("name", 'name'), ("sensor type", 'sensor_type'),
+                           ("multiplier", 'multiplier'), ("units", 'units')):
+            sent_value, read_value, matched = fields[key]
+            mark = "ok  " if matched else "DIFF"
+            self.log(f"  [{mark}] {label}: sent '{sent_value}', "
+                     f"read '{read_value}'")
 
         # Checked against the precision the instrument printed, not against a
         # tolerance chosen here; see compare_curves().
@@ -3215,10 +4267,10 @@ class CurveLoaderGUI:
                 f"{comparison['worst_reading_limit']:.3g} in the sensor "
                 "reading.")
 
-        for message in comparison['problems']:
-            self.log(f"  {message}")
+        verdict, headline, advice = classify_verify(
+            expected, header, comparison, baseline_header=baseline_header)
 
-        if comparison['matched'] and not problems:
+        if verdict == 'verified':
             self.log(f"VERIFIED. User curve {slot} on the instrument matches "
                      "what was sent: every point, the name, the sensor type, "
                      "the multiplier and the units.")
@@ -3233,27 +4285,299 @@ class CurveLoaderGUI:
                        f"User curve {slot} matches what was sent, point for "
                        f"point.\n\nSet an input channel to sensor index "
                        f"{senix} to use it.{caveat}")
-            return
+            return verdict
 
-        summary = []
-        if problems:
-            summary.append("Header differences: " + "; ".join(problems) + ".")
-        if not comparison['matched']:
-            summary.append(
-                f"{len(comparison['problems'])} point difference(s) "
-                "reported above.")
-        self.log("VERIFY FAILED. " + " ".join(summary))
-        self.log("  Do not use this sensor until this is resolved. If the "
-                 "point count is short, try a different line ending under "
-                 "Advanced and send again. If only the sensor type differs, "
-                 "the firmware does not accept that name; try another from "
-                 "the list.")
+        # Point-level differences are only worth printing when the header
+        # matched. When the slot holds another curve entirely they are a list
+        # of differences between two unrelated tables, which reads like
+        # evidence and is not.
+        if verdict != 'not_written':
+            for message in comparison['problems']:
+                self.log(f"  {message}")
+
+        self.log("VERIFY FAILED. " + headline)
+        self.log("  " + advice)
+        self.log("  Do not use this sensor until this is resolved.")
         self._post(
             'dialog', 'error', "Curve Not Verified",
-            f"User curve {slot} does not match what was sent.\n\n" +
-            "\n".join(summary) +
-            "\n\nThe console lists the differences. Do not use this sensor "
-            "until this is resolved.")
+            f"User curve {slot} does not match what was sent.\n\n"
+            f"{headline}\n\n{advice}\n\n"
+            "The console has the field-by-field comparison. Do not use this "
+            "sensor until this is resolved.")
+        return verdict
+
+    # -----------------------------------------------------------------------
+    # STEP 5b: THE WHOLE SEQUENCE, IN ORDER, STOPPING AT THE FIRST FAILURE
+    # -----------------------------------------------------------------------
+
+    def _run_full_sequence(self):
+        """Every instrument step in order, each one checked before the next.
+
+        The point of running these as a sequence rather than as separate
+        buttons is the BASELINE. Reading the slot before the send is what
+        turns "the readback does not match" into "the slot is unchanged, so
+        nothing was written", and those two call for opposite actions.
+
+        Order:
+            1  identify the instrument and confirm it is a Cryo-con
+            2  read the target slot as it stands now, and keep it
+            3  read the sensor-table entry for the same slot
+            4  send the CALCUR block
+            5  read it back and classify what happened
+            6  set SENTYPE <senix>:TYPE and confirm it took
+            7  optionally put the curve on a channel and read a temperature
+
+        Any step that fails stops the sequence. Steps 6 and 7 are skipped
+        when 5 did not verify, because configuring an input range for a curve
+        that is not there would only make the fault harder to see.
+        """
+        if not self.curve_lines:
+            messagebox.showerror(
+                "Nothing to Send",
+                "There is no valid curve yet. Load a file and clear the "
+                "problems listed on the right first.")
+            return
+        if not self._require_connection():
+            return
+
+        slot = self._slot_index(self.slot_var.get())
+        senix = self._senix_for(slot)
+        calcur_index = self._check_target_before_send(slot)
+        if calcur_index is None:
+            return
+        expected = self._expected_header()
+        sentype_type = expected['sentype_type']
+        assign = self.sequence_assign_var.get()
+        channel = self.channel_var.get()
+        wants_sentype = sentype_type in SENTYPE_SENSOR_TYPES
+
+        warning_text = ""
+        if self.curve_warnings:
+            warning_text = ("\n\nWarnings on this curve:\n  - " +
+                            "\n  - ".join(self.curve_warnings))
+        steps = [
+            "1  identify the instrument",
+            f"2  read CALCUR {calcur_index} as it stands now, and keep it "
+            "as a baseline",
+            f"3  read sensor-table entry {senix} and check it is not a "
+            "factory slot",
+            f"4  send the curve to CALCUR {calcur_index}",
+            "5  read it back and compare, field by field and point by point",
+        ]
+        if wants_sentype:
+            steps.append(f"6  set SENTYPE {senix}:TYPE {sentype_type} "
+                         "and confirm")
+        if assign:
+            steps.append(f"7  set input {channel} to sensor index {senix} "
+                         "and read a temperature")
+        if not messagebox.askyesno(
+                "Run the whole sequence?",
+                f"This overwrites user curve {slot} (sensor table index "
+                f"{senix}) on the Cryocon.\n\n" +
+                "\n".join(steps) +
+                f"\n\nName:       {expected['name']}"
+                f"\nCurve type: {expected['sensor_type']}"
+                f"\nMultiplier: {expected['multiplier']}"
+                f"\nUnits:      {expected['units']}"
+                f"\nPoints:     {len(self.curve_points)}\n\n"
+                "No loop, setpoint, heater or reset command is sent at any "
+                "point."
+                f"{warning_text}\n\nRun it?"):
+            self.log("Sequence cancelled.")
+            return
+
+        lines = list(self.curve_lines)
+        points = list(self.curve_points)
+        ending = LINE_ENDINGS[self.ending_var.get()]
+        also_name = self.set_name_var.get()
+
+        def job():
+            results = []
+
+            def record(number, title, passed, detail=""):
+                results.append((number, title, passed, detail))
+                mark = "PASS" if passed else "FAIL"
+                self.log(f"[{mark}]  step {number}: {title}"
+                         + (f" -- {detail}" if detail else ""))
+                return passed
+
+            def finish():
+                self.log("")
+                self.log("SEQUENCE SUMMARY")
+                for number, title, passed, detail in results:
+                    mark = "PASS" if passed else "FAIL"
+                    self.log(f"  [{mark}] {number}. {title}"
+                             + (f" -- {detail}" if detail else ""))
+                failed = [item for item in results if not item[2]]
+                if failed:
+                    self.log(f"  Stopped at step {failed[0][0]}. Nothing "
+                             "after it was attempted.")
+                    self._post(
+                        'dialog', 'error', "Sequence Stopped",
+                        f"Step {failed[0][0]} ({failed[0][1]}) did not "
+                        f"pass.\n\n{failed[0][3]}\n\nNothing after it was "
+                        "attempted. The console has the detail.")
+                else:
+                    self.log("  Every step passed.")
+                    self._post(
+                        'dialog', 'info', "Sequence Complete",
+                        f"User curve {slot} is installed and verified, and "
+                        "every step in the sequence passed. The console has "
+                        "the record.")
+
+            # -- 1: identify -------------------------------------------------
+            self.log("")
+            self.log("=" * 62)
+            self.log(f"SEQUENCE START  ·  user curve {slot}  ·  "
+                     f"CALCUR {calcur_index}  ·  sensor table index {senix}"
+                     + ("" if self._offset_is_confirmed()
+                        else "  (offset UNCONFIRMED)"))
+            self.log("=" * 62)
+            try:
+                idn = self.backend.link.query('*IDN?')
+            except Exception as exc:
+                record(1, "identify the instrument", False,
+                       f"*IDN? failed: {exc}")
+                return finish()
+            if not is_cryocon_idn(idn):
+                record(1, "identify the instrument", False,
+                       f"'{idn}' is not a Cryo-con; refusing to send a curve")
+                return finish()
+            record(1, "identify the instrument", True, idn)
+
+            # -- 2: baseline -------------------------------------------------
+            try:
+                baseline_header, baseline_points, baseline_text = \
+                    self.backend.read_slot_curve(calcur_index)
+            except Exception as exc:
+                record(2, f"read CALCUR {calcur_index} baseline", False, str(exc))
+                return finish()
+            if baseline_header is None:
+                if baseline_text.strip():
+                    detail = ("the slot replied but not with a readable "
+                              "curve; raw reply kept in the console")
+                    self.log(f"  Raw reply, first 400 characters:\n"
+                             f"{baseline_text[:400]}")
+                else:
+                    detail = "the slot is empty"
+                record(2, f"read CALCUR {calcur_index} baseline", True, detail)
+            else:
+                detail = (f"holds '{baseline_header['name']}', "
+                          f"{baseline_header['sensor_type']}, "
+                          f"{baseline_header['units']}, "
+                          f"{len(baseline_points)} points")
+                record(2, f"read CALCUR {calcur_index} baseline", True, detail)
+                self.log("  This is what will be overwritten. If the "
+                         "readback in step 5 still shows it, the send did "
+                         "not take.")
+
+            # -- 3: sensor table entry --------------------------------------
+            entry = self.backend.get_sensor_table_entry(senix)
+            rendered = ", ".join(
+                f"{key}={entry.get(key)}"
+                for key in ('name', 'type', 'multiplier'))
+            if looks_like_factory_entry(entry.get('name')):
+                record(3, f"read sensor-table entry {senix}", False,
+                       f"{rendered}. That is a FACTORY entry, not user curve "
+                       f"{slot}. Appendix A is wrong about this instrument. "
+                       "Map the table and use the index the scan calls an "
+                       "empty user slot. Nothing was written.")
+                return finish()
+            record(3, f"read sensor-table entry {senix}", True, rendered)
+
+            # -- 4: send -----------------------------------------------------
+            try:
+                self.log(f"Sending {len(lines) + 1} lines to user curve "
+                         f"{slot} (CALCUR {calcur_index}) ...")
+                self.backend.send_curve(
+                    calcur_index, lines, ending,
+                    progress=lambda done, total, line: self._set_progress(
+                        done, total))
+            except Exception as exc:
+                record(4, f"send the curve to CALCUR {calcur_index}", False, str(exc))
+                return finish()
+            record(4, f"send the curve to CALCUR {calcur_index}", True,
+                   f"{len(lines) + 1} lines, then {CURVE_SETTLE_S:.1f} s for "
+                   "the flash write")
+
+            if also_name:
+                try:
+                    reported = self.backend.set_sensor_name(
+                        senix, expected['name'])
+                    self.log(f"  SENTYPE {senix}:NAME set; the instrument "
+                             f"now reports '{reported}'.")
+                except Exception as exc:
+                    self.log(f"  SENTYPE {senix}:NAME was refused: {exc}. "
+                             "The name in the CALCUR header still stands.")
+
+            # -- 5: verify ---------------------------------------------------
+            verdict = self._verify_against(points, slot, expected,
+                                           baseline_header=baseline_header)
+            if verdict != 'verified':
+                record(5, "read the curve back and compare", False,
+                       f"verdict: {verdict}")
+                return finish()
+            record(5, "read the curve back and compare", True,
+                   "every field and every point")
+
+            # -- 6: input type ----------------------------------------------
+            if wants_sentype:
+                try:
+                    reported = self.backend.set_sensor_type(
+                        senix, sentype_type)
+                except Exception as exc:
+                    record(6, f"set SENTYPE {senix}:TYPE {sentype_type}",
+                           False, str(exc))
+                    return finish()
+                if str(reported).strip().upper() != sentype_type.upper():
+                    record(6, f"set SENTYPE {senix}:TYPE {sentype_type}",
+                           False,
+                           f"read back as '{reported}'. This firmware does "
+                           "not accept that name. The curve is installed and "
+                           "correct; set the input type from the front panel "
+                           "(Sensors key) before using the sensor.")
+                    return finish()
+                record(6, f"set SENTYPE {senix}:TYPE {sentype_type}", True,
+                       f"read back as '{reported}'")
+
+            # -- 7: channel --------------------------------------------------
+            if assign:
+                try:
+                    reported = self.backend.assign_curve_to_channel(
+                        channel, senix)
+                except Exception as exc:
+                    record(7, f"set input {channel} to index {senix}", False,
+                           str(exc))
+                    return finish()
+                try:
+                    matched = int(float(reported)) == senix
+                except (TypeError, ValueError):
+                    matched = False
+                if not matched:
+                    record(7, f"set input {channel} to index {senix}", False,
+                           f"the channel reads back as '{reported}', not "
+                           f"{senix}. This firmware may number user curves "
+                           "differently from the Edition 4 manual; it also "
+                           "answers ISENIX and USENIX. Nothing further was "
+                           "sent. Set the sensor from the front panel.")
+                    return finish()
+                reading = self.backend.read_channel_temperature(channel)
+                note = self._describe_reading(reading)
+                record(7, f"set input {channel} to index {senix}", True,
+                       f"reads {reading}{note}")
+
+            finish()
+
+        self._run_in_worker("Running the sequence", job)
+
+    @staticmethod
+    def _describe_reading(reading):
+        """Turn a channel reply into a short plain-language note, or ''."""
+        text = str(reading).strip()
+        for marker, meaning in CRYOCON_STATUS_STRINGS.items():
+            if marker in text:
+                return f"  ({meaning})"
+        return ""
 
     # -----------------------------------------------------------------------
     # STEP 6: CHANNEL ASSIGNMENT
@@ -3280,8 +4604,8 @@ class CurveLoaderGUI:
         if not self._require_connection():
             return
         channel = self.channel_var.get()
-        slot = int(self.slot_var.get())
-        senix = CurveLoaderBackend.senix_for_user_curve(slot)
+        slot = self._slot_index(self.slot_var.get())
+        senix = self._senix_for(slot)
         if not messagebox.askyesno(
                 "Change the channel's sensor?",
                 f"This sets input channel {channel} to sensor index {senix}, "
@@ -3341,9 +4665,453 @@ class CurveLoaderGUI:
         self.root.destroy()
 
 
+# ===============================================================================
+# OFFLINE SELF-TEST
+# ===============================================================================
+#
+# Everything here runs on made-up data with no instrument, no VISA and no Tk,
+# so it can be run on the measurement PC before a session or anywhere else:
+#
+#     python Sensor_Curve_Loader_CC34_GUI.py --selftest
+#
+# It is not a substitute for tests/test_cryocon_curve_loader.py; it is the
+# subset that has to hold before this module is allowed near the Cryocon, and
+# it exists mainly so the 29 Aug 2026 failure cannot come back unnoticed.
+# Cases 9, 10, 14 and 15 are that regression, written as tests.
+
+
+def _selftest_cases():
+    """Yield (name, callable) pairs. Each callable raises on failure."""
+
+    def check(condition, message):
+        if not condition:
+            raise AssertionError(message)
+
+    # -- 1: six significant digits, never in exponent form -------------------
+    def case_fmt6():
+        check(fmt6(1.6452312) == "1.64523", fmt6(1.6452312))
+        check(fmt6(325.0) == "325.0", fmt6(325.0))
+        check(fmt6(-1.0) == "-1.0", fmt6(-1.0))
+        check('e' not in fmt6(1.23e-7).lower(), fmt6(1.23e-7))
+        check('.' in fmt6(4), fmt6(4))
+
+    # -- 2: a Lake Shore .340 is already reading-first -----------------------
+    def case_parse_340():
+        text = ("Sensor Model:   CX-1030-SD-4L\n"
+                "Serial Number:  X17680\n"
+                "Data Format:    4      (Log Ohms/Kelvin)\n"
+                "SetPoint Limit: 325.      (Kelvin)\n"
+                "Temperature coefficient:  1    (Negative)\n"
+                "Number of Breakpoints:   3\n"
+                "\n"
+                "No.   Units      Temperature (K)\n"
+                "\n"
+                "  1   1.64523      325.000\n"
+                "  2   2.00000      100.000\n"
+                "  3   2.94699        4.000\n")
+        points, units, meta = _parse_lakeshore_340(
+            _clean_lines(text), "X17680.340")
+        check(units == 'LOGOHM', units)
+        check(len(points) == 3, len(points))
+        check(abs(points[0][0] - 325.0) < 1e-9, points[0])
+        check(abs(points[0][1] - 1.64523) < 1e-9, points[0])
+        check(meta['serial'] == 'X17680', meta)
+        check(meta['stated_multiplier'] == -1.0, meta)
+
+    # -- 3: a Lake Shore .dat is temperature-first and gets swapped ----------
+    def case_parse_dat():
+        text = ("Temperature   Resistance\n"
+                "(Kelvin)      (Ohms)\n"
+                "\n"
+                "3.59132       977.251\n"
+                "330.030        43.761\n")
+        points, units, meta = _parse_lakeshore_columns(
+            _clean_lines(text), "X17680.dat")
+        check(units == 'OHMS', units)
+        check(abs(points[0][0] - 3.59132) < 1e-9, points[0])
+        check(abs(points[0][1] - 977.251) < 1e-9, points[0])
+
+    # -- 4: a file with no column headings is refused, not guessed ----------
+    def case_headerless_refused():
+        try:
+            _parse_lakeshore_columns(
+                _clean_lines("1.0 2.0\n3.0 4.0\n"), "mystery.txt")
+        except CurveFileError:
+            return
+        raise AssertionError("a headerless two-column file was accepted")
+
+    # -- 5: OHMS and LOGOHM interconvert, VOLTS never -----------------------
+    def case_units():
+        converted = convert_units([(4.0, 100.0)], 'OHMS', 'LOGOHM')
+        check(abs(converted[0][1] - 2.0) < 1e-12, converted)
+        back = convert_units(converted, 'LOGOHM', 'OHMS')
+        check(abs(back[0][1] - 100.0) < 1e-9, back)
+        try:
+            convert_units([(4.0, 100.0)], 'OHMS', 'VOLTS')
+        except CurveFileError:
+            return
+        raise AssertionError("ohms were converted to volts")
+
+    # -- 6: thinning keeps both ends and invents nothing --------------------
+    def case_thin():
+        original = [(float(i), float(i)) for i in range(1, 51)]
+        thinned, dropped = thin_points(original, 10)
+        check(len(thinned) == 10, len(thinned))
+        check(thinned[0] == original[0], thinned[0])
+        check(thinned[-1] == original[-1], thinned[-1])
+        check(dropped == 40, dropped)
+        check(all(point in original for point in thinned), "invented a point")
+
+    # -- 7: extending adds only beyond the ends -----------------------------
+    def case_extend():
+        primary = [(10.0, 1.0), (20.0, 2.0), (30.0, 3.0)]
+        extra = [(5.0, 0.5), (25.0, 2.5), (40.0, 4.0)]
+        merged, added, _ = extend_curve(primary, extra, 'LOGOHM', 'LOGOHM')
+        check(len(added) == 2, added)
+        check(all(t in (5.0, 40.0) for t, _ in added), added)
+        check(len(merged) == 5, merged)
+
+    # -- 8: a built block parses back to the same numbers -------------------
+    def case_round_trip():
+        points = [(325.0, 1.64523), (100.0, 2.0), (4.0, 2.94699)]
+        lines = build_crv_lines("CX1030 X17680", "ACR", -1.0,
+                                "LOGOHM", points)
+        header, read_back = parse_crv_text("\n".join(lines) + "\n", "test")
+        check(header['name'] == "CX1030 X17680", header)
+        check(header['sensor_type'] == "ACR", header)
+        check(header['units'] == "LOGOHM", header)
+        check(len(read_back) == 3, read_back)
+        comparison = compare_curves(points, read_back,
+                                    read_texts=header['point_texts'])
+        check(comparison['matched'], comparison['problems'])
+
+    # -- 9: a SENTYPE name in a CALCUR header warns, and does not block ------
+    def case_sentype_name_warns():
+        # v1.2 made this an error on the strength of the manual. The 31 Aug
+        # scan showed the firmware's own vocabulary IS the R-names, and that
+        # the 29 Aug failure was a protected slot, not the type. So it warns
+        # and says the question is open, rather than deciding it.
+        points = [(325.0, 1.64523), (4.0, 2.94699)]
+        errors, warnings, _ = analyse_curve(points, 'LOGOHM', 'R8K10UA', -1.0,
+                                            "CX1030 X17680")
+        check(not errors, errors)
+        check(any('not settled' in message for message in warnings), warnings)
+        # a name in neither list is still an error
+        errors, _, _ = analyse_curve(points, 'LOGOHM', 'NOSUCHTYPE', -1.0,
+                                     "CX1030 X17680")
+        check(errors, "an unknown type was accepted")
+
+    # -- 10: REGRESSION. ACR is accepted for a log-ohm NTC curve ------------
+    def case_acr_accepted():
+        points = [(325.0, 1.64523), (4.0, 2.94699)]
+        errors, _, _ = analyse_curve(points, 'LOGOHM', 'ACR', -1.0,
+                                     "CX1030 X17680")
+        check(not errors, errors)
+
+    # -- 10b: the input-range check now keys on the SENTYPE type ------------
+    def case_range_headroom():
+        # X17681's cold end, 3.04306 logohm = 1104 ohm, fits 8 kohm.
+        points = [(325.0, 1.65330), (4.0, 3.04306)]
+        errors, warnings, stats = analyse_curve(
+            points, 'LOGOHM', 'ACR', -1.0, "CX1030 X17681",
+            sentype_type='R8K10UA')
+        check(not errors, errors)
+        check(abs(stats['peak_ohms'] - 1104.23) < 0.5, stats)
+        # the same curve on a 625 ohm input is off the top of the range
+        errors, _, _ = analyse_curve(points, 'LOGOHM', 'ACR', -1.0,
+                                     "CX1030 X17681",
+                                     sentype_type='R625R1MA')
+        check(any('full scale' in message for message in errors), errors)
+        # and with no input type named, the gap is stated, not passed silently
+        _, warnings, _ = analyse_curve(points, 'LOGOHM', 'ACR', -1.0,
+                                       "CX1030 X17681")
+        check(any('no input type was named' in message
+                  for message in warnings), warnings)
+
+    # -- 11: a volts curve on a resistance type is an error -----------------
+    def case_units_type_clash():
+        points = [(325.0, 0.5), (4.0, 1.6)]
+        errors, _, _ = analyse_curve(points, 'VOLTS', 'ACR', -1.0,
+                                     "Some Diode")
+        check(any('VOLTS' in message for message in errors), errors)
+
+    # -- 12: a positive multiplier on an NTC curve is an error --------------
+    def case_multiplier_sign():
+        points = [(325.0, 1.64523), (4.0, 2.94699)]
+        errors, _, _ = analyse_curve(points, 'LOGOHM', 'ACR', +1.0,
+                                     "CX1030 X17680")
+        check(any('multiplier' in message for message in errors), errors)
+
+    # -- 13: a curve that stops short of the working range warns ------------
+    def case_coverage():
+        points = [(325.0, 1.64523), (4.0, 2.94699)]
+        _, warnings, _ = analyse_curve(points, 'LOGOHM', 'ACR', -1.0,
+                                       "CX1030 X17680",
+                                       working_range=(2.0, 300.0))
+        check(any('2 K' in message or '2.0' in message or 'dots' in message
+                  for message in warnings), warnings)
+
+    # -- 14: REGRESSION. All three fields different means nothing landed ----
+    def case_classify_not_written():
+        expected = {'name': 'CX1030 X17680', 'sensor_type': 'ACR',
+                    'multiplier': '-1.0', 'units': 'LOGOHM'}
+        header = {'name': 'Lakeshore 10', 'sensor_type': 'SiDiode',
+                  'multiplier': -1.0, 'units': 'VOLTS'}
+        comparison = {'matched': False, 'sent_count': 129, 'read_count': 124,
+                      'problems': []}
+        verdict, headline, advice = classify_verify(expected, header,
+                                                    comparison)
+        check(verdict == 'not_written', verdict)
+        check('line ending' in advice, advice)
+        check('NOT evidence' in advice, advice)
+        # And with a baseline it is a comparison, not an inference.
+        baseline = dict(header)
+        verdict2, headline2, _ = classify_verify(expected, header, comparison,
+                                                 baseline_header=baseline)
+        check(verdict2 == 'not_written', verdict2)
+        check('before the send' in headline2, headline2)
+
+    # -- 15: REGRESSION. Only the type different means a substitution -------
+    def case_classify_type_only():
+        expected = {'name': 'CX1030 X17680', 'sensor_type': 'R8K10UA',
+                    'multiplier': '-1.0', 'units': 'LOGOHM'}
+        header = {'name': 'CX1030 X17680', 'sensor_type': 'SiDiode',
+                  'multiplier': -1.0, 'units': 'LOGOHM'}
+        comparison = {'matched': True, 'sent_count': 129, 'read_count': 129,
+                      'problems': []}
+        verdict, _, advice = classify_verify(expected, header, comparison)
+        check(verdict == 'type_only', verdict)
+        check('ACR' in advice, advice)
+
+    # -- 16: a good readback verifies -------------------------------------
+    def case_classify_verified():
+        expected = {'name': 'CX1030 X17680', 'sensor_type': 'ACR',
+                    'multiplier': '-1.0', 'units': 'LOGOHM'}
+        header = {'name': 'CX1030 X17680', 'sensor_type': 'ACR',
+                  'multiplier': -1.0, 'units': 'LOGOHM'}
+        comparison = {'matched': True, 'sent_count': 129, 'read_count': 129,
+                      'problems': []}
+        verdict, _, _ = classify_verify(expected, header, comparison)
+        check(verdict == 'verified', verdict)
+
+    # -- 17: a right header with lost points points at the line ending ------
+    def case_classify_points():
+        expected = {'name': 'CX1030 X17680', 'sensor_type': 'ACR',
+                    'multiplier': '-1.0', 'units': 'LOGOHM'}
+        header = {'name': 'CX1030 X17680', 'sensor_type': 'ACR',
+                  'multiplier': -1.0, 'units': 'LOGOHM'}
+        comparison = {'matched': False, 'sent_count': 129, 'read_count': 124,
+                      'problems': []}
+        verdict, _, advice = classify_verify(expected, header, comparison)
+        check(verdict == 'points', verdict)
+        check('line ending' in advice, advice)
+
+    # -- 18: the readback is judged at the precision it was printed to ------
+    def case_printed_precision():
+        sent = [(325.0, 1.645231)]
+        read = [(325.0, 1.6452)]
+        loose = compare_curves(sent, read,
+                               read_texts=[("1.6452", "325.000")])
+        check(loose['matched'], loose['problems'])
+        tight = compare_curves(sent, read,
+                               read_texts=[("1.64520000", "325.000")])
+        check(not tight['matched'], "an under-printed value passed a tight "
+                                    "tolerance")
+
+    # -- 19: the two vocabularies really are different ----------------------
+    def case_vocabularies():
+        # v1.3: both vocabularies are offered for the header, because the
+        # firmware uses the R-names and the manual prints the old ones, and
+        # nothing here can decide between them. What must stay true is that
+        # the MANUAL's printed list is still recorded separately, so the
+        # warning can name the discrepancy instead of hiding it.
+        check('R8K10UA' not in CALCUR_MANUAL_TYPE_LIST,
+              "R8K10UA is in the manual's printed CALCUR list")
+        check('ACR' in CALCUR_MANUAL_TYPE_LIST, "ACR missing from the manual")
+        check('R8K10UA' in CALCUR_SENSOR_TYPES, "R8K10UA not offered")
+        check('ACR' in CALCUR_SENSOR_TYPES, "ACR not offered")
+        check(CALCUR_TYPE_CANDIDATES[0] == 'R8K10UA', CALCUR_TYPE_CANDIDATES)
+        check('R8K10UA' in SENTYPE_SENSOR_TYPES, "R8K10UA missing SENTYPE")
+        check('ACR' not in SENTYPE_SENSOR_TYPES, "ACR is in the SENTYPE list")
+        check(CERNOX_DEFAULTS['sensor_type'] in CALCUR_SENSOR_TYPES,
+              CERNOX_DEFAULTS)
+        check(CERNOX_DEFAULTS['sentype_type'] in SENTYPE_SENSOR_TYPES,
+              CERNOX_DEFAULTS)
+
+    # -- 19b: REGRESSION. The observed table, mapped from names --------------
+    def case_table_map_observed():
+        # What this lab's Rev 3.03A actually answered on 31 Aug: index 10 is
+        # a thermocouple, not user curve 1. Suppose the user block starts at
+        # 14, which is where Appendix A's own factory table (0-13) implies.
+        entries = (
+            [{'index': i, 'name': n} for i, n in enumerate(
+                ['None', 'Cryocon S700', 'LS DT-670', 'LS DT-470',
+                 'SI 410 Diode', 'Pt100 385', 'Pt1K 385', 'Pt10K 385',
+                 'RuOx 1K Ohm', 'TC K Extern', 'TC E Extern', 'TC T Extern',
+                 'AuFe 0.07%', 'Lakeshore 10'])] +
+            [{'index': 14 + i, 'name': f'User Sensor {i + 1}'}
+             for i in range(9)] +
+            [{'index': 23 + i, 'name': f'User Sensor {c}'}
+             for i, c in enumerate('ABC')])
+        analysis = analyse_sensor_table(entries)
+        check(analysis['confidence'] == 'confirmed', analysis)
+        check(analysis['user_block_start'] == 14, analysis)
+        check(analysis['senix_offset'] == 13, analysis)
+        check(any('does NOT match the manual' in note
+                  for note in analysis['notes']), analysis['notes'])
+
+    # -- 19c: a factory name is recognised, an empty user slot is not --------
+    def case_factory_recognition():
+        for name in ('Lakeshore 10', 'TC E Extern', 'LS DT-470',
+                     'Cryocon S700', 'RuOx 2K Ohm', 'None'):
+            check(looks_like_factory_entry(name),
+                  f"{name} not seen as factory")
+        for name in ('User Sensor 1', 'User Sensor B', 'CX1030 X17680'):
+            check(not looks_like_factory_entry(name),
+                  f"{name} wrongly seen as factory")
+        check(looks_like_empty_user_slot('User Sensor 3'), 'User Sensor 3')
+        check(not looks_like_empty_user_slot('CX1030 X17680'), 'CX1030')
+
+    # -- 19d: a table with no untouched slot refuses to guess ----------------
+    def case_table_map_refuses_to_guess():
+        entries = [{'index': i, 'name': 'Lakeshore 10'} for i in range(0, 12)]
+        analysis = analyse_sensor_table(entries)
+        check(analysis['confidence'] == 'unknown', analysis)
+        check(analysis['senix_offset'] is None, analysis)
+        check(any('cannot be established' in note
+                  for note in analysis['notes']), analysis['notes'])
+        mixed = [{'index': 10, 'name': 'User Sensor 1'},
+                 {'index': 15, 'name': 'User Sensor 3'}]
+        analysis = analyse_sensor_table(mixed)
+        check(analysis['confidence'] == 'partial', analysis)
+        check(analysis['senix_offset'] is None, analysis)
+
+    # -- 19e: REGRESSION. The table as this instrument really reported it ---
+    def case_real_table_31aug():
+        names = ['None', 'Lakeshore 10', 'Lakeshore 11', 'Cryocal D3',
+                 'SI 410', 'Pt100 3902', 'Pt100 385', 'Pt1K 385',
+                 'Pt1K 375', 'TC K Extern', 'TC E Extern', 'TC T Extern',
+                 'TC type K', 'TC type E', 'TC type T', 'S700']
+        entries = [{'index': i, 'name': n} for i, n in enumerate(names)]
+        entries += [{'index': 16 + i, 'name': f'User Sensor {c}'}
+                    for i, c in enumerate('23456789ABC')]
+        analysis = analyse_sensor_table(entries)
+        check(analysis['confidence'] == 'confirmed', analysis)
+        check(analysis['user_block_start'] == 15, analysis)
+        check(analysis['senix_offset'] == 14, analysis)
+        # index 1 is a factory entry and must be refused
+        check(looks_like_factory_entry('Lakeshore 10'), 'Lakeshore 10')
+        # 16 and 17 are the two targets and must not be
+        check(looks_like_empty_user_slot('User Sensor 2'), 'User Sensor 2')
+        check(looks_like_empty_user_slot('User Sensor 3'), 'User Sensor 3')
+        check(not looks_like_factory_entry('User Sensor 2'), 'User Sensor 2')
+
+    # -- 20: slot and index arithmetic matches Appendix A -------------------
+    def case_senix():
+        # These are the Appendix A numbers, which this firmware disagrees
+        # with. They are the FALLBACK, used only until a scan runs, so what
+        # is checked is that the fallback is what it claims to be, not that
+        # the manual is right.
+        check(CurveLoaderBackend.senix_for_user_curve(1) == 10,
+              "the unconfirmed fallback for user curve 1 should be 10")
+        check(CurveLoaderBackend.senix_for_user_curve(1, 13) == 14,
+              "with a scanned offset of 13, user curve 1 should be index 14")
+        check(CurveLoaderBackend.senix_for_user_curve(12, 13) == 25,
+              "with a scanned offset of 13, user curve 12 should be index 25")
+        check(MAX_USER_CURVE == 12 and MIN_USER_CURVE == 1,
+              "the Model 34 has twelve user curves, numbered 1 to 12")
+
+    # -- 21: the manual's line-ending rule, per interface -------------------
+    def case_line_ending():
+        backend = CurveLoaderBackend.__new__(CurveLoaderBackend)
+
+        class _Stub:
+            def __init__(self, address):
+                self.address = address
+
+        backend.link = _Stub("GPIB0::12::INSTR")
+        check(backend.resolve_line_ending(None) == b'', "GPIB got a byte")
+        backend.link = _Stub("USB0::0x1234::INSTR")
+        check(backend.resolve_line_ending(None) == b'', "USB got a byte")
+        backend.link = _Stub("ASRL3::INSTR")
+        check(backend.resolve_line_ending(None) == b'\n', "RS-232 got none")
+        backend.link = _Stub("GPIB0::12::INSTR")
+        check(backend.resolve_line_ending(b'\r\n') == b'\r\n',
+              "an explicit choice was overridden")
+
+    return [
+        ("fmt6 writes six digits, never an exponent", case_fmt6),
+        ("a .340 file is read reading-first", case_parse_340),
+        ("a .dat file is read temperature-first and swapped", case_parse_dat),
+        ("a headerless file is refused, not guessed", case_headerless_refused),
+        ("ohms and log-ohms interconvert, volts never", case_units),
+        ("thinning keeps both ends and invents nothing", case_thin),
+        ("extending adds only beyond the ends", case_extend),
+        ("a built block parses back to the same numbers", case_round_trip),
+        ("a SENTYPE name in a CALCUR header warns without blocking",
+         case_sentype_name_warns),
+        ("REGRESSION: ACR is accepted for a log-ohm NTC curve",
+         case_acr_accepted),
+        ("the input-range check keys on the SENTYPE type",
+         case_range_headroom),
+        ("a volts curve on a resistance type is an error",
+         case_units_type_clash),
+        ("a positive multiplier on an NTC curve is an error",
+         case_multiplier_sign),
+        ("a curve short of the working range warns", case_coverage),
+        ("REGRESSION: three fields differing means nothing landed",
+         case_classify_not_written),
+        ("REGRESSION: only the type differing means a substitution",
+         case_classify_type_only),
+        ("a good readback verifies", case_classify_verified),
+        ("a right header with lost points blames the line ending",
+         case_classify_points),
+        ("the readback is judged at the precision it was printed to",
+         case_printed_precision),
+        ("the CALCUR and SENTYPE vocabularies are separate",
+         case_vocabularies),
+        ("REGRESSION: the observed sensor table maps to offset 13",
+         case_table_map_observed),
+        ("REGRESSION: the real 31 Aug table maps to offset 14",
+         case_real_table_31aug),
+        ("factory names and empty user slots are told apart",
+         case_factory_recognition),
+        ("a table with no untouched slot refuses to guess",
+         case_table_map_refuses_to_guess),
+        ("the Appendix A offset is only the unconfirmed fallback",
+         case_senix),
+        ("the line-ending rule follows the interface", case_line_ending),
+    ]
+
+
+def run_self_test(report=print):
+    """Run every offline check. Returns True when all of them pass."""
+    cases = _selftest_cases()
+    failures = []
+    report(f"Offline self-test: {len(cases)} checks, no instrument needed.")
+    for number, (title, function) in enumerate(cases, start=1):
+        try:
+            function()
+        except Exception as exc:
+            failures.append((number, title, exc))
+            report(f"  [FAIL] {number:2d}. {title}")
+            report(f"         {type(exc).__name__}: {exc}")
+        else:
+            report(f"  [ ok ] {number:2d}. {title}")
+    if failures:
+        report(f"{len(failures)} of {len(cases)} checks FAILED. Do not send "
+               "a curve with this build.")
+    else:
+        report(f"All {len(cases)} checks passed.")
+    return not failures
+
+
 # ---------------------------------------------------------------------------
 # MAIN ENTRY POINT
 # ---------------------------------------------------------------------------
+
+if __name__ == '__main__' and '--selftest' in sys.argv:
+    raise SystemExit(0 if run_self_test() else 1)
 
 if __name__ == '__main__':
     root = tk.Tk()
