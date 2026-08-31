@@ -756,6 +756,19 @@ _CRYOCON_FAULT_RE = re.compile(r'^-{2,}$')
 _CRYOCON_RANGE_RE = re.compile(r'^\.{2,}$')
 
 
+# A sensor-status reply ('-------' / '.......') is an INVALID READING, not a
+# communication error: the instrument answered, the sensor did not, so no
+# amount of reconnecting cures it and the comm-retry path must never be
+# entered on one. Almost every one of them is transient -- the Model 34 shows
+# dashes for a moment while an input range switches -- so the reading is
+# retried in place first. Past that the point's temperature becomes NaN: the
+# electrical measurement at that point is still good and is still written,
+# only the thermometry column is missing, and the run carries on so that a
+# sensor which recovers at 3 a.m. resumes logging on its own.
+CRYOCON_READ_RETRIES = 3            # extra tries before a point becomes NaN
+CRYOCON_READ_RETRY_S = 0.3          # pause between those tries
+
+
 class CryoconStatusError(ValueError):
     """A query returned a Cryo-con status string where a number was expected."""
 
@@ -901,9 +914,30 @@ class Cryocon34Monitor:
         return units
 
     def read_temperature(self):
-        """INPUT? <channel> -> Kelvin, or a named status condition."""
-        raw = self.instrument.query('INPUT? %s' % self.channel).strip()
-        return parse_cryocon_number(raw, "temperature", self.channel)
+        """INPUT? <channel> -> Kelvin, or NaN on a sensor fault.
+
+        A status reply ('-------' or '.......') is retried in place, because
+        dashes during an input range switch clear within a second and must
+        not cost a data point. If it still will not read, NaN comes back
+        rather than an exception: the resistance measurement at that point
+        is still good, the stop-window comparisons are false for NaN so the
+        run is never ended by a fault, and logging resumes on its own when
+        the sensor does. A genuine comm failure still raises.
+        """
+        for attempt in range(CRYOCON_READ_RETRIES + 1):
+            raw = self.instrument.query('INPUT? %s' % self.channel).strip()
+            try:
+                return parse_cryocon_number(raw, "temperature", self.channel)
+            except CryoconStatusError as exc:
+                if attempt < CRYOCON_READ_RETRIES:
+                    time.sleep(CRYOCON_READ_RETRY_S)
+                    continue
+                self._sensor_faults = getattr(self, '_sensor_faults', 0) + 1
+                if (self._sensor_faults <= 5
+                        or self._sensor_faults % 25 == 0):
+                    print("  Sensor fault #%d: temperature logged as NaN, "
+                          "run continues. %s" % (self._sensor_faults, exc))
+                return float('nan')
 
     def shutdown(self):
         """Nothing to undo: this module never wrote to the instrument."""

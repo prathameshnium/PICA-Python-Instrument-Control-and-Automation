@@ -206,6 +206,16 @@ PROBE_RESOURCE_PREFIXES = ("GPIB", "USB", "TCPIP")
 # before it gives up. Set to 0 to stop at the first communication error.
 CRYOCON_WORKER_RETRIES = 5
 
+# A sensor-status reply ('-------' / '.......') is an INVALID READING, not a
+# communication error: the instrument answered, the sensor did not, and no
+# amount of reconnecting cures it. Nearly every one of them is transient --
+# the Model 34 shows dashes for a moment while an input range switches -- so
+# the reading is retried in place first, and only if it still refuses does
+# the point become NaN. A NaN point is skipped, never logged as data, and the
+# run carries on: an eight-hour log must not die on a one-second glitch.
+CRYOCON_READ_RETRIES = 3            # extra tries before a point becomes NaN
+CRYOCON_READ_RETRY_S = 0.3          # pause between those tries
+
 # Input channels on a Model 34.
 CRYOCON_INPUT_CHANNELS = ('A', 'B', 'C', 'D')
 
@@ -475,6 +485,9 @@ class Cryocon34_Backend:
         self.log = log if callable(log) else (lambda msg: print(msg))
         self.link = CryoconLink(visa_address, log=self.log)
         self.idn = self.link.idn
+        # Sensor-fault bookkeeping, so a skipped point can say why.
+        self.last_status_error = None
+        self.status_reports = 0
         # Confirm what actually answered before treating its numbers as
         # temperatures. GPIB addresses get changed; if this one now holds a
         # Lakeshore or a Keithley, its reply to INPUT? would be logged as a
@@ -532,10 +545,38 @@ class Cryocon34_Backend:
         return value
 
     def get_temperature(self, sensor=None):
-        """Reads the temperature from a specified sensor."""
+        """Reads the temperature from a specified sensor.
+
+        Strict: a status reply raises. Used by probe_channel(), where a
+        fault at Start really is a wiring problem worth refusing to run on.
+        The logging loop uses read_temperature_tolerant() instead.
+        """
         ch = (str(sensor).strip().upper() if sensor else self.channel)
         raw = self.link.query(f'INPUT? {ch}')
         return parse_cryocon_number(raw, 'temperature reading', ch)
+
+    def read_temperature_tolerant(self, sensor=None):
+        """One temperature for the log: NaN instead of a raise on a fault.
+
+        A status reply is retried in place, because dashes during an input
+        range switch clear within a second and must not cost a point. If it
+        still will not read, NaN comes back and the caller skips the point:
+        the instrument answered, so this is not a comm error and the
+        reconnect path must not be entered. A genuine comm failure still
+        raises, and the worker's reconnect loop takes it.
+        """
+        ch = (str(sensor).strip().upper() if sensor else self.channel)
+        for attempt in range(CRYOCON_READ_RETRIES + 1):
+            raw = self.link.query(f'INPUT? {ch}')
+            try:
+                return parse_cryocon_number(raw, 'temperature reading', ch)
+            except CryoconStatusError as e:
+                self.last_status_error = str(e)
+                if attempt < CRYOCON_READ_RETRIES:
+                    time.sleep(CRYOCON_READ_RETRY_S)
+                    continue
+                self.status_reports += 1
+                return float('nan')
 
     def reconnect(self):
         """Re-open the session after a communication failure. Queries only."""
@@ -599,6 +640,8 @@ class TempMonitorGUI:
         self.is_running = False
         self.start_time = None
         self.backend = None
+        # Consecutive skipped points caused by a sensor fault.
+        self.sensor_faults = 0
         self.file_location_path = ""
         self.data_storage = {'time': [], 'temperature': []}
         self.logo_image = None
@@ -1152,6 +1195,7 @@ class TempMonitorGUI:
 
             self.log("Starting passive data logging...")
             self.start_time = time.time()
+            self.sensor_faults = 0
 
             self.measurement_thread = threading.Thread(
                 target=self._measurement_worker, daemon=True)
@@ -1182,23 +1226,20 @@ class TempMonitorGUI:
 
         A dropped GPIB link is retried rather than treated as fatal: a
         temperature log that survives a cable knock is worth more than one
-        that stops at the first timeout. A sensor fault is different, and
-        stops the run, because the channel is telling us it has nothing to
-        report.
+        that stops at the first timeout. A sensor fault is not fatal either:
+        read_temperature_tolerant() returns NaN, the point is skipped, and
+        the run carries on so that a sensor which comes back at 3 a.m.
+        resumes logging on its own.
         """
         delay_s = float(self.entries["Delay"].get())
         comm_failures = 0
         while self.is_running:
             try:
-                temp = self.backend.get_temperature()
+                temp = self.backend.read_temperature_tolerant()
                 comm_failures = 0
                 elapsed = time.time() - self.start_time
                 self.data_queue.put((elapsed, temp))
                 time.sleep(delay_s)
-            except CryoconStatusError as e:
-                # The instrument answered; the channel has no valid reading.
-                self.data_queue.put((e, traceback.format_exc()))
-                break
             except Exception as e:
                 comm_failures += 1
                 if comm_failures > CRYOCON_WORKER_RETRIES:
@@ -1245,6 +1286,28 @@ class TempMonitorGUI:
                     return
 
                 elapsed, temp = data
+
+                # NaN means the sensor did not read (dashes or dots). Skip
+                # the point entirely: writing 0 K, or the last good value,
+                # would put a number in the file that was never measured.
+                # No messagebox -- an unattended run must not stop on a
+                # dialog. The log says it, throttled, and the run continues.
+                if temp != temp:
+                    self.sensor_faults += 1
+                    self.temp_label_var.set("sensor fault")
+                    if (self.sensor_faults <= 5
+                            or self.sensor_faults % 25 == 0):
+                        detail = getattr(
+                            self.backend, 'last_status_error', '') or ''
+                        self.log(
+                            f"Sensor fault #{self.sensor_faults}: point "
+                            f"skipped, logging continues. {detail}")
+                    continue
+
+                if self.sensor_faults:
+                    self.log(f"Sensor reading recovered after "
+                             f"{self.sensor_faults} skipped point(s).")
+                    self.sensor_faults = 0
                 self.temp_label_var.set(f"{temp:.4f} K")
                 self.log(f"T:{temp:.3f} K")
 

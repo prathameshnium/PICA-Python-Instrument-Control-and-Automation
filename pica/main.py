@@ -197,9 +197,14 @@ class PICALauncherApp:
         "Lakeshore Step Control (Advanced)": resource_path("lakeshore/T_Control_L350_Step_GUI_advanced.py"),
         "Lakeshore Direct Control": resource_path("lakeshore/T_Control_L350_DirectControl_GUI.py"),
         "Lakeshore Temp Monitor": resource_path("lakeshore/T_Sensing_L350_GUI.py"),
+        "Lakeshore Sensor Curve Loader": resource_path("lakeshore/Sensor_Curve_Loader_L340_L350_GUI.py"),
         "Cryocon Direct Control": resource_path("cryocon/T_Control_CC34_DirectControl_GUI.py"),
         "Cryocon Temp Monitor": resource_path("cryocon/T_Sensing_CC34_GUI.py"),
         "Cryocon Sensor Curve Loader": resource_path("cryocon/Sensor_Curve_Loader_CC34_GUI.py"),
+        # Read-only companions to the loader: they browse and export the
+        # curves an instrument already holds and cannot write to it.
+        "Cryocon Sensor Curve Viewer": resource_path("cryocon/Sensor_Curve_Viewer_CC34_GUI.py"),
+        "Lakeshore Sensor Curve Viewer": resource_path("lakeshore/Sensor_Curve_Viewer_L350_GUI.py"),
         "LCR C-V Measurement": resource_path("keysight/CV_KE4980A_GUI.py"),
         "LCR Frequency Scan": resource_path("keysight/Frequency_Scan_E4980A_GUI.py"), # Already present
         "LCR Temp. Step Freq. Scan (T_Control)": resource_path("keysight/Step_Frequency_Scan_E4980A_GUI.py"), # Already present
@@ -765,12 +770,16 @@ class PICALauncherApp:
                                    "Lakeshore Direct Control", "control"),
                                   ("Temperature Monitor (L350)",
                                    "Lakeshore Temp Monitor", "sensing"),
+                                  ("Sensor Curve Viewer (L350, read only)",
+                                   "Lakeshore Sensor Curve Viewer", "sensing"),
                                   ("Direct Control (Cryocon 34)",
                                    "Cryocon Direct Control", "control"),
                                   ("Temperature Monitor (Cryocon 34)",
                                    "Cryocon Temp Monitor", "sensing"),
                                   ("Sensor Curve Loader (Cryocon 34)",
-                                   "Cryocon Sensor Curve Loader", "control")])
+                                   "Cryocon Sensor Curve Loader", "control"),
+                                  ("Sensor Curve Viewer (Cryocon 34, read only)",
+                                   "Cryocon Sensor Curve Viewer", "sensing")])
         self._create_suite_frame(right_col,
                                  'Impedance Spectroscopy',
                                  "Voltage Driven",
