@@ -3,9 +3,14 @@
  PROGRAM:      PICA Launcher (v2)
 
  PURPOSE:      A modernised dashboard for launching PICA measurement scripts.
-               Adds a native menu bar (File / Tools / View / Help), a two-view
-               module selector (Browse cards + Quick Select dropdowns), and an
-               instrument status strip.
+               The main window is the Quick Select view: category ->
+               sub-category -> protocol, three dropdowns and a plain-language
+               description of each choice, showing only the instruments that
+               the selection actually needs. Everything PICA can launch lives
+               in the Advanced Options window (Tools menu, or Ctrl+Shift+A),
+               which keeps the full card grid and the full instrument list.
+               Both windows carry the instrument status strip along the
+               bottom edge.
 
  STATUS SAFETY (important):
                The launcher talks to the instruments ONLY at startup and when
@@ -491,6 +496,306 @@ CATALOG = [
 ]
 
 
+
+# -----------------------------------------------------------------------------
+#  Quick Select catalogue (the main screen)
+# -----------------------------------------------------------------------------
+# The main window is the "Quick Select" view: it is what a new PICA user meets
+# first, so it asks three plain questions -- what kind of measurement, over
+# what range, which protocol -- instead of showing every module at once. The
+# full CATALOG above stays behind Tools > Advanced Options (Ctrl+Shift+A).
+#
+# Structure:
+#   category -> sub-categories -> protocols
+# where a protocol is one launchable script. Each level carries its own short
+# description, shown stacked at the bottom of the screen as the user narrows
+# down, and each sub-category names the instruments that matter to it -- the
+# status strip then shows only those chips.
+#
+# Deliberate differences from CATALOG:
+#   * "Ultra Low Resistance" and "Low Resistance" are two entries that resolve
+#     to the SAME delta-mode scripts. They are split because a user thinks in
+#     terms of the sample, not the instrument pair: 10 nOhm of contact
+#     resistance and a 10 mOhm film feel like different measurements.
+#   * Where a Cryo-con 34 twin of a script exists, Quick Select lists ONLY the
+#     Cryo-con one for the LCR meter (E4980A) and the electrometer (K6517B):
+#     those two benches now run on the CC34. The Lakeshore variants are still
+#     one keystroke away in Advanced Options. Pyroelectric has no CC34 twin
+#     yet, so its Lakeshore module is the one listed.
+#   * Temperature utilities, the Novocontrol Alpha-AN and the bench multimeter
+#     are Advanced-only: they are not measurements a newcomer starts from.
+QUICK_CATALOG = [
+    {
+        'category': "DC Resistance",
+        'desc': "Force a steady current (or voltage) through the sample and "
+                "measure the voltage (or current) it develops. Everything here "
+                "is a two- or four-probe DC measurement; the sub-categories "
+                "differ only in the resistance range the hardware can resolve.",
+        'subcategories': [
+            {
+                'name': "Ultra Low Resistance (10 nOhm - 1 uOhm)",
+                'desc': "Delta mode: the K6221 reverses the current at every "
+                        "point and the K2182 nanovoltmeter averages the two "
+                        "readings, so thermoelectric EMFs cancel and nanovolt "
+                        "signals survive. Use it for contacts, metallic films "
+                        "and superconducting transitions.",
+                'instruments': ["Keithley 6221", "Keithley 2182",
+                                "Lakeshore 350", "Cryocon 34"],
+                'protocols': [
+                    {'label': "I-V Sweep (Delta Mode)",
+                     'key': "Delta Mode I-V Sweep", 'family': None,
+                     'desc': "Sweep the delta-mode current and record V(I) at "
+                             "one fixed temperature -- the check you run before "
+                             "any R vs. T, to confirm the contacts are ohmic."},
+                    {'label': "R vs. T - PICA drives the temperature",
+                     'key': "Delta Mode R-T", 'family': 'control',
+                     'desc': "PICA sets each Lakeshore 350 setpoint, waits for "
+                             "it to settle, then measures. Use when the "
+                             "cryostat is yours to command."},
+                    {'label': "R vs. T - temperature read only (Cryocon 34)",
+                     'key': "Delta Mode R-T (T_Sensing, CC34)",
+                     'family': 'sensing',
+                     'desc': "Something else ramps the temperature (a PPMS "
+                             "sequence, a manual dewar warm-up) and PICA only "
+                             "reads the Cryo-con 34 while it measures."},
+                    {'label': "R vs. T - temperature read only (Lakeshore 350)",
+                     'key': "Delta Mode R-T (T_Sensing)", 'family': 'sensing',
+                     'desc': "The same passive scan, reading the Lakeshore 350 "
+                             "instead of the Cryo-con 34."},
+                ],
+            },
+            {
+                'name': "Low Resistance (above 1 uOhm)",
+                # Same scripts as the entry above -- see the note at the head
+                # of QUICK_CATALOG for why the range is split in two.
+                'desc': "The same K6221 + K2182 delta-mode pair, used where "
+                        "the sample sits comfortably above a microohm. Current "
+                        "reversal is still worth having: it removes the drift "
+                        "and thermal offsets a single-polarity reading hides.",
+                'instruments': ["Keithley 6221", "Keithley 2182",
+                                "Lakeshore 350", "Cryocon 34"],
+                'protocols': [
+                    {'label': "I-V Sweep (Delta Mode)",
+                     'key': "Delta Mode I-V Sweep", 'family': None,
+                     'desc': "Sweep the delta-mode current and record V(I) at "
+                             "one fixed temperature."},
+                    {'label': "R vs. T - PICA drives the temperature",
+                     'key': "Delta Mode R-T", 'family': 'control',
+                     'desc': "PICA sets each Lakeshore 350 setpoint, waits for "
+                             "it to settle, then measures."},
+                    {'label': "R vs. T - temperature read only (Cryocon 34)",
+                     'key': "Delta Mode R-T (T_Sensing, CC34)",
+                     'family': 'sensing',
+                     'desc': "Passive scan: an external ramp moves the "
+                             "temperature, PICA reads the Cryo-con 34."},
+                    {'label': "R vs. T - temperature read only (Lakeshore 350)",
+                     'key': "Delta Mode R-T (T_Sensing)", 'family': 'sensing',
+                     'desc': "The same passive scan against the "
+                             "Lakeshore 350."},
+                ],
+            },
+            {
+                'name': "Resistance with High Precision (1 uOhm - 100 MOhm)",
+                'desc': "The K2400 sources the current and a dedicated K2182 "
+                        "nanovoltmeter reads the sample voltage. Two "
+                        "instruments instead of one, in exchange for a voltage "
+                        "resolution the K2400's own ADC cannot reach.",
+                'instruments': ["Keithley 2400", "Keithley 2182",
+                                "Lakeshore 350", "Cryocon 34"],
+                'protocols': [
+                    {'label': "I-V Sweep", 'key': "K2400_2182 I-V",
+                     'family': None,
+                     'desc': "Current sweep at fixed temperature, with the "
+                             "voltage read by the K2182."},
+                    {'label': "R vs. T - PICA drives the temperature",
+                     'key': "K2400_2182 R-T", 'family': 'control',
+                     'desc': "Setpoint-by-setpoint scan with PICA in charge of "
+                             "the Lakeshore 350."},
+                    {'label': "R vs. T - temperature read only (Cryocon 34)",
+                     'key': "K2400_2182 R-T (T_Sensing, CC34)",
+                     'family': 'sensing',
+                     'desc': "Passive scan alongside an external ramp, reading "
+                             "the Cryo-con 34."},
+                    {'label': "R vs. T - temperature read only (Lakeshore 350)",
+                     'key': "K2400_2182 R-T (T_Sensing)", 'family': 'sensing',
+                     'desc': "The same passive scan against the "
+                             "Lakeshore 350."},
+                ],
+            },
+            {
+                'name': "Normal Resistance (100 uOhm - 200 MOhm)",
+                'desc': "One K2400 SourceMeter both sources the current and "
+                        "measures the voltage. The simplest wiring in PICA, "
+                        "and the right default for an ordinary sample.",
+                'instruments': ["Keithley 2400", "Lakeshore 350",
+                                "Cryocon 34"],
+                'protocols': [
+                    {'label': "I-V Sweep", 'key': "K2400 I-V", 'family': None,
+                     'desc': "Source-measure current sweep at one "
+                             "temperature."},
+                    {'label': "R vs. T - PICA drives the temperature",
+                     'key': "K2400 R-T", 'family': 'control',
+                     'desc': "PICA walks the Lakeshore 350 through the "
+                             "temperature list and measures at each point."},
+                    {'label': "R vs. T - temperature read only (Cryocon 34)",
+                     'key': "K2400 R-T (T_Sensing, CC34)", 'family': 'sensing',
+                     'desc': "Passive scan against an external ramp, reading "
+                             "the Cryo-con 34."},
+                    {'label': "R vs. T - temperature read only (Lakeshore 350)",
+                     'key': "K2400 R-T (T_Sensing)", 'family': 'sensing',
+                     'desc': "The same passive scan against the "
+                             "Lakeshore 350."},
+                ],
+            },
+            {
+                'name': "High Resistance (1 Ohm - 10 POhm)",
+                'desc': "The K6517B electrometer applies a voltage and "
+                        "measures the sub-picoamp current that flows. This is "
+                        "the range for insulators, ceramics and dielectric "
+                        "films, where every other instrument reads open "
+                        "circuit.",
+                # The electrometer bench runs on the Cryo-con 34; the
+                # Lakeshore variants of these scripts are in Advanced Options.
+                'instruments': ["Keithley 6517B", "Cryocon 34"],
+                'protocols': [
+                    {'label': "I-V Sweep", 'key': "K6517B I-V", 'family': None,
+                     'desc': "Voltage sweep with electrometer current "
+                             "measurement, at one fixed temperature."},
+                    {'label': "R vs. T - temperature read only (Cryocon 34)",
+                     'key': "K6517B R-T (T_Sensing, CC34)", 'family': 'sensing',
+                     'desc': "Passive high-resistance scan: an external ramp "
+                             "moves the temperature, PICA reads the Cryo-con "
+                             "34 and logs R(T)."},
+                ],
+            },
+        ],
+    },
+    {
+        'category': "AC Resistance",
+        'desc': "Drive the sample with a small alternating current and recover "
+                "the voltage at that same frequency with a lock-in amplifier. "
+                "Everything outside the reference frequency -- drift, 1/f "
+                "noise, mains pickup -- is rejected, so far smaller signals "
+                "are measurable than DC allows.",
+        'subcategories': [
+            {
+                'name': "Lock-in AC Resistivity (K6221 + SR830)",
+                'desc': "The K6221 supplies the AC current and the SR830 DSP "
+                        "lock-in recovers the in-phase voltage. Experimental: "
+                        "the pairing works, but has not yet been through a "
+                        "full measurement campaign.",
+                'instruments': ["Keithley 6221", "SR830 Lock-in"],
+                'protocols': [
+                    {'label': "Comms and Control",
+                     'key': "SR830 Lock-in Comms", 'family': None,
+                     'desc': "Talk to the SR830 directly: set sensitivity, "
+                             "time constant, phase and reference, and watch X, "
+                             "Y, R and theta live. Start here to get the "
+                             "lock-in locked."},
+                    {'label': "AC Resistivity (4-probe)",
+                     'key': "SR830 AC Resistivity", 'family': None,
+                     'desc': "Four-probe AC resistivity: the K6221 sources the "
+                             "AC current, the SR830 reads the voltage drop, "
+                             "and PICA logs R against time."},
+                ],
+            },
+        ],
+    },
+    {
+        'category': "Impedance Spectroscopy",
+        'desc': "Apply a small AC voltage over a range of frequencies and "
+                "measure the complex impedance. From it come capacitance, "
+                "dielectric permittivity and loss -- the standard way to "
+                "separate bulk, grain-boundary and electrode responses in a "
+                "dielectric.",
+        'subcategories': [
+            {
+                'name': "Frequency / Bias Sweep at fixed temperature",
+                'desc': "Keysight E4980A precision LCR meter, 20 Hz - 2 MHz. "
+                        "The temperature is held still (or simply not "
+                        "controlled) while frequency or DC bias is swept.",
+                'instruments': ["Keysight E4980A"],
+                'protocols': [
+                    {'label': "C-V Measurement", 'key': "LCR C-V Measurement",
+                     'family': None,
+                     'desc': "Capacitance against DC bias at a fixed frequency "
+                             "-- ferroelectric butterfly loops, depletion "
+                             "profiling, tunability."},
+                    {'label': "Dielectric Frequency Scan",
+                     'key': "LCR Frequency Scan", 'family': None,
+                     'desc': "Sweep frequency across the E4980A range at one "
+                             "temperature and record the permittivity and "
+                             "loss."},
+                ],
+            },
+            {
+                'name': "Temperature-dependent Dielectric (Cryocon 34)",
+                # The LCR bench runs on the CC34; the L350 twins of these
+                # three scripts remain available in Advanced Options.
+                'desc': "The same LCR meter, run while the temperature moves. "
+                        "PICA reads the Cryo-con 34 and stamps every "
+                        "dielectric point with the temperature it was actually "
+                        "taken at, rather than the one that was requested.",
+                'instruments': ["Keysight E4980A", "Cryocon 34"],
+                'protocols': [
+                    {'label': "Dielectric Temperature Scan",
+                     'key': "LCR Temp. Scan (T_Sensing, CC34)",
+                     'family': 'sensing',
+                     'desc': "Continuous permittivity against temperature at a "
+                             "fixed frequency list, while an external ramp "
+                             "warms or cools the sample. The hardened passive "
+                             "scan: it reconnects by itself and flushes every "
+                             "point to disk."},
+                    {'label': "Temperature-step Frequency Scan (PPMS)",
+                     'key': "PPMS Sync Freq. Scan (CC34)", 'family': 'sensing',
+                     'desc': "Waits for the PPMS to hold a plateau, runs a "
+                             "full frequency sweep there, then waits for the "
+                             "next plateau. Gives a clean grid in frequency "
+                             "and temperature."},
+                    {'label': "Dielectric Master - T-scan + F-scan (PPMS)",
+                     'key': "PPMS Dielectric Master (CC34)", 'family': 'master',
+                     'desc': "The full protocol in one run: temperature scans "
+                             "and frequency scans interleaved to a written "
+                             "sequence, with field tags and per-run cooldowns. "
+                             "Use it for an overnight PPMS campaign."},
+                ],
+            },
+        ],
+    },
+    {
+        'category': "Pyroelectric",
+        'desc': "Measure the tiny current a polarised sample releases as its "
+                "temperature changes. Integrating that current against time "
+                "gives the released charge, and from it the remanent "
+                "polarisation and any depolarisation (TSDC) peaks.",
+        'subcategories': [
+            {
+                'name': "Pyroelectric / TSDC Current",
+                # No Cryo-con twin of these scripts exists yet, so the
+                # Lakeshore module is the one Quick Select shows.
+                'desc': "The K6517B electrometer reads the sample current at "
+                        "zero applied bias while the temperature ramps. Poling "
+                        "is done first, with the same instrument's voltage "
+                        "source.",
+                'instruments': ["Keithley 6517B", "Lakeshore 350"],
+                'protocols': [
+                    {'label': "Pyroelectric Current vs. T",
+                     'key': "Pyroelectric Current", 'family': None,
+                     'desc': "Log the depolarisation current against "
+                             "temperature during the ramp -- the measurement "
+                             "itself."},
+                    {'label': "Poling / Voltage Polling (Bias)",
+                     'key': "K6517B Polling (Bias)", 'family': None,
+                     'desc': "Hold a poling voltage on the sample and watch the "
+                             "leakage current settle. Run this before the "
+                             "pyroelectric scan."},
+                ],
+            },
+        ],
+    },
+]
+
+
 def _run_legacy_launcher():
     """Target for a spawned process: run the classic v1 launcher."""
     from pica.main import main as legacy_main
@@ -498,7 +803,7 @@ def _run_legacy_launcher():
 
 
 class PICALauncherV2:
-    PROGRAM_VERSION = "2.0.0"
+    PROGRAM_VERSION = "2.1.0"
 
     # --- Palette: matches the v1 launcher (warm sand / cream / terracotta) ---
     CLR_APP = '#B8A392'          # tan window background (v1 CLR_BG_DARK)
@@ -588,7 +893,12 @@ class PICALauncherV2:
         self._rendering = False
         # Folder the File menu's pickers open in (last one the user visited).
         self._last_data_dir = os.getcwd()
-        self.chip_widgets = {}
+        # Every status strip alive right now (Quick Select, and Advanced
+        # Options while it is open). One scan result is rendered into all
+        # of them; a strip built later catches up from _last_scan.
+        self._strips = []
+        self._last_scan = None
+        self._adv_win = None
         # Names whose dot is currently blinking (detected on the last scan).
         self._live_chips = set()
         self._blink_on = True
@@ -731,8 +1041,17 @@ class PICALauncherV2:
         self.root.bind_all("<Control-q>", lambda _e: self.open_sequence_file())
         self.root.bind_all("<Control-p>",
                            lambda _e: self.open_ppms_data_as_plot())
+        # Ctrl+Shift+A: the expert door. Tk reports the shifted letter as an
+        # upper-case keysym, so the binding is on "A", not "a".
+        self.root.bind_all("<Control-Shift-KeyPress-A>",
+                           lambda _e: self.open_advanced())
 
         tools_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
+        # Advanced Options sits at the top of Tools: it is the one entry an
+        # experienced user reaches for, and it has the accelerator to match.
+        tools_menu.add_command(label="Advanced Options…", accelerator="Ctrl+Shift+A",
+                               command=self.open_advanced)
+        tools_menu.add_separator()
         tools_menu.add_command(label="GPIB / VISA Scanner", command=self._launch_gpib_scanner)
         tools_menu.add_command(label="GPIB Scanner (32-bit, no VISA)",
                                command=lambda: self.launch_script("GPIB Scanner (32-bit)"))
@@ -743,8 +1062,9 @@ class PICALauncherV2:
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
         view_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
-        view_menu.add_command(label="Browse All Modules", command=lambda: self.notebook.select(0))
-        view_menu.add_command(label="Quick Select", command=lambda: self.notebook.select(1))
+        view_menu.add_command(label="Advanced Options…", accelerator="Ctrl+Shift+A",
+                              command=self.open_advanced)
+        view_menu.add_command(label="Main Window", command=self._focus_main)
         view_menu.add_separator()
         view_menu.add_checkbutton(label="Show Console", variable=self._make_console_var())
         menubar.add_cascade(label="View", menu=view_menu)
@@ -766,24 +1086,51 @@ class PICALauncherV2:
         return self._console_visible
 
     # ------------------------------------------------------------ status strip
-    def _build_statusbar(self):
-        bar = tk.Frame(self.root, bg=self.CLR_PANEL, highlightthickness=1,
-                       highlightbackground=self.CLR_BORDER)
-        bar.pack(side='top', fill='x')
-        inner = tk.Frame(bar, bg=self.CLR_PANEL)
-        inner.pack(fill='x', padx=10, pady=4)
+    # The strip is the bottom band of a PICA window: a temperature snapshot,
+    # the VISA link count, a colour legend and one chip per instrument. It
+    # sits at the BOTTOM rather than the top because the eye starts at the
+    # chooser above it -- the strip is reference material, not a heading.
+    #
+    # Up to two strips are alive at once (Quick Select and Advanced Options),
+    # so each one registers itself in self._strips and every scan result is
+    # rendered into all of them. Quick Select rebuilds its chips whenever the
+    # selection changes, so it only ever shows the instruments that the chosen
+    # measurement actually needs; Advanced Options always shows all of them.
+    #
+    # FUTURE (pressure): a pressure tile belongs immediately to the right of
+    # the temperature tile -- same StripCap / StripStat / StripDim triple,
+    # filled from the same one-shot scan result -- once a gauge is on the bus.
+    # Nothing else in the strip has to change to make room for it.
+    def _all_chip_names(self):
+        """Every instrument chip, in reference-table order."""
+        return [n for n, _ in KNOWN_INSTRUMENTS] + NEVER_PROBED_INSTRUMENTS
 
-        # Temperature snapshot tile
+    def _build_statusbar(self):
+        """The Quick Select strip; its chips follow the current selection."""
+        self.quick_strip = self._build_status_strip(self.root,
+                                                    self._all_chip_names())
+
+    def _build_status_strip(self, parent, chip_names):
+        """Build one bottom status band and register it for scan updates."""
+        bar = tk.Frame(parent, bg=self.CLR_PANEL, highlightthickness=1,
+                       highlightbackground=self.CLR_BORDER)
+        bar.pack(side='bottom', fill='x')
+        inner = tk.Frame(bar, bg=self.CLR_PANEL)
+        inner.pack(fill='x', padx=10, pady=5)
+        strip = {'bar': bar, 'chips': {}, 'names': []}
+
+        # Temperature snapshot tile. Fixed width: the value grows from "—" to
+        # "300.00 K" on every scan and an elastic tile would shove the rest of
+        # the strip sideways each time.
         temp_tile = tk.Frame(inner, bg=self.CLR_PANEL)
         temp_tile.pack(side='left', padx=(0, 12))
         ttk.Label(temp_tile, text="TEMPERATURE", style='StripCap.TLabel').pack(anchor='w')
-        # Fixed width: the value grows from "—" to "300.00 K" on every scan and
-        # an elastic tile would shove the rest of the strip sideways each time.
-        self.temp_value = ttk.Label(temp_tile, text="—", style='StripStat.TLabel',
-                                    width=10, anchor='w')
-        self.temp_value.pack(anchor='w', fill='x')
-        self.temp_sub = ttk.Label(temp_tile, text="not scanned yet", style='StripDim.TLabel')
-        self.temp_sub.pack(anchor='w')
+        strip['temp_value'] = ttk.Label(temp_tile, text="—", style='StripStat.TLabel',
+                                        width=10, anchor='w')
+        strip['temp_value'].pack(anchor='w', fill='x')
+        strip['temp_sub'] = ttk.Label(temp_tile, text="not scanned yet",
+                                      style='StripDim.TLabel')
+        strip['temp_sub'].pack(anchor='w')
 
         tk.Frame(inner, bg=self.CLR_BORDER, width=1).pack(side='left', fill='y', padx=(0, 12))
 
@@ -791,42 +1138,116 @@ class PICALauncherV2:
         link_tile = tk.Frame(inner, bg=self.CLR_PANEL)
         link_tile.pack(side='left', padx=(0, 12))
         ttk.Label(link_tile, text="GPIB / VISA", style='StripCap.TLabel').pack(anchor='w')
-        self.link_value = ttk.Label(link_tile, text="—", style='StripStat.TLabel',
-                                    width=4, anchor='w')
-        self.link_value.pack(anchor='w', fill='x')
-        self.link_sub = ttk.Label(link_tile, text="press Reload to scan", style='StripDim.TLabel')
-        self.link_sub.pack(anchor='w')
+        strip['link_value'] = ttk.Label(link_tile, text="—", style='StripStat.TLabel',
+                                        width=4, anchor='w')
+        strip['link_value'].pack(anchor='w', fill='x')
+        strip['link_sub'] = ttk.Label(link_tile, text="press Reload to scan",
+                                      style='StripDim.TLabel')
+        strip['link_sub'].pack(anchor='w')
 
         tk.Frame(inner, bg=self.CLR_BORDER, width=1).pack(side='left', fill='y', padx=(0, 12))
 
-        # Reload is packed before the elastic chip grid so pack reserves its
-        # width at the right edge instead of letting the chips squeeze it out.
-        self.reload_btn = ttk.Button(inner, text="⟳ Reload", style='Aux.TButton',
-                                     command=self.start_scan)
-        self.reload_btn.pack(side='right', padx=(12, 0))
+        # Reload and the legend are packed to the right edge before the elastic
+        # chip grid, so pack reserves their width instead of letting the chips
+        # squeeze them out.
+        strip['reload_btn'] = ttk.Button(inner, text="⟳ Reload", style='Aux.TButton',
+                                         command=self.start_scan)
+        strip['reload_btn'].pack(side='right', padx=(12, 0))
 
-        # Instrument chips
-        chips = tk.Frame(inner, bg=self.CLR_PANEL)
-        chips.pack(side='left', fill='x', expand=True)
-        chip_names = [n for n, _ in KNOWN_INSTRUMENTS] + NEVER_PROBED_INSTRUMENTS
-        # Six natural-width columns: eleven chips land in two rows, and
-        # dropping the uniform sizing stops the long protected-instrument
-        # label from being clipped by an equal-share column.
-        cols = 6
+        # Colour legend. Without it a grey dot reads as "broken" rather than
+        # "switched off", which is the question people actually ask of the
+        # strip. Protected instruments get a hollow ring, not a filled dot:
+        # PICA has no reading for them at all, so they are neither on nor off.
+        legend = tk.Frame(inner, bg=self.CLR_PANEL)
+        legend.pack(side='right', padx=(12, 0))
+        ttk.Label(legend, text="DOT KEY", style='StripCap.TLabel').pack(anchor='w')
+        keyrow = tk.Frame(legend, bg=self.CLR_PANEL)
+        keyrow.pack(anchor='w')
+        for glyph, colour, text in (("●", self.CLR_LIVE, "on"),
+                                    ("●", self.CLR_TEXT_FAINT, "off"),
+                                    ("○", self.CLR_TEXT_FAINT, "not probed")):
+            item = tk.Frame(keyrow, bg=self.CLR_PANEL)
+            item.pack(side='left', padx=(0, 8))
+            tk.Label(item, text=glyph, bg=self.CLR_PANEL, fg=colour,
+                     font=self.FONT_STRIP).pack(side='left', padx=(0, 3))
+            tk.Label(item, text=text, bg=self.CLR_PANEL, fg=self.CLR_TEXT_DIM,
+                     font=self.FONT_STRIP).pack(side='left')
+
+        chip_tile = tk.Frame(inner, bg=self.CLR_PANEL)
+        chip_tile.pack(side='left', fill='x', expand=True)
+        ttk.Label(chip_tile, text="INSTRUMENTS", style='StripCap.TLabel').pack(anchor='w')
+        strip['chips_frame'] = tk.Frame(chip_tile, bg=self.CLR_PANEL)
+        strip['chips_frame'].pack(anchor='w', fill='x')
+
+        self._strips.append(strip)
+        self._set_strip_chips(strip, chip_names)
+        return strip
+
+    def _set_strip_chips(self, strip, chip_names):
+        """Rebuild one strip's chips, then repaint them from the last scan."""
+        frame = strip['chips_frame']
+        for w in frame.winfo_children():
+            w.destroy()
+        strip['chips'] = {}
+        strip['names'] = list(chip_names)
+        # Four natural-width columns: the full list lands in three rows, which
+        # is the height the temperature tile already sets, and a filtered
+        # handful stays on one. Six columns fitted the count but not the
+        # width -- the last chips ran under the dot key at the right edge.
+        cols = 4
         for i, name in enumerate(chip_names):
-            chip = tk.Frame(chips, bg=self.CLR_PANEL)
+            chip = tk.Frame(frame, bg=self.CLR_PANEL)
             chip.grid(row=i // cols, column=i % cols, sticky='w', padx=(0, 10))
-            dot = tk.Label(chip, text="●", bg=self.CLR_PANEL, fg=self.CLR_TEXT_FAINT,
-                           font=self.FONT_DOT)
+            manual = name in NEVER_PROBED_INSTRUMENTS
+            dot = tk.Label(chip, text="○" if manual else "●", bg=self.CLR_PANEL,
+                           fg=self.CLR_TEXT_FAINT, font=self.FONT_DOT)
             dot.pack(side='left', padx=(0, 4))
-            lbl = tk.Label(chip, text=name, bg=self.CLR_PANEL, fg=self.CLR_TEXT_DIM,
+            lbl = tk.Label(chip, text=f"{name} (prot.)" if manual else name,
+                           bg=self.CLR_PANEL, fg=self.CLR_TEXT_DIM,
                            font=self.FONT_STRIP)
             lbl.pack(side='left')
-            manual = name in NEVER_PROBED_INSTRUMENTS
+            strip['chips'][name] = (dot, lbl, manual)
+        self._render_strip(strip)
+
+    def _render_strip(self, strip):
+        """Paint the most recent scan result into one strip. Safe with none."""
+        r = self._last_scan
+        if r is None:
+            return
+        if not r['available'] or r['error']:
+            msg = r['error'] or "PyVISA not installed"
+            strip['temp_value'].config(text="—")
+            strip['temp_sub'].config(text=msg)
+            strip['link_value'].config(text="—")
+            strip['link_sub'].config(text=msg)
+            return
+
+        detected = r['detected']
+        n_found = sum(1 for v in detected.values() if v)
+        n_known = len(KNOWN_INSTRUMENTS)
+        strip['link_value'].config(
+            text=str(n_found), foreground=self.CLR_OK if n_found else self.CLR_TEXT)
+        strip['link_sub'].config(text=f"of {n_known} known · scan {r['timestamp']}")
+
+        if r['temperature'] is not None:
+            units = r.get('temp_units', 'K')
+            strip['temp_value'].config(text=f"{r['temperature']:.2f} {units}")
+            strip['temp_sub'].config(text=f"{r['temp_source']} · as of {r['timestamp']}")
+        else:
+            strip['temp_value'].config(text="—")
+            strip['temp_sub'].config(text="no Lakeshore / Cryocon reading")
+
+        for name, (dot, lbl, manual) in strip['chips'].items():
             if manual:
+                # Protected: PICA never speaks to it, so it has no state to
+                # report. The ring stays hollow and grey whatever the scan says.
+                continue
+            if detected.get(name):
+                dot.config(fg=self.CLR_LIVE)
+                lbl.config(fg=self.CLR_TEXT)
+            else:
                 dot.config(fg=self.CLR_TEXT_FAINT)
-                lbl.config(text=f"{name} (prot.)")
-            self.chip_widgets[name] = (dot, lbl, manual)
+                lbl.config(fg=self.CLR_TEXT_DIM)
 
     def _blink_tick(self):
         """Pulse the dots of the instruments that answered the last scan.
@@ -839,10 +1260,11 @@ class PICALauncherV2:
         self._blink_on = not self._blink_on
         colour = self.CLR_LIVE if self._blink_on else self.CLR_LIVE_DIM
         try:
-            for name in self._live_chips:
-                widgets = self.chip_widgets.get(name)
-                if widgets:
-                    widgets[0].config(fg=colour)
+            for strip in self._strips:
+                for name in self._live_chips:
+                    widgets = strip['chips'].get(name)
+                    if widgets and not widgets[2]:
+                        widgets[0].config(fg=colour)
             self.root.after(650, self._blink_tick)
         except tk.TclError:
             pass
@@ -856,24 +1278,22 @@ class PICALauncherV2:
 
         self._build_rail(body)
 
-        # Right side: notebook with two views
         right = ttk.Frame(body)
         right.grid(row=0, column=1, sticky='nsew', padx=(0, 12), pady=12)
         right.rowconfigure(1, weight=1)
         right.columnconfigure(0, weight=1)
 
         self._build_toolbar(right)
+        # The main screen IS the Quick Select view. It carries no tab and no
+        # name of its own -- it stopped being one view among several when
+        # Browse All Modules became the Advanced Options window (Ctrl+Shift+A).
+        self._build_quick(right)
 
-        self.notebook = ttk.Notebook(right)
-        self.notebook.grid(row=1, column=0, sticky='nsew')
-
-        self.browse_tab = ttk.Frame(self.notebook)
-        self.quick_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.browse_tab, text="Browse All Modules")
-        self.notebook.add(self.quick_tab, text="Quick Select")
-
-        self._build_browse(self.browse_tab)
-        self._build_quick(self.quick_tab)
+    def _focus_main(self):
+        """Bring the main (Quick Select) window back to the front."""
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
 
     def _build_toolbar(self, parent):
         """Top-right icon buttons, carried over from the v1 launcher.
@@ -1043,7 +1463,7 @@ class PICALauncherV2:
 
     def _reflow_cards(self, width):
         """Re-lay the card grid if the available width changed the column count."""
-        if self._rendering:
+        if self._rendering or not self._browse_alive():
             return
         cols = max(1, min(self.MAX_CARD_COLS, width // self.CARD_MIN_WIDTH))
         self._browse_width = width
@@ -1051,10 +1471,19 @@ class PICALauncherV2:
             self._browse_cols = cols
             self._render_cards()
 
+    def _browse_alive(self):
+        """True while the Advanced Options card grid exists."""
+        frame = getattr(self, 'browse_frame', None)
+        try:
+            return frame is not None and frame.winfo_exists()
+        except tk.TclError:
+            return False
+
     def _render_cards(self):
         # Guard: the masonry pass calls update_idletasks, which can dispatch the
-        # canvas <Configure> and re-enter this method mid-build.
-        if self._rendering:
+        # canvas <Configure> and re-enter this method mid-build. The grid also
+        # only exists while Advanced Options is open.
+        if self._rendering or not self._browse_alive():
             return
         self._rendering = True
         try:
@@ -1089,6 +1518,9 @@ class PICALauncherV2:
             self._make_card(target, cat, wrap).pack(fill='x', pady=(0, 12))
 
     def _rebuild_browse(self):
+        if not self._browse_alive():
+            self.log("Module list is rebuilt when Advanced Options opens.")
+            return
         self._render_cards()
         self.log("Module list refreshed.")
 
@@ -1137,95 +1569,192 @@ class PICALauncherV2:
                 side='left', fill='x', expand=True)
         return card
 
-    # -------------------------------------------------- Quick Select (form)
+    # ------------------------------------------------ Quick Select (main screen)
+    # Three questions, asked in plain language and in the order a person
+    # actually thinks in: what kind of measurement, over what range, which
+    # protocol. Each answer explains itself underneath, and the status strip
+    # narrows to the instruments that answer needs.
     def _build_quick(self, parent):
-        wrap = tk.Frame(parent, bg=self.CLR_APP)
-        wrap.pack(fill='both', expand=True, padx=20, pady=20)
+        outer = tk.Frame(parent, bg=self.CLR_APP)
+        outer.grid(row=1, column=0, sticky='nsew')
 
-        card = tk.Frame(wrap, bg=self.CLR_PANEL, highlightthickness=1,
+        card = tk.Frame(outer, bg=self.CLR_PANEL, highlightthickness=1,
                         highlightbackground=self.CLR_BORDER)
-        card.pack(fill='x')
+        card.pack(fill='both', expand=True)
         inner = tk.Frame(card, bg=self.CLR_PANEL)
-        inner.pack(fill='x', padx=22, pady=18)
+        inner.pack(fill='both', expand=True, padx=26, pady=22)
 
-        tk.Label(inner, text="Select a measurement module", bg=self.CLR_PANEL,
-                 fg=self.CLR_TEXT, font=self.FONT_CARD).pack(anchor='w', pady=(0, 14))
+        tk.Label(inner, text="What do you want to measure?", bg=self.CLR_PANEL,
+                 fg=self.CLR_TEXT, font=self.FONT_TITLE).pack(anchor='w')
+        tk.Label(inner,
+                 text="Pick a category, narrow the range, then choose a protocol. "
+                      "Every module PICA ships is in Advanced Options — Ctrl+Shift+A.",
+                 bg=self.CLR_PANEL, fg=self.CLR_TEXT_DIM,
+                 font=self.FONT_SMALL).pack(anchor='w', pady=(2, 18))
 
         grid = tk.Frame(inner, bg=self.CLR_PANEL)
         grid.pack(fill='x')
-        grid.columnconfigure((0, 1), weight=1, uniform='q')
+        grid.columnconfigure((0, 1, 2), weight=1, uniform='q')
 
-        cat_col = tk.Frame(grid, bg=self.CLR_PANEL)
-        cat_col.grid(row=0, column=0, sticky='ew', padx=(0, 7))
-        tk.Label(cat_col, text="Category", bg=self.CLR_PANEL, fg=self.CLR_TEXT_DIM,
-                 font=self.FONT_LABEL).pack(anchor='w', pady=(0, 4))
         self.cat_var = tk.StringVar()
-        self.cat_combo = ttk.Combobox(cat_col, textvariable=self.cat_var, state='readonly',
-                                      values=[c['category'] for c in CATALOG])
-        self.cat_combo.pack(fill='x')
-        self.cat_combo.bind("<<ComboboxSelected>>", self._on_category)
+        self.sub_var = tk.StringVar()
+        self.proto_var = tk.StringVar()
 
-        mod_col = tk.Frame(grid, bg=self.CLR_PANEL)
-        mod_col.grid(row=0, column=1, sticky='ew', padx=(7, 0))
-        tk.Label(mod_col, text="Module", bg=self.CLR_PANEL, fg=self.CLR_TEXT_DIM,
-                 font=self.FONT_LABEL).pack(anchor='w', pady=(0, 4))
-        self.mod_var = tk.StringVar()
-        self.mod_combo = ttk.Combobox(mod_col, textvariable=self.mod_var, state='disabled')
-        self.mod_combo.pack(fill='x')
-        self.mod_combo.bind("<<ComboboxSelected>>", self._on_module)
+        self.cat_combo = self._combo_column(
+            grid, 0, "1 · Category", self.cat_var,
+            [c['category'] for c in QUICK_CATALOG], 'readonly',
+            self._on_quick_category)
+        self.sub_combo = self._combo_column(
+            grid, 1, "2 · Sub-category", self.sub_var, [], 'disabled',
+            self._on_quick_sub)
+        self.proto_combo = self._combo_column(
+            grid, 2, "3 · Protocol", self.proto_var, [], 'disabled',
+            self._on_quick_protocol)
 
-        # Detail line
-        self.detail_label = tk.Label(inner, text="Select a module to see instrument details.",
-                                     bg=self.CLR_PANEL, fg=self.CLR_TEXT_FAINT,
-                                     font=self.FONT_SMALL, anchor='w', justify='left')
-        self.detail_label.pack(fill='x', pady=(14, 14))
+        # Description stack: one block per level, filled in as the user
+        # narrows down and greyed out until then.
+        desc = tk.Frame(inner, bg=self.CLR_PANEL)
+        desc.pack(fill='both', expand=True, pady=(20, 18))
+        self._desc_blocks = {
+            'category': self._desc_block(desc, "CATEGORY"),
+            'sub': self._desc_block(desc, "SUB-CATEGORY"),
+            'protocol': self._desc_block(desc, "PROTOCOL"),
+        }
+        # Body text wraps to whatever width the window currently gives it.
+        desc.bind("<Configure>", self._rewrap_descriptions)
+        self._reset_descriptions()
 
-        # Action row
         actions = tk.Frame(inner, bg=self.CLR_PANEL)
-        actions.pack(fill='x')
-        self.launch_btn = ttk.Button(actions, text="▶  Launch Module", style='Launch.TButton',
-                                    state='disabled', command=self._launch_selected)
+        actions.pack(fill='x', side='bottom')
+        self.launch_btn = ttk.Button(actions, text="▶  Launch Protocol",
+                                     style='Launch.TButton', state='disabled',
+                                     command=self._launch_selected)
         self.launch_btn.pack(side='left', fill='x', expand=True)
         self.folder_btn = ttk.Button(actions, text="📁 Folder", style='Aux.TButton',
-                                    state='disabled', command=self._folder_selected)
+                                     state='disabled', command=self._folder_selected)
         self.folder_btn.pack(side='left', padx=(8, 0))
         self.data_btn = ttk.Button(actions, text="≡ Data", style='Aux.TButton',
-                                  state='disabled', command=self._data_selected)
+                                   state='disabled', command=self._data_selected)
         self.data_btn.pack(side='left', padx=(8, 0))
         self.plot_btn = ttk.Button(actions, text="📈 Plot", style='Aux.TButton',
-                                  state='disabled', command=lambda: launch_plotter_utility())
+                                   state='disabled',
+                                   command=lambda: launch_plotter_utility())
         self.plot_btn.pack(side='left', padx=(8, 0))
 
         self._selected_key = None
 
-    def _on_category(self, _event=None):
+    def _combo_column(self, parent, column, caption, var, values, state, handler):
+        """One labelled dropdown in the three-across selector row."""
+        col = tk.Frame(parent, bg=self.CLR_PANEL)
+        col.grid(row=0, column=column, sticky='ew',
+                 padx=(0 if column == 0 else 7, 0 if column == 2 else 7))
+        tk.Label(col, text=caption, bg=self.CLR_PANEL, fg=self.CLR_TEXT_DIM,
+                 font=self.FONT_LABEL).pack(anchor='w', pady=(0, 4))
+        combo = ttk.Combobox(col, textvariable=var, state=state, values=values)
+        combo.pack(fill='x')
+        combo.bind("<<ComboboxSelected>>", handler)
+        return combo
+
+    def _desc_block(self, parent, caption):
+        """A caption / title / body triple in the description stack."""
+        block = tk.Frame(parent, bg=self.CLR_PANEL)
+        block.pack(fill='x', anchor='w', pady=(0, 10))
+        head = tk.Frame(block, bg=self.CLR_PANEL)
+        head.pack(fill='x')
+        tk.Label(head, text=caption, bg=self.CLR_PANEL, fg=self.CLR_TEXT_FAINT,
+                 font=self.FONT_LABEL, width=14, anchor='w').pack(side='left')
+        title = tk.Label(head, text="—", bg=self.CLR_PANEL, fg=self.CLR_TEXT,
+                         font=self.FONT_INFO_BOLD, anchor='w', justify='left')
+        title.pack(side='left', fill='x', expand=True)
+        body = tk.Label(block, text="", bg=self.CLR_PANEL, fg=self.CLR_TEXT_DIM,
+                        font=self.FONT_SMALL, anchor='w', justify='left',
+                        wraplength=700)
+        body.pack(fill='x', padx=(14 * 8, 0))
+        return {'title': title, 'body': body}
+
+    def _rewrap_descriptions(self, event):
+        for block in self._desc_blocks.values():
+            block['body'].config(wraplength=max(280, event.width - 130))
+
+    def _set_desc(self, level, title, text):
+        block = self._desc_blocks[level]
+        block['title'].config(text=title or "—",
+                              fg=self.CLR_TEXT if title else self.CLR_TEXT_FAINT)
+        block['body'].config(text=text or "")
+
+    def _reset_descriptions(self):
+        self._set_desc('category', None, None)
+        self._set_desc('sub', None, None)
+        self._set_desc('protocol', None, None)
+
+    def _on_quick_category(self, _event=None):
         idx = self.cat_combo.current()
         if idx < 0:
             return
-        modules = CATALOG[idx]['modules']
-        self.mod_combo.config(state='readonly', values=[m[0] for m in modules])
-        self.mod_var.set('')
-        self.detail_label.config(text="Select a module to see instrument details.",
-                                 fg=self.CLR_TEXT_FAINT)
+        cat = QUICK_CATALOG[idx]
+        self.sub_combo.config(state='readonly',
+                              values=[s['name'] for s in cat['subcategories']])
+        self.sub_var.set('')
+        self.proto_var.set('')
+        self.proto_combo.config(state='disabled', values=[])
+        self._reset_descriptions()
+        self._set_desc('category', cat['category'], cat['desc'])
         self._set_quick_actions(False)
+        self._update_quick_chips(cat)
+        # A category with a single sub-category is not a choice, so make it
+        # for the user rather than asking them to click through it.
+        if len(cat['subcategories']) == 1:
+            self.sub_combo.current(0)
+            self._on_quick_sub()
 
-    def _on_module(self, _event=None):
-        cat_idx = self.cat_combo.current()
-        mod_idx = self.mod_combo.current()
-        if cat_idx < 0 or mod_idx < 0:
+    def _on_quick_sub(self, _event=None):
+        cat_idx, sub_idx = self.cat_combo.current(), self.sub_combo.current()
+        if cat_idx < 0 or sub_idx < 0:
             return
-        cat = CATALOG[cat_idx]
-        label, key, family = cat['modules'][mod_idx]
-        self._selected_key = key
-        tags = [cat['type']]
-        if family:
-            tags.append({'control': 'T Control', 'sensing': 'T Sensing',
-                         'master': 'Master Sequence'}[family])
-        if cat.get('experimental'):
-            tags.append('Experimental')
-        self.detail_label.config(text=f"{cat['instruments']}     [ {'  ·  '.join(tags)} ]",
-                                 fg=self.CLR_TEXT_DIM)
+        cat = QUICK_CATALOG[cat_idx]
+        subcat = cat['subcategories'][sub_idx]
+        self.proto_combo.config(state='readonly',
+                                values=[p['label'] for p in subcat['protocols']])
+        self.proto_var.set('')
+        self._set_desc('sub', subcat['name'], subcat['desc'])
+        self._set_desc('protocol', None, None)
+        self._set_quick_actions(False)
+        self._update_quick_chips(cat, subcat)
+
+    def _on_quick_protocol(self, _event=None):
+        cat_idx, sub_idx = self.cat_combo.current(), self.sub_combo.current()
+        proto_idx = self.proto_combo.current()
+        if cat_idx < 0 or sub_idx < 0 or proto_idx < 0:
+            return
+        subcat = QUICK_CATALOG[cat_idx]['subcategories'][sub_idx]
+        proto = subcat['protocols'][proto_idx]
+        self._selected_key = proto['key']
+        tag = {'control': "  ·  PICA controls the temperature",
+               'sensing': "  ·  PICA only reads the temperature",
+               'master': "  ·  master sequence"}.get(proto['family'], "")
+        self._set_desc('protocol', proto['label'] + tag, proto['desc'])
         self._set_quick_actions(True)
+
+    def _update_quick_chips(self, cat, subcat=None):
+        """Show only the instruments the current selection can use.
+
+        A category with no sub-category chosen yet shows the union of all of
+        its sub-categories, so the strip never goes empty mid-choice.
+
+        FUTURE (pressure): when a pressure gauge joins KNOWN_INSTRUMENTS it is
+        filtered here like any other chip -- name it in the sub-category's
+        'instruments' list and nothing else has to change.
+        """
+        if subcat is not None:
+            wanted = set(subcat['instruments'])
+        else:
+            wanted = set()
+            for s in cat['subcategories']:
+                wanted |= set(s['instruments'])
+        # Keep the reference-table order so chips do not jump around between
+        # selections.
+        names = [n for n in self._all_chip_names() if n in wanted]
+        self._set_strip_chips(self.quick_strip, names)
 
     def _set_quick_actions(self, enabled):
         state = 'normal' if enabled else 'disabled'
@@ -1254,6 +1783,56 @@ class PICALauncherV2:
         if path:
             self._open_path(path)
 
+    # ------------------------------------------------- Advanced Options window
+    # This was the "Browse All Modules" tab. It is now a window of its own,
+    # opened from Tools / View or with Ctrl+Shift+A, and it is unfiltered on
+    # purpose: the full card grid with every module and its range exactly as
+    # before, and every instrument chip on the strip whether or not the module
+    # in front of you uses it. Quick Select is the guided route for a new user;
+    # this is the one for someone who already knows the module name.
+    def open_advanced(self):
+        if self._adv_win is not None and self._adv_win.winfo_exists():
+            self._adv_win.deiconify()
+            self._adv_win.lift()
+            self._adv_win.focus_force()
+            return
+
+        win = Toplevel(self.root)
+        win.title("PICA — Advanced Options")
+        win.configure(bg=self.CLR_APP)
+        win.geometry("1400x900")
+        win.protocol("WM_DELETE_WINDOW", self._close_advanced)
+        self._adv_win = win
+
+        head = tk.Frame(win, bg=self.CLR_APP)
+        head.pack(fill='x', padx=18, pady=(14, 0))
+        tk.Label(head, text="Advanced Options", bg=self.CLR_APP,
+                 fg=self.CLR_ACCENT, font=self.FONT_TITLE).pack(anchor='w')
+        tk.Label(head,
+                 text="Every module PICA ships, grouped by measurement range and "
+                      "instrument. Quick Select in the main window is the guided route.",
+                 bg=self.CLR_APP, fg=self.CLR_TEXT_DIM,
+                 font=self.FONT_SMALL).pack(anchor='w')
+
+        # Strip first: packed to the bottom edge before the card grid claims
+        # the rest of the height.
+        self._adv_strip = self._build_status_strip(win, self._all_chip_names())
+        self._build_browse(win)
+        self.log("Advanced Options opened.")
+
+    def _close_advanced(self):
+        """Tear down the Advanced window and un-register its status strip."""
+        strip = getattr(self, '_adv_strip', None)
+        if strip in self._strips:
+            self._strips.remove(strip)
+        self._adv_strip = None
+        # The card grid lives in this window; drop the reference so a stray
+        # refresh cannot reach into a destroyed widget tree.
+        self.browse_frame = None
+        if self._adv_win is not None:
+            self._adv_win.destroy()
+        self._adv_win = None
+
     # ------------------------------------------------------- scan lifecycle
     def start_scan(self):
         """Trigger a one-shot instrument scan (startup or manual reload)."""
@@ -1274,8 +1853,9 @@ class PICALauncherV2:
                 return
 
         self._scanning = True
-        self.reload_btn.config(state='disabled', text="⟳ Scanning…")
-        self.link_sub.config(text="scanning the VISA bus…")
+        for strip in self._strips:
+            strip['reload_btn'].config(state='disabled', text="⟳ Scanning…")
+            strip['link_sub'].config(text="scanning the VISA bus…")
         self.log("Scanning instruments (startup/reload only)…")
         threading.Thread(target=self._scan_worker, daemon=True).start()
 
@@ -1286,18 +1866,16 @@ class PICALauncherV2:
 
     def _apply_scan(self, r):
         self._scanning = False
-        self.reload_btn.config(state='normal', text="⟳ Reload")
+        self._last_scan = r
+        for strip in self._strips:
+            strip['reload_btn'].config(state='normal', text="⟳ Reload")
 
         if not r['available']:
-            self.temp_value.config(text="—")
-            self.temp_sub.config(text="PyVISA not installed")
-            self.link_value.config(text="—")
-            self.link_sub.config(text="install pyvisa to scan")
+            self._refresh_strips()
             self.log("PyVISA not available — instrument status unavailable.")
             return
         if r['error']:
-            self.link_value.config(text="—")
-            self.link_sub.config(text=r['error'])
+            self._refresh_strips()
             self.log(f"Scan error: {r['error']}")
             return
 
@@ -1306,38 +1884,26 @@ class PICALauncherV2:
         # this launcher never sends it anything again.
         self._record_protected(r)
 
+        # Which chips blink is strip-independent, so it is decided once here
+        # and each strip picks up whichever of those names it happens to show.
         detected = r['detected']
-        n_found = sum(1 for v in detected.values() if v)
+        self._live_chips = {name for name, res in detected.items() if res}
+        self._refresh_strips()
+
+        n_found = len(self._live_chips)
         n_known = len(KNOWN_INSTRUMENTS)
-        self.link_value.config(text=str(n_found), foreground=self.CLR_OK if n_found else self.CLR_TEXT)
-        self.link_sub.config(text=f"of {n_known} known · scan {r['timestamp']}")
-
-        # Temperature snapshot
-        if r['temperature'] is not None:
-            units = r.get('temp_units', 'K')
-            self.temp_value.config(text=f"{r['temperature']:.2f} {units}")
-            self.temp_sub.config(text=f"{r['temp_source']} · as of {r['timestamp']}")
-        else:
-            self.temp_value.config(text="—")
-            self.temp_sub.config(text="no Lakeshore / Cryocon reading")
-
-        # Chips
-        for name, (dot, lbl, manual) in self.chip_widgets.items():
-            if manual:
-                continue
-            if detected.get(name):
-                self._live_chips.add(name)
-                dot.config(fg=self.CLR_LIVE)
-                lbl.config(fg=self.CLR_TEXT)
-            else:
-                self._live_chips.discard(name)
-                dot.config(fg=self.CLR_TEXT_FAINT)
-                lbl.config(fg=self.CLR_TEXT_DIM)
-
         skipped = r.get('skipped') or []
         tail = f", {len(skipped)} not probed" if skipped else ""
         self.log(f"Scan complete — {n_found}/{n_known} instruments detected "
                  f"across {len(r['resources'])} VISA resource(s){tail}.")
+
+    def _refresh_strips(self):
+        """Render the last scan result into every strip that is alive."""
+        for strip in list(self._strips):
+            try:
+                self._render_strip(strip)
+            except tk.TclError:
+                self._strips.remove(strip)
 
     def _record_protected(self, r):
         """Learn the Novocontrol's address from a scan and never probe it again.
@@ -1349,10 +1915,11 @@ class PICALauncherV2:
         """
         new = set(r.get('protect') or ())
         if r.get('novocontrol'):
-            chip = self.chip_widgets.get(NOVOCONTROL_CHIP)
-            if chip:
-                chip[1].config(text=f"{NOVOCONTROL_CHIP} (protected)",
-                               fg=self.CLR_TEXT)
+            for strip in self._strips:
+                chip = strip['chips'].get(NOVOCONTROL_CHIP)
+                if chip:
+                    chip[1].config(text=f"{NOVOCONTROL_CHIP} (protected)",
+                                   fg=self.CLR_TEXT)
             self.log(f"Novocontrol mainframe identified at "
                      f"{r['novocontrol']} — it will not be probed again.")
         new -= self._session_protected
