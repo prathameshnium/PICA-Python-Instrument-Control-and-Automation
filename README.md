@@ -292,7 +292,18 @@ pip install --upgrade pica-suite
     > python pica/keithley/k6517b/High_Resistance/IV_K6517B_GUI.py
     > ```
 
-2.  **Command Line Interface (CLI)**
+2.  **Launcher v2 (in testing)**
+    A second launcher that opens on a **Quick Select** screen — category,
+    module and protocol, each explained in plain language — and keeps the full
+    module grid in an **Advanced Options** window (`Ctrl+Shift+A`). The status
+    strip carries the temperature and a button opening **Instrument Status**:
+    every instrument with its light, anything new on the bus named from its
+    `*IDN?` reply, and the VISA/GPIB scan table.
+    ```bash
+    python run_pica_v2.py
+    ```
+
+3.  **Command Line Interface (CLI)**
     For headless operation (e.g., Raspberry Pi).
     ```bash
     pica-cli

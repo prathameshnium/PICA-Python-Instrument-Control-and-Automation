@@ -684,19 +684,48 @@ def test_send_curve_writes_the_command_the_header_the_points_and_the_semicolon()
     assert instrument.writes == []
 
 
-def test_send_curve_refuses_a_slot_outside_1_to_12():
-    """The Model 34 has twelve user curves; the Model 32 has four."""
+def test_send_curve_refuses_an_index_outside_the_master_sensor_table():
+    """v1.3: the number after CALCUR is a table index, not a curve number.
+
+    Appendix A says CALCUR takes the user-curve number 1 to 12. This
+    firmware disagrees: CALCUR? 1 returned the entry at table index 1 and
+    CALCUR? 15 returned the entry at index 15, so the range send_curve
+    accepts is the table's, 0 to MASTER_TABLE_SCAN_MAX. Index 0 and index 15
+    are inside it. What stops a write to a protected slot is
+    looks_like_factory_entry() and the scan, not this range check.
+    """
     lines = LOADER.build_crv_lines(
         "TESTCURVE", "R8K10UA", -1.0, "LOGOHM",
         [(300.0, 1.6), (4.0, 2.9)])
+    top = LOADER.MASTER_TABLE_SCAN_MAX
     backend, _ = _connected_backend()
-    for index in (0, -1, 13, 61):
+    for index in (-1, top + 1, 61):
         try:
             backend.send_curve(index, lines, b"")
         except ValueError as exc:
-            assert "1 to 12" in str(exc)
+            assert f"0 to {top}" in str(exc), str(exc)
         else:
-            raise AssertionError(f"slot {index} was accepted")
+            raise AssertionError(f"index {index} was accepted")
+
+    # And the two indices the Cernoxes are going to, plus both ends of the
+    # table, are accepted rather than refused on the range alone.
+    for index in (0, 16, 17, top):
+        backend, _ = _connected_backend()
+        backend.send_curve(index, lines, b"")
+
+
+def test_read_curve_accepts_the_same_index_range_as_send_curve():
+    """A slot that can be written must be readable back, or it cannot be
+    verified."""
+    top = LOADER.MASTER_TABLE_SCAN_MAX
+    backend, _ = _connected_backend()
+    for index in (-1, top + 1):
+        try:
+            backend.read_curve(index)
+        except ValueError as exc:
+            assert f"0 to {top}" in str(exc), str(exc)
+        else:
+            raise AssertionError(f"index {index} was accepted")
 
 
 def test_line_endings_follow_the_manuals_rule_per_interface():
@@ -1057,16 +1086,26 @@ def test_the_module_sends_no_control_or_reset_command():
                 f"command {banned!r}")
 
 
-def test_the_only_writes_are_the_curve_the_name_and_the_channel():
-    """Four write paths, each behind its own button, and nothing else.
+def test_the_only_writes_are_the_curve_the_type_the_name_and_the_channel():
+    """Five write paths, each behind its own button, and nothing else.
 
     write_line() carries the curve; write() carries the CALCUR? query (which
-    is read back by hand, line by line), the sensor name and the channel
-    assignment. Everything else the module says is a query.
+    is read back by hand, line by line), the SENTYPE:TYPE input range, the
+    sensor name and the channel assignment. Everything else the module says
+    is a query.
+
+    v1.3 added the SENTYPE:TYPE write. It is the second half of installing a
+    Cernox -- the curve says what the readings mean, SENTYPE:TYPE sets the
+    input range and the excitation current -- and it is sent only after the
+    curve has been read back and verified. Counting the write sites is what
+    keeps this module's non-destructive claim honest, so the count is
+    asserted exactly: a sixth write appearing must fail this test until
+    somebody has decided it belongs.
     """
     assert SOURCE.count("self.link.write_line(") == 1
-    assert SOURCE.count("self.link.write(") == 3
+    assert SOURCE.count("self.link.write(") == 4
     for expected in ('self.link.write(f"CALCUR? {index}")',
+                     'self.link.write(f"SENTYPE {senix}:TYPE {stype}")',
                      'self.link.write(f\'SENTYPE {senix}:NAME "{name}"\')',
                      'self.link.write(f"INPUT {channel}:SENIX {senix}")'):
         assert expected in SOURCE, expected
@@ -1075,15 +1114,52 @@ def test_the_only_writes_are_the_curve_the_name_and_the_channel():
 
 
 def test_the_cernox_defaults_are_the_ones_in_table_4():
-    """Cernox: R8K10UA, 10 uA, negative coefficient, LogOhms."""
+    """Cernox: R8K10UA, 10 uA, negative coefficient, LogOhms.
+
+    v1.1 split the one type field into two, because the manual uses two
+    different vocabularies for two different commands: `sensor_type` goes in
+    the CALCUR header and `sentype_type` goes in SENTYPE <index>:TYPE, which
+    is the one Table 4 is actually about.
+    """
     assert LOADER.CERNOX_DEFAULTS == {
         "sensor_type": "R8K10UA",
         "multiplier": "-1.0",
         "units": "LOGOHM",
+        "sentype_type": "R8K10UA",
     }
+    # The input type must be legal for the command it is sent with.
+    assert LOADER.CERNOX_DEFAULTS["sentype_type"] in \
+        LOADER.SENTYPE_SENSOR_TYPES
     full_scale, unit, description = LOADER.SENSOR_TYPES["R8K10UA"]
     assert full_scale == 8.0e3 and unit == "ohm"
     assert "Cernox" in description
+
+
+def test_the_two_sensor_type_vocabularies_stay_separate():
+    """The 29 Aug 2026 failure, kept as a test.
+
+    The manual prints one list for the CALCUR header (p.173) and a different
+    one for SENTYPE:TYPE (p.187). v1.3 offers both for the header, because
+    SENTYPE? showed the R-names are this firmware's own vocabulary while the
+    manual prints ACR, and nothing offline can decide between them. What
+    must not blur is which list the manual actually printed for the header:
+    the warning that names the discrepancy is built from it.
+    """
+    assert "R8K10UA" not in LOADER.CALCUR_MANUAL_TYPE_LIST
+    assert "ACR" in LOADER.CALCUR_MANUAL_TYPE_LIST
+    assert "ACR" not in LOADER.SENTYPE_SENSOR_TYPES
+    # Both spellings are offered for the header while the question is open.
+    assert "ACR" in LOADER.CALCUR_SENSOR_TYPES
+    assert "R8K10UA" in LOADER.CALCUR_SENSOR_TYPES
+    # A header type from the SENTYPE list warns and says the question is
+    # open; it no longer blocks, because the send that provoked that rule
+    # went to a protected factory slot and never tested the type at all.
+    points = _cernox_curve()
+    errors, warnings, _ = LOADER.analyse_curve(
+        points, "LOGOHM", "R8K10UA", -1.0, "CX1030 X17680",
+        sentype_type="R8K10UA")
+    assert errors == [], errors
+    assert any("not settled" in message for message in warnings), warnings
 
 
 def test_the_model_34_limits_are_the_ones_in_the_manual():
