@@ -188,6 +188,7 @@ class PICALauncherApp:
         "K6517B R-T (T_Sensing)": resource_path("keithley/k6517b/High_Resistance/RT_K6517B_L350_T_Sensing_GUI.py"),
         "K6517B R-T (T_Sensing, CC34)": resource_path("keithley/k6517b/High_Resistance/RT_K6517B_CC34_T_Sensing_GUI.py"),
         "K197A Monitor": resource_path("keithley/k197a/Monitor_K197A_GUI.py"),
+        "TPG361 Pressure Log": resource_path("pfeiffer/Pressure_Log_TPG361_GUI.py"),
         "Pyroelectric Current": resource_path("keithley/k6517b/Pyroelectricity/Pyroelectric_K6517B_L350_GUI.py"),
         "K6517B Polling (Bias)": resource_path("keithley/k6517b/Pyroelectricity/Polling_K6517B_GUI.py"),
         "Lakeshore Temp Control": resource_path("lakeshore/T_Control_L350_RangeControl_GUI.py"),
@@ -735,6 +736,10 @@ class PICALauncherApp:
             right_col, 'Bench Multimeter Logging (Keithley 197A)', "Passive Logging",
             "Requires a Model 1973A / 1972A IEEE-488 interface card", [
                 ("197A Reading Monitor", "K197A Monitor", "sensing")])
+        self._create_suite_frame(
+            right_col, 'Vacuum Gauge Logging (Pfeiffer TPG 361)', "Passive Logging",
+            "RS-232 serial (ASRL), not GPIB -- pick the COM port in the module", [
+                ("Pressure vs. Time", "TPG361 Pressure Log", "sensing")])
         self._create_suite_frame(right_col,
                                  'Temperature Utilities (Lakeshore 350 / Cryocon 34)',
                                  "Control Utility",

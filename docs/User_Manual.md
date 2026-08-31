@@ -169,7 +169,17 @@ PICA is structured as a standard Python package. The following instructions are 
     > python pica/keithley/k6517b/High_Resistance/IV_K6517B_GUI.py
     > ```
 
-2.  **Command Line Interface (CLI)**
+2.  **Launcher v2 (in testing)**
+    A second launcher ships alongside the classic one. It opens on the
+    **Quick Select** screen — three dropdowns (category, module, protocol)
+    that narrow a measurement down in plain language — and keeps the full card
+    grid in an **Advanced Options** window (`Ctrl+Shift+A`). See
+    [Launcher v2](#55-launcher-v2-quick-select-and-advanced-options).
+    ```bash
+    python run_pica_v2.py
+    ```
+
+3.  **Command Line Interface (CLI)**
     For headless operation (e.g., Raspberry Pi).
     ```bash
     pica-cli
@@ -275,6 +285,97 @@ The control window also contains a console located below the parameter settings.
 
 Above the plot area, there are two buttons providing access to the [VISA Instrument Scanner](#51-visa-instrument-scanner) and [PICA Plotter Utility](#52-pica-plotter-utility). These utilities are accessible from all modules to facilitate rapid testing and diagnostics. The VISA/GPIB scanner allows the user to quickly verify whether instruments are properly connected and recognized by the system, while the plotter utility offers additional plotting capabilities beyond those available in the default plot window.
 
+
+### 5.5 Launcher v2: Quick Select and Advanced Options
+
+*File Reference: `pica/main_v2.py` (run with `python run_pica_v2.py`)*
+
+Launcher v2 is a second dashboard, developed alongside the classic launcher
+(`pica-gui`), which it does not replace. It exists because the two people who
+use PICA want opposite things from it: someone meeting the instrument rack for
+the first time wants to be asked what they are measuring, and someone who runs
+the rack every day wants every module on one screen. v2 gives each of them a
+window.
+
+**Quick Select (the main screen).** Three dropdowns, answered in the order a
+person actually thinks in:
+
+1. **Category** — *DC Resistance*, *AC Resistance*, *Impedance Spectroscopy*
+   or *Pyroelectric*.
+2. **Module** — the resistance range or the measurement style. Under DC
+   Resistance: *Ultra Low Resistance* (10 nΩ – 1 µΩ), *Low Resistance* (above
+   1 µΩ), *Resistance, High Precision* (1 µΩ – 100 MΩ), *Normal Resistance*
+   (100 µΩ – 200 MΩ) and *High Resistance* (1 Ω – 10 PΩ). Ultra Low and Low
+   run the same delta-mode scripts; they are listed separately because a
+   10 nΩ contact and a 10 mΩ film are different measurements to the person
+   making them, whatever the instrument pair.
+3. **Protocol** — the individual measurement, e.g. an I–V sweep, an R vs. T
+   where PICA drives the temperature, or an R vs. T where PICA only reads it.
+
+Each choice writes a short description of itself into the panel below, so all
+three levels — what the measurement is, what range it covers, what the
+protocol does — are on screen at once before anything is launched. The
+descriptions name every instrument in full ("Keithley 2400", not "K2400"),
+since this screen is the one place in PICA that assumes no prior familiarity
+with the rack.
+
+The **Cryo-con 34** appears in Quick Select under the LCR meter and the
+electrometer only — the two benches it serves — where its protocols sit next
+to the Lakeshore 350 ones. Every other module is Lakeshore 350 here; the
+Cryo-con twins of those scripts still exist and are in Advanced Options.
+
+**Advanced Options (`Ctrl+Shift+A`, or the Tools menu).** The complete card
+grid: every module PICA ships, grouped by measurement range and instrument,
+with the folder shortcut on each card. Nothing here is filtered or
+range-limited — this is the expert route, and the one to use for the
+temperature utilities, the Novocontrol Alpha-AN and the bench multimeter,
+which Quick Select does not list. The window opens maximised and reflows its
+cards into up to four columns, so a wide screen shows more of them before you
+scroll; its bottom strip is the compact one, with the Instrument Status button
+in place of the chips.
+
+**Status strip.** Both windows carry a band along their bottom edge. On Quick
+Select it holds only what a measurement actually needs to know before it
+starts — the temperature snapshot, a pressure tile (a placeholder: no gauge is
+on the bus yet, and the tile is drawn now so the strip does not change shape
+when one arrives), and a button reading, for example, *Instrument Status
+3/10 on the bus*. Advanced Options keeps the whole instrument list on its
+strip, chip by chip.
+
+**Instrument Status window.** The button opens it, and so does launching a
+protocol — an instrument that is not on the bus is the commonest way for a
+measurement to fail, and the module would only report it as a connection error
+a minute later. Launching also repaints the bottom panel of every open window;
+it does not rescan, because a module that has just started is opening its own
+connections and the launcher must stay off the bus. Press **Reload** for a
+deliberate rescan. The window is the launcher's own VISA scanner:
+
+* every known instrument as a chip with its light. The dot key reads
+  **green ●** — on the bus and answering (the dot blinks), **grey ●** — not
+  found on the last scan, **hollow ○** — never probed (the Novocontrol
+  Alpha-AN is permanently in this state; see the
+  [GPIB runbook](Novocontrol_GPIB_Runbook.md) for why).
+* an instrument that answers but matches nothing in the reference table gets
+  a chip of its own, named from its `*IDN?` reply and marked **(new)** — so a
+  newly racked instrument shows up without anyone editing PICA first.
+* the instruments the current Quick Select choice needs are marked with an
+  accent bar.
+* below the chips, the **VISA / GPIB scan** table: every resource, what it was
+  identified as, and the raw reply. It is filled from the pass that lit the
+  dots — no address is opened twice to build it — and appears half a second
+  after the lights settle.
+* **Full VISA / GPIB Scanner** opens the standalone scanner utility
+  (§5.1), unchanged, for the address guide and for sending SCPI by hand.
+  That scanner still opens by itself at startup, half a second after the
+  launcher's own scan has finished, so the two never probe the bus at once.
+
+:::{important}
+The strip is filled by a single read-only scan at startup, and again only when
+**Reload** is pressed. The launcher never polls in the background, so once a
+measurement is running it stays off the GPIB bus. Pressing Reload while a
+measurement launched from that window is still alive raises a confirmation
+first.
+:::
 
 ## 6. Supported Measurement Modules
 
@@ -731,6 +832,9 @@ For developers and advanced users, the following reference outlines the PICA dir
 
 :::{note}
 Adding a new module to the main launcher into the GUI requires modifying `pica/main.py`.
+For launcher v2, add the same module to `CATALOG` in `pica/main_v2.py` so it
+appears in Advanced Options, and to `QUICK_CATALOG` in the same file if it also
+belongs on the Quick Select screen.
 :::
 
 ```text
