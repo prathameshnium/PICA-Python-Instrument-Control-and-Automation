@@ -359,11 +359,10 @@ strip, chip by chip.
 
 **Instrument Status window.** It opens by itself a moment after the launcher
 starts, and fills in when the first scan lands (so it still appears, and still
-explains itself, when PyVISA is missing or the VISA backend errors). The strip button opens it later, and so
-does launching a protocol — an instrument that is not on the bus is the commonest way for a
-measurement to fail, and the module would only report it as a connection error
-a minute later. Launching also repaints the bottom panel of every open window;
-it does not rescan, because a module that has just started is opening its own
+explains itself, when PyVISA is missing or the VISA backend errors). After
+that it is opened from the strip button — launching a measurement does not
+raise it, which would only bury the module you just asked for. Launching does
+repaint the bottom panel of every open window; it does not rescan, because a module that has just started is opening its own
 connections and the launcher must stay off the bus. Press **Reload** for a
 deliberate rescan. The window is the launcher's own VISA scanner:
 
