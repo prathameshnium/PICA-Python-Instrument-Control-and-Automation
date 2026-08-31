@@ -122,7 +122,8 @@ def test_the_newer_modules_are_all_in_the_catalogue():
     keys = {key for cat in launcher.CATALOG for _l, key, _f in cat["modules"]}
     for expected in ("Cryocon Direct Control", "Cryocon Temp Monitor",
                      "K197A Monitor", "SR830 Lock-in Comms",
-                     "Alpha-AN Freq. Scan", "Alpha-AN Freq. Scan (32-bit)"):
+                     "Alpha-AN Freq. Scan", "Alpha-AN Freq. Scan (32-bit)",
+                     "AFG3022B Function Generator"):
         assert expected in keys, expected
 
 

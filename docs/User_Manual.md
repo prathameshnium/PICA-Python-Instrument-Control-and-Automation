@@ -41,6 +41,7 @@ pip install --upgrade pica-suite
    * [Broadband Dielectric Spectroscopy](#68-broadband-dielectric-spectroscopy)
    * [Standalone Temperature Utilities](#69-standalone-temperature-utilities)
    * [Bench Multimeter Logging (Keithley 197A)](#610-bench-multimeter-logging-keithley-197a)
+   * [AC Transport (Keithley 6221 AC Current Source)](#611-ac-transport-keithley-6221-ac-current-source)
 7. [Releases and Versions](#7-releases-and-versions)
 8. [Common Issues & Troubleshooting](#8-common-issues--troubleshooting)
 9. [Technical Reference](#9-technical-reference)
@@ -312,6 +313,14 @@ person actually thinks in:
 3. **Protocol** — the individual measurement, e.g. an I–V sweep, an R vs. T
    where PICA drives the temperature, or an R vs. T where PICA only reads it.
 
+Each choice also narrows the instrument list shown on the status strip, with
+each instrument's own light: picking a category shows everything its modules can
+use, picking a module shows that module's hardware, and picking a protocol
+shows only what that script talks to — an I–V sweep drops the temperature
+controller entirely, and a T Sensing (Cryocon 34) protocol drops the Lakeshore.
+"Do I have the hardware for this, and is it switched on?" is therefore
+answered where the choice is being made.
+
 Each choice writes a short description of itself into the panel below, so all
 three levels — what the measurement is, what range it covers, what the
 protocol does — are on screen at once before anything is launched. The
@@ -334,6 +343,12 @@ cards into up to four columns, so a wide screen shows more of them before you
 scroll; its bottom strip is the compact one, with the Instrument Status button
 in place of the chips.
 
+**Console.** Everything the launcher does is logged, whether or not anything
+is showing it. Quick Select keeps it behind the **Console** button on the
+strip, which opens it in a window of its own; Advanced Options carries one
+inline, above its strip. A console opened after the fact still shows the lines
+written at startup, and every open view updates together.
+
 **Status strip.** Both windows carry a band along their bottom edge. On Quick
 Select it holds only what a measurement actually needs to know before it
 starts — the temperature snapshot, a pressure tile (a placeholder: no gauge is
@@ -342,8 +357,9 @@ when one arrives), and a button reading, for example, *Instrument Status
 3/10 on the bus*. Advanced Options keeps the whole instrument list on its
 strip, chip by chip.
 
-**Instrument Status window.** It opens by itself at startup, as soon as the
-first scan has something to put in it. The strip button opens it later, and so
+**Instrument Status window.** It opens by itself a moment after the launcher
+starts, and fills in when the first scan lands (so it still appears, and still
+explains itself, when PyVISA is missing or the VISA backend errors). The strip button opens it later, and so
 does launching a protocol — an instrument that is not on the bus is the commonest way for a
 measurement to fail, and the module would only report it as a connection error
 a minute later. Launching also repaints the bottom panel of every open window;
@@ -366,9 +382,11 @@ deliberate rescan. The window is the launcher's own VISA scanner:
   dots — no address is opened twice to build it — and appears half a second
   after the lights settle.
 * **Full VISA / GPIB Scanner** opens the standalone scanner utility
-  (§5.1), unchanged, for the address guide and for sending SCPI by hand.
-  That scanner still opens by itself at startup, half a second after the
-  launcher's own scan has finished, so the two never probe the bus at once.
+  (§5.1), unchanged, for the address guide and for sending SCPI by hand. It
+  is not opened at startup — it repeats, in a second process and a second
+  pass over the bus, what this window already shows — but it does come up
+  with Advanced Options by default, and it is in the Tools menu and on the
+  toolbar.
 
 :::{important}
 The strip is filled by a single read-only scan at startup, and again only when
@@ -676,6 +694,94 @@ The default VISA address is the placeholder `GPIB0::7::INSTR`. It is editable
 in the GUI, and it is very likely wrong on your rack; run the GPIB Scanner
 utility to find the real one.
 
+### 6.11 AC Transport (Keithley 6221 AC Current Source)
+
+**Target Hardware:** Keithley 6221 AC/DC current source, paired either with an
+SRS SR830 DSP lock-in amplifier or with a Keithley 197A bench DMM. Optional
+thermometry from a Lakeshore 350 or a Cryo-con 34.
+
+Ten modules in two matched sets of five. Each set covers the same four-probe
+AC measurement in the same four situations, so a measurement can be moved
+between the two detectors without changing anything else:
+
+| Protocol | 6221 + SR830 | 6221 + 197A |
+| --- | --- | --- |
+| AC I-V (current sweep, fixed *f*) | `IV_AC_K6221_SR830_GUI.py` | `IV_AC_K6221_K197A_GUI.py` |
+| AC frequency scan (fixed *I*) | `Frequency_Scan_K6221_SR830_GUI.py` | `Frequency_Scan_K6221_K197A_GUI.py` |
+| R–T, this module drives the ramp | `RT_AC_K6221_SR830_L350_T_Control_GUI.py` | `RT_AC_K6221_K197A_L350_T_Control_GUI.py` |
+| R–T, passive (Lakeshore 350) | `RT_AC_K6221_SR830_L350_T_Sensing_GUI.py` | `RT_AC_K6221_K197A_L350_T_Sensing_GUI.py` |
+| R–T, passive (Cryo-con 34) | `RT_AC_K6221_SR830_CC34_T_Sensing_GUI.py` | `RT_AC_K6221_K197A_CC34_T_Sensing_GUI.py` |
+
+The SR830 set lives in `pica/lockin/sr830/`, beside the existing
+`AC_Resistivity_K6221_SR830_GUI.py`; the 197A set lives in
+`pica/keithley/k6221_k197a/`.
+
+**The current is set, not measured.** The 6221 is a true current source, so
+in both sets the current through the sample comes from the setting.
+`SOUR:WAVE:AMPL` is a **peak** amplitude while every voltage here is RMS, so
+the conversion happens once, explicitly:
+
+```
+I_rms = I_peak / sqrt(2)
+```
+
+Dividing an RMS voltage by a peak current gives a resistance wrong by exactly
+`sqrt(2) = 1.414` — large enough to matter, small enough to look plausible.
+That factor is pinned by the test suite in every one of the ten modules.
+
+**With the SR830 (phase sensitive).** `R = X / I_rms`, the in-phase
+and therefore resistive part; the magnitude `sqrt(X^2 + Y^2) / I_rms`
+is logged beside it, and the two agreeing to a fraction of a percent is the
+evidence that the phasing is right and the contact is ohmic. The lock-in needs
+a reference and the 6221 supplies it as a 1 µs TTL phase-marker pulse:
+
+> **6221 TRIGGER LINK line 3 → SR830 REF IN.** This cable is not optional.
+> Without it the SR830 free-runs and every number it returns is meaningless.
+
+Each point reads `LIAS?` and compares the SR830's `FREQ?` against the
+frequency programmed into the 6221, so a missing reference cable is reported
+as an error and written into the file's `Flags` column rather than logged as a
+plausible resistance. Overloads and a reading above 90 % of the sensitivity
+full scale are flagged the same way.
+
+**With the 197A (magnitude only).** `R = V_rms / I_rms`.
+The 197A on AC volts is a broadband true-RMS converter with no reference
+input: there is no X, no Y and no phase. Nothing outside the drive
+frequency is rejected, so mains hum, thermal EMF at the wrong phase, amplifier
+noise and the harmonics of a non-ohmic contact all add in quadrature and
+always upward — `V_measured = sqrt(V_signal^2 + V_noise^2) >= V_signal` —
+which makes the reported resistance an **upper bound**. Use this pairing
+when the voltage is comfortably above the meter's noise floor and no lock-in
+is free; use the SR830 pairing for anything small. Three consequences are
+visible in the module:
+
+  * the spread across the averaged readings is logged next to the mean,
+    because with no reference it is the only noise estimate there is;
+  * a drive outside the meter's AC volts band is flagged on every point, since
+    outside it the meter simply rolls the signal off and the resistance is low
+    by an unknown factor;
+  * everything in §6.10 about the 197A still applies — the Model 1973A/1972A
+    interface card is required, and the command table is **UNVERIFIED**
+    against the printed interface manual.
+
+**Temperature.** The T-Control modules stabilise at the start temperature, arm
+`SETP` and `RAMP` on the Lakeshore 350, open the heater and log along the
+ramp, with a safety cutoff beyond the end temperature. The heater is put back
+to off when the run ends, is stopped, or throws — in the same thread that
+opened it, on every exit path, exactly as the current is. The T-Sensing
+modules never write to their thermometer at all: whatever is driving the
+temperature keeps driving it. The Cryo-con variants verify that the chosen
+channel is displaying Kelvin before the run starts, parse the Cryo-con status
+strings (`-------`, `.......`) rather than handing them to `float()`, and
+retry the first `*IDN?` of a session.
+
+Every module writes the standard PICA commented-header `.dat` file (§9.4),
+with optional bar or van der Pauw resistivity and sheet resistance columns,
+and takes the 6221 output off on every exit path.
+
+*Status: experimental. The pairings work and the conversions are tested, but
+neither set has been through a full measurement campaign.*
+
 ## 7. Releases and Versions
 
 For downloadable release builds, please visit the [Releases page](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases).
@@ -787,7 +893,11 @@ The full preprint of the PICA software suite, detailing its design, implementati
 
 ### 11.1 AC Resistivity (Lock-In)
 
-*Status: Under Development*
+*Status: Under Development. The first modules have landed and are described in
+[§6.11](#611-ac-transport-keithley-6221-ac-current-source) — I-V, frequency
+scan and R-T, with either the SR830 or a Keithley 197A as the voltmeter. What
+remains is a full measurement campaign against a known sample, and the
+verification of the 197A command table against its printed interface manual.*
 
   * **Instruments:** Keithley 6221 (AC Source) + SRS SR830 (DSP Lock-In Amplifier).
   * **Predicted Resistance Range:** \~ 20 nΩ to 1 MΩ.
@@ -891,6 +1001,12 @@ PICA (Root Directory)/
                 RT_K2400_K2182_L350_T_Sensing_GUI.py
                 RT_K2400_K2182_T_Control_GUI.py
                 Instrument_Control/
+            k6221_k197a/        <-- AC transport with a DMM (magnitude only)
+                IV_AC_K6221_K197A_GUI.py
+                Frequency_Scan_K6221_K197A_GUI.py
+                RT_AC_K6221_K197A_L350_T_Control_GUI.py
+                RT_AC_K6221_K197A_L350_T_Sensing_GUI.py
+                RT_AC_K6221_K197A_CC34_T_Sensing_GUI.py
             k6517b/             <-- High Resistance & Pyroelectric
                 High_Resistance/
                     IV_K6517B_GUI.py
@@ -913,6 +1029,12 @@ PICA (Root Directory)/
         lockin/                 <-- Lock-in Amplifiers (Experimental)
             sr830/
                 Comms_SR830_GUI.py
+                AC_Resistivity_K6221_SR830_GUI.py
+                IV_AC_K6221_SR830_GUI.py
+                Frequency_Scan_K6221_SR830_GUI.py
+                RT_AC_K6221_SR830_L350_T_Control_GUI.py
+                RT_AC_K6221_SR830_L350_T_Sensing_GUI.py
+                RT_AC_K6221_SR830_CC34_T_Sensing_GUI.py
                 Instrument_Control/
         utils/                  <-- Core Utilities
             GPIB_Instrument_Scanner_GUI.py
