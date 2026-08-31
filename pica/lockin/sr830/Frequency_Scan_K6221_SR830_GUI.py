@@ -763,9 +763,6 @@ def build_log_header(sample, operator, source, detector, thermometer,
     ]
     lines.extend(detector_header_lines(
         detector.idn, detector.address, detector_settings))
-    if thermometer is not None:
-        lines.extend(thermometer_header_lines(
-            thermometer, params['temperature']))
     lines.extend([
         "# Measurement: %s" % MEASUREMENT_DESCRIPTION,
         "# Drive: %s" % params['drive_description'],

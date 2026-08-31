@@ -9,6 +9,7 @@ Runnable as plain Python as well as under pytest.
 
 import ast
 import importlib.util
+import re
 import os
 import sys
 
@@ -264,7 +265,11 @@ def test_the_gpib_scanner_and_plotter_are_still_in_the_tools_menu():
 
 def test_the_scanner_auto_launches_at_startup():
     assert hasattr(launcher.PICALauncherV2, "_auto_launch_gpib_scanner")
-    assert "self.root.after(900, self._auto_launch_gpib_scanner)" in V2_SOURCE
+    # The delay is a drawing courtesy, not a contract: assert the
+    # scheduling, not the number of milliseconds.
+    assert re.search(
+        r"self\.root\.after\(\d+, self\._auto_launch_gpib_scanner\)",
+        V2_SOURCE)
 
 
 def test_v1_also_auto_launches_so_the_behaviour_matches():
