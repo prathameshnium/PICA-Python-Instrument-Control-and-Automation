@@ -724,9 +724,13 @@ CATALOG = [
             ("Step-wise Control (Advanced, L350)", "Lakeshore Step Control (Advanced)", "control"),
             ("Direct Control (L350)", "Lakeshore Direct Control", "control"),
             ("Temperature Monitor (L350)", "Lakeshore Temp Monitor", "sensing"),
+            # The two viewers are read-only: they ask the instrument what
+            # curves it holds and can send nothing but queries.
+            ("Sensor Curve Viewer (L350, read only)", "Lakeshore Sensor Curve Viewer", "sensing"),
             ("Direct Control (Cryocon 34)", "Cryocon Direct Control", "control"),
             ("Temperature Monitor (Cryocon 34)", "Cryocon Temp Monitor", "sensing"),
             ("Sensor Curve Loader (Cryocon 34)", "Cryocon Sensor Curve Loader", "control"),
+            ("Sensor Curve Viewer (Cryocon 34, read only)", "Cryocon Sensor Curve Viewer", "sensing"),
         ],
     },
     {

@@ -97,6 +97,33 @@ def launch_gpib_scanner():
             "Launch Error", f"Failed to launch GPIB Scanner: {e}")
 
 
+def launch_curve_loader():
+    """Open the sensor curve loader in its own process.
+
+    The Input Curve field above selects which of the instrument's curves an
+    input uses; it cannot put a curve there. Installing a calibrated Cernox
+    is a CRVDEL / CRVHDR / 129 x CRVPT transfer (plus CRVSAV on a 340), which
+    is what the loader does.
+
+    Launched as a separate process, like every other utility here, so a curve
+    transfer never shares a VISA session with the control panel.
+    """
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        loader_path = os.path.join(
+            script_dir, "Sensor_Curve_Loader_L340_L350_GUI.py")
+        if not os.path.exists(loader_path):
+            messagebox.showerror(
+                "File Not Found",
+                f"Sensor Curve Loader not found at:\n{loader_path}\n\n"
+                "Everything else in this window works normally.")
+            return
+        Process(target=run_script_process, args=(loader_path,)).start()
+    except Exception as e:
+        messagebox.showerror(
+            "Launch Error", f"Failed to launch the Sensor Curve Loader: {e}")
+
+
 # ---------------------------------------------------------------------------
 # BACKEND: Lake Shore 350 Instrument Control
 # ---------------------------------------------------------------------------
@@ -1442,6 +1469,15 @@ class DirectControlGUI:
             text="Read Config",
             command=self._read_input_config).grid(
             row=0, column=1, sticky='ew', padx=5)
+
+        # A calibrated sensor needs its curve installed before the Input
+        # Curve field can point at it. That is a 130-command transfer, so it
+        # has its own window.
+        ttk.Button(
+            frame,
+            text="Sensor Curve Loader…",
+            command=launch_curve_loader).grid(
+            row=4, column=0, columnspan=2, sticky='ew', padx=10, pady=(5, 8))
 
     def _create_manual_output_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Manual Output')

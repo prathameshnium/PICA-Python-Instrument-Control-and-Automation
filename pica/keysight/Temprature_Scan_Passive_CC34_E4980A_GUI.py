@@ -288,6 +288,16 @@ CRYOCON_OPEN_SETTLE_S = 0.30        # pause after open, before the first command
 CRYOCON_MIN_GAP_S = 0.08            # minimum gap between consecutive operations
 CRYOCON_CONNECT_ATTEMPTS = 3        # tries for the first '*IDN?'
 CRYOCON_RETRY_WAIT_S = 1.5          # pause between those tries
+
+# A sensor-status reply ('-------' / '.......') is an INVALID READING, not a
+# comm error: the instrument answered, the sensor did not, so reconnecting
+# cannot cure it and the retry-forever comm loop must never be entered on
+# one. Almost all of them are transient (dashes while an input range
+# switches), so the reading is retried in place first; past that the point's
+# temperature becomes NaN. The electrical measurement at that point is still
+# good and is still written -- only the thermometry column is missing.
+CRYOCON_READ_RETRIES = 3            # extra tries before a point becomes NaN
+CRYOCON_READ_RETRY_S = 0.3          # pause between those tries
 ALLOW_DEVICE_CLEAR_ON_RETRY = False # see note above
 
 # Literal replies that are status, not data.
@@ -490,6 +500,7 @@ class Cryocon34_Backend:
         self.log = log if callable(log) else (lambda msg: print(msg))
         self.link = CryoconLink(visa_address, log=self.log)
         self.idn = self.link.idn
+        self.status_reports = 0     # sensor-fault readings seen so far
         if not is_cryocon_idn(self.idn):
             self.link.close()
             raise ConnectionError(
@@ -522,9 +533,40 @@ class Cryocon34_Backend:
         return value
 
     def get_temperature(self, sensor=None):
+        """Strict read: a sensor-status reply raises.
+
+        Used by verify_channel() at Start, where a faulted channel really
+        is a reason to refuse to run. The sweep uses the tolerant read.
+        """
         ch = (str(sensor).strip().upper() if sensor else self.channel)
         raw = self.link.query(f'INPUT? {ch}')
         return parse_cryocon_number(raw, 'temperature reading', ch)
+
+    def read_temperature_tolerant(self, sensor=None):
+        """One temperature for a data point: NaN instead of a raise.
+
+        A status reply is retried in place, because dashes during a range
+        switch clear within a second and must not cost a point. If it still
+        will not read, NaN comes back: the point keeps its capacitance and
+        conductance, the temperature column reads NaN, the plot leaves a
+        gap, and the run carries on. A genuine comm failure still raises,
+        and the worker's retry-forever reconnect loop takes it.
+        """
+        ch = (str(sensor).strip().upper() if sensor else self.channel)
+        for attempt in range(CRYOCON_READ_RETRIES + 1):
+            raw = self.link.query(f'INPUT? {ch}')
+            try:
+                return parse_cryocon_number(raw, 'temperature reading', ch)
+            except CryoconStatusError as e:
+                if attempt < CRYOCON_READ_RETRIES:
+                    time.sleep(CRYOCON_READ_RETRY_S)
+                    continue
+                self.status_reports += 1
+                if (self.status_reports <= 5
+                        or self.status_reports % 25 == 0):
+                    self.log(f"Sensor fault #{self.status_reports}: "
+                             f"temperature logged as NaN, run continues. {e}")
+                return float('nan')
 
     def get_heater_output(self, loop=CRYOCON_HEATER_LOOP):
         """Loop output power as a percentage of full scale. Query only.
@@ -784,7 +826,8 @@ class Combined_Backend:
         for f in frequencies:
             if stop_event is not None and stop_event.is_set():
                 break                     # abort mid-sweep, cleanly
-            temp = self.cryocon.get_temperature()   # T for THIS point
+            # NaN on a sensor fault: the point keeps its LCR data.
+            temp = self.cryocon.read_temperature_tolerant()  # T for THIS point
             if temp >= self.SAFETY_KILL_TEMP_K:
                 self.check_safety_kill(temp)
                 points.append((temp, f, float('nan'), float('nan'), -1))
@@ -1835,9 +1878,13 @@ class Integrated_CT_GUI:
                 else:
                     break   # stop_event aborted the sweep pre-first-point
 
-                # Hardcoded 400 K kill switch (checks max T in cycle)
-                max_temp = max(pt[0] for pt in cycle['points'])
-                if self.backend.check_safety_kill(max_temp):
+                # Hardcoded 400 K kill switch (checks max T in cycle).
+                # NaN points are sensor faults, not measurements, and are
+                # left out: a NaN reaching max() would hide a real 400 K.
+                real_temps = [pt[0] for pt in cycle['points']
+                              if pt[0] == pt[0]]
+                if real_temps and self.backend.check_safety_kill(
+                        max(real_temps)):
                     self.data_queue.put("KILL")
                     break
         except Exception as e:
