@@ -675,9 +675,13 @@ CATALOG = [
     {
         'category': "Pyroelectric Measurement",
         'type': "Current Sensing",
-        'instruments': "K6517B",
+        'instruments': "K6517B · Lakeshore 350",
         'modules': [
-            ("PyroCurrent vs. T", "Pyroelectric Current", None),
+            # T Control: the script sets the Lakeshore 350 start point and
+            # drives it with SETP/RAMP to the end temperature while it reads
+            # the current. It was listed here as untyped, which put no family
+            # strip on the row and left the Lakeshore off the card.
+            ("PyroCurrent vs. T", "Pyroelectric Current", "control"),
             ("Voltage Polling (Bias)", "K6517B Polling (Bias)", None),
         ],
     },
@@ -697,6 +701,17 @@ CATALOG = [
         'instruments': "Pfeiffer TPG 361 SingleGauge · RS-232 (ASRL)",
         'modules': [
             ("Pressure vs. Time", "TPG361 Pressure Log", "sensing"),
+        ],
+    },
+    {
+        'category': "Signal Generation",
+        'type': "Waveform Source",
+        # A source, not a measurement: this module sets the drive another
+        # module measures against, so it carries no data file of its own.
+        'instruments': "Tektronix AFG 3022B (2 ch, 25 MHz)",
+        'modules': [
+            ("Function Generator Direct Control", "AFG3022B Function Generator",
+             "control"),
         ],
     },
     {
@@ -750,6 +765,26 @@ CATALOG = [
         'modules': [
             ("Comms and Control", "SR830 Lock-in Comms", None),
             ("AC Resistivity (4-probe)", "SR830 AC Resistivity", None),
+            ("AC I-V Sweep", "SR830 AC I-V", None),
+            ("AC Frequency Scan", "SR830 AC Freq. Scan", None),
+            ("AC R vs. T (T Control)", "SR830 AC R-T", "control"),
+            ("AC R vs. T (T Sensing, L350)", "SR830 AC R-T (T_Sensing)", "sensing"),
+            ("AC R vs. T (T Sensing, Cryocon 34)", "SR830 AC R-T (T_Sensing, CC34)", "sensing"),
+        ],
+    },
+    {
+        'category': "AC Transport without a Lock-in",
+        'type': "AC Current Driven",
+        'instruments': "Keithley 6221 · Keithley 197A (AC volts)",
+        # No reference and no phase: R is a magnitude and an upper bound.
+        # Kept apart from the lock-in suite so the two are never confused.
+        'experimental': True,
+        'modules': [
+            ("AC I-V Sweep", "K197A AC I-V", None),
+            ("AC Frequency Scan", "K197A AC Freq. Scan", None),
+            ("AC R vs. T (T Control)", "K197A AC R-T", "control"),
+            ("AC R vs. T (T Sensing, L350)", "K197A AC R-T (T_Sensing)", "sensing"),
+            ("AC R vs. T (T Sensing, Cryocon 34)", "K197A AC R-T (T_Sensing, CC34)", "sensing"),
         ],
     },
 ]
@@ -781,8 +816,11 @@ CATALOG = [
 #     benches are the pair the CC34 serves. Every other module is Lakeshore
 #     350 in Quick Select; its Cryo-con twin still exists and is one keystroke
 #     away in Advanced Options. Pyroelectric has no CC34 twin written yet.
-#   * Temperature utilities, the Novocontrol Alpha-AN and the bench multimeter
-#     are Advanced-only: they are not measurements a newcomer starts from.
+#   * Temperature utilities, the Novocontrol Alpha-AN, the bench multimeter,
+#     the pressure log and the function generator are Advanced-only: they are
+#     not measurements a newcomer starts from. The Alpha-AN broadband scans
+#     are the ones to add here first, once the module has been through a full
+#     campaign; the temperature utilities stay in Advanced by choice.
 #
 # Instrument names are written out in full in every description -- "Keithley
 # 2400", not "K2400". A newcomer has not yet learned to read the shorthand,
@@ -959,6 +997,70 @@ QUICK_CATALOG = [
                      'desc': "Four-probe AC resistivity: the Keithley 6221 "
                              "sources the AC current, the SR830 reads the "
                              "voltage drop, and PICA logs R against time."},
+                    {'label': "AC I-V Sweep", 'key': "SR830 AC I-V",
+                     'family': None,
+                     'desc': "Sweep the current amplitude at one fixed "
+                             "frequency. A straight line through the origin "
+                             "is an ohmic contact; it also says which current "
+                             "the temperature scans should use."},
+                    {'label': "AC Frequency Scan",
+                     'key': "SR830 AC Freq. Scan", 'family': None,
+                     'desc': "Sweep the drive frequency at one fixed current. "
+                             "A flat R(f) is a resistance; anything else is "
+                             "cable capacitance, contact impedance, or the "
+                             "measurement's own limits."},
+                    {'label': "R vs. T (T Control)", 'key': "SR830 AC R-T",
+                     'family': 'control',
+                     'desc': "AC R(T) along a Lakeshore 350 ramp driven by "
+                             "the module. The heater goes back to off on "
+                             "every exit path."},
+                    {'label': "R vs. T (T Sensing)",
+                     'key': "SR830 AC R-T (T_Sensing)", 'family': 'sensing',
+                     'desc': "The same AC R(T), logged passively while "
+                             "something else drives the temperature."},
+                    {'label': "R vs. T (T Sensing, Cryocon 34)",
+                     'key': "SR830 AC R-T (T_Sensing, CC34)",
+                     'family': 'sensing',
+                     'desc': "The passive AC R(T) with the Cryo-con 34 as the "
+                             "thermometer."},
+                ],
+            },
+            {
+                'name': "DMM AC Resistance (no lock-in)",
+                'desc': "The Keithley 6221 supplies the AC current and a "
+                        "Keithley 197A reads the voltage on AC volts. There "
+                        "is no reference and no phase, so R is a MAGNITUDE "
+                        "and an upper bound: every noise contribution inside "
+                        "the meter's passband adds into it. Use it when the "
+                        "voltage is comfortably above the meter's noise floor "
+                        "and no lock-in is free; use the SR830 pairing for "
+                        "anything small.",
+                'instruments': ["Keithley 6221", "Keithley 197A"],
+                'protocols': [
+                    {'label': "AC I-V Sweep", 'key': "K197A AC I-V",
+                     'family': None,
+                     'desc': "Sweep the current amplitude at one fixed "
+                             "frequency and check that the voltage follows "
+                             "it. Start high: the 197A needs a voltage it can "
+                             "resolve."},
+                    {'label': "AC Frequency Scan",
+                     'key': "K197A AC Freq. Scan", 'family': None,
+                     'desc': "Sweep the drive frequency at one fixed current. "
+                             "A roll-off at the top is the METER's passband "
+                             "before it is the sample's."},
+                    {'label': "R vs. T (T Control)", 'key': "K197A AC R-T",
+                     'family': 'control',
+                     'desc': "AC R(T) along a Lakeshore 350 ramp driven by "
+                             "the module."},
+                    {'label': "R vs. T (T Sensing)",
+                     'key': "K197A AC R-T (T_Sensing)", 'family': 'sensing',
+                     'desc': "The same AC R(T), logged passively while "
+                             "something else drives the temperature."},
+                    {'label': "R vs. T (T Sensing, Cryocon 34)",
+                     'key': "K197A AC R-T (T_Sensing, CC34)",
+                     'family': 'sensing',
+                     'desc': "The passive AC R(T) with the Cryo-con 34 as the "
+                             "thermometer."},
                 ],
             },
         ],
@@ -1016,24 +1118,25 @@ QUICK_CATALOG = [
                      'desc': "The same passive scan with the Cryo-con 34 as "
                              "thermometer. The hardened version: it reconnects "
                              "by itself and flushes every point to disk."},
+                ],
+            },
+            {
+                'name': "Frequency Scan vs. Temperature",
+                'desc': "A full frequency sweep taken at each of a series of "
+                        "temperatures. Either PICA holds each setpoint itself, "
+                        "or -- against a Quantum Design PPMS running its own "
+                        "sequence -- it waits for the plateaus the PPMS "
+                        "provides and never commands the temperature.",
+                'instruments': ["Keysight E4980A", "Lakeshore 350",
+                                "Cryocon 34"],
+                'protocols': [
                     {'label': "Temp. Step Freq. Scan (T Control)",
                      'key': "LCR Temp. Step Freq. Scan (T_Control)",
                      'family': 'control',
                      'desc': "Each Lakeshore 350 setpoint is held while a full "
                              "frequency sweep is run, then the next setpoint "
-                             "is taken."},
-                ],
-            },
-            {
-                'name': "PPMS-synchronised Dielectric",
-                'desc': "The Keysight E4980A run against a Quantum Design PPMS "
-                        "that is following its own sequence. PICA never "
-                        "commands the temperature here; it watches the "
-                        "thermometer and fits its measurements into the "
-                        "plateaus the PPMS provides.",
-                'instruments': ["Keysight E4980A", "Lakeshore 350",
-                                "Cryocon 34"],
-                'protocols': [
+                             "is taken. The stand-alone form, with no PPMS "
+                             "involved."},
                     {'label': "PPMS Sync Freq. Scan (T Sensing, L350)",
                      'key': "PPMS Sync Freq. Scan", 'family': 'sensing',
                      'desc': "Waits for the PPMS to hold a plateau, runs a "
@@ -1075,8 +1178,11 @@ QUICK_CATALOG = [
                         "instrument's voltage source.",
                 'instruments': ["Keithley 6517B", "Lakeshore 350"],
                 'protocols': [
+                    # T Control, not untyped: the script sets the Lakeshore
+                    # 350 start point and drives it with SETP/RAMP to the end
+                    # temperature while it reads the current.
                     {'label': "Pyroelectric Current vs. T",
-                     'key': "Pyroelectric Current", 'family': None,
+                     'key': "Pyroelectric Current", 'family': 'control',
                      'desc': "Log the depolarisation current against "
                              "temperature during the ramp -- the measurement "
                              "itself."},
@@ -1090,6 +1196,33 @@ QUICK_CATALOG = [
         ],
     },
 ]
+
+# The two temperature controllers, which are what distinguishes one protocol
+# from the next within a module: an I-V sweep uses neither, a T Control scan
+# drives the Lakeshore, a T Sensing scan reads whichever one its script names.
+TEMPERATURE_CHIPS = ("Lakeshore 350", "Cryocon 34")
+
+
+def _protocol_instruments(module, proto):
+    """The instruments one protocol actually talks to.
+
+    Derived from the module's list rather than written out thirty times: the
+    module names the hardware, and which thermometer (if any) is in play is
+    already stated unambiguously by the protocol itself -- 'CC34' in the
+    script key for the Cryo-con variants, and T Control scripts being
+    Lakeshore throughout. Deriving it keeps this in step with the script keys
+    by construction; a hand-written list would drift the first time a protocol
+    was renamed.
+    """
+    names = list(module['instruments'])
+    if not proto['family']:
+        # No temperature dimension at all -- an I-V or fixed-T sweep.
+        return [n for n in names if n not in TEMPERATURE_CHIPS]
+    key = proto['key'].upper()
+    cryocon = "CC34" in key or "CRYOCON" in key
+    drop = "Lakeshore 350" if cryocon else "Cryocon 34"
+    return [n for n in names if n != drop]
+
 
 def _run_legacy_launcher():
     """Target for a spawned process: run the classic v1 launcher."""
@@ -1150,6 +1283,13 @@ class PICALauncherV2:
     FONT_DOT = ('Segoe UI', FONT_SIZE_BASE + 1)              # status dot glyph
     FONT_STRIP = ('Segoe UI', FONT_SIZE_BASE - 4)            # chip / caption text
     FONT_STRIP_BOLD = ('Segoe UI', FONT_SIZE_BASE - 4, 'bold')  # a marked chip
+    # The chips that answer "have I got the hardware for this, and is it on?"
+    # run well above the strip's own caption scale: text a size under the body
+    # copy, and a dot big enough to catch the eye across the bench while it
+    # blinks. Only the strips that carry the narrowed selection use them.
+    FONT_CHIP = ('Segoe UI', FONT_SIZE_BASE - 1)
+    FONT_CHIP_BOLD = ('Segoe UI', FONT_SIZE_BASE - 1, 'bold')
+    FONT_CHIP_DOT = ('Segoe UI', FONT_SIZE_BASE + 4)
     FONT_STRIP_CAP = ('Segoe UI', FONT_SIZE_BASE - 5, 'bold')  # tile headings
     FONT_STRIP_STAT = ('Consolas', FONT_SIZE_BASE, 'bold')   # tile big numbers
     # Browse cards keep the v1 sizes. The base bump was for the menus and the
@@ -1205,9 +1345,16 @@ class PICALauncherV2:
         # longer shows chips, so this is what tints them in the Instrument
         # Status window instead of filtering a list nobody is looking at.
         self._needed_instruments = set()
-        # The standalone VISA/GPIB scanner is started once, half a second
-        # after the launcher's own scan finishes -- never alongside it.
-        self._startup_scanner_done = False
+        # Every line the launcher has logged, and every console view currently
+        # showing them. The log outlives any one view: a console opened after
+        # the fact still shows what happened at startup, which is exactly when
+        # the interesting lines are written.
+        self._log_lines = []
+        self._consoles = []
+        self._console_win = None
+        # The Instrument Status window is shown once, shortly after launch.
+        # Later scans must not re-open it.
+        self._startup_status_shown = False
         # Names whose dot is currently blinking (detected on the last scan).
         self._live_chips = set()
         self._blink_on = True
@@ -1226,11 +1373,24 @@ class PICALauncherV2:
         # First (and only automatic) instrument scan, shortly after the UI draws.
         self.root.after(400, self.start_scan)
         self._blink_tick()
-        # The VISA/GPIB scanner still opens by itself at startup, as in v1 --
-        # the first thing anyone needs is the list of what is actually on the
-        # bus with its real addresses. It is scheduled from _apply_scan, half
-        # a second after this launcher's own scan has finished, so the two
-        # never probe the bus at the same time.
+        # The Instrument Status window comes up right after the launcher
+        # draws, on its own timer rather than off the back of the scan: the
+        # scan can end early (no PyVISA, a VISA backend error) and those are
+        # the cases where the window has the most to say. It fills in when the
+        # scan lands a moment later.
+        #
+        # The standalone VISA/GPIB scanner is NOT opened here: it repeats, in
+        # a second process and a second pass over the bus, what that window
+        # already shows. Advanced Options opens it, and it is in the Tools
+        # menu and on the toolbar.
+        self.root.after(600, self._open_startup_status)
+
+    def _open_startup_status(self):
+        """Show the Instrument Status window once, just after startup."""
+        if self._startup_status_shown:
+            return
+        self._startup_status_shown = True
+        self.open_instrument_status()
 
     # ---------------------------------------------------------------- styling
     def _setup_styles(self):
@@ -1391,7 +1551,7 @@ class PICALauncherV2:
                               command=self.open_advanced)
         view_menu.add_command(label="Main Window", command=self._focus_main)
         view_menu.add_separator()
-        view_menu.add_checkbutton(label="Show Console", variable=self._make_console_var())
+        view_menu.add_command(label="Console", command=self.open_console)
         menubar.add_cascade(label="View", menu=view_menu)
 
         help_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
@@ -1404,11 +1564,6 @@ class PICALauncherV2:
         menubar.add_cascade(label="Help", menu=help_menu)
 
         self.root.config(menu=menubar)
-
-    def _make_console_var(self):
-        self._console_visible = tk.BooleanVar(value=True)
-        self._console_visible.trace_add('write', lambda *a: self._toggle_console())
-        return self._console_visible
 
     # ------------------------------------------------------------ status strip
     # The strip is the bottom band of a PICA window: a temperature snapshot,
@@ -1433,9 +1588,11 @@ class PICALauncherV2:
 
     def _build_statusbar(self):
         """The Quick Select strip: readings and a button, no chips."""
-        self.quick_strip = self._build_status_strip(self.root, None)
+        self.quick_strip = self._build_status_strip(self.root, None,
+                                                    console_button=True)
 
-    def _build_status_strip(self, parent, chip_names):
+    def _build_status_strip(self, parent, chip_names, console_button=False,
+                            console=False):
         """Build one bottom status band and register it for scan updates.
 
         `chip_names` is the list of instruments to show as chips, or None for
@@ -1495,9 +1652,50 @@ class PICALauncherV2:
             strip['status_btn'] = ttk.Button(
                 inner, text="⚡ Instrument Status", style='Aux.TButton',
                 command=self.open_instrument_status)
-            strip['status_btn'].pack(side='left')
+            strip['status_btn'].pack(side='right', padx=(12, 0))
+            if console_button:
+                # Quick Select reaches the console through a button rather
+                # than a panel: the log matters when something has gone wrong,
+                # and until then it is a wall of text on the screen a newcomer
+                # is trying to read. Advanced Options has one open inline.
+                ttk.Button(inner, text="🗒 Console", style='Aux.TButton',
+                           command=self.open_console).pack(side='right',
+                                                           padx=(12, 0))
+            if console:
+                # The console rides in the strip itself, in the gap between
+                # the readings and the buttons. That space was empty on the
+                # Advanced strip, and a console block above the strip took a
+                # slice of height from the card grid to say the same thing.
+                console_tile = tk.Frame(inner, bg=self.CLR_PANEL)
+                console_tile.pack(side='left', fill='both', expand=True,
+                                  padx=(0, 12))
+                ttk.Label(console_tile, text="CONSOLE",
+                          style='StripCap.TLabel').pack(anchor='w')
+                box = tk.Frame(console_tile, bg=self.CLR_PANEL,
+                               highlightthickness=1,
+                               highlightbackground=self.CLR_BORDER)
+                box.pack(fill='both', expand=True)
+                self._make_console(box, height=3).pack(fill='both', expand=True,
+                                                       padx=1, pady=1)
+
+            # The instruments the current selection needs, with their lights.
+            # They belong here beside the temperature and the pressure -- this
+            # is the bus reading, and the strip is where the rack's state is
+            # read. The list narrows as the choice narrows, so it stays short
+            # enough to take in at a glance.
+            chip_tile = tk.Frame(inner, bg=self.CLR_PANEL)
+            chip_tile.pack(side='left', fill='x', expand=True)
+            strip['caption'] = ttk.Label(chip_tile, text="",
+                                         style='StripCap.TLabel')
+            strip['caption'].pack(anchor='w')
+            strip['chips_frame'] = tk.Frame(chip_tile, bg=self.CLR_PANEL)
+            strip['chips_frame'].pack(anchor='w', fill='x')
+            strip['cols'] = 4
+            strip['big'] = True
+
             self._strips.append(strip)
             self._render_strip(strip)
+            self._mark_strip_scanning(strip)
             return strip
 
         # GPIB link tile
@@ -1529,6 +1727,7 @@ class PICALauncherV2:
 
         self._strips.append(strip)
         self._set_strip_chips(strip, chip_names)
+        self._mark_strip_scanning(strip)
         return strip
 
     def _build_dot_key(self, parent, inline=False):
@@ -1566,6 +1765,26 @@ class PICALauncherV2:
         unknown = sorted((self._last_scan or {}).get('unknown') or {})
         return names + [n for n in unknown if n not in names]
 
+    def _mark_strip_scanning(self, strip):
+        """Tell a strip built mid-scan that a scan is already in flight.
+
+        start_scan can only speak to the strips that existed when it ran, and
+        the startup scan begins before the Instrument Status window is built.
+        Without this the new window comes up saying "press Reload to scan"
+        while the scan it is waiting for is already running -- which reads as
+        a window that never refreshes, rather than one that is about to.
+        """
+        if not self._scanning:
+            return
+        if strip.get('reload_btn'):
+            strip['reload_btn'].config(state='disabled', text="⟳ Scanning…")
+        if strip.get('link_sub'):
+            strip['link_sub'].config(text="scanning the VISA bus…")
+        if strip.get('temp_sub') and self._last_scan is None:
+            strip['temp_sub'].config(text="scanning the VISA bus…")
+        if strip.get('raw_note'):
+            strip['raw_note'].config(text="waiting for the scan to finish…")
+
     def _set_strip_chips(self, strip, chip_names, render=True):
         """Rebuild one strip's chips, then repaint them from the last scan.
 
@@ -1588,7 +1807,17 @@ class PICALauncherV2:
         # filtered handful stays on one. Six used to overrun the dot key at
         # the right edge; the key now sits on the caption line, so the whole
         # strip width belongs to the chips and six fits.
-        cols = 6
+        cols = strip.get('cols', 6)
+        if strip.get('big'):
+            # The selection chips run at reading size, so how many fit on a
+            # line depends on the window. Measure rather than guess: a fixed
+            # count either wrapped a list that had room to stay on one line,
+            # or ran the last chip off the edge of a narrow window. Width is 1
+            # until the frame has been mapped, which is what the fallback is
+            # for -- the next selection change lays it out for real.
+            available = strip['chips_frame'].winfo_width()
+            if available > 1:
+                cols = max(2, min(len(chip_names) or 1, available // 150))
         for i, name in enumerate(chip_names):
             chip = tk.Frame(frame, bg=self.CLR_PANEL)
             chip.grid(row=i // cols, column=i % cols, sticky='w', padx=(0, 10))
@@ -1610,11 +1839,16 @@ class PICALauncherV2:
             else:
                 mode, glyph, colour = None, "●", self.CLR_TEXT_FAINT
                 text, fg = name, self.CLR_TEXT_DIM
+            big = strip.get('big')
             dot = tk.Label(chip, text=glyph, bg=self.CLR_PANEL, fg=colour,
-                           font=self.FONT_DOT)
-            dot.pack(side='left', padx=(0, 4))
+                           font=self.FONT_CHIP_DOT if big else self.FONT_DOT)
+            dot.pack(side='left', padx=(0, 5))
+            if big:
+                label_font = self.FONT_CHIP_BOLD if marked else self.FONT_CHIP
+            else:
+                label_font = self.FONT_STRIP_BOLD if marked else self.FONT_STRIP
             lbl = tk.Label(chip, text=text, bg=self.CLR_PANEL, fg=fg,
-                           font=self.FONT_STRIP_BOLD if marked else self.FONT_STRIP)
+                           font=label_font)
             lbl.pack(side='left')
             strip['chips'][name] = (dot, lbl, mode)
         if render:
@@ -1838,10 +2072,6 @@ class PICALauncherV2:
 
         tk.Frame(pad, bg=self.CLR_BORDER, height=1).pack(fill='x', pady=8)
 
-        # Console (packed from the bottom up, so the links sit just above it)
-        self.console_frame = tk.Frame(pad, bg=self.CLR_PANEL)
-        self.console_frame.pack(side='bottom', fill='both', expand=True)
-
         links = tk.Frame(pad, bg=self.CLR_PANEL)
         links.pack(side='bottom', fill='x', pady=(6, 10))
         ttk.Label(links, text=f"Version {self.PROGRAM_VERSION}",
@@ -1855,11 +2085,6 @@ class PICALauncherV2:
             lnk.pack(side='left', padx=(0, 12))
             lnk.bind("<Button-1>", lambda _e, a=action: a())
 
-        ttk.Label(self.console_frame, text="CONSOLE", style='Faint.TLabel').pack(anchor='w', pady=(0, 4))
-        self.console_widget = scrolledtext.ScrolledText(
-            self.console_frame, state='disabled', bg=self.CLR_PANEL2, fg=self.CLR_TEXT_DIM,
-            font=self.FONT_MONO, wrap='word', bd=0, relief='flat', height=10, width=1)
-        self.console_widget.pack(fill='both', expand=True)
 
     def _load_logo(self):
         """Load the institute logo into the rail canvas (deferred, like v1)."""
@@ -2082,6 +2307,7 @@ class PICALauncherV2:
         }
         # Body text wraps to whatever width the window currently gives it.
         desc.bind("<Configure>", self._rewrap_descriptions)
+
         self._reset_descriptions()
 
         actions = tk.Frame(inner, bg=self.CLR_PANEL)
@@ -2140,6 +2366,10 @@ class PICALauncherV2:
         self._set_desc('category', None, None)
         self._set_desc('module', None, None)
         self._set_desc('protocol', None, None)
+        row = getattr(self, 'quick_strip', None)
+        if row is not None and row.get('caption') is not None:
+            self._set_strip_chips(row, [])
+            row['caption'].config(text="")
 
     def _on_quick_category(self, _event=None):
         idx = self.cat_combo.current()
@@ -2187,27 +2417,40 @@ class PICALauncherV2:
                'sensing': "  ·  T Sensing",
                'master': "  ·  Master Sequence"}.get(proto['family'], "")
         self._set_desc('protocol', proto['label'] + tag, proto['desc'])
+        self._update_needed_instruments(QUICK_CATALOG[cat_idx], module, proto)
         self._set_quick_actions(True)
 
-    def _update_needed_instruments(self, cat, module=None):
+    def _update_needed_instruments(self, cat, module=None, proto=None):
         """Record which instruments the current selection needs.
 
-        A category with no module chosen yet counts the union of all of its
-        modules, so the answer is never empty mid-choice. The Instrument
-        Status window tints these chips; nothing on the Quick Select strip
-        changes, because the strip is readings and a button now.
+        The set narrows one step at a time: a category counts everything its
+        modules can use, a module counts its own list, and a protocol counts
+        only what that script talks to. Nothing is ever empty mid-choice, so
+        the row never blinks out between clicks.
+
+        The row under the Quick Select descriptions shows the set with each
+        instrument's light; the Instrument Status window marks the same names.
 
         FUTURE (pressure): a pressure gauge is picked up here like any other
         instrument -- name it in the module's 'instruments' list and nothing
         else has to change.
         """
-        if module is not None:
+        if proto is not None and module is not None:
+            self._needed_instruments = set(_protocol_instruments(module, proto))
+        elif module is not None:
             self._needed_instruments = set(module['instruments'])
         else:
             self._needed_instruments = set()
             for m in cat['modules']:
                 self._needed_instruments |= set(m['instruments'])
-        # Repaint the tint if the window happens to be open behind us.
+        # Keep the reference-table order so chips do not jump around as the
+        # selection narrows.
+        names = [n for n in self._all_chip_names()
+                 if n in self._needed_instruments]
+        self._set_strip_chips(self.quick_strip, names)
+        self.quick_strip['caption'].config(
+            text="INSTRUMENTS FOR THIS PROTOCOL" if names else "")
+        # Repaint the marks if the status window happens to be open behind us.
         strip = getattr(self, '_status_strip', None)
         if strip is not None:
             self._set_strip_chips(strip, self._chip_names_with_unknown())
@@ -2270,7 +2513,7 @@ class PICALauncherV2:
         win = Toplevel(self.root)
         win.title("PICA — Instrument Status")
         win.configure(bg=self.CLR_APP)
-        win.geometry("820x620")
+        win.geometry("760x560")
         win.protocol("WM_DELETE_WINDOW", self._close_instrument_status)
         self._status_win = win
 
@@ -2361,6 +2604,7 @@ class PICALauncherV2:
         self._strips.append(strip)
         self._status_strip = strip
         self._set_strip_chips(strip, self._chip_names_with_unknown())
+        self._mark_strip_scanning(strip)
         self.log("Instrument Status window opened.")
 
     def _close_instrument_status(self):
@@ -2473,9 +2717,19 @@ class PICALauncherV2:
         # dot key stood nearly 80 px tall along the bottom of the one window
         # whose whole job is showing as many cards at once as will fit, and
         # the window they open holds the same list with more room for it.
-        self._adv_strip = self._build_status_strip(win, None)
+        # Console, always open and inside the strip: this is the expert
+        # window, and the log is what you read when a module refuses to
+        # launch. It fills the gap the strip had between its readings and its
+        # buttons, so it costs the card grid nothing.
+        self._adv_strip = self._build_status_strip(win, None, console=True)
         self._build_browse(win)
         self.log("Advanced Options opened.")
+        # The standalone scanner comes up with this window by default: this is
+        # the window for someone who came to look at the rack, and the
+        # scanner's address guide is what they reach for. It runs its own pass
+        # over the bus, so it follows a moment later rather than starting
+        # while the window is still drawing.
+        self.root.after(400, self._auto_launch_gpib_scanner)
 
     def _close_advanced(self):
         """Tear down the Advanced window and un-register its status strip."""
@@ -2511,9 +2765,15 @@ class PICALauncherV2:
 
         self._scanning = True
         for strip in self._strips:
-            strip['reload_btn'].config(state='disabled', text="⟳ Scanning…")
+            if strip.get('reload_btn'):
+                strip['reload_btn'].config(state='disabled', text="⟳ Scanning…")
             if strip.get('link_sub'):
                 strip['link_sub'].config(text="scanning the VISA bus…")
+            # The Quick Select strip has no GPIB tile to put that line in, so
+            # the temperature tile carries it -- but only until there is a
+            # reading worth keeping on screen.
+            elif strip.get('temp_sub') and self._last_scan is None:
+                strip['temp_sub'].config(text="scanning the VISA bus…")
         self.log("Scanning instruments (startup/reload only)…")
         threading.Thread(target=self._scan_worker, daemon=True).start()
 
@@ -2526,7 +2786,8 @@ class PICALauncherV2:
         self._scanning = False
         self._last_scan = r
         for strip in self._strips:
-            strip['reload_btn'].config(state='normal', text="⟳ Reload")
+            if strip.get('reload_btn'):
+                strip['reload_btn'].config(state='normal', text="⟳ Reload")
 
         if not r['available']:
             self._refresh_strips()
@@ -2568,13 +2829,7 @@ class PICALauncherV2:
         # The standalone scanner runs its own pass over the bus, so it is
         # started only once the launcher has finished its own -- half a second
         # after, the same beat the raw table appears on.
-        if not self._startup_scanner_done:
-            self._startup_scanner_done = True
-            # The status window opens as soon as the first scan lands, with
-            # what it is about to show already in hand -- opening it any
-            # earlier would put a window of dead dots on screen for a second.
-            self.open_instrument_status()
-            self.root.after(500, self._auto_launch_gpib_scanner)
+
 
     def _refresh_strips(self):
         """Render the last scan result into every strip that is alive.
@@ -2858,10 +3113,10 @@ class PICALauncherV2:
         launch_gpib_scanner()
 
     def _auto_launch_gpib_scanner(self):
-        """Open the VISA/GPIB scanner at startup (v1 behaviour).
+        """Open the standalone VISA/GPIB scanner with Advanced Options.
 
-        Startup must never be blocked by a missing dependency or a spawn
-        failure, so this reports to the console and gives up rather than
+        Opening a window must never be blocked by a missing dependency or a
+        spawn failure, so this reports to the console and gives up rather than
         raising a dialog the way the menu command does.
         """
         if not PYVISA_AVAILABLE:
@@ -2937,14 +3192,6 @@ class PICALauncherV2:
             "Licensed under the MIT License.")
 
     # ------------------------------------------------------------- helpers
-    def _toggle_console(self):
-        if not hasattr(self, 'console_frame'):
-            return
-        if self._console_visible.get():
-            self.console_frame.pack(side='bottom', fill='both', expand=True)
-        else:
-            self.console_frame.pack_forget()
-
     def _open_path(self, path):
         abs_path = os.path.abspath(path)
         if not os.path.exists(abs_path):
@@ -2962,12 +3209,63 @@ class PICALauncherV2:
             messagebox.showerror("Error", f"Could not open:\n{path}\n\n{e}")
 
     def log(self, message):
-        if getattr(self, 'console_widget', None):
-            ts = datetime.now().strftime("%H:%M:%S")
-            self.console_widget.config(state='normal')
-            self.console_widget.insert('end', f"[{ts}] {message}\n")
-            self.console_widget.see('end')
-            self.console_widget.config(state='disabled')
+        line = f"[{datetime.now().strftime('%H:%M:%S')}] {message}\n"
+        self._log_lines.append(line)
+        for widget in list(self._consoles):
+            try:
+                widget.config(state='normal')
+                widget.insert('end', line)
+                widget.see('end')
+                widget.config(state='disabled')
+            except tk.TclError:
+                # Its window was closed; the line is still in the buffer.
+                self._consoles.remove(widget)
+
+    def _make_console(self, parent, height=10):
+        """Build a console view, fill it from the log, and keep it fed."""
+        widget = scrolledtext.ScrolledText(
+            parent, state='disabled', bg=self.CLR_PANEL2, fg=self.CLR_TEXT_DIM,
+            font=self.FONT_MONO, wrap='word', bd=0, relief='flat',
+            height=height, width=1)
+        widget.config(state='normal')
+        widget.insert('end', "".join(self._log_lines))
+        widget.see('end')
+        widget.config(state='disabled')
+        self._consoles.append(widget)
+        return widget
+
+    def open_console(self):
+        """Show the console in a window of its own (Quick Select route)."""
+        if self._console_win is not None and self._console_win.winfo_exists():
+            self._console_win.deiconify()
+            self._console_win.lift()
+            self._console_win.focus_force()
+            return
+        win = Toplevel(self.root)
+        win.title("PICA — Console")
+        win.configure(bg=self.CLR_APP)
+        win.geometry("760x420")
+        win.protocol("WM_DELETE_WINDOW", self._close_console)
+        self._console_win = win
+
+        head = tk.Frame(win, bg=self.CLR_APP)
+        head.pack(fill='x', padx=16, pady=(12, 6))
+        tk.Label(head, text="Console", bg=self.CLR_APP, fg=self.CLR_ACCENT,
+                 font=self.FONT_TITLE).pack(side='left')
+        tk.Label(head, text="Everything this launcher has done, oldest first.",
+                 bg=self.CLR_APP, fg=self.CLR_TEXT_DIM,
+                 font=self.FONT_SMALL).pack(side='left', padx=(12, 0))
+
+        body = tk.Frame(win, bg=self.CLR_PANEL, highlightthickness=1,
+                        highlightbackground=self.CLR_BORDER)
+        body.pack(fill='both', expand=True, padx=16, pady=(0, 14))
+        self._make_console(body, height=18).pack(fill='both', expand=True,
+                                                 padx=1, pady=1)
+
+    def _close_console(self):
+        if self._console_win is not None:
+            self._console_win.destroy()
+        self._console_win = None
 
 
 def main():
