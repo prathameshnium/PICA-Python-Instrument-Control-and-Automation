@@ -450,6 +450,11 @@ def scan_instruments(skip_addresses=None, gauge=None):
     Runs in a worker thread -- must not touch any Tk object. Returns a plain
     dict the GUI can apply on the main thread.
 
+    Every resource that is not protected and not excluded by kind IS probed,
+    whether or not it is in KNOWN_INSTRUMENTS: a reply matching nothing in the
+    table comes back under 'unknown' and is shown as a new instrument rather
+    than discarded.
+
     Never probes an address listed in SKIP_GPIB_ADDRESSES, in the persistent
     protected-address file, or in the caller-supplied 'skip_addresses'. If a
     Novocontrol mainframe is nonetheless identified (because its address was
@@ -471,6 +476,10 @@ def scan_instruments(skip_addresses=None, gauge=None):
         # get it: the identification pass already has these in hand, and the
         # Instrument Status window shows them rather than re-probing the bus.
         'idns': {},
+        # Why each skipped resource was passed over, resource -> reason. The
+        # Instrument Status table prints it rather than a bare "not probed",
+        # which would read as a failure when every one of them is deliberate.
+        'skip_reason': {},
         # Instruments that answered but match nothing in KNOWN_INSTRUMENTS,
         # display name -> resource. They are shown as chips of their own
         # rather than being dropped: an unrecognised reply means the rack has
@@ -512,9 +521,12 @@ def scan_instruments(skip_addresses=None, gauge=None):
             addr = _gpib_address_of(res)
             if addr is not None and addr in protected:
                 result['skipped'].append(res)   # protected: never opened
+                result['skip_reason'][res] = "protected — never probed"
                 continue
             if not _is_probeable(res):
-                result['skipped'].append(res)   # serial and friends
+                result['skipped'].append(res)   # serial: see the gauge policy
+                result['skip_reason'][res] = (
+                    "serial port — only the configured pressure gauge is read")
                 continue
 
             idn = None
@@ -2275,8 +2287,10 @@ class PICALauncherV2:
                    command=self._launch_gpib_scanner).pack(side='right', padx=(0, 8))
 
         tk.Label(win, text="One read-only pass over the bus, taken at startup and "
-                           "whenever you press Reload. Nothing is polled in the "
-                           "background, so a running measurement is never disturbed.",
+                           "whenever you press Reload. Every address that answers is "
+                           "listed, whether or not PICA knows it. Nothing is polled "
+                           "in the background, so a running measurement is never "
+                           "disturbed.",
                  bg=self.CLR_APP, fg=self.CLR_TEXT_DIM, font=self.FONT_SMALL,
                  justify='left', wraplength=820).pack(anchor='w', padx=18, pady=(0, 10))
 
@@ -2395,7 +2409,8 @@ class PICALauncherV2:
                 widget.insert('end', "-" * 108 + "\n")
                 for res in r['resources']:
                     if res in skipped:
-                        name, reply = "—", "not probed (protected or serial)"
+                        name = "—"
+                        reply = r.get('skip_reason', {}).get(res, "not probed")
                     else:
                         name = by_resource.get(res, "—")
                         reply = r.get('idns', {}).get(res) or "no reply"
@@ -2555,6 +2570,10 @@ class PICALauncherV2:
         # after, the same beat the raw table appears on.
         if not self._startup_scanner_done:
             self._startup_scanner_done = True
+            # The status window opens as soon as the first scan lands, with
+            # what it is about to show already in hand -- opening it any
+            # earlier would put a window of dead dots on screen for a second.
+            self.open_instrument_status()
             self.root.after(500, self._auto_launch_gpib_scanner)
 
     def _refresh_strips(self):

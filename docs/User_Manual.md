@@ -342,8 +342,9 @@ when one arrives), and a button reading, for example, *Instrument Status
 3/10 on the bus*. Advanced Options keeps the whole instrument list on its
 strip, chip by chip.
 
-**Instrument Status window.** The button opens it, and so does launching a
-protocol — an instrument that is not on the bus is the commonest way for a
+**Instrument Status window.** It opens by itself at startup, as soon as the
+first scan has something to put in it. The strip button opens it later, and so
+does launching a protocol — an instrument that is not on the bus is the commonest way for a
 measurement to fail, and the module would only report it as a connection error
 a minute later. Launching also repaints the bottom panel of every open window;
 it does not rescan, because a module that has just started is opening its own
