@@ -1589,10 +1589,11 @@ class PICALauncherV2:
     def _build_statusbar(self):
         """The Quick Select strip: readings and a button, no chips."""
         self.quick_strip = self._build_status_strip(self.root, None,
-                                                    console_button=True)
+                                                    console_button=True,
+                                                    selection_chips=True)
 
     def _build_status_strip(self, parent, chip_names, console_button=False,
-                            console=False):
+                            console=False, selection_chips=False):
         """Build one bottom status band and register it for scan updates.
 
         `chip_names` is the list of instruments to show as chips, or None for
@@ -1678,20 +1679,23 @@ class PICALauncherV2:
                 self._make_console(box, height=3).pack(fill='both', expand=True,
                                                        padx=1, pady=1)
 
-            # The instruments the current selection needs, with their lights.
-            # They belong here beside the temperature and the pressure -- this
-            # is the bus reading, and the strip is where the rack's state is
-            # read. The list narrows as the choice narrows, so it stays short
-            # enough to take in at a glance.
-            chip_tile = tk.Frame(inner, bg=self.CLR_PANEL)
-            chip_tile.pack(side='left', fill='x', expand=True)
-            strip['caption'] = ttk.Label(chip_tile, text="",
-                                         style='StripCap.TLabel')
-            strip['caption'].pack(anchor='w')
-            strip['chips_frame'] = tk.Frame(chip_tile, bg=self.CLR_PANEL)
-            strip['chips_frame'].pack(anchor='w', fill='x')
-            strip['cols'] = 4
-            strip['big'] = True
+            if selection_chips:
+                # The instruments the current selection needs, with their
+                # lights. They belong here beside the temperature and the
+                # pressure -- this is the bus reading, and the strip is where
+                # the rack's state is read. Only the window that HAS a
+                # selection builds this: on Advanced Options it was an empty
+                # frame, and an empty frame packed to expand still takes its
+                # share of the width from whatever else wanted it.
+                chip_tile = tk.Frame(inner, bg=self.CLR_PANEL)
+                chip_tile.pack(side='left', fill='x', expand=True)
+                strip['caption'] = ttk.Label(chip_tile, text="",
+                                             style='StripCap.TLabel')
+                strip['caption'].pack(anchor='w')
+                strip['chips_frame'] = tk.Frame(chip_tile, bg=self.CLR_PANEL)
+                strip['chips_frame'].pack(anchor='w', fill='x')
+                strip['cols'] = 4
+                strip['big'] = True
 
             self._strips.append(strip)
             self._render_strip(strip)
@@ -2463,25 +2467,23 @@ class PICALauncherV2:
             self._selected_key = None
 
     def _launch_selected(self):
-        """Launch the chosen protocol, then show the instrument status.
+        """Launch the chosen protocol and repaint the status panels.
 
-        The first thing that goes wrong in a measurement is an instrument that
-        is not on the bus, and the module reports that as a connection error a
-        minute later. Opening the status window on launch puts the lights in
-        front of the user at the moment they matter, with the instruments the
-        protocol needs already marked.
+        No window is opened here. The Instrument Status window comes up once,
+        when the launcher starts; putting it in front of the user again on
+        every single measurement launch only buried the module they had just
+        asked for.
 
-        The bottom panel of every open window is repainted at the same time --
-        NOT rescanned. A module that has just been launched is opening its own
-        connections right now, and the launcher going back on the bus to
-        confirm what it already knows is exactly the interference the status
-        design exists to avoid. Reload is there for a deliberate rescan.
+        The bottom panel of every open window is repainted -- NOT rescanned. A
+        module that has just been launched is opening its own connections
+        right now, and the launcher going back on the bus to confirm what it
+        already knows is exactly the interference the status design exists to
+        avoid. Reload is there for a deliberate rescan.
         """
         if not self._selected_key:
             return
         self.launch_script(self._selected_key)
         self._refresh_strips()
-        self.open_instrument_status(fresh=True)
 
     def _folder_selected(self):
         if self._selected_key:
@@ -2493,22 +2495,13 @@ class PICALauncherV2:
     # launcher itself runs: the same read-only pass that lights the dots also
     # fills the table, so opening this window costs the bus nothing. The
     # standalone SCPI scanner is unchanged and one button away.
-    def open_instrument_status(self, fresh=False):
-        """Open the Instrument Status window, or raise the one already open.
-
-        `fresh` throws the open one away and builds it again. A window left
-        over from an earlier choice is stale in ways repainting cannot fix --
-        it was built before there was a selection, so it carries no highlight
-        key, and its chips were laid out around whatever the bus looked like
-        then. Launching a protocol therefore asks for a new one.
-        """
+    def open_instrument_status(self):
+        """Open the Instrument Status window, or raise the one already open."""
         if self._status_win is not None and self._status_win.winfo_exists():
-            if not fresh:
-                self._status_win.deiconify()
-                self._status_win.lift()
-                self._status_win.focus_force()
-                return
-            self._close_instrument_status()
+            self._status_win.deiconify()
+            self._status_win.lift()
+            self._status_win.focus_force()
+            return
 
         win = Toplevel(self.root)
         win.title("PICA — Instrument Status")
@@ -2721,7 +2714,10 @@ class PICALauncherV2:
         # window, and the log is what you read when a module refuses to
         # launch. It fills the gap the strip had between its readings and its
         # buttons, so it costs the card grid nothing.
-        self._adv_strip = self._build_status_strip(win, None, console=True)
+        # The button opens the full console window; the strip console is a
+        # three-line tail of the same log, for reading in place.
+        self._adv_strip = self._build_status_strip(win, None, console=True,
+                                                   console_button=True)
         self._build_browse(win)
         self.log("Advanced Options opened.")
         # The standalone scanner comes up with this window by default: this is
