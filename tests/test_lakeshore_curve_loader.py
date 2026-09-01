@@ -990,40 +990,199 @@ def test_a_curve_that_would_not_answer_is_not_treated_as_free():
         top.destroy()
 
 
+EMPTY_POINT = (0.0, 0.0, ("0", "0"))
+STORED_POINT = (325.0, 1.64523, ("1.64523", "325.000"))
+
+
+def _fake_points(backend, stored_at=(), log=None):
+    """Answer CRVPT? from a table: `stored_at` lists the indices that hold a
+    breakpoint; every other index answers 0,0. Records what was asked."""
+    def read_curve_point(curve, index):
+        if log is not None:
+            log.append((curve, index))
+        return STORED_POINT if index in stored_at else EMPTY_POINT
+    backend.read_curve_point = read_curve_point
+
+
 def test_the_pre_send_check_reads_the_instrument_not_the_listing():
-    """The listing can be minutes old. One CRVHDR? immediately before the
-    write is what actually protects an existing curve."""
+    """The listing can be minutes old. Reading the curve immediately before
+    the write -- header AND breakpoints -- is what actually protects an
+    existing curve. The gate answers with a word, never a flag."""
     listing = [_free(21), _free(22)]
     top, gui = _gui_with_curve(curve_map=listing)
     try:
         assert gui._curve_number() == 21
+        asked = []
 
-        # The instrument says the curve is occupied, whatever the listing said.
+        # The instrument holds points, whatever the listing said. One CRVPT?
+        # is enough to refuse: the scan stops at the first stored point.
         gui.backend.read_curve_header = lambda curve: {
             "name": "SOMEBODY ELSE", "serial": "X99999", "format": 4,
             "limit": 325.0, "coefficient": 1, "limit_text": "325.000"}
-        is_empty, header, detail = gui._target_is_empty_now(21)
-        assert is_empty is False
-        assert "already holds" in detail
+        _fake_points(gui.backend, stored_at=(1,), log=asked)
+        state, header, detail = gui._target_is_empty_now(21)
+        assert state == "in use"
+        assert header["name"] == "SOMEBODY ELSE"
+        assert "holds breakpoints" in detail
         assert "SOMEBODY ELSE" in detail
         assert "nothing was sent" in detail
+        assert asked == [(21, 1)]
 
         # An unreadable reply is not "empty" either.
         def boom(curve):
             raise TimeoutError("no reply")
 
         gui.backend.read_curve_header = boom
-        is_empty, header, detail = gui._target_is_empty_now(21)
-        assert is_empty is False
+        state, header, detail = gui._target_is_empty_now(21)
+        assert state == "unreadable"
+        assert header is None
         assert "Nothing was sent" in detail
 
-        # And an empty header is the only thing that lets a send through.
+        # A point that will not answer is just as unreadable as a header.
         gui.backend.read_curve_header = (
             lambda curve: LOADER.parse_crvhdr_reply(
                 "               ,          ,1,+0.000,1"))
-        is_empty, header, detail = gui._target_is_empty_now(21)
-        assert is_empty is True
+
+        def point_boom(curve, index):
+            raise TimeoutError("no reply")
+
+        gui.backend.read_curve_point = point_boom
+        state, header, detail = gui._target_is_empty_now(21)
+        assert state == "unreadable"
+
+        # A header somebody wrote, with nothing behind it, is a stub: not
+        # free, not in use, and the whole depth was read to say so.
+        gui.backend.read_curve_header = lambda curve: {
+            "name": "SOMEBODY ELSE", "serial": "X99999", "format": 4,
+            "limit": 325.0, "coefficient": 1, "limit_text": "325.000"}
+        asked.clear()
+        _fake_points(gui.backend, log=asked)
+        state, header, detail = gui._target_is_empty_now(21)
+        assert state == "stub"
+        assert "no breakpoints" in detail
+        assert "SOMEBODY ELSE" in detail
+        assert [index for _, index in asked] == list(
+            range(1, LOADER.GATE_PROBE_LIMIT + 1))
+
+        # The 340's firmware filler is NOT a stored curve. Header-only
+        # judgement called this slot occupied; the breakpoints say free.
+        gui.backend.read_curve_header = lambda curve: {
+            "name": "User 21", "serial": "", "format": 2,
+            "limit": 375.0, "coefficient": 1, "limit_text": "375.0"}
+        state, header, detail = gui._target_is_empty_now(21)
+        assert state == "free"
         assert "is empty" in detail
+
+        # A blank header with no points is free, and it is the ONLY answer
+        # that lets a send through.
+        gui.backend.read_curve_header = (
+            lambda curve: LOADER.parse_crvhdr_reply(
+                "               ,          ,1,+0.000,1"))
+        state, header, detail = gui._target_is_empty_now(21)
+        assert state == "free"
+        assert "is empty" in detail
+        assert "firmware default" in detail
+
+        # A stored point deep in the curve, behind an innocent header, is
+        # still a stored point.
+        _fake_points(gui.backend, stored_at=(134,))
+        state, header, detail = gui._target_is_empty_now(21)
+        assert state == "in use"
+        assert "21,134" in detail
+    finally:
+        top.destroy()
+
+
+class _FakeLink:
+    """Answers *IDN? and nothing else. The sequence must not need more."""
+    address = "GPIB0::12::INSTR"
+    is_connected = True
+
+    def __init__(self, idn):
+        self.idn = idn
+        self.queries = []
+
+    def query(self, command):
+        self.queries.append(command)
+        if command.strip() == "*IDN?":
+            return self.idn
+        raise AssertionError(f"unexpected query {command!r}")
+
+
+def _sequence_ready(gui, state, header=None, detail="gate detail"):
+    """Wire a window so _run_full_sequence runs to completion on this thread
+    with the gate answering `state`. Returns the list of command batches
+    that reached send_curve and the list of curves that reached CRVDEL."""
+    sent = []
+    erased = []
+    gui.is_connected = True
+    gui.backend.link = _FakeLink("LSCI,MODEL350,LSA23AR,1.5")
+    gui.backend.curve_is_empty = (
+        lambda curve, indices=None, progress=None:
+            (state == "free", header or {}, state, detail))
+    gui.backend.send_curve = (
+        lambda commands, progress=None, should_stop=None:
+            sent.append(list(commands)))
+    gui.backend.delete_curve = lambda curve: erased.append(curve)
+    gui._confirm_send = lambda expected, steps=None: True
+    gui._run_in_worker = lambda description, function: function()
+    gui._verify_against = lambda *args, **kwargs: "verified"
+    gui.sequence_assign_var.set(False)
+    return sent, erased
+
+
+def _drain_dialogs(gui):
+    dialogs = []
+    while not gui._events.empty():
+        event = gui._events.get_nowait()
+        if event[0] == "dialog":
+            dialogs.append(event)
+    return dialogs
+
+
+def test_the_sequence_sends_only_when_the_gate_says_free():
+    """REGRESSION. The gate answers with a word. Every word is a non-empty
+    string, so a sequence that used the word as its pass flag would have
+    passed step 2 for 'in use' and written over a stored calibration."""
+    listing = [_free(21), _free(22)]
+    for state in ("in use", "unreadable", "stub"):
+        top, gui = _gui_with_curve(curve_map=listing)
+        try:
+            sent, erased = _sequence_ready(gui, state)
+            gui._run_full_sequence()
+            assert sent == [], f"{state!r} let the send through"
+            assert erased == [], f"{state!r} erased the curve"
+            dialogs = _drain_dialogs(gui)
+            assert any("Sequence Stopped" in d[2] for d in dialogs), state
+            assert any("Step 2" in d[3] for d in dialogs), state
+            if state == "stub":
+                assert any("Use Send" in d[3] for d in dialogs)
+        finally:
+            top.destroy()
+
+    top, gui = _gui_with_curve(curve_map=listing)
+    try:
+        sent, erased = _sequence_ready(gui, "free")
+        gui._run_full_sequence()
+        assert len(sent) == 1
+        assert sent[0] == gui.curve_commands
+        assert erased == []
+        dialogs = _drain_dialogs(gui)
+        assert not any("Sequence Stopped" in d[2] for d in dialogs)
+    finally:
+        top.destroy()
+
+
+def test_the_sequence_stops_on_the_wrong_model_before_the_gate():
+    listing = [_free(21), _free(22)]
+    top, gui = _gui_with_curve(curve_map=listing)
+    try:
+        sent, erased = _sequence_ready(gui, "free")
+        gui.backend.link = _FakeLink("LSCI,MODEL340,340219,111196")
+        gui._run_full_sequence()
+        assert sent == [] and erased == []
+        dialogs = _drain_dialogs(gui)
+        assert any("Step 1" in d[3] for d in dialogs)
     finally:
         top.destroy()
 
@@ -1041,60 +1200,106 @@ def test_the_send_dialog_says_it_fills_an_empty_curve():
 # The map of what is on the instrument
 # ---------------------------------------------------------------------------
 
-def test_the_map_covers_the_whole_curve_range_and_marks_standard_curves():
-    """list_curves() defaults to the user block and can take the whole lot."""
-    calls = []
+class _MapBackend:
+    """Just enough of CurveLoaderBackend for list_curves(): headers and
+    points come from a table, the emptiness logic is the real one."""
+    curve_is_empty = LOADER.CurveLoaderBackend.curve_is_empty
+    read_curve_occupancy = LOADER.CurveLoaderBackend.read_curve_occupancy
+    model = M350
 
-    class FakeBackend:
-        model = M350
+    def __init__(self):
+        self.header_calls = []
+        self.point_calls = []
 
-        def _spec(self):
-            return LOADER.MODEL_SPECS[M350]
+    def _spec(self):
+        return LOADER.MODEL_SPECS[M350]
 
-        def read_curve_header(self, curve):
-            calls.append(curve)
-            if curve <= 20:
-                return LOADER.parse_crvhdr_reply(
-                    f"Std{curve}          ,          ,2,+475.000,1")
-            if curve == 21:
-                return LOADER.parse_crvhdr_reply(
-                    "CX-1030-SD-4L  ,X17680    ,4,+325.000,1")
+    def read_curve_header(self, curve):
+        self.header_calls.append(curve)
+        if curve <= 20:
             return LOADER.parse_crvhdr_reply(
-                "               ,          ,1,+0.000,1")
+                f"Std{curve}          ,          ,2,+475.000,1")
+        if curve == 21:
+            return LOADER.parse_crvhdr_reply(
+                "CX-1030-SD-4L  ,X17680    ,4,+325.000,1")
+        if curve == 23:
+            # A header, and nothing behind it.
+            return LOADER.parse_crvhdr_reply(
+                "S700           ,          ,4,+325.000,1")
+        if curve == 28:
+            # The 340's filler. It used to make every free slot look taken.
+            return LOADER.parse_crvhdr_reply(
+                "User 28        ,          ,2,+375.000,1")
+        return LOADER.parse_crvhdr_reply(
+            "               ,          ,1,+0.000,1")
 
-    backend = FakeBackend()
+    def read_curve_point(self, curve, index):
+        self.point_calls.append((curve, index))
+        if curve == 21:
+            return STORED_POINT
+        return EMPTY_POINT
+
+
+def test_the_map_covers_the_whole_curve_range_and_marks_standard_curves():
+    """list_curves() defaults to the user block and can take the whole lot.
+    Emptiness comes from CRVPT?, with the header as context."""
+    backend = _MapBackend()
     entries = LOADER.CurveLoaderBackend.list_curves(backend)
     assert [entry["curve"] for entry in entries] == list(range(21, 60))
     assert all(entry["standard"] is False for entry in entries)
-    assert entries[0]["empty"] is False
-    assert entries[0]["name"].strip() == "CX-1030-SD-4L"
-    assert entries[1]["empty"] is True
+    by_curve = {entry["curve"]: entry for entry in entries}
+    assert by_curve[21]["empty"] is False
+    assert by_curve[21]["state"] == "in use"
+    assert by_curve[21]["name"].strip() == "CX-1030-SD-4L"
+    assert by_curve[22]["empty"] is True
+    assert by_curve[22]["state"] == "free"
+    assert by_curve[23]["empty"] is False
+    assert by_curve[23]["state"] == "stub"
+    assert by_curve[28]["empty"] is True, "filler header must read as free"
+    assert by_curve[28]["state"] == "free"
+    assert all("detail" in entry for entry in entries)
 
-    calls.clear()
+    # An occupied slot costs one CRVPT?; an empty one the whole ladder.
+    asked = {}
+    for curve, index in backend.point_calls:
+        asked.setdefault(curve, []).append(index)
+    assert asked[21] == [1]
+    assert asked[22] == list(LOADER.MAP_PROBE_INDICES)
+    assert asked[23] == list(LOADER.MAP_PROBE_INDICES)
+
+    backend = _MapBackend()
     whole = LOADER.CurveLoaderBackend.list_curves(backend, 1, 59)
     assert len(whole) == 59
     assert whole[0]["curve"] == 1 and whole[0]["standard"] is True
+    assert whole[0]["state"] == "standard"
+    assert whole[0]["empty"] is False
     assert whole[20]["curve"] == 21 and whole[20]["standard"] is False
-    assert calls == list(range(1, 60))
+    assert backend.header_calls == list(range(1, 60))
+    # Standard curves are never a target, so they are never probed.
+    assert not any(curve <= 20 for curve, _ in backend.point_calls)
 
 
 def test_a_curve_that_will_not_answer_stays_in_the_map():
-    """A gap in the map is itself worth seeing."""
-    class FakeBackend:
-        def _spec(self):
-            return LOADER.MODEL_SPECS[M350]
-
+    """A gap in the map is itself worth seeing, whichever query it was
+    that went unanswered."""
+    class Backend(_MapBackend):
         def read_curve_header(self, curve):
             if curve == 30:
                 raise TimeoutError("no reply")
-            return LOADER.parse_crvhdr_reply(
-                "               ,          ,1,+0.000,1")
+            return super().read_curve_header(curve)
 
-    entries = LOADER.CurveLoaderBackend.list_curves(FakeBackend())
-    broken = [entry for entry in entries if entry["curve"] == 30]
-    assert len(broken) == 1
-    assert "TimeoutError" in broken[0]["error"]
-    assert broken[0]["empty"] is None
+        def read_curve_point(self, curve, index):
+            if curve == 31 and index == 5:
+                raise OSError("bus hung")
+            return super().read_curve_point(curve, index)
+
+    entries = LOADER.CurveLoaderBackend.list_curves(Backend())
+    by_curve = {entry["curve"]: entry for entry in entries}
+    assert "TimeoutError" in by_curve[30]["error"]
+    assert by_curve[30]["empty"] is None
+    assert "OSError" in by_curve[31]["error"]
+    assert by_curve[31]["empty"] is None
+    assert by_curve[32]["empty"] is True
 
 
 def test_the_map_tab_shows_a_row_per_curve():

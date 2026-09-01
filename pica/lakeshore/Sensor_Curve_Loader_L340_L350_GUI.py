@@ -4583,13 +4583,13 @@ class CurveLoaderGUI:
         """Read the target curve and say whether it is safe to fill.
 
         Runs on the worker thread, immediately before anything is written.
-        Returns (is_empty, header, detail).
+        Returns (state, header, detail); see the end of this docstring.
 
         This is the gate, not the listing. The listing can be minutes old, it
         can predate somebody else at the front panel, and it is not run at all
-        unless the operator presses the button. One CRVHDR? costs nothing and
-        turns "the picker said it was free" into "the instrument says it is
-        free, now".
+        unless the operator presses the button. One read of the curve, header
+        and breakpoints, costs a few seconds and turns "the picker said it
+        was free" into "the instrument says it is free, now".
 
         An unreadable reply is NOT treated as empty. Refusing a send costs a
         retry; overwriting a calibration nobody can get back does not.
@@ -4937,9 +4937,20 @@ class CurveLoaderGUI:
             # empty curve IS the baseline: if step 4 reads back an empty
             # header, nothing landed, and that is a comparison rather than an
             # inference.
-            is_empty, baseline_header, detail = self._target_is_empty_now(curve)
-            if not record(2, f"confirm curve {curve} is empty", is_empty,
-                          detail):
+            state, baseline_header, detail = self._target_is_empty_now(curve)
+            # The gate answers with a WORD, not a flag: 'free', 'stub',
+            # 'in use' or 'unreadable'. Only 'free' lets the sequence go on.
+            # Handing the word itself to record() would pass every one of
+            # them, because a non-empty string is true, and step 3 would
+            # write over a stored calibration. A stub (header, no points) is
+            # not sent here either: the sequence asks nobody anything, so it
+            # stops and points at the button that does.
+            if state == 'stub':
+                detail += (" The sequence fills free curves only. Use Send "
+                           "in step 5, which shows the header and asks "
+                           "before erasing it, or erase the curve first.")
+            if not record(2, f"confirm curve {curve} is empty",
+                          state == 'free', detail):
                 return finish()
 
             # -- 3: send ----------------------------------------------------

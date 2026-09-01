@@ -403,6 +403,42 @@ def looks_empty(name, curve=None):
     return curve is None or int(match.group(1)) == int(curve)
 
 
+def describe_slot(header, points):
+    """What one slot holds, judged from its header AND its breakpoints.
+
+    Returns (holds_curve, note). The breakpoints decide; the header is
+    context. A blank or filler header over stored points is a curve whose
+    points were written before its header, and a named header over no
+    points is a header and nothing else. `note` says so in words when the
+    two disagree, or when the slot is empty, and is blank for the ordinary
+    case of a named header over stored points.
+
+    looks_empty() stays header-only on purpose, so the catalogue can show
+    the two verdicts side by side. This is where they are combined for the
+    single-slot read, which used to stop at the header and never ask.
+    """
+    curve = header.get('curve', '?')
+    name = str(header.get('name', '')).strip()
+    named = not header.get('is_empty')
+    count = len(points)
+    if points:
+        if named:
+            return True, ""
+        return True, (
+            f"The header of slot {curve} carries no curve name "
+            f"('{header.get('_raw', '')}'), but {count} breakpoint(s) are "
+            "stored. The breakpoints are the ones to believe: this slot "
+            "holds a curve, written without a header.")
+    if named:
+        return False, (
+            f"Slot {curve} has a header ('{name}') but CRVPT? found no "
+            "breakpoints. A header with nothing behind it is not a "
+            "calibration.")
+    return False, (
+        f"Slot {curve} holds no curve: the header carries no name and "
+        "CRVPT? found no breakpoints.")
+
+
 def parse_crvpt(reply, curve, index):
     """Turn a CRVPT? reply into (units_value, temperature), or raise.
 
@@ -1867,16 +1903,20 @@ class CurveViewerGUI:
             header = self.backend.read_header(curve)
             self.log(f"  CRVHDR? {curve} -> {header['_raw']}")
             if header['is_empty']:
-                self.log(f"  Slot {curve} is empty: it has no curve name. "
-                         "No breakpoints were asked for.")
-                self._post('curve', header, [],
-                           ["This slot holds no curve."])
-                return
-            self.log(f"  Name '{header['name']}', serial "
-                     f"'{header['serial']}', data format "
-                     f"{header['format_code']} ({header['format_name']}), "
-                     f"limit {header['limit']} K, coefficient "
-                     f"{header['coefficient_name']}.")
+                # The header alone cannot say the slot is empty: a curve
+                # whose points were written before its header answers the
+                # same way, and this read used to stop here and never find
+                # it. On a truly empty slot the breakpoints cost
+                # STOP_AFTER_ZERO_PAIRS queries.
+                self.log(f"  The header of slot {curve} carries no curve "
+                         "name. That alone does not say the slot is empty, "
+                         "so the breakpoints are asked for anyway.")
+            else:
+                self.log(f"  Name '{header['name']}', serial "
+                         f"'{header['serial']}', data format "
+                         f"{header['format_code']} ({header['format_name']}), "
+                         f"limit {header['limit']} K, coefficient "
+                         f"{header['coefficient_name']}.")
 
             def progress(done, total, point):
                 self._post('progress', done, total)
@@ -1884,6 +1924,11 @@ class CurveViewerGUI:
             points, notes = self.backend.read_points(
                 curve, progress=progress, should_stop=self._stop_flag.is_set)
             self.log(f"  {len(points)} breakpoints read.")
+            holds_curve, verdict = describe_slot(header, points)
+            if verdict:
+                notes = list(notes) + [verdict]
+            self.log(f"  Slot {curve} "
+                     + ("holds a curve." if holds_curve else "is empty."))
             for note in notes:
                 self.log(f"  Note: {note}")
             self._post('curve', header, points, notes)
@@ -1911,21 +1956,24 @@ class CurveViewerGUI:
                                       fmt_value(temperature), ohms))
 
         kind = 'user' if header.get('is_user_slot') else 'standard'
-        if header.get('is_empty'):
+        holds_curve, _verdict = describe_slot(header, points)
+        if not holds_curve and header.get('is_empty'):
             self.headline_label.config(
                 text=f"Slot {header['curve']} is empty.")
             self.detail_label.config(
                 text=(f"This is a {kind} slot. The instrument answered "
                       f"'{header.get('_raw')}', which carries no curve name, "
-                      "so there is nothing stored here."))
+                      "and CRVPT? found no breakpoints, so there is nothing "
+                      "stored here."))
             self.problem_label.config(text="")
             self._draw_plot(header, [])
             self.right_tabs.select(0)
             return
 
         stats = curve_statistics(points, header.get('units_label', '?'))
+        shown_name = str(header.get('name', '')).strip() or "(no name)"
         self.headline_label.config(
-            text=(f"Slot {header['curve']}  ·  {header['name']}  "
+            text=(f"Slot {header['curve']}  ·  {shown_name}  "
                   f"·  {stats.get('count', 0)} breakpoints"))
         if stats:
             self.detail_label.config(
@@ -2255,6 +2303,54 @@ def _selftest_cases():
         csv = build_catalogue_csv(list(entries.values()))
         check("EmptyByHeader,EmptyByPoints,Disagrees" in csv, csv[:200])
 
+    # -- 15: a blank header does not stop the breakpoints being read --------
+    def case_blank_header_over_points():
+        # The single-slot read used to stop at a blank header and report
+        # "holds no curve" without one CRVPT?. Slot 23 above is exactly the
+        # slot that hid: points written, header never set.
+        blank = parse_crvhdr(",,1,0.000,1", 23)
+        filler = parse_crvhdr("User 28,,2,375.000,1", 28)
+        named = parse_crvhdr("CX-1030,X17680,4,325.000,1", 24)
+        stored = [(2.94699, 4.0), (2.0, 100.0)]
+
+        holds, note = describe_slot(blank, stored)
+        check(holds is True, "stored points are a curve, blank header or not")
+        check("breakpoints are the ones to believe" in note, note)
+        holds, note = describe_slot(filler, stored)
+        check(holds is True, "filler header over points is still a curve")
+        holds, note = describe_slot(named, stored)
+        check(holds is True and note == "", "the ordinary case needs no note")
+        holds, note = describe_slot(named, [])
+        check(holds is False, "a header with nothing behind it is no curve")
+        check("not a calibration" in note, note)
+        holds, note = describe_slot(blank, [])
+        check(holds is False, "blank header, no points: empty")
+        check("holds no curve" in note, note)
+
+        # And the read path itself, driven through the backend with the
+        # same table as case 14: slot 23 must come back with its points.
+        class FakeLink:
+            def __init__(self):
+                self.asked = []
+
+            def ask(self, command):
+                self.asked.append(command)
+                if command.startswith("CRVHDR?"):
+                    return ",,1,0.000,1"
+                index = int(command.split(',')[1])
+                return {1: "2.94699,4.000", 2: "2.00000,100.000"}.get(
+                    index, "0.00000,0.000")
+
+        backend = CurveViewerBackend.__new__(CurveViewerBackend)
+        backend.link = FakeLink()
+        header = backend.read_header(23)
+        check(header['is_empty'] is True, "the header alone says empty")
+        points, _notes = backend.read_points(23)
+        check(len(points) == 2, f"expected the two stored points, got {points}")
+        check(describe_slot(header, points)[0] is True, "and that is a curve")
+        check(all(command.endswith('?') or '?' in command
+                  for command in backend.link.asked), "queries only")
+
     # -- 4: an empty slot is recognised, not guessed at ---------------------
     def case_empty_slot():
         header = parse_crvhdr("            ,          ,0,0.0,1", 45)
@@ -2398,6 +2494,8 @@ def _selftest_cases():
         ("catalogue CSV", case_catalogue_csv),
         ("REGRESSION: a 340's 'User 28' filler is not a stored curve, and "
          "header and points are reported separately", case_filler_and_probe),
+        ("REGRESSION: a blank header does not stop the breakpoints being "
+         "read", case_blank_header_over_points),
     ]
 
 
