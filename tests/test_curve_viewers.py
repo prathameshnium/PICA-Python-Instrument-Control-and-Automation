@@ -37,6 +37,7 @@ import importlib.util
 import os
 import re
 import sys
+import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
@@ -483,8 +484,23 @@ def test_l350_catalogue_csv_marks_empty_slots():
     text = l350.build_catalogue_csv(entries, idn="LSCI", address="GPIB1::12")
     lines = [line for line in text.splitlines() if not line.startswith('#')]
     assert len(lines) == 3            # header row plus two slots
+    assert lines[0].endswith(",EmptyByHeader,EmptyByPoints,Disagrees")
     assert ",standard," in lines[1]
-    assert lines[2].endswith(",yes")
+    # Not probed: the header verdict stands alone and the points column is
+    # left blank rather than guessed.
+    assert lines[1].endswith(",no,,no")
+    assert lines[2].endswith(",yes,,no")
+
+    # Probed, and the two verdicts disagree: a 340's filler header reads as
+    # occupied but CRVPT? found nothing. Both columns say what they saw.
+    filler = l350.parse_crvhdr("User 28,,2,375.0,1", 28)
+    filler.update(is_empty=False, points_empty=True, disagrees=True)
+    agreed = l350.parse_crvhdr("      ,      ,0,0.0,1", 45)
+    agreed.update(points_empty=True, disagrees=False)
+    text = l350.build_catalogue_csv([filler, agreed])
+    lines = [line for line in text.splitlines() if not line.startswith('#')]
+    assert lines[1].endswith(",no,yes,yes")
+    assert lines[2].endswith(",yes,yes,no")
 
 
 # ---------------------------------------------------------------------------
@@ -503,6 +519,98 @@ def test_both_viewers_are_in_the_launcher():
 
 def test_cc34_module_self_test_passes():
     assert cc34.run_self_test(report=lambda message: None)
+
+
+def test_l350_describe_slot_believes_the_breakpoints():
+    blank = l350.parse_crvhdr(",,1,0.000,1", 23)
+    filler = l350.parse_crvhdr("User 28,,2,375.000,1", 28)
+    named = l350.parse_crvhdr("CX-1030,X17680,4,325.000,1", 24)
+    stored = [(2.94699, 4.0), (2.0, 100.0)]
+    assert l350.describe_slot(blank, stored)[0] is True
+    assert l350.describe_slot(filler, stored)[0] is True
+    assert l350.describe_slot(named, stored) == (True, "")
+    holds, note = l350.describe_slot(named, [])
+    assert holds is False and "not a calibration" in note
+    holds, note = l350.describe_slot(blank, [])
+    assert holds is False and "holds no curve" in note
+
+
+class _SlotLink:
+    """CRVHDR? and CRVPT? from a table; every other command is refused."""
+    is_connected = True
+    address = "GPIB1::12"
+
+    def __init__(self, header, points):
+        self.header = header
+        self.points = points
+        self.asked = []
+
+    def ask(self, command):
+        self.asked.append(command)
+        assert '?' in command, command
+        if command.startswith("CRVHDR?"):
+            return self.header
+        index = int(command.split(',')[1])
+        value, temperature = self.points.get(index, (0.0, 0.0))
+        return f"{value:.5f},{temperature:.3f}"
+
+
+def _viewer_window():
+    import tkinter as tk
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"no display for a Tk root: {exc}")
+    root.withdraw()
+    return root, l350.CurveViewerGUI(root)
+
+
+def _read_slot_synchronously(gui, curve, link):
+    gui.backend.link = link
+    gui._require_connection = lambda: True
+    gui._selected_slot = lambda: curve
+    gui._run_in_worker = lambda description, function: function()
+    gui._read_slot()
+    posted = []
+    while not gui._events.empty():
+        event = gui._events.get_nowait()
+        if event[0] == 'curve':
+            posted.append(event)
+    assert len(posted) == 1, posted
+    _kind, header, points, notes = posted[0]
+    return header, points, notes
+
+
+def test_l350_reading_a_slot_with_a_blank_header_still_reads_its_points():
+    """REGRESSION. The single-slot read used to stop at a blank header and
+    report 'holds no curve' without asking for one breakpoint, so a curve
+    written without a header could not be viewed at all."""
+    root, gui = _viewer_window()
+    try:
+        link = _SlotLink(",,1,0.000,1", {1: (2.94699, 4.0), 2: (2.0, 100.0)})
+        header, points, notes = _read_slot_synchronously(gui, 23, link)
+        assert header['is_empty'] is True
+        assert points == [(2.94699, 4.0), (2.0, 100.0)]
+        assert any("breakpoints are the ones to believe" in n for n in notes)
+        assert any(c.startswith("CRVPT? 23,1") for c in link.asked)
+        gui._show_curve(header, points, notes)
+        assert "(no name)" in gui.headline_label.cget("text")
+        assert "2 breakpoints" in gui.headline_label.cget("text")
+        assert "is empty" not in gui.headline_label.cget("text")
+
+        # A truly empty slot still reads as empty, and says why.
+        link = _SlotLink(",,1,0.000,1", {})
+        header, points, notes = _read_slot_synchronously(gui, 45, link)
+        assert points == []
+        assert any("holds no curve" in n for n in notes)
+        gui._show_curve(header, points, notes)
+        assert gui.headline_label.cget("text") == "Slot 45 is empty."
+        assert "CRVPT? found no breakpoints" in gui.detail_label.cget("text")
+        # It cost STOP_AFTER_ZERO_PAIRS queries, not zero and not two hundred.
+        assert sum(c.startswith("CRVPT?") for c in link.asked) == \
+            l350.STOP_AFTER_ZERO_PAIRS
+    finally:
+        root.destroy()
 
 
 def test_l350_module_self_test_passes():
