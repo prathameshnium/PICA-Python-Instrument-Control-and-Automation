@@ -756,6 +756,13 @@ class PICALauncherApp:
             right_col, 'Vacuum Gauge Logging (Pfeiffer TPG 361)', "Passive Logging",
             "RS-232 serial (ASRL), not GPIB -- pick the COM port in the module", [
                 ("Pressure vs. Time", "TPG361 Pressure Log", "sensing")])
+        # A source, not a measurement: this module sets the drive another
+        # module measures against, so it carries no data file of its own.
+        self._create_suite_frame(
+            right_col, 'Signal Generation (Tektronix AFG 3022B)',
+            "Waveform Source", "2 channels, 25 MHz", [
+                ("Function Generator Direct Control",
+                 "AFG3022B Function Generator", "control")])
         self._create_suite_frame(right_col,
                                  'Temperature Utilities (Lakeshore 350 / Cryocon 34)',
                                  "Control Utility",
@@ -770,6 +777,9 @@ class PICALauncherApp:
                                    "Lakeshore Direct Control", "control"),
                                   ("Temperature Monitor (L350)",
                                    "Lakeshore Temp Monitor", "sensing"),
+                                  ("Sensor Curve Loader (L340 / L350)",
+                                   "Lakeshore Sensor Curve Loader",
+                                   "control"),
                                   ("Sensor Curve Viewer (L350, read only)",
                                    "Lakeshore Sensor Curve Viewer", "sensing"),
                                   ("Direct Control (Cryocon 34)",
@@ -812,7 +822,34 @@ class PICALauncherApp:
                                  [("Comms and Control",
                                    "SR830 Lock-in Comms"),
                                   ("AC Resistivity (4-probe)",
-                                   "SR830 AC Resistivity")],
+                                   "SR830 AC Resistivity"),
+                                  ("AC I-V Sweep", "SR830 AC I-V"),
+                                  ("AC Frequency Scan",
+                                   "SR830 AC Freq. Scan"),
+                                  ("AC R vs. T (T_Control)",
+                                   "SR830 AC R-T", "control"),
+                                  ("AC R vs. T (T_Sensing, L350)",
+                                   "SR830 AC R-T (T_Sensing)", "sensing"),
+                                  ("AC R vs. T (T_Sensing, Cryocon 34)",
+                                   "SR830 AC R-T (T_Sensing, CC34)",
+                                   "sensing")],
+                                 experimental=True)
+        # No reference and no phase: R is a magnitude and an upper bound.
+        # Kept apart from the lock-in suite so the two are never confused.
+        self._create_suite_frame(right_col,
+                                 'AC Transport without a Lock-in',
+                                 "AC Current Driven",
+                                 "Instruments: Keithley 6221 + Keithley 197A (AC volts)",
+                                 [("AC I-V Sweep", "K197A AC I-V"),
+                                  ("AC Frequency Scan",
+                                   "K197A AC Freq. Scan"),
+                                  ("AC R vs. T (T_Control)",
+                                   "K197A AC R-T", "control"),
+                                  ("AC R vs. T (T_Sensing, L350)",
+                                   "K197A AC R-T (T_Sensing)", "sensing"),
+                                  ("AC R vs. T (T_Sensing, Cryocon 34)",
+                                   "K197A AC R-T (T_Sensing, CC34)",
+                                   "sensing")],
                                  experimental=True)
 
         return main_container

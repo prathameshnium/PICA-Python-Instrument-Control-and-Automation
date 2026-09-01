@@ -726,6 +726,8 @@ CATALOG = [
             ("Temperature Monitor (L350)", "Lakeshore Temp Monitor", "sensing"),
             # The two viewers are read-only: they ask the instrument what
             # curves it holds and can send nothing but queries.
+            ("Sensor Curve Loader (L340 / L350)",
+             "Lakeshore Sensor Curve Loader", "control"),
             ("Sensor Curve Viewer (L350, read only)", "Lakeshore Sensor Curve Viewer", "sensing"),
             ("Direct Control (Cryocon 34)", "Cryocon Direct Control", "control"),
             ("Temperature Monitor (Cryocon 34)", "Cryocon Temp Monitor", "sensing"),
