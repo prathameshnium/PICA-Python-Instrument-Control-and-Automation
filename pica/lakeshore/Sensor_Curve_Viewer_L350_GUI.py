@@ -47,9 +47,18 @@ Curve slots
   both, and reading a standard curve is often exactly what is wanted -- it is
   how you find out what the instrument thinks a DT-670 is.
 
-  A slot that holds nothing still answers CRVHDR?. It comes back with an
-  empty or blank name; that is how an empty slot is recognised here. It is
-  never inferred from a slot number.
+  A slot that holds nothing still answers CRVHDR?, but it does NOT
+  necessarily come back blank. A Model 340 prints its own filler over an
+  untouched slot -- 'User 28', blank serial, format 2, limit 375.0 K -- so a
+  name is not evidence of a stored curve. Nor is a blank name evidence of an
+  empty one, because points can be written before a header.
+
+  So each slot is read BOTH ways and both are reported: what the header says
+  (looks_empty) and what CRVPT? finds (probe_points). Where the two disagree
+  the breakpoints are the ones to believe, and the slot is flagged in the
+  list rather than quietly resolved -- reading a slot two ways and comparing
+  is how the loader's false 'curve occupied' was caught in the first place.
+  Neither verdict is ever inferred from a slot number.
 
 CRVHDR? <curve>
   Reply: <name>,<serial>,<format>,<limit>,<coefficient>
@@ -354,21 +363,44 @@ def parse_crvhdr(reply, curve):
     header['coefficient_name'] = COEFFICIENTS.get(
         header['coefficient_code'], "unknown")
     header['is_user_slot'] = curve >= FIRST_USER_CURVE
-    header['is_empty'] = looks_empty(header['name'])
+    header['is_empty'] = looks_empty(header['name'], curve)
     return header
 
 
-def looks_empty(name):
-    """True if a curve name means 'nothing stored here'.
+# A Model 340 does not leave an unused slot blank. It prints its own filler
+# over it -- 'User 28', blank serial, format 2, limit 375.0 K -- so a name is
+# not evidence of a stored curve, and the loader in this directory was
+# refusing all forty user curves on the strength of one. The names below are
+# recognised as filler here for the same reason.
+DEFAULT_CURVE_NAME_RE = re.compile(
+    r'^(?:user\s*)?(?:curve\s*)?(\d{1,3})$', re.IGNORECASE)
 
-    An unused slot answers with a blank name or with a run of spaces. Some
-    firmware answers a single dot. None of those is a curve anybody stored,
-    and every one of them is treated the same way: the slot is listed, and it
-    is listed as empty rather than skipped, because a gap in the list is
-    itself worth seeing.
+# Which breakpoints to sample when judging a slot by its contents rather than
+# its name. The first few, then a spread reaching the instrument ceiling, so
+# points stranded above a blank pair are seen too. Ten queries a slot.
+PROBE_INDICES = (1, 2, 3, 5, 10, 25, 50, 100, 150, 200)
+
+
+def looks_empty(name, curve=None):
+    """True if a curve NAME means 'nothing stored here'.
+
+    Deliberately still a header-only test, and deliberately kept even though
+    the contents test below is the reliable one. Reading a slot two ways and
+    comparing the answers is how the loader's bug was found, so this module
+    reports both verdicts side by side rather than replacing one with the
+    other.
+
+    A blank name is filler, a run of spaces is filler, some firmware answers
+    a single dot, and a 340 answers 'User <n>' over slot n. A name carrying a
+    DIFFERENT slot's number is left alone: that is a curve somebody copied.
     """
     stripped = str(name or '').strip().strip('"').strip()
-    return stripped == '' or stripped in ('.', '-', 'none', 'None')
+    if stripped == '' or stripped.lower() in ('.', '-', 'none', 'null'):
+        return True
+    match = DEFAULT_CURVE_NAME_RE.match(stripped)
+    if not match:
+        return False
+    return curve is None or int(match.group(1)) == int(curve)
 
 
 def parse_crvpt(reply, curve, index):
@@ -517,7 +549,8 @@ def build_catalogue_csv(entries, idn="", address=""):
         f"# Instrument: {idn or 'unknown'}",
         f"# VISA address: {address or 'unknown'}",
         "Slot,Kind,Name,Serial,FormatCode,FormatName,LimitK,"
-        "CoefficientCode,CoefficientName,Empty",
+        "CoefficientCode,CoefficientName,EmptyByHeader,EmptyByPoints,"
+        "Disagrees",
     ]
     for entry in entries:
         if entry.get('error'):
@@ -532,7 +565,10 @@ def build_catalogue_csv(entries, idn="", address=""):
             f"{entry.get('format_code', '')},{entry.get('format_name', '')},"
             f"{entry.get('limit', '')},{entry.get('coefficient_code', '')},"
             f"{entry.get('coefficient_name', '')},"
-            f"{'yes' if entry.get('is_empty') else 'no'}")
+            f"{'yes' if entry.get('is_empty') else 'no'},"
+            + ("" if entry.get('points_empty') is None
+               else ('yes' if entry['points_empty'] else 'no'))
+            + f",{'yes' if entry.get('disagrees') else 'no'}")
     return "\n".join(lines) + "\n"
 
 
@@ -797,12 +833,45 @@ class CurveViewerBackend:
                 f"not {curve}.")
         return parse_crvhdr(self.link.ask(f"CRVHDR? {curve}"), curve)
 
+    def probe_points(self, curve, indices=PROBE_INDICES):
+        """Sample a few breakpoints of a curve. Queries only.
+
+        Returns (stored, checked): `stored` is the first
+        (index, units_value, temperature) that came back non-zero, or empty,
+        and `checked` is the indices actually asked for. Stops at the first
+        stored point, so an occupied slot costs one query.
+        """
+        stored = []
+        checked = []
+        for index in indices:
+            units_value, temperature = parse_crvpt(
+                self.link.ask(f"CRVPT? {curve},{index}"), curve, index)
+            checked.append(int(index))
+            if not (units_value == 0.0 and temperature == 0.0):
+                stored.append((int(index), units_value, temperature))
+                break
+        return stored, checked
+
     def scan_catalogue(self, first=MIN_CURVE, last=MAX_CURVE, progress=None,
-                       should_stop=None):
-        """Read every curve header in a range. One query per slot.
+                       should_stop=None, probe=True):
+        """Read every curve header in a range, and optionally sample points.
 
         A slot that will not answer is included with an 'error' key rather
         than dropped, because a gap in the list is itself informative.
+
+        With `probe` on, each slot is also asked for a handful of breakpoints
+        and the entry carries BOTH verdicts:
+
+            'is_empty'      what the header says   (name is filler)
+            'points_empty'  what the contents say  (nothing stored)
+            'disagrees'     the two do not match
+
+        Both are kept on purpose. Either one alone can be wrong -- a 340's
+        filler header reads as occupied to the first, and a curve whose points
+        were written before its header reads as free to the first as well --
+        and a slot where they disagree is exactly the slot worth looking at.
+        Probing costs about ten extra queries per empty slot and one per
+        occupied one; it is all CRVPT?, so it is still read-only.
         """
         if not self.link:
             raise ConnectionError("Not connected to instrument.")
@@ -813,10 +882,19 @@ class CurveViewerBackend:
                 break
             try:
                 entry = self.read_header(curve)
+                if probe:
+                    stored, checked = self.probe_points(curve)
+                    entry['points_empty'] = not stored
+                    entry['probe_checked'] = checked
+                    entry['probe_first'] = stored[0] if stored else None
+                    entry['disagrees'] = (entry['points_empty']
+                                          != entry['is_empty'])
             except Exception as exc:
                 entry = {'curve': curve,
                          'is_user_slot': curve >= FIRST_USER_CURVE,
                          'is_empty': True,
+                         'points_empty': None,
+                         'disagrees': False,
                          'name': '', 'serial': '',
                          'error': f"{type(exc).__name__}: {exc}"}
             entries.append(entry)
@@ -1418,6 +1496,8 @@ class CurveViewerGUI:
         # Double-clicking a row is the obvious way to say 'read that one'.
         self.catalogue_table.bind('<Double-1>', self._catalogue_double_click)
         self.catalogue_table.tag_configure('empty', foreground='#8A8177')
+        self.catalogue_table.tag_configure('split',
+                                           foreground=self.CLR_STATUS_WARN)
 
     # -----------------------------------------------------------------------
     # LOGGING AND STATE
@@ -1666,10 +1746,35 @@ class CurveViewerGUI:
             entries = self.backend.scan_catalogue(
                 first=first, last=MAX_CURVE, progress=progress,
                 should_stop=self._stop_flag.is_set)
-            occupied = [e for e in entries
-                        if not e.get('is_empty') and not e.get('error')]
+            # The contents verdict is the one to believe where the two
+            # differ, so the count is taken from it where it exists.
+            def holds_a_curve(entry):
+                if entry.get('error'):
+                    return False
+                if entry.get('points_empty') is not None:
+                    return not entry['points_empty']
+                return not entry.get('is_empty')
+
+            occupied = [e for e in entries if holds_a_curve(e)]
             self.log(f"  {len(entries)} slots read; {len(occupied)} hold a "
                      "curve.")
+            split = [e for e in entries if e.get('disagrees')]
+            if split:
+                self.log(f"  {len(split)} slot(s) where the header and the "
+                         "breakpoints disagree. The breakpoints are the ones "
+                         "to believe:")
+                for entry in split:
+                    if entry.get('points_empty'):
+                        self.log(f"    slot {entry['curve']:2d}  header reads "
+                                 f"'{entry.get('name', '').strip()}' but "
+                                 "CRVPT? found no points. Firmware filler, "
+                                 "not a stored curve.")
+                    else:
+                        index, units_value, temperature = entry['probe_first']
+                        self.log(f"    slot {entry['curve']:2d}  header looks "
+                                 f"blank but CRVPT? {entry['curve']},{index} "
+                                 f"answered {units_value:g},{temperature:g}. "
+                                 "Something IS stored here.")
             for entry in occupied:
                 self.log(f"    slot {entry['curve']:2d}  "
                          f"{entry['name']:<16s} {entry['serial']:<12s} "
@@ -1695,7 +1800,25 @@ class CurveViewerGUI:
             if entry.get('error'):
                 values = (entry['curve'], kind, '<no answer>', '', '', '', '')
                 tags = ('empty',)
-            elif entry.get('is_empty'):
+            elif entry.get('disagrees'):
+                # Worth seeing rather than smoothing over: one of the two
+                # readings of this slot is wrong, and which one matters.
+                if entry.get('points_empty'):
+                    note = f"(no points; header said '{entry.get('name', '')}')"
+                else:
+                    index = entry['probe_first'][0]
+                    note = f"(header looks blank; point {index} is set)"
+                    occupied += 1
+                values = (entry['curve'], kind, note,
+                          entry.get('serial', ''),
+                          f"{entry.get('format_code')} "
+                          f"({entry.get('format_name')})",
+                          entry.get('limit', ''),
+                          entry.get('coefficient_name', ''))
+                tags = ('split',)
+            elif (entry.get('points_empty')
+                  if entry.get('points_empty') is not None
+                  else entry.get('is_empty')):
                 values = (entry['curve'], kind, '(empty)', '', '', '', '')
                 tags = ('empty',)
             else:
@@ -2069,6 +2192,69 @@ def _selftest_cases():
         check(header['is_user_slot'] is True, "21 is a user slot")
         check(header['is_empty'] is False, "this slot is not empty")
 
+    # -- 14: a 340's filler name is not a stored curve, and the two
+    #        verdicts are reported side by side --------------------------
+    def case_filler_and_probe():
+        # What the lab 340 answers over an untouched slot.
+        check(looks_empty("User 28", 28), "'User 28' on slot 28 is filler")
+        check(looks_empty("28", 28), "a bare slot number is filler")
+        check(looks_empty("", 24), "blank is filler")
+        check(not looks_empty("S700", 21), "S700 is a stored name")
+        check(not looks_empty("User 24", 28), "another slot's number")
+        header = parse_crvhdr("User 28,,2,375.000,1", 28)
+        check(header['is_empty'] is True,
+              "a 375 K filler header must not read as occupied")
+
+        class FakeLink:
+            """Answers CRVHDR? and CRVPT? from a table. Queries only."""
+
+            def __init__(self, headers, points):
+                self.headers = headers
+                self.points = points
+                self.asked = []
+
+            def ask(self, command):
+                self.asked.append(command)
+                if command.startswith("CRVHDR?"):
+                    return self.headers[int(command.split()[1])]
+                curve, index = (int(part) for part
+                                in command.split(None, 1)[1].split(','))
+                value, temperature = self.points.get(curve, {}).get(
+                    index, (0.0, 0.0))
+                return f"{value:.5f},{temperature:.3f}"
+
+        backend = CurveViewerBackend.__new__(CurveViewerBackend)
+        backend.link = FakeLink(
+            {21: "S700,,2,375.000,1",              # named, and really full
+             22: "User 22,,2,375.000,1",           # filler, really empty
+             23: ",,1,0.000,1",                    # blank header over points
+             24: "CX-1030,X17680,4,325.000,1"},    # named, but no points
+            {21: {1: (1.64523, 325.0)},
+             23: {1: (2.94699, 4.0)}})
+        entries = {entry['curve']: entry for entry
+                   in backend.scan_catalogue(first=21, last=24)}
+
+        check(entries[21]['points_empty'] is False, "21 holds points")
+        check(entries[21]['disagrees'] is False, "21: both verdicts agree")
+        check(entries[22]['points_empty'] is True, "22 holds nothing")
+        check(entries[22]['disagrees'] is False, "22: both verdicts agree")
+        # The two slots the header alone gets wrong, one each way.
+        check(entries[23]['is_empty'] is True, "23 looks empty by header")
+        check(entries[23]['points_empty'] is False, "23 holds points")
+        check(entries[23]['disagrees'] is True, "23 must be flagged")
+        check(entries[24]['is_empty'] is False, "24 is named")
+        check(entries[24]['points_empty'] is True, "24 holds nothing")
+        check(entries[24]['disagrees'] is True, "24 must be flagged")
+        # The probe stops at the first stored point.
+        check(sum(1 for command in backend.link.asked
+                  if command.startswith("CRVPT? 21")) == 1,
+              "an occupied slot should cost one CRVPT?")
+
+        # Both verdicts have to reach the exported CSV, or the comparison
+        # only exists on screen.
+        csv = build_catalogue_csv(list(entries.values()))
+        check("EmptyByHeader,EmptyByPoints,Disagrees" in csv, csv[:200])
+
     # -- 4: an empty slot is recognised, not guessed at ---------------------
     def case_empty_slot():
         header = parse_crvhdr("            ,          ,0,0.0,1", 45)
@@ -2182,7 +2368,19 @@ def _selftest_cases():
                  if line and not line.startswith('#')]
         check(len(lines) == 3, lines)          # header row plus two slots
         check(",standard," in lines[1], lines[1])
-        check(lines[2].endswith(",yes"), lines[2])
+        # The row now carries BOTH verdicts and their disagreement flag.
+        # These entries were never probed, so the points column is blank --
+        # which must read as "not asked", never as "empty".
+        check(lines[0].endswith("EmptyByHeader,EmptyByPoints,Disagrees"),
+              lines[0])
+        check(lines[2].endswith(",yes,,no"), lines[2])
+        # A probed slot fills it in, and a disagreement survives the export.
+        probed = parse_crvhdr("User 28,,2,375.000,1", 28)
+        probed['points_empty'] = False
+        probed['disagrees'] = True
+        row = [line for line in build_catalogue_csv([probed]).splitlines()
+               if line and not line.startswith('#')][1]
+        check(row.endswith(",yes,no,yes"), row)
 
     return [
         ("read-only guard admits queries only", case_read_only_guard),
@@ -2198,6 +2396,8 @@ def _selftest_cases():
         ("curve statistics", case_statistics),
         ("curve CSV", case_curve_csv),
         ("catalogue CSV", case_catalogue_csv),
+        ("REGRESSION: a 340's 'User 28' filler is not a stored curve, and "
+         "header and points are reported separately", case_filler_and_probe),
     ]
 
 

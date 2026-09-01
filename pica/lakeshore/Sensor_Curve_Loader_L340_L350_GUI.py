@@ -15,12 +15,48 @@ Purpose: Install a calibrated sensor curve (Cernox, Ruthenium-Oxide,
          the CD (.234, .330, .340, .34A, .91C) are the same calibration
          rendered for different controllers, not different data.
 
-IT ONLY EVER FILLS AN EMPTY USER CURVE. It does not replace an existing one
-and has no button that does. The operator picks the target from a map of what
-every curve holds, and the curve is read once more with CRVHDR? immediately
+IT ONLY EVER FILLS AN EMPTY USER CURVE. The send path does not replace an
+existing one and has no button that does. The operator picks the target from
+a map of what every curve holds, and the curve is read once more immediately
 before anything is written: if it is not empty then, the send is abandoned
 with nothing sent. An unreadable reply counts as not-empty. Refusing a send
 costs a retry; overwriting a calibration nobody can get back does not.
+
+Erasing is the one exception, and it is a separate button that does nothing
+else. It reads the target first and puts its header, its point count and its
+two end points into the confirmation dialog, because "erase curve 27" is not
+a sentence anybody can check and "erase 129 points from 4.0 K to 325.0 K,
+serial X17680" is. It then reads the slot back to prove the CRVDEL landed.
+Nothing else in this module removes anything.
+
+WHAT 'EMPTY' MEANS HERE  (changed in v1.1, and it is the point of v1.1)
+A curve is empty when CRVPT? answers 0,0 at every index checked. It is NOT
+judged from CRVHDR? alone any more, because a header cannot tell a stored
+curve from an untouched slot in either direction:
+
+  * the lab's Model 340 prints its own filler over a slot nobody has
+    written -- name 'User 28', blank serial, format 2, limit 375.0 K -- and
+    the old rule (blank name AND zero limit) read all forty user curves as
+    occupied, so there was nowhere to put a calibration;
+
+  * a slot whose points were written before its header carries a blank
+    name and a zero limit over 129 real breakpoints, and the old rule would
+    have offered that one as free.
+
+The header is still read and still reported. A slot with no points but a
+header nobody could have got from the firmware is called a 'stub': it is
+neither refused nor quietly filled, because a header with nothing behind it
+is not a calibration and there is nothing there to lose. The send stops,
+shows the operator that header, and on a yes erases the slot with CRVDEL
+before writing, so what lands is this curve and nothing else.
+
+Two depths, on purpose. The gate reads one curve up to the instrument's own
+200-breakpoint ceiling, which is about ten seconds and is paid once per
+transfer. The curve map reads a ladder -- points 1, 2, 3, 5, 10, 25, 50, 100,
+150, 200 -- across forty slots, which catches a stored curve and catches
+points stranded above a blank pair without turning a map into a coffee break.
+A slot the map calls free is still re-scanned in full by the gate before a
+single command goes out.
 
 Non-destructive: this module never sends *RST, DFLT, SETP, RANGE, RAMP,
 PID, MOUT or any other heater, loop or setpoint command. It writes exactly
@@ -28,6 +64,8 @@ three kinds of thing, and only when the operator presses the button that
 says so:
   - CRVDEL / CRVHDR / CRVPT (+ CRVSAV on the 340), into an empty user curve;
   - optionally INCRV, to put that curve on an input;
+  - CRVDEL alone, from the erase button, on a user curve whose contents were
+    read out and shown in the confirmation dialog first;
   - nothing else.
 
 ===============================================================================
@@ -1326,15 +1364,96 @@ def parse_crvhdr_reply(text, source_name="CRVHDR?"):
     }
 
 
-def header_is_empty(header):
-    """True if a CRVHDR? reply describes an untouched user curve.
+# A user curve that nobody has written to does NOT necessarily read back
+# blank. On the lab's Model 340 (LSCI,MODEL340,340219,111196) an untouched
+# slot answers CRVHDR? with the firmware's own filler -- name 'User 28',
+# blank serial, format 2, limit 375.0 K -- and the rule that used to live
+# here (blank name AND zero limit) therefore called all forty user curves
+# occupied and left nowhere to put a calibration.
+#
+# The rule was also wrong in the dangerous direction. A header says nothing
+# about whether breakpoints are stored, so a slot whose points had been
+# written before its header carried a blank name, a zero limit, and 129
+# points of somebody's calibration -- and the old rule would have offered it
+# as free. What a curve HOLDS is its breakpoints, so that is what is asked
+# now. The header is reported alongside as context.
+DEFAULT_CURVE_NAME_RE = re.compile(
+    r'^(?:user\s*)?(?:curve\s*)?(\d{1,3})$', re.IGNORECASE)
+BLANK_CURVE_NAMES = ('', '.', '-', 'none', 'null')
 
-    A deleted or never-used slot answers with a blank name and a zero limit.
-    That is how a free slot is told from an occupied one when the list of
-    user curves is read.
+# HOW DEEP THE EMPTINESS CHECK LOOKS
+#
+# There are two scans and they are deliberately different, because they are
+# asked to do different jobs.
+#
+# The GATE runs on ONE curve, once, immediately before anything is written,
+# and it is the only check that authorises a write. It reads until it finds
+# a stored point or reaches the instrument's own ceiling, so a curve it calls
+# free is free at every index the instrument has. That is 200 queries on an
+# empty slot, about ten seconds. Paid once per transfer, it is cheap.
+#
+# The MAP runs on forty curves and cannot afford that, so it probes a ladder:
+# the first few indices, then a spread reaching the ceiling. It catches a
+# stored curve and it catches points stranded above a blank pair, at ten
+# queries per empty slot rather than two hundred. A slot the map calls free
+# is still re-scanned in full by the gate before a single command goes out,
+# so the ladder is a picker aid and never the thing that permits a write.
+GATE_PROBE_LIMIT = MAX_CURVE_POINTS
+MAP_PROBE_INDICES = (1, 2, 3, 5, 10, 25, 50, 100, 150, 200)
+
+
+def header_name_is_default(name, curve=None):
+    """True if a CRVHDR? name is firmware filler rather than a stored name.
+
+    Blank is filler, and so is the 'User <n>' a 340 prints over a slot
+    nobody has written, where <n> is that slot's own number. A name holding
+    a DIFFERENT slot's number is left alone: that is a curve somebody copied,
+    and it is not this module's to judge.
     """
-    return (not str(header.get('name', '')).strip()
-            and float(header.get('limit', 0.0) or 0.0) == 0.0)
+    text = str(name or '').strip().strip('"').strip()
+    if text.lower() in BLANK_CURVE_NAMES:
+        return True
+    match = DEFAULT_CURVE_NAME_RE.match(text)
+    if not match:
+        return False
+    return curve is None or int(match.group(1)) == int(curve)
+
+
+def header_is_empty(header, curve=None):
+    """True if a CRVHDR? reply carries nothing an operator put there.
+
+    THIS IS NO LONGER THE EMPTINESS TEST, and it cannot be: see the comment
+    above. It is half of it. The other half is CRVPT?, and the two are put
+    together in CurveLoaderBackend.curve_is_empty(), which is what the
+    listing and the pre-send gate both call.
+
+    A serial number counts as something an operator put there even when the
+    name is filler, because nothing in the firmware writes one.
+    """
+    return (header_name_is_default(header.get('name', ''), curve)
+            and str(header.get('serial', '')).strip().strip('"') == '')
+
+
+CURVE_COMMAND_TARGET_RE = re.compile(r'^(?:CRVDEL|CRVHDR|CRVPT)\s+(\d+)',
+                                     re.IGNORECASE)
+
+
+def commands_target_curves(commands):
+    """Every curve number a built command list actually writes to.
+
+    build_curve_commands() puts the target in the first field of CRVDEL,
+    CRVHDR and CRVPT; CRVSAV carries none. The list is built once and the
+    target is picked from a combobox, so these two can drift apart, and a
+    list built for curve 21 sent while the picker reads 28 would be checked
+    against one slot and written into another. Returns a sorted list, so
+    anything other than exactly [target] is a refusal.
+    """
+    numbers = set()
+    for command in commands or ():
+        match = CURVE_COMMAND_TARGET_RE.match(str(command).strip())
+        if match:
+            numbers.add(int(match.group(1)))
+    return sorted(numbers)
 
 
 def parse_crvpt_reply(text, source_name="CRVPT?"):
@@ -2028,6 +2147,85 @@ class CurveLoaderBackend:
         return parse_crvpt_reply(link.query(f"CRVPT? {int(curve)},{int(index)}"),
                                  f"CRVPT? {curve},{index}")
 
+    def read_curve_occupancy(self, curve, indices=None, progress=None,
+                             should_stop=None):
+        """Ask CRVPT? for breakpoints of a curve until one of them is stored.
+
+        `indices` is the sequence of breakpoint numbers to try, and defaults
+        to every one the instrument has. Returns (stored, checked): `stored`
+        holds the (index, temperature, reading) of the first point that came
+        back non-zero, or is empty, and `checked` is the list of indices
+        actually asked for.
+
+        The scan stops at the first stored point, because one is already
+        enough to know the slot is not free. So an occupied curve costs one
+        query and only an empty one pays the full depth.
+        """
+        if indices is None:
+            indices = range(1, int(GATE_PROBE_LIMIT) + 1)
+        stored = []
+        checked = []
+        for index in indices:
+            if should_stop is not None and should_stop():
+                break
+            temperature, reading, _ = self.read_curve_point(curve, index)
+            checked.append(int(index))
+            if progress:
+                progress(len(checked), index)
+            if not point_is_empty(temperature, reading):
+                stored.append((int(index), temperature, reading))
+                break
+        return stored, checked
+
+    def curve_is_empty(self, curve, indices=None, progress=None):
+        """Is this curve free to fill? Header and breakpoints, both read now.
+
+        Returns (empty, header, state, detail) where state is 'free',
+        'in use' or 'stub'.
+
+        The breakpoints are the evidence and the header is context:
+
+          'in use'  something is stored. Refused, whatever the header says.
+          'stub'    no points, but a header nobody could have got from the
+                    firmware. NOT refused -- reported, and the operator is
+                    asked, because a header without points is not a
+                    calibration and there is nothing there to lose. On yes
+                    the slot is erased first so what lands is clean.
+          'free'    no points and the firmware's own filler header.
+
+        `indices` defaults to the full-depth gate scan; pass
+        MAP_PROBE_INDICES for the cheap ladder the curve map uses.
+        """
+        header = self.read_curve_header(curve)
+        stored, checked = self.read_curve_occupancy(
+            curve, indices=indices, progress=progress)
+        depth = (f"{checked[0]} to {checked[-1]}" if checked else "none")
+        name = str(header.get('name', '')).strip()
+        serial = str(header.get('serial', '')).strip()
+        described = (f"name '{name}', serial '{serial}', format "
+                     f"{header.get('format')}, limit "
+                     f"{float(header.get('limit', 0.0)):g} K")
+        if stored:
+            index, temperature, reading = stored[0]
+            return (False, header, 'in use',
+                    f"curve {curve} holds breakpoints: CRVPT? {curve},{index} "
+                    f"answered {reading:g},{temperature:g}. Its header reads "
+                    f"{described}. This module only fills empty curves, so "
+                    "nothing was sent. Pick a free curve, or erase this one "
+                    "first.")
+        if not header_is_empty(header, curve):
+            return (False, header, 'stub',
+                    f"curve {curve} holds no breakpoints -- CRVPT? answered "
+                    f"0,0 at every index checked ({depth}) -- but its header "
+                    f"is not the firmware default: {described}. A header with "
+                    "no points behind it is not a calibration, so there is "
+                    "nothing here to lose, but somebody did write it and you "
+                    "should see that before it goes.")
+        return (True, header, 'free',
+                f"curve {curve} is empty: CRVPT? answered 0,0 at every index "
+                f"checked ({depth}), and its header is the firmware default "
+                f"({described})")
+
     def read_curve(self, curve, max_points=MAX_CURVE_POINTS, progress=None,
                    expected_count=None):
         """Read a whole curve back.
@@ -2089,9 +2287,21 @@ class CurveLoaderBackend:
             entry = {'curve': curve,
                      'standard': curve < spec['user_curve_min']}
             try:
-                header = self.read_curve_header(curve)
-                entry.update(header)
-                entry['empty'] = header_is_empty(header)
+                if entry['standard']:
+                    # Standard curves are read-only and are never a target,
+                    # so they are not probed: it would double the query count
+                    # of a whole-instrument map to answer a question nobody
+                    # is asking.
+                    entry.update(self.read_curve_header(curve))
+                    entry['empty'] = False
+                    entry['state'] = 'standard'
+                else:
+                    empty, header, state, detail = self.curve_is_empty(
+                        curve, indices=MAP_PROBE_INDICES)
+                    entry.update(header)
+                    entry['empty'] = empty
+                    entry['state'] = state
+                    entry['detail'] = detail
             except Exception as exc:
                 entry['error'] = f"{type(exc).__name__}: {exc}"
                 entry['empty'] = None
@@ -2182,7 +2392,7 @@ class CurveLoaderGUI:
     unseen.
     """
 
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "1.1"
     PROGRAM_NAME = "Lake Shore 340 / 350 Sensor Curve Loader"
 
     # Colour scheme, shared with the sibling Lakeshore and Cryocon modules.
@@ -2592,7 +2802,7 @@ class CurveLoaderGUI:
                                         values=[], state='readonly', width=40)
         self.curve_combo.grid(row=9, column=1, sticky='w', padx=10, pady=4)
         self.curve_combo.bind('<<ComboboxSelected>>',
-                              lambda *_: self._refresh_curve_hint())
+                              lambda *_: self._on_target_curve_changed())
         self.curve_hint = ttk.Label(
             frame,
             text=("Set the model first: the 340 has curves 21-60 and the 350 "
@@ -2680,11 +2890,14 @@ class CurveLoaderGUI:
             row=5, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
         ttk.Label(
             frame,
-            text=("Mapping the curves sends one CRVHDR? per curve and not a\n"
-                  "single write: no CRVDEL, no CRVPT, no loop, setpoint or\n"
-                  "heater command. Safe with a cryostat controlling. What it\n"
-                  "finds fills the 'What is on the instrument' tab on the\n"
-                  "right, and the target picker below."),
+            text=("Mapping the curves sends CRVHDR? for every curve and,\n"
+                  "on the user curves, ten CRVPT? queries to see\n"
+                  "whether anything is stored. Queries only: not a\n"
+                  "single write, no CRVDEL, no loop, setpoint or\n"
+                  "heater command. Safe with a cryostat controlling.\n"
+                  "What it finds fills the 'What is on the\n"
+                  "instrument' tab on the right, and the target picker\n"
+                  "below."),
             background=self.CLR_FRAME_BG, font=self.FONT_SMALL,
             justify='left').grid(row=6, column=0, columnspan=2, sticky='w',
                                  padx=10, pady=(0, 4))
@@ -2700,7 +2913,21 @@ class CurveLoaderGUI:
             row=8, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
         ttk.Button(frame, text="Show every point of the chosen curve",
                    command=self._inspect_curve).grid(
-            row=9, column=0, columnspan=2, sticky='ew', padx=10, pady=(0, 8))
+            row=9, column=0, columnspan=2, sticky='ew', padx=10, pady=(0, 2))
+        self.erase_button = ttk.Button(
+            frame, text="ERASE the chosen user curve (CRVDEL)",
+            style='Disconnect.TButton', command=self._erase_curve)
+        self.erase_button.grid(row=10, column=0, columnspan=2, sticky='ew',
+                               padx=10, pady=(6, 2))
+        ttk.Label(
+            frame,
+            text=("The only destructive button in this module. It reads the\n"
+                  "curve first and shows you its header and its points, then\n"
+                  "asks. There is no undo: the instrument keeps no copy and\n"
+                  "neither does this program."),
+            background=self.CLR_FRAME_BG, font=self.FONT_SMALL,
+            justify='left').grid(row=11, column=0, columnspan=2, sticky='w',
+                                 padx=10, pady=(0, 8))
 
     def _create_send_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Step 5  ·  Send and check')
@@ -2715,11 +2942,14 @@ class CurveLoaderGUI:
             row=0, column=0, sticky='w', padx=10, pady=(8, 0))
         ttk.Label(
             frame,
-            text=("Leave this on. The target is always an empty curve, but\n"
-                  "'empty' is judged from its header, and a transfer that was\n"
-                  "interrupted can leave points behind a blank header. CRVDEL\n"
-                  "costs one command and guarantees a clean slate; on an\n"
-                  "already-empty curve it deletes nothing."),
+            text=("Leave this on. The target is always an empty curve, and\n"
+                  "'empty' means CRVPT? answered 0,0 at every index\n"
+                  "the gate checked, which is all 200. That is\n"
+                  "thorough, but a slot the gate cleared can still be\n"
+                  "dirtied by a transfer that is interrupted part-way\n"
+                  "through this very send. CRVDEL costs one command\n"
+                  "and clears it; on a curve that really is empty it\n"
+                  "deletes nothing."),
             background=self.CLR_FRAME_BG, font=self.FONT_SMALL,
             justify='left').grid(row=1, column=0, sticky='w',
                                  padx=10, pady=(0, 6))
@@ -2990,11 +3220,15 @@ class CurveLoaderGUI:
     def _create_curve_map_tab(self, tabs):
         """The map: one row per curve, saying what is in it.
 
-        Built from CRVHDR? alone. That is one query per curve rather than the
-        two hundred a point-by-point read would take, and the header is what
-        identifies a curve anyway: the name and serial say which sensor it is,
-        the format says what units it is in, and the limit says how far up it
-        goes. Use 'Show every point of the chosen curve' for the points.
+        Built from one CRVHDR? per curve plus, on the user curves, the
+        MAP_PROBE_INDICES ladder of CRVPT? queries. The header is what
+        identifies a curve -- the name and serial say which sensor it is,
+        the format says what units it is in, the limit says how far up it
+        goes -- but it cannot say whether anything is stored, so the
+        Status column comes from the breakpoints. Ten queries a slot
+        rather than two hundred, and the gate re-scans a chosen slot in
+        full before any write. Use 'Show every point of the chosen curve'
+        for the points themselves.
         """
         map_frame = ttk.Frame(tabs)
         tabs.add(map_frame, text='  What is on the instrument  ')
@@ -3034,6 +3268,7 @@ class CurveLoaderGUI:
         # the map is readable at a glance and still readable without colour.
         self.map_table.tag_configure('free', foreground=self.CLR_STATUS_OK)
         self.map_table.tag_configure('inuse', foreground=self.CLR_TEXT_DARK)
+        self.map_table.tag_configure('stub', foreground=self.CLR_STATUS_WARN)
         self.map_table.tag_configure('standard',
                                      foreground=self.CLR_STATUS_WARN)
         self.map_table.tag_configure('error', foreground=self.CLR_STATUS_BAD)
@@ -3048,7 +3283,17 @@ class CurveLoaderGUI:
                                  padx=8, pady=(0, 6))
 
     def _map_row_chosen(self, _event=None):
-        """Selecting a free user curve in the map picks it as the target."""
+        """Selecting a free user curve in the map picks it as the target.
+
+        This is the second way the target moves, and it has to go through
+        _on_target_curve_changed() for the same reason the combobox
+        binding does: the curve number is baked into every CRVDEL, CRVHDR
+        and CRVPT of the built list, so a target set here without a
+        rebuild would leave a list addressed to the previous slot. The
+        gate would refuse that send rather than write to the wrong curve,
+        but a refusal the operator has to decode is not the same as a
+        list that is simply correct.
+        """
         selection = self.map_table.selection()
         if not selection:
             return
@@ -3061,7 +3306,7 @@ class CurveLoaderGUI:
         for value in (self.curve_combo['values'] or []):
             if self._parse_leading_int(value) == curve:
                 self.curve_var.set(value)
-                self._refresh_curve_hint()
+                self._on_target_curve_changed()
                 return
 
     def _render_curve_map(self):
@@ -3071,6 +3316,7 @@ class CurveLoaderGUI:
         if not self.curve_map:
             return
         free = 0
+        stubs = 0
         for entry in self.curve_map:
             if entry.get('error'):
                 kind, tag = "no answer", 'error'
@@ -3079,6 +3325,10 @@ class CurveLoaderGUI:
             elif entry.get('empty'):
                 kind, tag = "free", 'free'
                 free += 1
+            elif entry.get('state') == 'stub':
+                # No points behind the header. Usable, but not silently.
+                kind, tag = "header only", 'stub'
+                stubs += 1
             else:
                 kind, tag = "in use", 'inuse'
             fmt_code = entry.get('format')
@@ -3099,7 +3349,9 @@ class CurveLoaderGUI:
                        if not entry.get('standard')]
         self.map_status.config(
             text=(f"{len(self.curve_map)} curves read. {free} of "
-                  f"{len(user_curves)} user curves are free."))
+                  f"{len(user_curves)} user curves are free"
+                  + (f", and {stubs} hold a header with no points behind it "
+                     "(usable, with a prompt)." if stubs else ".")))
 
     # -----------------------------------------------------------------------
     # LOGGING AND STATE
@@ -3118,6 +3370,23 @@ class CurveLoaderGUI:
     def _post(self, *event):
         """Queue one request for the Tk thread. Safe from any thread."""
         self._events.put(event)
+
+    def _ask_on_main(self, title, message, icon='warning', timeout_s=600.0):
+        """Put a yes/no question to the operator from a worker thread.
+
+        Blocks the worker until the dialog is answered. Returns False if it
+        is not answered inside `timeout_s`, because the safe reading of
+        silence is no -- an unanswered question must never become consent to
+        write.
+        """
+        holder = {'answer': False}
+        done = threading.Event()
+        self._post('ask', icon, title, message, holder, done)
+        if not done.wait(timeout_s):
+            self.log("  No answer to the confirmation dialog. Treating that "
+                     "as no; nothing was sent.")
+            return False
+        return bool(holder.get('answer'))
 
     def _drain_events(self, reschedule=True):
         """Carry out queued work. MAIN THREAD ONLY, driven by after().
@@ -3170,6 +3439,16 @@ class CurveLoaderGUI:
             self._render_curve_map()
             self._repopulate_curve_choices()
             self._refresh_curve_hint()
+        elif kind == 'ask':
+            # A worker needs a yes or no from the operator. Tk can only be
+            # asked on this thread, so the worker parks on an Event and this
+            # writes the answer into the holder before releasing it.
+            _kind, title, message, holder, done = event[1:6]
+            try:
+                holder['answer'] = bool(messagebox.askyesno(title, message,
+                                                            icon=_kind))
+            finally:
+                done.set()
         elif kind == 'dialog':
             _, level, title, text = event
             {'info': messagebox.showinfo,
@@ -3322,11 +3601,16 @@ class CurveLoaderGUI:
         return None
 
     def _target_state(self):
-        """'free', 'in use', 'no answer' or 'unknown' for the chosen curve.
+        """'free', 'stub', 'in use', 'no answer' or 'unknown' for the target.
 
         'unknown' means the user curves have not been listed in this session,
         so nothing here can say. It is not the same as free, and the module
         does not treat it as free: the pre-send check reads the curve itself.
+
+        'stub' is passed through rather than folded into 'in use', because
+        the two lead to different places -- 'in use' is a refusal and 'stub'
+        is a question. Folding them would block the send before the gate ever
+        got to ask it.
         """
         curve = self._curve_number()
         if curve is None:
@@ -3336,6 +3620,9 @@ class CurveLoaderGUI:
                 continue
             if entry.get('error'):
                 return 'no answer'
+            state = entry.get('state')
+            if state in ('free', 'stub', 'in use'):
+                return state
             return 'free' if entry.get('empty') else 'in use'
         return 'unknown'
 
@@ -3349,6 +3636,20 @@ class CurveLoaderGUI:
     def _curve_number(self):
         """The target user curve number, or None."""
         return self._parse_leading_int(self.curve_var.get())
+
+    def _on_target_curve_changed(self):
+        """The target moved, so the command list has to be rebuilt for it.
+
+        This is not cosmetic. The curve number is baked into every CRVDEL,
+        CRVHDR and CRVPT in the list, while the pre-send check and the saved
+        command file both take the number off this combobox. Leaving a list
+        built for another slot in place means checking one curve and writing
+        into a different one -- which is how a command file named
+        'X17680_curve28.txt' came to contain 'CRVHDR 21,...'.
+        """
+        if getattr(self, 'source', None):
+            self._rebuild_curve()
+        self._refresh_curve_hint()
 
     def _refresh_curve_hint(self):
         key = self.model()
@@ -3372,6 +3673,14 @@ class CurveLoaderGUI:
                     "curves were listed. Inspect it before sending.")
         elif held.get('empty'):
             text = f"User curve {curve} is free. Sending fills it."
+        elif held.get('state') == 'stub':
+            text = (f"User curve {curve} holds no breakpoints, but its header "
+                    f"reads '{held.get('name', '').strip()}' (serial "
+                    f"'{held.get('serial', '').strip()}', format "
+                    f"{held.get('format')}, limit {held.get('limit')} K). "
+                    "Nothing is stored there to lose. The send will show you "
+                    "that header and ask, then erase the slot before "
+                    "writing.")
         else:
             free = self._first_free_curve()
             text = (f"User curve {curve} already holds "
@@ -3682,11 +3991,12 @@ class CurveLoaderGUI:
                 "nothing was interpolated.")
         if not self.erase_var.get():
             warnings.append(
-                "The curve will NOT be erased first. The target is empty by "
-                "its header, but a transfer interrupted part-way can leave "
-                "points behind a blank header, and those would survive past "
-                "the end of this curve for the instrument to interpolate "
-                "through.")
+                "The curve will NOT be erased first. The gate reads every "
+                "index up to the instrument's 200-breakpoint ceiling, so "
+                "the target is empty when the send begins, but a transfer "
+                "interrupted part-way can leave points further up the "
+                "slot, and those would survive past the end of this curve "
+                "for the instrument to interpolate through.")
 
         curve = self._curve_number()
         if curve is None:
@@ -3696,7 +4006,14 @@ class CurveLoaderGUI:
             # empty user curves; it does not replace anybody's calibration,
             # and the instrument gives no way to get one back.
             state = self._target_state()
-            if state == 'in use':
+            if state == 'stub':
+                warnings.append(
+                    f"User curve {curve} holds no breakpoints but its header "
+                    "was written by somebody. Nothing is stored there to "
+                    "lose, so this is not a refusal, but the send will stop "
+                    "and show you that header before it writes, and the slot "
+                    "will be erased first so what lands is clean.")
+            elif state == 'in use':
                 free = self._first_free_curve()
                 errors.append(
                     f"User curve {curve} already holds a curve. Nothing here "
@@ -3868,9 +4185,15 @@ class CurveLoaderGUI:
             return
         default = "curve_commands.txt"
         if self.source_path:
+            # Named after the curve the COMMANDS address, not the one the
+            # picker happens to show. The file is the record of the transfer,
+            # and a record whose name disagrees with its contents is worse
+            # than no record.
+            targets = commands_target_curves(self.curve_commands)
+            suffix = "_".join(str(number) for number in targets) or "unknown"
             default = os.path.splitext(
                 os.path.basename(self.source_path))[0] + \
-                f"_curve{self._curve_number()}.txt"
+                f"_curve{suffix}.txt"
         path = filedialog.asksaveasfilename(
             title="Save the command list",
             defaultextension=".txt", initialfile=default,
@@ -4032,6 +4355,7 @@ class CurveLoaderGUI:
                 progress=lambda done, total, entry: self._set_progress(
                     done, total))
             free = 0
+            stubs = 0
             for entry in entries:
                 mark = "  [standard, read-only]" if entry.get('standard') \
                     else ""
@@ -4042,6 +4366,14 @@ class CurveLoaderGUI:
                     if not entry.get('standard'):
                         free += 1
                     self.log(f"  {entry['curve']:>3}  [free]{mark}")
+                elif entry.get('state') == 'stub':
+                    stubs += 1
+                    self.log(f"  {entry['curve']:>3}  [header only, no "
+                             f"points]  "
+                             f"{str(entry.get('name', '')).strip():<16} "
+                             f"SN={str(entry.get('serial', '')).strip():<11}"
+                             f"format={entry.get('format')}  "
+                             f"limit={entry.get('limit')} K{mark}")
                 else:
                     self.log(f"  {entry['curve']:>3}  "
                              f"{str(entry.get('name', '')).strip():<16} "
@@ -4052,10 +4384,13 @@ class CurveLoaderGUI:
             user_curves = [entry for entry in entries
                            if not entry.get('standard')]
             self.log(f"  {free} of {len(user_curves)} user curves are free.")
-            if not free:
-                self.log("  Nothing here overwrites a curve, so with no free "
-                         "user curve there is nowhere to put this one. Free "
-                         "one from the front panel first.")
+            if stubs:
+                self.log(f"  {stubs} more hold a header with no points behind "
+                         "it. Those can be written to: the send stops, shows "
+                         "you the header, and erases the slot first.")
+            if not free and not stubs:
+                self.log("  No free user curve. Erase one with the erase "
+                         "button in step 4, or from the front panel.")
             self._post('curves_listed', entries)
 
         self._run_in_worker("Mapping the curves", job)
@@ -4083,9 +4418,10 @@ class CurveLoaderGUI:
                      f"limit {header['limit']:g} K, coefficient "
                      f"{header['coefficient']} "
                      f"({COEFFICIENT_NAMES.get(header['coefficient'], '?')}).")
-            if header_is_empty(header):
-                self.log("  That is an empty curve: no name and no limit. "
-                         "Nothing is stored here.")
+            if header_is_empty(header, curve):
+                self.log("  That header is the firmware's own filler, not a "
+                         "name anybody stored. Whether the slot is free is "
+                         "decided by the points below, not by this line.")
             if not points:
                 self.log("  No points. The curve is empty.")
                 return
@@ -4097,6 +4433,94 @@ class CurveLoaderGUI:
                      f"Last: {texts[-1][0]} -> {texts[-1][1]} K.")
 
         self._run_in_worker("Reading the curve", job)
+
+    def _erase_curve(self):
+        """CRVDEL one user curve, after showing the operator what goes.
+
+        The one destructive thing in this module, so it is the one thing that
+        reads its target first: header, point count, and the two end points
+        of the curve all go into the dialog, because 'erase curve 27' is not
+        a sentence anybody can check and 'erase 129 points from 4.0 K to
+        325.0 K, serial X17680' is.
+        """
+        if not self._require_model() or not self._require_connection():
+            return
+        curve = self._curve_number()
+        if curve is None:
+            messagebox.showerror("No Curve Chosen",
+                                 "Choose the user curve to erase in step 2.")
+            return
+        spec = model_spec(self.model())
+        if not (spec['user_curve_min'] <= curve <= spec['user_curve_max']):
+            messagebox.showerror(
+                "Not A User Curve",
+                f"Curve {curve} is not a user curve on a {spec['short']} "
+                f"({spec['user_curve_min']}-{spec['user_curve_max']}). "
+                "Standard curves are read-only in the instrument and cannot "
+                "be erased.")
+            return
+
+        def job():
+            self.log("")
+            self.log(f"Reading curve {curve} before erasing it ...")
+            header, points, texts, _ = self.backend.read_curve(
+                curve,
+                progress=lambda done, total: self._set_progress(done, total))
+            name = str(header['name']).strip()
+            serial = str(header['serial']).strip()
+            if points:
+                temperatures = [t for t, _ in points]
+                contents = (f"{len(points)} breakpoints, covering "
+                            f"{min(temperatures):.4g} K to "
+                            f"{max(temperatures):.4g} K.\n"
+                            f"First: {texts[0][0]} -> {texts[0][1]} K\n"
+                            f"Last:  {texts[-1][0]} -> {texts[-1][1]} K")
+            else:
+                contents = "No breakpoints. The slot holds a header only."
+            summary = (f"Curve {curve} on the {spec['short']} at "
+                       f"{getattr(self.backend.link, 'address', '?')}\n\n"
+                       f"Name:   {name or '(blank)'}\n"
+                       f"Serial: {serial or '(blank)'}\n"
+                       f"Format: {header['format']} "
+                       f"({FORMAT_CODES.get(header['format'], ('', '?'))[1]})"
+                       f"\nLimit:  {header['limit']:g} K\n\n"
+                       f"{contents}")
+            self.log("  About to erase:")
+            for line in summary.splitlines():
+                self.log(f"    {line}")
+            if not self._ask_on_main(
+                    "Erase This Curve?",
+                    summary + "\n\n"
+                    "CRVDEL removes this permanently. The instrument keeps no "
+                    "copy, this program keeps no copy, and if the sensor it "
+                    "belongs to is on an input that input stops reading "
+                    "temperature.\n\n"
+                    f"Erase curve {curve}?"):
+                self.log("Erase cancelled. Nothing was sent.")
+                return
+            self.log(f"Erasing curve {curve} with CRVDEL ...")
+            self.backend.delete_curve(curve)
+            after = self.backend.read_curve_header(curve)
+            stored, checked = self.backend.read_curve_occupancy(
+                curve, indices=MAP_PROBE_INDICES)
+            if stored:
+                index, temperature, reading = stored[0]
+                self._post(
+                    'dialog', 'error', "Curve Not Erased",
+                    f"CRVDEL was sent, but curve {curve} still answers "
+                    f"CRVPT? {curve},{index} with {reading:g},{temperature:g}. "
+                    "Do not assume the slot is free. Check it from the front "
+                    "panel.")
+                self.log(f"  NOT ERASED: point {index} is still there.")
+                return
+            self.log(f"  Curve {curve} erased. Header now reads "
+                     f"'{str(after['name']).strip()}', and CRVPT? answered "
+                     f"0,0 at indices {checked[0]} to {checked[-1]}.")
+            self._post('dialog', 'info', "Curve Erased",
+                       f"Curve {curve} is empty. Map the curves again to see "
+                       "it listed as free.")
+
+        self._run_in_worker("Erasing the curve", job)
 
     # -----------------------------------------------------------------------
     # STEP 5: SEND AND VERIFY
@@ -4169,24 +4593,24 @@ class CurveLoaderGUI:
 
         An unreadable reply is NOT treated as empty. Refusing a send costs a
         retry; overwriting a calibration nobody can get back does not.
+
+        The judgement itself is CurveLoaderBackend.curve_is_empty(), at full
+        depth: one CRVHDR? and up to 200 CRVPT?, because a header alone
+        cannot tell a stored curve from an untouched slot on either model.
+        Returns (state, header, detail) with state 'free', 'stub', 'in use'
+        or 'unreadable'.
         """
         try:
-            header = self.backend.read_curve_header(curve)
+            _empty, header, state, detail = self.backend.curve_is_empty(
+                curve,
+                progress=lambda done, index: self._set_progress(
+                    done, len(range(1, GATE_PROBE_LIMIT + 1))))
         except Exception as exc:
-            return (False, None,
+            return ('unreadable', None,
                     f"curve {curve} could not be read before sending "
                     f"({type(exc).__name__}: {exc}), so nothing here can say "
                     "it is empty. Nothing was sent.")
-        if not header_is_empty(header):
-            return (False, header,
-                    f"curve {curve} already holds "
-                    f"'{header['name'].strip()}' (serial "
-                    f"'{header['serial'].strip()}', format "
-                    f"{header['format']}, limit {header['limit']:g} K). This "
-                    "module only fills empty curves, so nothing was sent. "
-                    "Pick a free curve, or free this one from the front panel "
-                    "if it really is finished with.")
-        return (True, header, f"curve {curve} is empty")
+        return (state, header, detail)
 
     def _send_curve(self):
         if not self._require_model() or not self._require_connection():
@@ -4199,6 +4623,24 @@ class CurveLoaderGUI:
             return
 
         expected = self._expected_header()
+
+        # Belt and braces for the same drift the combobox binding now
+        # prevents: the gate below checks the curve the FORM names, so the
+        # commands have to be addressed to that curve and to no other. A list
+        # that names a different slot is refused here, before the dialog.
+        targets = commands_target_curves(self.curve_commands)
+        if targets != [expected['curve']]:
+            detail = (
+                f"The command list is addressed to curve "
+                f"{', '.join(str(number) for number in targets) or '(none)'}, "
+                f"but the target on the form is curve {expected['curve']}. "
+                "Nothing was sent. Rebuild the curve for the target you want "
+                "before sending.")
+            self.log(f"REFUSED: {detail}")
+            messagebox.showerror("Command List Does Not Match The Target",
+                                 detail)
+            return
+
         if not self._confirm_send(expected):
             self.log("Send cancelled.")
             return
@@ -4212,13 +4654,38 @@ class CurveLoaderGUI:
         def job():
             # The gate. Nothing is written until the instrument itself says
             # this curve is empty.
-            self.log(f"Checking curve {curve} is empty before writing ...")
-            is_empty, baseline_header, detail = self._target_is_empty_now(curve)
-            if not is_empty:
+            self.log(f"Checking curve {curve} is empty before writing. This "
+                     f"reads CRVPT? up to point {GATE_PROBE_LIMIT}, so it "
+                     "takes a few seconds on an empty slot ...")
+            state, baseline_header, detail = self._target_is_empty_now(curve)
+            if state in ('in use', 'unreadable'):
                 self.log(f"REFUSED: {detail}")
                 self._post('dialog', 'error', "Curve Not Empty", detail)
                 return
             self.log(f"  {detail}.")
+
+            if state == 'stub':
+                # No points, but a header somebody wrote. Not this module's
+                # to overrule in silence and not its to refuse either: the
+                # operator is shown exactly what is there and asked.
+                if not self._ask_on_main(
+                        "Curve Holds A Header But No Points",
+                        f"{detail}\n\n"
+                        f"Nothing is stored in curve {curve}, so nothing can "
+                        "be lost, but the header above was put there by "
+                        "somebody.\n\n"
+                        "Answer yes and curve "
+                        f"{curve} is erased with CRVDEL first, so what lands "
+                        "is this calibration and nothing else.\n\n"
+                        f"Write this curve into slot {curve}?"):
+                    self.log("REFUSED by the operator at the header prompt. "
+                             "Nothing was sent.")
+                    return
+                self.log(f"  Confirmed. Erasing curve {curve} with CRVDEL "
+                         "first so it goes in clean ...")
+                self.backend.delete_curve(curve)
+                self.log(f"  Curve {curve} erased.")
+
             self.log(f"Sending {len(commands)} commands to curve {curve} ...")
             self.backend.send_curve(
                 commands,
@@ -4690,6 +5157,132 @@ def _selftest_cases():
                   "  2   2.00000      100.000\n"
                   "  3   2.94699        4.000\n")
 
+    # -- 25: the 340's filler header is not a stored curve -------------------
+    def case_default_header_names():
+        # What the lab 340 actually answered on 1 Sep 2026, curve by curve.
+        check(header_name_is_default("User 28", 28), "'User 28' on slot 28")
+        check(header_name_is_default("28", 28), "bare slot number")
+        check(header_name_is_default("", 24), "blank name")
+        check(header_name_is_default("  ", 24), "spaces")
+        # Somebody's curve, whatever the limit says.
+        check(not header_name_is_default("S700", 21), "S700 is a stored name")
+        check(not header_name_is_default("CX-1030-SD-4L", 28), "a real name")
+        # A different slot's number is a copied curve, not filler.
+        check(not header_name_is_default("User 24", 28), "another slot")
+        # The old rule: blank name AND zero limit. The 340 prints 375.0 K
+        # over an untouched slot, so that rule found nowhere to write.
+        filler = {'name': 'User 28', 'serial': '', 'format': 2,
+                  'limit': 375.0, 'coefficient': 1}
+        check(header_is_empty(filler, 28), "375 K filler must read as empty")
+        check(not (not str(filler['name']).strip()
+                   and float(filler['limit']) == 0.0),
+              "the old rule is what this case exists to keep out")
+        # A serial nobody could have got from the firmware means somebody
+        # was here, so it is not offered as free.
+        check(not header_is_empty({'name': 'User 23', 'serial': '4',
+                                   'format': 1, 'limit': 0.008,
+                                   'coefficient': 1}, 23),
+              "a serial number is a fingerprint")
+
+    # -- 26: the breakpoints decide, not the header --------------------------
+    def case_curve_is_empty():
+        class FakeLink:
+            """Answers CRVHDR? and CRVPT? from a table. No bus, no Tk."""
+
+            def __init__(self, header, points):
+                self.header = header
+                self.points = dict(points)   # index -> (reading, temperature)
+                self.asked = []
+
+            def query(self, command):
+                self.asked.append(command)
+                if command.startswith("CRVHDR?"):
+                    return self.header
+                index = int(command.split(',')[1])
+                reading, temperature = self.points.get(index, (0.0, 0.0))
+                return f"{reading:.5f},{temperature:.3f}"
+
+        def backend_with(header, points):
+            backend = CurveLoaderBackend.__new__(CurveLoaderBackend)
+            backend.link = FakeLink(header, points)
+            backend.model = MODEL_340
+            return backend
+
+        # The reported bug: filler header, no points. Must come back free.
+        free = backend_with("User 28,,2,375.000,1", {})
+        empty, _header, state, detail = free.curve_is_empty(28)
+        check(empty and state == 'free', f"{state}: {detail}")
+        # The gate looks at every index the instrument has, so a slot it
+        # calls free has been checked at all 200 and not just at the top.
+        check(len(free.link.asked) == 1 + GATE_PROBE_LIMIT,
+              f"queries used: {len(free.link.asked)}")
+
+        # The map ladder reaches the ceiling for a tenth of the queries.
+        laddered = backend_with("User 28,,2,375.000,1", {})
+        empty, _header, state, _detail = laddered.curve_is_empty(
+            28, indices=MAP_PROBE_INDICES)
+        check(empty and state == 'free', state)
+        check(len(laddered.link.asked) == 1 + len(MAP_PROBE_INDICES),
+              f"queries used: {len(laddered.link.asked)}")
+        check(MAP_PROBE_INDICES[-1] == MAX_CURVE_POINTS,
+              "the ladder must reach the instrument ceiling")
+
+        # Points stranded above a leading blank pair: unreachable to the
+        # instrument's search routine, but still in the slot. Both scans
+        # have to find them.
+        stranded = backend_with("User 28,,2,375.000,1", {100: (2.5, 15.8)})
+        empty, _header, state, _detail = stranded.curve_is_empty(28)
+        check(not empty and state == 'in use', f"gate missed a tail: {state}")
+        stranded = backend_with("User 28,,2,375.000,1", {100: (2.5, 15.8)})
+        empty, _header, state, _detail = stranded.curve_is_empty(
+            28, indices=MAP_PROBE_INDICES)
+        check(not empty and state == 'in use', f"map missed a tail: {state}")
+
+        # Same filler header, but the slot holds a calibration. Refused, and
+        # refused on the FIRST point, so an occupied curve costs one query.
+        held = backend_with("User 28,,2,375.000,1",
+                            {1: (1.64523, 325.0), 2: (2.94699, 4.0)})
+        empty, _header, state, detail = held.curve_is_empty(28)
+        check(not empty and state == 'in use', f"{state}: {detail}")
+        check("CRVPT? 28,1" in detail, detail)
+        check(len(held.link.asked) == 2, f"queries used: {held.link.asked}")
+
+        # Points written before the header: blank name, zero limit, real
+        # data. The rule this replaces would have called this one free.
+        headless = backend_with(",,1,0.000,1", {1: (1.64523, 325.0)})
+        empty, _header, state, _detail = headless.curve_is_empty(28)
+        check(not empty and state == 'in use', state)
+
+        # A header somebody wrote and never filled. Reported as a stub so
+        # the operator is asked, not refused outright and not filled in
+        # silence.
+        stub = backend_with("CX-1030-SD-4L,X17680,4,325.000,1", {})
+        empty, _header, state, detail = stub.curve_is_empty(28)
+        check(not empty and state == 'stub', f"{state}: {detail}")
+        check("nothing here to lose" in detail, detail)
+
+        # One dropped reply is not an empty curve.
+        gap = backend_with("User 28,,2,375.000,1", {2: (2.94699, 4.0)})
+        empty, _header, state, _detail = gap.curve_is_empty(28)
+        check(not empty and state == 'in use', state)
+
+    # -- 27: a command list addressed elsewhere is caught --------------------
+    def case_command_targets():
+        commands = build_curve_commands(
+            MODEL_340, 21, "CX-1030-SD-4L", "X17680", 4, 325.0, 1,
+            [(325.0, 1.64523), (4.0, 2.94699)], erase_first=True)
+        check(commands_target_curves(commands) == [21],
+              commands_target_curves(commands))
+        # The uploaded file: named for 28, addressed to 21.
+        check(commands_target_curves(commands) != [28], "must not match 28")
+        check(commands_target_curves([]) == [], "an empty list targets nothing")
+        # CRVSAV carries no curve number and must not invent one.
+        check(commands_target_curves(["CRVSAV"]) == [], "CRVSAV")
+        # A list that names two slots is a list that was rebuilt badly.
+        check(commands_target_curves(["CRVHDR 21,A,B,4,325.000,1",
+                                      "CRVPT 28,1,1.64523,325.0"]) == [21, 28],
+              "mixed targets")
+
     # -- 1: six significant digits, never in exponent form -------------------
     def case_fmt6():
         check(fmt6(1.6452312) == "1.64523", fmt6(1.6452312))
@@ -5077,6 +5670,12 @@ def _selftest_cases():
          case_printed_precision),
         ("the model comes from *IDN? and nothing else", case_model_from_idn),
         ("a .340 file survives the whole round trip", case_round_trip),
+        ("REGRESSION: a 340's 'User 28' filler is not an occupied curve",
+         case_default_header_names),
+        ("emptiness is decided by CRVPT?, not by the header",
+         case_curve_is_empty),
+        ("a command list addressed to another curve is caught",
+         case_command_targets),
     ]
 
 
