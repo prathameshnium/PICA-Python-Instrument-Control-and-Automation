@@ -521,6 +521,61 @@ def test_cc34_module_self_test_passes():
     assert cc34.run_self_test(report=lambda message: None)
 
 
+def test_l350_query_guard_admits_a_query_by_shape_only():
+    for command in ("*IDN?", "CRVHDR? 21", "CRVPT? 21,1", "INCRV? A",
+                    "INTYPE? B", "KRDG? A", "crvhdr? 21"):
+        assert l350.is_query(command), command
+    for command in ("CRVHDR? 21;CRVDEL 21", "CRVDEL 21 ?", "*RST?",
+                    "CRVSAV?", "CRVHDR? 21; CRVSAV", "INCRV A,21?",
+                    "CRVHDR?? 21", "CRVDEL 21", "", "?",
+                    "CRVHDR? 21\nCRVDEL 21", "CRVPT? 21,1\r\n*RST"):
+        assert not l350.is_query(command), command
+
+
+def test_l350_slot_range_follows_the_instrument():
+    assert l350.max_curve_for_idn("LSCI,MODEL340,340219,111196") == 60
+    assert l350.max_curve_for_idn("LSCI,MODEL350,LSA23AR,1.5") == 59
+    backend = l350.CurveViewerBackend.__new__(l350.CurveViewerBackend)
+    backend.link = _SlotLink("CX,SN,4,325.000,1", {})
+    backend.max_curve = 60
+    assert backend.read_header(60)["curve"] == 60
+    backend.max_curve = 59
+    with pytest.raises(ValueError):
+        backend.read_header(60)
+
+
+def test_l350_an_incomplete_read_is_marked_and_not_exported():
+    class FailingLink(_SlotLink):
+        def ask(self, command):
+            if command.startswith("CRVPT?") and command.endswith(",3"):
+                raise TimeoutError("no reply")
+            return super().ask(command)
+
+    backend = l350.CurveViewerBackend.__new__(l350.CurveViewerBackend)
+    backend.link = FailingLink("CX,SN,4,325.000,1",
+                               {1: (1.5, 300.0), 2: (1.6, 200.0),
+                                3: (1.7, 100.0)})
+    points, notes = backend.read_points(21)
+    assert points == [(1.5, 300.0), (1.6, 200.0)]
+    assert l350.read_is_incomplete(notes)
+    header = backend.read_header(21)
+    header["_incomplete"] = True
+    with pytest.raises(ValueError, match="did not reach the end"):
+        l350.build_340_text(header, points)
+    header["_incomplete"] = False
+    assert "Number of Breakpoints:   2" in l350.build_340_text(header, points)
+
+
+def test_l350_340_export_never_invents_a_header_field():
+    header = l350.parse_crvhdr("CX,SN,4,junk,junk", 21)
+    with pytest.raises(ValueError, match="inventing"):
+        l350.build_340_text(header, [(1.5, 300.0)])
+    five = l350.parse_crvhdr("S700,,5,325.000,1", 21)
+    assert five["format_name"] == "Log Ohm/Log K"
+    with pytest.raises(ValueError, match="log10 of kelvin"):
+        l350.build_340_text(five, [(1.5, 2.4)])
+
+
 def test_l350_describe_slot_believes_the_breakpoints():
     blank = l350.parse_crvhdr(",,1,0.000,1", 23)
     filler = l350.parse_crvhdr("User 28,,2,375.000,1", 28)
@@ -629,3 +684,16 @@ if __name__ == "__main__":
                 print(f"FAIL  {name}: {type(exc).__name__}: {exc}")
     print(f"\n{failures} failure(s).")
     sys.exit(1 if failures else 0)
+
+def test_cc34_query_guard_admits_a_query_by_shape_only():
+    for command in ("*IDN?", "CALCUR? 15", "SENTYPE? 15", "SENTYPE 15:TYPE?",
+                    "SENTYPE 15:MULTIPLY?", "INPUT A:SENIX?",
+                    "INPUT A:ISENIX?", "INPUT A:USENIX?", "INPUT? A",
+                    "calcur? 15"):
+        assert cc34.is_query(command), command
+    for command in ("CALCUR? 15;CALCUR 15", "CALCUR 15 ?", "*RST?", "STOP?",
+                    'SENTYPE 15:NAME "X"?', "CALCUR?? 15",
+                    "SENTYPE? 15; CONTROL", "CALCUR 15", "", "?",
+                    "SENTYPE? 15\nSTOP", "CALCUR? 15\r\nCALCUR 15"):
+        assert not cc34.is_query(command), command
+

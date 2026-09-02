@@ -407,11 +407,16 @@ def parse_calcur_block(text, source_name="the slot"):
             f"{source_name} did not end with the semicolon line that marks "
             "the end of a Cryo-con curve, so the reply may be truncated. "
             "Nothing is shown from a partial read.")
+    if len(points) < 2:
+        raise CurveReadError(
+            f"{source_name} holds {len(points)} point(s); a curve needs at "
+            "least two to interpolate.")
 
     header = {
         'name': name,
         'sensor_type': sensor_type,
         'multiplier': multiplier,
+        'multiplier_text': lines[2],     # as printed, for the .crv export
         'units': units,
         'point_texts': texts,
     }
@@ -490,9 +495,18 @@ def build_crv_lines(header, points):
     """
     if not points:
         raise ValueError("A .crv file needs at least one point.")
+    # The multiplier goes out as the instrument printed it, like the points;
+    # a header without one is not given a default, because the file would
+    # then say something the instrument did not.
+    if header.get('multiplier_text') is None and \
+            header.get('multiplier') is None:
+        raise ValueError("This curve's header carries no multiplier, so a "
+                         ".crv cannot be written without inventing one.")
     lines = [str(header.get('name', '')),
              str(header.get('sensor_type', '')),
-             fmt6(header.get('multiplier', -1.0)),
+             (str(header['multiplier_text']).strip()
+              if header.get('multiplier_text') is not None
+              else fmt6(header['multiplier'])),
              str(header.get('units', '')).upper()]
     texts = header.get('point_texts')
     if texts and len(texts) == len(points):
@@ -601,17 +615,37 @@ def is_cryocon_idn(idn):
     return any(marker in str(idn).upper() for marker in CRYOCON_IDN_MARKERS)
 
 
-def is_query(command):
-    """True if `command` is a Cryo-con query.
+# The shape of a Cryo-con query: an optional '*', a mnemonic, optionally one
+# argument that may carry a ':SUBSYSTEM' chain (SENTYPE 15:TYPE?,
+# INPUT A:SENIX?), the '?' directly after that, then at most a parameter
+# list of letters, digits, commas, dots and spaces. The old test was "'?'
+# anywhere in the text", which admitted 'CALCUR? 15;CALCUR 15' -- and a
+# Cryo-con takes several commands on one line separated by ';'.
+QUERY_RE = re.compile(
+    r'^\*?[A-Z][A-Z0-9]{0,7}(?:[ \t]+[A-Z0-9]+(?::[A-Z0-9]+)*)?\?'
+    r'(?:[ \t]+[A-Z0-9,. \t]*)?$')
 
-    A Cryo-con command is a query when it carries a '?'. Every setting
-    command is the same mnemonic without one: CALCUR? reads a curve, CALCUR
-    writes one; SENTYPE 3:NAME? reads a name, SENTYPE 3:NAME sets it. So this
-    single test separates the two completely, and it does it by admitting
-    queries rather than by listing commands to forbid -- a command added to
-    this module later cannot slip past a list it was never added to.
+# Mnemonics that have no query form. A '?' behind one of these is a
+# malformed setting command, never a question.
+NEVER_A_QUERY = ('*RST', '*CLS', 'STOP', 'CONTROL')
+
+
+def is_query(command):
+    """True if `command` is a Cryo-con query and nothing else.
+
+    A Cryo-con command is a query when it carries a '?' directly after its
+    mnemonic or its argument: CALCUR? reads a curve, CALCUR writes one;
+    SENTYPE 3:NAME? reads a name, SENTYPE 3:NAME sets it. The test admits
+    that shape and only that shape -- one '?', no ';', no quoted text -- so a
+    compound line, a trailing '?' behind a setting command, or a second
+    command after a separator is refused. Admitting by shape rather than
+    forbidding by list means a command added later cannot slip past.
     """
-    return '?' in str(command)
+    text = str(command).strip().upper()
+    if not QUERY_RE.match(text):
+        return False
+    mnemonic = text.split('?', 1)[0].split()[0]
+    return mnemonic not in NEVER_A_QUERY
 
 
 class CryoconReadOnlyLink:
@@ -753,8 +787,10 @@ class CryoconReadOnlyLink:
                 self._last_io = time.time()
                 self.commands_sent += 1
             for line_number in range(max_lines):
+                # No pacing between the lines of one reply: the gap is for
+                # commands, and at 80 ms a line it added sixteen seconds to
+                # a 200-point curve.
                 try:
-                    self._pace()
                     try:
                         chunk = self.instrument.read().strip()
                     finally:
@@ -938,7 +974,9 @@ class CurveViewerBackend:
             return None, None, text
         try:
             header, points = parse_calcur_block(text, f"slot {index}")
-        except CurveReadError:
+        except CurveReadError as exc:
+            # Say WHY, or a timed-out read looks exactly like an empty slot.
+            self.log(f"  Slot {index} answered, but not with a curve: {exc}")
             return None, None, text
         return header, points, text
 
@@ -1689,6 +1727,10 @@ class CurveViewerGUI:
                                  f"Could not connect to {address}:\n{exc}")
 
     def _do_disconnect(self):
+        if self.busy:
+            self.log("Not disconnecting: a read is still running. Press "
+                     "Stop, or wait for it to finish.")
+            return
         self.log("Disconnecting...")
         self.backend.disconnect()
         self.is_connected = False
@@ -1714,7 +1756,10 @@ class CurveViewerGUI:
             self.log("Another instrument job is still running.")
             return
         self._stop_flag.clear()
-        self._post('busy', True)
+        # Set directly, not through the queue: this runs on the Tk thread,
+        # and a second click inside the 50 ms before the queue was drained
+        # used to start a second worker on the same VISA session.
+        self._set_busy(True)
 
         def worker():
             try:
@@ -2011,6 +2056,9 @@ class CurveViewerGUI:
 
     def _write(self, path, text, description):
         try:
+            # Checked before the file is opened, so a name the instrument
+            # printed in a non-ASCII byte does not leave an empty file.
+            text.encode('ascii')
             with open(path, 'w', encoding='ascii', newline='\n') as handle:
                 handle.write(text)
         except Exception as exc:
@@ -2152,8 +2200,16 @@ def _selftest_cases():
         for command in ('*RST', '*CLS', 'STOP', 'CALCUR 15',
                         'SENTYPE 15:NAME "X17680"', 'SENTYPE 15:TYPE ACR',
                         'INPUT A:SENIX 15', 'LOOP 1:SETPT 300',
-                        'LOOP 1:RANGE HI', 'CONTROL'):
+                        'LOOP 1:RANGE HI', 'CONTROL',
+                        # the shapes the old "'?' anywhere" test let through
+                        'CALCUR? 15;CALCUR 15', 'CALCUR 15 ?', '*RST?',
+                        'STOP?', 'SENTYPE 15:NAME "X"?', 'CALCUR?? 15',
+                        'SENTYPE? 15; CONTROL', 'SENTYPE? 15\nSTOP',
+                        'CALCUR? 15\r\nCALCUR 15'):
             check(not is_query(command), f"{command} must be refused")
+        for command in ('INPUT A:ISENIX?', 'INPUT A:USENIX?',
+                        'SENTYPE 15:NAME?', 'calcur? 15'):
+            check(is_query(command), f"{command} should be allowed")
 
     # -- 2: both paths to the bus enforce it --------------------------------
     def case_link_refuses():
@@ -2289,7 +2345,7 @@ def _selftest_cases():
                      if line and not line.startswith('#')
                      and not line.startswith('Index')]
         check(len(data_rows) == 3, data_rows)
-        check(data_rows[0].endswith("44.1663") or "44.1" in data_rows[0],
+        check(data_rows[0].endswith("44.1804"),          # 10 ** 1.64523
               f"the ohms column looks wrong: {data_rows[0]}")
 
     # -- 15: the slot list CSV labels every slot it was given ---------------

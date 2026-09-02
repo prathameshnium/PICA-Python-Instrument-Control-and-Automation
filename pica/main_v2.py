@@ -98,7 +98,11 @@ except ImportError:
 # the whole reply, so a serial number that happens to contain "2400" or "34"
 # cannot masquerade as a model number.
 KNOWN_INSTRUMENTS = [
-    ("Lakeshore 350",   ["MODEL350", "MODEL 350", "LSCI"]),
+    # Matched on the model, not on the "LSCI" maker token: every Lake Shore
+    # controller answers LSCI, and a 340 on the same rack was being lit up
+    # as a 350. Each model gets a chip of its own.
+    ("Lakeshore 350",   ["MODEL350", "MODEL 350"]),
+    ("Lakeshore 340",   ["MODEL340", "MODEL 340"]),
     # A Cryo-con answers either IEEE-488.2 style ("Cryocon,34,204683,3.18A")
     # or as free text ("Cryocon Model 34 Rev 3.18A"), and both spellings of
     # the maker name are in circulation. Matching maker AND model as separate
@@ -260,15 +264,19 @@ def save_protected_addresses(addresses, path=None):
 # -----------------------------------------------------------------------------
 #  Pressure gauge (Pfeiffer TPG 361 SingleGauge)
 # -----------------------------------------------------------------------------
-# The TPG 361 is RS-232 only -- it is never on GPIB and it does not answer
-# *IDN?, so the bus scan cannot find it and must not go looking: ASRL is the
-# one resource kind PICA refuses to probe blind (see PROBE_RESOURCE_PREFIXES),
-# because an unannounced write to an unknown COM port is how you wedge a UPS.
+# The TPG 361 has no GPIB. It reaches the PC over USB (an FTDI virtual COM
+# port, so an ASRL resource) or over Ethernet (TCP port 8000, fixed, so a
+# TCPIP0::<ip>::8000::SOCKET resource). Neither can be found by the bus
+# scan: it does not answer *IDN?, ASRL is the one resource kind PICA refuses
+# to probe blind (see PROBE_RESOURCE_PREFIXES, because an unannounced write
+# to an unknown COM port is how you wedge a UPS), and a socket resource is
+# never enumerated by VISA at all.
 #
-# So the gauge is OPT-IN. Nothing here runs until somebody names the port in
-# Tools > Pressure Gauge, and from then on the scan speaks to that one
-# resource and no other. Both status strips already carry the PRESSURE tile;
-# this is what finally fills it.
+# So the gauge is OPT-IN. Nothing here runs until somebody names its address
+# in Tools > Pressure Gauge, and from then on the scan speaks to that one
+# resource and no other -- and never sends it a *IDN?, even if it does show
+# up in list_resources(). Both status strips already carry the PRESSURE
+# tile; this is what finally fills it.
 PRESSURE_GAUGE_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "launcher_pressure_gauge.json")
 
@@ -292,6 +300,56 @@ GAUGE_ACK = '\x06'
 GAUGE_NAK = '\x15'
 GAUGE_ENQ = b'\x05'
 GAUGE_TIMEOUT_MS = 1500
+GAUGE_TCP_PORT = 8000            # fixed on the TPG 36x Ethernet interface
+PFEIFFER_OUI = "00-A0-41"        # first three octets of every Pfeiffer MAC
+
+
+def normalise_gauge_resource(text):
+    """Whatever was typed -> a VISA resource string.
+
+        COM5 / com5 / 5 / ASRL5 / ASRL5::INSTR  -> ASRL5::INSTR
+        192.168.1.50 / 192.168.1.50:8000        -> TCPIP0::192.168.1.50::8000::SOCKET
+        any other full VISA string              -> unchanged
+        ""                                      -> ""
+    """
+    t = (text or "").strip()
+    if not t:
+        return ""
+    up = t.upper()
+    if "::" in up:
+        if up.startswith("ASRL"):
+            return up if up.endswith("::INSTR") else up + "::INSTR"
+        return t
+    m = re.fullmatch(r'(?:ASRL|COM)?\s*(\d+)', up)
+    if m:
+        return f"ASRL{int(m.group(1))}::INSTR"
+    m = re.fullmatch(r'([A-Za-z0-9.\-]+)(?::(\d+))?', t)
+    if m:
+        port = int(m.group(2)) if m.group(2) else GAUGE_TCP_PORT
+        return f"TCPIP0::{m.group(1)}::{port}::SOCKET"
+    return t
+
+
+def is_network_gauge(resource):
+    """True for an Ethernet (TCPIP) gauge resource, False for a COM port."""
+    return (resource or "").strip().upper().startswith("TCPIP")
+
+
+def pfeiffer_hosts_from_arp(arp_text):
+    """IPv4 addresses in an `arp -a` listing whose MAC carries the Pfeiffer
+    OUI -- the one way a LAN device gives itself away without being spoken
+    to. Handles both 00-a0-41-.. and 00:a0:41:.. forms."""
+    oui = PFEIFFER_OUI.lower().replace("-", "")
+    hosts = []
+    for line in (arp_text or "").splitlines():
+        m = re.search(r'(\d{1,3}(?:\.\d{1,3}){3})\D+'
+                      r'((?:[0-9a-fA-F]{2}[-:]){5}[0-9a-fA-F]{2})', line)
+        if not m:
+            continue
+        mac = re.sub(r'[-:]', '', m.group(2)).lower()
+        if mac.startswith(oui) and m.group(1) not in hosts:
+            hosts.append(m.group(1))
+    return hosts
 
 
 def load_pressure_gauge(path=None):
@@ -315,7 +373,7 @@ def load_pressure_gauge(path=None):
         baud = int(data.get('baud', 9600))
     except (TypeError, ValueError):
         baud = 9600
-    return {'resource': resource.strip(), 'baud': baud}
+    return {'resource': normalise_gauge_resource(resource), 'baud': baud}
 
 
 def save_pressure_gauge(resource, baud=9600, path=None):
@@ -323,6 +381,7 @@ def save_pressure_gauge(resource, baud=9600, path=None):
     success. Never raises: an installed copy may sit in a read-only folder,
     and losing the setting is not a reason to fail."""
     path = path or PRESSURE_GAUGE_FILE
+    resource = normalise_gauge_resource(resource)
     try:
         if not resource:
             if os.path.exists(path):
@@ -330,10 +389,13 @@ def save_pressure_gauge(resource, baud=9600, path=None):
             return True
         with open(path, 'w', encoding='utf-8') as fh:
             json.dump({
-                "_comment": "Serial port of the Pfeiffer TPG 361 pressure "
-                            "gauge. This is the ONLY serial resource the "
-                            "PICA launcher ever speaks to. Delete this file "
-                            "to switch the pressure tile off again.",
+                "_comment": "Address of the Pfeiffer TPG 361 pressure gauge: "
+                            "ASRLn::INSTR for its USB (FTDI) COM port, or "
+                            "TCPIP0::<ip>::8000::SOCKET for Ethernet. This "
+                            "is the ONLY serial/socket resource the PICA "
+                            "launcher ever speaks to, and it is never sent "
+                            "a *IDN?. Delete this file to switch the "
+                            "pressure tile off again.",
                 "resource": resource,
                 "baud": int(baud),
             }, fh, indent=2)
@@ -408,13 +470,14 @@ def read_pressure_gauge(rm, gauge):
     try:
         inst = rm.open_resource(gauge['resource'])
         inst.timeout = GAUGE_TIMEOUT_MS
-        try:
-            inst.baud_rate = gauge['baud']
-            inst.data_bits = 8
-            inst.parity = pyvisa.constants.Parity.none
-            inst.stop_bits = pyvisa.constants.StopBits.one
-        except Exception:
-            pass                      # backend without full serial control
+        if not is_network_gauge(gauge['resource']):
+            try:
+                inst.baud_rate = gauge['baud']
+                inst.data_bits = 8
+                inst.parity = pyvisa.constants.Parity.none
+                inst.stop_bits = pyvisa.constants.StopBits.one
+            except Exception:
+                pass                  # backend without full serial control
         inst.write_termination = '\r\n'
         inst.read_termination = '\r\n'
 
@@ -514,6 +577,7 @@ def scan_instruments(skip_addresses=None, gauge=None):
 
     result['resources'] = resources
     lakeshore_resource = None
+    lakeshore_name = "Lakeshore 350"
     cryocon_resource = None
 
     try:
@@ -522,6 +586,13 @@ def scan_instruments(skip_addresses=None, gauge=None):
             if addr is not None and addr in protected:
                 result['skipped'].append(res)   # protected: never opened
                 result['skip_reason'][res] = "protected — never probed"
+                continue
+            if gauge and res.strip().upper() == gauge['resource'].upper():
+                # The gauge speaks Pfeiffer mnemonics, not SCPI. It is read
+                # below with its own protocol and must never see a *IDN?,
+                # even if VISA has it registered as a TCPIP/USB resource.
+                result['skipped'].append(res)
+                result['skip_reason'][res] = "pressure gauge — read by its own protocol"
                 continue
             if not _is_probeable(res):
                 result['skipped'].append(res)   # serial: see the gauge policy
@@ -571,6 +642,11 @@ def scan_instruments(skip_addresses=None, gauge=None):
                     result['detected'][name] = res
                     if name == "Lakeshore 350":
                         lakeshore_resource = res
+                        lakeshore_name = name
+                    elif name == "Lakeshore 340" and not lakeshore_resource:
+                        # Same KRDG? query; a 350 on the bus takes priority.
+                        lakeshore_resource = res
+                        lakeshore_name = name
                     elif name == "Cryocon 34":
                         cryocon_resource = res
             if not matched:
@@ -584,7 +660,7 @@ def scan_instruments(skip_addresses=None, gauge=None):
                 inst.timeout = TEMP_TIMEOUT_MS
                 temp = inst.query("KRDG? A").strip()
                 result['temperature'] = float(temp)
-                result['temp_source'] = "Lakeshore 350 · Input A"
+                result['temp_source'] = f"{lakeshore_name} · Input A"
                 inst.close()
             except Exception:
                 result['temperature'] = None
@@ -696,9 +772,9 @@ CATALOG = [
     {
         'category': "Vacuum Gauge Logging",
         'type': "Passive Logging",
-        # RS-232, not GPIB: the TPG 361 never shows up in the launcher's bus
+        # USB / Ethernet, not GPIB: the TPG 361 never shows up in the launcher's bus
         # scan, so the module asks for the COM port itself.
-        'instruments': "Pfeiffer TPG 361 SingleGauge · RS-232 (ASRL)",
+        'instruments': "Pfeiffer TPG 361 SingleGauge · USB (FTDI COM) or Ethernet",
         'modules': [
             ("Pressure vs. Time", "TPG361 Pressure Log", "sensing"),
         ],
@@ -817,11 +893,14 @@ CATALOG = [
 #     to the SAME delta-mode scripts. They are split because a user thinks in
 #     terms of the sample, not the instrument pair: 10 nOhm of contact
 #     resistance and a 10 mOhm film feel like different measurements.
-#   * Cryo-con 34 protocols are listed for the LCR meter (E4980A) and the
-#     electrometer (K6517B) ONLY, next to the Lakeshore 350 ones -- those two
-#     benches are the pair the CC34 serves. Every other module is Lakeshore
-#     350 in Quick Select; its Cryo-con twin still exists and is one keystroke
-#     away in Advanced Options. Pyroelectric has no CC34 twin written yet.
+#   * Cryo-con 34 protocols are listed for the LCR meter (E4980A), the
+#     electrometer (K6517B) and the two AC benches, next to the Lakeshore 350
+#     ones. The delta-mode and Keithley 2400 modules are Lakeshore 350 only in
+#     Quick Select; their Cryo-con twins still exist and are in Advanced
+#     Options. Pyroelectric has no CC34 twin written yet.
+#   * PICA is the software. The rack it drives is the ITMS (Integrated
+#     Transport Measurement System, formerly ATMS), so descriptions say "the
+#     module" or "the ITMS rack" where they mean the hardware, never "PICA".
 #   * Temperature utilities, the Novocontrol Alpha-AN, the bench multimeter,
 #     the pressure log and the function generator are Advanced-only: they are
 #     not measurements a newcomer starts from. The Alpha-AN broadband scans
@@ -834,40 +913,38 @@ CATALOG = [
 QUICK_CATALOG = [
     {
         'category': "DC Resistance",
-        'desc': "Force a steady current (or voltage) through the sample and "
-                "measure the voltage (or current) it develops. Everything here "
-                "is a two- or four-probe DC measurement; the modules differ "
-                "only in the resistance range their hardware can resolve.",
+        'desc': "A steady current is passed through the sample and the "
+                "voltage across it is measured, in a two- or four-wire "
+                "arrangement. The modules below use different instrument "
+                "pairs for different resistance ranges; pick the one whose "
+                "range covers the sample.",
         'modules': [
             {
                 'name': "Ultra Low Resistance (10 nΩ – 1 µΩ)",
-                'desc': "Delta mode: the Keithley 6221 current source reverses "
-                        "the current at every point and the Keithley 2182 "
-                        "nanovoltmeter averages the two readings, so "
-                        "thermoelectric EMFs cancel and nanovolt signals "
-                        "survive. Use it for contacts, metallic films and "
-                        "superconducting transitions.",
+                'desc': "Keithley 6221 current source with a Keithley 2182 "
+                        "nanovoltmeter in delta mode. The current is reversed "
+                        "at every point and the two readings are averaged, "
+                        "which cancels the thermal EMFs in the leads and "
+                        "contacts. For superconductors, metallic films and "
+                        "contact resistance.",
                 'instruments': ["Keithley 6221", "Keithley 2182",
                                 "Lakeshore 350"],
                 'protocols': [
                     {'label': "Delta Mode I-V Sweep",
                      'key': "Delta Mode I-V Sweep", 'family': None,
-                     'desc': "Sweep the delta-mode current and record V(I) at "
-                             "one fixed temperature -- the check you run "
-                             "before any R vs. T, to confirm the contacts are "
-                             "ohmic."},
+                     'desc': "Current sweep at a fixed temperature, recording "
+                             "V against I. Run this first to check that the "
+                             "contacts are ohmic."},
                     {'label': "R vs. T (T Control, Lakeshore 350)",
                      'key': "Delta Mode R-T", 'family': 'control',
-                     'desc': "The Lakeshore 350 is driven through the "
-                             "temperature list; each setpoint is allowed to "
-                             "settle before a point is taken. Use when the "
-                             "cryostat is under PICA's control."},
+                     'desc': "Resistance against temperature. The module sets "
+                             "each Lakeshore 350 setpoint, waits for it to "
+                             "settle, then takes the reading."},
                     {'label': "R vs. T (T Sensing, Lakeshore 350)",
                      'key': "Delta Mode R-T (T_Sensing)", 'family': 'sensing',
-                     'desc': "Passive scan: the temperature is ramped by "
-                             "something else (a PPMS sequence, a manual dewar "
-                             "warm-up) and the Lakeshore 350 is read, never "
-                             "commanded."},
+                     'desc': "Resistance against temperature while the PPMS, "
+                             "or a manual dewar warm-up, drives the "
+                             "temperature. The Lakeshore 350 is only read."},
                 ],
             },
             {
@@ -875,101 +952,107 @@ QUICK_CATALOG = [
                 # Same scripts as the entry above -- see the note at the head
                 # of QUICK_CATALOG for why the range is split in two.
                 'desc': "The same Keithley 6221 and Keithley 2182 delta-mode "
-                        "pair, used where the sample sits comfortably above a "
-                        "microohm. Current reversal is still worth having: it "
-                        "removes the drift and thermal offsets a "
-                        "single-polarity reading hides.",
+                        "pair, for samples above a microohm. Current reversal "
+                        "still removes thermal offsets and drift that a "
+                        "single-polarity reading would include.",
                 'instruments': ["Keithley 6221", "Keithley 2182",
                                 "Lakeshore 350"],
                 'protocols': [
                     {'label': "Delta Mode I-V Sweep",
                      'key': "Delta Mode I-V Sweep", 'family': None,
-                     'desc': "Sweep the delta-mode current and record V(I) at "
-                             "one fixed temperature."},
+                     'desc': "Current sweep at a fixed temperature, recording "
+                             "V against I."},
                     {'label': "R vs. T (T Control, Lakeshore 350)",
                      'key': "Delta Mode R-T", 'family': 'control',
-                     'desc': "The Lakeshore 350 is driven through the "
-                             "temperature list, settling at each setpoint "
-                             "before a point is taken."},
+                     'desc': "Resistance against temperature. The module sets "
+                             "each Lakeshore 350 setpoint and waits for it to "
+                             "settle before reading."},
                     {'label': "R vs. T (T Sensing, Lakeshore 350)",
                      'key': "Delta Mode R-T (T_Sensing)", 'family': 'sensing',
-                     'desc': "Passive scan: an external ramp moves the "
-                             "temperature and the Lakeshore 350 is read at "
-                             "each point."},
+                     'desc': "Resistance against temperature while an "
+                             "external system drives the temperature. The "
+                             "Lakeshore 350 is only read."},
                 ],
             },
             {
                 'name': "Resistance, High Precision (1 µΩ – 100 MΩ)",
-                'desc': "The Keithley 2400 SourceMeter sources the current and "
-                        "a dedicated Keithley 2182 nanovoltmeter reads the "
-                        "sample voltage. Two instruments instead of one, in "
-                        "exchange for a voltage resolution the Keithley 2400's "
-                        "own converter cannot reach.",
+                'desc': "Keithley 2400 SourceMeter as the current source and "
+                        "a Keithley 2182 nanovoltmeter to read the sample "
+                        "voltage, in a true four-wire arrangement. Better "
+                        "voltage resolution than the Keithley 2400 alone, for "
+                        "picking out small features such as phase "
+                        "transitions.",
                 'instruments': ["Keithley 2400", "Keithley 2182",
                                 "Lakeshore 350"],
                 'protocols': [
                     {'label': "I-V Sweep", 'key': "K2400_2182 I-V",
                      'family': None,
-                     'desc': "Current sweep at fixed temperature, with the "
+                     'desc': "Current sweep at a fixed temperature, with the "
                              "voltage read by the Keithley 2182."},
                     {'label': "R vs. T (T Control, Lakeshore 350)",
                      'key': "K2400_2182 R-T", 'family': 'control',
-                     'desc': "Setpoint-by-setpoint scan with PICA in charge of "
-                             "the Lakeshore 350."},
+                     'desc': "Resistance against temperature, setpoint by "
+                             "setpoint, with the module driving the "
+                             "Lakeshore 350."},
                     {'label': "R vs. T (T Sensing, Lakeshore 350)",
                      'key': "K2400_2182 R-T (T_Sensing)", 'family': 'sensing',
-                     'desc': "Passive scan alongside an external ramp, reading "
-                             "the Lakeshore 350."},
+                     'desc': "Resistance against temperature while an "
+                             "external system drives the temperature. The "
+                             "Lakeshore 350 is only read."},
                 ],
             },
             {
                 'name': "Normal Resistance (100 µΩ – 200 MΩ)",
-                'desc': "One Keithley 2400 SourceMeter both sources the "
-                        "current and measures the voltage. The simplest wiring "
-                        "in PICA, and the right default for an ordinary "
-                        "sample.",
+                'desc': "A single Keithley 2400 SourceMeter sources the "
+                        "current and measures the voltage. The simplest "
+                        "wiring on the ITMS rack, and the usual choice for "
+                        "semiconductors, oxides and general transport.",
                 'instruments': ["Keithley 2400", "Lakeshore 350"],
                 'protocols': [
                     {'label': "I-V Sweep", 'key': "K2400 I-V", 'family': None,
-                     'desc': "Source-measure current sweep at one "
-                             "temperature."},
+                     'desc': "Current sweep at a fixed temperature: linear "
+                             "sweeps, hysteresis loops or a custom current "
+                             "list."},
                     {'label': "R vs. T (T Control, Lakeshore 350)",
                      'key': "K2400 R-T", 'family': 'control',
-                     'desc': "Setpoint-by-setpoint scan with the Lakeshore 350 "
-                             "under PICA's control."},
+                     'desc': "Resistance against temperature, setpoint by "
+                             "setpoint, with the module driving the "
+                             "Lakeshore 350."},
                     {'label': "R vs. T (T Sensing, Lakeshore 350)",
                      'key': "K2400 R-T (T_Sensing)", 'family': 'sensing',
-                     'desc': "Passive scan against an external ramp, reading "
-                             "the Lakeshore 350."},
+                     'desc': "Resistance against temperature while an "
+                             "external system drives the temperature. The "
+                             "Lakeshore 350 is only read."},
                 ],
             },
             {
                 'name': "High Resistance (1 Ω – 10 PΩ)",
-                'desc': "The Keithley 6517B electrometer applies a voltage and "
-                        "measures the sub-picoamp current that flows. This is "
-                        "the range for insulators, ceramics and dielectric "
-                        "films, where every other instrument reads open "
-                        "circuit.",
+                'desc': "Keithley 6517B electrometer. A voltage is applied "
+                        "and the leakage current, down to the pA and fA "
+                        "range, is measured. For insulators, ceramics, "
+                        "polymers and dielectric films. The module allows a "
+                        "settling delay so the current reaches steady state "
+                        "before it is recorded.",
                 # Electrometer bench: both temperature controllers are offered.
                 'instruments': ["Keithley 6517B", "Lakeshore 350",
                                 "Cryocon 34"],
                 'protocols': [
                     {'label': "I-V Sweep", 'key': "K6517B I-V", 'family': None,
-                     'desc': "Voltage sweep with electrometer current "
-                             "measurement, at one fixed temperature."},
+                     'desc': "Voltage sweep at a fixed temperature, with the "
+                             "current read by the electrometer."},
                     {'label': "R vs. T (T Control, Lakeshore 350)",
                      'key': "K6517B R-T", 'family': 'control',
-                     'desc': "The Lakeshore 350 is driven through the "
-                             "temperature list, settling at each setpoint "
-                             "before the high-resistance reading is taken."},
+                     'desc': "Resistance against temperature. The module sets "
+                             "each Lakeshore 350 setpoint and waits for it to "
+                             "settle before the reading is taken."},
                     {'label': "R vs. T (T Sensing, Lakeshore 350)",
                      'key': "K6517B R-T (T_Sensing)", 'family': 'sensing',
-                     'desc': "Passive high-resistance scan: an external ramp "
-                             "moves the temperature and PICA reads the "
-                             "Lakeshore 350 while it logs R(T)."},
+                     'desc': "Resistance against temperature while an "
+                             "external system drives the temperature. The "
+                             "Lakeshore 350 is only read."},
                     {'label': "R vs. T (T Sensing, Cryocon 34)",
                      'key': "K6517B R-T (T_Sensing, CC34)", 'family': 'sensing',
-                     'desc': "The same passive scan with the Cryo-con 34 as "
+                     'desc': "The same passive scan, with the Cryo-con 34 as "
                              "the thermometer."},
                 ],
             },
@@ -977,171 +1060,179 @@ QUICK_CATALOG = [
     },
     {
         'category': "AC Resistance",
-        'desc': "Drive the sample with a small alternating current and recover "
-                "the voltage at that same frequency with a lock-in amplifier. "
-                "Everything outside the reference frequency -- drift, 1/f "
-                "noise, mains pickup -- is rejected, so far smaller signals "
-                "are measurable than DC allows.",
+        'desc': "A small alternating current is passed through the sample "
+                "and the voltage at the drive frequency is measured. With a "
+                "lock-in amplifier, drift, 1/f noise and mains pickup are "
+                "rejected, so much smaller signals can be resolved than with "
+                "DC. Both modules here are experimental.",
         'modules': [
             {
                 'name': "Lock-in AC Resistivity (4-probe)",
-                'desc': "The Keithley 6221 supplies the AC current and the "
-                        "Stanford Research SR830 DSP lock-in recovers the "
-                        "in-phase voltage. Experimental: the pairing works, "
-                        "but has not yet been through a full measurement "
-                        "campaign.",
-                'instruments': ["Keithley 6221", "SR830 Lock-in"],
+                'desc': "Keithley 6221 as the AC current source and a "
+                        "Stanford Research SR830 lock-in amplifier to read "
+                        "the in-phase voltage. The 6221 must supply the "
+                        "reference to the SR830 (Trigger Link line 3 to REF "
+                        "IN) or the readings are meaningless. Experimental: "
+                        "the pairing works but has not been through a full "
+                        "measurement campaign.",
+                # The AC modules use the Lakeshore 350 for T Control and
+                # either thermometer for T Sensing; both chips must be listed
+                # or the R vs. T protocols show no thermometer at all.
+                'instruments': ["Keithley 6221", "SR830 Lock-in",
+                                "Lakeshore 350", "Cryocon 34"],
                 'protocols': [
                     {'label': "SR830 Comms and Control",
                      'key': "SR830 Lock-in Comms", 'family': None,
-                     'desc': "Talk to the SR830 directly: set sensitivity, "
-                             "time constant, phase and reference, and watch X, "
-                             "Y, R and theta live. Start here to get the "
-                             "lock-in locked."},
+                     'desc': "Direct control of the SR830: sensitivity, time "
+                             "constant, phase and reference, with X, Y, R "
+                             "and theta shown live. Use it to get the lock-in "
+                             "locked before a measurement."},
                     {'label': "AC Resistivity, 4-probe (SR830)",
                      'key': "SR830 AC Resistivity", 'family': None,
-                     'desc': "Four-probe AC resistivity: the Keithley 6221 "
-                             "sources the AC current, the SR830 reads the "
-                             "voltage drop, and PICA logs R against time."},
+                     'desc': "Four-probe AC resistance against time at a "
+                             "fixed current and frequency."},
                     {'label': "AC I-V Sweep", 'key': "SR830 AC I-V",
                      'family': None,
-                     'desc': "Sweep the current amplitude at one fixed "
-                             "frequency. A straight line through the origin "
-                             "is an ohmic contact; it also says which current "
-                             "the temperature scans should use."},
+                     'desc': "Current amplitude sweep at a fixed frequency. "
+                             "A straight line through the origin means an "
+                             "ohmic contact, and shows which current to use "
+                             "for the temperature scans."},
                     {'label': "AC Frequency Scan",
                      'key': "SR830 AC Freq. Scan", 'family': None,
-                     'desc': "Sweep the drive frequency at one fixed current. "
-                             "A flat R(f) is a resistance; anything else is "
-                             "cable capacitance, contact impedance, or the "
-                             "measurement's own limits."},
+                     'desc': "Frequency sweep at a fixed current. A flat R(f) "
+                             "is a plain resistance; a roll-off points to "
+                             "cable capacitance or contact impedance."},
                     {'label': "R vs. T (T Control)", 'key': "SR830 AC R-T",
                      'family': 'control',
-                     'desc': "AC R(T) along a Lakeshore 350 ramp driven by "
-                             "the module. The heater goes back to off on "
-                             "every exit path."},
+                     'desc': "AC resistance against temperature along a "
+                             "Lakeshore 350 ramp that the module drives. The "
+                             "heater is switched off on every exit path."},
                     {'label': "R vs. T (T Sensing)",
                      'key': "SR830 AC R-T (T_Sensing)", 'family': 'sensing',
-                     'desc': "The same AC R(T), logged passively while "
-                             "something else drives the temperature."},
+                     'desc': "AC resistance against temperature while an "
+                             "external system drives the temperature. The "
+                             "Lakeshore 350 is only read."},
                     {'label': "R vs. T (T Sensing, Cryocon 34)",
                      'key': "SR830 AC R-T (T_Sensing, CC34)",
                      'family': 'sensing',
-                     'desc': "The passive AC R(T) with the Cryo-con 34 as the "
-                             "thermometer."},
+                     'desc': "The same passive scan, with the Cryo-con 34 as "
+                             "the thermometer."},
                 ],
             },
             {
                 'name': "DMM AC Resistance (no lock-in)",
-                'desc': "The Keithley 6221 supplies the AC current and a "
-                        "Keithley 197A reads the voltage on AC volts. There "
-                        "is no reference and no phase, so R is a MAGNITUDE "
-                        "and an upper bound: every noise contribution inside "
-                        "the meter's passband adds into it. Use it when the "
-                        "voltage is comfortably above the meter's noise floor "
-                        "and no lock-in is free; use the SR830 pairing for "
-                        "anything small.",
-                'instruments': ["Keithley 6221", "Keithley 197A"],
+                'desc': "Keithley 6221 as the AC current source and a "
+                        "Keithley 197A bench multimeter on AC volts. There "
+                        "is no reference and no phase, so the result is a "
+                        "magnitude and an upper bound: noise inside the "
+                        "meter's passband adds to it. Use it only when the "
+                        "voltage is well above the meter's noise floor and "
+                        "no lock-in is free. The 197A needs its 1973A/1972A "
+                        "interface card, and its command table is not yet "
+                        "verified against the manual.",
+                'instruments': ["Keithley 6221", "Keithley 197A",
+                                "Lakeshore 350", "Cryocon 34"],
                 'protocols': [
                     {'label': "AC I-V Sweep", 'key': "K197A AC I-V",
                      'family': None,
-                     'desc': "Sweep the current amplitude at one fixed "
-                             "frequency and check that the voltage follows "
-                             "it. Start high: the 197A needs a voltage it can "
-                             "resolve."},
+                     'desc': "Current amplitude sweep at a fixed frequency. "
+                             "Start at a current that gives a voltage the "
+                             "197A can resolve."},
                     {'label': "AC Frequency Scan",
                      'key': "K197A AC Freq. Scan", 'family': None,
-                     'desc': "Sweep the drive frequency at one fixed current. "
-                             "A roll-off at the top is the METER's passband "
-                             "before it is the sample's."},
+                     'desc': "Frequency sweep at a fixed current. A roll-off "
+                             "at the top of the range is usually the meter's "
+                             "own passband, not the sample."},
                     {'label': "R vs. T (T Control)", 'key': "K197A AC R-T",
                      'family': 'control',
-                     'desc': "AC R(T) along a Lakeshore 350 ramp driven by "
-                             "the module."},
+                     'desc': "AC resistance against temperature along a "
+                             "Lakeshore 350 ramp that the module drives."},
                     {'label': "R vs. T (T Sensing)",
                      'key': "K197A AC R-T (T_Sensing)", 'family': 'sensing',
-                     'desc': "The same AC R(T), logged passively while "
-                             "something else drives the temperature."},
+                     'desc': "AC resistance against temperature while an "
+                             "external system drives the temperature. The "
+                             "Lakeshore 350 is only read."},
                     {'label': "R vs. T (T Sensing, Cryocon 34)",
                      'key': "K197A AC R-T (T_Sensing, CC34)",
                      'family': 'sensing',
-                     'desc': "The passive AC R(T) with the Cryo-con 34 as the "
-                             "thermometer."},
+                     'desc': "The same passive scan, with the Cryo-con 34 as "
+                             "the thermometer."},
                 ],
             },
         ],
     },
     {
         'category': "Impedance Spectroscopy",
-        'desc': "Apply a small AC voltage over a range of frequencies and "
-                "measure the complex impedance. From it come capacitance, "
-                "dielectric permittivity and loss -- the standard way to "
-                "separate bulk, grain-boundary and electrode responses in a "
-                "dielectric.",
+        'desc': "A small AC voltage is applied over a range of frequencies "
+                "and the complex impedance is measured. Capacitance, "
+                "dielectric permittivity and loss tangent follow from it. "
+                "Used for C-V analysis, magnetocapacitance and dielectric "
+                "anomalies at phase transitions.",
         'modules': [
             {
                 'name': "Frequency / Bias Sweep (fixed T)",
-                'desc': "Keysight E4980A precision LCR meter, 20 Hz to 2 MHz. "
-                        "The temperature is held still (or simply not "
-                        "controlled) while frequency or DC bias is swept.",
+                'desc': "Keysight E4980A precision LCR meter, 20 Hz to "
+                        "2 MHz. The temperature is held, or simply not "
+                        "controlled, while the frequency or the DC bias is "
+                        "swept.",
                 'instruments': ["Keysight E4980A"],
                 'protocols': [
                     {'label': "C-V Measurement", 'key': "LCR C-V Measurement",
                      'family': None,
-                     'desc': "Capacitance against DC bias at a fixed frequency "
-                             "-- ferroelectric butterfly loops, depletion "
-                             "profiling, tunability."},
+                     'desc': "Capacitance against DC bias at a fixed "
+                             "frequency, for ferroelectric butterfly loops, "
+                             "depletion profiling and tunability."},
                     {'label': "Dielectric Frequency Scan",
                      'key': "LCR Frequency Scan", 'family': None,
-                     'desc': "Sweep frequency across the Keysight E4980A range "
-                             "at one temperature and record the permittivity "
-                             "and loss."},
+                     'desc': "Frequency sweep at one temperature, recording "
+                             "capacitance, permittivity and loss."},
                 ],
             },
             {
                 'name': "Dielectric Temperature Scan",
                 # LCR bench: both temperature controllers are offered.
-                'desc': "The Keysight E4980A run while the temperature moves. "
-                        "PICA stamps every dielectric point with the "
-                        "temperature it was actually taken at, rather than the "
-                        "one that was requested.",
+                'desc': "Keysight E4980A read continuously while the "
+                        "temperature changes. Every point is stamped with the "
+                        "temperature it was actually taken at, not the one "
+                        "that was requested.",
                 'instruments': ["Keysight E4980A", "Lakeshore 350",
                                 "Cryocon 34"],
                 'protocols': [
                     {'label': "Dielectric Temp. Scan (T Control)",
                      'key': "LCR Temp. Scan (T_Control)", 'family': 'control',
-                     'desc': "Setpoint-by-setpoint scan: the dielectric "
-                             "response is measured once each Lakeshore 350 "
-                             "setpoint has settled."},
+                     'desc': "Setpoint by setpoint: the dielectric response "
+                             "is measured once each Lakeshore 350 setpoint "
+                             "has settled."},
                     {'label': "Dielectric Temp. Scan (T Sensing, L350)",
                      'key': "LCR Temp. Scan (T_Sensing)", 'family': 'sensing',
-                     'desc': "Continuous permittivity against temperature "
-                             "while an external ramp warms or cools the "
-                             "sample, with the Lakeshore 350 as thermometer."},
+                     'desc': "Permittivity against temperature while the "
+                             "PPMS or another external ramp warms or cools "
+                             "the sample. The Lakeshore 350 is only read."},
                     {'label': "Dielectric Temp. Scan (T Sensing, CC34)",
                      'key': "LCR Temp. Scan (T_Sensing, CC34)",
                      'family': 'sensing',
                      'desc': "The same passive scan with the Cryo-con 34 as "
-                             "thermometer. The hardened version: it reconnects "
-                             "by itself and flushes every point to disk."},
+                             "the thermometer. This is the hardened version: "
+                             "it reconnects by itself and writes every point "
+                             "to disk as it goes."},
                 ],
             },
             {
                 'name': "Frequency Scan vs. Temperature",
-                'desc': "A full frequency sweep taken at each of a series of "
-                        "temperatures. Either PICA holds each setpoint itself, "
-                        "or -- against a Quantum Design PPMS running its own "
-                        "sequence -- it waits for the plateaus the PPMS "
-                        "provides and never commands the temperature.",
+                'desc': "A full frequency sweep at each of a series of "
+                        "temperatures. Either the module holds each setpoint "
+                        "itself on the Lakeshore 350, or it waits for the "
+                        "plateaus of a Quantum Design PPMS sequence and never "
+                        "commands the temperature.",
                 'instruments': ["Keysight E4980A", "Lakeshore 350",
                                 "Cryocon 34"],
                 'protocols': [
                     {'label': "Temp. Step Freq. Scan (T Control)",
                      'key': "LCR Temp. Step Freq. Scan (T_Control)",
                      'family': 'control',
-                     'desc': "Each Lakeshore 350 setpoint is held while a full "
-                             "frequency sweep is run, then the next setpoint "
-                             "is taken. The stand-alone form, with no PPMS "
+                     'desc': "Each Lakeshore 350 setpoint is held while a "
+                             "full frequency sweep is run, then the next "
+                             "setpoint is taken. Stand-alone, no PPMS "
                              "involved."},
                     {'label': "PPMS Sync Freq. Scan (T Sensing, L350)",
                      'key': "PPMS Sync Freq. Scan", 'family': 'sensing',
@@ -1152,36 +1243,38 @@ QUICK_CATALOG = [
                     {'label': "PPMS Sync Freq. Scan (T Sensing, CC34)",
                      'key': "PPMS Sync Freq. Scan (CC34)", 'family': 'sensing',
                      'desc': "The same plateau-synchronised frequency scan "
-                             "with the Cryo-con 34 as thermometer."},
+                             "with the Cryo-con 34 as the thermometer."},
                     {'label': "PPMS Dielectric Master (L350)",
                      'key': "PPMS Dielectric Master", 'family': 'master',
-                     'desc': "T-scan and F-scan in one run: temperature scans "
-                             "and frequency scans interleaved to a written "
-                             "sequence, with field tags and per-run cooldowns. "
-                             "Use it for an overnight PPMS campaign."},
+                     'desc': "Temperature scans and frequency scans in one "
+                             "run, following a written sequence, with field "
+                             "tags and per-run cooldowns. For an overnight "
+                             "PPMS campaign."},
                     {'label': "PPMS Dielectric Master (CC34)",
                      'key': "PPMS Dielectric Master (CC34)", 'family': 'master',
-                     'desc': "The same master sequence with the Cryo-con 34 as "
-                             "thermometer."},
+                     'desc': "The same master sequence with the Cryo-con 34 "
+                             "as the thermometer."},
                 ],
             },
         ],
     },
     {
         'category': "Pyroelectric",
-        'desc': "Measure the tiny current a polarised sample releases as its "
-                "temperature changes. Integrating that current against time "
-                "gives the released charge, and from it the remanent "
-                "polarisation and any depolarisation (TSDC) peaks.",
+        'desc': "The current a poled sample releases as its temperature "
+                "changes, measured down to the fA range. Integrating it "
+                "gives the released charge, and from that the remanent "
+                "polarisation and the depolarisation (TSDC) peaks that mark "
+                "a ferroelectric transition or Curie temperature.",
         'modules': [
             {
                 'name': "Pyroelectric / TSDC Current",
                 # The electrometer bench may use the Cryo-con 34, but no CC34
                 # twin of these two scripts is written yet.
-                'desc': "The Keithley 6517B electrometer reads the sample "
-                        "current at zero applied bias while the temperature "
-                        "ramps. Poling is done first, with the same "
-                        "instrument's voltage source.",
+                'desc': "Keithley 6517B electrometer reading the sample "
+                        "current at zero bias while the temperature ramps. "
+                        "Pole the sample first with the same instrument's "
+                        "voltage source. Proper shielding matters at these "
+                        "currents.",
                 'instruments': ["Keithley 6517B", "Lakeshore 350"],
                 'protocols': [
                     # T Control, not untyped: the script sets the Lakeshore
@@ -1189,9 +1282,9 @@ QUICK_CATALOG = [
                     # temperature while it reads the current.
                     {'label': "Pyroelectric Current vs. T",
                      'key': "Pyroelectric Current", 'family': 'control',
-                     'desc': "Log the depolarisation current against "
-                             "temperature during the ramp -- the measurement "
-                             "itself."},
+                     'desc': "The measurement itself: depolarisation current "
+                             "against temperature during a linear ramp that "
+                             "the module drives on the Lakeshore 350."},
                     {'label': "Voltage Polling (Bias / Poling)",
                      'key': "K6517B Polling (Bias)", 'family': None,
                      'desc': "Hold a poling voltage on the sample and watch "
@@ -1308,6 +1401,7 @@ class PICALauncherV2:
     SCRIPT_PATHS = PICALauncherApp.SCRIPT_PATHS
     LOGO_FILE = resource_path("assets/LOGO/UGC_DAE_CSR_NBG.jpeg")
     LOGO_SIZE = PICALauncherApp.LOGO_SIZE                    # 140, as in v1
+    ADV_LOGO_SIZE = 64          # header badge in the Advanced Options window
     RAIL_WIDTH = 300
     # Card grid reflows with the window: a maximised 1920 px screen fits four
     # columns, a 1440 px one three, a restored window two, a narrow one a
@@ -1553,8 +1647,8 @@ class PICALauncherV2:
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
         view_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
-        view_menu.add_command(label="Advanced Options…", accelerator="Ctrl+Shift+A",
-                              command=self.open_advanced)
+        # Advanced Options is deliberately not repeated here: it stays in
+        # the Tools menu and on Ctrl+Shift+A, out of a newcomer's way.
         view_menu.add_command(label="Main Window", command=self._focus_main)
         view_menu.add_separator()
         view_menu.add_command(label="Console", command=self.open_console)
@@ -2096,19 +2190,31 @@ class PICALauncherV2:
             lnk.bind("<Button-1>", lambda _e, a=action: a())
 
 
-    def _load_logo(self):
-        """Load the institute logo into the rail canvas (deferred, like v1)."""
+    def _logo_photo(self, size):
+        """Institute logo scaled to fit a size x size box, or None.
+
+        Shared by the rail (140 px) and the Advanced Options header (a
+        smaller badge). The caller keeps the returned PhotoImage alive.
+        """
         if not (PIL_AVAILABLE and os.path.exists(self.LOGO_FILE)):
             self.log("Logo not loaded: PIL unavailable or file missing.")
-            return
+            return None
         try:
             img = Image.open(self.LOGO_FILE)
-            img.thumbnail((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
-            self.logo_image = ImageTk.PhotoImage(img)  # keep a reference
-            self.logo_canvas.create_image(self.LOGO_SIZE / 2, self.LOGO_SIZE / 2,
-                                          image=self.logo_image)
+            img.thumbnail((size, size), Image.Resampling.LANCZOS)
+            return ImageTk.PhotoImage(img)
         except Exception as e:
             self.log(f"ERROR: Failed to load logo. {e}")
+            return None
+
+    def _load_logo(self):
+        """Load the institute logo into the rail canvas (deferred, like v1)."""
+        photo = self._logo_photo(self.LOGO_SIZE)
+        if photo is None:
+            return
+        self.logo_image = photo  # keep a reference
+        self.logo_canvas.create_image(self.LOGO_SIZE / 2, self.LOGO_SIZE / 2,
+                                      image=self.logo_image)
 
     # ---------------------------------------------------- Browse (card grid)
     def _build_family_legend(self, parent):
@@ -2282,8 +2388,9 @@ class PICALauncherV2:
         tk.Label(inner, text="What do you want to measure?", bg=self.CLR_PANEL,
                  fg=self.CLR_TEXT, font=self.FONT_TITLE).pack(anchor='w')
         tk.Label(inner,
-                 text="Pick a category, narrow the range, then choose a protocol. "
-                      "Every module PICA ships is in Advanced Options — Ctrl+Shift+A.",
+                 text="Choose a category, a module and a protocol, then launch. "
+                      "Each protocol is one PICA program for the ITMS "
+                      "(Integrated Transport Measurement System) hardware.",
                  bg=self.CLR_PANEL, fg=self.CLR_TEXT_DIM,
                  font=self.FONT_SMALL).pack(anchor='w', pady=(2, 18))
 
@@ -2699,11 +2806,42 @@ class PICALauncherV2:
         win.protocol("WM_DELETE_WINDOW", self._close_advanced)
         self._adv_win = win
 
+        # Letterhead-style band, as on the main window's rail: institute logo
+        # with the institute name and the programme's full name stacked beside
+        # it, the window title and family legend on the right, and a rule
+        # under the whole band. One accent headline only -- the window title;
+        # the branding is set in the body colours so the two do not compete.
         head = tk.Frame(win, bg=self.CLR_APP)
-        head.pack(fill='x', padx=18, pady=(10, 0))
-        tk.Label(head, text="Advanced Options", bg=self.CLR_APP,
-                 fg=self.CLR_ACCENT, font=self.FONT_TITLE).pack(side='left')
-        self._build_family_legend(head).pack(side='left', padx=(18, 0), pady=(4, 0))
+        head.pack(fill='x', padx=18, pady=(12, 0))
+
+        brand = tk.Frame(head, bg=self.CLR_APP)
+        brand.pack(side='left', fill='y')
+        self._adv_logo_image = self._logo_photo(self.ADV_LOGO_SIZE)
+        if self._adv_logo_image is not None:
+            tk.Label(brand, image=self._adv_logo_image, bg=self.CLR_APP
+                     ).pack(side='left', padx=(0, 14))
+        words = tk.Frame(brand, bg=self.CLR_APP)
+        words.pack(side='left', fill='y')
+        # Two-line stack centred on the logo: inner frame packed with
+        # expand=True so the lines sit in the middle of the logo's height.
+        lines = tk.Frame(words, bg=self.CLR_APP)
+        lines.pack(expand=True)
+        tk.Label(lines, text="UGC-DAE Consortium for Scientific Research",
+                 bg=self.CLR_APP, fg=self.CLR_TEXT,
+                 font=self.FONT_CARD).pack(anchor='w')
+        tk.Label(lines, text="Mumbai Centre  |  PICA — Python Instrument "
+                             "Control & Automation",
+                 bg=self.CLR_APP, fg=self.CLR_TEXT_DIM,
+                 font=self.FONT_BASE).pack(anchor='w')
+
+        title_blk = tk.Frame(head, bg=self.CLR_APP)
+        title_blk.pack(side='right', fill='y')
+        tk.Label(title_blk, text="Advanced Options", bg=self.CLR_APP,
+                 fg=self.CLR_ACCENT, font=self.FONT_TITLE).pack(anchor='e')
+        self._build_family_legend(title_blk).pack(anchor='e', pady=(2, 0))
+
+        tk.Frame(win, bg=self.CLR_BORDER, height=1).pack(fill='x', padx=18,
+                                                         pady=(10, 6))
         tk.Label(win,
                  text="Every module PICA ships, grouped by measurement range and "
                       "instrument. Quick Select in the main window is the guided route.",
@@ -2985,15 +3123,16 @@ class PICALauncherV2:
                            argv=[os.path.abspath(p) for p in paths])
 
     def open_pressure_gauge_dialog(self):
-        """Name the serial port of the Pfeiffer TPG 361, or forget it again.
+        """Name the address of the Pfeiffer TPG 361, or forget it again.
 
-        This is the only place PICA is ever told about a serial instrument.
-        The dialog offers the ASRL resources VISA can see but opens none of
-        them: picking one from the list is a choice, not a probe, and the
-        first thing ever sent down that port is the gauge's own UNI at the
-        next scan. A port that VISA does not enumerate can still be typed in
-        by hand, which is the difference between a working evening and a
-        re-install of the VISA backend.
+        This is the only place PICA is ever told about a serial or socket
+        instrument. The dialog offers the ASRL resources VISA can see but
+        opens none of them: picking one from the list is a choice, not a
+        probe, and the first thing ever sent down that port is the gauge's
+        own UNI at the next scan. An IP address (Ethernet, TCP 8000) or a
+        COM port VISA does not enumerate can be typed in by hand. "Find on
+        LAN" reads the ARP table for Pfeiffer MACs and offers those IPs --
+        it sends nothing to anything.
         """
         current = load_pressure_gauge() or {}
 
@@ -3009,17 +3148,45 @@ class PICALauncherV2:
         ttk.Label(pad, text="Pfeiffer TPG 361 SingleGauge",
                   style='CardTitle.TLabel').pack(anchor='w')
         ttk.Label(pad, style='Dim.TLabel', justify='left',
-                  text="RS-232 only — the gauge is never on GPIB, so it cannot\n"
-                       "be found by a bus scan. Name its port and the status\n"
-                       "strip reads the pressure on every scan; leave it empty\n"
-                       "and PICA never touches a serial port at all.").pack(
+                  text="USB or Ethernet — the gauge is never on GPIB, so it\n"
+                       "cannot be found by a bus scan. Name its address and the\n"
+                       "status strip reads the pressure on every scan; leave it\n"
+                       "empty and PICA never touches a serial port at all.\n"
+                       "USB: pick the FTDI 'USB Serial Port' below.\n"
+                       "Ethernet: type its IP (TCP port 8000 is implied), or\n"
+                       "press Find on LAN.").pack(
             anchor='w', pady=(2, 12))
 
-        ttk.Label(pad, text="SERIAL PORT (VISA)", style='Faint.TLabel').pack(anchor='w')
+        ttk.Label(pad, text="ADDRESS — COM port, IP address or VISA resource",
+                  style='Faint.TLabel').pack(anchor='w')
         port_var = tk.StringVar(value=current.get('resource', ""))
         port_cb = ttk.Combobox(pad, textvariable=port_var, height=8,
                                font=self.FONT_COMBO, width=34)
-        port_cb.pack(anchor='w', fill='x', ipady=3, pady=(2, 10))
+        port_cb.pack(anchor='w', fill='x', ipady=3, pady=(2, 4))
+
+        def _find_on_lan():
+            try:
+                out = subprocess.run(["arp", "-a"], capture_output=True,
+                                     text=True, timeout=10).stdout
+            except Exception as e:
+                self.log(f"Could not read the ARP table: {e}")
+                return
+            hosts = pfeiffer_hosts_from_arp(out)
+            if not hosts:
+                self.log("No Pfeiffer MAC (00-A0-41) in the ARP table. Ping "
+                         "the gauge once, read the IP off its front panel, or "
+                         "use Find on LAN in the pressure-log module, which "
+                         "can sweep the subnet.")
+                return
+            choices = [f"TCPIP0::{ip}::{GAUGE_TCP_PORT}::SOCKET" for ip in hosts]
+            port_cb['values'] = list(choices) + list(port_cb['values'])
+            port_var.set(choices[0])
+            self.log(f"Pfeiffer device(s) on the LAN: {', '.join(hosts)}. "
+                     "Save to read the gauge on the next scan.")
+
+        ttk.Button(pad, text="Find on LAN (ARP table, sends nothing)",
+                   style='Aux.TButton', command=_find_on_lan).pack(
+            anchor='w', pady=(0, 10))
         try:
             rm = pyvisa.ResourceManager()
             try:
@@ -3033,18 +3200,20 @@ class PICALauncherV2:
                 # empty list here means the cable or its USB-serial driver,
                 # not a PICA problem, and there is nothing to type either.
                 ttk.Label(pad, style='Dim.TLabel', justify='left',
-                          text="No serial ports on this computer. Plug the\n"
-                               "TPG 361 in (or install its USB-serial driver)\n"
-                               "and reopen this window.").pack(anchor='w',
-                                                               pady=(0, 10))
-                self.log("No serial ports found — nothing to configure yet.")
+                          text="No serial ports on this computer. On USB, plug\n"
+                               "the TPG 361 in (or install the FTDI VCP driver)\n"
+                               "and reopen this window. On Ethernet, type its\n"
+                               "IP address above.").pack(anchor='w', pady=(0, 10))
+                self.log("No serial ports found — type an IP address for "
+                         "Ethernet, or plug in the USB cable.")
         except Exception as e:
             self.log(f"Could not list serial resources: {e}")
 
-        ttk.Label(pad, text="BAUD RATE", style='Faint.TLabel').pack(anchor='w')
+        ttk.Label(pad, text="BAUD RATE (USB / serial only, ignored over Ethernet)",
+                  style='Faint.TLabel').pack(anchor='w')
         baud_var = tk.StringVar(value=str(current.get('baud', 9600)))
         baud_cb = ttk.Combobox(pad, textvariable=baud_var, state='readonly',
-                               values=("9600", "19200", "38400"),
+                               values=("9600", "19200", "38400", "57600", "115200"),
                                font=self.FONT_COMBO, width=34)
         baud_cb.pack(anchor='w', fill='x', ipady=3, pady=(2, 16))
 
@@ -3052,22 +3221,25 @@ class PICALauncherV2:
         row.pack(fill='x')
 
         def _save():
-            resource = gauge_resource_from_choice(port_var.get())
+            resource = normalise_gauge_resource(
+                gauge_resource_from_choice(port_var.get()))
             if not resource:
-                self.log("No port given — pressure gauge left unset.")
+                self.log("No address given — pressure gauge left unset.")
                 win.destroy()
                 return
             if not save_pressure_gauge(resource, baud_var.get()):
                 self.log("WARNING: could not save the gauge setting to disk. "
                          "It holds for this session only.")
-            self.log(f"Pressure gauge set to {resource} @ {baud_var.get()} baud. "
+            how = ("over Ethernet" if is_network_gauge(resource)
+                   else f"@ {baud_var.get()} baud")
+            self.log(f"Pressure gauge set to {resource} {how}. "
                      "It is read on the next scan.")
             win.destroy()
             self.start_scan()
 
         def _clear():
             save_pressure_gauge(None)
-            self.log("Pressure gauge cleared. No serial port will be read.")
+            self.log("Pressure gauge cleared. No serial port or socket will be read.")
             win.destroy()
             self.start_scan()
 

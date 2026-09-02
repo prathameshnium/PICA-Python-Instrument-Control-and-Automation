@@ -1055,14 +1055,28 @@ def analyse_curve(model, points, units, fmt_code, name, serial, limit,
         # logarithms, so a negative one only means a resistance below 1 ohm.
         errors.append("The curve contains a resistance of zero or below.")
 
-    duplicates = [readings[i] for i in range(1, len(readings))
-                  if readings[i] == readings[i - 1]]
-    if duplicates:
-        errors.append(
-            f"{len(duplicates)} point(s) repeat a sensor reading (for "
-            f"example {fmt6(duplicates[0])}). The instrument interpolates on "
-            "the sensor reading, so a repeated reading has no single "
-            "temperature.")
+    all_finite = all(math.isfinite(t) and math.isfinite(r)
+                     for t, r in ordered)
+    if all_finite:
+        # Judged on the six digits CRVPT carries, not on the floats: two
+        # readings that differ only in the seventh digit go out identical.
+        printed = [fmt6(reading) for reading in readings]
+        duplicates = [printed[i] for i in range(1, len(printed))
+                      if printed[i] == printed[i - 1]]
+        if duplicates:
+            errors.append(
+                f"{len(duplicates)} point(s) repeat a sensor reading once "
+                f"written to the six digits CRVPT takes (for example "
+                f"{duplicates[0]}). The instrument interpolates on the "
+                "sensor reading, so a repeated reading has no single "
+                "temperature.")
+        too_wide = [value for value in readings + temperatures
+                    if abs(value) >= 1e6]
+        if too_wide:
+            errors.append(
+                f"A value of {too_wide[0]:g} does not fit the six numerals a "
+                "CRVPT field holds. Use a log format for a resistance this "
+                "large.")
 
     rises = sum(1 for i in range(1, len(temperatures))
                 if temperatures[i] > temperatures[i - 1])
@@ -1552,9 +1566,17 @@ def compare_curves(sent_points, read_points, read_texts=None,
     worst_overall = -1.0
     for index in range(len(sent)):
         sent_t, sent_r = sent[index]
+        # What went on the wire is fmt6() of these: six significant digits.
+        # Judged against the unrounded float, a value whose seventh digit is
+        # a 5 sits exactly half a unit off what the instrument stored, which
+        # is the tolerance itself, and binary noise tips a correctly stored
+        # point into "differs". Compare against what was actually sent.
+        wire_t, wire_r = float(fmt6(sent_t)), float(fmt6(sent_r))
         read_t, read_r = read[index]
-        reading_gap = abs(sent_r - read_r)
-        temperature_gap = abs(sent_t - read_t)
+        # A point matches if it agrees with what went on the wire OR with
+        # the original: the smaller of the two gaps is the real error.
+        reading_gap = min(abs(sent_r - read_r), abs(wire_r - read_r))
+        temperature_gap = min(abs(sent_t - read_t), abs(wire_t - read_t))
 
         reading_limit = temperature_limit = None
         if texts is not None:
@@ -1889,6 +1911,22 @@ class LakeshoreLink:
         finally:
             self._last_io = time.time()
 
+    def clear_pending(self):
+        """Device-clear the session after a query that timed out.
+
+        A reply that arrives after its query gave up sits in the instrument's
+        output buffer and is returned as the answer to the NEXT query, which
+        turns a good CRVHDR? into an unreadable one. Sends no instrument
+        command; a device clear only empties the interface buffers.
+        """
+        if self.instrument is None:
+            return False
+        try:
+            self.instrument.clear()
+            return True
+        except Exception:
+            return False
+
     def reconnect(self):
         """Drop the session and open a fresh one. Sends nothing but '*IDN?'."""
         self._drop_session()
@@ -2056,6 +2094,11 @@ class CurveLoaderBackend:
                 self.log(f"  BUSY? was not answered ({type(exc).__name__}); "
                          f"waiting {CRVSAV_TIMEOUT_S / 10:.0f} s instead.")
                 time.sleep(CRVSAV_TIMEOUT_S / 10)
+                clear = getattr(link, 'clear_pending', None)
+                if clear is not None and clear():
+                    self.log("  The interface buffers were cleared, so a "
+                             "late BUSY? reply cannot be read as the answer "
+                             "to the next query.")
                 return False
             asked += 1
             try:
@@ -2095,12 +2138,19 @@ class CurveLoaderBackend:
             link.write("CRVSAV")
             self.wait_until_idle()
 
-    def send_curve(self, commands, progress=None, should_stop=None):
+    def send_curve(self, commands, progress=None, should_stop=None,
+                   curve=None):
         """Send a prepared list of commands, one VISA write each.
 
         `commands` is what build_curve_commands() returned. Nothing is
         composed here: what is sent is exactly what was shown in the window
         and saved to the command file.
+
+        `curve`, when given, is the curve the caller has just checked is
+        empty. Every CRVDEL, CRVHDR and CRVPT in the list must address that
+        curve and no other, or nothing is sent: the emptiness gate and the
+        write have to be talking about the same slot, and this is the last
+        place that can be checked before the bus.
 
         A CRVSAV in the list is followed by the BUSY? wait, because until
         that clears the 340 has not finished writing flash and a readback
@@ -2109,6 +2159,14 @@ class CurveLoaderBackend:
         link = self._require_link()
         if not commands:
             raise ValueError("There are no commands to send.")
+        if curve is not None:
+            targets = commands_target_curves(commands)
+            if targets != [int(curve)]:
+                raise ValueError(
+                    f"The command list addresses curve "
+                    f"{', '.join(str(n) for n in targets) or '(none)'} but "
+                    f"curve {int(curve)} is the one that was checked. "
+                    "Nothing was sent.")
         for position, command in enumerate(commands):
             if should_stop is not None and should_stop():
                 raise RuntimeError(
@@ -2199,7 +2257,12 @@ class CurveLoaderBackend:
         header = self.read_curve_header(curve)
         stored, checked = self.read_curve_occupancy(
             curve, indices=indices, progress=progress)
-        depth = (f"{checked[0]} to {checked[-1]}" if checked else "none")
+        if not checked:
+            depth = "none"
+        elif len(checked) == checked[-1] - checked[0] + 1:
+            depth = f"{checked[0]} to {checked[-1]}"        # every index
+        else:
+            depth = ', '.join(str(index) for index in checked)  # the ladder
         name = str(header.get('name', '')).strip()
         serial = str(header.get('serial', '')).strip()
         described = (f"name '{name}', serial '{serial}', format "
@@ -3276,7 +3339,7 @@ class CurveLoaderGUI:
 
         ttk.Label(
             map_frame,
-            text=("Double-click a free user curve to make it the target. "
+            text=("Click a free user curve to make it the target. "
                   "Standard curves are read-only and are never offered."),
             background=self.CLR_FRAME_BG, font=self.FONT_SMALL,
             justify='left').grid(row=2, column=0, columnspan=2, sticky='w',
@@ -3500,6 +3563,14 @@ class CurveLoaderGUI:
                 getattr(self, widget).config(state=state)
             except Exception:
                 pass
+        # Disconnect under a running job leaves a curve half written, so the
+        # button goes grey with the rest and comes back only if connected.
+        try:
+            self.disconnect_btn.config(
+                state='disabled' if busy or not self.is_connected
+                else 'normal')
+        except Exception:
+            pass
 
     # -----------------------------------------------------------------------
     # MODEL
@@ -3565,6 +3636,10 @@ class CurveLoaderGUI:
                     values.append(f"{curve}  (no answer)")
                 elif entry.get('empty'):
                     values.append(f"{curve}  [free]")
+                elif entry.get('state') == 'stub':
+                    values.append(
+                        f"{curve}  {entry.get('name', '').strip()}  "
+                        f"{entry.get('serial', '').strip()}  [header only]")
                 else:
                     values.append(
                         f"{curve}  {entry.get('name', '').strip()}  "
@@ -3588,10 +3663,16 @@ class CurveLoaderGUI:
             free = [value for value in values if value.endswith("[free]")]
             if not free and self.curve_list:
                 self.log("No free user curve was found. Nothing here "
-                         "overwrites one, so free a curve from the front "
-                         "panel before sending.")
+                         "overwrites one: erase a curve you no longer need "
+                         "with the erase button, or free one from the front "
+                         "panel, before sending.")
             self.curve_var.set((free or values or [""])[0])
-        self._refresh_curve_hint()
+        # Setting the variable fires no <<ComboboxSelected>>, so the rebuild
+        # a hand-made selection triggers has to be called here. Without it a
+        # map that moved the picker off an in-use curve left a command list
+        # addressed to that in-use curve behind a headline naming the new
+        # one. The send button caught that; the sequence did not.
+        self._on_target_curve_changed()
 
     def _first_free_curve(self):
         """The lowest user curve the listing calls free, or None."""
@@ -3788,11 +3869,26 @@ class CurveLoaderGUI:
             self._set_coefficient(coefficient_from_points(points))
             self.log("  This file does not state a temperature coefficient, "
                      "so it was read off the data.")
-        if not self.name_var.get().strip():
-            self.name_var.set(self._suggest_name(name, meta))
-        if not self.serial_var.get().strip():
-            self.serial_var.set(
-                str(meta.get('serial', ''))[:MAX_SERIAL_CHARS])
+        # The name is suggested from the file unless the operator has typed
+        # their own; the serial always follows the file, because a header
+        # that names one sensor's serial over another's calibration is the
+        # kind of wrong nobody notices until the sensor is swapped.
+        suggested = self._suggest_name(name, meta)
+        current_name = self.name_var.get().strip()
+        if not current_name or current_name == getattr(
+                self, '_suggested_name', None):
+            self.name_var.set(suggested)
+        elif current_name != suggested:
+            self.log(f"  The name field still says '{current_name}'; this "
+                     f"file would suggest '{suggested}'. Check it.")
+        self._suggested_name = suggested
+        file_serial = str(meta.get('serial', '')).strip()[:MAX_SERIAL_CHARS]
+        current_serial = self.serial_var.get().strip()
+        if file_serial and file_serial != current_serial:
+            if current_serial:
+                self.log(f"  Serial changed from '{current_serial}' to "
+                         f"'{file_serial}', as the file states it.")
+            self.serial_var.set(file_serial)
 
         self._rebuild_curve()
 
@@ -4222,6 +4318,11 @@ class CurveLoaderGUI:
     # -----------------------------------------------------------------------
 
     def _scan_visa(self):
+        if self.busy:
+            self.log("Not scanning: an instrument operation is still "
+                     "running. A scan would open a second session to the "
+                     "same address in the middle of it.")
+            return
         self.log("Scanning for VISA instruments...")
         try:
             resources = list(self.backend.scan_resources())
@@ -4250,6 +4351,10 @@ class CurveLoaderGUI:
                      "*IDN? on this bus.")
 
     def _do_connect(self):
+        if self.busy:
+            self.log("Not connecting: an instrument operation is still "
+                     "running.")
+            return
         address = self.visa_cb.get()
         if not address:
             messagebox.showerror("No Address",
@@ -4279,6 +4384,11 @@ class CurveLoaderGUI:
                                  f"Could not connect to {address}:\n\n{exc}")
 
     def _do_disconnect(self):
+        if self.busy:
+            self.log("Not disconnecting: an instrument operation is still "
+                     "running. Closing the session under it would leave a "
+                     "curve half written. Wait for it to finish.")
+            return
         self.log("Disconnecting (non-destructive)...")
         self.backend.disconnect()
         self.is_connected = False
@@ -4347,9 +4457,10 @@ class CurveLoaderGUI:
 
         def job():
             self.log("")
-            self.log(f"Mapping curves {first} to {last} with CRVHDR?. This "
-                     "sends queries only: no CRVDEL, no CRVPT, no CRVSAV, no "
-                     "loop, setpoint or heater command.")
+            self.log(f"Mapping curves {first} to {last} with CRVHDR? and a "
+                     "ladder of CRVPT? per user curve. This sends queries "
+                     "only: no CRVDEL, no CRVHDR or CRVPT write, no CRVSAV, "
+                     "no loop, setpoint or heater command.")
             entries = self.backend.list_curves(
                 first, last,
                 progress=lambda done, total, entry: self._set_progress(
@@ -4423,7 +4534,21 @@ class CurveLoaderGUI:
                          "name anybody stored. Whether the slot is free is "
                          "decided by the points below, not by this line.")
             if not points:
-                self.log("  No points. The curve is empty.")
+                # read_curve() stops at the first blank index. Points
+                # stranded above a gap are what the map calls "in use", so
+                # the full depth is asked before this slot is called empty.
+                stored, checked = self.backend.read_curve_occupancy(
+                    curve, progress=lambda done, index: self._set_progress(
+                        done, GATE_PROBE_LIMIT))
+                if stored:
+                    index, temperature, reading = stored[0]
+                    self.log(f"  No point at index 1, but CRVPT? {curve},"
+                             f"{index} answers {reading:g},{temperature:g}: "
+                             "the curve holds points stranded above a gap. "
+                             "It is NOT empty.")
+                else:
+                    self.log(f"  No points at any index 1 to {checked[-1]}. "
+                             "The curve is empty.")
                 return
             temperatures = [t for t, _ in points]
             self.log(f"  {len(points)} points, covering "
@@ -4460,6 +4585,9 @@ class CurveLoaderGUI:
                 "be erased.")
             return
 
+        def texts_for(value):
+            return f"{value:g}"
+
         def job():
             self.log("")
             self.log(f"Reading curve {curve} before erasing it ...")
@@ -4476,7 +4604,19 @@ class CurveLoaderGUI:
                             f"First: {texts[0][0]} -> {texts[0][1]} K\n"
                             f"Last:  {texts[-1][0]} -> {texts[-1][1]} K")
             else:
-                contents = "No breakpoints. The slot holds a header only."
+                stored, _checked = self.backend.read_curve_occupancy(
+                    curve, progress=lambda done, index: self._set_progress(
+                        done, GATE_PROBE_LIMIT))
+                if stored:
+                    index, temperature, reading = stored[0]
+                    contents = (f"No breakpoint at index 1, but CRVPT? "
+                                f"{curve},{index} answers {texts_for(reading)} "
+                                f"-> {texts_for(temperature)} K: the slot "
+                                "holds points stranded above a gap.")
+                else:
+                    contents = ("No breakpoints at any index 1 to "
+                                f"{GATE_PROBE_LIMIT}. The slot holds a "
+                                "header only.")
             summary = (f"Curve {curve} on the {spec['short']} at "
                        f"{getattr(self.backend.link, 'address', '?')}\n\n"
                        f"Name:   {name or '(blank)'}\n"
@@ -4515,7 +4655,7 @@ class CurveLoaderGUI:
                 return
             self.log(f"  Curve {curve} erased. Header now reads "
                      f"'{str(after['name']).strip()}', and CRVPT? answered "
-                     f"0,0 at indices {checked[0]} to {checked[-1]}.")
+                     f"0,0 at indices {', '.join(str(i) for i in checked)}.")
             self._post('dialog', 'info', "Curve Erased",
                        f"Curve {curve} is empty. Map the curves again to see "
                        "it listed as free.")
@@ -4660,7 +4800,9 @@ class CurveLoaderGUI:
             state, baseline_header, detail = self._target_is_empty_now(curve)
             if state in ('in use', 'unreadable'):
                 self.log(f"REFUSED: {detail}")
-                self._post('dialog', 'error', "Curve Not Empty", detail)
+                self._post('dialog', 'error',
+                           "Curve Not Empty" if state == 'in use'
+                           else "Curve Could Not Be Read", detail)
                 return
             self.log(f"  {detail}.")
 
@@ -4685,10 +4827,15 @@ class CurveLoaderGUI:
                          "first so it goes in clean ...")
                 self.backend.delete_curve(curve)
                 self.log(f"  Curve {curve} erased.")
+                # The baseline for the readback is the slot as it is NOW.
+                # Kept as the stub's header, a send whose CRVHDR landed but
+                # whose points did not would read back "identical to the
+                # baseline" and be reported as nothing written.
+                baseline_header = self.backend.read_curve_header(curve)
 
             self.log(f"Sending {len(commands)} commands to curve {curve} ...")
             self.backend.send_curve(
-                commands,
+                commands, curve=curve,
                 progress=lambda done, total, command: self._set_progress(
                     done, total))
             self.log("  All commands sent.")
@@ -4710,8 +4857,19 @@ class CurveLoaderGUI:
                 "Load the file whose curve you want to compare against "
                 "first.")
             return
+        if not self.curve_commands:
+            messagebox.showerror(
+                "Nothing to Compare",
+                "The header fields do not make a valid curve yet. Clear the "
+                "problems listed on the right first, so there is something "
+                "definite to compare against.")
+            return
         model = self.model()
         curve = self._curve_number()
+        if curve is None:
+            messagebox.showerror("No Curve Chosen",
+                                 "Choose the user curve to compare in step 2.")
+            return
         points = list(self.curve_points)
         expected = self._expected_header()
         self._run_in_worker(
@@ -4736,7 +4894,22 @@ class CurveLoaderGUI:
                 progress=lambda done, total: self._set_progress(done, total))
         except CurveFileError as exc:
             self.log(f"VERIFY FAILED: the reply could not be read: {exc}")
+            self._post(
+                'dialog', 'error', "Curve Not Verified",
+                f"Curve {curve} could not be read back: {exc}\n\nNothing "
+                "has confirmed what the instrument stored. Read the curve "
+                "with the inspect button before using this sensor.")
             return 'unreadable'
+
+        # read_curve() returns every stored point up to the first empty one,
+        # so the tail of a longer previous curve arrives as EXTRA points.
+        # Compared whole, that reads as "129 sent, 200 came back" and is
+        # diagnosed as CRVPT loss -- the wrong diagnosis, with the wrong
+        # advice (raise the gap and resend). The curve itself is the first
+        # len(sent_points) points; the tail is reported through tail_index.
+        if tail_index is not None:
+            read_points = read_points[:len(sent_points)]
+            texts = texts[:len(sent_points)]
 
         self.log(f"  The instrument reports: name "
                  f"'{header['name'].strip()}', serial "
@@ -4775,7 +4948,7 @@ class CurveLoaderGUI:
             self.log(f"  Point {tail_index}, one past the end of this curve, "
                      "is NOT empty. The slot still holds the tail of a longer "
                      "curve.")
-        else:
+        elif comparison['read_count'] >= len(sent_points):
             self.log(f"  Point {len(sent_points) + 1}, one past the end, is "
                      "empty as it should be: nothing of the previous curve "
                      "survived.")
@@ -4870,6 +5043,22 @@ class CurveLoaderGUI:
         if assign:
             steps.append(f"5  check input {channel}'s sensor type, set it to "
                          f"curve {curve}, and read a temperature")
+        # The same refusal the send button has. The gate in step 2 checks the
+        # curve the FORM names; the commands are sent as they stand, so a
+        # list addressed to any other curve must not reach step 3.
+        targets = commands_target_curves(self.curve_commands)
+        if targets != [curve]:
+            detail = (
+                f"The command list is addressed to curve "
+                f"{', '.join(str(number) for number in targets) or '(none)'}, "
+                f"but the target on the form is curve {curve}. Nothing was "
+                "sent. Rebuild the curve for the target you want before "
+                "running the sequence.")
+            self.log(f"REFUSED: {detail}")
+            messagebox.showerror("Command List Does Not Match The Target",
+                                 detail)
+            return
+
         if not self._confirm_send(expected, steps=steps):
             self.log("Sequence cancelled.")
             return
@@ -4957,7 +5146,7 @@ class CurveLoaderGUI:
             try:
                 self.log(f"Sending {len(commands)} commands ...")
                 self.backend.send_curve(
-                    commands,
+                    commands, curve=curve,
                     progress=lambda done, total, command: self._set_progress(
                         done, total))
             except Exception as exc:
@@ -5647,6 +5836,34 @@ def _selftest_cases():
                                         comparison)
         check(verdict == 'verified', verdict)
 
+    # -- 28: send_curve() refuses a list addressed to another curve --------
+    def case_send_guard():
+        class FakeLink:
+            def __init__(self):
+                self.written = []
+
+            def write(self, command, gap=None):
+                self.written.append(command)
+
+            def query(self, command, gap=None):
+                return "0"
+
+        backend = CurveLoaderBackend.__new__(CurveLoaderBackend)
+        backend.link = FakeLink()
+        backend.model = MODEL_350
+        backend.log = lambda message: None
+        commands = ["CRVDEL 21", "CRVHDR 21,CX,SN,4,325.000,1",
+                    "CRVPT 21,1,1.64523,325.0"]
+        try:
+            backend.send_curve(commands, curve=28)
+        except ValueError as exc:
+            check("curve 21" in str(exc) and "28" in str(exc), str(exc))
+        else:
+            raise AssertionError("a list for curve 21 was sent to curve 28")
+        check(backend.link.written == [], "nothing may reach the bus")
+        check(backend.send_curve(commands, curve=21) == 3, "the right curve")
+        check(backend.link.written == commands, backend.link.written)
+
     return [
         ("fmt6 writes six digits, never an exponent", case_fmt6),
         ("a .340 file is read reading-first, with its whole header",
@@ -5687,6 +5904,8 @@ def _selftest_cases():
          case_curve_is_empty),
         ("a command list addressed to another curve is caught",
          case_command_targets),
+        ("send_curve() refuses a list addressed to another curve",
+         case_send_guard),
     ]
 
 

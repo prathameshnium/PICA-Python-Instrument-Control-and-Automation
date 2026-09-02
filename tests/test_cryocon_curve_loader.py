@@ -1425,3 +1425,90 @@ if __name__ == "__main__":
                 print(f"FAIL  {name}: {type(exc).__name__}: {exc}")
     print(f"\n{failures} failure(s), {skipped} skipped.")
     sys.exit(1 if failures else 0)
+
+# ---------------------------------------------------------------------------
+# REGRESSION, 2 Sep 2026: a correct transfer read as "points differ"
+# ---------------------------------------------------------------------------
+
+def test_the_readback_is_judged_against_what_was_sent_not_the_raw_float():
+    """Points converted from ohms to log ohms carry fifteen digits; fmt6()
+    sends six; the instrument echoes six. The comparison must be made
+    against the six that went on the wire, or every converted point fails
+    by up to half a unit in the sixth digit and the problem line shows two
+    identical numbers."""
+    converted = [(3.5913, math.log10(3901.2345678)),
+                 (3.75, math.log10(3550.987654)),
+                 (4.0, 3.591325437)]
+    echoed = [(t, float(LOADER.fmt6(r))) for t, r in converted]
+    texts = [(LOADER.fmt6(r), LOADER.fmt6(t)) for t, r in converted]
+    result = LOADER.compare_curves(converted, echoed, read_texts=texts)
+    assert result["matched"], result["problems"]
+    # A real difference in the sixth digit is still caught.
+    wrong = list(echoed)
+    wrong[1] = (3.75, wrong[1][1] + 2e-5)
+    result = LOADER.compare_curves(converted, wrong, read_texts=texts)
+    assert not result["matched"]
+    assert "3.55037" in result["problems"][0]
+
+
+def test_the_header_name_is_compared_case_insensitively():
+    fields = LOADER.compare_headers(
+        {"name": "X17680", "sensor_type": "R8K10UA",
+         "multiplier": "-1.0", "units": "LOGOHM"},
+        {"name": "x17680", "sensor_type": "r8k10ua",
+         "multiplier": -1.0, "units": "logohm"})
+    assert all(matched for _, _, matched in fields.values()), fields
+    verdict, _, _ = LOADER.classify_verify(
+        {"name": "X17680", "sensor_type": "R8K10UA",
+         "multiplier": "-1.0", "units": "LOGOHM"},
+        {"name": "x17680", "sensor_type": "r8k10ua",
+         "multiplier": -1.0, "units": "logohm"},
+        {"matched": True, "sent_count": 3, "read_count": 3, "problems": []})
+    assert verdict == "verified"
+
+def test_a_diode_echoed_as_sidiode_verifies_but_acr_does_not():
+    diode_sent = {"name": "DT-670", "sensor_type": "Diode",
+                  "multiplier": "1.0", "units": "VOLTS"}
+    echoed = {"name": "DT-670", "sensor_type": "SiDiode",
+              "multiplier": 1.0, "units": "VOLTS"}
+    good = {"matched": True, "sent_count": 3, "read_count": 3, "problems": []}
+    assert LOADER.classify_verify(diode_sent, echoed, good)[0] == "verified"
+    acr_sent = dict(diode_sent, sensor_type="ACR", units="LOGOHM",
+                    multiplier="-1.0")
+    substituted = dict(echoed, units="LOGOHM", multiplier=-1.0)
+    assert LOADER.classify_verify(acr_sent, substituted, good)[0] == \
+        "type_only"
+
+
+def test_a_resend_with_a_lost_point_is_a_points_problem_not_nothing_written():
+    header = {"name": "X17680", "sensor_type": "R8K10UA",
+              "multiplier": "-1.0", "units": "LOGOHM"}
+    held = dict(header, multiplier=-1.0)
+    short = {"matched": False, "sent_count": 135, "read_count": 134,
+             "problems": ["135 points were sent but 134 came back."]}
+    verdict, headline, _ = LOADER.classify_verify(header, held, short,
+                                                  baseline_header=held)
+    assert verdict == "points"
+    assert "134 came back" in headline
+
+
+def test_the_tolerance_is_never_tighter_than_a_32_bit_float():
+    import struct
+    sent = [(325.0, 1.64523)]
+    stored = struct.unpack("f", struct.pack("f", 1.64523))[0]
+    read = [(325.0, stored)]
+    texts = [(f"{stored:.8f}", "325.000")]        # eight printed decimals
+    result = LOADER.compare_curves(sent, read, read_texts=texts)
+    assert result["matched"], result["problems"]
+
+
+def test_duplicates_are_judged_as_sent_and_the_units_check_covers_r_names():
+    points = [(300.0, 977.2512), (200.0, 977.2514), (100.0, 1500.0)]
+    errors, _w, _s = LOADER.analyse_curve(
+        points, "OHMS", "R8K10UA", -1.0, "TEST", sentype_type="R8K10UA")
+    assert any("repeat a sensor reading" in e for e in errors), errors
+    volts = [(300.0, 0.5), (200.0, 0.7), (100.0, 1.0)]
+    errors, _w, _s = LOADER.analyse_curve(
+        volts, "VOLTS", "R8K10UA", -1.0, "TEST", sentype_type="R8K10UA")
+    assert any("VOLTS" in e and "resistance" in e for e in errors), errors
+

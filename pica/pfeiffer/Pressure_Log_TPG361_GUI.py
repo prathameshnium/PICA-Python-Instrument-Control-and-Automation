@@ -6,14 +6,37 @@ Purpose: GUI module for logging vacuum pressure vs. time from a Pfeiffer
   Instrument: Pfeiffer Vacuum TPG 361 SingleGauge
               D-35614 Asslar  |  P/N PT G28 040  |  S/N 44877780
               Mains 100-240 V, 50-60 Hz, 40 VA
-  Interface:  RS-232C (9-pin D-sub on the rear panel), spoken to through
-              PyVISA as an ASRL resource. There is no GPIB on this box, so
-              it never appears in the launcher's GPIB scan -- pick the COM
-              port here instead.
+  Interface:  There is no GPIB on this box, so it never appears in the
+              launcher's GPIB scan. The TPG 36x family talks over three
+              rear-panel ports, and this module handles the two the lab
+              can use:
 
-  Serial defaults (TPG 36x factory settings): 9600 baud, 8 data bits, no
-  parity, 1 stop bit, no handshake. Baud is selectable below because the
-  front panel can be set to 9600 / 19200 / 38400.
+                USB (type B socket)  -> an FTDI virtual COM port. Windows
+                                        shows it as "USB Serial Port (COMn)";
+                                        PyVISA sees it as ASRLn::INSTR.
+                Ethernet (RJ45)      -> the same protocol on TCP port 8000
+                                        (fixed). PyVISA resource
+                                        TCPIP0::<ip>::8000::SOCKET.
+                RS-485               -> not used here.
+
+              The address box accepts any of "COM5", "5", "ASRL5::INSTR",
+              "192.168.1.50", "192.168.1.50:8000" or a full VISA string;
+              normalise_resource() turns each into the VISA form.
+
+  Serial (USB) defaults, TPG 36x factory settings: 9600 baud, 8 data bits,
+  no parity, 1 stop bit, no handshake. The controller's BAU parameter can
+  be 9600 / 19200 / 38400 / 57600 / 115200, so the baud is selectable
+  below. Over Ethernet the baud is meaningless and is not applied.
+
+  Finding the address when nobody knows it:
+    USB      -> "Scan for USB / Serial Ports" lists every COM port with its
+                Windows name; the FTDI one is the gauge.
+    Ethernet -> "Find on LAN" reads the PC's ARP table for Pfeiffer MAC
+                addresses (their OUI is 00-A0-41), optionally after a ping
+                sweep of the local /24 so the table is populated, then
+                sends AYT to those hosts only -- never to anything else.
+                The IP is also shown on the gauge's front panel under the
+                Ethernet parameter group, and can be fixed or DHCP there.
 
   Protocol -- the Pfeiffer "mnemonic" handshake used by the TPG 26x/36x
   family. Every exchange is three steps, and skipping the ENQ leaves the
@@ -52,9 +75,14 @@ import os
 import time
 import platform
 import ctypes
+import re
 import traceback
 import threading
 import queue
+import socket
+import subprocess
+import ipaddress
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import csv
 from matplotlib.figure import Figure
@@ -148,6 +176,106 @@ ENQ = b'\x05'     # "send me the data you accepted" -- raw, no terminator
 ACK = '\x06'
 NAK = '\x15'
 
+# Ethernet: the TPG 36x listens on this TCP port and it cannot be changed.
+TPG_TCP_PORT = 8000
+# Pfeiffer Vacuum's IEEE OUI -- the first three octets of every MAC address
+# the company ships. The ARP table is the one place a LAN device announces
+# itself without being spoken to.
+PFEIFFER_OUI = "00-A0-41"
+
+
+def normalise_resource(text):
+    """Turn whatever somebody typed into a VISA resource string.
+
+        COM5, com5, 5, ASRL5, ASRL5::INSTR          -> ASRL5::INSTR
+        192.168.1.50, 192.168.1.50:8000, tpg.local  -> TCPIP0::192.168.1.50::8000::SOCKET
+        TCPIP0::192.168.1.50::8000::SOCKET          -> unchanged
+        ""                                          -> ""
+
+    A full VISA string of any other kind is passed through untouched so a
+    resource this function has never heard of can still be used.
+    """
+    t = (text or "").strip()
+    if not t:
+        return ""
+    up = t.upper()
+    if "::" in up:
+        if up.startswith("ASRL"):
+            return up if up.endswith("::INSTR") else up + "::INSTR"
+        return t
+    m = re.fullmatch(r'(?:ASRL|COM)?\s*(\d+)', up)
+    if m:
+        return f"ASRL{int(m.group(1))}::INSTR"
+    m = re.fullmatch(r'([A-Za-z0-9.\-]+)(?::(\d+))?', t)
+    if m:
+        port = int(m.group(2)) if m.group(2) else TPG_TCP_PORT
+        return f"TCPIP0::{m.group(1)}::{port}::SOCKET"
+    return t
+
+
+def is_network_resource(resource):
+    """True for an Ethernet (TCPIP) resource, False for a COM port."""
+    return (resource or "").strip().upper().startswith("TCPIP")
+
+
+def describe_link(resource, baud):
+    """One line for the data-file header saying how the gauge was reached."""
+    if is_network_resource(resource):
+        return f"Ethernet {resource} (TCP port {TPG_TCP_PORT})"
+    return f"{resource} @ {baud} baud, 8-N-1 (USB / serial)"
+
+
+def pfeiffer_hosts_from_arp(arp_text):
+    """IPv4 addresses in an `arp -a` listing whose MAC carries the Pfeiffer
+    OUI. Pure text parsing so it can be tested without a network; accepts
+    the Windows (00-a0-41-..) and Unix (00:a0:41:..) separators."""
+    oui = PFEIFFER_OUI.lower().replace("-", "")
+    hosts = []
+    for line in (arp_text or "").splitlines():
+        m = re.search(r'(\d{1,3}(?:\.\d{1,3}){3})\D+'
+                      r'((?:[0-9a-fA-F]{2}[-:]){5}[0-9a-fA-F]{2})', line)
+        if not m:
+            continue
+        mac = re.sub(r'[-:]', '', m.group(2)).lower()
+        if mac.startswith(oui) and m.group(1) not in hosts:
+            hosts.append(m.group(1))
+    return hosts
+
+
+def serial_port_choices(resources):
+    """Annotate ASRL resources with the port's Windows name, FTDI first.
+
+    "ASRL5::INSTR" tells somebody who already knows which COM the gauge is
+    on. "ASRL5::INSTR -- USB Serial Port (COM5)" tells everybody else, and
+    the TPG 36x USB port IS an FTDI chip, so an FTDI port goes to the top.
+    pyserial is optional (it ships with pyvisa-py); without it the list is
+    returned unlabelled and nothing is lost.
+    """
+    try:
+        from serial.tools import list_ports
+        ports = {p.device.upper(): p for p in list_ports.comports()}
+    except Exception:
+        return list(resources)
+
+    labelled = []
+    for res in resources:
+        m = re.search(r'ASRL(?:COM)?(\d+)', res.upper())
+        p = ports.get(f"COM{m.group(1)}") if m else None
+        if p is None:
+            labelled.append((1, res))
+            continue
+        blob = f"{p.description} {p.manufacturer or ''} {p.hwid or ''}".upper()
+        ftdi = "FTDI" in blob or "VID:PID=0403" in blob
+        label = f"{res} -- {p.description}" + ("  [FTDI: likely the TPG]" if ftdi else "")
+        labelled.append((0 if ftdi else 1, label))
+    labelled.sort(key=lambda t: t[0])
+    return [label for _, label in labelled]
+
+
+def resource_from_choice(text):
+    """The bare resource from a (possibly annotated) dropdown choice."""
+    return (text or "").split(" -- ")[0].split(" \u2014 ")[0].strip()
+
 # PR1 status field -> what the gauge is telling you.
 PRESSURE_STATUS = {
     0: "Measurement data okay",
@@ -232,7 +360,7 @@ class TPG361_Backend:
     TIMEOUT_MS = 4000
 
     def __init__(self, visa_address, baud_rate=9600):
-        self.visa_address = visa_address
+        self.visa_address = normalise_resource(visa_address)
         self.baud_rate = int(baud_rate)
         self.instrument = None
         self.unit = "mbar"
@@ -242,7 +370,7 @@ class TPG361_Backend:
 
     # ------------------------------------------------------------------ link
     def connect(self):
-        """Open the serial port and confirm the controller answers."""
+        """Open the COM port or TCP socket and confirm the controller answers."""
         self._rm = pyvisa.ResourceManager()
         self.instrument = self._rm.open_resource(self.visa_address)
         self.instrument.timeout = self.TIMEOUT_MS
@@ -250,9 +378,12 @@ class TPG361_Backend:
         # 8-N-1, no handshake: the TPG 36x factory setting. Each attribute is
         # set on its own because a backend that rejects one (pyvisa-py does
         # not expose flow control on every platform) must not cost us the
-        # rest of the configuration.
-        serial_settings = [('baud_rate', self.baud_rate), ('data_bits', 8)]
-        if visa_constants is not None:
+        # rest of the configuration. Over Ethernet there is no UART to set
+        # up, so the block is skipped rather than producing five warnings.
+        serial_settings = []
+        if not is_network_resource(self.visa_address):
+            serial_settings = [('baud_rate', self.baud_rate), ('data_bits', 8)]
+        if serial_settings and visa_constants is not None:
             serial_settings += [
                 ('parity', visa_constants.Parity.none),
                 ('stop_bits', visa_constants.StopBits.one),
@@ -380,7 +511,13 @@ class PressureMonitorGUI:
     # pump-down that recovers at 03:00 should resume within the minute.
     RECONNECT_BACKOFFS = (5, 10, 30, 60)
 
-    BAUD_RATES = ("9600", "19200", "38400")
+    # The controller's BAU parameter offers these five; USB / serial only.
+    BAUD_RATES = ("9600", "19200", "38400", "57600", "115200")
+    # Per-host timeouts for the LAN search, kept short: 254 pings at 300 ms
+    # on 32 threads is a few seconds, and an AYT to a Pfeiffer host that is
+    # not a TPG (a turbo controller, say) must not hang the button.
+    LAN_PING_TIMEOUT_MS = 300
+    LAN_AYT_TIMEOUT_MS = 1500
 
     try:
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -695,37 +832,55 @@ class PressureMonitorGUI:
         self.entries["Delay"].grid(row=3, column=0, padx=10, pady=(0, 5), sticky='ew')
         self.entries["Delay"].insert(0, "2.0")
 
-        ttk.Label(frame, text="TPG 361 Serial Port (VISA):").grid(
+        ttk.Label(frame, text="TPG 361 Address (COM port, IP address or VISA):").grid(
             row=4, column=0, padx=10, pady=pady_val, sticky='w')
-        # Editable, not readonly: a COM port that VISA does not enumerate can
-        # still be typed in by hand (ASRL4::INSTR), which is the difference
-        # between a working evening and a re-install of the VISA backend.
+        # Editable, not readonly: a COM port that VISA does not enumerate,
+        # or an IP address (which VISA never enumerates), can be typed in
+        # by hand -- "COM5", "192.168.1.50" and full VISA strings all work.
         self.port_cb = ttk.Combobox(frame, font=self.FONT_BASE)
-        self.port_cb.grid(row=5, column=0, padx=10, pady=(0, 10), sticky='ew')
+        self.port_cb.grid(row=5, column=0, padx=10, pady=(0, 0), sticky='ew')
+        ttk.Label(frame, text="e.g.  COM5   |   192.168.1.50   |   ASRL5::INSTR",
+                  font=self.FONT_SUB_LABEL).grid(
+            row=6, column=0, padx=10, pady=(0, 6), sticky='w')
 
-        ttk.Label(frame, text="Baud Rate:").grid(
-            row=6, column=0, padx=10, pady=pady_val, sticky='w')
+        ttk.Label(frame, text="Baud Rate (USB / serial only, ignored over LAN):").grid(
+            row=7, column=0, padx=10, pady=pady_val, sticky='w')
         self.baud_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly',
                                     values=self.BAUD_RATES)
         self.baud_cb.set("9600")   # TPG 36x factory default
-        self.baud_cb.grid(row=7, column=0, padx=10, pady=(0, 10), sticky='ew')
+        self.baud_cb.grid(row=8, column=0, padx=10, pady=(0, 10), sticky='ew')
 
         self.log_scale_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             frame, text="Logarithmic pressure axis",
             variable=self.log_scale_var,
             command=self._apply_axis_scale).grid(
-            row=8, column=0, padx=10, pady=(0, 5), sticky='w')
+            row=9, column=0, padx=10, pady=(0, 5), sticky='w')
 
+        find_row = ttk.Frame(frame)
+        find_row.grid(row=10, column=0, padx=10, pady=4, sticky='ew')
+        find_row.columnconfigure(0, weight=1)
+        find_row.columnconfigure(1, weight=1)
         self.scan_button = ttk.Button(
-            frame, text="Scan for Serial Ports", command=self._scan_for_serial_ports)
-        self.scan_button.grid(row=9, column=0, padx=10, pady=4, sticky='ew')
+            find_row, text="Scan for USB / Serial Ports",
+            command=self._scan_for_serial_ports)
+        self.scan_button.grid(row=0, column=0, sticky='ew', padx=(0, 5))
+        self.lan_button = ttk.Button(
+            find_row, text="Find on LAN", command=self._find_on_lan)
+        self.lan_button.grid(row=0, column=1, sticky='ew', padx=(5, 0))
+        # Off by default: a ping sweep touches every address on the subnet.
+        # The ARP table alone is enough once the gauge has spoken to anyone.
+        self.lan_sweep_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            find_row, text="Ping-sweep the local subnet first (if the ARP table is empty)",
+            variable=self.lan_sweep_var).grid(
+            row=1, column=0, columnspan=2, sticky='w', pady=(2, 0))
         self.file_button = ttk.Button(
             frame, text="Browse Save Location...", command=self._browse_file_location)
-        self.file_button.grid(row=10, column=0, padx=10, pady=4, sticky='ew')
+        self.file_button.grid(row=11, column=0, padx=10, pady=4, sticky='ew')
 
         control_frame = ttk.Frame(frame)
-        control_frame.grid(row=11, column=0, padx=10, pady=(10, 10), sticky='ew')
+        control_frame.grid(row=12, column=0, padx=10, pady=(10, 10), sticky='ew')
         control_frame.columnconfigure(0, weight=1)
         control_frame.columnconfigure(1, weight=1)
 
@@ -764,8 +919,8 @@ class PressureMonitorGUI:
             frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT,
             font=self.FONT_CONSOLE, wrap='word', bd=0, relief='flat')
         self.console_widget.pack(pady=5, padx=5, fill='both', expand=True)
-        self.log("Console initialized. Pick the COM port the TPG 361 is on, "
-                 "then Start.")
+        self.log("Console initialized. Enter the TPG 361's COM port (USB) or IP "
+                 "address (LAN), or use the Scan / Find buttons, then Start.")
         if not PYVISA_AVAILABLE:
             self.log("CRITICAL: PyVISA not found.")
         return frame
@@ -842,13 +997,14 @@ class PressureMonitorGUI:
             params = {
                 'sample_name': self.entries["Sample Name"].get().strip(),
                 'delay': float(self.entries["Delay"].get()),
-                'port': self.port_cb.get().strip(),
+                'port': normalise_resource(resource_from_choice(self.port_cb.get())),
                 'baud': self.baud_cb.get().strip(),
             }
             if not all(params.values()) or not self.file_location_path:
                 raise ValueError(
-                    "Log file name, delay, serial port, baud rate and save "
+                    "Log file name, delay, gauge address, baud rate and save "
                     "location are all required.")
+            self.log(f"Connecting to {params['port']} ...")
             if params['delay'] <= 0:
                 raise ValueError("Logging delay must be greater than zero.")
 
@@ -866,8 +1022,7 @@ class PressureMonitorGUI:
                 writer.writerow([f"# Log File: {params['sample_name']}"])
                 writer.writerow([f"# Instrument: Pfeiffer TPG 361 "
                                  f"({self.backend.identity})"])
-                writer.writerow([f"# Port: {params['port']} @ "
-                                 f"{params['baud']} baud, 8-N-1"])
+                writer.writerow([f"# Link: {describe_link(params['port'], params['baud'])}"])
                 writer.writerow([f"# Pressure unit: {self.unit}"])
                 writer.writerow([f"# Started: "
                                  f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
@@ -1058,15 +1213,160 @@ class PressureMonitorGUI:
             finally:
                 rm.close()
             if resources:
-                self.log(f"Found: {resources}")
-                self.port_cb['values'] = resources
+                choices = serial_port_choices(resources)
+                for c in choices:
+                    self.log(f"  {c}")
+                self.port_cb['values'] = choices
                 if not self.port_cb.get():
-                    self.port_cb.set(resources[0])
+                    self.port_cb.set(choices[0])
+                if not any("FTDI" in c for c in choices):
+                    self.log("None of these is an FTDI port. If the gauge is on "
+                             "USB, check Device Manager for 'USB Serial Port' "
+                             "or install the FTDI VCP driver; if it is on the "
+                             "LAN, use Find on LAN or type its IP address.")
             else:
-                self.log("No serial resources found. Type the port by hand, "
-                         "e.g. ASRL3::INSTR, if you know which COM it is on.")
+                self.log("No serial resources found. If the gauge is on USB, "
+                         "plug it in / install the FTDI VCP driver. If it is "
+                         "on the LAN, use Find on LAN or type its IP address.")
         except Exception as e:
             self.log(f"ERROR during serial scan: {e}")
+
+    # ------------------------------------------------------------- LAN find
+    def _find_on_lan(self):
+        """Locate a TPG 36x on the local network without knowing its IP.
+
+        1. Optionally ping every host on the PC's own /24 subnets so the
+           ARP table is populated (off by default).
+        2. Read the ARP table and keep only MACs with Pfeiffer's OUI.
+        3. Send AYT -- read-only -- to those hosts on port 8000, and only
+           those, to tell a TPG from any other Pfeiffer box on the LAN.
+        Runs in a thread; the GUI hears back via root.after().
+        """
+        if not PYVISA_AVAILABLE:
+            self.log("ERROR: PyVISA not installed.")
+            return
+        self.lan_button.config(state='disabled')
+        sweep = self.lan_sweep_var.get()
+        threading.Thread(target=self._find_on_lan_worker, args=(sweep,),
+                         daemon=True).start()
+
+    def _ui(self, fn, *args):
+        """Run fn(*args) on the Tk thread."""
+        self.root.after(0, lambda: fn(*args))
+
+    @staticmethod
+    def _local_subnets():
+        """The /24 networks this PC has an IPv4 address on."""
+        nets = []
+        try:
+            for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+                try:
+                    net = ipaddress.ip_network(f"{ip}/24", strict=False)
+                except ValueError:
+                    continue
+                if not net.is_loopback and net not in nets:
+                    nets.append(net)
+        except Exception:
+            pass
+        return nets
+
+    def _ping(self, ip):
+        if platform.system() == "Windows":
+            cmd = ["ping", "-n", "1", "-w", str(self.LAN_PING_TIMEOUT_MS), str(ip)]
+            flags = {'creationflags': 0x08000000}          # CREATE_NO_WINDOW
+        else:
+            cmd = ["ping", "-c", "1", "-W", "1", str(ip)]
+            flags = {}
+        try:
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=self.LAN_PING_TIMEOUT_MS / 1000 + 2, **flags)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _arp_table():
+        try:
+            out = subprocess.run(["arp", "-a"], capture_output=True, text=True,
+                                 timeout=10)
+            return out.stdout
+        except Exception:
+            return ""
+
+    def _ayt_at(self, ip):
+        """AYT to one host on port 8000. Returns the identity or None."""
+        resource = f"TCPIP0::{ip}::{TPG_TCP_PORT}::SOCKET"
+        rm = None
+        inst = None
+        try:
+            rm = pyvisa.ResourceManager()
+            inst = rm.open_resource(resource)
+            inst.timeout = self.LAN_AYT_TIMEOUT_MS
+            inst.write_termination = '\r\n'
+            inst.read_termination = '\r\n'
+            inst.write('AYT')
+            reply = inst.read()
+            if ACK not in reply:
+                return None
+            inst.write_raw(ENQ)
+            return inst.read().strip()
+        except Exception:
+            return None
+        finally:
+            for h in (inst, rm):
+                try:
+                    if h is not None:
+                        h.close()
+                except Exception:
+                    pass
+
+    def _find_on_lan_worker(self, sweep):
+        try:
+            if sweep:
+                nets = self._local_subnets()
+                if not nets:
+                    self._ui(self.log, "No IPv4 network on this PC to sweep.")
+                for net in nets:
+                    self._ui(self.log, f"Ping-sweeping {net} ...")
+                    with ThreadPoolExecutor(max_workers=32) as pool:
+                        list(pool.map(self._ping, net.hosts()))
+
+            self._ui(self.log, "Reading the ARP table for Pfeiffer (00-A0-41) MACs...")
+            hosts = pfeiffer_hosts_from_arp(self._arp_table())
+            if not hosts:
+                self._ui(self.log,
+                         "No Pfeiffer MAC in the ARP table. Either the gauge "
+                         "is not on this network yet, or nothing has talked to "
+                         "it: tick the ping-sweep box and try again, read the "
+                         "IP off the gauge's front panel (Ethernet parameter "
+                         "group), or run Pfeiffer's Ethernet Configuration Tool.")
+                return
+
+            found = []
+            for ip in hosts:
+                identity = self._ayt_at(ip)
+                if identity:
+                    self._ui(self.log, f"  {ip}: {identity}")
+                    found.append(ip)
+                else:
+                    self._ui(self.log, f"  {ip}: Pfeiffer device, no TPG reply on "
+                                       f"port {TPG_TCP_PORT} (not the gauge, or "
+                                       "its protocol setting is not Mnemonic).")
+            if found:
+                choices = [f"TCPIP0::{ip}::{TPG_TCP_PORT}::SOCKET" for ip in found]
+                self._ui(self._offer_lan_choices, choices)
+            else:
+                self._ui(self.log, "No TPG answered. Check the gauge's Ethernet "
+                                   "settings (PRO / protocol should allow "
+                                   "Mnemonics) and try again.")
+        except Exception as e:
+            self._ui(self.log, f"ERROR during LAN search: {e}")
+        finally:
+            self._ui(lambda: self.lan_button.config(state='normal'))
+
+    def _offer_lan_choices(self, choices):
+        self.port_cb['values'] = choices
+        self.port_cb.set(choices[0])
+        self.log(f"Gauge address set to {choices[0]}. Press Start.")
 
     def _browse_file_location(self):
         path = filedialog.askdirectory()

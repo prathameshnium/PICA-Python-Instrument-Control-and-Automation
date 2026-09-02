@@ -263,18 +263,35 @@ def launch_gpib_scanner():
 
 MIN_CURVE = 1
 MAX_CURVE = 59               # Model 350 and Model 336
+MAX_CURVE_340 = 60           # the Model 340 has one more user curve
 FIRST_USER_CURVE = 21        # 1-20 are the standard Lake Shore curves
 MAX_BREAKPOINTS = 200
 INPUT_CHANNELS = ('A', 'B', 'C', 'D')
 
+
+def max_curve_for_idn(idn):
+    """The last curve slot on the instrument that answered '*IDN?'.
+
+    A 350 stops at 59; a 340 has 60, and a viewer that stops at 59 cannot
+    see, read or export a curve stored there.
+    """
+    text = str(idn).upper().replace(' ', '').replace('-', '')
+    return MAX_CURVE_340 if 'MODEL340' in text else MAX_CURVE
+
+
 # Data Format codes, exactly as they are printed in a .340 header and
 # returned by CRVHDR?. The third field is the column heading a .340 uses.
+# Format 5 exists on the 340 only: its TEMPERATURE column is log10 of
+# kelvin, so it is named here (a 340 can hold one) but never exported as a
+# .340, because every reader of that file takes the column as kelvin.
 CURVE_FORMATS = {
     1: ("mV/K", "mV", "millivolts"),
     2: ("V/K", "V", "volts"),
     3: ("Ohm/K", "Ohm", "ohms"),
     4: ("Log Ohm/K", "log(Ohm)", "log10 of ohms"),
+    5: ("Log Ohm/Log K", "log(Ohm)", "log10 of ohms"),
 }
+LOG_TEMPERATURE_FORMATS = (5,)
 
 # Temperature coefficient codes.
 COEFFICIENTS = {1: "Negative", 2: "Positive"}
@@ -282,6 +299,16 @@ COEFFICIENTS = {1: "Negative", 2: "Positive"}
 # A CRVPT? reply of 0,0 marks the end of a curve. One of them could be a
 # dropped reply; two in a row is the instrument saying there is nothing more.
 STOP_AFTER_ZERO_PAIRS = 2
+
+# The first word of any read note that means the curve on screen is not the
+# whole curve. A read that stopped early must never leave as a .340, because
+# that file counts its own rows and a half curve loads as if it were whole.
+INCOMPLETE_MARK = "INCOMPLETE:"
+
+
+def read_is_incomplete(notes):
+    """True if any note from read_points() says the read stopped early."""
+    return any(str(note).startswith(INCOMPLETE_MARK) for note in notes or ())
 
 
 class CurveReadError(RuntimeError):
@@ -511,6 +538,19 @@ def build_340_text(header, points):
     """
     if not points:
         raise ValueError("A .340 file needs at least one breakpoint.")
+    if header.get('_incomplete'):
+        raise ValueError(
+            "This read did not reach the end of the curve (it was stopped, "
+            "or a reply failed part way). A .340 written from it would count "
+            "its own rows and load elsewhere as a whole curve. Read the slot "
+            "again to the end before exporting.")
+    if header.get('format_code') in LOG_TEMPERATURE_FORMATS:
+        raise ValueError(
+            f"This curve's Data Format is {header.get('format_code')} "
+            f"({CURVE_FORMATS[header['format_code']][0]}): its temperature "
+            "column is log10 of kelvin. Every reader of a .340 takes that "
+            "column as kelvin, so it is not written. The CSV export carries "
+            "the numbers with the raw header text alongside them.")
     if header.get('format_code') not in CURVE_FORMATS:
         raise ValueError(
             "This curve's Data Format code is "
@@ -522,19 +562,25 @@ def build_340_text(header, points):
     format_code = header['format_code']
     format_name = CURVE_FORMATS[format_code][0]
     coefficient = header.get('coefficient_code')
-    coefficient_name = COEFFICIENTS.get(coefficient, "unknown")
     limit = header.get('limit')
+    # A field the instrument did not give is not invented here: a made-up
+    # coefficient or limit in a .340 would be loaded as if the 350 had said
+    # it. The CSV export carries the raw header text for these cases.
+    if limit is None or coefficient not in COEFFICIENTS:
+        raise ValueError(
+            "This curve's header did not give a readable temperature limit "
+            f"or coefficient (the instrument answered '{header.get('_raw')}'). "
+            "A .340 file cannot be written without inventing them, so it is "
+            "not. The CSV export carries the numbers with the raw header "
+            "text alongside them.")
+    coefficient_name = COEFFICIENTS[coefficient]
 
     lines = [
         f"Sensor Model:   {header.get('name') or 'UNKNOWN'}",
         f"Serial Number:  {header.get('serial') or 'UNKNOWN'}",
         f"Data Format:    {format_code}      ({format_name})",
-        (f"SetPoint Limit: {fmt_value(limit)}      (Kelvin)"
-         if limit is not None else
-         "SetPoint Limit: 0.0      (Kelvin)"),
-        (f"Temperature coefficient:  {coefficient} ({coefficient_name})"
-         if coefficient is not None else
-         "Temperature coefficient:  1 (Negative)"),
+        f"SetPoint Limit: {fmt_value(limit)}      (Kelvin)",
+        f"Temperature coefficient:  {coefficient} ({coefficient_name})",
         f"Number of Breakpoints:   {len(points)}",
         "",
         "No.   Units      Temperature (K)",
@@ -632,17 +678,35 @@ def is_lakeshore_idn(idn):
     return any(marker in str(idn).upper() for marker in LAKESHORE_IDN_MARKERS)
 
 
-def is_query(command):
-    """True if `command` is a Lake Shore query.
+# The shape of a Lake Shore query: an optional '*', a mnemonic, then the '?'
+# directly after it, then at most a parameter list of letters, digits,
+# commas, dots and spaces. Both instruments also take several commands on
+# one line separated by ';', which is why the shape matters: the old test
+# ('?' anywhere in the text) admitted 'CRVHDR? 21;CRVDEL 21'.
+QUERY_RE = re.compile(
+    r'^\*?[A-Z][A-Z0-9]{0,7}\?(?:[ \t]+[A-Z0-9,. \t]*)?$')
 
-    A Lake Shore command is a query when it carries a '?'. Every setting
-    command is the same mnemonic without one: CRVHDR? reads a header, CRVHDR
-    writes one; INCRV? reads the assignment, INCRV writes it. So this single
-    test separates the two completely, and it does it by admitting queries
-    rather than by listing commands to forbid -- a new command added to this
-    module later cannot slip past a list it was never added to.
+# Mnemonics that have no query form. None of them is ever a question, so a
+# '?' behind one is a malformed setting command, not a query.
+NEVER_A_QUERY = ('*RST', '*CLS', 'CRVDEL', 'CRVSAV', 'DFLT')
+
+
+def is_query(command):
+    """True if `command` is a Lake Shore query and nothing else.
+
+    A Lake Shore command is a query when it carries a '?' directly after
+    its mnemonic: CRVHDR? reads a header, CRVHDR writes one; INCRV? reads
+    the assignment, INCRV writes it. The test admits that shape and only
+    that shape -- one mnemonic, one '?', no ';' -- so a compound line, a
+    trailing '?' behind a setting command, or a second command after a
+    separator is refused. Admitting by shape rather than forbidding by
+    list means a command added later cannot slip past.
     """
-    return '?' in str(command)
+    text = str(command).strip().upper()
+    if not QUERY_RE.match(text):
+        return False
+    mnemonic = text.split('?', 1)[0]
+    return mnemonic not in NEVER_A_QUERY
 
 
 class LakeshoreReadOnlyLink:
@@ -691,6 +755,12 @@ class LakeshoreReadOnlyLink:
             try:
                 self.instrument = self.rm.open_resource(self.address)
                 self.instrument.timeout = self.timeout_ms
+                # The same framing as the loader and the direct-control
+                # window: line-feed terminated both ways. Left at the VISA
+                # default the read waits for EOI, which a 340 whose IEEE
+                # menu has EOI off never sends, and every query times out.
+                self.instrument.read_termination = '\n'
+                self.instrument.write_termination = '\n'
                 time.sleep(LAKESHORE_OPEN_SETTLE_S)
                 self.idn = self.ask('*IDN?')
                 if not self.idn:
@@ -770,6 +840,7 @@ class CurveViewerBackend:
     def __init__(self, log=None):
         self.link = None
         self.rm = None
+        self.max_curve = MAX_CURVE        # set from *IDN? on connect
         self.log = log if callable(log) else (lambda msg: print(msg))
         if pyvisa:
             try:
@@ -833,6 +904,7 @@ class CurveViewerBackend:
                 f"{visa_address} is not a Lake Shore: it identifies itself "
                 f"as '{idn}'. Scan the bus and pick the 350's actual address "
                 f"(it does not have to be {LAKESHORE_ADDRESS_HINT}).")
+        self.max_curve = max_curve_for_idn(idn)
         return idn
 
     def disconnect(self):
@@ -863,9 +935,10 @@ class CurveViewerBackend:
         """One CRVHDR? query, parsed."""
         if not self.link:
             raise ConnectionError("Not connected to instrument.")
-        if not (MIN_CURVE <= curve <= MAX_CURVE):
+        last = getattr(self, 'max_curve', MAX_CURVE)
+        if not (MIN_CURVE <= curve <= last):
             raise ValueError(
-                f"Curve number must be {MIN_CURVE} to {MAX_CURVE}, "
+                f"Curve number must be {MIN_CURVE} to {last}, "
                 f"not {curve}.")
         return parse_crvhdr(self.link.ask(f"CRVHDR? {curve}"), curve)
 
@@ -888,7 +961,7 @@ class CurveViewerBackend:
                 break
         return stored, checked
 
-    def scan_catalogue(self, first=MIN_CURVE, last=MAX_CURVE, progress=None,
+    def scan_catalogue(self, first=MIN_CURVE, last=None, progress=None,
                        should_stop=None, probe=True):
         """Read every curve header in a range, and optionally sample points.
 
@@ -911,6 +984,8 @@ class CurveViewerBackend:
         """
         if not self.link:
             raise ConnectionError("Not connected to instrument.")
+        if last is None:
+            last = getattr(self, 'max_curve', MAX_CURVE)
         entries = []
         total = last - first + 1
         for offset, curve in enumerate(range(first, last + 1), start=1):
@@ -919,12 +994,24 @@ class CurveViewerBackend:
             try:
                 entry = self.read_header(curve)
                 if probe:
-                    stored, checked = self.probe_points(curve)
-                    entry['points_empty'] = not stored
-                    entry['probe_checked'] = checked
-                    entry['probe_first'] = stored[0] if stored else None
-                    entry['disagrees'] = (entry['points_empty']
-                                          != entry['is_empty'])
+                    # A probe that fails must not throw the header away:
+                    # the header answered, so it is shown, and the points
+                    # column says "not asked" rather than guessing.
+                    try:
+                        stored, checked = self.probe_points(curve)
+                    except Exception as exc:
+                        entry['points_empty'] = None
+                        entry['probe_checked'] = []
+                        entry['probe_first'] = None
+                        entry['disagrees'] = False
+                        entry['probe_error'] = (f"{type(exc).__name__}: "
+                                                f"{exc}")
+                    else:
+                        entry['points_empty'] = not stored
+                        entry['probe_checked'] = checked
+                        entry['probe_first'] = stored[0] if stored else None
+                        entry['disagrees'] = (entry['points_empty']
+                                              != entry['is_empty'])
             except Exception as exc:
                 entry = {'curve': curve,
                          'is_user_slot': curve >= FIRST_USER_CURVE,
@@ -957,13 +1044,20 @@ class CurveViewerBackend:
         zero_run = 0
         for index in range(1, limit + 1):
             if should_stop is not None and should_stop():
-                notes.append(f"Stopped by the operator at breakpoint {index}.")
+                notes.append(f"{INCOMPLETE_MARK} stopped by the operator at "
+                             f"breakpoint {index}. The points below it are "
+                             "what came back; nothing above it was read.")
                 break
             try:
                 units_value, temperature = parse_crvpt(
                     self.link.ask(f"CRVPT? {curve},{index}"), curve, index)
-            except CurveReadError as exc:
-                notes.append(str(exc))
+            except Exception as exc:
+                # Any failure, not just a garbled reply: a VISA timeout at
+                # point 150 used to discard the 149 already read.
+                notes.append(f"{INCOMPLETE_MARK} the read stopped at "
+                             f"breakpoint {index} ({type(exc).__name__}: "
+                             f"{exc}). The points below it are what came "
+                             "back; nothing above it was read.")
                 break
             if units_value == 0.0 and temperature == 0.0:
                 zero_run += 1
@@ -1303,10 +1397,10 @@ class CurveViewerGUI:
 
         ttk.Label(
             frame,
-            text=("One CRVHDR? per slot: the name, serial, data format,\n"
-                  "temperature limit and coefficient of all "
-                  f"{MAX_CURVE - MIN_CURVE + 1} slots.\n"
-                  "Around a second in total, and it writes nothing."),
+            text=("One CRVHDR? per slot for the name, serial, data format,\n"
+                  "limit and coefficient, then up to ten CRVPT? per slot to\n"
+                  "see whether anything is stored behind the header.\n"
+                  "Half a minute for the whole instrument; it writes nothing."),
             background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
             justify='left').grid(row=0, column=0, sticky='w',
                                  padx=10, pady=(6, 4))
@@ -1364,7 +1458,7 @@ class CurveViewerGUI:
             frame,
             text=("A full curve is up to 200 CRVPT? queries, so a long one\n"
                   "takes a few seconds. The read stops by itself at the\n"
-                  "instrument's own end marker (a breakpoint of 0, 0)."),
+                  "instrument's own end marker (two breakpoints of 0, 0)."),
             background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
             justify='left').grid(row=4, column=0, columnspan=2, sticky='w',
                                  padx=10, pady=(0, 8))
@@ -1617,9 +1711,9 @@ class CurveViewerGUI:
                      "table only.")
 
     @staticmethod
-    def _slot_choices():
+    def _slot_choices(max_curve=MAX_CURVE):
         labels = []
-        for curve in range(MIN_CURVE, MAX_CURVE + 1):
+        for curve in range(MIN_CURVE, max_curve + 1):
             kind = "user" if curve >= FIRST_USER_CURVE else "standard"
             labels.append(f"{curve:2d}  ({kind})")
         return labels
@@ -1630,7 +1724,8 @@ class CurveViewerGUI:
         if not match:
             return None
         value = int(match.group(1))
-        return value if MIN_CURVE <= value <= MAX_CURVE else None
+        last = getattr(self.backend, 'max_curve', MAX_CURVE)
+        return value if MIN_CURVE <= value <= last else None
 
     def _require_connection(self):
         if not self.is_connected or not self.backend.is_connected:
@@ -1711,6 +1806,15 @@ class CurveViewerGUI:
             self.connect_btn.config(state='disabled')
             self.disconnect_btn.config(state='normal')
             self.visa_cb.config(state='disabled')
+            # The slot list follows the instrument: 59 on a 350, 60 on a 340.
+            chosen = self.slot_cb.get()
+            self.slot_cb['values'] = self._slot_choices(self.backend.max_curve)
+            if chosen in self.slot_cb['values']:
+                self.slot_cb.set(chosen)
+            else:
+                self.slot_cb.current(FIRST_USER_CURVE - MIN_CURVE)
+            self.log(f"  Curve slots {MIN_CURVE} to {self.backend.max_curve} "
+                     "on this instrument.")
         except Exception as exc:
             self.log(f"CONNECT ERROR: {traceback.format_exc()}")
             messagebox.showerror("Connection Failed",
@@ -1742,7 +1846,10 @@ class CurveViewerGUI:
             self.log("Another instrument job is still running.")
             return
         self._stop_flag.clear()
-        self._post('busy', True)
+        # Set directly, not through the queue: this runs on the Tk thread,
+        # and a second click inside the 50 ms before the queue was drained
+        # used to start a second worker on the same VISA session.
+        self._set_busy(True)
 
         def worker():
             try:
@@ -1771,16 +1878,18 @@ class CurveViewerGUI:
         if not self._require_connection():
             return
         first = FIRST_USER_CURVE if self.user_only_var.get() else MIN_CURVE
+        last = self.backend.max_curve
 
         def job():
-            self.log(f"Listing curve slots {first} to {MAX_CURVE} "
-                     "(one CRVHDR? each, read only)...")
+            self.log(f"Listing curve slots {first} to {last} (one CRVHDR? "
+                     "each, plus up to ten CRVPT? per slot to see whether "
+                     "anything is stored; queries only)...")
 
             def progress(done, total, entry):
                 self._post('progress', done, total)
 
             entries = self.backend.scan_catalogue(
-                first=first, last=MAX_CURVE, progress=progress,
+                first=first, last=last, progress=progress,
                 should_stop=self._stop_flag.is_set)
             # The contents verdict is the one to believe where the two
             # differ, so the count is taken from it where it exists.
@@ -1924,6 +2033,7 @@ class CurveViewerGUI:
             points, notes = self.backend.read_points(
                 curve, progress=progress, should_stop=self._stop_flag.is_set)
             self.log(f"  {len(points)} breakpoints read.")
+            header['_incomplete'] = read_is_incomplete(notes)
             holds_curve, verdict = describe_slot(header, points)
             if verdict:
                 notes = list(notes) + [verdict]
@@ -1991,10 +2101,16 @@ class CurveViewerGUI:
                       f"Temperature is {stats['temperature_direction']}."))
         else:
             self.detail_label.config(
-                text=(f"{kind} curve, but no breakpoints came back. See the "
-                      "console."))
+                text=(_verdict or f"{kind} slot: no breakpoints came back. "
+                      "See the console."))
 
         problems = list(self.read_notes)
+        if header.get('format_code') in LOG_TEMPERATURE_FORMATS:
+            problems.append(
+                f"Data format {header['format_code']} "
+                f"({header.get('format_name')}): the temperature column is "
+                "log10 of kelvin, not kelvin. The ranges above are logs, "
+                "and this curve cannot be exported as a .340.")
         if stats and not stats.get('temperature_monotonic'):
             problems.append(
                 "The temperature column is not monotonic. A calibration "
@@ -2197,8 +2313,14 @@ def _selftest_cases():
                         'CRVHDR 21,NAME,SN,4,325.0,1',
                         'CRVPT 21,1,1.5,300.0', 'INCRV A,21',
                         'INTYPE A,3,1,0,0,1', 'SETP 1,300', 'RANGE 1,3',
-                        'RAMP 1,1,0.5'):
+                        'RAMP 1,1,0.5',
+                        # the shapes the old "'?' anywhere" test let through
+                        'CRVHDR? 21;CRVDEL 21', 'CRVDEL 21 ?', '*RST?',
+                        'CRVSAV?', 'CRVHDR? 21; CRVSAV', 'INCRV A,21?',
+                        'CRVHDR?? 21', 'CRVHDR? 21\nCRVDEL 21',
+                        'CRVPT? 21,1\r\n*RST'):
             check(not is_query(command), f"{command} must be refused")
+        check(is_query('crvhdr? 21'), "case does not make a setting command")
 
     # -- 2: the guard is enforced by the link, not just by the helper -------
     def case_link_refuses():
@@ -2348,8 +2470,75 @@ def _selftest_cases():
         points, _notes = backend.read_points(23)
         check(len(points) == 2, f"expected the two stored points, got {points}")
         check(describe_slot(header, points)[0] is True, "and that is a curve")
-        check(all(command.endswith('?') or '?' in command
-                  for command in backend.link.asked), "queries only")
+        check(all(is_query(command) for command in backend.link.asked),
+              "queries only")
+
+    # -- 16: a 340 has a slot 60; an early stop cannot leave as a .340 ------
+    def case_340_slots_and_incomplete_reads():
+        check(max_curve_for_idn("LSCI,MODEL350,LSA23AR,1.5") == 59, "350")
+        check(max_curve_for_idn("LSCI,MODEL340,340219,111196") == 60, "340")
+        check(max_curve_for_idn("LSCI,MODEL 340,1,1") == 60, "spaced 340")
+        check(max_curve_for_idn("") == MAX_CURVE, "unknown falls back")
+
+        class FakeLink:
+            def __init__(self, fail_at=None):
+                self.fail_at = fail_at
+
+            def ask(self, command):
+                if command.startswith("CRVHDR?"):
+                    return "CX-1030,X17680,4,325.000,1"
+                index = int(command.split(',')[1])
+                if index == self.fail_at:
+                    raise TimeoutError("no reply")
+                if index <= 3:
+                    return f"{1.0 + index / 10:.5f},{300.0 - index:.3f}"
+                return "0.00000,0.000"
+
+        backend = CurveViewerBackend.__new__(CurveViewerBackend)
+        backend.link = FakeLink()
+        backend.max_curve = 60
+        header = backend.read_header(60)            # allowed on a 340
+        try:
+            backend.max_curve = 59
+            backend.read_header(60)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("slot 60 must be refused on a 350")
+
+        backend.link = FakeLink(fail_at=3)
+        points, notes = backend.read_points(21)
+        check(len(points) == 2, f"the two points before the failure: {points}")
+        check(read_is_incomplete(notes), notes)
+        header['_incomplete'] = True
+        try:
+            build_340_text(header, points)
+        except ValueError as exc:
+            check("did not reach the end" in str(exc), str(exc))
+        else:
+            raise AssertionError("an incomplete read must not become a .340")
+        header['_incomplete'] = False
+        check("Number of Breakpoints:   2" in build_340_text(header, points),
+              "a complete read exports")
+
+        # A header field the instrument did not give is not invented.
+        bare = parse_crvhdr("CX-1030,X17680,4,junk,junk", 21)
+        try:
+            build_340_text(bare, points)
+        except ValueError as exc:
+            check("inventing" in str(exc), str(exc))
+        else:
+            raise AssertionError("a .340 must not carry an invented limit")
+
+        # Format 5 is named, and refused as a .340.
+        five = parse_crvhdr("S700,,5,325.000,1", 21)
+        check(five['format_name'] == "Log Ohm/Log K", five['format_name'])
+        try:
+            build_340_text(five, points)
+        except ValueError as exc:
+            check("log10 of kelvin" in str(exc), str(exc))
+        else:
+            raise AssertionError("format 5 must not become a .340")
 
     # -- 4: an empty slot is recognised, not guessed at ---------------------
     def case_empty_slot():
@@ -2496,6 +2685,8 @@ def _selftest_cases():
          "header and points are reported separately", case_filler_and_probe),
         ("REGRESSION: a blank header does not stop the breakpoints being "
          "read", case_blank_header_over_points),
+        ("a 340 has a slot 60; an early stop cannot leave as a .340; "
+         "nothing in a .340 is invented", case_340_slots_and_incomplete_reads),
     ]
 
 
