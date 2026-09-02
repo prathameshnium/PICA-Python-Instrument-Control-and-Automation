@@ -46,6 +46,7 @@ import math
 import os
 import re
 import sys
+import pytest
 import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1121,8 +1122,8 @@ def _sequence_ready(gui, state, header=None, detail="gate detail"):
         lambda curve, indices=None, progress=None:
             (state == "free", header or {}, state, detail))
     gui.backend.send_curve = (
-        lambda commands, progress=None, should_stop=None:
-            sent.append(list(commands)))
+        lambda commands, progress=None, should_stop=None, curve=None:
+            sent.append((curve, list(commands))))
     gui.backend.delete_curve = lambda curve: erased.append(curve)
     gui._confirm_send = lambda expected, steps=None: True
     gui._run_in_worker = lambda description, function: function()
@@ -1165,12 +1166,71 @@ def test_the_sequence_sends_only_when_the_gate_says_free():
         sent, erased = _sequence_ready(gui, "free")
         gui._run_full_sequence()
         assert len(sent) == 1
-        assert sent[0] == gui.curve_commands
+        assert sent[0] == (21, gui.curve_commands)
         assert erased == []
         dialogs = _drain_dialogs(gui)
         assert not any("Sequence Stopped" in d[2] for d in dialogs)
     finally:
         top.destroy()
+
+
+def test_a_map_that_moves_the_picker_rebuilds_the_commands():
+    """REGRESSION. The map moved the picker off an in-use curve by setting
+    the Tk variable, which fires no selection event, so the command list
+    stayed addressed to the in-use curve while the headline named the free
+    one. The sequence then gated the free curve and would have sent CRVDEL
+    to the in-use one."""
+    top, gui = _gui_with_curve()
+    try:
+        assert gui._curve_number() == 21
+        assert LOADER.commands_target_curves(gui.curve_commands) == [21]
+        gui._apply_event(("curves_listed",
+                          [_occupied(21), _free(22), _free(23)]))
+        assert gui._curve_number() == 22
+        assert LOADER.commands_target_curves(gui.curve_commands) == [22]
+        assert gui._target_state() == "free"
+    finally:
+        top.destroy()
+
+
+def test_the_sequence_refuses_a_command_list_for_another_curve():
+    """Belt and braces for the same drift, at two levels: the sequence
+    refuses before its dialog, and the backend refuses at the bus."""
+    top, gui = _gui_with_curve(curve_map=[_free(21), _free(22)])
+    shown = []
+    real_error = LOADER.messagebox.showerror
+    LOADER.messagebox.showerror = lambda title, text: shown.append(
+        (title, text))
+    try:
+        sent, erased = _sequence_ready(gui, "free")
+        # Move the picker the way the old map path did: no rebuild.
+        for value in gui.curve_combo["values"]:
+            if gui._parse_leading_int(value) == 22:
+                gui.curve_var.set(value)
+                break
+        assert gui._curve_number() == 22
+        assert LOADER.commands_target_curves(gui.curve_commands) == [21]
+        gui._run_full_sequence()
+        assert sent == [] and erased == []
+        assert any("Does Not Match" in title for title, _ in shown), shown
+    finally:
+        LOADER.messagebox.showerror = real_error
+        top.destroy()
+
+    # And the backend itself, with the real send_curve and a fake link.
+    class FakeLink:
+        written = []
+
+        def write(self, command, gap=None):
+            self.written.append(command)
+
+    backend = LOADER.CurveLoaderBackend.__new__(LOADER.CurveLoaderBackend)
+    backend.link = FakeLink()
+    backend.model = M350
+    backend.log = lambda message: None
+    with pytest.raises(ValueError, match="curve 21"):
+        backend.send_curve(["CRVHDR 21,CX,SN,4,325.000,1"], curve=28)
+    assert FakeLink.written == []
 
 
 def test_the_sequence_stops_on_the_wrong_model_before_the_gate():
@@ -1183,6 +1243,77 @@ def test_the_sequence_stops_on_the_wrong_model_before_the_gate():
         assert sent == [] and erased == []
         dialogs = _drain_dialogs(gui)
         assert any("Step 1" in d[3] for d in dialogs)
+    finally:
+        top.destroy()
+
+
+def test_the_readback_is_judged_against_what_was_sent_not_the_raw_float():
+    """A value whose seventh digit is 5 goes out rounded; the instrument
+    echoes the rounded value; the two must agree."""
+    sent = [(3.591325, 1.234565), (100.0, 2.0)]
+    read = [(3.59132, 1.23456), (100.0, 2.0)]
+    texts = [("1.23456", "3.59132"), ("2.0", "100.0")]
+    result = LOADER.compare_curves(sent, read, read_texts=texts)
+    assert result["matched"], result["problems"]
+
+
+def test_duplicate_readings_are_judged_as_sent():
+    points = [(300.0, 977.2512), (200.0, 977.2514), (100.0, 1500.0)]
+    errors, _warnings, _stats = LOADER.analyse_curve(
+        M350, points, "OHMS", 3, "PT", "SN", 325.0, 2)
+    assert any("repeat a sensor reading" in e for e in errors), errors
+    wide = [(300.0, 1.0e6), (200.0, 2.0e6)]
+    errors, _warnings, _stats = LOADER.analyse_curve(
+        M350, wide, "OHMS", 3, "PT", "SN", 325.0, 2)
+    assert any("six numerals" in e for e in errors), errors
+
+
+def test_a_second_file_brings_its_own_serial():
+    top, gui = _gui_with_curve()
+    try:
+        assert gui.serial_var.get().strip() == "X17680"
+        gui.serial_var.set("X00001")
+        gui._load_file(LS340_17680)
+        assert gui.serial_var.get().strip() == "X17680"
+        assert LOADER.commands_target_curves(gui.curve_commands) == [21]
+        assert any("X17680" in c for c in gui.curve_commands
+                   if c.startswith("CRVHDR"))
+    finally:
+        top.destroy()
+
+
+def test_a_leftover_tail_is_diagnosed_as_a_tail_not_as_lost_points():
+    """REGRESSION. read_curve() hands back the leftover points of a longer
+    previous curve as extra points, so the whole-list comparison saw a
+    count mismatch and blamed the CRVPT lines. Only the first N points are
+    the curve; the tail has its own verdict and its own advice."""
+    top, gui = _gui_with_curve(curve_map=[_free(21)])
+    try:
+        expected = gui._expected_header()
+        sent = list(gui.curve_points)
+        header = {"name": expected["name"], "serial": expected["serial"],
+                  "format": expected["format"], "limit": expected["limit"],
+                  "coefficient": expected["coefficient"],
+                  "limit_text": LOADER.fmt_limit(expected["limit"])}
+        # Five stranded points past the end, at readings above the curve.
+        top_reading = max(reading for _, reading in sent)
+        tail = [(0.5 - 0.01 * k, top_reading + 1.0 + k) for k in range(5)]
+        read = sorted(sent, key=lambda pair: pair[1]) + tail
+        texts = [(LOADER.fmt6(r), LOADER.fmt6(t)) for t, r in read]
+        gui.backend.read_curve = (
+            lambda curve, max_points=200, progress=None, expected_count=None:
+                (header, read, texts, len(sent) + 1))
+        verdict = gui._verify_against(M350, sent, 21, expected)
+        assert verdict == "tail"
+        dialogs = _drain_dialogs(gui)
+        assert any("still holds data" in d[3] for d in dialogs), dialogs
+        assert not any("came back" in d[3] for d in dialogs), dialogs
+
+        # With nothing past the end, the same curve verifies.
+        gui.backend.read_curve = (
+            lambda curve, max_points=200, progress=None, expected_count=None:
+                (header, read[:len(sent)], texts[:len(sent)], None))
+        assert gui._verify_against(M350, sent, 21, expected) == "verified"
     finally:
         top.destroy()
 

@@ -186,7 +186,7 @@ v1.1, 31 Aug 2026. The 29 Aug transfer to X17680 failed and this is what
           the line ending was irrelevant;
         - run_full_sequence(): every instrument step in order, each checked
           before the next, stopping at the first failure, with a summary;
-        - run_self_test(): 21 offline checks, four of them regressions on
+        - run_self_test(): 26 offline checks, several of them regressions on
           the above. Run with --selftest or from the Advanced panel.
 """
 
@@ -1112,8 +1112,12 @@ def analyse_curve(points, units, sensor_type, multiplier, name,
     # Duplicate sensor readings make the curve ambiguous: the instrument
     # interpolates on the reading, so two temperatures at one reading has no
     # single answer. The instrument would keep both and sort them adjacent.
+    # Judged on the six digits fmt6() sends, not on the floats: two readings
+    # that differ only past the sixth digit go out identical.
+    printed = [fmt6(reading) if math.isfinite(reading) else repr(reading)
+               for reading in readings]
     duplicates = [readings[i] for i in range(1, len(readings))
-                  if readings[i] == readings[i - 1]]
+                  if printed[i] == printed[i - 1]]
     if duplicates:
         errors.append(
             f"{len(duplicates)} point(s) repeat a sensor reading "
@@ -1180,7 +1184,7 @@ def analyse_curve(points, units, sensor_type, multiplier, name,
             f"{', '.join(CALCUR_MANUAL_TYPE_LIST)}. Which of the two the "
             "header parser wants is not settled. Nothing here can decide it; "
             "the readback will, and the type probe settles it in one press.")
-    elif sensor_type not in CALCUR_SENSOR_TYPES:
+    if sensor_type not in CALCUR_SENSOR_TYPES:
         errors.append(
                 f"'{sensor_type}' is not one of the types the CALCUR header "
                 f"accepts ({', '.join(CALCUR_SENSOR_TYPES)}, manual printed "
@@ -1432,6 +1436,12 @@ def crv_file_text(lines):
     return text
 
 
+# Half a unit in the last place of a 32-bit float, relative. The manual says
+# curve values are stored as 32-bit floats, so nothing read back can be
+# closer to what was sent than this.
+FLOAT32_HALF_ULP = 2.0 ** -24
+
+
 def printed_tolerance(text):
     """Half a unit in the last decimal place a number was printed to.
 
@@ -1513,9 +1523,21 @@ def compare_curves(sent_points, read_points, read_texts=None,
     worst_overall = -1.0
     for index in range(len(sent)):
         sent_t, sent_r = sent[index]
+        # What went on the wire is fmt6() of these: six significant digits.
+        # The floats behind them can carry fifteen -- every point converted
+        # from ohms to log ohms does -- so judged against the float, a
+        # correctly stored point sits up to half a unit in the sixth digit
+        # away from what the instrument echoes, which is more than the
+        # tolerance its printed digits allow. The problem line then prints
+        # both sides through fmt6() and they look identical. This is what
+        # made a good transfer of the extended Cernox curve read as
+        # "points differ". Compare against what was actually sent.
+        wire_t, wire_r = float(fmt6(sent_t)), float(fmt6(sent_r))
         read_t, read_r = read[index]
-        reading_gap = abs(sent_r - read_r)
-        temperature_gap = abs(sent_t - read_t)
+        # A point matches if it agrees with what went on the wire OR with
+        # the original: the smaller of the two gaps is the real error.
+        reading_gap = min(abs(sent_r - read_r), abs(wire_r - read_r))
+        temperature_gap = min(abs(sent_t - read_t), abs(wire_t - read_t))
 
         reading_limit = temperature_gap_limit = None
         if texts is not None:
@@ -1525,6 +1547,12 @@ def compare_curves(sent_points, read_points, read_texts=None,
             reading_limit = abs(sent_r) * relative_tolerance
         if temperature_gap_limit is None:
             temperature_gap_limit = abs(sent_t) * relative_tolerance
+        # The instrument stores 32-bit floats. A firmware that prints more
+        # digits than that holds cannot be checked more closely than half
+        # a float32 unit in the last place, whatever it printed.
+        reading_limit = max(reading_limit, abs(wire_r) * FLOAT32_HALF_ULP)
+        temperature_gap_limit = max(temperature_gap_limit,
+                                    abs(wire_t) * FLOAT32_HALF_ULP)
 
         # The loosest tolerance applied anywhere, so the caller can state
         # how closely the curve was actually confirmed instead of implying
@@ -1566,12 +1594,19 @@ def compare_headers(expected, header):
 
     sent_name = str(expected.get('name', '')).strip()
     read_name = str(header.get('name', '')).strip()
-    fields['name'] = (sent_name, read_name, sent_name == read_name)
+    fields['name'] = (sent_name, read_name,
+                      sent_name.upper() == read_name.upper())
 
     sent_type = str(expected.get('sensor_type', '')).strip()
     read_type = str(header.get('sensor_type', '')).strip()
-    fields['sensor_type'] = (sent_type, read_type,
-                             sent_type.upper() == read_type.upper())
+    type_matched = sent_type.upper() == read_type.upper()
+    # The Rev 3.03A firmware echoes 'SiDiode' for a header that said
+    # 'Diode'. That is the same type in its own spelling, not the silent
+    # substitution, which only means something when a NON-diode was sent.
+    if (not type_matched and sent_type.lower() == 'diode'
+            and read_type.lower() in DIODE_SUBSTITUTION_STRINGS):
+        type_matched = True
+    fields['sensor_type'] = (sent_type, read_type, type_matched)
 
     sent_units = str(expected.get('units', '')).strip()
     read_units = str(header.get('units', '')).strip()
@@ -1593,6 +1628,29 @@ def compare_headers(expected, header):
     read_shown = f"{float(read_mult):+g}" if read_mult is not None else ""
     fields['multiplier'] = (sent_shown, read_shown, matched)
     return fields
+
+
+def _classify_points(comparison):
+    """The 'points' verdict: header right, points wrong or missing."""
+    if comparison['read_count'] != comparison['sent_count']:
+        headline = (
+            f"The header is correct but {comparison['sent_count']} "
+            f"points were sent and {comparison['read_count']} came back.")
+        advice = (
+            "The header arrived, so the block is being parsed and the "
+            "loss is in the point lines themselves. The instrument "
+            "deletes entries whose numeric fields it cannot parse. Try "
+            "another line ending under Advanced, and raise "
+            "CURVE_LINE_GAP_S if this firmware is dropping bytes under "
+            "back-to-back traffic.")
+    else:
+        headline = ("The header is correct but some points differ from "
+                    "what was sent.")
+        advice = ("The differences are listed above. Do not use this "
+                  "sensor: an interpolation table that is wrong in the "
+                  "middle gives a plausible temperature that is not the "
+                  "right one.")
+    return ('points', headline, advice)
 
 
 def classify_verify(expected, header, comparison, baseline_header=None):
@@ -1626,6 +1684,14 @@ def classify_verify(expected, header, comparison, baseline_header=None):
     if header_ok and points_ok:
         return ('verified', "", "")
 
+    if header_ok and not points_ok:
+        # The header is exactly what was sent, so the block was parsed and
+        # landed. Judged before the baseline test: a resend of the same
+        # name, type and units into a slot that already held them would
+        # otherwise read as "identical to the baseline, nothing written",
+        # and a lost point line would be blamed on the header fields.
+        return _classify_points(comparison)
+
     identical_to_baseline = False
     if baseline_header:
         identical_to_baseline = all(
@@ -1653,8 +1719,10 @@ def classify_verify(expected, header, comparison, baseline_header=None):
             "the curve that was already in the slot, so a shortfall means "
             "nothing and changing the line ending will not help. Check, in "
             "this order: (1) the sensor type is one the CALCUR header "
-            "accepts -- " + ", ".join(CALCUR_SENSOR_TYPES) + " -- because a "
-            "SENTYPE name such as R8K10UA is not; (2) the name is 4 to 15 "
+            "accepts -- the manual prints "
+            + ", ".join(CALCUR_MANUAL_TYPE_LIST) +
+            "; this firmware may want its own SENTYPE names instead, and the "
+            "type probe (step 4) settles which; (2) the name is 4 to 15 "
             "printable ASCII characters; (3) the units are OHMS, VOLTS or "
             "LOGOHM. Only if all three are already right is the line ending "
             "worth trying.")
@@ -1670,32 +1738,11 @@ def classify_verify(expected, header, comparison, baseline_header=None):
         advice = (
             "That is the documented silent substitution: the firmware could "
             "not identify the type and used a diode instead. A Cernox on a "
-            "diode input configuration reads nonsense. Set the type to ACR, "
-            "which is the CALCUR spelling for an NTC resistor, and resend; "
-            "then set the input range separately with "
-            "SENTYPE <index>:TYPE R8K10UA.")
+            "diode input configuration reads nonsense. Run the type probe "
+            "(step 4) to find the spelling this firmware keeps, put that in "
+            "the curve type box, and resend; then set the input range "
+            "separately with SENTYPE <index>:TYPE R8K10UA.")
         return ('type_only', headline, advice)
-
-    if header_ok and not points_ok:
-        if comparison['read_count'] != comparison['sent_count']:
-            headline = (
-                f"The header is correct but {comparison['sent_count']} "
-                f"points were sent and {comparison['read_count']} came back.")
-            advice = (
-                "The header arrived, so the block is being parsed and the "
-                "loss is in the point lines themselves. The instrument "
-                "deletes entries whose numeric fields it cannot parse. Try "
-                "another line ending under Advanced, and raise "
-                "CURVE_LINE_GAP_S if this firmware is dropping bytes under "
-                "back-to-back traffic.")
-        else:
-            headline = ("The header is correct but some points differ from "
-                        "what was sent.")
-            advice = ("The differences are listed above. Do not use this "
-                      "sensor: an interpolation table that is wrong in the "
-                      "middle gives a plausible temperature that is not the "
-                      "right one.")
-        return ('points', headline, advice)
 
     differing = [name for name, (_, _, matched) in fields.items()
                  if not matched]
@@ -1742,7 +1789,11 @@ ALLOW_DEVICE_CLEAR_ON_RETRY = False
 # what provoked the write timeout above.
 CURVE_LINE_GAP_S = 0.06
 CURVE_SETTLE_S = 1.0                # after the semicolon, while flash is written
-CURVE_READ_TIMEOUT_MS = 4000        # per line of a CALCUR? reply
+# CALCUR? walks flash and the first line can take about twelve seconds on the
+# Rev 3.03A unit in this lab (the viewer measured it). Four seconds here made
+# the readback "sent nothing back" while the whole curve was still on its way,
+# and the reply then arrived as the answer to the next query.
+CURVE_READ_TIMEOUT_MS = 20000       # per line of a CALCUR? reply
 CURVE_READ_MAX_LINES = MAX_CURVE_POINTS + 12
 
 # How often the window drains the worker-event queue. Fast enough that the
@@ -2086,10 +2137,16 @@ class CurveLoaderBackend:
             for _ in range(CURVE_READ_MAX_LINES):
                 try:
                     chunk = self.link.read_line()
-                except Exception:
-                    # A timeout here is how a Cryo-con says "that was the last
-                    # line". It is only a failure if the semicolon never came,
-                    # and the caller decides that from the text.
+                except Exception as exc:
+                    # A timeout AFTER some lines is how a Cryo-con says "that
+                    # was the last line"; the caller decides from the text
+                    # whether the semicolon came. A timeout before the FIRST
+                    # line is not that: nothing has been read, and if the
+                    # reply is still on its way it lands on the next query.
+                    if not collected:
+                        self.log(f"  CALCUR? {index}: no reply within "
+                                 f"{CURVE_READ_TIMEOUT_MS / 1000:.0f} s "
+                                 f"({type(exc).__name__}).")
                     break
                 if chunk:
                     collected.append(chunk)
@@ -2225,8 +2282,20 @@ class CurveLoaderBackend:
         ordered = sorted(points, key=lambda pair: pair[1])
         ends = [ordered[0], ordered[-1]]
         results = []
+        # A fixed probe name cannot tell "this block landed" from "the
+        # previous probe's block is still there", and a discarded resend
+        # then reads as ACCEPTED. Two digits from the clock, checked
+        # against what the slot holds now, keep every run distinct.
+        nonce = int(time.time()) % 90 + 10
+        try:
+            held, _, _ = self.read_slot_curve(index)
+            while held is not None and str(held.get('name', '')).strip() \
+                    .startswith(f"P{nonce:02d} "):
+                nonce = nonce % 90 + 11
+        except Exception:
+            pass
         for candidate in candidates:
-            probe_name = "PROBE " + candidate[:9]
+            probe_name = f"P{nonce:02d} " + candidate[:9]
             lines = build_crv_lines(probe_name, candidate, multiplier,
                                     units, ends)
             if log:
@@ -2664,6 +2733,12 @@ class CurveLoaderGUI:
             values=['(leave alone)'] + list(SENTYPE_SENSOR_TYPES),
             state='readonly')
         sentype_combo.grid(row=31, column=1, sticky='ew', padx=10, pady=4)
+        # The full-scale headroom check keys on THIS box, so a change here
+        # has to re-run the checks like every other header field does.
+        # Without it a 1104 ohm curve could be sent under a 625 ohm input.
+        sentype_combo.bind('<<ComboboxSelected>>',
+                           lambda *_: self._rebuild_curve())
+        self.sentype_var.trace_add('write', lambda *_: self._rebuild_curve())
         ttk.Label(
             frame,
             text=("Two different lists, two different commands. The curve\n"
@@ -2985,7 +3060,7 @@ class CurveLoaderGUI:
             row=5, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
         ttk.Label(
             self.advanced_frame,
-            text=("Twenty-one checks on the file readers, the unit maths, "
+            text=("Twenty-six checks on the file readers, the unit maths, "
                   "the two sensor-type\nlists and the readback classifier, "
                   "run on made-up data. Worth a press after\nany edit to "
                   "this file, and before a session on a cold cryostat."),
@@ -3203,6 +3278,14 @@ class CurveLoaderGUI:
             self.send_btn.config(state=state)
         except Exception:
             pass
+        # Disconnect under a running job leaves a curve half written, so the
+        # button goes grey with the rest and comes back only if connected.
+        try:
+            self.disconnect_btn.config(
+                state='disabled' if busy or not self.is_connected
+                else 'normal')
+        except Exception:
+            pass
 
     # -----------------------------------------------------------------------
     # STEP 1 AND 2: LOAD AND BUILD
@@ -3289,8 +3372,18 @@ class CurveLoaderGUI:
             self.units_var.set(
                 'LOGOHM' if source['units'] in ('OHMS', 'LOGOHM')
                 else source['units'])
-            if not self.name_var.get().strip():
-                self.name_var.set(self._suggest_name(name, source['meta']))
+            # The name follows the file unless the operator has typed their
+            # own: X17681.340 loaded after X17680.340 must not go into the
+            # instrument labelled X17680.
+            suggested = self._suggest_name(name, source['meta'])
+            current_name = self.name_var.get().strip()
+            if not current_name or current_name == getattr(
+                    self, '_suggested_name', None):
+                self.name_var.set(suggested)
+            elif current_name != suggested:
+                self.log(f"  The name field still says '{current_name}'; "
+                         f"this file would suggest '{suggested}'. Check it.")
+            self._suggested_name = suggested
             if 'stated_multiplier' in source['meta']:
                 self.multiplier_var.set(
                     fmt6(source['meta']['stated_multiplier']))
@@ -3443,7 +3536,7 @@ class CurveLoaderGUI:
                        "an index the scan calls an empty user slot, or "
                        "switch how the CALCUR index is interpreted.")
             return None
-        if not self._offset_is_confirmed():
+        if not self.table_map:
             if not messagebox.askyesno(
                     "Table Not Mapped",
                     "The Master Sensor Table has not been mapped in this "
@@ -3620,7 +3713,12 @@ class CurveLoaderGUI:
                            "says what to try next. Nothing usable is in the "
                            "slot.")
                 return
-            best = landed[0]
+            # A block that landed with its type substituted is not a win:
+            # prefer the candidate the firmware kept as sent, and fall back
+            # to the first that landed only if none did.
+            best = next((row for row in landed
+                         if str(row[1]).strip().upper() == row[0].upper()),
+                        landed[0])
             self.log(f"  Use '{best[0]}' in the curve type box. The "
                      f"instrument stored it as '{best[1]}'.")
             if best[1] and best[1].strip().lower() in \
@@ -3725,8 +3823,9 @@ class CurveLoaderGUI:
                     self.second_file_label.config(
                         text=(f"{second_name}: adds nothing, every point is "
                               "inside the main curve."))
-        except CurveFileError as exc:
-            self.curve_errors = [str(exc)]
+        except (CurveFileError, OverflowError) as exc:
+            self.curve_errors = [str(exc) or "A reading is too large to "
+                                 "convert between OHMS and LOGOHM."]
             self._render_summary()
             return
 
@@ -3930,6 +4029,11 @@ class CurveLoaderGUI:
     # -----------------------------------------------------------------------
 
     def _scan_visa(self):
+        if self.busy:
+            self.log("Not scanning: an instrument operation is still "
+                     "running. A scan would open a second session to the "
+                     "same address in the middle of it.")
+            return
         self.log("Scanning for VISA instruments...")
         try:
             resources = list(self.backend.scan_resources())
@@ -3960,6 +4064,10 @@ class CurveLoaderGUI:
             self.log("WARNING: no Cryo-con found on the bus.")
 
     def _do_connect(self):
+        if self.busy:
+            self.log("Not connecting: an instrument operation is still "
+                     "running.")
+            return
         address = self.visa_cb.get()
         if not address:
             messagebox.showerror("No Address",
@@ -3985,6 +4093,11 @@ class CurveLoaderGUI:
                                  f"Could not connect to {address}:\n{exc}")
 
     def _do_disconnect(self):
+        if self.busy:
+            self.log("Not disconnecting: an instrument operation is still "
+                     "running. Closing the session under it would leave a "
+                     "curve half written. Wait for it to finish.")
+            return
         self.log("Disconnecting (non-destructive)...")
         self.backend.disconnect()
         self.is_connected = False
@@ -4091,6 +4204,9 @@ class CurveLoaderGUI:
 
         slot = self._slot_index(self.slot_var.get())
         senix = self._senix_for(slot)
+        calcur_index = self._check_target_before_send(slot)
+        if calcur_index is None:
+            return
         warning_text = ""
         if self.curve_warnings:
             warning_text = ("\n\nThere are warnings on this curve:\n  - " +
@@ -4110,9 +4226,6 @@ class CurveLoaderGUI:
             self.log("Send cancelled.")
             return
 
-        calcur_index = self._check_target_before_send(slot)
-        if calcur_index is None:
-            return
         lines = list(self.curve_lines)
         points = list(self.curve_points)
         ending = LINE_ENDINGS[self.ending_var.get()]
@@ -4224,6 +4337,11 @@ class CurveLoaderGUI:
             self.log("VERIFY FAILED: the instrument sent nothing back. The "
                      "curve may not have been stored. Check the front panel "
                      "(Sensors key) before using this sensor.")
+            self._post('dialog', 'error', "Curve Not Verified",
+                       f"CALCUR? {index} answered nothing. The curve may not "
+                       "have been stored. Nothing has confirmed what the "
+                       "instrument holds; check the front panel (Sensors "
+                       "key) before using this sensor.")
             return 'empty'
         try:
             header, read_points = parse_crv_text(text, f"slot {slot}")
@@ -4231,6 +4349,10 @@ class CurveLoaderGUI:
             self.log(f"VERIFY FAILED: the reply could not be read as a "
                      f"curve: {exc}")
             self.log(f"  Raw reply, first 400 characters:\n{text[:400]}")
+            self._post('dialog', 'error', "Curve Not Verified",
+                       f"CALCUR? {index} answered, but not with a readable "
+                       f"curve: {exc}\n\nThe raw reply is in the console. "
+                       "Nothing has confirmed what the instrument holds.")
             return 'unreadable'
 
         self.log(f"  The instrument reports: name '{header['name']}', type "
@@ -4881,7 +5003,7 @@ def _selftest_cases():
                       'problems': []}
         verdict, _, advice = classify_verify(expected, header, comparison)
         check(verdict == 'type_only', verdict)
-        check('ACR' in advice, advice)
+        check('type probe' in advice, advice)
 
     # -- 16: a good readback verifies -------------------------------------
     def case_classify_verified():
@@ -4917,6 +5039,56 @@ def _selftest_cases():
                                read_texts=[("1.64520000", "325.000")])
         check(not tight['matched'], "an under-printed value passed a tight "
                                     "tolerance")
+        # REGRESSION (2 Sep 2026): a point converted from ohms to log ohms
+        # carries fifteen digits; fmt6() sent six; the instrument echoed
+        # those six. Judged against the fifteen-digit float the gap was up
+        # to half a unit in the sixth digit, over the tolerance the printed
+        # reply allows, and a correct transfer read as "points differ" with
+        # a problem line whose two sides looked identical.
+        converted = [(3.5913, math.log10(3901.2345678)),      # 3.59125...
+                     (3.75, math.log10(3550.987654))]         # 3.55035...
+        echoed = [(3.5913, float(fmt6(converted[0][1]))),
+                  (3.75, float(fmt6(converted[1][1])))]
+        texts = [(fmt6(converted[0][1]), "3.5913"),
+                 (fmt6(converted[1][1]), "3.75")]
+        result = compare_curves(converted, echoed, read_texts=texts)
+        check(result['matched'], f"a six-digit echo of a fifteen-digit "
+                                 f"float must match: {result['problems']}")
+        # 'Diode' echoed as 'SiDiode' is the firmware's spelling, not the
+        # substitution: a correct diode transfer must verify.
+        fields = compare_headers(
+            {'name': 'DT-670', 'sensor_type': 'Diode',
+             'multiplier': '1.0', 'units': 'VOLTS'},
+            {'name': 'DT-670', 'sensor_type': 'SiDiode',
+             'multiplier': 1.0, 'units': 'VOLTS'})
+        check(fields['sensor_type'][2], "SiDiode is Diode in this firmware")
+        # ... while ACR coming back as SiDiode still is the substitution.
+        fields = compare_headers(
+            {'name': 'X17680', 'sensor_type': 'ACR',
+             'multiplier': '-1.0', 'units': 'LOGOHM'},
+            {'name': 'X17680', 'sensor_type': 'SiDiode',
+             'multiplier': -1.0, 'units': 'LOGOHM'})
+        check(not fields['sensor_type'][2], "ACR -> SiDiode is a substitution")
+        # A resend of the same header into a slot that already held it, with
+        # one point line lost, is a POINTS problem, not "nothing written".
+        same = {'name': 'X17680', 'sensor_type': 'R8K10UA',
+                'multiplier': '-1.0', 'units': 'LOGOHM'}
+        held = {'name': 'X17680', 'sensor_type': 'R8K10UA',
+                'multiplier': -1.0, 'units': 'LOGOHM'}
+        verdict, headline, _ = classify_verify(
+            same, held, {'matched': False, 'sent_count': 135,
+                         'read_count': 134, 'problems': ['short']},
+            baseline_header=held)
+        check(verdict == 'points', verdict)
+        check('134 came back' in headline, headline)
+        # And the name survives the instrument's own casing.
+        fields = compare_headers(
+            {'name': 'X17680', 'sensor_type': 'R8K10UA',
+             'multiplier': '-1.0', 'units': 'LOGOHM'},
+            {'name': 'x17680', 'sensor_type': 'r8k10ua',
+             'multiplier': -1.0, 'units': 'logohm'})
+        check(all(matched for _, _, matched in fields.values()),
+              f"casing is not a mismatch: {fields}")
 
     # -- 19: the two vocabularies really are different ----------------------
     def case_vocabularies():
