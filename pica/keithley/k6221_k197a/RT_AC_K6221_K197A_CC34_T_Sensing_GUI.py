@@ -727,7 +727,10 @@ class K6221WaveSource:
 # Nothing in this block writes to the instrument.
 
 # Factory address, used only as a last-resort hint when nothing answers.
-CRYOCON_ADDRESS_HINT = "GPIB0::12"
+# The lab's Cryocon 34 was moved to IEEE address 23 on 3 Sep 2026: 12 is the
+# shared factory default of the Cryocon, the Lakeshore 340/350 and the 6221.
+# Board-independent hint ("::23::INSTR" matches GPIB0 or GPIB1); *IDN? decides.
+CRYOCON_ADDRESS_HINT = "::23::INSTR"
 CRYOCON_IDN_MARKERS = ("CRYOCON", "CRYO-CON", "CRYO CON")
 
 CRYOCON_TIMEOUT_MS = 10000          # per-operation VISA timeout
@@ -1070,7 +1073,7 @@ class ACResistanceCC34SensingGUI:
     MODULE_NAME = MODULE_NAME
     DEFAULT_SOURCE_ADDRESS = "GPIB0::13::INSTR"
     DEFAULT_DETECTOR_ADDRESS = "GPIB0::7::INSTR"
-    DEFAULT_THERMOMETER_ADDRESS = "GPIB0::12::INSTR"
+    DEFAULT_THERMOMETER_ADDRESS = "GPIB0::23::INSTR"  # Cryocon, re-addressed 3 Sep 2026
     LOGO_SIZE = 110
     LEFT_PANEL_WIDTH = 560
 

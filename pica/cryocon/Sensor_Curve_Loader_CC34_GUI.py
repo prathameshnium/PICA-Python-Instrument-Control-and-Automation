@@ -1773,7 +1773,10 @@ def classify_verify(expected, header, comparison, baseline_header=None):
 
 CRYOCON_IDN_MARKERS = ("CRYOCON", "CRYO-CON")
 PROBE_RESOURCE_PREFIXES = ("GPIB", "USB", "TCPIP")
-CRYOCON_ADDRESS_HINT = "GPIB0::12"
+# The lab's Cryocon 34 was moved to IEEE address 23 on 3 Sep 2026: 12 is the
+# shared factory default of the Cryocon, the Lakeshore 340/350 and the 6221.
+# Board-independent hint ("::23::INSTR" matches GPIB0 or GPIB1); *IDN? decides.
+CRYOCON_ADDRESS_HINT = "::23::INSTR"
 IDN_SCAN_TIMEOUT_MS = 1200
 
 CRYOCON_TIMEOUT_MS = 10000          # per-operation VISA timeout

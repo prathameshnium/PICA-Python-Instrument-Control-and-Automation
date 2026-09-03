@@ -172,9 +172,9 @@ def test_every_sibling_carries_the_hardening_helpers():
 
 
 def test_every_sibling_points_at_the_current_cryocon_address():
-    """GPIB0::12 as of 29 Aug 2026, and only ever as a hint."""
+    """Address 23 since 3 Sep 2026 (was GPIB0::12), and only ever as a hint."""
     for key, module in MODULES.items():
-        assert module.CRYOCON_ADDRESS_HINT == "GPIB0::12", key
+        assert module.CRYOCON_ADDRESS_HINT == "::23::INSTR", key
         # Identity, not address, must be what actually decides.
         assert "is_cryocon_idn(identities" in SOURCES[key], key
 

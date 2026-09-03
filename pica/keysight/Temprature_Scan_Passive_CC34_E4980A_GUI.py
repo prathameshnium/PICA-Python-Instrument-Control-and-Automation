@@ -238,7 +238,10 @@ CRYOCON_HEATER_LOOP = '1'
 
 # Factory address, used only as a last-resort hint. Identification is by
 # *IDN? content, so a re-addressed Cryocon is still found.
-CRYOCON_ADDRESS_HINT = "GPIB0::12"
+# The lab's Cryocon 34 was moved to IEEE address 23 on 3 Sep 2026: 12 is the
+# shared factory default of the Cryocon, the Lakeshore 340/350 and the 6221.
+# Board-independent hint ("::23::INSTR" matches GPIB0 or GPIB1); *IDN? decides.
+CRYOCON_ADDRESS_HINT = "::23::INSTR"
 
 # --- SAFETY: what happens at the 400 K limit -----------------------------
 # The Lakeshore version forces RANGE 1,0 and keeps going. The equivalent

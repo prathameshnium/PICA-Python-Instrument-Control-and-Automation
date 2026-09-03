@@ -146,6 +146,12 @@ def describe_reading_status(status):
     return ", ".join(names)
 
 
+# The lab's Model 340 was moved to IEEE address 19 on 3 Sep 2026 so that it
+# no longer collides with the 350, the Cryocon 34 and the Keithley 6221, which
+# all default to 12. A hint only: the IDN check decides.
+LAKESHORE340_ADDRESS_HINT = "::19::"
+
+
 class Lakeshore340_Backend:
     """Passive monitor for the Lake Shore Model 340.
 
@@ -873,9 +879,14 @@ class TempMonitorGUI:
             if resources:
                 self.log(f"Found: {resources}")
                 self.lakeshore_cb['values'] = resources
-                # No address is guessed and nothing is probed: the 340's
-                # GPIB address is whatever the lab set on its front panel.
-                if len(resources) == 1:
+                # Nothing is probed. The lab's 340 is set to address 19
+                # (3 Sep 2026; 12 is shared by the 350, the Cryocon and the
+                # 6221), so ::19:: is pre-selected when present. Any other
+                # address can still be picked by hand.
+                preferred = [r for r in resources if LAKESHORE340_ADDRESS_HINT in r]
+                if preferred:
+                    self.lakeshore_cb.set(preferred[0])
+                elif len(resources) == 1:
                     self.lakeshore_cb.set(resources[0])
             else:
                 self.log("No VISA instruments found.")
