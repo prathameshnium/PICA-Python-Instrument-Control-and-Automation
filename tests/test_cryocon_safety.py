@@ -442,7 +442,9 @@ def test_neither_module_hardcodes_the_address_as_the_only_route():
     """The factory address may be a hint, but identity must decide."""
     for module in (sensing, control):
         assert hasattr(module, "is_cryocon_idn")
-        assert module.CRYOCON_ADDRESS_HINT == "GPIB0::12"
+        # Address 23 since 3 Sep 2026 (12 collided with the L340/L350/6221);
+        # board-independent so a Cryocon on GPIB0 or GPIB1 is both found.
+        assert module.CRYOCON_ADDRESS_HINT == "::23::INSTR"
     assert "identify_resources" in SENSING_SOURCE
     assert "identify_resources" in CONTROL_SOURCE
 

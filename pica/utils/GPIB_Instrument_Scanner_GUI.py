@@ -242,14 +242,33 @@ Confirmed on the bus -- scan of 29 Aug 2026, controller GPIB1
                         overflow ohms reading in 197 dialect. Confirm on the
                         meter's front panel before writing to it.)
 
-Not seen on those scans -- the addresses below are stale hints only
-  • Lakeshore 340:      GPIB0::12::INSTR
-  • Cryocon 34:         GPIB1::12::INSTR  (that address now answers as the
-                        Lakeshore 350, so the Cryocon has been re-addressed or
-                        is off the bus. Take its address from a live scan.)
+Re-addressed on 3 Sep 2026 (set on the front panels; PICA modules pre-select
+these and still confirm by *IDN?)
+  • Lakeshore 340:      GPIB1::19::INSTR   (was 12, the shared factory default
+                        of the 340, the 350, the Cryocon 34 and the 6221)
+  • Cryocon 34:         GPIB1::23::INSTR   (was 12 / GPIB0::12)
+
+Not seen on recent scans -- stale hints only
   • Keithley 6517B:     GPIB1::27::INSTR
   • Keithley 2182:      GPIB0::7::INSTR
   • Keysight E4980A:    GPIB0::17::INSTR
+
+Address book -- who owns what (primary GPIB address)
+  In use / reserved:  4 K2400 alt · 5 Alpha-AN · 7 K2182 · 8 SR830
+                      11 AFG3022B · 12 L350 (factory default, shared)
+                      13 K6221 · 15 old Lakeshore hint · 17 E4980A
+                      19 L340 · 20 K197A · 23 Cryocon 34 · 24 K2400
+                      27 K6517B
+  Never assign:       0 and 21 (GPIB controllers / Keysight adapters use
+                      them), 30 (some adapters), 31 (invalid)
+  Avoid (common factory defaults of instruments a lab acquires later):
+                      1 Tektronix · 9 Agilent 34970A · 10 Agilent 332xx
+                      14 Keithley 6485 · 16 Keithley 2000/2010/2700
+                      18 Keithley 2450 · 22 Agilent 3458A/34401A
+  FREE for future instruments, safest first:
+                      26, 29, 25, 28, 2, 3, 6
+  When you assign one, set it on the instrument's front panel, add it to
+  this list, and to the module that talks to it (its *_ADDRESS_HINT).
 
 Broadband Dielectric
   • Novocontrol Alpha-AN: answers *IDN? but uses its own command set, not

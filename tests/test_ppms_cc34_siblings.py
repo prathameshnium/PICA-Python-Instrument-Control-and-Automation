@@ -418,7 +418,7 @@ def test_both_siblings_carry_the_hardening_helpers():
 
 def test_both_siblings_point_at_the_current_cryocon_address():
     for key, module in CC_MODULES.items():
-        assert module.CRYOCON_ADDRESS_HINT == "GPIB0::12", key
+        assert module.CRYOCON_ADDRESS_HINT == "::23::INSTR", key   # since 3 Sep 2026
 
 
 def test_neither_sibling_selects_the_cryocon_by_the_old_address():

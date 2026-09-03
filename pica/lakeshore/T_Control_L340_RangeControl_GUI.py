@@ -171,16 +171,19 @@ def explain_visa_error(exc):
     text = str(exc)
     if 'VI_ERROR_ALLOC' in text:
         return ("VI_ERROR_ALLOC comes from the VISA driver before any "
-                "command is sent: this VISA library cannot open a session on "
-                "that GPIB board (typically GPIB0 is a USB adapter whose own "
-                "driver, e.g. Keysight IO Libraries, is not installed or is "
-                "not the primary VISA). Try the same address on the other "
-                "board (GPIB1::..). If Keysight Connection Expert can talk to the "
-                "instrument, PyVISA is loading NI-VISA for a Keysight adapter: "
-                "tick 'Keysight VISA as primary VISA' in Connection Expert "
-                "settings, or set PYVISA_LIBRARY=C:\Windows\System32\ktvisa32.dll "
-                "and restart PICA. Then use 'Identify' to see which address "
-                "answers as MODEL340.")
+                "command is sent: the VISA library cannot open a session on "
+                "that GPIB interface. Most often the interface is a STALE entry "
+                "cached by Keysight Connection Expert (an adapter that is no "
+                "longer plugged in): list_resources() still reports it, and "
+                "opening it fails. Remove the dead interface in Connection "
+                "Expert and rescan; the live adapter usually is the other "
+                "board (GPIB1::..). If Connection Expert itself cannot talk "
+                "to the instrument either, PyVISA may be loading NI-VISA for a "
+                "Keysight adapter: tick 'Keysight VISA as primary VISA' in "
+                "Connection Expert settings, or set "
+                "PYVISA_LIBRARY=C:\Windows\System32\ktvisa32.dll and restart "
+                "PICA. Then use 'Identify' to see which address answers as "
+                "MODEL340.")
     if 'VI_ERROR_TMO' in text:
         return ("Timeout: the address exists but nothing answered *IDN?. "
                 "Check the 340 is powered, its IEEE address matches, and no "
@@ -191,6 +194,12 @@ def explain_visa_error(exc):
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
 # -------------------------------------------------------------------------------
+
+# The lab's Model 340 was moved to IEEE address 19 on 3 Sep 2026 so that it
+# no longer collides with the 350, the Cryocon 34 and the Keithley 6221, which
+# all default to 12. A hint only: the IDN check decides.
+LAKESHORE340_ADDRESS_HINT = "::19::"
+
 
 class Lakeshore340_Backend:
     MODEL_TOKENS = ("MODEL340", "MODEL 340")
@@ -1318,7 +1327,14 @@ class TempControlGUI:
             self.log(f"Found: {resources}")
             self.resource_labels = {r: r for r in resources}
             self.ls_cb['values'] = resources
-            if len(resources) == 1:
+            # The lab's 340 is set to address 19 (3 Sep 2026); pre-select
+            # it when present. Identify confirms by *IDN?.
+            preferred = [r for r in resources if LAKESHORE340_ADDRESS_HINT in r]
+            if preferred:
+                self.ls_cb.set(preferred[0])
+                self.log(f"Pre-selected {preferred[0]} (lab address 19). "
+                         "Press Identify to confirm it answers as MODEL340.")
+            elif len(resources) == 1:
                 self.ls_cb.set(resources[0])
             else:
                 self.ls_cb.set('')

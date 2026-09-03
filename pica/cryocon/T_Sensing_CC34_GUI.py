@@ -221,7 +221,10 @@ CRYOCON_INPUT_CHANNELS = ('A', 'B', 'C', 'D')
 
 # Factory address, used only as a last-resort hint. Identification is by
 # *IDN? content, so a re-addressed Cryocon is still found.
-CRYOCON_ADDRESS_HINT = "GPIB0::12"
+# The lab's Cryocon 34 was moved to IEEE address 23 on 3 Sep 2026: 12 is the
+# shared factory default of the Cryocon, the Lakeshore 340/350 and the 6221.
+# Board-independent hint ("::23::INSTR" matches GPIB0 or GPIB1); *IDN? decides.
+CRYOCON_ADDRESS_HINT = "::23::INSTR"
 
 # Short timeout for the identification pass so one silent address cannot
 # stall the whole scan.
