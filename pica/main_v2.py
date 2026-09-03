@@ -793,13 +793,16 @@ CATALOG = [
     {
         'category': "Temperature Utilities",
         'type': "Control Utility",
-        'instruments': "Lakeshore 350 · Cryocon 34",
+        'instruments': "Lakeshore 350 · Lakeshore 340 · Cryocon 34",
         'modules': [
             ("Temperature Ramp (L350)", "Lakeshore Temp Control", "control"),
             ("Step-wise Control (Basic, L350)", "Lakeshore Step Control", "control"),
             ("Step-wise Control (Advanced, L350)", "Lakeshore Step Control (Advanced)", "control"),
             ("Direct Control (L350)", "Lakeshore Direct Control", "control"),
             ("Temperature Monitor (L350)", "Lakeshore Temp Monitor", "sensing"),
+            ("Temperature Ramp with PID zones (L340)", "Lakeshore 340 Temp Control", "control"),
+            ("Direct Control (L340)", "Lakeshore 340 Direct Control", "control"),
+            ("Temperature Monitor (L340)", "Lakeshore 340 Temp Monitor", "sensing"),
             # The two viewers are read-only: they ask the instrument what
             # curves it holds and can send nothing but queries.
             ("Sensor Curve Loader (L340 / L350)",
