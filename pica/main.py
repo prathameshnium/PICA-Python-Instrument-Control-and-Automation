@@ -197,6 +197,11 @@ class PICALauncherApp:
         "Lakeshore Step Control (Advanced)": resource_path("lakeshore/T_Control_L350_Step_GUI_advanced.py"),
         "Lakeshore Direct Control": resource_path("lakeshore/T_Control_L350_DirectControl_GUI.py"),
         "Lakeshore Temp Monitor": resource_path("lakeshore/T_Sensing_L350_GUI.py"),
+        # Model 340 ports: RANGE/HTR? take no loop number, CSET enables the
+        # loop, MODE is 1/2/3, no TLIMIT/OUTMODE. Separate files on purpose.
+        "Lakeshore 340 Temp Control": resource_path("lakeshore/T_Control_L340_RangeControl_GUI.py"),
+        "Lakeshore 340 Direct Control": resource_path("lakeshore/T_Control_L340_DirectControl_GUI.py"),
+        "Lakeshore 340 Temp Monitor": resource_path("lakeshore/T_Sensing_L340_GUI.py"),
         "Lakeshore Sensor Curve Loader": resource_path("lakeshore/Sensor_Curve_Loader_L340_L350_GUI.py"),
         "Cryocon Direct Control": resource_path("cryocon/T_Control_CC34_DirectControl_GUI.py"),
         "Cryocon Temp Monitor": resource_path("cryocon/T_Sensing_CC34_GUI.py"),
