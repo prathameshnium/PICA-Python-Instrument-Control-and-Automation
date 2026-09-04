@@ -221,68 +221,79 @@ class GPIB_Instrument_Scanner_GUI:
 
     def show_address_guide(self):
         """Displays a list of common instrument addresses in the console."""
+        # Address guide shown under the scan. Kept as two ASCII tables so it reads at a
+        # glance in the Consolas console; the background is in these comments.
+        #
+        # Why hints, not facts: any address can be changed from an instrument's front
+        # panel, so modules identify instruments by their *IDN? reply and only use the
+        # address as a pre-selection. Always take the address from the scan itself.
+        #
+        # Provenance of the "seen" column:
+        #   * L350, K6221, K2400, SR830, AFG3022B, K197A: scan of 29 Aug 2026 on GPIB1.
+        #     The AFG3022B answered the 15:31 scan but not the 15:19 one, so it is
+        #     switched on and off at the rack.
+        #   * K197A is PROBABLE only. It has no *IDN?; the 1973A/1972A card hands back
+        #     a pending reading, and 20 answered "OOHM+9.99999E+9" (overflow ohms in
+        #     197 dialect). Confirm on the meter's front panel before writing to it.
+        #   * L340 -> 19 and Cryocon 34 -> 23 were set on the front panels on
+        #     3 Sep 2026. Both used to sit on 12, the factory default they share with
+        #     the L350 and the K6221 (the 340 on GPIB1::12, the Cryocon on GPIB0::12).
+        #     Confirmed on the bus 4 Sep 2026. Keysight Connection Expert keeps the
+        #     old entries in its cache with a red cross; delete them there and re-add
+        #     the new addresses, or its own scans keep reporting them as missing.
+        #   * K6517B, K2182, E4980A have not been seen on recent scans: stale hints.
+        #   * Novocontrol Alpha-AN answers *IDN? but is not SCPI. The v2 launcher
+        #     records its address the first time it sees it and never probes it again.
+        #     If it is on this bus, note its address and leave it alone.
+        #
+        # Buses: GPIB1 is the Keysight GPIB-USB adapter (most of the rack), GPIB0 is
+        # the NI PCI board (E4980A). Connection Expert lists them under those names.
+        #
+        # Reserved / avoid: 0 and 21 are used by GPIB controllers and Keysight
+        # adapters, 30 by some adapters, 31 is invalid. The "avoid" row lists common
+        # factory defaults of instruments a lab tends to acquire later (1 Tektronix,
+        # 9 Agilent 34970A, 10 Agilent 332xx, 14 Keithley 6485, 16 Keithley
+        # 2000/2010/2700, 18 Keithley 2450, 22 Agilent 3458A/34401A).
+        #
+        # When you assign a new address: set it on the front panel, add a row here,
+        # and update the *_ADDRESS_HINT of the module that talks to the instrument.
+        #
+        # A timeout is not an empty address. In the 15:31 scan of 29 Aug 2026 the
+        # 6221, the 197A and the 2400 all returned VI_ERROR_TMO while the L350 and
+        # SR830 answered: an instrument already held open by a running PICA module,
+        # or left mid-transfer, times out here. Close the other program and rescan
+        # before concluding anything has moved.
         guide_text = """
---- PICA Instrument Address Guide ---
-THESE ARE HINTS, NOT FACTS. Any address on the rack can be changed from an
-instrument's front panel. Always take the address from the scan above, never
-from this list. PICA's modules identify instruments from their *IDN? reply
-rather than their address for exactly this reason.
+--- PICA Instrument Address Guide (hints, not facts: trust the scan above) ---
 
-Confirmed on the bus -- scan of 29 Aug 2026, controller GPIB1
-  • Lakeshore 350:      GPIB1::12::INSTR   (LSCI,MODEL350,...,1.7)
-  • Keithley 6221:      GPIB1::13::INSTR   (...,MODEL 6221,...,D04 /700x)
-  • Keithley 2400:      GPIB1::24::INSTR   (...,MODEL 2400,...,C20 /H/H)
-  • SRS SR830 Lock-in:  GPIB1::8::INSTR    (Stanford_Research_Systems,SR830)
-  • Tektronix AFG3022B: GPIB1::11::INSTR   (function generator; it answered
-                        the 15:31 scan but not the 15:19 one, so it is
-                        switched on and off at the rack.)
-  • Keithley 197A DMM:  GPIB1::20::INSTR   (PROBABLE. It has no *IDN? -- the
-                        1973A/1972A card just hands back a pending reading,
-                        and this address answered "OOHM+9.99999E+9", i.e. an
-                        overflow ohms reading in 197 dialect. Confirm on the
-                        meter's front panel before writing to it.)
++------+----------------------+-------+----------------------+--------------------+
+| Addr | Instrument           | Bus   | *IDN? / reply        | Seen               |
++------+----------------------+-------+----------------------+--------------------+
+|   8  | SRS SR830 lock-in    | GPIB1 | Stanford_Research..  | 29 Aug 2026        |
+|  11  | Tektronix AFG3022B   | GPIB1 | TEKTRONIX,AFG3022B   | 29 Aug 2026 (*)    |
+|  12  | Lakeshore 350        | GPIB1 | LSCI,MODEL350        | 29 Aug 2026        |
+|  13  | Keithley 6221        | GPIB1 | ..MODEL 6221..       | 29 Aug 2026        |
+|  19  | Lakeshore 340        | GPIB1 | LSCI,MODEL340        | 4 Sep 2026 (was 12)|
+|  20  | Keithley 197A DMM    | GPIB1 | none; reading only   | 29 Aug 2026 (?)    |
+|  23  | Cryocon 34           | GPIB1 | Cryocon Model 34     | 4 Sep 2026 (was 12)|
+|  24  | Keithley 2400        | GPIB1 | ..MODEL 2400..       | 29 Aug 2026        |
+|   4  | Keithley 2400 (alt)  |   -   | ..MODEL 2400..       | hint only          |
+|   5  | Novocontrol Alpha-AN |   -   | not SCPI: never probe| hint only          |
+|   7  | Keithley 2182        | GPIB0 | ..MODEL 2182..       | stale hint         |
+|  17  | Keysight E4980A      | GPIB0 | ..E4980A..           | stale hint         |
+|  27  | Keithley 6517B       | GPIB1 | ..MODEL 6517B..      | stale hint         |
++------+----------------------+-------+----------------------+--------------------+
+ (*) on/off at the rack   (?) probable, no *IDN?; confirm on the front panel
+ GPIB1 = Keysight GPIB-USB adapter, GPIB0 = NI PCI board.
 
-Re-addressed on 3 Sep 2026 (set on the front panels; PICA modules pre-select
-these and still confirm by *IDN?)
-  • Lakeshore 340:      GPIB1::19::INSTR   (was 12, the shared factory default
-                        of the 340, the 350, the Cryocon 34 and the 6221)
-  • Cryocon 34:         GPIB1::23::INSTR   (was 12 / GPIB0::12)
++--------------+-------------------------------------------------------------+
+| Never assign | 0  21  30  31                                               |
+| Avoid        | 1  9  10  14  16  18  22   (other makers' factory defaults) |
+| Free         | 26  29  25  28  2  3  6    (safest first)                   |
++--------------+-------------------------------------------------------------+
+ New address: set it on the front panel, add a row here, update the module's
+ *_ADDRESS_HINT.  A VI_ERROR_TMO is a busy instrument, not an empty address.
 
-Not seen on recent scans -- stale hints only
-  • Keithley 6517B:     GPIB1::27::INSTR
-  • Keithley 2182:      GPIB0::7::INSTR
-  • Keysight E4980A:    GPIB0::17::INSTR
-
-Address book -- who owns what (primary GPIB address)
-  In use / reserved:  4 K2400 alt · 5 Alpha-AN · 7 K2182 · 8 SR830
-                      11 AFG3022B · 12 L350 (factory default, shared)
-                      13 K6221 · 15 old Lakeshore hint · 17 E4980A
-                      19 L340 · 20 K197A · 23 Cryocon 34 · 24 K2400
-                      27 K6517B
-  Never assign:       0 and 21 (GPIB controllers / Keysight adapters use
-                      them), 30 (some adapters), 31 (invalid)
-  Avoid (common factory defaults of instruments a lab acquires later):
-                      1 Tektronix · 9 Agilent 34970A · 10 Agilent 332xx
-                      14 Keithley 6485 · 16 Keithley 2000/2010/2700
-                      18 Keithley 2450 · 22 Agilent 3458A/34401A
-  FREE for future instruments, safest first:
-                      26, 29, 25, 28, 2, 3, 6
-  When you assign one, set it on the instrument's front panel, add it to
-  this list, and to the module that talks to it (its *_ADDRESS_HINT).
-
-Broadband Dielectric
-  • Novocontrol Alpha-AN: answers *IDN? but uses its own command set, not
-                        SCPI. The v2 launcher records its address the first
-                        time it sees it and never probes it again. If it is
-                        on this bus, note its address and leave it alone.
-
-A timeout is not an empty address. In the 15:31 scan of 29 Aug 2026 the 6221,
-the 197A and the 2400 all returned VI_ERROR_TMO while the L350 and SR830
-answered normally: an instrument already held open by a running PICA module,
-or left mid-transfer, times out here. Close the other program and rescan
-before concluding anything has moved.
-
-\n---------------------------------------------
 """
         self.log(guide_text, add_timestamp=False)
 
