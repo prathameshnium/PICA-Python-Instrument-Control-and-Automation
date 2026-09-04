@@ -2498,6 +2498,10 @@ class DirectControlGUI:
         """Start the 1-second polling loop."""
         if not self._require_connection():
             return
+        if self.polling_active:
+            # Already running: a second Start would queue a second after()
+            # chain on the same VISA session (Cryocon hang, 4 Sep 2026).
+            return
         self.polling_active = True
         self.poll_btn.config(text="Stop Polling")
         self.log("Live status polling started (1s interval).")
@@ -2506,12 +2510,20 @@ class DirectControlGUI:
     def _stop_polling(self):
         """Stop the polling loop."""
         self.polling_active = False
+        after_id = getattr(self, '_poll_after_id', None)
+        if after_id is not None:
+            self._poll_after_id = None
+            try:
+                self.root.after_cancel(after_id)
+            except Exception:
+                pass
         self.poll_btn.config(text="Start Polling")
         if self.is_connected:
             self.log("Live status polling stopped.")
 
     def _poll_loop(self):
         """Polling loop that queries instrument status every 1 second."""
+        self._poll_after_id = None
         if not self.polling_active or not self.is_connected:
             return
         try:
@@ -2611,7 +2623,7 @@ class DirectControlGUI:
 
         # Schedule next poll
         if self.polling_active:
-            self.root.after(1000, self._poll_loop)
+            self._poll_after_id = self.root.after(1000, self._poll_loop)
 
     # -----------------------------------------------------------------------
     # WINDOW CLOSE

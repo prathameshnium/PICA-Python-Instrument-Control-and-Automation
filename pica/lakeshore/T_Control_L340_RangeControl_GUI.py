@@ -181,7 +181,7 @@ def explain_visa_error(exc):
                 "to the instrument either, PyVISA may be loading NI-VISA for a "
                 "Keysight adapter: tick 'Keysight VISA as primary VISA' in "
                 "Connection Expert settings, or set "
-                "PYVISA_LIBRARY=C:\Windows\System32\ktvisa32.dll and restart "
+                "PYVISA_LIBRARY=C:\\Windows\\System32\\ktvisa32.dll and restart "
                 "PICA. Then use 'Identify' to see which address answers as "
                 "MODEL340.")
     if 'VI_ERROR_TMO' in text:

@@ -3108,8 +3108,17 @@ class DirectControlGUI:
             self._start_polling()
 
     def _start_polling(self):
-        """Start the 1-second polling loop."""
+        """Start the staged polling loop (idempotent).
+
+        v1.2, 4 Sep 2026: a second Start while a tick was still queued
+        used to leave two after() chains alive on one VISA session. Each
+        chain blocks the Tk thread for its stage, so the window stopped
+        repainting and looked hung. Start now refuses while active, and
+        Stop cancels the queued tick instead of only clearing the flag.
+        """
         if not self._require_connection():
+            return
+        if self.polling_active:
             return
         self.polling_active = True
         self._poll_stage = 0
@@ -3121,8 +3130,15 @@ class DirectControlGUI:
         self._poll_loop()
 
     def _stop_polling(self):
-        """Stop the polling loop."""
+        """Stop the polling loop and cancel any queued tick."""
         self.polling_active = False
+        after_id = getattr(self, '_poll_after_id', None)
+        if after_id is not None:
+            self._poll_after_id = None
+            try:
+                self.root.after_cancel(after_id)
+            except Exception:
+                pass
         self.poll_btn.config(text="Start Polling")
         if self.is_connected:
             self.log("Live status polling stopped.")
@@ -3140,6 +3156,7 @@ class DirectControlGUI:
         firmware revision refusing the next command. Each tick now refreshes
         one group and the panel cycles through them.
         """
+        self._poll_after_id = None
         if not self.polling_active or not self.is_connected:
             return
         stage = getattr(self, '_poll_stage', 0) % self.POLL_STAGE_COUNT
@@ -3148,8 +3165,22 @@ class DirectControlGUI:
             self._poll_stage_dispatch(stage)
         except Exception as e:
             self.log(f"Polling error: {e}")
+            # A bus error (VI_ERROR_TMO and friends) costs a full VISA
+            # timeout per query, and stage 0 alone is eight queries: keep
+            # rescheduling and the window freezes for over a minute per
+            # tick. Stop the loop; the operator restarts it once the bus
+            # answers again. A sensor fault ('-------', '.......') is a
+            # CryoconStatusError handled inside the stage and never lands
+            # here.
+            if pyvisa is not None and isinstance(e, pyvisa.VisaIOError):
+                self.log("Live status polling stopped: the instrument did "
+                         "not answer. Check the bus, then press Start "
+                         "Polling again.")
+                self._stop_polling()
+                return
         if self.polling_active:
-            self.root.after(self.POLL_STAGE_MS, self._poll_loop)
+            self._poll_after_id = self.root.after(self.POLL_STAGE_MS,
+                                                  self._poll_loop)
 
     # -- polling stages -----------------------------------------------------
 
@@ -3306,8 +3337,17 @@ class DirectControlGUI:
     # -----------------------------------------------------------------------
 
     def _on_closing(self):
-        """Handle window close event."""
+        """Handle window close event.
+
+        Polling is stopped BEFORE the confirmation dialog: askyesno runs a
+        nested Tk event loop, so queued poll ticks kept firing (and
+        blocking on VISA) behind the dialog, which is one way the window
+        appeared hung while closing. If the operator cancels, polling
+        resumes.
+        """
         if self.is_connected:
+            was_polling = self.polling_active
+            self._stop_polling()
             if messagebox.askyesno(
                     "Exit",
                     "You are still connected to the instrument.\n\n"
@@ -3315,9 +3355,10 @@ class DirectControlGUI:
                     "instrument will retain all settings and "
                     "continue controlling.\n\n"
                     "Disconnect and exit?"):
-                self._stop_polling()
                 self.backend.disconnect()
                 self.root.destroy()
+            elif was_polling:
+                self._start_polling()
         else:
             self.root.destroy()
 

@@ -805,13 +805,13 @@ CATALOG = [
         'instruments': "Lakeshore 350 · Lakeshore 340 · Cryocon 34",
         'modules': [
             ("Temperature Ramp (L350)", "Lakeshore Temp Control", "control"),
+            ("Temperature Ramp (L340)", "Lakeshore 340 Temp Control", "control"),
             ("Step-wise Control (Basic, L350)", "Lakeshore Step Control", "control"),
             ("Step-wise Control (Advanced, L350)", "Lakeshore Step Control (Advanced)", "control"),
             ("Step-wise Control (Basic, L340)", "Lakeshore 340 Step Control", "control"),
             ("Step-wise Control (Advanced, L340)", "Lakeshore 340 Step Control (Advanced)", "control"),
             ("Direct Control (L350)", "Lakeshore Direct Control", "control"),
             ("Temperature Monitor (L350)", "Lakeshore Temp Monitor", "sensing"),
-            ("Temperature Ramp with PID zones (L340)", "Lakeshore 340 Temp Control", "control"),
             ("Direct Control (L340)", "Lakeshore 340 Direct Control", "control"),
             ("Temperature Monitor (L340)", "Lakeshore 340 Temp Monitor", "sensing"),
             # The two viewers are read-only: they ask the instrument what
@@ -1323,7 +1323,7 @@ QUICK_CATALOG = [
 # The two temperature controllers, which are what distinguishes one protocol
 # from the next within a module: an I-V sweep uses neither, a T Control scan
 # drives the Lakeshore, a T Sensing scan reads whichever one its script names.
-TEMPERATURE_CHIPS = ("Lakeshore 350", "Cryocon 34")
+TEMPERATURE_CHIPS = ("Lakeshore 350", "Lakeshore 340", "Cryocon 34")
 
 
 def _protocol_instruments(module, proto):
@@ -1342,9 +1342,13 @@ def _protocol_instruments(module, proto):
         # No temperature dimension at all -- an I-V or fixed-T sweep.
         return [n for n in names if n not in TEMPERATURE_CHIPS]
     key = proto['key'].upper()
-    cryocon = "CC34" in key or "CRYOCON" in key
-    drop = "Lakeshore 350" if cryocon else "Cryocon 34"
-    return [n for n in names if n != drop]
+    if "CC34" in key or "CRYOCON" in key:
+        keep = "Cryocon 34"
+    elif "L340" in key or "LAKESHORE 340" in key:
+        keep = "Lakeshore 340"
+    else:
+        keep = "Lakeshore 350"
+    return [n for n in names if n not in TEMPERATURE_CHIPS or n == keep]
 
 
 def _run_legacy_launcher():
