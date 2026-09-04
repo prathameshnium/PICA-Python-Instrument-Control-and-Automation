@@ -2858,6 +2858,25 @@ class PICALauncherV2:
                  bg=self.CLR_APP, fg=self.CLR_TEXT_DIM,
                  font=self.FONT_BASE).pack(anchor='w')
 
+        # The same two icon buttons the main window carries in its top-right
+        # corner, in the same order with the same tooltips: the Plotter and
+        # the standalone SCPI (VISA/GPIB) scanner are what gets reached for at
+        # the start and the end of a session, and this window is where someone
+        # who knows the rack spends their time. Packed before the title block
+        # so they sit in the far corner.
+        adv_tools = tk.Frame(head, bg=self.CLR_APP)
+        adv_tools.pack(side='right', fill='y', padx=(14, 0))
+        adv_plotter = ttk.Button(adv_tools, text="📈", width=3,
+                                 style='Icon.TButton',
+                                 command=launch_plotter_utility)
+        adv_plotter.pack(side='right', padx=(2, 0))
+        self._add_tooltip(adv_plotter, "Plotter Utility")
+        adv_scanner = ttk.Button(adv_tools, text="📟", width=3,
+                                 style='Icon.TButton',
+                                 command=self._launch_gpib_scanner)
+        adv_scanner.pack(side='right', padx=(0, 2))
+        self._add_tooltip(adv_scanner, "VISA/GPIB Scanner")
+
         title_blk = tk.Frame(head, bg=self.CLR_APP)
         title_blk.pack(side='right', fill='y')
         tk.Label(title_blk, text="Advanced Options", bg=self.CLR_APP,
