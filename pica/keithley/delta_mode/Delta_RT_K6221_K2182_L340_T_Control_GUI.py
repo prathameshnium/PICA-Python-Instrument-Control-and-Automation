@@ -473,6 +473,7 @@ class Advanced_Delta_GUI:
         self.log_scale_var = tk.BooleanVar(master=self.root, value=True)
         self.current_heater_range = 'off'
         self.last_htr_error = 0
+        self.limits = None
         self.logo_image = None
         self.visa_queue = queue.Queue()
 
@@ -1071,6 +1072,10 @@ class Advanced_Delta_GUI:
             # CSET 1,<input>,1,1 / CMODE 1,1 / RAMP 1,0,0 and CLIMIT? 1.
             # An out-of-limit target is refused before anything heats.
             self.last_htr_error = 0
+            # Unknown until the first stabilisation poll writes it: the
+            # front panel may have left any range on, so the first poll
+            # always sends RANGE.
+            self.current_heater_range = None
             self.limits = self.backend.initialize_instruments(
                 self.params['keithley_visa'],
                 self.params['lakeshore_visa'],
@@ -1221,7 +1226,7 @@ class Advanced_Delta_GUI:
             self.log("Lakeshore 340 heater error cleared (HTRST? = 0).")
             self._set_ls_banner(
                 f"Lakeshore 340: loop 1 on {self.backend.control_input} | "
-                f"heater {self.current_heater_range}")
+                f"heater {self.current_heater_range or 'unknown'}")
 
     def _stabilization_loop(self):
         if not self.is_stabilizing:
@@ -1428,9 +1433,10 @@ class Advanced_Delta_GUI:
                 self.log(f"Found: {result}")
                 self.lakeshore_cb['values'] = result
                 self.keithley_cb['values'] = result
-                # Auto-select common addresses
+                # Auto-select common addresses: the lab's 340 sits at 19
+                # (never 12 or 15, those are the 350 / CC34 / 6221).
                 for res in result:
-                    if "GPIB1::15" in res:
+                    if LAKESHORE340_ADDRESS_HINT in res:
                         self.lakeshore_cb.set(res)
                     if "GPIB0::13" in res:
                         self.keithley_cb.set(res)

@@ -843,13 +843,21 @@ class PyroelectricAppGUI:
 
         Label(
             frame,
-            text="Lakeshore 350 VISA:").grid(
+            text="Lakeshore 340 VISA:").grid(
             row=6,
             column=0,
-            columnspan=2,
             padx=10,
             pady=pady_val,
             sticky='w')
+        # Lake Shore 340 control input (A/B; C/D with the 3462 card).
+        input_frame = ttk.Frame(frame)
+        input_frame.grid(row=6, column=1, padx=10, pady=pady_val, sticky='e')
+        Label(input_frame, text="Input:").pack(side='left', padx=(0, 5))
+        self.input_var = tk.StringVar(master=self.root, value='A')
+        self.input_cb = ttk.Combobox(
+            input_frame, textvariable=self.input_var, font=self.FONT_BASE,
+            values=['A', 'B', 'C', 'D'], state='readonly', width=4)
+        self.input_cb.pack(side='left')
         self.lakeshore_combobox = ttk.Combobox(
             frame, font=self.FONT_BASE, state='readonly')
         self.lakeshore_combobox.grid(
@@ -1027,38 +1035,69 @@ class PyroelectricAppGUI:
     def _handle_worker_thread_completion(self):
         pass
 
-    def _handle_worker_thread_error(self, exception):
-        self.log(f"RUNTIME ERROR in worker thread: {traceback.format_exc()}")
-        self.stop_measurement("runtime error")
-        messagebox.showerror(
-            "Runtime Error", "An error occurred. Check console.")
+    def _beep(self):
+        try:
+            self.root.bell()
+        except Exception:
+            pass
 
-    def _process_stabilizing_state(self, current_temp, params):
+    def _handle_worker_thread_error(self, exception):
+        # Unattended-safe: no dialog. Heater off, console, title, beep.
+        self.log(f"RUNTIME ERROR in worker thread: {exception}")
+        self.stop_measurement("stopped after a runtime error")
+        self.ax_main.set_title(
+            "ERROR: measurement stopped, heater off (see console)",
+            fontweight='bold')
+        self.canvas.draw_idle()
+        self._beep()
+
+    def _check_heater_status(self, htr_code, htr_text):
+        """HTRST? each sample; log once on change, beep on error, no dialog."""
+        if htr_code != self.last_htr_error:
+            self.last_htr_error = htr_code
+            if htr_code != 0:
+                self.log(f"HEATER ERROR HTRST? {htr_code:02d}: {htr_text}")
+                self._beep()
+            else:
+                self.log("Heater error cleared (HTRST? 00).")
+
+    def _process_stabilizing_state(self, current_temp, params, rd_text=""):
+        if rd_text:
+            # Not a valid sample: never drives the stabilisation test.
+            self.log(f"Stabilizing... RDGST {self.backend.control_input}: "
+                     f"{rd_text} (reading {current_temp:.4f} K ignored)")
+            return
         self.log(
             f"Stabilizing... Current Temp: {current_temp:.4f} K "
             f"(Target: {params['start_temp']} K)")
         if abs(current_temp - params['start_temp']) < 5:
             self.log(
-                f"Stabilized at {params['start_temp']} K. Starting ramp.")
+                f"Stabilized at {params['start_temp']} K. Starting ramp "
+                "(setpoint pinned to the present temperature first).")
             self.experiment_state = 'ramping'
             self.backend.start_ramp()
             self.start_time = time.time()
 
-    def _process_ramping_state(self, current_temp, current_val, params):
+    def _process_ramping_state(self, current_temp, current_val, params,
+                               rd_text=""):
         elapsed_time = time.time() - self.start_time
         self._log_and_save_ramping_data(
-            elapsed_time, current_temp, current_val)
+            elapsed_time, current_temp, current_val, rd_text)
         self._update_data_storage_and_plots(
             elapsed_time, current_temp, current_val)
-        self._check_ramping_completion_conditions(current_temp, params)
+        if not rd_text:
+            # Only a valid reading may end the ramp.
+            self._check_ramping_completion_conditions(current_temp, params)
 
     def _log_and_save_ramping_data(
-            self, elapsed_time, current_temp, current_val):
+            self, elapsed_time, current_temp, current_val, rd_text=""):
         log_msg = (
             f"Time: {elapsed_time:.1f}s | "
             f"Temp: {current_temp:.2f}K | "
             f"Current: {current_val:.2e}A"
         )
+        if rd_text:
+            log_msg += f" | RDGST {self.backend.control_input}: {rd_text}"
         self.log(log_msg)
         with open(self.data_filepath, 'a', newline='') as f:
             f.write(f"{elapsed_time:.2f},{current_temp:.4f},{current_val}\n")
@@ -1103,7 +1142,8 @@ class PyroelectricAppGUI:
                 'safety_cutoff': float(
                     self.entries["Safety Cutoff"].get()),
                 'lakeshore_visa': self.lakeshore_combobox.get(),
-                'keithley_visa': self.keithley_combobox.get()
+                'keithley_visa': self.keithley_combobox.get(),
+                'input': self.input_var.get()
             }
             if not all([params['sample_name'],
                         params['lakeshore_visa'],
@@ -1119,8 +1159,40 @@ class PyroelectricAppGUI:
                     "(Start < End < Cutoff).")
             if params['rate'] <= 0:
                 raise ValueError("Ramp rate must be a positive number.")
+            if not (0.1 <= params['rate'] <= 100):
+                raise ValueError(
+                    "Ramp rate must be 0.1-100 K/min on a Model 340.")
 
             self.backend.initialize_instruments(params)
+            limits = self.backend.limits
+            cur = self.backend.MAX_CURRENT_CODES.get(
+                limits['max_current'], f"code {limits['max_current']}")
+            self.log(f"Lakeshore: {self.backend.lakeshore_idn}")
+            self.log(f"Loop 1 enabled on input {self.backend.control_input} "
+                     f"(kelvin), Manual PID. CLIMIT: setpoint <= "
+                     f"{limits['sp_limit']:g} K, max current {cur}, "
+                     f"max range {limits['max_range']}.")
+            try:
+                if params['end_temp'] > limits['sp_limit']:
+                    raise ValueError(
+                        f"End temperature {params['end_temp']:g} K is above "
+                        f"the 340's setpoint limit of {limits['sp_limit']:g} K "
+                        "(CLIMIT). Raise the limit in the Direct Control "
+                        "module first.")
+                if self.backend.RAMP_RANGE > limits['max_range']:
+                    raise ValueError(
+                        f"This module heats on range {self.backend.RAMP_RANGE}, "
+                        f"but the 340's max range is {limits['max_range']} "
+                        "(CLIMIT). Raise the limit first.")
+                code, text = self.backend.get_heater_status()
+                if code != 0:
+                    raise RuntimeError(
+                        f"Heater error HTRST? {code:02d}: {text}. Fix the "
+                        "heater circuit before ramping.")
+            except Exception:
+                self.backend.close_instruments()
+                raise
+            self.last_htr_error = 0
             self.log(
                 f"Backend initialized for sample: "
                 f"{params['sample_name']}")
@@ -1189,19 +1261,23 @@ class PyroelectricAppGUI:
                     is not self.measurement_thread):
                 self.measurement_thread.join(timeout=3.0)
             self.backend.close_instruments()
-            self.log("Instrument connections closed.")
-            messagebox.showinfo(
-                "Info", f"Measurement stopped.\nReason: {reason}")
+            # Unattended-safe: no dialog after a run. Console + title + beep.
+            self.log(f"Instrument connections closed. Heater is OFF. "
+                     f"Reason: {reason}.")
+            self.ax_main.set_title(f"Measurement {reason}", fontweight='bold')
+            self.canvas.draw_idle()
+            self._beep()
 
     def _measurement_worker(self):
         """Worker thread to perform measurements and put data into a
         queue."""
         while self.is_running:
             try:
-                current_temp, current_val = \
+                current_temp, current_val, rd_status, htr_code, htr_text = \
                     self.backend.get_measurement()
                 self.data_queue.put(
-                    (current_temp, current_val, self.experiment_state))
+                    (current_temp, current_val, self.experiment_state,
+                     rd_status, htr_code, htr_text))
                 time.sleep(2)  # Control the measurement frequency
             except Exception as e:
                 self.data_queue.put(e)
@@ -1221,14 +1297,18 @@ class PyroelectricAppGUI:
                     self._handle_worker_thread_error(data)
                     return
 
-                current_temp, current_val, state = data
+                (current_temp, current_val, state,
+                 rd_status, htr_code, htr_text) = data
                 params = self.backend.params
+                rd_text = describe_reading_status(rd_status)
+                self._check_heater_status(htr_code, htr_text)
 
                 if state == 'stabilizing':
-                    self._process_stabilizing_state(current_temp, params)
+                    self._process_stabilizing_state(
+                        current_temp, params, rd_text)
                 elif state == 'ramping':
                     self._process_ramping_state(
-                        current_temp, current_val, params)
+                        current_temp, current_val, params, rd_text)
 
         except queue.Empty:
             pass
@@ -1283,7 +1363,9 @@ class PyroelectricAppGUI:
         for res in resources:
             if "GPIB1::27" in res:
                 self.keithley_combobox.set(res)
-            if "GPIB1::15" in res:
+            # Lab 340 sits at IEEE address 19; a hint only, the IDN check
+            # at Start decides.
+            if LAKESHORE340_ADDRESS_HINT in res:
                 self.lakeshore_combobox.set(res)
 
     def _set_default_combobox_values(self, resources):

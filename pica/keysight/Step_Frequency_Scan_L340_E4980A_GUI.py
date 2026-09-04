@@ -1,7 +1,72 @@
 """
-Module: Combined_TFreq_GUI.py
-Purpose: Combined Lakeshore 350 temperature control + Keysight E4980A
+Module: Step_Frequency_Scan_L340_E4980A_GUI.py
+Purpose: Combined Lakeshore 340 temperature control + Keysight E4980A
          frequency sweep GUI.
+         Port of Step_Frequency_Scan_E4980A_GUI.py (Lakeshore 350) to the
+         Model 340 command set.  Only the Lake Shore side changed; the
+         E4980A backend, stabilization, adaptive-rate, pause/skip, comm
+         recovery and file logic are the 350 version's, verbatim.
+
+What is different from the Model 350 version, and why
+-----------------------------------------------------
+  * No *RST anywhere.  On a 340 "*RST sets controller parameters to
+    power-up settings" (340 manual, printed 9-24): it resets the control
+    loop, setpoint and ramp.  Only *CLS is sent at connect / reconnect
+    (the 350 version already avoided *RST mid-run; the E4980A keeps its
+    own *RST, that is a different instrument).
+  * Loop setup at start.  A 340 control loop is DISABLED from the factory
+    and the heater stays off until CSET turns it on, so the worker sends
+    CSET 1,<input>,1,1 (printed 9-31) and CMODE 1,1 = Manual PID (9-29)
+    right after connecting and verifies both with CSET? 1 / CMODE? 1.
+    CLIMIT? 1 (9-28) is read and logged: any setpoint above the 340's
+    setpoint limit (or a 'from above' pre-target above it), or a heater
+    range above its max-range field, refuses the run before the heater
+    is ever turned on (the 340 has no TLIMIT).  HTRST? must read 0.
+  * RANGE takes no output number on a 340: "RANGE <0-5>" / "RANGE?"
+    (printed 9-40/9-41).  Every range write is read back with RANGE? and
+    an unexpected readback raises.  The combobox keeps the 0-5 choices;
+    the 'off/low/medium/high' names still map to 0/1/3/5 as before.
+  * HTR? takes no argument on a 340 and reports Loop 1 in percent
+    (printed 9-33).
+  * The 340 ramps from the CURRENT SETPOINT, not from the temperature
+    (RAMP, printed 9-40).  Every stage-1 ramp therefore pins the setpoint
+    to the present temperature with the ramp off (RAMP 1,0,0; SETP 1,T),
+    then enables the ramp at the requested rate and sends the target.
+    Heater range and PID are set BEFORE the ramp.  The stage-2 handover
+    (set_ramp_rate + set_setpoint) continues from the pre-target, exactly
+    as in the 350 version.
+  * RAMP rate is 0.1-100 K/min on a 340 (0.001-100 on a 350).  Start
+    refuses fixed / approach / min / max rates and low-T cap entries
+    outside that range; every rate actually sent is clamped into it
+    (logged) so an adaptive rate below 0.1 K/min cannot abort a run.
+  * PID limits are P, I, D each 0-1000 on a 340 (printed 9-40); the
+    350's P<=9999, D<=200 check is replaced.  Presets are unchanged.
+  * RDGST? <input> (printed 9-41) is read with every temperature sample.
+    A non-zero status (invalid, old, under/over range, units zero/over)
+    is logged on change, written as the last column of the temperature
+    log, and such a sample never advances the pre-target test or enters
+    the rolling stability window.
+  * HTRST? (heater error, 0 ok ... 5 open load, 6 load < 10 ohm) is read
+    every poll and logged once on every change; a non-zero code logs,
+    beeps and marks the status banner, no dialog.
+  * The control/sensor input is selectable (A or B on a base Model 340;
+    C and D only with the 3462 option card); the 350 version fixed 'A'.
+  * The identity-aware VISA scan accepts an address only if *IDN? contains
+    MODEL340 (case-insensitive, spaces ignored) and prefers the lab's
+    address 19 (::19::) when several answer; connect() refuses anything
+    that is not a MODEL340.  Nothing is ever picked by address alone.
+  * Stop / kill switch / shutdown = RAMP 1,0,0 + RANGE 0 exactly where the
+    350 version turned the heater off.  Reconnect after a comm loss is
+    still session-only: *CLS + *IDN? and nothing else.
+  MODE (9-38), INTYPE (9-34) and ZONE (9-43) are not sent by this module;
+  the 350 version did not send their counterparts either.
+
+Model 340 commands used (User's Manual, Chapter 9):
+  *IDN?, *CLS, CSET 1,<in>,1,1 / CSET? 1, CMODE 1,1 / CMODE? 1, CLIMIT? 1,
+  RAMP 1,<on>,<rate> (0.1-100 K/min), SETP 1,<K>, RANGE <0-5> / RANGE?,
+  PID 1,<P>,<I>,<D> / PID? 1 (0-1000 each), HTR?, HTRST?, KRDG? <in>,
+  SRDG? <in>, RDGST? <in>
+
 Note: despite the filename (Step_Frequency_Scan…), this program performs
 a temperature-STEPPED dielectric scan: a full frequency sweep at each
 temperature setpoint. Filename kept for compatibility.
@@ -173,7 +238,7 @@ v1.6 — ULTRA-SLOW PID BELOW 100 K (anti-windup)
   PID-2  Lab runs (2026-07-10) showed the Slow preset (P=0.5, I=4)
          still overshoots at 80-90 K, and after the overshoot the
          temperature would NOT come back down (it crept upward).
-         Diagnosis: integral windup. The LS350 output is
+         Diagnosis: integral windup. The Lake Shore output is
          ~ P*[e + (I/1000)*Int(e dt) + ...]; the integral accumulated
          during the ramp keeps the heater output nonzero after the
          temperature passes the setpoint, and on the LN2-dewar probe
@@ -196,7 +261,7 @@ v1.7 — UNATTENDED-RUN HARDENING (Passive v1.4 pattern)
          (5→10→30→60 s) instead of aborting the run: both sessions
          are closed and re-opened (the E4980A is fully
          re-configured, bias re-ramped; the Lakeshore reconnect is
-         SESSION-ONLY and never re-sends setpoints — the 350 keeps
+         SESSION-ONLY and never re-sends setpoints — the 340 keeps
          executing its ramp while the link is down). The current
          frequency point is retried after recovery. Stop stays
          responsive throughout. REL-1's quick retries remain the
@@ -383,14 +448,82 @@ class SoftLimitAbort(RuntimeError):
 
 
 # ============================================================
-# BACKEND: Lakeshore 350
+# BACKEND: Lakeshore 340  (Model 340 command set, see header docstring)
 # ============================================================
+# The lab's Model 340 was moved to IEEE address 19 on 3 Sep 2026 so that it
+# no longer collides with the 350, the Cryocon 34 and the Keithley 6221, which
+# all default to 12. A hint only: the IDN check decides.
+LAKESHORE340_ADDRESS_HINT = "::19::"
+
+
+def is_model_340_idn(idn):
+    """True when an *IDN? reply names a Model 340 (spaces/case ignored)."""
+    return "MODEL340" in str(idn).upper().replace(" ", "")
+
+
+def explain_visa_error(exc):
+    """Plain-language hint for the VISA errors seen on the lab PCs."""
+    text = str(exc)
+    if "VI_ERROR_ALLOC" in text:
+        return ("VI_ERROR_ALLOC comes from the VISA driver before any "
+                "command is sent: the VISA library cannot open a session on "
+                "that GPIB interface. Most often the interface is a STALE entry "
+                "cached by Keysight Connection Expert (an adapter that is no "
+                "longer plugged in): list_resources() still reports it, and "
+                "opening it fails. Remove the dead interface in Connection "
+                "Expert and rescan; the live adapter usually is the other "
+                "board (GPIB1::..). If Connection Expert itself cannot talk "
+                "to the instrument either, PyVISA may be loading NI-VISA for a "
+                "Keysight adapter: tick 'Keysight VISA as primary VISA' in "
+                "Connection Expert settings, or set "
+                "PYVISA_LIBRARY=C:\\Windows\\System32\\ktvisa32.dll and restart "
+                "PICA. Then use 'Scan VISA' to see which address answers as "
+                "MODEL340.")
+    if "VI_ERROR_TMO" in text:
+        return ("Timeout: the address exists but nothing answered *IDN?. "
+                "Check the 340 is powered, its IEEE address matches, and no "
+                "other programme holds the session.")
+    return ""
+
+
 class Lakeshore_Backend:
+    """Lake Shore Model 340, Loop 1 only.
+
+    RANGE / HTR? / HTRST? take no output number on a 340.  No *RST is ever
+    sent: on a 340 it resets loop, setpoint and ramp (printed 9-24).
+    """
+
     HARD_TEMP_LIMIT_K = 340.0  # hardcoded kill switch (§3a) — not in GUI
+    MODEL_TOKENS = ("MODEL340", "MODEL 340")
+    # Names the 350 version accepted, mapped to the same codes as before.
+    RANGE_NAMES = {"off": 0, "low": 1, "medium": 3, "high": 5}
+    RAMP_MIN_K_MIN = 0.1      # RAMP rate limits on a 340 (printed 9-40)
+    RAMP_MAX_K_MIN = 100.0
+    PID_MAX = 1000.0          # P, I and D are each 0-1000 on a 340 (9-40)
+    HEATER_ERRORS = {
+        0: "No error",
+        1: "Power supply over voltage",
+        2: "Power supply under voltage",
+        3: "Output DAC error",
+        4: "Current limit DAC error",
+        5: "OPEN HEATER LOAD",
+        6: "Heater load < 10 ohm",
+    }
+    MAX_CURRENT_CODES = {1: "0.25 A", 2: "0.5 A", 3: "1.0 A", 4: "2.0 A",
+                         5: "User (CLIMI)"}
+    # RDGST? bit weights, Model 340 manual printed 9-41.
+    RDGST_BITS = (
+        (1, "invalid reading"), (2, "old reading"), (16, "temp underrange"),
+        (32, "temp overrange"), (64, "units zero"), (128, "units overrange"),
+    )
 
     def __init__(self):
         self.lakeshore = None
         self.last_visa = None    # HARD-2: remembered for reconnect()
+        self.idn = ""
+        # Filled by every get_status(): RDGST? and HTRST? of the last poll.
+        self.last_reading_status = (0, "")
+        self.last_heater_status = (0, self.HEATER_ERRORS[0])
         self.rm = None
         if pyvisa:
             try:
@@ -398,22 +531,41 @@ class Lakeshore_Backend:
             except Exception as e:
                 print(f"VISA init failed: {e}")
 
+    # -- session --
+
     def connect(self, visa_address):
         if not self.rm:
             raise ConnectionError("VISA Resource Manager unavailable.")
         self.last_visa = visa_address   # HARD-2: for reconnect()
         self.lakeshore = self.rm.open_resource(visa_address)
         self.lakeshore.timeout = 10000
-        self.lakeshore.write("*CLS")  # do NOT *RST mid-run
-        idn = self.lakeshore.query("*IDN?").strip()
-        # Fix #12: warn (not fatal) if IDN doesn't look like a 350
-        if "350" not in idn:
-            print(f"WARNING: IDN does not contain '350': {idn}")
-        return idn
+        # The 340 answers with <CR><LF> and EOI by default; '\n' as read
+        # terminator is what the lab's 340 modules use and it works.
+        self.lakeshore.read_termination = "\n"
+        self.lakeshore.write_termination = "\n"
+        self.lakeshore.write("*CLS")  # *CLS only; never a reset on a 340
+        self.idn = self.lakeshore.query("*IDN?").strip()
+        if not self.is_model_340():
+            idn = self.idn
+            try:
+                self.lakeshore.close()
+            except Exception:
+                pass
+            self.lakeshore = None
+            raise RuntimeError(
+                f"'{visa_address}' answered '{idn}', which is not a Lake "
+                "Shore Model 340. Refusing to send 340-only commands (CSET, "
+                "RANGE n) to it. Pick the right address (the lab's 340 is "
+                f"at {LAKESHORE340_ADDRESS_HINT}).")
+        return self.idn
+
+    def is_model_340(self):
+        idn = self.idn.upper().replace(" ", "")
+        return any(tok.replace(" ", "") in idn for tok in self.MODEL_TOKENS)
 
     def reconnect(self):
         """HARD-2: close and re-open the VISA session only. NEVER
-        touches heater range / ramp / setpoint — the 350 keeps
+        touches heater range / ramp / setpoint / loop — the 340 keeps
         executing its last program while the PC link is down, and the
         retry-forever loop must not disturb it on recovery."""
         try:
@@ -424,40 +576,143 @@ class Lakeshore_Backend:
         self.lakeshore = None
         return self.connect(self.last_visa)
 
-    def set_heater_range(self, output, heater_range):
-        try:
-            range_code = int(heater_range)
-        except (ValueError, TypeError):
-            range_map = {"off": 0, "low": 1, "medium": 3, "high": 5}
-            range_code = range_map.get(str(heater_range).lower(), 0)
-        if not (0 <= range_code <= 5):
-            raise ValueError(f"Heater range must be 0-5. Got: {heater_range}")
-        self.lakeshore.write(f"RANGE {output},{range_code}")
+    def _write(self, cmd):
+        if not self.lakeshore:
+            raise ConnectionError("Not connected to the Lakeshore 340.")
+        self.lakeshore.write(cmd)
 
-    def configure_ramp(self, setpoint, rate, heater_range):
-        # Fix #2: caller already passes a clean range string; no .split() here
-        self.set_heater_range(1, heater_range)
-        self.lakeshore.write(f"RAMP 1,1,{rate}")
+    def _query(self, cmd):
+        if not self.lakeshore:
+            raise ConnectionError("Not connected to the Lakeshore 340.")
+        return self.lakeshore.query(cmd).strip()
+
+    # -- loop setup (CSET 9-31, CMODE 9-29, CLIMIT 9-28) --
+
+    def prepare_loop(self, control_input):
+        """*CLS; enable Loop 1 on <input> in kelvin; Manual PID; ramp off.
+
+        Returns (CSET? dict, CMODE? code, CLIMIT? dict) for logging.
+        Sent once per run, right after connect(); never on reconnect().
+        """
+        self._write("*CLS")
+        time.sleep(0.2)
+        self._write(f"CSET 1,{control_input},1,1")
+        self._write("CMODE 1,1")
+        time.sleep(0.2)
+        cset = self.get_control_loop(1)
+        if (cset["input"].upper() != str(control_input).upper()
+                or not cset["enabled"]):
+            raise RuntimeError(
+                f"CSET 1,{control_input},1,1 did not stick: CSET? 1 reads "
+                f"{cset}. Check the front panel (Remote/Local) and retry.")
+        cmode = int(float(self._query("CMODE? 1")))
+        if cmode != 1:
+            raise RuntimeError(f"CMODE 1,1 did not stick: CMODE? 1 = {cmode}.")
+        self._write("RAMP 1,0,0")
+        time.sleep(0.2)
+        return cset, cmode, self.get_control_limits(1)
+
+    def get_control_loop(self, loop=1):
+        parts = [p.strip() for p in self._query(f"CSET? {loop}").split(",")]
+        if len(parts) < 4:
+            raise ValueError(f"unexpected CSET? reply '{','.join(parts)}'")
+        return {"input": parts[0], "units": int(float(parts[1])),
+                "enabled": int(float(parts[2])), "powerup": int(float(parts[3]))}
+
+    def get_control_limits(self, loop=1):
+        parts = [p.strip() for p in self._query(f"CLIMIT? {loop}").split(",")]
+        if len(parts) < 5:
+            raise ValueError(f"unexpected CLIMIT? reply '{','.join(parts)}'")
+        return {"sp_limit": float(parts[0]), "pos_slope": float(parts[1]),
+                "neg_slope": float(parts[2]), "max_current": int(float(parts[3])),
+                "max_range": int(float(parts[4]))}
+
+    # -- heater range (RANGE printed 9-40/9-41): no output number --
+
+    @classmethod
+    def range_code(cls, heater_range):
+        """0-5, or 'off'/'low'/'medium'/'high' as the 350 version accepted."""
+        try:
+            code = int(heater_range)
+        except (ValueError, TypeError):
+            code = cls.RANGE_NAMES.get(str(heater_range).lower())
+        if code is None or not (0 <= code <= 5):
+            raise ValueError(f"Heater range must be 0-5. Got: {heater_range}")
+        return code
+
+    def set_heater_range(self, heater_range):
+        """RANGE <0-5>, verified with RANGE?."""
+        code = self.range_code(heater_range)
+        self._write(f"RANGE {code}")
         time.sleep(0.1)
-        self.lakeshore.write(f"SETP 1,{setpoint}")
+        back = self.get_heater_range()
+        if back != code:
+            raise RuntimeError(
+                f"RANGE {code} did not stick: RANGE? = {back}. The CLIMIT "
+                "max range may be lower, or the loop is disabled.")
+
+    def get_heater_range(self):
+        return int(float(self._query("RANGE?")))
+
+    # -- ramp / setpoint (RAMP, SETP printed 9-40, 9-42) --
+
+    @classmethod
+    def check_rate(cls, rate):
+        if not (cls.RAMP_MIN_K_MIN <= rate <= cls.RAMP_MAX_K_MIN):
+            raise ValueError(
+                f"Ramp rate must be {cls.RAMP_MIN_K_MIN:g}-"
+                f"{cls.RAMP_MAX_K_MIN:g} K/min on a Model 340, got {rate}")
+
+    def configure_ramp(self, setpoint, rate, heater_range, current_temperature):
+        """Heater range first (verified), then the ramp.
+
+        The 340 ramps from the CURRENT SETPOINT: the setpoint is pinned to
+        the present temperature with the ramp off, then the ramp is
+        enabled at `rate` and the target is sent, so the ramp starts from
+        where the sample is instead of from a leftover setpoint.
+        """
+        self.check_rate(rate)
+        self.set_heater_range(heater_range)
+        self._write("RAMP 1,0,0")
+        self._write(f"SETP 1,{current_temperature:.3f}")
+        time.sleep(0.2)
+        self._write(f"RAMP 1,1,{rate}")
+        time.sleep(0.1)
+        self._write(f"SETP 1,{setpoint}")
 
     def set_ramp_rate(self, rate):
         """Change ramp rate without touching heater range or setpoint."""
-        self.lakeshore.write(f"RAMP 1,1,{rate}")
+        self.check_rate(rate)
+        self._write(f"RAMP 1,1,{rate}")
 
     def set_setpoint(self, setpoint):
-        self.lakeshore.write(f"SETP 1,{setpoint}")
+        self._write(f"SETP 1,{setpoint}")
 
-    def get_status(self, retries=2):
+    # -- readings --
+
+    def get_status(self, control_input="A", retries=2):
         """REL-1: retry transient VISA glitches so a single failed query
         at 3 a.m. does not abort an overnight run. Persistent failures
-        still raise (and the worker's except/finally shuts down safely)."""
+        still raise (and the worker's except/finally shuts down safely).
+
+        Also reads RDGST? <input> and HTRST? (no argument) and leaves them
+        in last_reading_status / last_heater_status as (code, text).
+        Returns (temperature K, sensor units, heater %) like the 350 version.
+        """
         last_err = None
         for attempt in range(retries + 1):
             try:
-                temp = float(self.lakeshore.query("KRDG? A").strip())
-                resistance = float(self.lakeshore.query("SRDG? A").strip())
-                htr_output = float(self.lakeshore.query("HTR? 1").strip())
+                temp = float(self._query(f"KRDG? {control_input}"))
+                resistance = float(self._query(f"SRDG? {control_input}"))
+                htr_output = float(self._query("HTR?"))
+                rd_code = int(float(self._query(f"RDGST? {control_input}")))
+                ht_code = int(float(self._query("HTRST?")))
+                names = [n for bit, n in self.RDGST_BITS if rd_code & bit]
+                if rd_code and not names:
+                    names = [f"unknown bit(s) {rd_code}"]
+                self.last_reading_status = (rd_code, ", ".join(names))
+                self.last_heater_status = (
+                    ht_code, self.HEATER_ERRORS.get(ht_code, f"unknown code {ht_code}"))
                 return temp, resistance, htr_output
             except Exception as e:
                 last_err = e
@@ -470,34 +725,45 @@ class Lakeshore_Backend:
                     time.sleep(0.5)
         raise last_err
 
-    def set_pid(self, output, p, i, d):
-        if not (0 <= p <= 9999 and 0 <= i <= 1000 and 0 <= d <= 200):
-            raise ValueError("PID values out of range.")
-        # NOTE (audit MIN-7): LS350 treats I=0 / D=0 as "off". Presets keep
+    def get_heater_status(self):
+        """HTRST? -> (code, text); 0 = no error."""
+        code = int(float(self._query("HTRST?")))
+        return code, self.HEATER_ERRORS.get(code, f"unknown code {code}")
+
+    # -- PID (printed 9-40): P, I, D each 0-1000 on a 340 --
+
+    def set_pid(self, p, i, d):
+        if not (0 <= p <= self.PID_MAX and 0 <= i <= self.PID_MAX
+                and 0 <= d <= self.PID_MAX):
+            raise ValueError("PID values must each be 0-1000 on a Model 340.")
+        # NOTE (audit MIN-7): I=0 / D=0 switch that term off. Presets keep
         # I>0; do not set I=0 from the live panel unless you intend to
         # disable integral action (will produce a permanent offset).
-        self.lakeshore.write(f"PID {output},{p},{i},{d}")
+        self._write(f"PID 1,{p},{i},{d}")
 
-    def get_pid(self, output):
-        parts = self.lakeshore.query(f"PID? {output}").split(",")
+    def get_pid(self):
+        parts = self._query("PID? 1").split(",")
         return float(parts[0]), float(parts[1]), float(parts[2])
+
+    # -- stop --
 
     def check_overtemp(self, temp):
         """Returns True and kills heater if temp >= HARD_TEMP_LIMIT_K."""
         if temp >= self.HARD_TEMP_LIMIT_K:
             try:
-                self.lakeshore.write("RANGE 1,0")
-                self.lakeshore.write("RAMP 1,0,0")
+                self._write("RANGE 0")
+                self._write("RAMP 1,0,0")
             except Exception as e:
                 print(f"KILL SWITCH: heater-off command failed: {e}")
             return True
         return False
 
     def stop_ramp(self):
+        """RAMP off + RANGE 0 (heater off). Loop stays enabled."""
         if self.lakeshore:
             try:
-                self.lakeshore.write("RAMP 1,0,0")
-                self.set_heater_range(1, "off")
+                self._write("RAMP 1,0,0")
+                self._write("RANGE 0")
             except Exception as e:
                 print(f"stop_ramp warning: {e}")
 
@@ -705,7 +971,7 @@ class CombinedGUI:
     FONT_CONSOLE = ("Consolas", 9)
 
     # Dynamic PID presets (§3b)
-    # PID-2: LS350 integral term scales with BOTH P and I, and the LN2
+    # PID-2: the Lake Shore integral term scales with BOTH P and I, and the LN2
     # probe can only cool passively — so below 100 K windup must stay
     # tiny or an overshoot never recovers. Keep I > 0 (I=0 disables
     # integral action entirely -> permanent offset; see MIN-7).
@@ -777,6 +1043,13 @@ class CombinedGUI:
         self._freq_plot_dirty = False
         self._pending_progress = None
 
+        # Model 340 per-poll status (worker-side): HTRST? and RDGST? are
+        # logged once on every change; a bad RDGST? sample never counts
+        # towards stabilization.
+        self._last_htr_error = 0
+        self._last_rdgst = 0
+        self._last_sample_valid = True
+
         # ADV-3/5: pause/skip + tolerance-band state
         self._paused = False           # worker-only write
         self._skip_requested = False   # worker-only write
@@ -816,6 +1089,9 @@ class CombinedGUI:
                  "340 K kill switch active.")
         self.log("Stabilization: two-stage approach + rolling-window "
                  "(tolerance AND drift) criterion.")
+        self.log("Lake Shore Model 340 backend: Loop 1 enabled by CSET at "
+                 "start, Manual PID, CLIMIT? checked, RANGE n verified, "
+                 "setpoint pinned before every ramp, no reset command.")
         self.log("Ramp: adaptive or fixed (radio buttons); the low-T cap "
                  "table clamps EVERY rate incl. fixed + approach "
                  "(defaults: <77 K: 0.3, <100 K: 0.5, else 5 K/min). "
@@ -1142,7 +1418,16 @@ class CombinedGUI:
         ttk.Label(frame, text="LS VISA:").grid(row=2, column=0, sticky="w",
                                                padx=10, pady=5)
         self.ls_cb = ttk.Combobox(frame, state="readonly", width=18)
-        self.ls_cb.grid(row=2, column=1, columnspan=5, sticky="ew", padx=5)
+        self.ls_cb.grid(row=2, column=1, columnspan=3, sticky="ew", padx=5)
+        # Model 340: control/sensor input A or B (C, D only with the 3462
+        # option card). The 350 version fixed input A.
+        ttk.Label(frame, text="Input:").grid(row=2, column=4, sticky="e",
+                                             padx=(10, 2), pady=5)
+        self.sensor_var = tk.StringVar(value="A")
+        self.sensor_cb = ttk.Combobox(frame, textvariable=self.sensor_var,
+                                      values=["A", "B", "C", "D"],
+                                      state="readonly", width=3)
+        self.sensor_cb.grid(row=2, column=5, sticky="w", padx=(0, 5))
 
     def _create_lcr_settings_panel(self, parent, row):
         frame = ttk.LabelFrame(parent, text="E4980A LCR Settings")
@@ -1205,7 +1490,7 @@ class CombinedGUI:
         self.save_dir_lbl.grid(row=7, column=0, columnspan=4, sticky="w", padx=5)
 
     def _create_pid_panel(self, parent, row):
-        frame = ttk.LabelFrame(parent, text="Live PID Tuning (Output 1)")
+        frame = ttk.LabelFrame(parent, text="Live PID Tuning (Loop 1, 0-1000 each)")
         frame.grid(row=row, column=0, sticky="new", pady=5, padx=5)
         frame.grid_columnconfigure(1, weight=1)
         ttk.Label(frame, text="Preset:").grid(row=0, column=0, sticky="w", padx=10, pady=5)
@@ -1652,14 +1937,18 @@ class CombinedGUI:
                     pass
                 label = f"{res}  ->  {idn}"
                 found.append(label)
-                if "350" in idn and ls_pick is None:
+                # Model 340 only (IDN check); prefer the lab address ::19::
+                # when several answer. Never auto-pick by address alone.
+                if is_model_340_idn(idn) and (
+                        ls_pick is None or LAKESHORE340_ADDRESS_HINT in res):
                     ls_pick = label
                 if "E4980" in idn and lcr_pick is None:
                     lcr_pick = label
                 self.log(f"  {label}")
             self.ls_cb["values"] = found
             self.lcr_cb["values"] = found
-            if ls_pick: self.ls_cb.set(ls_pick); self.log(f"Lakeshore auto-selected: {ls_pick}")
+            if ls_pick: self.ls_cb.set(ls_pick); self.log(f"Lakeshore 340 auto-selected: {ls_pick}")
+            else: self.log(f"No address answered as MODEL340 (the lab's 340 is at {LAKESHORE340_ADDRESS_HINT}).")
             if lcr_pick: self.lcr_cb.set(lcr_pick); self.log(f"E4980A auto-selected: {lcr_pick}")
             if not ls_pick and found: self.ls_cb.set(found[0])
             if not lcr_pick and found: self.lcr_cb.set(found[0])
@@ -1793,6 +2082,7 @@ class CombinedGUI:
             "stab_timeout": float(self.entries["stab_timeout"]["entry"].get()),
             "heater_range": self.heater_range_var.get().split()[0],  # single split here
             "ls_visa": ls_visa,
+            "sensor": (self.sensor_var.get().strip().upper() or "A"),  # 340 input
             # ADV-1/2/4: adaptive ramp + approach mode + soft limit
             "max_temp": float(self.entries["max_temp"]["entry"].get()),
             "step_factor": float(self.entries["step_factor"]["entry"].get()),
@@ -1824,6 +2114,16 @@ class CombinedGUI:
             raise ValueError("Need 0 < Min Rate <= Max Rate.")
         if p["heater_range"] == "0":
             raise ValueError("Heater range 0 (off) cannot start a sequence.")
+        # Model 340 RAMP accepts 0.1-100 K/min (printed 9-40)
+        lo, hi = Lakeshore_Backend.RAMP_MIN_K_MIN, Lakeshore_Backend.RAMP_MAX_K_MIN
+        for key, name in (("rate", "Fixed Rate"), ("app_rate", "Approach Rate"),
+                          ("min_rate", "Min Rate"), ("max_rate", "Max Rate")):
+            if not (lo <= p[key] <= hi):
+                raise ValueError(
+                    f"{name} must be {lo:g}-{hi:g} K/min (Model 340 RAMP limits).")
+        if p["ramp_default_cap"] < lo or any(c < lo for _, c in p["ramp_caps"]):
+            raise ValueError(
+                f"Low-T cap rates must be >= {lo:g} K/min (Model 340 RAMP minimum).")
         if not (0 < p["max_temp"] <= Lakeshore_Backend.HARD_TEMP_LIMIT_K):
             raise ValueError(
                 f"Max Temp must be in (0, "
@@ -1876,6 +2176,7 @@ class CombinedGUI:
         for e in (self.entry_start, self.entry_end, self.entry_step, self.entry_manual):
             e.config(state=st)
         self.ls_cb.config(state="readonly" if not running else "disabled")
+        self.sensor_cb.config(state="readonly" if not running else "disabled")
         self.lcr_cb.config(state="readonly" if not running else "disabled")
         # Fix #10: removed the no-op self.sort_var.set(self.sort_var.get())
 
@@ -2040,6 +2341,18 @@ class CombinedGUI:
                 attempt += 1
         return False
 
+    def _ls_rate(self, rate, label):
+        """Model 340 RAMP accepts 0.1-100 K/min (printed 9-40). Every rate
+        sent to the instrument passes through here; a clamp is logged."""
+        lo = Lakeshore_Backend.RAMP_MIN_K_MIN
+        hi = Lakeshore_Backend.RAMP_MAX_K_MIN
+        clamped = min(max(rate, lo), hi)
+        if clamped != rate:
+            self._put_gui_msg("log",
+                text=f"{label} rate {rate:g} K/min is outside the 340's "
+                     f"{lo:g}-{hi:g} K/min RAMP range; using {clamped:g} K/min.")
+        return clamped
+
     def _get_status_hardened(self):
         """HARD-2: get_status that survives a dead link. REL-1's quick
         retries run first (inside get_status); on persistent failure the
@@ -2047,7 +2360,7 @@ class CombinedGUI:
         when the user stops mid-recovery, so callers unwind cleanly."""
         while True:
             try:
-                return self.ls_backend.get_status()
+                return self.ls_backend.get_status(self.params["sensor"])
             except Exception as e:
                 if not self._comm_recover("Lakeshore status read", e):
                     raise RuntimeError("Stopped during comm recovery.")
@@ -2065,9 +2378,59 @@ class CombinedGUI:
         self.summary_writer = None
         try:
             # --- Connect Lakeshore ---
-            self._put_gui_msg("log", text="Connecting to Lakeshore 350…")
-            idn = self.ls_backend.connect(self.params["ls_visa"])
+            self._put_gui_msg("log", text="Connecting to Lakeshore 340…")
+            try:
+                idn = self.ls_backend.connect(self.params["ls_visa"])
+            except Exception as e:
+                hint = explain_visa_error(e)
+                if hint:
+                    self._put_gui_msg("log", text=f"HINT: {hint}")
+                raise
             self._put_gui_msg("log", text=f"Lakeshore: {idn}")
+
+            # Model 340: no reset (it would reset loop/setpoint/ramp).
+            # CSET enables Loop 1 on the chosen input, CMODE 1,1 = Manual
+            # PID, CLIMIT? is the 340's over-temperature guard (no TLIMIT
+            # on a 340). All checked BEFORE the heater is ever turned on.
+            sensor = self.params["sensor"]
+            cset, cmode, limits = self.ls_backend.prepare_loop(sensor)
+            cur = self.ls_backend.MAX_CURRENT_CODES.get(
+                limits["max_current"], f"code {limits['max_current']}")
+            self._put_gui_msg("log",
+                text=f"Loop 1 enabled on input {cset['input']} (kelvin), "
+                     f"Manual PID (CMODE? 1 = {cmode}), ramp off. CLIMIT? 1: "
+                     f"setpoint <= {limits['sp_limit']:g} K, max current {cur}, "
+                     f"max range {limits['max_range']}.")
+            too_hot = [t for t in self.setpoint_floats
+                       if t > limits["sp_limit"]]
+            if too_hot:
+                raise ValueError(
+                    f"Setpoints {too_hot} are above the 340's setpoint limit "
+                    f"of {limits['sp_limit']:g} K (CLIMIT? 1). Lower them or "
+                    "raise the limit in the L340 Direct Control module first.")
+            if self.params["approach_side"] == "above":
+                band = self.params["app_band"]
+                too_hot = [t for t in self.setpoint_floats
+                           if t + band > limits["sp_limit"]]
+                if too_hot:
+                    raise ValueError(
+                        f"'Always from above' pre-targets (T + {band:g} K) of "
+                        f"{too_hot} exceed the 340's setpoint limit of "
+                        f"{limits['sp_limit']:g} K (CLIMIT? 1).")
+            rng_code = self.ls_backend.range_code(self.params["heater_range"])
+            if rng_code > limits["max_range"]:
+                raise ValueError(
+                    f"Heater range {rng_code} exceeds the 340's CLIMIT max "
+                    f"range {limits['max_range']}. Lower it or raise the "
+                    "limit in the L340 Direct Control module first.")
+            code, text = self.ls_backend.get_heater_status()
+            if code != 0:
+                raise RuntimeError(
+                    f"Heater error HTRST? {code:02d}: {text}. Fix the heater "
+                    "circuit before starting.")
+            self._last_htr_error = 0
+            self._last_rdgst = 0
+            self._last_sample_valid = True
 
             # --- Connect & configure E4980A ---
             self._put_gui_msg("log", text="Connecting to Keysight E4980A…")
@@ -2084,7 +2447,8 @@ class CombinedGUI:
             self.csv_writer = csv.writer(self.data_file)
             self.csv_writer.writerow(
                 ["Timestamp", "Elapsed_s", "Target_K", "Temperature_K",
-                 "Heater_pct", "Measuring", "Ramp_rate_K_min", "Phase"]
+                 "Heater_pct", "Measuring", "Ramp_rate_K_min", "Phase",
+                 "Reading_status"]   # 340 RDGST? code, 0 = good (appended)
             )
             self.data_file.flush()
             os.fsync(self.data_file.fileno())   # HARD-3
@@ -2130,8 +2494,9 @@ class CombinedGUI:
                         self._put_gui_msg("log", text=cap_msg)
                     self._put_gui_msg(
                         "log", text=f"Fixed ramp rate: {rate:g} K/min.")
+                rate = self._ls_rate(rate, "Step")   # 340: 0.1-100 K/min
 
-                # §3b: dynamic PID per setpoint
+                # §3b: dynamic PID per setpoint (PID before RANGE/RAMP)
                 self._apply_dynamic_pid(target)
 
                 # STB-1/2/3: two-stage approach + rolling-window stability
@@ -2279,17 +2644,32 @@ class CombinedGUI:
         self._current_rate = ramp_rate
         self._current_target = target
         temp, _, _ = self._log_temperature_point(target, measuring_flag=0)
+        # The 340 ramp is pinned to this reading: it must be a valid one.
+        wait_until = time.time() + 60.0
+        while not self._last_sample_valid:
+            if self._process_cmd_queue():
+                return "stopped", 0.0
+            if time.time() > wait_until:
+                raise RuntimeError(
+                    f"Input {p['sensor']} reading invalid for 60 s (RDGST? "
+                    f"{self.ls_backend.last_reading_status[0]}: "
+                    f"{self.ls_backend.last_reading_status[1]}); cannot ramp.")
+            time.sleep(p["delay"])
+            temp, _, _ = self._log_temperature_point(target, measuring_flag=0)
         pre_target = self._choose_pre_target(temp, target)
         # Low-T safety envelope applies to the approach rate too
         app_rate, app_msg = capped_rate(p["app_rate"], temp, target, p,
                                         "Approach")
         if app_msg:
             self._put_gui_msg("log", text=app_msg)
+        app_rate = self._ls_rate(app_rate, "Approach")   # 340: 0.1-100 K/min
 
         if pre_target is not None:
             self._worker_phase = "PRE_RAMP"
+            # 340: RANGE first (verified), then RAMP off, SETP = now,
+            # RAMP on, SETP = pre-target (setpoint pinning).
             self.ls_backend.configure_ramp(pre_target, ramp_rate,
-                                           p["heater_range"])
+                                           p["heater_range"], temp)
             self._put_gui_msg("log",
                 text=f"Stage 1: ramp ({ramp_rate:g} K/min) to pre-target "
                      f"{pre_target:.2f} K ({p['app_band']} K short of {target} K).")
@@ -2300,7 +2680,7 @@ class CombinedGUI:
             self._worker_phase = "FINAL_APPROACH"
             self._current_rate = app_rate
             self.ls_backend.configure_ramp(target, app_rate,
-                                           p["heater_range"])
+                                           p["heater_range"], temp)
             self._put_gui_msg("log",
                 text=f"Already within approach band — slow approach "
                      f"({app_rate:g} K/min) to {target} K.")
@@ -2341,13 +2721,15 @@ class CombinedGUI:
                 if self._worker_phase == "PRE_RAMP":
                     reached = (temp >= pre_target - p["tol"]) if pre_heating \
                         else (temp <= pre_target + p["tol"])
-                    if reached:
+                    # A sample flagged by RDGST? never advances the step.
+                    if reached and self._last_sample_valid:
                         # STB-1 stage 2: hand over to the slow final approach.
                         # Re-check the cap at the handover temperature.
                         app_rate, app_msg = capped_rate(
                             p["app_rate"], temp, target, p, "Approach")
                         if app_msg:
                             self._put_gui_msg("log", text=app_msg)
+                        app_rate = self._ls_rate(app_rate, "Approach")
                         self._worker_phase = "FINAL_APPROACH"
                         self._current_rate = app_rate
                         self.ls_backend.set_ramp_rate(app_rate)
@@ -2361,7 +2743,9 @@ class CombinedGUI:
                             text=f"APPROACHING {target} K", color=self.CLR_STABLE_WAIT)
                 else:
                     # FINAL_APPROACH / STABILIZING: rolling-window criterion.
-                    window.append((now, temp))
+                    # 340: a sample flagged by RDGST? never enters the window.
+                    if self._last_sample_valid:
+                        window.append((now, temp))
                     while window and (now - window[0][0]) > p["soak"]:
                         window.popleft()
                     ok, max_dev, drift = self._window_check(window, target, p)
@@ -2416,20 +2800,20 @@ class CombinedGUI:
                     self._skip_requested = True
                 elif kind == "heater":
                     try:
-                        self.ls_backend.set_heater_range(1, cmd[1])
-                        self._put_gui_msg("log", text=f"Heater range set: {cmd[1]}")
+                        self.ls_backend.set_heater_range(cmd[1])   # RANGE n, verified
+                        self._put_gui_msg("log", text=f"Heater range set: RANGE {cmd[1]} (RANGE? verified)")
                     except Exception as e:
                         self._put_gui_msg("log", text=f"Heater update failed: {e}")
                 elif kind == "pid_send":
                     p, i, d = cmd[1]
                     try:
-                        self.ls_backend.set_pid(1, p, i, d)
+                        self.ls_backend.set_pid(p, i, d)
                         self._put_gui_msg("log", text=f"PID set: P={p}, I={i}, D={d}")
                     except Exception as e:
                         self._put_gui_msg("log", text=f"PID send failed: {e}")
                 elif kind == "pid_read":
                     try:
-                        vals = self.ls_backend.get_pid(1)
+                        vals = self.ls_backend.get_pid()
                         self._put_gui_msg("pid_read_result", values=vals)
                     except Exception as e:
                         self._put_gui_msg("log", text=f"PID read failed: {e}")
@@ -2454,7 +2838,8 @@ class CombinedGUI:
                                      "active — applies from next ramp stage.")
                         else:
                             try:
-                                temp_now, _, _ = self.ls_backend.get_status()
+                                temp_now, _, _ = self.ls_backend.get_status(
+                                    self.params["sensor"])
                                 tgt = self._current_target
                                 new_rate, cap_msg = capped_rate(
                                     updates["rate"], temp_now,
@@ -2462,6 +2847,7 @@ class CombinedGUI:
                                     self.params, "Live")
                                 if cap_msg:
                                     self._put_gui_msg("log", text=cap_msg)
+                                new_rate = self._ls_rate(new_rate, "Live")
                                 self.ls_backend.set_ramp_rate(new_rate)
                                 self._current_rate = new_rate
                                 self._put_gui_msg("log",
@@ -2478,7 +2864,7 @@ class CombinedGUI:
             return
         p, i, d = self.PID_ULTRA if target < 100.0 else self.PID_MEDIUM
         try:
-            self.ls_backend.set_pid(1, p, i, d)
+            self.ls_backend.set_pid(p, i, d)
             self._put_gui_msg("log", text=f"Dynamic PID @ {target} K: P={p}, I={i}, D={d}")
         except Exception as e:
             self._put_gui_msg("log", text=f"Dynamic PID failed: {e}")
@@ -2491,6 +2877,31 @@ class CombinedGUI:
         Raises RuntimeError if the kill switch trips.
         """
         temp, _, htr = self._get_status_hardened()  # HARD-2
+        # Model 340: RDGST? and HTRST? ride along with every poll.
+        rd_code, rd_text = self.ls_backend.last_reading_status
+        ht_code, ht_text = self.ls_backend.last_heater_status
+        self._last_sample_valid = (rd_code == 0)
+        if rd_code != self._last_rdgst:
+            self._last_rdgst = rd_code
+            if rd_code:
+                self._put_gui_msg("log",
+                    text=f"RDGST? {self.params['sensor']} = {rd_code} ({rd_text}) "
+                         f"with reading {temp:.3f} K — samples are not used for "
+                         "stabilization until the status clears.")
+            else:
+                self._put_gui_msg("log", text="Reading status cleared (RDGST? 0).")
+        if ht_code != self._last_htr_error:
+            self._last_htr_error = ht_code
+            if ht_code:
+                # Unattended policy: log + banner + beep, no dialog.
+                self._put_gui_msg("log",
+                    text=f"HEATER ERROR HTRST? {ht_code:02d}: {ht_text}")
+                self._put_gui_msg("status",
+                    text=f"HEATER ERROR {ht_code:02d}: {ht_text}",
+                    color=self.CLR_ACCENT_RED)
+                self._put_gui_msg("beep", times=2)
+            else:
+                self._put_gui_msg("log", text="Heater error cleared (HTRST? 00).")
         if self.ls_backend.check_overtemp(temp):
             self._put_gui_msg("log",
                 text=f"!!! KILL SWITCH: {temp:.2f} K >= 340 K. Heater OFF. Aborting.")
@@ -2508,7 +2919,7 @@ class CombinedGUI:
         self.csv_writer.writerow(
             [now_str, f"{elapsed:.2f}", f"{target:.4f}", f"{temp:.4f}",
              f"{htr:.2f}", measuring_flag,
-             f"{self._current_rate:.3f}", phase]
+             f"{self._current_rate:.3f}", phase, rd_code]
         )
         self.data_file.flush()
         os.fsync(self.data_file.fileno())   # HARD-3

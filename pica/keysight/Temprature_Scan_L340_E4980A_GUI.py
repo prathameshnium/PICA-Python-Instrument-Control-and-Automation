@@ -1180,6 +1180,14 @@ class Integrated_CT_GUI:
         frame = LabelFrame(parent, text='Console Output', relief='groove',
                            bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT,
                            font=self.FONT_TITLE)
+        # Banner: the unattended-run replacement for a dialog. Run end,
+        # cutoff, errors and heater faults land here (plus log + beep).
+        self.status_var = tk.StringVar(value="Idle.")
+        Label(frame, textvariable=self.status_var, anchor='w',
+              justify='left', wraplength=440,
+              bg=self.CLR_BG_DARK, fg=self.CLR_TEXT_DARK,
+              font=('Segoe UI', self.FONT_SIZE_BASE, 'bold')).pack(
+                  fill='x', padx=5, pady=(5, 0))
         self.console_widget = scrolledtext.ScrolledText(
             frame, state='disabled',
             bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT,
@@ -1375,6 +1383,17 @@ class Integrated_CT_GUI:
     def _handle_log_message(self, message):
         self.log(message)
 
+    def _banner(self, message, beep=False):
+        """Console line + banner (+ optional beep). Never a dialog: a run
+        may be unattended (overnight), so nothing may block on a click."""
+        self.log(message)
+        self.status_var.set(message)
+        if beep:
+            try:
+                self.root.bell()
+            except tk.TclError:
+                pass
+
     # ==================================================================
     # START / STOP
     # ==================================================================
@@ -1397,6 +1416,7 @@ class Integrated_CT_GUI:
                 'alc_enabled':   self.var_alc.get(),
                 'corr_enabled':  self.var_corr.get(),
                 'cable_len':     self.cable_len_combobox.get(),
+                'sensor':        self.sensor_combobox.get() or "A",
                 'lakeshore_visa': self._extract_visa(
                                       self.lakeshore_cb.get()),
                 'lcr_visa':      self._extract_visa(
@@ -1414,6 +1434,10 @@ class Integrated_CT_GUI:
                     params['end_temp'] < params['cutoff']):
                 raise ValueError(
                     "Temperatures must be in order: start < end < cutoff.")
+            # Model 340 RAMP accepts 0.1-100 K/min (350: 0.001-100).
+            if not (0.1 <= params['rate'] <= 100.0):
+                raise ValueError(
+                    "Ramp rate must be 0.1-100 K/min on a Model 340.")
 
             if params['corr_enabled']:
                 self.log(
@@ -1423,8 +1447,12 @@ class Integrated_CT_GUI:
 
             # --- Initialize hardware ---
             self.backend.initialize_instruments(params)
+            for note in self.backend.startup_notes:
+                self.log(note)
             self.log(f"Backend initialized for sample: "
                      f"{params['sample_name']}")
+            self._last_htr_error = 0
+            self.status_var.set("Running.")
 
             # --- Appendix A.2: create one file per frequency ---
             self._create_per_frequency_files(params['sample_name'])
@@ -1586,29 +1614,77 @@ class Integrated_CT_GUI:
             return
 
         if from_user:
-            self.log("Measurement stopped and instruments disconnected.")
-            messagebox.showinfo(
-                "Info", "Measurement stopped and instruments disconnected.")
+            # No dialog: log + banner + beep (unattended-run policy).
+            self._banner(
+                "Measurement stopped and instruments disconnected "
+                "(RAMP 1,0,0 + RANGE 0 sent).", beep=True)
 
     # ==================================================================
     # WORKER THREAD  (Section 7, amended by Appendix A.1)
     # ==================================================================
+    def _check_heater_status(self, code_text=None):
+        """HTRST? once per poll; a change is logged once (beep + banner).
+
+        Runs in the worker thread; the GUI side receives queue messages.
+        No dialog: the run may be unattended.
+        """
+        if code_text is None:
+            code_text = self.backend.lakeshore.get_heater_status()
+        code, text = code_text
+        if code == self._last_htr_error:
+            return
+        self._last_htr_error = code
+        if code:
+            self.data_queue.put(
+                f"BANNER:!!! Lakeshore 340 HEATER ERROR: HTRST? = {code} "
+                f"({text}). Check the heater leads. !!!")
+        else:
+            self.data_queue.put(
+                "LOG:Lakeshore 340 heater error cleared (HTRST? = 0).")
+
     def _measurement_worker(self):
         params = self.backend.params
+        lakeshore = self.backend.lakeshore
+        sensor = params.get('sensor', 'A')
         try:
-            # --- Stabilization Phase (verbatim from R-T template) ---
+            # --- Stabilization Phase (same 5 K logic as the 350 version) ---
+            # The 340 ramps from its CURRENT SETPOINT, so the approach to
+            # the start temperature is armed once with start_ramp(), which
+            # pins the setpoint to the present temperature first.  It is
+            # re-armed only after the heater was switched off (T too high).
+            approach_armed = False
             while self.is_stabilizing and not self.stop_event.is_set():
-                current_temp = self.backend.lakeshore.get_temperature('A')
+                current_temp = lakeshore.get_temperature(sensor)
+                rdg_code, rdg_text = lakeshore.get_reading_status(sensor)
+                self._check_heater_status()
+                if rdg_code:
+                    # A flagged reading (RDGST? != 0) is logged and never
+                    # used to decide that the sample has stabilized.
+                    self.data_queue.put(
+                        f"LOG:Lakeshore 340 RDGST? {sensor} = {rdg_code} "
+                        f"({rdg_text}) at {current_temp:.4f} K; sample "
+                        f"ignored for the stabilization test.")
+                    self.stop_event.wait(2)
+                    continue
                 self.data_queue.put(
                     f"LOG:Stabilizing... Current: {current_temp:.4f} K "
                     f"(Target: {params['start_temp']} K)")
 
                 if current_temp > params['start_temp'] + 5.0:
-                    self.backend.lakeshore.set_heater_range(1, 'off')
-                else:
-                    self.backend.lakeshore.set_heater_range(1, 'high')
-                    self.backend.lakeshore.set_setpoint(
-                        1, params['start_temp'])
+                    lakeshore.heater_off()          # RAMP 1,0,0 + RANGE 0
+                    approach_armed = False
+                elif not approach_armed:
+                    # RANGE before the ramp, then pin the setpoint to the
+                    # present temperature and ramp to the start temperature.
+                    lakeshore.set_heater_range('high')
+                    lakeshore.start_ramp(
+                        params['start_temp'], params['rate'], current_temp)
+                    approach_armed = True
+                    self.data_queue.put(
+                        f"LOG:Approach armed from {current_temp:.4f} K "
+                        f"(setpoint pinned there first): "
+                        f"{params['start_temp']} K at {params['rate']} "
+                        f"K/min, RANGE {lakeshore.range_code('high')}.")
 
                 if abs(current_temp - params['start_temp']) < 5.0:
                     self.data_queue.put(
@@ -1622,14 +1698,19 @@ class Integrated_CT_GUI:
 
             # --- Ramp Phase ---
             if self.is_running and not self.stop_event.is_set():
-                # Enable ramp FIRST: a SETP sent while ramping is off is
-                # applied instantly and would bypass the ramp rate entirely.
-                self.backend.lakeshore.setup_ramp(1, params['rate'])
-                self.backend.lakeshore.set_setpoint(1, params['end_temp'])
-                self.backend.lakeshore.set_heater_range(1, 'high')
+                # Heater range BEFORE the ramp; start_ramp() then pins the
+                # setpoint to the present temperature with the ramp off,
+                # enables the ramp at the requested rate and sends the end
+                # temperature (a 340 ramps from the current setpoint).
+                current_temp = lakeshore.get_temperature(sensor)
+                lakeshore.set_heater_range('high')
+                lakeshore.start_ramp(
+                    params['end_temp'], params['rate'], current_temp)
                 self.data_queue.put(
-                    f"LOG:Hardware ramp started towards "
-                    f"{params['end_temp']} K at {params['rate']} K/min.")
+                    f"LOG:Hardware ramp armed from {current_temp:.4f} K "
+                    f"(setpoint pinned there first) towards "
+                    f"{params['end_temp']} K at {params['rate']} K/min, "
+                    f"RANGE {lakeshore.range_code('high')}.")
                 self.start_time = time.time()
 
             # --- Measurement Loop ---
@@ -1641,9 +1722,10 @@ class Integrated_CT_GUI:
                 
                 if not cycle['points']:
                     break
-                
+
                 elapsed = time.time() - self.start_time
                 self.data_queue.put(('CYCLE', cycle, elapsed))
+                self._check_heater_status(cycle['heater_status'])
 
                 # Check if the safety kill was triggered
                 if cycle.get('killed', False):
@@ -1651,8 +1733,11 @@ class Integrated_CT_GUI:
                     break
 
                 # Termination check uses the temperature of the LAST
-                # point measured in this cycle.
-                last_temp = cycle['points'][-1][0]
+                # VALID (RDGST? = 0) point measured in this cycle; a cycle
+                # with only flagged readings never ends the run.
+                last_temp = cycle['last_valid_temp']
+                if last_temp is None:
+                    continue
                 if last_temp >= params['cutoff']:
                     self.data_queue.put("CUTOFF")
                     break
@@ -1675,6 +1760,8 @@ class Integrated_CT_GUI:
 
                 if isinstance(data, str) and data.startswith("LOG:"):
                     self._handle_log_message(data[4:])
+                elif isinstance(data, str) and data.startswith("BANNER:"):
+                    self._banner(data[7:], beep=True)
                 elif isinstance(data, str) and data == "CUTOFF":
                     terminal = "CUTOFF"          # defer; keep draining
                 elif isinstance(data, str) and data == "COMPLETE":
@@ -1708,6 +1795,18 @@ class Integrated_CT_GUI:
                     f"WARNING: f={int(f)} Hz status={status} "
                     f"(non-zero = overload/ALC issue) "
                     f"at T={temp:.3f} K")
+
+        # Log flagged Lakeshore readings (RDGST? != 0), once per code
+        flagged = {}
+        for (temp, f, R, X, status), (code, text) in zip(
+                cycle['points'], cycle.get('tstatus', [])):
+            if code:
+                flagged.setdefault((code, text), []).append(int(f))
+        for (code, text), fs in flagged.items():
+            self.log(
+                f"WARNING: Lakeshore 340 RDGST? = {code} ({text}) for "
+                f"{len(fs)} point(s) (f={fs[0]}..{fs[-1]} Hz); these "
+                f"temperatures are not used for the end/cutoff test.")
 
         last_temp = cycle['points'][-1][0]
         self.log(
@@ -1870,27 +1969,30 @@ class Integrated_CT_GUI:
     # ==================================================================
     # EVENT HANDLERS  (identical logic to R-T template)
     # ==================================================================
+    # No dialogs here: a run may be unattended, so every end-of-run event
+    # is console log + banner + beep.  Heater off (RAMP 1,0,0 + RANGE 0)
+    # happens in stop_measurement -> close_instruments -> Lakeshore close.
     def _handle_cutoff_event(self):
         self.log("!!! SAFETY CUTOFF REACHED !!!")
         self._update_live_plots(force=True)
         self.stop_measurement(False)
-        messagebox.showwarning(
-            "Cutoff", "Safety cutoff temperature reached.")
+        self._banner("Safety cutoff temperature reached. Heater OFF "
+                     "(RAMP 1,0,0 + RANGE 0).", beep=True)
 
     # ------------------------------------------------------------------
     def _handle_complete_event(self):
         self.log("Target temperature reached.")
         self._update_live_plots(force=True)
         self.stop_measurement(False)
-        messagebox.showinfo("Finished", "Measurement complete.")
+        self._banner("Measurement complete. Heater OFF "
+                     "(RAMP 1,0,0 + RANGE 0).", beep=True)
 
     # ------------------------------------------------------------------
     def _handle_runtime_error(self, exception):
         self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
         self.stop_measurement(False)
-        messagebox.showerror(
-            "Runtime Error",
-            f"A critical error occurred: {exception}")
+        self._banner(f"A critical error occurred: {exception}. Heater OFF "
+                     "(RAMP 1,0,0 + RANGE 0).", beep=True)
 
     # ==================================================================
     # VISA SCAN (identity-aware, for BOTH instruments)
@@ -1941,8 +2043,11 @@ class Integrated_CT_GUI:
 
             # Auto-select the Lakeshore 340 by model, never by the LSCI
             # maker token alone: a 350 on the same bus also answers LSCI.
-            if (lakeshore_label is None and
-                    "MODEL340" in idn.upper().replace(" ", "")):
+            if is_model_340_idn(idn) and (
+                    lakeshore_label is None
+                    or LAKESHORE340_ADDRESS_HINT in res):
+                # First MODEL340 wins, unless a later one sits at the
+                # lab's address 19 (hint only; IDN decides membership).
                 lakeshore_label = label
 
             # Auto-select E4980A
@@ -1954,11 +2059,12 @@ class Integrated_CT_GUI:
 
         if lakeshore_label:
             self.lakeshore_cb.set(lakeshore_label)
-            self.log("Lakeshore 350 auto-selected.")
+            self.log("Lakeshore 340 auto-selected.")
         elif found:
             self.lakeshore_cb.set(found[0])
-            self.log("WARNING: No Lakeshore 350 found; "
-                     "defaulted to first device.")
+            self.log("WARNING: No Lakeshore 340 (MODEL340) found; "
+                     "defaulted to first device. Start will refuse a "
+                     "non-340 address.")
 
         if lcr_label:
             self.lcr_cb.set(lcr_label)
