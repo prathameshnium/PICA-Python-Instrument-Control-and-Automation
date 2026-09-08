@@ -832,6 +832,7 @@ CATALOG = [
         'instruments': "Keysight E4980A",
         'modules': [
             ("C-V Measurement", "LCR C-V Measurement", None),
+            ("Open/Short Correction (guided, inspect + redo)", "LCR Open/Short Correction", None),
             ("Dielectric Frequency Scan", "LCR Frequency Scan", None),
             ("Temp. Step Freq. Scan (T Control)", "LCR Temp. Step Freq. Scan (T_Control)", "control"),
             ("Temp. Step Freq. Scan (T Control, L340)", "LCR Temp. Step Freq. Scan (T_Control, L340)", "control"),

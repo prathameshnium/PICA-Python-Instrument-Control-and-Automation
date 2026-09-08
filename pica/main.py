@@ -233,6 +233,8 @@ class PICALauncherApp:
         "Cryocon Sensor Curve Viewer": resource_path("cryocon/Sensor_Curve_Viewer_CC34_GUI.py"),
         "Lakeshore Sensor Curve Viewer": resource_path("lakeshore/Sensor_Curve_Viewer_L350_GUI.py"),
         "LCR C-V Measurement": resource_path("keysight/CV_KE4980A_GUI.py"),
+        # Guided OPEN/SHORT correction of the E4980A (Advanced Options only).
+        "LCR Open/Short Correction": resource_path("keysight/Correction_OpenShort_E4980A_GUI.py"),
         "LCR Frequency Scan": resource_path("keysight/Frequency_Scan_E4980A_GUI.py"), # Already present
         "LCR Temp. Step Freq. Scan (T_Control)": resource_path("keysight/Step_Frequency_Scan_E4980A_GUI.py"), # Already present
         "LCR Temp. Scan (T_Control)": resource_path("keysight/Temprature_Scan_E4980A_GUI.py"), # Already present
