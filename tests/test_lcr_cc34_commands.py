@@ -43,16 +43,38 @@ if project_root not in sys.path:
 import matplotlib                                             # noqa: E402
 matplotlib.use("Agg")
 
-from pica.keysight import PPMS_Sync_Freq_Scan_E4980A_GUI as sync_ls    # noqa: E402
-from pica.keysight import PPMS_Sync_Freq_Scan_CC34_E4980A_GUI as sync_cc  # noqa: E402
-from pica.keysight import (                                   # noqa: E402
-    PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI as master_ls)
-from pica.keysight import (                                   # noqa: E402
-    PPMS_Dielectric_Master_Tscan_Fscan_CC34_E4980A_GUI as master_cc)
-from pica.keysight import Temprature_Scan_Passive_E4980A_GUI as passive_ls  # noqa: E402
-from pica.keysight import Temprature_Scan_Passive_CC34_E4980A_GUI as passive_cc  # noqa: E402
-
 KEYSIGHT = os.path.join(project_root, "pica", "keysight")
+
+
+def _load(alias, filename):
+    """Load a module from its file under a private name.
+
+    Deliberately NOT `from pica.keysight import ...`: that caches the module
+    under its package name at collection time, bound to the real tkinter,
+    and tests/test_gui_modules_initialization.py later gets that cached
+    copy instead of one imported under its tkinter mock and fails with
+    "Too early to create variable".
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        alias, os.path.join(KEYSIGHT, filename))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[alias] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+sync_ls = _load("lcr_cc34_test_sync_ls", "PPMS_Sync_Freq_Scan_E4980A_GUI.py")
+sync_cc = _load("lcr_cc34_test_sync_cc",
+                "PPMS_Sync_Freq_Scan_CC34_E4980A_GUI.py")
+master_ls = _load("lcr_cc34_test_master_ls",
+                  "PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI.py")
+master_cc = _load("lcr_cc34_test_master_cc",
+                  "PPMS_Dielectric_Master_Tscan_Fscan_CC34_E4980A_GUI.py")
+passive_ls = _load("lcr_cc34_test_passive_ls",
+                   "Temprature_Scan_Passive_E4980A_GUI.py")
+passive_cc = _load("lcr_cc34_test_passive_cc",
+                   "Temprature_Scan_Passive_CC34_E4980A_GUI.py")
 
 PAIRS = {
     "sync": (sync_ls, sync_cc),

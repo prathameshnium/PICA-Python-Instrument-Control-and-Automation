@@ -19,7 +19,19 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from pica.keysight import Field_Step_Freq_Scan_E4980A_GUI as m
+import importlib.util  # noqa: E402
+
+# Loaded from its file under a private name, not `from pica.keysight import`:
+# a package-name import at collection time caches the module bound to the
+# real tkinter, and tests/test_gui_modules_initialization.py then gets that
+# copy instead of one imported under its tkinter mock.
+_spec = importlib.util.spec_from_file_location(
+    "field_step_freq_scan_test_module",
+    os.path.join(project_root, "pica", "keysight",
+                 "Field_Step_Freq_Scan_E4980A_GUI.py"))
+m = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = m
+_spec.loader.exec_module(m)
 
 
 # ----------------------------------------------------------------- field list
