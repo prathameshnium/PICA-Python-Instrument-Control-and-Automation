@@ -1294,7 +1294,42 @@ def test_printed_tolerance_is_half_the_last_place():
     assert LOADER.printed_tolerance("1.6452") == 0.5e-4
     assert LOADER.printed_tolerance("325") == 0.5
     assert LOADER.printed_tolerance("  325.0  ") == 0.05
-    assert LOADER.printed_tolerance("1.6e-3") is None
+    assert LOADER.printed_tolerance("not a number") is None
+
+
+def test_printed_tolerance_reads_exponent_notation():
+    """A firmware that prints '1.64523E+00' is printed to 1e-5, not to
+    nothing. Returning None here used to drop the check to a 1e-6 relative
+    tolerance, tighter than the six digits sent, and every point of a
+    correct transfer failed."""
+    assert abs(LOADER.printed_tolerance("1.64523E+00") - 0.5e-5) < 1e-18
+    assert abs(LOADER.printed_tolerance("3.25000E+02") - 0.5e-3) < 1e-15
+    assert abs(LOADER.printed_tolerance("1.6e-3") - 0.5e-4) < 1e-18
+    assert abs(LOADER.printed_tolerance("-2.9470e+00") - 0.5e-4) < 1e-18
+
+
+def test_an_exponent_form_echo_of_what_was_sent_verifies():
+    """REGRESSION: the readback echoed exactly the six digits that went on
+    the wire, but in exponent form, and the loader called every point a
+    mismatch."""
+    sent = [(3.5913, 3.5912544321), (325.0, 1.645231234)]
+    read = [(3.5913, 3.59125), (325.0, 1.64523)]
+    texts = [("3.59125E+00", "3.59130E+00"), ("1.64523E+00", "3.25000E+02")]
+    comparison = LOADER.compare_curves(sent, read, read_texts=texts)
+    assert comparison["matched"], comparison["problems"]
+
+
+def test_the_check_is_never_tighter_than_the_six_digits_sent():
+    """Whatever the instrument prints, a readback inside half a unit of the
+    sixth significant digit of the value sent agrees with everything that
+    was sent. A wrong value in the fifth digit still fails."""
+    sent = [(325.0, 1.645231234)]
+    agree = LOADER.compare_curves(sent, [(325.0, 1.6452349)],
+                                  read_texts=[("1.6452349", "325.0000")])
+    assert agree["matched"], agree["problems"]
+    wrong = LOADER.compare_curves(sent, [(325.0, 1.64530)],
+                                  read_texts=[("1.64530", "325.000")])
+    assert not wrong["matched"]
 
 
 def test_a_reply_with_fewer_digits_is_not_called_a_mismatch():
@@ -1512,3 +1547,51 @@ def test_duplicates_are_judged_as_sent_and_the_units_check_covers_r_names():
         volts, "VOLTS", "R8K10UA", -1.0, "TEST", sentype_type="R8K10UA")
     assert any("VOLTS" in e and "resistance" in e for e in errors), errors
 
+
+# ---------------------------------------------------------------------------
+# The occupied-slot gate (ported from the Lake Shore loader, September 2026)
+# ---------------------------------------------------------------------------
+
+def test_an_empty_slot_is_never_refused():
+    assert LOADER.overwrite_refusal(None, "X17680") == ""
+    assert LOADER.overwrite_refusal({"name": ""}, "X17680") == ""
+
+
+def test_a_resend_of_the_same_curve_is_allowed():
+    held = {"name": "cx1030 x17680", "sensor_type": "ACR", "units": "LOGOHM"}
+    assert LOADER.overwrite_refusal(held, "CX1030 X17680 ") == ""
+
+
+def test_another_curve_is_refused_unless_the_operator_says_so():
+    held = {"name": "DT-670 spare", "sensor_type": "Diode", "units": "VOLTS"}
+    refusal = LOADER.overwrite_refusal(held, "CX1030 X17680")
+    assert "DT-670 spare" in refusal and "refused" in refusal
+    assert LOADER.overwrite_refusal(held, "CX1030 X17680",
+                                    allow_overwrite=True) == ""
+
+
+def test_send_curve_passes_the_chosen_gap_to_every_line():
+    class Link:
+        address = "GPIB0::23::INSTR"
+        instrument = object()
+        is_connected = True
+
+        def __init__(self):
+            self.gaps = []
+
+        def write_line(self, line, ending, gap=None):
+            self.gaps.append(gap)
+
+    backend = LOADER.CurveLoaderBackend.__new__(LOADER.CurveLoaderBackend)
+    backend.link = Link()
+    backend.log = lambda msg: None
+    original = LOADER.CURVE_SETTLE_S
+    LOADER.CURVE_SETTLE_S = 0.0
+    try:
+        sent = backend.send_curve(10, ["N", "ACR", "-1.0", "LOGOHM",
+                                       "1.0 300.0", "2.0 100.0", ";"],
+                                  b"", gap=0.25)
+    finally:
+        LOADER.CURVE_SETTLE_S = original
+    assert sent == 8
+    assert backend.link.gaps == [0.25] * 8

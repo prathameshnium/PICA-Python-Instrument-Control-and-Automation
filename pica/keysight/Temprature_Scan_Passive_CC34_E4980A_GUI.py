@@ -4,7 +4,7 @@ Purpose:             GUI module for Temperature-Dependent Dielectric
                      Measurement (Keysight E4980A + Cryocon Model 34).
 Original Authors:    Prathamesh Deshmukh (template programs)
 Integrated by:       AI-assisted merge per design specification
-Version:             V: 1.5  (v1.3 multi-day hardening: 400 K kill
+Version:             V: 1.6  (v1.3 multi-day hardening: 400 K kill
                      switch, retry-forever comm recovery, fsync-per-point
                      writes, timestamped T-log, bounded console, optional
                      plot thinning, Windows keep-awake;
@@ -17,17 +17,29 @@ Version:             V: 1.5  (v1.3 multi-day hardening: 400 K kill
                      v1.5, 28 Aug 2026: Cryocon Model 34 in place of the
                      Lakeshore 350. Keep Temprature_Scan_Passive_E4980A_GUI.py
                      as it is for Lakeshore work; this file is the Cryocon
-                     sibling, not a replacement.)
+                     sibling, not a replacement;
+                     v1.6, 10 Sep 2026: verification pass against the
+                     Lakeshore base. The two heater call sites of the base
+                     are back with their Cryocon equivalent (RANGE 1,0 ->
+                     STOP): the 400 K kill switch disengages the loops
+                     exactly as the base does, and "STOP at Start" is an
+                     opt-in checkbox, OFF by default. A heater-read comm
+                     error now reaches the reconnect loop instead of being
+                     swallowed; NaN temperatures no longer freeze the
+                     x-axis; the runtime-error handler no longer prints
+                     'NoneType: None'.)
 
 Differences from the Lakeshore 350 version, all forced by the instrument:
 
-  1. The Cryocon is READ ONLY here. The Lakeshore version offers a
-     "Set Range to Zero" checkbox and forces RANGE 1,0 at 400 K. Neither
-     is possible without writing to a controller that something else may
-     be driving, so this module writes nothing at all and the 400 K limit
-     stops the measurement instead of touching the heater. There is no
-     write path in the file to call by accident. Ask if you want the STOP
-     write back; see the SAFETY note below.
+  1. The Cryocon is read only by default. The Lakeshore version offers a
+     "Set Range to Zero" checkbox (RANGE 1,0 at Start) and forces RANGE
+     1,0 at 400 K. The Cryocon equivalent of both is the single command
+     STOP, which disengages every control loop and drops every heater.
+     Here the Start-time STOP is a checkbox that is OFF by default (the
+     Cryocon may be driving the cryostat for somebody else), while the
+     400 K kill switch sends STOP unconditionally, as the base does.
+     STOP is the ONLY command this module ever writes. See the SAFETY
+     note below.
 
   2. The sensor channel is chosen in the GUI. A Model 34 has four inputs
      and INPUT? reports in each channel's own display units, so the
@@ -244,27 +256,32 @@ CRYOCON_HEATER_LOOP = '1'
 CRYOCON_ADDRESS_HINT = "::23::INSTR"
 
 # --- SAFETY: what happens at the 400 K limit -----------------------------
-# The Lakeshore version forces RANGE 1,0 and keeps going. The equivalent
-# here would be writing STOP, which disengages BOTH Cryocon control loops
-# and drops both heaters, on an instrument this module does not own and may
-# not be the only client of.
+# The Lakeshore version forces RANGE 1,0 (heater output 1 OFF) and stops
+# the run. The Cryocon equivalent is STOP, which disengages BOTH control
+# loops and drops both heaters (Cryocon 34 manual: "STOP: disengage all
+# control loops"; CONTROL re-engages them). That is what check_safety_kill
+# sends, three attempts, exactly as the base retries RANGE 1,0. STOP has no
+# reply, so nothing is left unread on the bus.
 #
-# This module writes nothing, and there is no write path in it to call by
-# mistake: CryoconLink here has no write() method at all. At 400 K the run
-# stops, the console says so loudly, the beeper sounds, and every row is
-# already fsync'd to disk. Whatever is driving the cryostat keeps doing what
-# it was doing, which is the honest outcome when a read-only monitor decides
-# it does not like the temperature.
+# The base also zeroes the heater range at Start when its "Set Range to
+# Zero" box is ticked (ticked by default there). Here the same thing is the
+# "Disengage Cryocon control loops at Start (STOP)" box, OFF by default:
+# the Cryocon may be driving the cryostat for another program, and a
+# passive monitor must not switch that off unless told to.
 #
-# If you want the limit to disengage the loops instead, say so and it goes
-# back: it needs a write() on CryoconLink and one 'STOP' in check_safety_kill.
+# STOP is the only command ever written. No *RST (a ~15 s hardware reset
+# on this instrument), no CONTROL, no loop, heater, range or setpoint
+# command. CryoconLink.write() exists for STOP alone and every write goes
+# through the same pacing as the queries.
+CRYOCON_STOP_COMMAND = "STOP"
 
 
 # ===============================================================================
 # CRYOCON LINK HARDENING  (read-only; inlined so each module stays standalone)
 # ===============================================================================
 #
-# Two failures seen on a Cryo-con Model 34 Rev 3.03A at GPIB1::12, 28 Aug 2026:
+# Two failures seen on a Cryo-con Model 34 Rev 3.03A (then at GPIB address
+# 12; the lab unit is at 23 since 3 Sep 2026), 28 Aug 2026:
 #
 #   1. The bus scan identified the instrument, and the very next session's
 #      '*IDN?' died inside viWrite with VI_ERROR_TMO. Pressing Start again
@@ -373,7 +390,8 @@ class CryoconLink:
     """One paced VISA session to a Cryo-con, opened with retries.
 
     Every method is a query unless the caller explicitly asks for write().
-    The monitor and the dielectric scan never call write().
+    The only caller of write() in this module is the STOP path (the
+    Start-time checkbox and the 400 K kill switch).
     """
 
     def __init__(self, visa_address, timeout_ms=CRYOCON_TIMEOUT_MS,
@@ -464,9 +482,18 @@ class CryoconLink:
             self._last_io = time.time()
         return reply.strip()
 
-    # There is deliberately no write() on this class. This module is a
-    # passive monitor, and a write path that exists is a write path that can
-    # be called by mistake. The direct-control module carries its own.
+    def write(self, command):
+        """Paced write. Cryocon set commands send no reply, so there is
+        nothing to read back and nothing is left on the bus. Same pacing
+        as query(): back-to-back traffic is what provoked the Rev 3.03A
+        write timeout. Only STOP is ever sent through here."""
+        if self.instrument is None:
+            raise ConnectionError("Not connected to the Cryocon.")
+        self._pace()
+        try:
+            self.instrument.write(command)
+        finally:
+            self._last_io = time.time()
 
     def reconnect(self):
         """Drop the session and open a fresh one. Sends no SCPI beyond
@@ -492,10 +519,12 @@ class CryoconLink:
 class Cryocon34_Backend:
     """Passive temperature source for the dielectric scan.
 
-    Every method is a query. No *RST (on a Cryocon that is a ~15 s hardware
-    reset to power-up defaults), no CONTROL, no STOP, no loop, heater,
-    range or setpoint command. Whatever is driving the cryostat is
-    untouched from Start to Stop.
+    Every method is a query except stop_control_loops(), the Cryocon
+    equivalent of the Lakeshore base's RANGE 1,0 (heater off). No *RST
+    (on a Cryocon that is a ~15 s hardware reset to power-up defaults),
+    no CONTROL, no loop, heater-range or setpoint command. Unless the
+    Start-time STOP box is ticked or the 400 K limit is reached, whatever
+    is driving the cryostat is untouched from Start to Stop.
     """
 
     def __init__(self, visa_address, channel='A', log=None):
@@ -574,15 +603,31 @@ class Cryocon34_Backend:
     def get_heater_output(self, loop=CRYOCON_HEATER_LOOP):
         """Loop output power as a percentage of full scale. Query only.
 
-        Kept so the T-log keeps its Heater_pct column. Returns nan rather
-        than raising: a heater number that cannot be read is not a reason to
-        interrupt a dielectric measurement.
+        The Cryocon equivalent of the base's 'HTR? 1'; kept so the T-log
+        keeps its Heater_pct column. A status reply (loop off, 'N/A',
+        dashes) gives NaN rather than raising: a heater number that cannot
+        be read is not a reason to interrupt a dielectric measurement. A
+        COMM failure still raises, as 'HTR?' did in the base, so the
+        worker's retry-forever reconnect loop sees it instead of the
+        error being hidden behind a NaN until the next INPUT?.
         """
+        raw = self.link.query(f'LOOP {loop}:OUTPWR?')
         try:
-            raw = self.link.query(f'LOOP {loop}:OUTPWR?')
             return parse_cryocon_number(raw.rstrip('%'), 'LOOP OUTPWR')
-        except Exception:
+        except CryoconStatusError:
             return float('nan')
+
+    def stop_control_loops(self):
+        """STOP: disengage all Cryocon control loops and drop the heaters.
+
+        This is the Cryocon equivalent of the base's 'RANGE 1,0' (heater
+        output OFF). It is the only command this module ever writes, and
+        it is sent from exactly two places: the opt-in Start-time
+        checkbox and the 400 K kill switch. STOP returns nothing, so no
+        reply is left unread on the bus.
+        """
+        self.link.write(CRYOCON_STOP_COMMAND)
+        self.log("Cryocon control loops disengaged (STOP).")
 
     def reconnect(self):
         self.link.reconnect()
@@ -796,24 +841,38 @@ class Combined_Backend:
             channel=parameters['channel'],
             log=self.log)
 
-        # NOTE: nothing is written to the Cryocon here or anywhere else.
-        # No *RST (a Cryocon *RST is a ~15 s hardware reset), no CONTROL,
-        # no STOP, no loop, heater or setpoint command.
+        # NOTE: no reset_and_clear(), no setup_heater(), no setup_ramp(),
+        # no set_setpoint() - and no *RST at all (a Cryocon *RST is a ~15 s
+        # hardware reset). The base's 'RANGE 1,0 at Start' becomes STOP
+        # here, and only when the box is ticked (OFF by default).
         self.cryocon.verify_channel()
+        if parameters.get('stop_loops', False):
+            # STOP => all control loops disengaged, heaters off
+            # (Cryocon 34 manual). Fully passive from here on.
+            self.cryocon.stop_control_loops()
+            print("  Cryocon control loops disengaged (STOP). Fully passive.")
+        else:
+            print("  Cryocon control loops left UNTOUCHED per user request.")
 
         self.lcr.initialize_instrument(parameters)
 
     def check_safety_kill(self, temperature_k):
-        """Hardcoded limit at 400 K. Read-only by default.
-
-        The Lakeshore sibling forces RANGE 1,0 here. This one stops the
-        measurement and says so; see ALLOW_EMERGENCY_STOP_WRITE at the top
-        of the file for why, and for how to change it.
+        """Hardcoded kill switch: disengage the control loops (STOP) at or
+        above 400 K. Always fires, regardless of the Start-time STOP
+        checkbox - the Cryocon equivalent of the base forcing RANGE 1,0.
+        Three attempts, as in the base; a failure is logged, never raised,
+        so the worker still stops the run and the data stays on disk.
         """
         if temperature_k >= self.SAFETY_KILL_TEMP_K:
-            print(f"!!! SAFETY LIMIT: T={temperature_k:.3f} K.")
-            print("    Measurement stopped. Nothing written to the "
-                  "Cryocon: it is read-only in this module.")
+            for attempt in range(3):
+                try:
+                    self.cryocon.stop_control_loops()
+                    break
+                except Exception as e:
+                    print(f"Kill attempt {attempt+1} failed: {e}")
+                    time.sleep(0.5)
+            print(f"!!! SAFETY KILL: T={temperature_k:.3f} K. "
+                  "Cryocon STOP sent (loops disengaged, heaters off).")
             return True
         return False
 
@@ -870,8 +929,9 @@ class Integrated_CT_GUI:
     Main GUI application for Temperature-Dependent Dielectric Measurement.
     Combines Cryocon Model 34 temperature sensing with E4980A
     multi-frequency LCR measurement.  The Cryocon is a PASSIVE temperature
-    sensor and nothing is ever written to it; the heater is never ramped or
-    setpoint-driven from this GUI.  A hardcoded 400 K limit stops the run.
+    sensor; the heater is never ramped or setpoint-driven from this GUI.
+    A hardcoded 400 K safety kill switch always sends STOP (loops
+    disengaged, heaters off - the Cryocon's RANGE 1,0).
     Built for unattended multi-day runs: comm errors auto-reconnect
     forever, every data row is fsync'd to disk immediately, and heating/
     cooling direction is never assumed — whatever temperature profile is
@@ -1187,8 +1247,7 @@ class Integrated_CT_GUI:
             "Program Name: Dielectric vs. Temperature (Passive T-Monitor)\n"
             "Instruments: Cryocon Model 34 (read-only), Keysight E4980A\n"
             "Function: FUNC:IMP RX, multi-frequency scan per T point\n"
-            "Safety: hardcoded 400 K limit; the run stops and nothing "
-            "is written to the Cryocon")
+            "Safety: hardcoded 400 K kill switch (Cryocon STOP)")
         ttk.Label(frame, text=details_text, justify='left').grid(
             row=3, column=0, columnspan=2, padx=15, pady=(0, 10),
             sticky='w')
@@ -1282,6 +1341,18 @@ class Integrated_CT_GUI:
         self.channel_cb.set(CRYOCON_INPUT_CHANNELS[0])
         self.channel_cb.grid(
             row=r, column=0, padx=(10, 5), pady=(0, 10), sticky='w')
+        r += 1
+
+        # --- Passive control-loop disengage (the base's "Set Range to
+        #     Zero"; RANGE 1,0 -> STOP). OFF by default here: the Cryocon
+        #     may be driving the cryostat for another program. ---
+        self.var_stop_loops = tk.BooleanVar(value=False)   # OFF by default
+        ttk.Checkbutton(
+            frame,
+            text="Disengage Cryocon control loops at Start (STOP; heaters OFF)",
+            variable=self.var_stop_loops).grid(
+            row=r, column=0, columnspan=2, padx=padx_val, pady=2,
+            sticky='w')
         r += 1
 
         # --- Plot thinning for very long runs (plot-only; files keep all) ---
@@ -1632,6 +1703,7 @@ class Integrated_CT_GUI:
             params = {
                 'sample_name':   self.entries["Sample Name"].get(),
                 'channel':       self.channel_cb.get(),
+                'stop_loops':    self.var_stop_loops.get(),
                 'ac_bias':       float(self.entries["AC Bias"].get()),
                 'dc_bias':       float(self.entries["DC Bias"].get()),
                 'delay':         float(self.entries["Delay"].get()),
@@ -2197,6 +2269,10 @@ class Integrated_CT_GUI:
 
         self._apply_y_scale(self.ax_main, vals, "cp")
 
+        # NaN temperatures (sensor-fault points) must not reach min/max:
+        # a NaN in the first position makes both NaN and the x-axis would
+        # never rescale again for the rest of the run.
+        temps = [t for t in temps if t == t]
         if temps:
             xlo, xhi = min(temps), max(temps)
             if xhi > xlo:
@@ -2211,20 +2287,22 @@ class Integrated_CT_GUI:
         # with nobody at the PC. Loud console log + beeps only; the run
         # is already stopped and every row is fsync'd on disk.
         kill_t = self.backend.SAFETY_KILL_TEMP_K
-        self.log(f"!!! HARDCODED SAFETY LIMIT ({kill_t:.0f} K) REACHED — "
-                 "measurement stopped !!!")
+        self.log(f"!!! HARDCODED SAFETY KILL ({kill_t:.0f} K) TRIGGERED — "
+                 "Cryocon STOP sent, control loops disengaged !!!")
         self._update_live_plots(force=True)
         self.stop_measurement(False)
-        self.log(f"Temperature reached {kill_t:.0f} K. Measurement stopped "
-                 "and data is on disk. NOTHING was written to the Cryocon: "
-                 "whatever is driving the cryostat is still driving it. "
-                 "Check the controller.")
+        self.log(f"Temperature reached {kill_t:.0f} K. Cryocon loops "
+                 "disengaged (STOP) and measurement stopped. Data is on "
+                 "disk. Check the controller before re-engaging CONTROL.")
         self._beep(times=5)
 
     # ------------------------------------------------------------------
     def _handle_runtime_error(self, exception):
         # UNATTENDED POLICY: no modal dialog (see _handle_kill_event).
-        self.log(f"RUNTIME ERROR: {traceback.format_exc()}")
+        # The worker's traceback was already logged by the queue pump
+        # (it is formatted in the worker thread, where the exception is
+        # live); format_exc() here would only print 'NoneType: None'.
+        self.log(f"RUNTIME ERROR: {type(exception).__name__}: {exception}")
         self.stop_measurement(False)
         self.log(f"A critical error occurred: {exception}. Measurement "
                  "stopped; all written data is on disk.")

@@ -1497,6 +1497,12 @@ def point_is_empty(temperature, reading):
     return temperature == 0.0 and reading == 0.0
 
 
+# A printed number: an optional sign, digits with an optional point, and an
+# optional exponent. Used to find the last printed place of a readback.
+PRINTED_NUMBER_RE = re.compile(
+    r'(?P<mantissa>[+-]?(?:\d+\.?\d*|\.\d+))(?:[eE](?P<exponent>[+-]?\d+))?')
+
+
 def printed_tolerance(text):
     """Half a unit in the last decimal place a number was printed to.
 
@@ -1507,14 +1513,29 @@ def printed_tolerance(text):
     than half a kelvin, and saying so is more use than a tolerance invented
     here.
 
-    Returns None for exponent notation, where the last-place argument does
-    not hold; the caller falls back to a relative tolerance.
+    Exponent notation is handled the same way: '1.64523E+00' is printed to
+    five places of a mantissa scaled by 10^0, so its last place is 1e-5, and
+    '3.25000E+02' is printed to 1e-3. This used to return None for such a
+    reply and the caller fell back to a relative tolerance of 1e-6, which is
+    tighter than the six significant digits that were sent, so a firmware
+    that prints in exponent form failed every point of a correct transfer.
+
+    Returns None only for text that is not a number at all.
     """
-    body = str(text).strip()
-    if 'e' in body.lower():
+    match = PRINTED_NUMBER_RE.fullmatch(str(text).strip())
+    if not match or not match.group('mantissa').strip('+-.'):
         return None
-    decimals = len(body.split('.', 1)[1]) if '.' in body else 0
-    return 0.5 * 10.0 ** (-decimals)
+    mantissa = match.group('mantissa')
+    exponent = int(match.group('exponent') or 0)
+    decimals = len(mantissa.split('.', 1)[1]) if '.' in mantissa else 0
+    return 0.5 * 10.0 ** (exponent - decimals)
+
+
+# fmt6() puts six significant digits on the wire. A readback that agrees
+# with the sent value to those six digits agrees with everything that was
+# sent, whatever else the instrument prints, so no point is called a
+# mismatch inside half a unit of the sixth significant digit.
+SENT_DIGITS_HALF_UNIT = 0.5e-5
 
 
 def compare_curves(sent_points, read_points, read_texts=None,
@@ -1586,6 +1607,10 @@ def compare_curves(sent_points, read_points, read_texts=None,
             reading_limit = abs(sent_r) * relative_tolerance
         if temperature_limit is None:
             temperature_limit = abs(sent_t) * relative_tolerance
+        # Never tighter than the digits that went on the wire.
+        reading_limit = max(reading_limit, abs(wire_r) * SENT_DIGITS_HALF_UNIT)
+        temperature_limit = max(temperature_limit,
+                                abs(wire_t) * SENT_DIGITS_HALF_UNIT)
 
         result['worst_reading_limit'] = max(result['worst_reading_limit'],
                                             reading_limit)

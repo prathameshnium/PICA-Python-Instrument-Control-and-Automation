@@ -419,9 +419,16 @@ def test_the_dielectric_scan_ships_the_exception_and_its_traceback():
 # ------------------------------------------- the passive modules stay silent
 
 def test_neither_passive_module_can_write_to_the_cryocon():
-    for module in (sensing, dscan):
-        assert not hasattr(module.CryoconLink, "write"), module.__name__
+    """The T-sensing monitor has no write path at all. Since v1.6 the
+    dielectric scan carries exactly one, for STOP - the Cryocon equivalent
+    of the Lakeshore base's RANGE 1,0 (opt-in Start-time checkbox, OFF by
+    default, and the 400 K kill switch). A default session still writes
+    nothing: see test_a_passive_session_leaves_no_writes_on_the_bus and
+    tests/test_lcr_cc34_commands.py."""
+    assert not hasattr(sensing.CryoconLink, "write")
     assert hasattr(control.CryoconLink, "write")
+    assert hasattr(dscan.CryoconLink, "write")
+    assert dscan.CRYOCON_STOP_COMMAND == "STOP"
 
 
 def test_a_passive_session_leaves_no_writes_on_the_bus():

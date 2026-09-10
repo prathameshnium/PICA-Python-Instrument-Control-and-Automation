@@ -765,7 +765,7 @@ class CryoconReadOnlyLink:
 
     def ask_block(self, command, max_lines=CURVE_READ_MAX_LINES,
                   timeout_ms=CURVE_READ_TIMEOUT_MS, terminator=';',
-                  progress=None):
+                  progress=None, should_stop=None):
         """Send one query and read its reply until the terminator line.
 
         Used for CALCUR?, whose reply is a header, up to 200 points and a
@@ -790,6 +790,11 @@ class CryoconReadOnlyLink:
                 self._last_io = time.time()
                 self.commands_sent += 1
             for line_number in range(max_lines):
+                if should_stop is not None and should_stop():
+                    # The lines already in hand are returned as they are;
+                    # without the closing semicolon the parser refuses them
+                    # as a curve, which is right, and the raw tab shows them.
+                    break
                 # No pacing between the lines of one reply: the gap is for
                 # commands, and at 80 ms a line it added sixteen seconds to
                 # a 200-point curve.
@@ -958,7 +963,7 @@ class CurveViewerBackend:
                 progress(offset, total, entry)
         return entries
 
-    def read_slot_curve(self, index, progress=None):
+    def read_slot_curve(self, index, progress=None, should_stop=None):
         """Read one slot with CALCUR? and parse it.
 
         Returns (header, points, raw_text). header and points are None when
@@ -972,7 +977,8 @@ class CurveViewerBackend:
             raise ValueError(
                 f"Table index must be {MIN_TABLE_INDEX} to "
                 f"{MAX_TABLE_INDEX}, not {index}.")
-        text = self.link.ask_block(f"CALCUR? {index}", progress=progress)
+        text = self.link.ask_block(f"CALCUR? {index}", progress=progress,
+                                   should_stop=should_stop)
         if not text.strip():
             return None, None, text
         try:
@@ -1353,21 +1359,29 @@ class CurveViewerGUI:
         self.progress.grid(row=2, column=0, columnspan=2, sticky='ew',
                            padx=10, pady=(0, 4))
 
-        self.stop_btn = ttk.Button(frame, text="Stop the slot list",
+        # Says in words where the read is and, above all, when it is over.
+        self.read_status_label = ttk.Label(
+            frame, text="No curve read yet.", background=self.CLR_FRAME_BG,
+            font=('Segoe UI', 9, 'bold'), wraplength=300, justify='left')
+        self.read_status_label.grid(row=3, column=0, columnspan=2,
+                                    sticky='w', padx=10, pady=(0, 4))
+
+        self.stop_btn = ttk.Button(frame, text="Stop the slot list or the read",
                                    state='disabled',
                                    command=self._request_stop)
-        self.stop_btn.grid(row=3, column=0, columnspan=2, sticky='ew',
+        self.stop_btn.grid(row=4, column=0, columnspan=2, sticky='ew',
                            padx=10, pady=(0, 4))
 
         ttk.Label(
             frame,
             text=("One CALCUR? query. On the Rev 3.03A unit here it takes\n"
                   "about twelve seconds while the instrument walks its\n"
-                  "flash; the window stays responsive throughout. Reading\n"
-                  "cannot be interrupted part-way, so the stop button above\n"
-                  "applies to the slot list in step 2, not to this."),
+                  "flash; the window stays responsive throughout. The stop\n"
+                  "button ends the slot list of step 2, or this read between\n"
+                  "two lines; a read stopped part-way is shown as raw text\n"
+                  "and never as a curve."),
             background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
-            justify='left').grid(row=4, column=0, columnspan=2, sticky='w',
+            justify='left').grid(row=5, column=0, columnspan=2, sticky='w',
                                  padx=10, pady=(0, 8))
 
     def _create_export_panel(self, parent, grid_row):
@@ -1608,6 +1622,8 @@ class CurveViewerGUI:
         elif kind == 'progress':
             self.progress['maximum'] = event[2]
             self.progress['value'] = event[1]
+        elif kind == 'read_status':
+            self.read_status_label.config(text=event[1])
         elif kind == 'catalogue':
             self._show_catalogue(event[1])
         elif kind == 'curve':
@@ -1670,8 +1686,13 @@ class CurveViewerGUI:
 
     def _request_stop(self):
         self._stop_flag.set()
-        self.log("Stop requested. The slot list will end after the query "
-                 "that is already in flight.")
+        self.log("Stop requested. The slot list, or the curve read, will end "
+                 "after the line that is already in flight.")
+        try:
+            self.read_status_label.config(text="Stopping after the line in "
+                                               "flight...")
+        except Exception:
+            pass
 
     # -----------------------------------------------------------------------
     # CONNECTION
@@ -1875,14 +1896,38 @@ class CurveViewerGUI:
                      "takes about twelve seconds on this firmware...")
             started = time.time()
 
+            self._post('read_status', f"Waiting for CALCUR? {index} to "
+                                      "answer (about twelve seconds)...")
+
             def progress(done, total):
                 self._post('progress', done, total)
+                self._post('read_status',
+                           f"Receiving line {done} of up to {total}...")
 
             header, points, raw = self.backend.read_slot_curve(
-                index, progress=progress)
+                index, progress=progress, should_stop=self._stop_flag.is_set)
+            if self._stop_flag.is_set():
+                self.log(f"  Stopped by you after {len(raw.splitlines())} "
+                         "line(s). What came back is on the 'What the "
+                         "instrument said' tab; it is not a curve.")
+            elif not raw.strip():
+                # An empty slot and a reply that came too late look the
+                # same from here. Ask once more before calling it empty.
+                self.log(f"  Nothing came back in {time.time() - started:.1f}"
+                         " s. A slow reply and an empty slot look the same, "
+                         "so asking once more...")
+                header, points, raw = self.backend.read_slot_curve(
+                    index, progress=progress,
+                    should_stop=self._stop_flag.is_set)
             elapsed = time.time() - started
-            self.log(f"  Reply in {elapsed:.1f} s, "
-                     f"{len(raw.splitlines())} line(s).")
+            lines = len(raw.splitlines())
+            self.log(f"  Reply in {elapsed:.1f} s, {lines} line(s). The "
+                     "read is finished.")
+            # Fill the bar: its total was the line ceiling, and a shorter
+            # curve used to leave it part way across, looking unfinished.
+            self._post('progress', max(lines, 1), max(lines, 1))
+            self._post('read_status',
+                       f"Done: {lines} line(s) received in {elapsed:.1f} s.")
             if header is None:
                 self.log(f"  Slot {index} did not answer with a curve. The "
                          "reply is on the 'What the instrument said' tab.")
@@ -1910,6 +1955,23 @@ class CurveViewerGUI:
         for row in self.table.get_children():
             self.table.delete(row)
 
+        if header is None and not self.raw_text.strip():
+            # Said apart from a garbled reply: nothing at all came back,
+            # twice, which is an empty slot OR an instrument that did not
+            # answer in time, and the screen must not pick one.
+            self.headline_label.config(
+                text=f"Slot {index} did not answer.")
+            self.detail_label.config(
+                text=("Nothing came back to CALCUR? within the wait, asked "
+                      "twice. Either the slot is empty, or the instrument "
+                      "was still busy and answered too late. The name the "
+                      "slot list (step 2) shows for this index says which "
+                      "is likelier; read it once more before calling it "
+                      "empty."))
+            self.problem_label.config(text="")
+            self._draw_plot(None, [])
+            self.right_tabs.select(0)
+            return
         if header is None:
             self.headline_label.config(
                 text=f"Slot {index} holds no readable curve.")
@@ -1917,8 +1979,9 @@ class CurveViewerGUI:
                 text=("The instrument answered, but the reply is not the "
                       "four header lines, points and semicolon a Cryo-con "
                       "curve is made of. That normally means the slot is "
-                      "empty. The whole reply is on the 'What the "
-                      "instrument said' tab."))
+                      "empty, or that the read was stopped part-way. The "
+                      "whole reply is on the 'What the instrument said' "
+                      "tab."))
             self.problem_label.config(text="")
             self._draw_plot(None, [])
             self.right_tabs.select(0)
@@ -2027,12 +2090,33 @@ class CurveViewerGUI:
 
     def _show_channels(self, answers):
         lines = []
+        # The slot list, where one has been run, turns a sensor index into
+        # the name of the curve behind it. The Lake Shore viewer does the
+        # same with INCRV?; a bare number is not much use to anyone.
+        names = {}
+        for entry in self.catalogue or ():
+            try:
+                names[int(entry.get('index'))] = entry.get('name')
+            except (TypeError, ValueError):
+                continue
         for channel in INPUT_CHANNELS:
             entry = answers.get(channel, {})
             lines.append(
                 f"{channel}: SENIX {str(entry.get('SENIX', '?')):>6s}  "
                 f"ISENIX {str(entry.get('ISENIX', '?')):>6s}  "
                 f"USENIX {str(entry.get('USENIX', '?')):>6s}")
+            named = []
+            for key in ('SENIX', 'ISENIX', 'USENIX'):
+                try:
+                    number = int(float(str(entry.get(key, '')).strip()))
+                except (TypeError, ValueError):
+                    continue
+                if number in names and names[number]:
+                    named.append(f"{key} {number} = '{names[number]}'")
+            if named:
+                lines.append("   " + "; ".join(dict.fromkeys(named)))
+            elif names:
+                lines.append("   (no index above is in the slot list)")
             lines.append(f"   reads {entry.get('reading', '?')}")
         lines.append("")
         lines.append("A run of dashes is a sensor fault; a run of dots means")

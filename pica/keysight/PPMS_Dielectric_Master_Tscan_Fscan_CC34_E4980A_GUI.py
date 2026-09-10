@@ -271,9 +271,10 @@ forced by the instrument:
           'INPUT <ch>:UNITS?' must answer K, and the channel must
           return a live reading, before the run begins.
   CC34-3  The instrument is chosen by identity, never by address.
-          The Cryocon is at GPIB0::12 as of 29 Aug 2026 and the
-          Lakeshore 350 answers on GPIB1::12 — the Cryo-con's own
-          factory address — so an address-based pick would drive the
+          The Cryocon was at GPIB0::12 on 29 Aug 2026 (address 23
+          since 3 Sep 2026) and the Lakeshore 350 answers on
+          GPIB1::12 — the Cryo-con's own factory address — so an
+          address-based pick would drive the
           whole phase machine off the wrong instrument. Connect
           refuses anything whose *IDN? is not a Cryo-con.
   CC34-4  Opening is retried and all traffic is paced. On a Rev
@@ -982,8 +983,9 @@ def validate_ppms_seq(text):
 #      which float() rejects outright. Handled by parse_cryocon_number(),
 #      which names the condition instead of raising a bare ValueError.
 #
-#   3. The Cryocon was picked by address alone. It is at GPIB0::12 as of
-#      29 Aug 2026, and the Lakeshore 350 now sits on GPIB1::12 - the
+#   3. The Cryocon was picked by address alone. It was at GPIB0::12 on
+#      29 Aug 2026 (address 23 since 3 Sep 2026; see CRYOCON_ADDRESS_HINT),
+#      and the Lakeshore 350 now sits on GPIB1::12 - the
 #      Cryo-con's own factory address. Selection here is by '*IDN?'
 #      content, so a re-addressed Cryocon is still found and a stranger on
 #      the factory address is never mistaken for one. Every measured point

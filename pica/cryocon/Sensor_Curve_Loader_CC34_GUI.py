@@ -1300,6 +1300,34 @@ def looks_like_empty_user_slot(name):
     return bool(USER_SLOT_NAME_RE.match(str(name or '').strip()))
 
 
+def overwrite_refusal(baseline_header, name, allow_overwrite=False):
+    """Why a send into this slot must not go ahead, or '' if it may.
+
+    Ported from the Lake Shore loader, whose rule is that the slot is read
+    immediately before the write and an occupied one is refused. Here the
+    rule is one step gentler, because a resend after a failed verify is the
+    common case: a slot that holds a curve of the SAME name is a resend and
+    is allowed; a slot that holds a curve of ANOTHER name is somebody's
+    calibration and is refused unless the operator has ticked the Advanced
+    box that says so. An empty slot is always allowed.
+    """
+    if not baseline_header:
+        return ""
+    held = str(baseline_header.get('name', '')).strip()
+    wanted = str(name or '').strip()
+    if not held or held.upper() == wanted.upper():
+        return ""
+    if allow_overwrite:
+        return ""
+    return (f"The slot already holds a curve named '{held}' "
+            f"({baseline_header.get('sensor_type')}, "
+            f"{baseline_header.get('units')}), and the curve being sent is "
+            f"named '{wanted}'. Overwriting another curve is refused by "
+            "default. Pick an empty slot, or tick 'allow overwriting a slot "
+            "that holds a different curve' under Advanced if that curve is "
+            "really no longer wanted.")
+
+
 def analyse_sensor_table(entries):
     """Work out the shape of the Master Sensor Table from a scan.
 
@@ -1442,6 +1470,12 @@ def crv_file_text(lines):
 FLOAT32_HALF_ULP = 2.0 ** -24
 
 
+# A printed number: an optional sign, digits with an optional point, and an
+# optional exponent. Used to find the last printed place of a readback.
+PRINTED_NUMBER_RE = re.compile(
+    r'(?P<mantissa>[+-]?(?:\d+\.?\d*|\.\d+))(?:[eE](?P<exponent>[+-]?\d+))?')
+
+
 def printed_tolerance(text):
     """Half a unit in the last decimal place a number was printed to.
 
@@ -1452,14 +1486,29 @@ def printed_tolerance(text):
     than half a Kelvin, and saying so is more use than a tolerance invented
     here.
 
-    Returns None for exponent notation, where the last-place argument does
-    not hold; the caller falls back to a relative tolerance.
+    Exponent notation is handled the same way: '1.64523E+00' is printed to
+    five places of a mantissa scaled by 10^0, so its last place is 1e-5, and
+    '3.25000E+02' is printed to 1e-3. This used to return None for such a
+    reply and the caller fell back to a relative tolerance of 1e-6, which is
+    tighter than the six significant digits that were sent, so a firmware
+    that prints in exponent form failed every point of a correct transfer.
+
+    Returns None only for text that is not a number at all.
     """
-    body = text.strip()
-    if 'e' in body.lower():
+    match = PRINTED_NUMBER_RE.fullmatch(str(text).strip())
+    if not match or not match.group('mantissa').strip('+-.'):
         return None
-    decimals = len(body.split('.', 1)[1]) if '.' in body else 0
-    return 0.5 * 10.0 ** (-decimals)
+    mantissa = match.group('mantissa')
+    exponent = int(match.group('exponent') or 0)
+    decimals = len(mantissa.split('.', 1)[1]) if '.' in mantissa else 0
+    return 0.5 * 10.0 ** (exponent - decimals)
+
+
+# fmt6() puts six significant digits on the wire. A readback that agrees
+# with the sent value to those six digits agrees with everything that was
+# sent, whatever else the instrument prints, so no point is called a
+# mismatch inside half a unit of the sixth significant digit.
+SENT_DIGITS_HALF_UNIT = 0.5e-5
 
 
 def compare_curves(sent_points, read_points, read_texts=None,
@@ -1547,6 +1596,10 @@ def compare_curves(sent_points, read_points, read_texts=None,
             reading_limit = abs(sent_r) * relative_tolerance
         if temperature_gap_limit is None:
             temperature_gap_limit = abs(sent_t) * relative_tolerance
+        # Never tighter than the digits that went on the wire.
+        reading_limit = max(reading_limit, abs(wire_r) * SENT_DIGITS_HALF_UNIT)
+        temperature_gap_limit = max(temperature_gap_limit,
+                                    abs(wire_t) * SENT_DIGITS_HALF_UNIT)
         # The instrument stores 32-bit floats. A firmware that prints more
         # digits than that holds cannot be checked more closely than half
         # a float32 unit in the last place, whatever it printed.
@@ -2080,12 +2133,18 @@ class CurveLoaderBackend:
     # -- curve transfer --
 
     def send_curve(self, index, lines, line_ending, progress=None,
-                   should_stop=None):
+                   should_stop=None, gap=None):
         """Send one CALCUR block, line by line.
 
         `lines` is what build_crv_lines() returned: four header lines, the
         points, and the closing semicolon. The command line is added here so
         the same list can be written to a .crv file unchanged.
+
+        `gap` is the pause before each line, in seconds; None means the
+        module default CURVE_LINE_GAP_S. The Advanced panel exposes it,
+        because the readback classifier's own advice for a short curve is to
+        raise it, and a constant nobody can reach from the window is not
+        advice anyone can follow.
         """
         if not self.link:
             raise ConnectionError("Not connected to instrument.")
@@ -2106,7 +2165,7 @@ class CurveLoaderBackend:
                     f"Stopped after {position} of {len(block)} lines. The "
                     f"curve in slot {index} is now partial: send it again "
                     "before using it.")
-            self.link.write_line(line, ending)
+            self.link.write_line(line, ending, gap)
             if progress:
                 progress(position + 1, len(block), line)
         # The manual: the instrument conditions, sorts and copies the curve to
@@ -3055,12 +3114,48 @@ class CurveLoaderGUI:
             justify='left').grid(row=3, column=0, columnspan=2, sticky='w',
                                  padx=10, pady=(0, 8))
 
+        ttk.Label(self.advanced_frame, text="Gap between lines (s):",
+                  background=self.CLR_FRAME_BG).grid(
+            row=4, column=0, sticky='w', padx=10, pady=4)
+        self.gap_var = tk.StringVar(value=f"{CURVE_LINE_GAP_S:g}")
+        ttk.Entry(self.advanced_frame, textvariable=self.gap_var,
+                  width=8, font=self.FONT_BASE).grid(
+            row=4, column=1, sticky='w', padx=10, pady=4)
+        ttk.Label(
+            self.advanced_frame,
+            text=("The pause before each line of the CALCUR block. Raise it "
+                  "if a readback comes\nback short: this firmware drops "
+                  "bytes under back-to-back traffic. 0 to 2 s; a\n200-point "
+                  "curve takes about 200 times this."),
+            background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
+            justify='left').grid(row=5, column=0, columnspan=2, sticky='w',
+                                 padx=10, pady=(0, 6))
+
+        ttk.Label(self.advanced_frame, text="Occupied slot:",
+                  background=self.CLR_FRAME_BG).grid(
+            row=6, column=0, sticky='w', padx=10, pady=4)
+        self.overwrite_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            self.advanced_frame,
+            text="allow overwriting a slot that holds a different curve",
+            variable=self.overwrite_var).grid(
+            row=6, column=1, sticky='w', padx=10, pady=4)
+        ttk.Label(
+            self.advanced_frame,
+            text=("The target is read back before every send. A slot that "
+                  "holds a curve of\nanother name is refused unless this is "
+                  "ticked. An empty slot, or one holding\na curve of the "
+                  "same name (a resend), is always allowed. Off by default."),
+            background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
+            justify='left').grid(row=7, column=0, columnspan=2, sticky='w',
+                                 padx=10, pady=(0, 8))
+
         ttk.Separator(self.advanced_frame, orient='horizontal').grid(
-            row=4, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
+            row=8, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
         ttk.Button(self.advanced_frame,
                    text="Run the built-in checks (no instrument needed)",
                    command=self._run_self_test).grid(
-            row=5, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
+            row=9, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
         ttk.Label(
             self.advanced_frame,
             text=("Twenty-six checks on the file readers, the unit maths, "
@@ -3068,8 +3163,33 @@ class CurveLoaderGUI:
                   "run on made-up data. Worth a press after\nany edit to "
                   "this file, and before a session on a cold cryostat."),
             background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
-            justify='left').grid(row=6, column=0, columnspan=2, sticky='w',
+            justify='left').grid(row=10, column=0, columnspan=2, sticky='w',
                                  padx=10, pady=(0, 8))
+
+    def _line_gap(self):
+        """The inter-line gap from the Advanced box, or None for the default.
+
+        A value that is not a number, or is outside 0 to 2 s, is reported
+        and the default is used: a typo must not turn into a 200 s curve or
+        a burst the firmware cannot keep up with.
+        """
+        raw = str(self.gap_var.get()).strip() if hasattr(self, 'gap_var') else ''
+        if not raw:
+            return None
+        try:
+            gap = float(raw)
+        except ValueError:
+            self.log(f"  Gap between lines '{raw}' is not a number; using "
+                     f"the default {CURVE_LINE_GAP_S:g} s.")
+            return None
+        if not 0.0 <= gap <= 2.0:
+            self.log(f"  Gap between lines {gap:g} s is outside 0 to 2 s; "
+                     f"using the default {CURVE_LINE_GAP_S:g} s.")
+            return None
+        if abs(gap - CURVE_LINE_GAP_S) > 1e-9:
+            self.log(f"  Gap between lines set to {gap:g} s (default "
+                     f"{CURVE_LINE_GAP_S:g} s).")
+        return gap
 
     def _run_self_test(self):
         """Run the offline checks and print them in the console."""
@@ -3277,10 +3397,13 @@ class CurveLoaderGUI:
     def _set_busy(self, busy):
         self.busy = busy
         state = 'disabled' if busy else 'normal'
-        try:
-            self.send_btn.config(state=state)
-        except Exception:
-            pass
+        # Both write buttons, not just one: a sequence started on top of a
+        # running send used to be bounced with a console line only.
+        for widget_name in ('send_btn', 'sequence_btn'):
+            try:
+                getattr(self, widget_name).config(state=state)
+            except Exception:
+                pass
         # Disconnect under a running job leaves a curve half written, so the
         # button goes grey with the rest and comes back only if connected.
         try:
@@ -4173,11 +4296,24 @@ class CurveLoaderGUI:
                 self.log(f"  SENTYPE {key}: {entry.get(key)}")
                 if entry.get(f"{key}_error"):
                     self.log(f"    ({entry[f'{key}_error']})")
+            started = time.time()
             text = self.backend.read_curve(self._calcur_index_for(slot))
             if not text.strip():
-                self.log(f"  Slot {slot} returned nothing. It is probably "
-                         "empty, which is fine if you are about to fill it.")
-                return
+                # An empty slot and a reply that came too late look the
+                # same from here. Ask once more before calling it empty.
+                self.log(f"  Slot {slot} returned nothing in "
+                         f"{time.time() - started:.1f} s. A slow reply and "
+                         "an empty slot look the same, so asking once "
+                         "more...")
+                text = self.backend.read_curve(self._calcur_index_for(slot))
+                if not text.strip():
+                    self.log(f"  Nothing again ({time.time() - started:.1f} "
+                             "s in all). Either the slot is empty, which is "
+                             "fine if you are about to fill it, or the "
+                             "instrument is not answering CALCUR?; the "
+                             "SENTYPE name above says which is likelier.")
+                    return
+            self.log(f"  Reply in {time.time() - started:.1f} s.")
             try:
                 header, points = parse_crv_text(text, f"slot {slot}")
             except CurveFileError as exc:
@@ -4235,6 +4371,8 @@ class CurveLoaderGUI:
         verify = self.verify_var.get()
         also_name = self.set_name_var.get()
         name = self.name_var.get().strip()
+        gap = self._line_gap()
+        allow_overwrite = self.overwrite_var.get()
         # Snapshot on this, the Tk thread. See _expected_header().
         expected = self._expected_header()
 
@@ -4257,10 +4395,17 @@ class CurveLoaderGUI:
                          f"{baseline_header['units']}, "
                          f"{len(baseline_points)} points. That is what is "
                          "about to be overwritten.")
+                refusal = overwrite_refusal(baseline_header, name,
+                                            allow_overwrite)
+                if refusal:
+                    self.log("REFUSED. " + refusal)
+                    self._post('dialog', 'error', "Slot Is Occupied",
+                               refusal + "\n\nNothing was sent.")
+                    return
             self.log(f"Sending {len(lines) + 1} lines to user curve {slot} "
                      f"(CALCUR {calcur_index}) ...")
             self.backend.send_curve(
-                calcur_index, lines, ending,
+                calcur_index, lines, ending, gap=gap,
                 progress=lambda done, total, line: self._set_progress(
                     done, total))
             self.log(f"  All lines sent. Waited {CURVE_SETTLE_S:.1f} s for "
@@ -4361,6 +4506,19 @@ class CurveLoaderGUI:
         self.log(f"  The instrument reports: name '{header['name']}', type "
                  f"'{header['sensor_type']}', multiplier "
                  f"{header['multiplier']:+g}, units {header['units']}.")
+        # The numerals exactly as printed. How many digits this firmware
+        # prints, and in what notation, decides how closely the points can
+        # be checked, and until it is in the log nobody can tell a strict
+        # check from a wrong curve.
+        printed = list(header.get('point_texts') or [])
+        if printed:
+            shown = [f"{r} {t}" for r, t in printed[:2]]
+            if len(printed) > 3:
+                shown.append("...")
+            if len(printed) > 2:
+                shown.append(f"{printed[-1][0]} {printed[-1][1]}")
+            self.log("  Points as printed (reading, temperature): "
+                     + "  |  ".join(shown))
 
         # Field by field, so the console says which ones survived rather than
         # only that something did not.
@@ -4515,6 +4673,8 @@ class CurveLoaderGUI:
         points = list(self.curve_points)
         ending = LINE_ENDINGS[self.ending_var.get()]
         also_name = self.set_name_var.get()
+        gap = self._line_gap()
+        allow_overwrite = self.overwrite_var.get()
 
         def job():
             results = []
@@ -4591,6 +4751,12 @@ class CurveLoaderGUI:
                           f"{baseline_header['sensor_type']}, "
                           f"{baseline_header['units']}, "
                           f"{len(baseline_points)} points")
+                refusal = overwrite_refusal(baseline_header, expected['name'],
+                                            allow_overwrite)
+                if refusal:
+                    record(2, f"read CALCUR {calcur_index} baseline", False,
+                           detail + ". " + refusal)
+                    return finish()
                 record(2, f"read CALCUR {calcur_index} baseline", True, detail)
                 self.log("  This is what will be overwritten. If the "
                          "readback in step 5 still shows it, the send did "
@@ -4615,7 +4781,7 @@ class CurveLoaderGUI:
                 self.log(f"Sending {len(lines) + 1} lines to user curve "
                          f"{slot} (CALCUR {calcur_index}) ...")
                 self.backend.send_curve(
-                    calcur_index, lines, ending,
+                    calcur_index, lines, ending, gap=gap,
                     progress=lambda done, total, line: self._set_progress(
                         done, total))
             except Exception as exc:
