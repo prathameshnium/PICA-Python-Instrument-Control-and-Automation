@@ -237,6 +237,9 @@ class PICALauncherApp:
         "LCR Open/Short Correction": resource_path("keysight/Correction_OpenShort_E4980A_GUI.py"),
         "LCR Frequency Scan": resource_path("keysight/Frequency_Scan_E4980A_GUI.py"), # Already present
         "LCR Temp. Step Freq. Scan (T_Control)": resource_path("keysight/Step_Frequency_Scan_E4980A_GUI.py"), # Already present
+        # Field-stepped dielectric scan on the PPMS: T and H set by hand, one
+        # E4980A sweep per field; thermometer (L350 / CC34 / none) read only.
+        "LCR Field Step Freq. Scan (PPMS, manual H)": resource_path("keysight/Field_Step_Freq_Scan_E4980A_GUI.py"),
         "LCR Temp. Scan (T_Control)": resource_path("keysight/Temprature_Scan_E4980A_GUI.py"), # Already present
         "LCR Temp. Scan (T_Sensing)": resource_path("keysight/Temprature_Scan_Passive_E4980A_GUI.py"), # Already present
         "LCR Temp. Scan (T_Sensing, CC34)": resource_path("keysight/Temprature_Scan_Passive_CC34_E4980A_GUI.py"),
@@ -856,6 +859,7 @@ class PICALauncherApp:
                                    "LCR C-V Measurement"),
                                   ("Dielectric Frequency Scan", "LCR Frequency Scan"), # Already present
                                   ("Temp. Step Freq. Scan (T_Control, L350)", "LCR Temp. Step Freq. Scan (T_Control)", "control"), # Already present
+                                  ("Field Step Freq. Scan (PPMS, manual H, T_Sensing L350/CC34)", "LCR Field Step Freq. Scan (PPMS, manual H)", "sensing"),
                                   ("Temp. Step Freq. Scan (T_Control, L340)", "LCR Temp. Step Freq. Scan (T_Control, L340)", "control"),
                                   ("Temp. Step Freq. Scan (PPMS, T_Sensing, L350)", "PPMS Sync Freq. Scan", "sensing"),
                                   ("Temp. Step Freq. Scan (PPMS, T_Sensing, L340)", "PPMS Sync Freq. Scan (L340)", "sensing"),

@@ -1042,6 +1042,7 @@ class CurveViewerBackend:
         points = []
         notes = []
         zero_run = 0
+        repeat_run = 0
         for index in range(1, limit + 1):
             if should_stop is not None and should_stop():
                 notes.append(f"{INCOMPLETE_MARK} stopped by the operator at "
@@ -1062,10 +1063,40 @@ class CurveViewerBackend:
             if units_value == 0.0 and temperature == 0.0:
                 zero_run += 1
                 if zero_run >= STOP_AFTER_ZERO_PAIRS:
+                    notes.append(
+                        f"End of curve: CRVPT? answered 0,0 at breakpoints "
+                        f"{index - zero_run + 1} to {index}, which is the "
+                        "instrument's end marker, so the curve holds "
+                        f"{len(points)} breakpoints and the read stopped "
+                        f"there rather than going on to {limit}.")
                     break
                 # Held back: if the next reply is real, these zeros were a
                 # gap in the stored curve and belong in the list.
                 continue
+            if points and (units_value, temperature) == points[-1]:
+                # A firmware that answers an index past the end of the curve
+                # with the LAST breakpoint instead of 0,0 would otherwise be
+                # read all the way to the ceiling, and the table would carry
+                # a tail of copies. A Lake Shore never stores two identical
+                # breakpoints (the sensor column must ascend), so two exact
+                # repeats in a row are the end of the curve.
+                repeat_run += 1
+                if repeat_run >= STOP_AFTER_ZERO_PAIRS:
+                    notes.append(
+                        f"End of curve: breakpoints {index - repeat_run + 1} "
+                        f"to {index} repeated the last real breakpoint "
+                        "exactly. A Lake Shore never stores two identical "
+                        "breakpoints, so this is taken as the end of the "
+                        f"curve: {len(points)} breakpoints.")
+                    break
+                continue
+            if repeat_run:
+                notes.append(
+                    f"{repeat_run} breakpoint(s) before index {index} "
+                    "repeated the previous breakpoint exactly and were "
+                    "followed by different data. They are not in the table "
+                    "below.")
+                repeat_run = 0
             if zero_run:
                 notes.append(
                     f"{zero_run} zero breakpoint(s) before index {index} were "
@@ -1449,9 +1480,16 @@ class CurveViewerGUI:
         self.progress.grid(row=2, column=0, columnspan=2, sticky='ew',
                            padx=10, pady=(0, 4))
 
+        # Says in words where the read is and, above all, when it is over.
+        self.read_status_label = ttk.Label(
+            frame, text="No curve read yet.", background=self.CLR_FRAME_BG,
+            font=('Segoe UI', 9, 'bold'), wraplength=300, justify='left')
+        self.read_status_label.grid(row=3, column=0, columnspan=2,
+                                    sticky='w', padx=10, pady=(0, 4))
+
         self.stop_btn = ttk.Button(frame, text="Stop reading",
                                    state='disabled', command=self._request_stop)
-        self.stop_btn.grid(row=3, column=0, columnspan=2, sticky='ew',
+        self.stop_btn.grid(row=4, column=0, columnspan=2, sticky='ew',
                            padx=10, pady=(0, 4))
 
         ttk.Label(
@@ -1460,7 +1498,7 @@ class CurveViewerGUI:
                   "takes a few seconds. The read stops by itself at the\n"
                   "instrument's own end marker (two breakpoints of 0, 0)."),
             background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
-            justify='left').grid(row=4, column=0, columnspan=2, sticky='w',
+            justify='left').grid(row=5, column=0, columnspan=2, sticky='w',
                                  padx=10, pady=(0, 8))
 
     def _create_export_panel(self, parent, grid_row):
@@ -1686,6 +1724,8 @@ class CurveViewerGUI:
         elif kind == 'progress':
             self.progress['maximum'] = event[2]
             self.progress['value'] = event[1]
+        elif kind == 'read_status':
+            self.read_status_label.config(text=event[1])
         elif kind == 'catalogue':
             self._show_catalogue(event[1])
         elif kind == 'curve':
@@ -1753,6 +1793,11 @@ class CurveViewerGUI:
         self._stop_flag.set()
         self.log("Stop requested. The read will end after the query that is "
                  "already in flight.")
+        try:
+            self.read_status_label.config(text="Stopping after the query in "
+                                               "flight...")
+        except Exception:
+            pass
 
     # -----------------------------------------------------------------------
     # CONNECTION
@@ -2027,12 +2072,25 @@ class CurveViewerGUI:
                          f"limit {header['limit']} K, coefficient "
                          f"{header['coefficient_name']}.")
 
+            started = time.time()
+
             def progress(done, total, point):
                 self._post('progress', done, total)
+                self._post('read_status',
+                           f"Reading breakpoint {done} of up to {total}...")
 
             points, notes = self.backend.read_points(
                 curve, progress=progress, should_stop=self._stop_flag.is_set)
-            self.log(f"  {len(points)} breakpoints read.")
+            elapsed = time.time() - started
+            # Fill the bar. Its total was the 200-breakpoint ceiling, so a
+            # shorter curve used to leave it part way across with no word
+            # that the read had ended, which looked like a read still going.
+            self._post('progress', len(points), max(len(points), 1))
+            self._post('read_status',
+                       f"Done: {len(points)} breakpoints read in "
+                       f"{elapsed:.1f} s.")
+            self.log(f"  {len(points)} breakpoints read in {elapsed:.1f} s. "
+                     "The read is finished.")
             header['_incomplete'] = read_is_incomplete(notes)
             holds_curve, verdict = describe_slot(header, points)
             if verdict:

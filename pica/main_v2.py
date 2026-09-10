@@ -835,6 +835,7 @@ CATALOG = [
             ("Open/Short Correction (guided, inspect + redo)", "LCR Open/Short Correction", None),
             ("Dielectric Frequency Scan", "LCR Frequency Scan", None),
             ("Temp. Step Freq. Scan (T Control)", "LCR Temp. Step Freq. Scan (T_Control)", "control"),
+            ("Field Step Freq. Scan (PPMS, manual H, T Sensing)", "LCR Field Step Freq. Scan (PPMS, manual H)", "sensing"),
             ("Temp. Step Freq. Scan (T Control, L340)", "LCR Temp. Step Freq. Scan (T_Control, L340)", "control"),
             ("Temp. Step Freq. Scan (PPMS, T Sensing, L350)", "PPMS Sync Freq. Scan", "sensing"),
             ("Temp. Step Freq. Scan (PPMS, T Sensing, L340)", "PPMS Sync Freq. Scan (L340)", "sensing"),
@@ -1259,6 +1260,14 @@ QUICK_CATALOG = [
                              "full frequency sweep is run, then the next "
                              "setpoint is taken. Stand-alone, no PPMS "
                              "involved."},
+                    {'label': "Field Step Freq. Scan (PPMS, manual H)",
+                     'key': "LCR Field Step Freq. Scan (PPMS, manual H)",
+                     'family': 'sensing',
+                     'desc': "Magnetic-field-dependent dielectric scan. You "
+                             "set T and H by hand on the PPMS; pick the field "
+                             "in the list and press Measure for one E4980A "
+                             "sweep per field, one file per field. The "
+                             "Lakeshore 350 or Cryo-con 34 is only read."},
                     {'label': "PPMS Sync Freq. Scan (T Sensing, L350)",
                      'key': "PPMS Sync Freq. Scan", 'family': 'sensing',
                      'desc': "Waits for the PPMS to hold a plateau, runs a "

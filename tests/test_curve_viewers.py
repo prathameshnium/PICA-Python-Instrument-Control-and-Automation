@@ -697,3 +697,54 @@ def test_cc34_query_guard_admits_a_query_by_shape_only():
                     "SENTYPE? 15\nSTOP", "CALCUR? 15\r\nCALCUR 15"):
         assert not cc34.is_query(command), command
 
+
+def test_cc34_block_read_can_be_stopped_between_lines():
+    """The stop button used to apply to the slot list only. A curve read
+    stopped part-way returns the lines in hand, which the parser then
+    refuses as a curve because the semicolon never came."""
+    link = _cc34_link(lines=["CX1030", "ACR", "-1.0", "LOGOHM",
+                             "1.0 300.0", "2.0 100.0", ";"])
+    seen = []
+
+    def stop_after_two():
+        return len(seen) >= 2
+
+    def progress(done, total):
+        seen.append(done)
+
+    text = link.ask_block("CALCUR? 10", progress=progress,
+                          should_stop=stop_after_two)
+    assert text.splitlines() == ["CX1030", "ACR"]
+    with pytest.raises(cc34.CurveReadError):
+        cc34.parse_calcur_block(text)
+
+
+def test_l350_read_points_says_where_the_curve_ended_and_fills_no_tail():
+    """September 2026: a read of a short curve looked as if it never
+    finished. The read did stop at the end marker, but said nothing about
+    it; now the notes say where the curve ended. A firmware that echoes the
+    last breakpoint past the end instead of 0,0 is also treated as the end,
+    because a Lake Shore never stores two identical breakpoints."""
+    class ScriptedLink:
+        def __init__(self, replies):
+            self.replies = list(replies)
+
+        def ask(self, command):
+            assert '?' in command, command
+            return self.replies.pop(0)
+
+    backend = l350.CurveViewerBackend(log=lambda msg: None)
+    backend.link = ScriptedLink(["1.0,300.0", "2.0,100.0",
+                                 "0.0,0.0", "0.0,0.0"])
+    points, notes = backend.read_points(21)
+    assert points == [(1.0, 300.0), (2.0, 100.0)]
+    assert any(note.startswith("End of curve") and "holds 2 breakpoints"
+               in note for note in notes), notes
+    assert not l350.read_is_incomplete(notes)
+
+    backend.link = ScriptedLink(["1.0,300.0", "2.0,100.0", "2.0,100.0",
+                                 "2.0,100.0", "2.0,100.0"])
+    points, notes = backend.read_points(21)
+    assert points == [(1.0, 300.0), (2.0, 100.0)]
+    assert any("repeated the last real breakpoint" in note for note in notes)
+    assert not l350.read_is_incomplete(notes)
