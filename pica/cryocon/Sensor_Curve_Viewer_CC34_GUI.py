@@ -278,6 +278,34 @@ UNITS_TO_OHMS = {
     'VOLTS': None,
 }
 
+# Which unit family a Cryo-con sensor type belongs to. The instrument holds
+# two vocabularies for the same idea -- the manual's CALCUR list and the
+# R-name family SENTYPE? reports -- so both are here, folded to lower case
+# because firmware capitalises them inconsistently ('Diode' and 'SiDiode' are
+# the same type).
+#
+# Only used to notice a type that disagrees with the curve's own units. A
+# diode curve stored against a resistance input does not fail: the channel
+# passes a resistance-measuring current through the diode and reads a
+# perfectly plausible wrong temperature, which is the whole reason this
+# window bothers to compare them.
+TYPE_UNIT_FAMILY = {
+    'diode': 'V', 'sidiode': 'V', 'si diode': 'V', 'sidiod': 'V',
+    'tc80': 'V', 'tc40': 'V',
+    'acr': 'ohm', '31kr': 'ohm', '3.1kr': 'ohm', '625r': 'ohm',
+    '312r': 'ohm',
+    'r8k10ua': 'ohm', 'r16k10ua': 'ohm', 'r6k100ua': 'ohm',
+    'r2k100ua': 'ohm', 'r625r1ma': 'ohm', 'r312r1ma': 'ohm',
+}
+
+UNITS_FAMILY = {'VOLTS': 'V', 'OHMS': 'ohm', 'LOGOHM': 'ohm'}
+
+
+def type_unit_family(sensor_type):
+    """'V', 'ohm', or None when the name is not one this module knows."""
+    return TYPE_UNIT_FAMILY.get(str(sensor_type or '').strip().lower())
+
+
 # Names that mean a slot is a factory entry rather than something an operator
 # stored. Kept because the distinction matters when deciding what is safe to
 # overwrite -- in the loader, not here -- and because it is useful to see.
@@ -347,7 +375,7 @@ def _tokens_are_numeric(tokens, count=None):
     return True
 
 
-def parse_calcur_block(text, source_name="the slot"):
+def parse_calcur_block(text, source_name="the slot", allow_empty=False):
     """Read the reply to a 'CALCUR? n' query.
 
     Returns (header, points) where points is a list of (reading, temperature)
@@ -358,18 +386,30 @@ def parse_calcur_block(text, source_name="the slot"):
     header['point_texts']. How many digits the instrument prints is the limit
     on how precisely anything read here can be quoted, and that is not
     recoverable once the text has become a float.
+
+    `allow_empty` accepts a header with no points after it. An untouched user
+    slot answers CALCUR? with exactly that -- four header lines and the
+    semicolon, e.g. 'User Sensor 4 / SiDiode / -1.000000 / Volts / ;' -- and
+    it is a real answer meaning "there is no curve here". Refusing it made
+    this window report a perfectly healthy empty slot as "no readable curve",
+    which reads like a fault and is not one.
     """
     lines = [line.strip() for line in _clean_lines(text)]
     lines = [line for line in lines if line]
-    if len(lines) < 6:
+
+    # The reply may still carry the echoed command on some interfaces. It is
+    # stripped BEFORE anything is counted: counting first made the echo
+    # decide whether an empty slot parsed at all.
+    if lines and re.match(r'^CALCUR\??\s', lines[0], re.I):
+        lines = lines[1:]
+
+    minimum = 5 if allow_empty else 6
+    if len(lines) < minimum:
         raise CurveReadError(
             f"{source_name} answered {len(lines)} non-blank line(s). A curve "
-            "is a header of four lines, at least two points and a "
-            "semicolon.")
-
-    # The reply may still carry the echoed command on some interfaces.
-    if re.match(r'^CALCUR\??\s', lines[0], re.I):
-        lines = lines[1:]
+            "is a header of four lines, "
+            + ("" if allow_empty else "at least two points and ")
+            + "a semicolon.")
 
     name = lines[0]
     sensor_type = lines[1]
@@ -407,7 +447,10 @@ def parse_calcur_block(text, source_name="the slot"):
             f"{source_name} did not end with the semicolon line that marks "
             "the end of a Cryo-con curve, so the reply may be truncated. "
             "Nothing is shown from a partial read.")
-    if len(points) < 2:
+    if len(points) < 2 and not (allow_empty and not points):
+        # A slot with exactly one point is a broken curve and is refused.
+        # A slot with NO points is an empty slot, which is a different thing
+        # and only an error to a caller that did not ask for it.
         raise CurveReadError(
             f"{source_name} holds {len(points)} point(s); a curve needs at "
             "least two to interpolate.")
@@ -419,6 +462,8 @@ def parse_calcur_block(text, source_name="the slot"):
         'multiplier_text': lines[2],     # as printed, for the .crv export
         'units': units,
         'point_texts': texts,
+        # True when the block is a header and nothing else: an empty slot.
+        'no_points': not points,
     }
     return header, points
 
@@ -611,6 +656,12 @@ IDN_SCAN_TIMEOUT_MS = 1500
 PROBE_RESOURCE_PREFIXES = ('GPIB', 'USB', 'TCPIP')
 
 EVENT_POLL_MS = 50
+
+# How long the window waits for a running read before it destroys itself. A
+# CALCUR? walks flash and takes about twelve seconds on this firmware, so the
+# wait has to be longer than that or it would time out on every normal close
+# during a read.
+WORKER_JOIN_TIMEOUT_S = 15.0
 
 
 def is_cryocon_idn(idn):
@@ -966,8 +1017,10 @@ class CurveViewerBackend:
     def read_slot_curve(self, index, progress=None, should_stop=None):
         """Read one slot with CALCUR? and parse it.
 
-        Returns (header, points, raw_text). header and points are None when
-        the slot is empty or the reply is not a curve; raw_text is always
+        Returns (header, points, raw_text). An empty slot returns its
+        placeholder header and an EMPTY point list, which is what it really
+        holds; header and points are None only when the reply is not a curve
+        at all. raw_text is always
         whatever came back, so the caller can print it rather than have this
         function decide quietly that nothing was there.
         """
@@ -982,7 +1035,8 @@ class CurveViewerBackend:
         if not text.strip():
             return None, None, text
         try:
-            header, points = parse_calcur_block(text, f"slot {index}")
+            header, points = parse_calcur_block(text, f"slot {index}",
+                                                allow_empty=True)
         except CurveReadError as exc:
             # Say WHY, or a timed-out read looks exactly like an empty slot.
             self.log(f"  Slot {index} answered, but not with a curve: {exc}")
@@ -1075,6 +1129,18 @@ class CurveViewerGUI:
         self.is_connected = False
         self.busy = False
         self._stop_flag = threading.Event()
+        # SHUTDOWN (added 12 Sep 2026, after 'Tcl_AsyncDelete: async handler
+        # deleted by the wrong thread' on closing the window). The stop flag
+        # alone was not enough: it is only honoured between lines, and a
+        # CALCUR? read is twelve seconds, so destroy() ran while the worker
+        # was still alive holding a reference to this window and through it
+        # to the Tk interpreter. The launcher drops the main thread's copy as
+        # soon as mainloop() returns, so the worker became the last holder
+        # and Tk was freed on a thread that never created it. The window now
+        # waits for the worker and cancels its own after() chain first.
+        self._closing = False
+        self._worker = None
+        self._poll_id = None
 
         self.catalogue = []           # every SENTYPE? entry the scan reached
         self.slot_index = None        # the slot on screen
@@ -1603,9 +1669,10 @@ class CurveViewerGUI:
             except Exception as exc:          # never let the pump die
                 print(f"Curve viewer event {event[0]!r} failed: {exc}")
 
-        if reschedule:
+        if reschedule and not self._closing:
             try:
-                self.root.after(EVENT_POLL_MS, self._drain_events)
+                self._poll_id = self.root.after(EVENT_POLL_MS,
+                                                self._drain_events)
             except tk.TclError:
                 pass                          # the window is closing
 
@@ -1801,8 +1868,11 @@ class CurveViewerGUI:
             finally:
                 self._post('busy', False)
 
-        threading.Thread(target=worker, daemon=True,
-                         name=f"cc34-viewer-{description}").start()
+        # Kept, so the window can wait for it rather than destroy the Tk
+        # interpreter out from under it.
+        self._worker = threading.Thread(target=worker, daemon=True,
+                                        name=f"cc34-viewer-{description}")
+        self._worker.start()
 
     # -----------------------------------------------------------------------
     # STEP 2: THE SLOT LIST
@@ -1987,6 +2057,27 @@ class CurveViewerGUI:
             self.right_tabs.select(0)
             return
 
+        if not points:
+            # A header and a semicolon, nothing between them. This is what an
+            # untouched user slot holds, and saying so plainly is the whole
+            # point: "no readable curve" reads like a fault, and an empty
+            # slot is not one -- it is a slot you can write to.
+            self.headline_label.config(
+                text=f"Slot {index} is empty.")
+            self.detail_label.config(
+                text=(f"The slot answered with a header and nothing else: "
+                      f"name '{header['name']}', type "
+                      f"'{header['sensor_type']}', multiplier "
+                      f"{header['multiplier']}, units "
+                      f"{header.get('units', '')}. That is the placeholder "
+                      "this firmware keeps in an untouched user slot, not a "
+                      "curve. There are no breakpoints here, so nothing "
+                      "would be lost by writing a curve into it."))
+            self.problem_label.config(text="")
+            self._draw_plot(header, [])
+            self.right_tabs.select(0)
+            return
+
         units = header.get('units', '')
         for number, (reading, temperature) in enumerate(points, start=1):
             ohms = reading_in_ohms(reading, units)
@@ -2022,16 +2113,39 @@ class CurveViewerGUI:
             problems.append(
                 "The sensor column is not strictly ascending, which is the "
                 "order a Cryo-con sorts its stored curves into.")
-        if header.get('sensor_type', '').strip().lower() in (
-                'diode', 'sidiode', 'si diode') and units in ('OHMS',
-                                                              'LOGOHM'):
+        # The header type against the curve's own units. Checked in BOTH
+        # directions: a diode type on a resistance curve is the signature of
+        # the firmware's silent substitution, and a resistance type on a
+        # volts curve is the mistake at the other end -- a diode installed on
+        # an NTC range, which is what happens when a DT-470 is loaded on top
+        # of the Cernox defaults. Neither reports itself as a fault; the
+        # channel just reads a plausible wrong temperature.
+        stored_type = header.get('sensor_type', '')
+        type_family = type_unit_family(stored_type)
+        units_family = UNITS_FAMILY.get(units)
+        if type_family == 'V' and units_family == 'ohm':
             problems.append(
-                "The sensor type reads as a diode while the curve units are "
-                "resistive. That is the signature of the silent diode "
-                "substitution the manual warns about: a header type the "
-                "firmware could not identify is replaced with Diode rather "
-                "than reported. The curve data itself is still what is "
-                "shown.")
+                f"The sensor type reads as '{stored_type}', a voltage input, "
+                f"while the curve units are {units}. That is the signature "
+                "of the silent diode substitution the manual warns about: a "
+                "header type the firmware could not identify is replaced "
+                "with Diode rather than reported. The curve data itself is "
+                "still what is shown.")
+        elif type_family == 'ohm' and units_family == 'V':
+            problems.append(
+                f"The sensor type reads as '{stored_type}', a resistance "
+                "input, while the curve units are VOLTS. A diode stored "
+                "against a resistance range is measured with the wrong "
+                "excitation and reads a plausible wrong temperature rather "
+                "than failing. Check the input type for any channel using "
+                "this curve (SENTYPE <index>:TYPE should be Diode, or TC80 "
+                "or TC40 for a thermocouple).")
+        elif type_family is None and stored_type.strip():
+            problems.append(
+                f"'{stored_type}' is not a sensor type this module "
+                "recognises, so nothing here has checked it against the "
+                f"curve's {units} units. Read it off the front panel before "
+                "trusting a channel that uses this curve.")
         self.problem_label.config(text="\n".join(problems))
 
         self._draw_plot(header, points)
@@ -2209,11 +2323,45 @@ class CurveViewerGUI:
     def _on_closing(self):
         # Nothing here can leave the instrument half-changed, because nothing
         # here changes it, so a running read is not a reason to refuse to
-        # close. It is stopped and the session is dropped.
+        # close. It is stopped, waited for, and the session is dropped.
+        self._closing = True
         self._stop_flag.set()
+        if self._poll_id is not None:
+            try:
+                self.root.after_cancel(self._poll_id)
+            except tk.TclError:
+                pass
+            self._poll_id = None
+        self._wait_for_worker()
         if self.is_connected:
             self.backend.disconnect()
         self.root.destroy()
+
+    def _wait_for_worker(self, timeout_s=WORKER_JOIN_TIMEOUT_S):
+        """Wait for the read to finish before Tk is torn down.
+
+        The stop flag is only honoured between lines and a CALCUR? read is
+        about twelve seconds on this firmware, so "stopped" and "finished"
+        are far apart. Destroying the window in between is what freed the Tk
+        interpreter on the worker thread.
+
+        The queue is drained while waiting, without rescheduling, so the last
+        lines the worker writes still reach the console.
+        """
+        worker = self._worker
+        if worker is None or not worker.is_alive():
+            return
+        deadline = time.time() + timeout_s
+        while worker.is_alive() and time.time() < deadline:
+            worker.join(0.05)
+            try:
+                self._drain_events(reschedule=False)
+                self.root.update_idletasks()
+            except tk.TclError:
+                break
+        if worker.is_alive():
+            print(f"Curve viewer: the '{worker.name}' thread is still "
+                  f"running after {timeout_s:.0f} s; closing anyway.")
 
 
 # ===============================================================================
@@ -2454,6 +2602,52 @@ def _selftest_cases():
         check(lines[3].endswith(",empty"), lines[3])
         check(lines[4].endswith(",no answer"), lines[4])
 
+    # -- 16: an empty user slot reads as empty, not as a fault --------------
+    def case_parse_empty_slot():
+        # What table index 18 answers on this firmware when nothing has been
+        # written to it: four header lines and the terminator.
+        empty = "User Sensor 4\nSiDiode\n-1.000000\nVolts\n;"
+        header, points = parse_calcur_block(empty, "slot 18",
+                                            allow_empty=True)
+        check(points == [], points)
+        check(header['name'] == "User Sensor 4", header['name'])
+        check(header['units'] == "VOLTS", header['units'])
+        # With the command echoed the line count clears the old threshold,
+        # so the same slot used to parse or not depending on the interface.
+        header, points = parse_calcur_block("CALCUR? 18\n" + empty,
+                                            "slot 18", allow_empty=True)
+        check(points == [] and header['name'] == "User Sensor 4",
+              "the echo changed how an empty slot read")
+        # A caller that has not asked for it still gets the refusal, so a
+        # half-read curve is never shown as a whole one.
+        try:
+            parse_calcur_block(empty, "slot 18")
+        except CurveReadError:
+            pass
+        else:
+            raise AssertionError("allow_empty should be opt-in")
+
+    # -- 17: the stored type is checked against the curve's units both ways --
+    def case_type_against_units():
+        # A diode type on a resistance curve: the firmware's silent
+        # substitution, which this window already caught.
+        check(type_unit_family('SiDiode') == 'V', 'SiDiode')
+        check(type_unit_family('Diode') == 'V', 'Diode')
+        check(type_unit_family('R8K10UA') == 'ohm', 'R8K10UA')
+        check(type_unit_family('ACR') == 'ohm', 'ACR')
+        check(type_unit_family('TC80') == 'V', 'TC80')
+        # The mistake at the other end, which it did not: a DT-470 loaded on
+        # top of the Cernox defaults gives a VOLTS curve on an 8 kohm range.
+        check(UNITS_FAMILY['VOLTS'] == 'V', 'VOLTS')
+        check(UNITS_FAMILY['LOGOHM'] == 'ohm', 'LOGOHM')
+        check(type_unit_family('R8K10UA') != UNITS_FAMILY['VOLTS'],
+              'a resistance type on a volts curve must not read as agreeing')
+        check(type_unit_family('Diode') == UNITS_FAMILY['VOLTS'],
+              'a diode type on a volts curve must read as agreeing')
+        # An unknown name is reported as unchecked rather than assumed good.
+        check(type_unit_family('WhatIsThis') is None, 'unknown type')
+        check(type_unit_family('') is None, 'blank type')
+
     return [
         ("read-only guard admits queries only", case_read_only_guard),
         ("both paths to the bus enforce it", case_link_refuses),
@@ -2471,6 +2665,10 @@ def _selftest_cases():
         ("curve statistics", case_statistics),
         ("curve CSV", case_curve_csv),
         ("slot list CSV", case_catalogue_csv),
+        ("REGRESSION: an empty user slot reads as empty, not as a fault",
+         case_parse_empty_slot),
+        ("the stored type is checked against the curve units both ways",
+         case_type_against_units),
     ]
 
 

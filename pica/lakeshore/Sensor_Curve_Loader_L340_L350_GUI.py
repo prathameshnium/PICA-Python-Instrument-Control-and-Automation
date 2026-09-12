@@ -1835,6 +1835,15 @@ CRVSAV_TIMEOUT_S = 60.0             # "may take several seconds"; this is ample
 # be invisible.
 EVENT_POLL_MS = 50
 
+# How long the window waits for a running operation before it destroys itself.
+# A worker can only notice anything between commands, so the longest it can
+# still be busy once it has been asked to stop is one outstanding write or
+# query, and that is bounded by LAKESHORE_TIMEOUT_MS (10 s). Nothing here is
+# a single long blocking read of the Cryocon CALCUR? kind, so this wait is
+# never reached in normal use; it only has to cover a command left waiting on
+# an instrument that has stopped answering.
+WORKER_JOIN_TIMEOUT_S = 10.0
+
 
 class LakeshoreLink:
     """One paced VISA session to a Lake Shore controller, opened with retries."""
@@ -2525,6 +2534,46 @@ class CurveLoaderGUI:
         self.logo_image = None
         self.is_connected = False
         self.busy = False
+        # WHAT EACH INPUT IS CONFIGURED AS  (added 12 Sep 2026)
+        #
+        # analyse_curve() has always been able to refuse a resistance curve
+        # aimed at a voltage input and a voltage curve aimed at a resistance
+        # one. It was never asked: the live call in _rebuild_curve() left
+        # input_type at None, so the whole block was skipped, and the only
+        # thing standing between a DT-470 and an NTC input was the check in
+        # _install_on_input() -- which runs at ASSIGN time, after the curve
+        # is already written to the instrument.
+        #
+        # No new bus traffic pays for this. "Show what each input is using
+        # now" already queries INTYPE? on every channel, and
+        # _install_on_input queries it again; both now keep what they read,
+        # and the build uses it. Nothing writes INTYPE, which is this
+        # module's standing rule: changing an input's type changes what a
+        # running loop is measuring.
+        #
+        # Keyed by channel letter, holding the numeric INTYPE code. Cleared
+        # on disconnect and on a model change, because a cached answer from
+        # another instrument is worse than no answer at all.
+        self._input_types = {}
+        self._stop_flag = threading.Event()
+        # SHUTDOWN (added 12 Sep 2026, after 'Tcl_AsyncDelete: async handler
+        # deleted by the wrong thread' on closing the window). A worker only
+        # notices a request to stop between commands, and a command already
+        # in flight runs to its own timeout, so destroy() ran while the worker
+        # was still alive holding a reference to this window and through it to
+        # the Tk interpreter. The launcher drops the main thread's copy as
+        # soon as mainloop() returns, so the worker became the last holder and
+        # Tk was freed on a thread that never created it. The window now waits
+        # for the worker and cancels its own after() chain first.
+        self._closing = False
+        self._worker = None
+        self._poll_id = None
+        # Every _ask_on_main() question a worker is currently parked on, as
+        # (holder, done) pairs. Only the event pump ever answers one, and the
+        # pump stops when the window closes, so _on_closing() has to release
+        # them itself or the worker sleeps out the full dialog timeout with
+        # the Tk interpreter still in its hands.
+        self._pending_asks = []
 
         # The loaded file, and the curve derived from it.
         self.source = None
@@ -3115,6 +3164,8 @@ class CurveLoaderGUI:
                                         values=['A', 'B', 'C', 'D'],
                                         state='readonly', width=6)
         self.input_combo.grid(row=1, column=1, sticky='w', padx=10, pady=4)
+        # Changing the input re-runs the checks against THAT input's type.
+        self.input_var.trace_add('write', lambda *_: self._rebuild_curve())
 
         ttk.Button(frame, text="Show what each input is using now",
                    command=self._show_input_state).grid(
@@ -3466,13 +3517,39 @@ class CurveLoaderGUI:
         is not answered inside `timeout_s`, because the safe reading of
         silence is no -- an unanswered question must never become consent to
         write.
+
+        A closing window counts as silence too. Nothing but the event pump
+        ever answers one of these, and the pump is gone once the window is
+        closing, so without the two checks below a worker parked here would
+        sleep out the whole timeout holding the Tk interpreter alive.
         """
+        if self._closing:
+            self.log("  The window is closing, so there is nobody to answer "
+                     "the confirmation. Treating that as no; nothing was "
+                     "sent.")
+            return False
+
         holder = {'answer': False}
         done = threading.Event()
-        self._post('ask', icon, title, message, holder, done)
-        if not done.wait(timeout_s):
-            self.log("  No answer to the confirmation dialog. Treating that "
-                     "as no; nothing was sent.")
+        # Registered before the question is posted, so that a close arriving
+        # in the gap still finds it and releases it.
+        self._pending_asks.append((holder, done))
+        try:
+            self._post('ask', icon, title, message, holder, done)
+            if not done.wait(timeout_s):
+                self.log("  No answer to the confirmation dialog. Treating "
+                         "that as no; nothing was sent.")
+                return False
+        finally:
+            try:
+                self._pending_asks.remove((holder, done))
+            except ValueError:
+                pass                          # already taken off by the close
+        if self._closing:
+            # Released by _on_closing(), not by the operator. The holder is
+            # still False, but say so rather than rely on that.
+            self.log("  The window closed before the confirmation was "
+                     "answered. Treating that as no; nothing was sent.")
             return False
         return bool(holder.get('answer'))
 
@@ -3496,9 +3573,10 @@ class CurveLoaderGUI:
             except Exception as exc:          # never let the pump die
                 print(f"Curve loader event {event[0]!r} failed: {exc}")
 
-        if reschedule:
+        if reschedule and not self._closing:
             try:
-                self.root.after(EVENT_POLL_MS, self._drain_events)
+                self._poll_id = self.root.after(EVENT_POLL_MS,
+                                                self._drain_events)
             except tk.TclError:
                 pass                          # the window is closing
 
@@ -3537,6 +3615,15 @@ class CurveLoaderGUI:
                                                             icon=_kind))
             finally:
                 done.set()
+        elif kind == 'inputs_read':
+            # The input types were read on a worker. The checks are re-run
+            # here, on the Tk thread, so the problem panel reflects them.
+            chosen = self.input_var.get()
+            if chosen in self._input_types:
+                self.log(f"  The curve on the bench is now checked against "
+                         f"input {chosen}. Change the Input box in step 6 to "
+                         "check it against a different one.")
+            self._rebuild_curve()
         elif kind == 'dialog':
             _, level, title, text = event
             {'info': messagebox.showinfo,
@@ -3615,6 +3702,10 @@ class CurveLoaderGUI:
         self._on_model_change()
 
     def _on_model_change(self):
+        # The sensor-type codes mean different things on the two models --
+        # 8 is Cernox on a 340 and Thermocouple on a 350 -- so a cached code
+        # read under one model must not be checked against the other.
+        self._forget_input_types("the model changed")
         key = self.model()
         if key is None:
             self.curve_combo['values'] = []
@@ -4102,7 +4193,31 @@ class CurveLoaderGUI:
         serial = self.serial_var.get().strip()
         errors, warnings, stats = analyse_curve(
             key, points, target_units, fmt_code, name, serial, limit,
-            coefficient, working_range=self._working_range())
+            coefficient, working_range=self._working_range(),
+            input_type=self._known_input_type())
+        # Whether the input was checked at all is itself worth saying. An
+        # unchecked curve must not read like a checked one: the failure it
+        # guards against -- a diode curve on a resistance input -- reads a
+        # plausible wrong temperature rather than failing.
+        channel = self.input_var.get()
+        if self._known_input_type() is None:
+            warnings.append(
+                f"Nothing has checked this curve against what input "
+                f"{channel} is actually configured as. A voltage curve on a "
+                "resistance input, or the other way round, is measured with "
+                "the wrong excitation and reads a plausible wrong "
+                "temperature rather than failing. The inputs are read on "
+                "connect, so this normally means there is no connection "
+                "yet; otherwise press 'Show what each input is using now' "
+                "in step 6 and the check is made here, before anything is "
+                "written.")
+        elif 'input_type_name' in stats:
+            warnings.append(
+                f"Checked against input {channel}, which is sensor type "
+                f"{self._known_input_type()} "
+                f"({stats['input_type_name']}), as last read by 'Show what "
+                "each input is using now'. If it has been changed on the "
+                "front panel since, read it again.")
         warnings.extend(self.merge_notes)
         if dropped:
             warnings.append(
@@ -4403,10 +4518,89 @@ class CurveLoaderGUI:
             self.disconnect_btn.config(state='normal')
             self.visa_cb.config(state='disabled')
             self.model_combo.config(state='disabled')
+            # AFTER the model is settled, never before: _adopt_model() runs
+            # _on_model_change(), which clears this cache on purpose, so a
+            # read taken earlier would be thrown away a line later.
+            self._read_input_types_now(model)
         except Exception as exc:
             self.log(f"CONNECT ERROR: {exc}")
             messagebox.showerror("Connection Failed",
                                  f"Could not connect to {address}:\n\n{exc}")
+
+    def _read_input_types_now(self, model):
+        """Ask each input what sensor type it is set to, once, on connect.
+
+        One INTYPE? per channel -- four queries on a 340, two on a 350. All
+        of them are queries; this module never writes INTYPE, because
+        changing an input's sensor type changes what any running control loop
+        is measuring.
+
+        Done here so the curve on the bench is checked against the real
+        instrument from the moment there is one, rather than only after
+        somebody presses the button in step 6. Before this the panel said
+        "nothing has checked this curve against input A" for the whole
+        session unless you knew to go and look.
+
+        Runs on the Tk thread, like the rest of _do_connect, because it is
+        part of connecting. A failure is logged and dropped: not knowing an
+        input type is a checked-nothing state the panel already reports, and
+        it must never be a reason a connection fails.
+        """
+        spec = model_spec(model)
+        found = {}
+        for channel in spec['inputs']:
+            try:
+                code, _raw = self.backend.get_input_type(channel)
+            except Exception as exc:
+                self.log(f"  INTYPE? {channel} did not answer "
+                         f"({type(exc).__name__}). The curve will not be "
+                         f"checked against input {channel} until 'Show what "
+                         "each input is using now' is pressed.")
+                continue
+            if code is None:
+                # Asked, and the reply did not start with a sensor type.
+                # NOT cached: _known_input_type() returns None for "not
+                # asked", and an unreadable answer stored as None would make
+                # the two indistinguishable. Both end in no check, but only
+                # one of them is worth investigating, so it is said here.
+                self.log(f"  INTYPE? {channel} answered something that does "
+                         "not start with a sensor type, so nothing here "
+                         f"knows what input {channel} is set to. It is left "
+                         "unchecked rather than assumed.")
+                continue
+            found[channel] = code
+        if not found:
+            return
+        self._input_types.update(found)
+        described = ", ".join(
+            f"{channel} = {spec['sensor_types'].get(code, 'unrecognised')}"
+            for channel, code in sorted(found.items()))
+        self.log(f"  Inputs read: {described}. The curve on the bench is now "
+                 "checked against whichever of them is chosen in step 6.")
+        self._rebuild_curve()
+
+    def _known_input_type(self):
+        """The INTYPE code last read for the chosen input, or None.
+
+        None means "not asked", and analyse_curve() then skips the check
+        rather than assuming the input is right. The panel says which of the
+        two it is, so an unchecked curve never reads like a checked one.
+
+        Read off a plain dict, not off the instrument: this runs on the Tk
+        thread every time a field changes, and a query here would put VISA
+        traffic behind every keystroke.
+        """
+        return self._input_types.get(self.input_var.get())
+
+    def _forget_input_types(self, why):
+        """Drop the cache. Called on disconnect and on a model change."""
+        if not self._input_types:
+            return
+        self._input_types = {}
+        self.log(f"  What each input is configured as was forgotten: {why}. "
+                 "Press 'Show what each input is using now' to have the "
+                 "curve checked against it again.")
+        self._rebuild_curve()
 
     def _do_disconnect(self):
         if self.busy:
@@ -4415,6 +4609,7 @@ class CurveLoaderGUI:
                      "curve half written. Wait for it to finish.")
             return
         self.log("Disconnecting (non-destructive)...")
+        self._forget_input_types("the session was closed")
         self.backend.disconnect()
         self.is_connected = False
         self.log("Disconnected. The instrument keeps every setting and "
@@ -4441,6 +4636,7 @@ class CurveLoaderGUI:
         if self.busy:
             self.log("Another instrument operation is still running.")
             return
+        self._stop_flag.clear()
         self._set_busy(True)
 
         def target():
@@ -4461,7 +4657,11 @@ class CurveLoaderGUI:
             finally:
                 self._post('busy', False)
 
-        threading.Thread(target=target, daemon=True).start()
+        # Kept, so the window can wait for it rather than destroy the Tk
+        # interpreter out from under it.
+        self._worker = threading.Thread(target=target, daemon=True,
+                                        name=f"ls-loader-{description}")
+        self._worker.start()
 
     def _set_progress(self, done, total):
         """Move the progress bar. Safe from the worker thread."""
@@ -5220,6 +5420,12 @@ class CurveLoaderGUI:
         """
         spec = model_spec(model)
         code, raw = self.backend.get_input_type(channel)
+        # Same rule as _read_input_types_now(): an unreadable answer is not
+        # cached as None, because None already means "never asked".
+        if code is None:
+            self._input_types.pop(channel, None)
+        else:
+            self._input_types[channel] = code
         name = spec['sensor_types'].get(code, "unrecognised")
         self.log(f"  INTYPE? {channel} -> {raw}   (sensor type {code}: "
                  f"{name})")
@@ -5279,6 +5485,17 @@ class CurveLoaderGUI:
                      "its reading. Queries only.")
             for channel in spec['inputs']:
                 code, raw = self.backend.get_input_type(channel)
+                # Kept, so the curve on the bench can be checked against the
+                # input BEFORE it is written rather than at assign time.
+                # See _known_input_type(). A code of None means the reply did
+                # not start with a sensor type, and that is NOT cached: None
+                # is what _known_input_type() returns for "never asked", and
+                # storing it would make an unreadable answer indistinguishable
+                # from no answer at all.
+                if code is None:
+                    self._input_types.pop(channel, None)
+                else:
+                    self._input_types[channel] = code
                 name = spec['sensor_types'].get(code, "unrecognised")
                 curve = self.backend.get_input_curve(channel)
                 readings = self.backend.read_input_temperature(channel)
@@ -5289,6 +5506,9 @@ class CurveLoaderGUI:
                     self.log("    Curve 0 means no curve: this input reports "
                              "sensor units and no temperature.")
             self.log(f"  {spec['input_note']}")
+            # Applied on the Tk thread: the input box is a Tk variable and a
+            # worker must not read one. See _apply_event('inputs_read').
+            self._post('inputs_read')
 
         self._run_in_worker("Reading the inputs", job)
 
@@ -5344,9 +5564,52 @@ class CurveLoaderGUI:
                     "could leave a partial curve in the slot.\n\nClose "
                     "anyway?"):
                 return
+        self._closing = True
+        self._stop_flag.set()
+        if self._poll_id is not None:
+            try:
+                self.root.after_cancel(self._poll_id)
+            except tk.TclError:
+                pass
+            self._poll_id = None
+        # Release anything parked in _ask_on_main() before waiting. The pump
+        # that would normally answer those has just been cancelled, so a
+        # worker sitting on one would otherwise wait out the whole dialog
+        # timeout and the join below would time out with it. The holder is
+        # left untouched, which is how the worker reads this as no.
+        for _holder, done in list(self._pending_asks):
+            done.set()
+        self._pending_asks = []
+        self._wait_for_worker()
         if self.is_connected:
             self.backend.disconnect()
         self.root.destroy()
+
+    def _wait_for_worker(self, timeout_s=WORKER_JOIN_TIMEOUT_S):
+        """Wait for the operation to finish before Tk is torn down.
+
+        A worker only notices anything between commands, and a command
+        already on the wire runs to its own timeout, so "asked to stop" and
+        "finished" are not the same moment. Destroying the window in between
+        is what freed the Tk interpreter on the worker thread.
+
+        The queue is drained while waiting, without rescheduling, so the last
+        lines the worker writes still reach the console.
+        """
+        worker = self._worker
+        if worker is None or not worker.is_alive():
+            return
+        deadline = time.time() + timeout_s
+        while worker.is_alive() and time.time() < deadline:
+            worker.join(0.05)
+            try:
+                self._drain_events(reschedule=False)
+                self.root.update_idletasks()
+            except tk.TclError:
+                break
+        if worker.is_alive():
+            print(f"Curve loader: the '{worker.name}' thread is still "
+                  f"running after {timeout_s:.0f} s; closing anyway.")
 
 
 # ===============================================================================

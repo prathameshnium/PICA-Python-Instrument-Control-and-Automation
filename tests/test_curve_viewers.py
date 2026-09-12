@@ -50,6 +50,13 @@ CC34_PATH = os.path.join(REPO_ROOT, "pica", "cryocon",
                          "Sensor_Curve_Viewer_CC34_GUI.py")
 L350_PATH = os.path.join(REPO_ROOT, "pica", "lakeshore",
                          "Sensor_Curve_Viewer_L350_GUI.py")
+L340_PATH = os.path.join(REPO_ROOT, "pica", "lakeshore",
+                         "Sensor_Curve_Viewer_L340_GUI.py")
+# The loader holds the authoritative sensor-type tables. It is loaded here
+# only so the viewers' copies can be checked against it; see
+# test_the_viewers_sensor_type_tables_match_the_loader.
+LS_LOADER_PATH = os.path.join(REPO_ROOT, "pica", "lakeshore",
+                              "Sensor_Curve_Loader_L340_L350_GUI.py")
 
 
 def _load(name, path):
@@ -62,6 +69,8 @@ def _load(name, path):
 
 cc34 = _load("cc34_curve_viewer", CC34_PATH)
 l350 = _load("l350_curve_viewer", L350_PATH)
+l340 = _load("l340_curve_viewer", L340_PATH)
+ls_loader = _load("ls_curve_loader", LS_LOADER_PATH)
 
 
 SAMPLE_CALCUR = ("X17680\n"
@@ -748,3 +757,99 @@ def test_l350_read_points_says_where_the_curve_ended_and_fills_no_tail():
     assert points == [(1.0, 300.0), (2.0, 100.0)]
     assert any("repeated the last real breakpoint" in note for note in notes)
     assert not l350.read_is_incomplete(notes)
+
+# ---------------------------------------------------------------------------
+# THE SENSOR TYPE AGAINST THE CURVE'S OWN UNITS
+# ---------------------------------------------------------------------------
+#
+# A diode measured with a resistance excitation does not fail. It reads a
+# plausible wrong temperature, and every measurement made against it is
+# quietly wrong. Each viewer therefore compares the type the channel is set to
+# against the unit family of the curve it is using, in BOTH directions.
+#
+# Every module here is deliberately self-contained, so these tables are
+# COPIES. Copies drift. The first test is the one that stops them.
+
+def test_the_viewers_sensor_type_tables_match_the_loader():
+    spec340 = ls_loader.MODEL_SPECS['340']
+    spec350 = ls_loader.MODEL_SPECS['350']
+    assert dict(l340.SENSOR_TYPES_340) == dict(spec340['sensor_types'])
+    assert tuple(l340.RESISTIVE_TYPES_340) == tuple(spec340['resistive_types'])
+    assert tuple(l340.VOLTAGE_TYPES_340) == tuple(spec340['voltage_types'])
+    assert dict(l350.SENSOR_TYPES_350) == dict(spec350['sensor_types'])
+    assert tuple(l350.RESISTIVE_TYPES_350) == tuple(spec350['resistive_types'])
+    assert tuple(l350.VOLTAGE_TYPES_350) == tuple(spec350['voltage_types'])
+
+
+def test_the_two_models_number_their_sensor_types_differently():
+    # 8 is Cernox on a 340 and does not exist on a 350; 3 is Platinum 100 on a
+    # 340 and NTC RTD on a 350. A code read under one model means something
+    # else under the other, which is why each viewer has its own table.
+    assert l340.type_unit_family_340(8) == 'ohm'
+    assert l350.type_unit_family_350(8) is None
+    assert l340.SENSOR_TYPES_340[3] != l350.SENSOR_TYPES_350[3]
+
+
+def test_a_diode_curve_on_a_resistance_input_is_flagged_on_both_models():
+    # Format 2 is V/K -- the DT-470 curve. Put it on an NTC/Cernox input and
+    # the families disagree.
+    assert l350.FORMAT_FAMILY_350[2] == 'V'
+    assert l350.type_unit_family_350(3) == 'ohm'          # NTC RTD
+    assert l350.FORMAT_FAMILY_350[2] != l350.type_unit_family_350(3)
+    assert l340.FORMAT_FAMILY_340[2] == 'V'
+    assert l340.type_unit_family_340(8) == 'ohm'          # Cernox
+    assert l340.FORMAT_FAMILY_340[2] != l340.type_unit_family_340(8)
+
+
+def test_a_resistance_curve_on_a_diode_input_is_flagged_on_both_models():
+    # The other direction: a Cernox curve (format 4, log ohm) on a diode input.
+    assert l350.FORMAT_FAMILY_350[4] == 'ohm'
+    assert l350.type_unit_family_350(1) == 'V'            # Diode
+    assert l350.FORMAT_FAMILY_350[4] != l350.type_unit_family_350(1)
+    assert l340.FORMAT_FAMILY_340[4] == 'ohm'
+    assert l340.type_unit_family_340(1) == 'V'            # Silicon Diode
+    assert l340.FORMAT_FAMILY_340[4] != l340.type_unit_family_340(1)
+
+
+def test_the_matching_pairs_do_not_raise_a_false_alarm():
+    assert l350.FORMAT_FAMILY_350[2] == l350.type_unit_family_350(1)
+    assert l350.FORMAT_FAMILY_350[4] == l350.type_unit_family_350(3)
+    assert l340.FORMAT_FAMILY_340[2] == l340.type_unit_family_340(1)
+    assert l340.FORMAT_FAMILY_340[4] == l340.type_unit_family_340(8)
+
+
+def test_a_type_that_decides_nothing_is_not_guessed_at():
+    # 340 type 0 is 'Special', which is whatever its units and excitation
+    # fields were set to; 350 type 0 is Disabled and 5 is Capacitance. None of
+    # them implies a unit family, and a guess would be a false alarm on every
+    # such input.
+    assert l340.type_unit_family_340(0) is None
+    assert l350.type_unit_family_350(0) is None
+    assert l350.type_unit_family_350(5) is None
+    assert l340.type_unit_family_340(99) is None
+    assert l350.type_unit_family_350(99) is None
+    assert l340.type_unit_family_340(None) is None
+    assert l350.type_unit_family_350(None) is None
+
+
+def test_the_cryocon_viewer_checks_its_own_types_both_ways():
+    # Same idea, the Cryocon's two vocabularies. Before this it flagged only
+    # a diode type on a resistance curve, not a resistance type on a volts
+    # curve -- which is the DT-470-on-the-Cernox-defaults case.
+    assert cc34.type_unit_family('SiDiode') == 'V'
+    assert cc34.type_unit_family('Diode') == 'V'
+    assert cc34.type_unit_family('R8K10UA') == 'ohm'
+    assert cc34.type_unit_family('ACR') == 'ohm'
+    assert cc34.UNITS_FAMILY['VOLTS'] == 'V'
+    assert cc34.UNITS_FAMILY['LOGOHM'] == 'ohm'
+    assert cc34.type_unit_family('R8K10UA') != cc34.UNITS_FAMILY['VOLTS']
+    assert cc34.type_unit_family('Diode') != cc34.UNITS_FAMILY['LOGOHM']
+    assert cc34.type_unit_family('WhatIsThis') is None
+    assert cc34.type_unit_family('') is None
+
+
+def test_every_viewer_still_sends_only_queries_after_the_change():
+    # These modules are query-only. The cross-checks reuse replies that were
+    # already being read, and must not have added a command.
+    for module in (cc34, l340, l350):
+        assert module.run_self_test(report=lambda message: None)

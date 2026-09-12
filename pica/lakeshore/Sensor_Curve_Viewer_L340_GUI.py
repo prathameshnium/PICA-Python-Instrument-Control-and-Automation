@@ -379,6 +379,72 @@ CURVE_FORMATS = {
 }
 LOG_TEMPERATURE_FORMATS = (5,)
 
+# Which unit family a curve's data format and an input's sensor type each
+# imply, so the two can be compared. A format is either a voltage curve or a
+# resistance curve; a sensor type either measures a voltage or measures a
+# resistance. If they disagree, the input is reading the sensor the wrong
+# way.
+#
+# The two type tuples are COPIED from MODEL_SPECS['340'] in
+# Sensor_Curve_Loader_L340_L350_GUI.py ('resistive_types' and
+# 'voltage_types'), not imported: this viewer is deliberately self-contained
+# and must keep working if the loader is moved or renamed. If the loader's
+# tuples are ever corrected, correct these by hand to match.
+#
+# Type 0 (Special) is listed as resistive in the loader because INCRV has to
+# accept a resistance curve for it, but a Special input is whatever its
+# units, coefficient, excitation and range fields were set to, and it can
+# just as well be a voltage input. Nothing here can tell which, so it is
+# left out of both tuples below and reported as not decisive rather than
+# flagged -- a warning that fires on every Special input would be noise.
+FORMAT_FAMILY_340 = {
+    1: 'V',      # mV/K
+    2: 'V',      # V/K
+    3: 'ohm',    # Ohm/K
+    4: 'ohm',    # Log Ohm/K
+    5: 'ohm',    # Log Ohm/Log K
+}
+RESISTIVE_TYPES_340 = (0, 3, 4, 5, 6, 7, 8, 9, 10)   # copied from the loader
+VOLTAGE_TYPES_340 = (1, 2, 12)                       # copied from the loader
+NOT_DECISIVE_TYPES_340 = (0,)                        # Special: either way
+
+
+def type_unit_family_340(code):
+    """'V', 'ohm', or None for a 340 INTYPE? sensor-type code.
+
+    None means the comparison cannot be made, and covers three different
+    cases on purpose: a code this module does not recognise, a code it
+    recognises but which is not decisive (type 0, Special), and anything
+    that is not a number at all. Every one of them must be reported as
+    unchecked rather than treated as agreeing, because a curve read against
+    the wrong sensor type does not fail -- it returns a plausible wrong
+    temperature.
+    """
+    try:
+        number = int(float(code))
+    except (TypeError, ValueError):
+        return None
+    if number in NOT_DECISIVE_TYPES_340:
+        return None
+    if number in VOLTAGE_TYPES_340:
+        return 'V'
+    if number in RESISTIVE_TYPES_340:
+        return 'ohm'
+    return None
+
+
+def intype_code(reply):
+    """The sensor-type code out of an 'INTYPE? <input>' reply, or None.
+
+    The type is field 0 of the reply on a 340 (<type>,<units>,<coefficient>,
+    <excitation>,<range>, printed 9-34). Never raises: an odd reply is None.
+    """
+    try:
+        return int(float(str(reply).split(',')[0].strip()))
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
 # Temperature coefficient codes.
 COEFFICIENTS = {1: "Negative", 2: "Positive"}
 
@@ -763,6 +829,15 @@ IDN_SCAN_TIMEOUT_MS = 1500
 PROBE_RESOURCE_PREFIXES = ('GPIB', 'USB', 'TCPIP')
 
 EVENT_POLL_MS = 50
+
+# How long the window waits for a running read before it destroys itself. The
+# stop flag is only honoured between breakpoints, so the longest a worker can
+# still be busy after it is set is one outstanding CRVPT? query, and that is
+# bounded by LAKESHORE_TIMEOUT_MS (10 s). Individual 340 reads are quick --
+# nothing here resembles the Cryocon's twelve-second CALCUR? -- so this wait
+# is never reached in normal use; it only has to cover a query that is waiting
+# out a dead instrument.
+WORKER_JOIN_TIMEOUT_S = 10.0
 
 
 def is_model_340_idn(idn):
@@ -1294,8 +1369,22 @@ class CurveViewerGUI:
         self.is_connected = False
         self.busy = False
         self._stop_flag = threading.Event()
+        # SHUTDOWN (added 12 Sep 2026, after 'Tcl_AsyncDelete: async handler
+        # deleted by the wrong thread' on closing the window). The stop flag
+        # alone was not enough: it is only honoured between breakpoints, and a
+        # query already in flight runs to its own timeout, so destroy() ran
+        # while the worker was still alive holding a reference to this window
+        # and through it to the Tk interpreter. The launcher drops the main
+        # thread's copy as soon as mainloop() returns, so the worker became
+        # the last holder and Tk was freed on a thread that never created it.
+        # The window now waits for the worker and cancels its own after()
+        # chain first.
+        self._closing = False
+        self._worker = None
+        self._poll_id = None
 
         self.catalogue = []           # every header the last scan reached
+        self.channels = {}            # the last INCRV?/INTYPE? read, by input
         self.header = None            # the slot on screen
         self.points = []              # its breakpoints, (units, temperature)
         self.read_notes = []
@@ -1809,9 +1898,10 @@ class CurveViewerGUI:
             except Exception as exc:          # never let the pump die
                 print(f"Curve viewer event {event[0]!r} failed: {exc}")
 
-        if reschedule:
+        if reschedule and not self._closing:
             try:
-                self.root.after(EVENT_POLL_MS, self._drain_events)
+                self._poll_id = self.root.after(EVENT_POLL_MS,
+                                                self._drain_events)
             except tk.TclError:
                 pass                          # the window is closing
 
@@ -2021,8 +2111,11 @@ class CurveViewerGUI:
             finally:
                 self._post('busy', False)
 
-        threading.Thread(target=worker, daemon=True,
-                         name=f"l340-viewer-{description}").start()
+        # Kept, so the window can wait for it rather than destroy the Tk
+        # interpreter out from under it.
+        self._worker = threading.Thread(target=worker, daemon=True,
+                                        name=f"l340-viewer-{description}")
+        self._worker.start()
 
     # -----------------------------------------------------------------------
     # STEP 2: THE CATALOGUE
@@ -2286,7 +2379,59 @@ class CurveViewerGUI:
             problems.append(
                 "The sensor column is not strictly ascending, which is the "
                 "order a Lake Shore stores breakpoints in.")
+        problems.extend(self._curve_type_problems(header))
         self.problem_label.config(text="\n".join(problems))
+
+    def _curve_type_problems(self, header):
+        """The same check as on the channels panel, from the curve's side.
+
+        Only says anything once the channel read has been done, because
+        without it nothing here knows which inputs, if any, are using this
+        slot. An input whose type disagrees with this curve is worth seeing
+        while the curve is on screen, which is the moment someone decides
+        whether to trust it.
+        """
+        if not self.channels:
+            return []
+        format_family = FORMAT_FAMILY_340.get(header.get('format_code'))
+        if format_family is None:
+            return []
+        try:
+            slot = int(header.get('curve'))
+        except (TypeError, ValueError):
+            return []
+        messages = []
+        for channel in INPUT_CHANNELS:
+            entry = self.channels.get(channel, {})
+            try:
+                used = int(float(str(entry.get('curve', '')).strip()))
+            except (TypeError, ValueError):
+                continue
+            if used != slot:
+                continue
+            code = intype_code(entry.get('intype'))
+            type_family = type_unit_family_340(code)
+            name = SENSOR_TYPES_340.get(code, f"unknown code {code}")
+            if type_family is None:
+                messages.append(
+                    f"Input {channel} is using this curve, but its sensor "
+                    f"type ({name}) is not one this module can compare "
+                    "against a data format, so that comparison has not been "
+                    "made. Read the input type off the front panel.")
+            elif type_family != format_family:
+                measures = ("a voltage" if type_family == 'V'
+                            else "a resistance")
+                holds = "volts" if format_family == 'V' else "ohms"
+                messages.append(
+                    f"Input {channel} is using this curve and is set to "
+                    f"sensor type {code} ({name}), which measures "
+                    f"{measures}, while this curve's data format "
+                    f"{header.get('format_code')} "
+                    f"({header.get('format_name')}) is a table in {holds}. "
+                    "That pairing does not fail; the input reports a "
+                    "plausible wrong temperature. Check which of the two is "
+                    "the mistake before using this channel's readings.")
+        return messages
 
         self._draw_plot(header, points)
         self.right_tabs.select(0)
@@ -2342,11 +2487,13 @@ class CurveViewerGUI:
         self._run_in_worker("Reading the channel assignments", job)
 
     def _show_channels(self, answers):
+        self.channels = dict(answers or {})
         lines = []
         for channel in INPUT_CHANNELS:
             entry = answers.get(channel, {})
             curve = str(entry.get('curve', '?')).strip()
             name = ""
+            match = None
             try:
                 number = int(float(curve))
                 match = next((e for e in self.catalogue
@@ -2354,15 +2501,73 @@ class CurveViewerGUI:
                 if match and not match.get('is_empty'):
                     name = f"  {match.get('name')}"
             except (TypeError, ValueError):
-                pass
+                number = None
             lines.append(f"Input {channel}:  curve {curve:<4s}{name}")
             intype_text = str(entry.get('intype_text', '')).strip()
             if intype_text:
                 lines.append(f"          INTYPE? {intype_text}")
+            # Does the curve this input is using match the sensor type the
+            # input is set to? Nothing is sent to ask: the curve's format
+            # code is already in the slot list, and the type is already in
+            # the INTYPE? reply just read. Both directions matter, and
+            # neither shows up as a fault on the instrument -- a resistance
+            # curve on a voltage input, or the reverse, simply reads a
+            # plausible wrong temperature.
+            self._check_channel_type(channel, number, match, entry)
         if not self.catalogue:
             lines.append("")
             lines.append("(List the slots to see the curve names here.)")
         self.channel_label.config(text="\n".join(lines))
+
+    def _check_channel_type(self, channel, number, match, entry):
+        """Log whether one input's sensor type agrees with its curve.
+
+        Says so when the check could not be made, rather than staying quiet:
+        silence would read as "checked and fine", and the whole point of the
+        comparison is that a mismatch is invisible otherwise.
+        """
+        code = intype_code(entry.get('intype'))
+        type_family = type_unit_family_340(code)
+        if not self.catalogue:
+            self.log(f"  Input {channel}: sensor type not checked against "
+                     "the curve -- the slot list has not been read, so the "
+                     "curve's data format is not known here. Press List "
+                     "Slots first.")
+            return
+        if number is None or match is None:
+            self.log(f"  Input {channel}: sensor type not checked -- curve "
+                     f"{entry.get('curve')} is not in the slot list that was "
+                     "read.")
+            return
+        format_code = match.get('format_code')
+        format_family = FORMAT_FAMILY_340.get(format_code)
+        if format_family is None:
+            self.log(f"  Input {channel}: sensor type not checked -- curve "
+                     f"{number} reports data format {format_code}, which is "
+                     "not one of the five this module knows.")
+            return
+        if type_family is None:
+            name = SENSOR_TYPES_340.get(code, f"unknown code {code}")
+            self.log(f"  Input {channel}: sensor type {code} ({name}) is not "
+                     "decisive, so it has not been checked against curve "
+                     f"{number} (data format {format_code}, "
+                     f"{match.get('format_name')}). Read the input type off "
+                     "the front panel before trusting this channel.")
+            return
+        if type_family != format_family:
+            name = SENSOR_TYPES_340.get(code, f"unknown code {code}")
+            wants = "a voltage" if type_family == 'V' else "a resistance"
+            holds = ("volts" if format_family == 'V' else "ohms")
+            self.log(
+                f"  WARNING  Input {channel} is set to sensor type {code} "
+                f"({name}), which measures {wants}, but it is using curve "
+                f"{number} '{match.get('name')}', whose data format is "
+                f"{format_code} ({match.get('format_name')}) -- a table in "
+                f"{holds}. The input will not report an error: it measures "
+                "the sensor its own way and looks the answer up in a table "
+                "written for the other way, so the temperature it reports "
+                "is wrong but plausible. Either the input type or the curve "
+                "on it is not the one intended.")
 
     # -----------------------------------------------------------------------
     # STEP 4: EXPORT
@@ -2448,11 +2653,45 @@ class CurveViewerGUI:
     def _on_closing(self):
         # Nothing here can leave the instrument half-changed, because nothing
         # here changes it, so a running read is not a reason to refuse to
-        # close. It is stopped and the session is dropped.
+        # close. It is stopped, waited for, and the session is dropped.
+        self._closing = True
         self._stop_flag.set()
+        if self._poll_id is not None:
+            try:
+                self.root.after_cancel(self._poll_id)
+            except tk.TclError:
+                pass
+            self._poll_id = None
+        self._wait_for_worker()
         if self.is_connected:
             self.backend.disconnect()
         self.root.destroy()
+
+    def _wait_for_worker(self, timeout_s=WORKER_JOIN_TIMEOUT_S):
+        """Wait for the read to finish before Tk is torn down.
+
+        The stop flag is only honoured between breakpoints, and a query
+        already on the wire runs to its own timeout, so "stopped" and
+        "finished" are not the same moment. Destroying the window in between
+        is what freed the Tk interpreter on the worker thread.
+
+        The queue is drained while waiting, without rescheduling, so the last
+        lines the worker writes still reach the console.
+        """
+        worker = self._worker
+        if worker is None or not worker.is_alive():
+            return
+        deadline = time.time() + timeout_s
+        while worker.is_alive() and time.time() < deadline:
+            worker.join(0.05)
+            try:
+                self._drain_events(reschedule=False)
+                self.root.update_idletasks()
+            except tk.TclError:
+                break
+        if worker.is_alive():
+            print(f"Curve viewer: the '{worker.name}' thread is still "
+                  f"running after {timeout_s:.0f} s; closing anyway.")
 
 
 # ===============================================================================
@@ -2857,9 +3096,42 @@ def _selftest_cases():
         check(describe_intype("3") == "type 3 = Platinum 100 (250 ohm)",
               describe_intype("3"))
 
+    # -- 18: the sensor type is checked against the curve format both ways --
+    def case_type_against_format_340():
+        # A resistance type on a resistance curve and a voltage type on a
+        # voltage curve: the two pairings that are right.
+        check(type_unit_family_340(8) == 'ohm', 'Cernox is resistive')
+        check(type_unit_family_340(9) == 'ohm', 'RuOx is resistive')
+        check(type_unit_family_340(1) == 'V', 'Silicon Diode is a voltage')
+        check(type_unit_family_340(12) == 'V', 'Thermocouple is a voltage')
+        check(FORMAT_FAMILY_340[2] == 'V', 'format 2 V/K')
+        check(FORMAT_FAMILY_340[4] == 'ohm', 'format 4 Log Ohm/K')
+        check(type_unit_family_340(8) == FORMAT_FAMILY_340[4],
+              'a Cernox on a log-ohm curve must read as agreeing')
+        check(type_unit_family_340(1) == FORMAT_FAMILY_340[1],
+              'a diode on a mV/K curve must read as agreeing')
+        # And the two that are wrong, in both directions.
+        check(type_unit_family_340(1) != FORMAT_FAMILY_340[3],
+              'a diode on an Ohm/K curve must not read as agreeing')
+        check(type_unit_family_340(8) != FORMAT_FAMILY_340[2],
+              'a Cernox on a V/K curve must not read as agreeing')
+        # Not decisive and not recognised are both reported as unchecked,
+        # never as agreeing. Type 0 (Special) can be either kind of input.
+        check(type_unit_family_340(0) is None, 'Special is not decisive')
+        check(type_unit_family_340(11) is None, 'Capacitor is neither')
+        check(type_unit_family_340(99) is None, 'unknown code')
+        check(type_unit_family_340('junk') is None, 'unparseable code')
+        check(type_unit_family_340(None) is None, 'missing code')
+        # The type is field 0 of the INTYPE? reply on a 340.
+        check(intype_code("8,2,1,6,8") == 8, 'INTYPE? field 0 is the type')
+        check(intype_code("1") == 1, 'a one-field reply still gives the type')
+        check(intype_code("<no answer: TimeoutError>") is None, 'no answer')
+
     return [
         ("read-only guard admits queries only", case_read_only_guard),
         ("340 INTYPE? reply is decoded", case_intype_340),
+        ("the sensor type is checked against the curve format both ways",
+         case_type_against_format_340),
         ("the link itself refuses a setting command", case_link_refuses),
         ("CRVHDR? reply is parsed", case_parse_header),
         ("an empty slot is recognised", case_empty_slot),
