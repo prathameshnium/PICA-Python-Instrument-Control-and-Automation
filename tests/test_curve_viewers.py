@@ -853,3 +853,78 @@ def test_every_viewer_still_sends_only_queries_after_the_change():
     # already being read, and must not have added a command.
     for module in (cc34, l340, l350):
         assert module.run_self_test(report=lambda message: None)
+
+# ---------------------------------------------------------------------------
+# _show_curve MUST REACH ITS OWN END
+# ---------------------------------------------------------------------------
+#
+# On 13 Sep 2026 a new method was inserted into the MIDDLE of the L340's
+# _show_curve, which left its last two lines stranded after that method's
+# return. flake8 caught the dead code as F821 ("undefined name 'points'"), but
+# the real damage was invisible to everything else: _show_curve stopped
+# calling _draw_plot, so the curve tab went blank while the header, the table
+# and every self-test carried on passing.
+#
+# Nothing here asserts what the plot looks like. It asserts only that the tail
+# of the method is still reached, which is the part that silently stopped.
+
+def _slot_window(module):
+    import tkinter as tk
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"no display for a Tk root: {exc}")
+    root.withdraw()
+    return root, module.CurveViewerGUI(root)
+
+
+@pytest.mark.parametrize("module", [l340, l350], ids=["l340", "l350"])
+def test_showing_a_curve_still_draws_it(module):
+    root, gui = _slot_window(module)
+    try:
+        header = module.parse_crvhdr("DT-470,STANDARD,2,475.000,1", 23)
+        points = [(0.51892, 300.0), (1.01525, 80.0), (1.62622, 4.2)]
+        drawn = []
+        gui._draw_plot = lambda h, p: drawn.append((h, list(p)))
+        gui._show_curve(header, points, [])
+        assert drawn, "_show_curve returned before drawing the plot"
+        assert len(drawn[0][1]) == len(points)
+        assert "3 breakpoints" in gui.headline_label.cget("text")
+    finally:
+        root.destroy()
+
+
+@pytest.mark.parametrize("module", [l340, l350], ids=["l340", "l350"])
+def test_an_empty_slot_still_clears_the_plot(module):
+    # The empty branch returns early, so it has its own call to _draw_plot.
+    # It has to keep it, or an empty slot leaves the previous curve on screen.
+    root, gui = _slot_window(module)
+    try:
+        header = module.parse_crvhdr(",,1,0.000,1", 45)
+        drawn = []
+        gui._draw_plot = lambda h, p: drawn.append((h, list(p)))
+        gui._show_curve(header, [], [])
+        assert drawn, "an empty slot left the previous plot on screen"
+        assert drawn[0][1] == []
+        assert "is empty" in gui.headline_label.cget("text")
+    finally:
+        root.destroy()
+
+
+def test_the_cryocon_viewer_also_reaches_the_end_of_show_curve():
+    import tkinter as tk
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"no display for a Tk root: {exc}")
+    root.withdraw()
+    gui = cc34.CurveViewerGUI(root)
+    try:
+        header, points = cc34.parse_calcur_block(SAMPLE_CALCUR, "slot 15")
+        drawn = []
+        gui._draw_plot = lambda h, p: drawn.append((h, list(p)))
+        gui._show_curve(15, header, points, SAMPLE_CALCUR)
+        assert drawn, "_show_curve returned before drawing the plot"
+        assert len(drawn[0][1]) == len(points)
+    finally:
+        root.destroy()

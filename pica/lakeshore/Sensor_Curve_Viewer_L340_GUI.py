@@ -2382,6 +2382,9 @@ class CurveViewerGUI:
         problems.extend(self._curve_type_problems(header))
         self.problem_label.config(text="\n".join(problems))
 
+        self._draw_plot(header, points)
+        self.right_tabs.select(0)
+
     def _curve_type_problems(self, header):
         """The same check as on the channels panel, from the curve's side.
 
@@ -2432,9 +2435,6 @@ class CurveViewerGUI:
                     "plausible wrong temperature. Check which of the two is "
                     "the mistake before using this channel's readings.")
         return messages
-
-        self._draw_plot(header, points)
-        self.right_tabs.select(0)
 
     def _draw_plot(self, header, points):
         if not MATPLOTLIB_AVAILABLE or self.figure is None:
