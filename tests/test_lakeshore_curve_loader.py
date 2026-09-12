@@ -42,6 +42,7 @@ Runnable as plain Python as well as under pytest.
 """
 
 import importlib.util
+import io
 import math
 import os
 import re
@@ -1523,6 +1524,231 @@ def test_the_link_is_paced_and_retries_the_first_idn():
     assert LOADER.LAKESHORE_MIN_GAP_S > 0
     assert LOADER.CURVE_COMMAND_GAP_S > 0
     assert LOADER.CRVSAV_TIMEOUT_S >= 30
+
+
+# ---------------------------------------------------------------------------
+# THE INPUT TYPE IS CHECKED BEFORE THE CURVE IS WRITTEN, NOT AFTER
+# ---------------------------------------------------------------------------
+#
+# analyse_curve() has always been able to refuse a resistance curve aimed at a
+# voltage input and a voltage curve aimed at a resistance one. Until 12 Sep
+# 2026 nothing asked it: the live call in _rebuild_curve() left input_type at
+# None, so the block was skipped and the only thing between a DT-470 and a
+# Cernox input was the check in _install_on_input(), which runs after the
+# curve is already on the instrument.
+#
+# The failure it guards against does not announce itself. A diode measured
+# with a resistance excitation reads a plausible wrong temperature.
+
+def test_a_diode_curve_on_an_ntc_input_is_an_error_on_the_350():
+    points = [(300.0, 0.52), (80.0, 1.02), (4.2, 1.63)]
+    errors, _, _ = LOADER.analyse_curve(
+        '350', points, 'V', 2, "DT-470", "STANDARD", 475.0, 1,
+        input_type=3)                       # 3 = NTC RTD on a 350
+    assert any('resistance' in message.lower() for message in errors), errors
+
+
+def test_the_same_curve_on_a_diode_input_passes_on_the_350():
+    points = [(300.0, 0.52), (80.0, 1.02), (4.2, 1.63)]
+    errors, _, stats = LOADER.analyse_curve(
+        '350', points, 'V', 2, "DT-470", "STANDARD", 475.0, 1,
+        input_type=1)                       # 1 = Diode on a 350
+    assert errors == [], errors
+    assert stats['input_type_name'] == LOADER.MODEL_SPECS['350']['sensor_types'][1]
+
+
+def test_a_resistance_curve_on_a_diode_input_is_an_error_on_the_350():
+    # The other direction. A Cernox on a diode input is the mistake that
+    # started all of this, seen from the far end.
+    points = [(300.0, 1.7), (80.0, 2.4), (4.2, 3.5)]
+    errors, _, _ = LOADER.analyse_curve(
+        '350', points, 'LOGOHM', 4, "X17680", "X17680", 325.0, 1,
+        input_type=1)
+    assert any('voltage' in message.lower() for message in errors), errors
+
+
+def test_the_340_sensor_type_codes_differ_from_the_350s():
+    # 8 is Cernox on a 340 and does not exist on a 350, where 3 is NTC RTD.
+    # This is why the cached input type is dropped when the model changes.
+    codes_340 = LOADER.MODEL_SPECS['340']
+    codes_350 = LOADER.MODEL_SPECS['350']
+    assert codes_340['sensor_types'][8] != codes_350['sensor_types'].get(8)
+    assert 8 in codes_340['resistive_types']
+    assert codes_350['ntc_type'] == 3
+    assert codes_340['ntc_type'] == 8
+
+
+def test_an_unknown_input_type_is_refused_rather_than_assumed():
+    points = [(300.0, 0.52), (80.0, 1.02), (4.2, 1.63)]
+    errors, _, _ = LOADER.analyse_curve(
+        '350', points, 'V', 2, "DT-470", "STANDARD", 475.0, 1,
+        input_type=99)
+    assert any('not an INTYPE sensor type' in message for message in errors), errors
+
+
+def test_no_input_type_skips_the_check_rather_than_passing_it():
+    # None means "not asked". It must not quietly read as "checked and fine";
+    # the window says so separately, in a warning.
+    points = [(300.0, 0.52), (80.0, 1.02), (4.2, 1.63)]
+    errors, _, stats = LOADER.analyse_curve(
+        '350', points, 'V', 2, "DT-470", "STANDARD", 475.0, 1)
+    assert errors == [], errors
+    assert 'input_type_name' not in stats
+
+
+def test_the_loader_still_never_writes_intype():
+    # The standing rule: changing an input's sensor type changes what a
+    # running control loop is measuring, so this module only ever reads it.
+    # Feeding the cached type into the build must not have turned a read
+    # into a write, so every line that sends something is checked for the
+    # bare mnemonic. INTYPE? is the query and is allowed.
+    source = io.open(LOADER.__file__, encoding='utf-8').read()
+    sending = re.compile(r'\.(write|write_line|query|ask)\s*\(')
+    for number, line in enumerate(source.split(chr(10)), start=1):
+        if not sending.search(line):
+            continue
+        if 'INTYPE' in line:
+            assert 'INTYPE?' in line, (
+                f"line {number} sends INTYPE: {line.strip()}")
+
+
+# ---------------------------------------------------------------------------
+# THE INPUTS ARE READ ON CONNECT
+# ---------------------------------------------------------------------------
+#
+# Before 12 Sep 2026 the curve was checked against the input's sensor type
+# only if somebody pressed the button in step 6, so in practice it never was.
+# The inputs are now read once on connect: INTYPE? per channel, queries only.
+# This module still never writes INTYPE.
+#
+# Two things here are easy to get wrong and neither announces itself:
+#
+#   * ORDER. _adopt_model() runs _on_model_change(), which clears the cache on
+#     purpose, so a read taken before the model is settled is thrown away a
+#     line later. That looks fine until the model has to come off *IDN?.
+#   * A code of None means "the reply did not start with a sensor type". It
+#     must NOT be cached, because None is also what _known_input_type()
+#     returns for "never asked", and the two lead to different places.
+
+DT470_340 = ("Sensor Model:   DT-470\n"
+             "Serial Number:  STANDARD\n"
+             "Data Format:    2      (V/K)\n"
+             "SetPoint Limit: 475.0      (Kelvin)\n"
+             "Temperature coefficient:  1 (Negative)\n"
+             "Number of Breakpoints:   3\n\n"
+             "No.   Units      Temperature (K)\n\n"
+             "  1  0.51892      300.0\n"
+             "  2  1.01525      80.0\n"
+             "  3  1.62622      4.2\n")
+
+
+class _FakeConnectBackend:
+    """Answers connect and INTYPE?, recording what was asked, in order."""
+
+    def __init__(self, types, model=M350, fail=()):
+        self.types = types
+        self.model = model
+        self.fail = fail
+        self.asked = []
+
+    def connect(self, address, expected_model=None):
+        self.asked.append("connect")
+        return (f"LSCI,MODEL{self.model},X,1.7", self.model)
+
+    def get_input_type(self, channel):
+        self.asked.append(f"INTYPE? {channel}")
+        if channel in self.fail:
+            raise TimeoutError("no reply")
+        code = self.types.get(channel)
+        return code, f"{code},0,0,0,1"
+
+    def disconnect(self):
+        self.asked.append("disconnect")
+
+
+def _connected_gui(backend):
+    """A real window, connected to `backend`, with the model off *IDN?."""
+    import tkinter as tk
+    top = tk.Toplevel(_shared_root())
+    top.withdraw()
+    gui = LOADER.CurveLoaderGUI(top)
+    gui.backend = backend
+    gui.visa_cb.set("GPIB0::12::INSTR")
+    gui.model_var.set("")            # force the model to be read from *IDN?
+    gui._do_connect()
+    return top, gui
+
+
+def _close(top, gui):
+    gui.busy = False
+    gui._closing = True
+    top.destroy()
+
+
+def test_the_inputs_are_read_on_connect_after_the_model_is_settled():
+    backend = _FakeConnectBackend({'A': 3, 'B': 1, 'C': 1, 'D': 1})
+    top, gui = _connected_gui(backend)
+    try:
+        assert gui.is_connected
+        assert gui.model() == M350
+        # Connect first, then every input, in order. Had the read happened
+        # before the model was adopted, the cache would be empty here.
+        assert backend.asked == ["connect", "INTYPE? A", "INTYPE? B",
+                                 "INTYPE? C", "INTYPE? D"], backend.asked
+        assert gui._input_types == {'A': 3, 'B': 1, 'C': 1, 'D': 1}
+    finally:
+        _close(top, gui)
+
+
+def test_an_input_that_does_not_answer_does_not_fail_the_connection():
+    backend = _FakeConnectBackend({'A': 1, 'B': 1, 'C': 1, 'D': 1},
+                                  fail=('A',))
+    top, gui = _connected_gui(backend)
+    try:
+        assert gui.is_connected
+        assert gui._input_types == {'B': 1, 'C': 1, 'D': 1}
+    finally:
+        _close(top, gui)
+
+
+def test_an_unreadable_intype_reply_is_not_cached_as_never_asked():
+    # get_input_type() answers (None, raw) when the reply does not start with
+    # a sensor type. Cached, that is indistinguishable from not having asked.
+    backend = _FakeConnectBackend({'A': None, 'B': 1, 'C': 1, 'D': 1})
+    top, gui = _connected_gui(backend)
+    try:
+        assert 'A' not in gui._input_types, gui._input_types
+        assert gui._input_types == {'B': 1, 'C': 1, 'D': 1}
+    finally:
+        _close(top, gui)
+
+
+def test_the_curve_is_checked_against_the_input_as_soon_as_it_is_connected():
+    backend = _FakeConnectBackend({'A': 3, 'B': 1, 'C': 1, 'D': 1})
+    top, gui = _connected_gui(backend)
+    try:
+        gui._load_file(_write("dt470_connect.340", DT470_340))
+        gui.input_var.set('A')        # 3 = NTC RTD, and this is a diode curve
+        assert any('resistance' in message.lower()
+                   for message in gui.curve_errors), gui.curve_errors
+        gui.input_var.set('B')        # 1 = Diode
+        assert gui.curve_errors == [], gui.curve_errors
+        assert any("Checked against input B" in message
+                   for message in gui.curve_warnings), gui.curve_warnings
+    finally:
+        _close(top, gui)
+
+
+def test_disconnecting_forgets_what_the_inputs_were():
+    backend = _FakeConnectBackend({'A': 1, 'B': 1, 'C': 1, 'D': 1})
+    top, gui = _connected_gui(backend)
+    try:
+        assert gui._input_types == {'A': 1, 'B': 1, 'C': 1, 'D': 1}
+        gui.busy = False
+        gui._do_disconnect()
+        assert gui._input_types == {}
+    finally:
+        _close(top, gui)
 
 
 if __name__ == "__main__":

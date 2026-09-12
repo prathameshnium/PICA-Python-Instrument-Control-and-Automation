@@ -1570,6 +1570,171 @@ def test_another_curve_is_refused_unless_the_operator_says_so():
                                     allow_overwrite=True) == ""
 
 
+# ---------------------------------------------------------------------------
+# THE 11 SEPTEMBER 2026 FAILURE
+# ---------------------------------------------------------------------------
+#
+# A DT-470 curve pulled off the LS350 was sent to Master Sensor Table index
+# 18, an untouched user slot. Two things went wrong, and they turned out to
+# be one thing: the placeholder header an empty slot answers with was being
+# read as a curve named 'User Sensor 4'.
+#
+#   * With the command echoed, the send was REFUSED as an overwrite of
+#     somebody's calibration, on a slot the same window was labelling
+#     "[empty user slot]" in its own picker.
+#   * Without the echo the same five lines were one short of the parser's
+#     minimum, so the readback came back as "the reply could not be read as
+#     a curve" instead of the true answer, which is "nothing was written".
+#
+# EMPTY_SLOT_REPLY below is that reply verbatim, off the instrument.
+
+EMPTY_SLOT_REPLY = (
+    "User Sensor 4\n"
+    "SiDiode\n"
+    "-1.000000\n"
+    "Volts\n"
+    ";\n"
+)
+
+
+def test_an_empty_user_slot_parses_as_empty_rather_than_failing():
+    header, points = LOADER.parse_crv_text(EMPTY_SLOT_REPLY, "slot 18",
+                                           allow_empty=True)
+    assert points == []
+    assert header['no_points'] is True
+    assert header['name'] == "User Sensor 4"
+    assert header['units'] == "VOLTS"
+
+
+def test_the_echo_does_not_decide_whether_an_empty_slot_parses():
+    # The echoed command line pushed the count over the old six-line minimum,
+    # so one and the same empty slot parsed on one interface and not on the
+    # other -- and the one where it parsed is the one that refused the send.
+    with_echo, points_with = LOADER.parse_crv_text(
+        "CALCUR? 18\n" + EMPTY_SLOT_REPLY, "slot 18", allow_empty=True)
+    without_echo, points_without = LOADER.parse_crv_text(
+        EMPTY_SLOT_REPLY, "slot 18", allow_empty=True)
+    assert with_echo['name'] == without_echo['name'] == "User Sensor 4"
+    assert points_with == points_without == []
+
+
+def test_a_file_with_no_breakpoints_is_still_refused():
+    # allow_empty is for readbacks only. A .crv on disk holding no points is
+    # a bad file and must not load as an empty curve.
+    try:
+        LOADER.parse_crv_text(EMPTY_SLOT_REPLY, "a file")
+    except LOADER.CurveFileError:
+        return
+    raise AssertionError("a file with no breakpoints should be refused")
+
+
+def test_an_empty_user_slot_is_not_an_occupied_one():
+    header, points = LOADER.parse_crv_text(EMPTY_SLOT_REPLY, "slot 18",
+                                           allow_empty=True)
+    assert LOADER.overwrite_refusal(header, "DT-470 SD",
+                                    baseline_points=points) == ""
+    # Judged on the points as well as on the name, so a slot whose
+    # placeholder has been renamed is still recognised as empty.
+    renamed = dict(header, name="Spare 4")
+    assert LOADER.overwrite_refusal(renamed, "DT-470 SD",
+                                    baseline_points=[]) == ""
+
+
+def test_a_real_curve_of_another_name_is_still_refused():
+    # The point of the check that was over-reaching. It must keep working.
+    held = {'name': "CX1030 X17680", 'sensor_type': "R8K10UA",
+            'units': "LOGOHM", 'no_points': False}
+    points = [(4.0, 3.9), (300.0, 1.5)]
+    assert LOADER.overwrite_refusal(held, "DT-470 SD", baseline_points=points)
+    assert LOADER.overwrite_refusal(held, "DT-470 SD", True,
+                                    baseline_points=points) == ""
+    assert LOADER.overwrite_refusal(held, "CX1030 X17680",
+                                    baseline_points=points) == ""
+
+
+def test_a_discarded_send_is_reported_as_nothing_written():
+    # What the console said on 11 Sep was "the reply could not be read as a
+    # curve", which sends the operator after the wrong thing entirely.
+    expected = {'name': "DT-470 SD", 'sensor_type': "Diode",
+                'multiplier': "-1.0", 'units': "VOLTS"}
+    still_empty, _ = LOADER.parse_crv_text(EMPTY_SLOT_REPLY, "slot 18",
+                                           allow_empty=True)
+    comparison = {'matched': False, 'sent_count': 88, 'read_count': 0,
+                  'problems': [], 'worst_reading_error': 0.0,
+                  'worst_temperature_error': 0.0, 'worst_point': 0,
+                  'worst_temperature_limit': 0.0, 'worst_reading_limit': 0.0}
+    verdict, headline, advice = LOADER.classify_verify(
+        expected, still_empty, comparison, baseline_header=still_empty)
+    assert verdict == 'not_written'
+    assert "still EMPTY" in headline
+    # And it names the CALCUR range, which is the first thing to check when a
+    # whole block is discarded: the manual gives 1 to 12 for that number and
+    # index 18 is outside it.
+    assert "1 to 12" in advice
+
+
+# ---------------------------------------------------------------------------
+# THE SENSOR TYPE FOLLOWS THE FILE
+# ---------------------------------------------------------------------------
+#
+# Loading a DT-470 .340 used to leave both type boxes on the Cernox defaults,
+# so a diode curve sat on an 8 kohm resistance input until somebody noticed.
+
+def test_a_dt470_340_chooses_the_diode_type_by_itself():
+    assert LOADER.types_for_source("VOLTS", 2) == ("Diode", "Diode")
+
+
+def test_a_millivolt_curve_is_a_thermocouple_not_a_diode():
+    # Format 1 and format 2 are both VOLTS, so units alone cannot tell them
+    # apart and the data-format code has to be carried through.
+    assert LOADER.types_for_source("VOLTS", 1) == ("TC80", "TC80")
+
+
+def test_a_resistance_curve_still_chooses_the_ntc_range():
+    assert LOADER.types_for_source("LOGOHM", 4) == ("R8K10UA", "R8K10UA")
+    assert LOADER.types_for_source("OHMS", 3) == ("R8K10UA", "R8K10UA")
+
+
+def test_an_unmappable_unit_suggests_nothing_rather_than_guessing():
+    assert LOADER.types_for_source("KELVIN") is None
+
+
+def test_a_340_carries_its_data_format_code_through():
+    path = os.path.join(tempfile.gettempdir(), "pica_dt470_format.340")
+    with open(path, 'w', encoding='ascii') as handle:
+        handle.write(
+            "Sensor Model:   DT-470\n"
+            "Serial Number:  STANDARD\n"
+            "Data Format:    2      (V/K)\n"
+            "SetPoint Limit: 475.0      (Kelvin)\n"
+            "Temperature coefficient:  1 (Negative)\n"
+            "Number of Breakpoints:   3\n\n"
+            "No.   Units      Temperature (K)\n\n"
+            "  1  0.51892      300.0\n"
+            "  2  1.01525      80.0\n"
+            "  3  1.62622      4.2\n")
+    try:
+        source = LOADER.load_sensor_file(path)
+    finally:
+        os.remove(path)
+    assert source['units'] == "VOLTS"
+    assert source['meta']['format_code'] == 2
+    assert LOADER.types_for_source(
+        source['units'], source['meta']['format_code']) == ("Diode", "Diode")
+
+
+def test_a_diode_curve_on_a_resistance_input_type_is_an_error():
+    # SENTYPE:TYPE is what configures the channel, and for a VOLTS curve the
+    # whole input-range block used to be skipped, so nothing checked it.
+    points = [(300.0, 0.52), (80.0, 1.02), (4.2, 1.63)]
+    errors, _, _ = LOADER.analyse_curve(points, "VOLTS", "Diode", -1.0,
+                                        "DT-470 SD", sentype_type="R8K10UA")
+    assert any("resistance input" in message for message in errors)
+    errors, _, _ = LOADER.analyse_curve(points, "VOLTS", "Diode", -1.0,
+                                        "DT-470 SD", sentype_type="Diode")
+    assert errors == []
+
+
 def test_send_curve_passes_the_chosen_gap_to_every_line():
     class Link:
         address = "GPIB0::23::INSTR"

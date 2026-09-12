@@ -508,6 +508,56 @@ CERNOX_DEFAULTS = {
     'sentype_type': 'R8K10UA',
 }
 
+# WHAT THE FILE SAYS THE SENSOR IS  (added 12 Sep 2026)
+# ---------------------------------------------------------------------------
+#
+# The relation between curve units and sensor type was already in this
+# module -- it is the third field of CALCUR_SENSOR_TYPES and
+# SENTYPE_SENSOR_TYPES, 'V' or 'ohm' -- but it was only ever read BACKWARDS,
+# to reject a mismatch after the operator had typed one. Read forwards it
+# fills both type boxes in from the file, which is what the Lake Shore loader
+# does with the data-format code and what this one did not: a DT-470 curve
+# loaded here landed on the Cernox defaults and stayed there, so the operator
+# had to know to change 'R8K10UA' to 'Diode' by hand, twice, or be stopped by
+# an error that named the symptom rather than the file.
+#
+# Keyed on the Lake Shore data-format code where the file states one, because
+# format 1 (mV/K) is a thermocouple and format 2 (V/K) a diode: both are
+# VOLTS, and the units alone cannot tell those two apart.
+#
+# Each value is (CALCUR header type, SENTYPE input type).
+TYPES_FOR_LAKESHORE_FORMAT = {
+    1: ('TC80', 'TC80'),            # mV/K   - thermocouple
+    2: ('Diode', 'Diode'),          # V/K    - silicon or GaAlAs diode
+    3: ('R8K10UA', 'R8K10UA'),      # Ohm/K
+    4: ('R8K10UA', 'R8K10UA'),      # Log Ohm/K
+}
+
+# The fallback when the file states no format code, e.g. a .dat or a .tbl.
+# Resistance lands on the 8 kohm / 10 uA range, which is what every NTC
+# sensor in this lab uses; a Platinum RTD would want R312R1MA or R2K100UA and
+# is flagged rather than guessed at, because its curve has a POSITIVE
+# temperature coefficient and that is visible in the data.
+TYPES_FOR_UNITS = {
+    'VOLTS':  ('Diode', 'Diode'),
+    'OHMS':   ('R8K10UA', 'R8K10UA'),
+    'LOGOHM': ('R8K10UA', 'R8K10UA'),
+}
+
+
+def types_for_source(units, lakeshore_format=None):
+    """(CALCUR header type, SENTYPE input type) the file implies, or None.
+
+    `lakeshore_format` is the integer data-format code where the file stated
+    one. Nothing here is a decision: it is a suggestion put into the form so
+    the operator confirms it, which is the whole reason the form shows both
+    type boxes instead of sending what this function returns.
+    """
+    if lakeshore_format in TYPES_FOR_LAKESHORE_FORMAT:
+        return TYPES_FOR_LAKESHORE_FORMAT[lakeshore_format]
+    return TYPES_FOR_UNITS.get(str(units or '').upper())
+
+
 # How each line of a CALCUR block is terminated on the wire.
 #   Auto  - the manual's rule: nothing on GPIB/USB, a line feed on RS-232 and
 #           LAN, decided from the VISA resource string.
@@ -780,6 +830,10 @@ def _parse_lakeshore_340(lines, source_name):
 
     units, scale, format_name = LAKESHORE_FORMATS[fmt_code]
     meta['lakeshore_format'] = f"{fmt_code} ({format_name})"
+    # The code itself, not only the sentence about it: types_for_source()
+    # needs the integer to tell format 1 (thermocouple) from format 2
+    # (diode), which are both VOLTS.
+    meta['format_code'] = fmt_code
     if coefficient is not None:
         meta['stated_multiplier'] = coefficient
     meta['columns'] = ("column 2 = sensor reading, column 3 = temperature "
@@ -807,25 +861,50 @@ def _parse_lakeshore_340(lines, source_name):
     return points, units, meta
 
 
-def parse_crv_text(text, source_name=".crv data"):
+def parse_crv_text(text, source_name=".crv data", allow_empty=False):
     """Read a Cryo-con .crv block, or the reply to a CALCUR? query.
 
     Returns (header, points) where header holds name / sensor_type /
     multiplier / units and points is a list of (temperature, reading), the
     same shape every other reader returns.
+
+    `allow_empty` accepts a header with no points after it. That is exactly
+    what an untouched user slot answers on this firmware -- four header lines
+    and the closing semicolon, e.g.
+
+        User Sensor 4
+        SiDiode
+        -1.000000
+        Volts
+        ;
+
+    -- and it is a real, readable answer meaning "there is no curve here",
+    not a malformed one. Refusing it made the module report an empty slot as
+    unreadable, and, when the interface echoed the command and pushed the
+    line count over the old threshold, as OCCUPIED. A file on disk with no
+    breakpoints is still refused, so the default stays strict and only the
+    instrument-readback callers pass allow_empty=True.
     """
     lines = [line.strip() for line in _clean_lines(text)]
     lines = [line for line in lines if line]
-    if len(lines) < 6:
-        raise CurveFileError(
-            f"{source_name} is too short to be a curve: a header of four "
-            f"lines, at least two points and a semicolon are needed, but "
-            f"{len(lines)} non-blank lines were found.")
 
     # A reply to 'CALCUR? n' may still carry the echoed command, and a file
-    # written by this module never does. Either is accepted.
-    if re.match(r'^CALCUR\??\s', lines[0], re.I):
+    # written by this module never does. Either is accepted. This is stripped
+    # BEFORE anything is counted: counting first made one and the same
+    # empty-slot reply parse or fail depending on whether the interface
+    # echoed, which is how "the slot is empty" and "the slot is occupied"
+    # became two readings of the same five lines.
+    if lines and re.match(r'^CALCUR\??\s', lines[0], re.I):
         lines = lines[1:]
+
+    minimum = 5 if allow_empty else 6
+    if len(lines) < minimum:
+        raise CurveFileError(
+            f"{source_name} is too short to be a curve: a header of four "
+            f"lines, "
+            + ("" if allow_empty else "at least two points and ")
+            + f"a semicolon are needed, but {len(lines)} non-blank lines "
+            "were found.")
 
     name = lines[0]
     sensor_type = lines[1]
@@ -868,6 +947,11 @@ def parse_crv_text(text, source_name=".crv data"):
         'sensor_type': sensor_type,
         'multiplier': multiplier,
         'units': units,
+        # True when the block is a header and nothing else. On a readback
+        # that means the slot is empty, which every caller that judges
+        # whether a slot may be written to has to be able to tell from a
+        # slot holding somebody's calibration.
+        'no_points': not points,
         # The numerals exactly as they were printed, reading then temperature.
         # Kept because how many digits the instrument prints is the limit on
         # how closely a readback can be checked, and that is not recoverable
@@ -1216,6 +1300,22 @@ def analyse_curve(points, units, sensor_type, multiplier, name,
         peak_ohms = stats['r_max']
     elif units == 'LOGOHM':
         peak_ohms = 10.0 ** stats['r_max']
+
+    # A VOLTS curve has no peak resistance, so every check below was skipped
+    # for one -- including the one that matters most. SENTYPE:TYPE is what
+    # configures the channel, so a diode curve sent with the input type still
+    # on a resistance range puts the diode on a resistance input, and until
+    # now nothing said so. The CALCUR header type was checked; this was not.
+    if units == 'VOLTS' and sentype_type in SENTYPE_SENSOR_TYPES:
+        _, sentype_unit, _ = SENTYPE_SENSOR_TYPES[sentype_type]
+        if sentype_unit and sentype_unit != 'V':
+            errors.append(
+                f"The curve is in VOLTS but the input type {sentype_type} is "
+                "a resistance input. SENTYPE <index>:TYPE is what sets the "
+                "range and the excitation, so the channel would be "
+                "configured to pass a current through a diode and read it as "
+                "a resistor. A silicon diode wants Diode; a thermocouple "
+                "wants TC80 or TC40.")
     if peak_ohms is not None:
         stats['peak_ohms'] = peak_ohms
     if peak_ohms is not None and sentype_type in SENTYPE_SENSOR_TYPES:
@@ -1300,7 +1400,8 @@ def looks_like_empty_user_slot(name):
     return bool(USER_SLOT_NAME_RE.match(str(name or '').strip()))
 
 
-def overwrite_refusal(baseline_header, name, allow_overwrite=False):
+def overwrite_refusal(baseline_header, name, allow_overwrite=False,
+                      baseline_points=None):
     """Why a send into this slot must not go ahead, or '' if it may.
 
     Ported from the Lake Shore loader, whose rule is that the slot is read
@@ -1310,12 +1411,38 @@ def overwrite_refusal(baseline_header, name, allow_overwrite=False):
     is allowed; a slot that holds a curve of ANOTHER name is somebody's
     calibration and is refused unless the operator has ticked the Advanced
     box that says so. An empty slot is always allowed.
+
+    "Empty" is the part that has to be got right, and the port got it wrong.
+    An untouched user slot on this firmware does not answer CALCUR? with
+    nothing: it answers with a placeholder header, 'User Sensor 4 / SiDiode /
+    -1.000000 / Volts / ;' and no points. Read as a curve that is what it
+    looks like -- a curve named 'User Sensor 4' -- and the send was refused
+    as an overwrite of somebody's calibration, on a slot the very same window
+    was labelling "[empty user slot]" in its own picker.
+
+    Two independent tells, either of which means the slot is free:
+
+      * the block carries NO POINTS. Nothing is stored there to lose,
+        whatever the header says. This is the Lake Shore loader's 'stub'
+        state, which that module is explicit is "a question, not a refusal".
+      * the held name is the firmware's own untouched-slot placeholder,
+        'User Sensor n' -- looks_like_empty_user_slot(), the same test the
+        slot picker, the slot hint and the table scan already use.
+
+    `baseline_points` is what was read back with the header; None means the
+    caller did not keep it, and then only the name is available to judge on.
     """
     if not baseline_header:
         return ""
     held = str(baseline_header.get('name', '')).strip()
     wanted = str(name or '').strip()
     if not held or held.upper() == wanted.upper():
+        return ""
+    # A header with no points behind it is an empty slot, not a curve.
+    if baseline_header.get('no_points') or (
+            baseline_points is not None and not baseline_points):
+        return ""
+    if looks_like_empty_user_slot(held):
         return ""
     if allow_overwrite:
         return ""
@@ -1757,6 +1884,31 @@ def classify_verify(expected, header, comparison, baseline_header=None):
                         not fields['units'][2])
 
     if identical_to_baseline or wholly_different:
+        if header.get('no_points'):
+            # The clearest case there is: the slot answers with the
+            # firmware's untouched-slot placeholder and no points at all.
+            # It is still empty, so the block never landed.
+            headline = (
+                "NOTHING WAS WRITTEN. The slot is still EMPTY: it answers "
+                f"with the placeholder header '{header['name']}' and no "
+                "points at all. The instrument discarded the whole block.")
+            advice = (
+                "A block that is discarded outright is refused before any "
+                "point is stored, so check what the instrument parses "
+                "first, in this order: (1) the number after CALCUR. The "
+                "manual (printed p.173) says it is a USER CURVE number, 1 "
+                "to 12, not a Master Sensor Table index; an index above 12 "
+                "is out of that range and this firmware discards such a "
+                "write without a word. The Advanced panel now lets you "
+                "address the slot either way. (2) the sensor type is one "
+                "the CALCUR header accepts -- the manual prints "
+                + ", ".join(CALCUR_MANUAL_TYPE_LIST) +
+                "; the type probe (step 4) settles which spelling this "
+                "firmware keeps. (3) the name is 4 to 15 printable ASCII "
+                "characters. (4) the units are OHMS, VOLTS or LOGOHM. Only "
+                "if all four are already right is the line ending worth "
+                "trying.")
+            return ('not_written', headline, advice)
         if identical_to_baseline:
             headline = (
                 "NOTHING WAS WRITTEN. The slot reads back exactly as it did "
@@ -1856,6 +2008,11 @@ CURVE_READ_MAX_LINES = MAX_CURVE_POINTS + 12
 # console keeps up with a curve going out line by line, slow enough to be
 # invisible.
 EVENT_POLL_MS = 50
+
+# How long the window waits for a running instrument job before it destroys
+# itself. Long enough for a CALCUR? read, which walks flash and takes about
+# twelve seconds on the Rev 3.03A unit in this lab, plus the settle.
+WORKER_JOIN_TIMEOUT_S = 15.0
 
 CRYOCON_STATUS_STRINGS = {
     '-------': "sensor fault: the sensor is open, disconnected or shorted",
@@ -2384,17 +2541,24 @@ class CurveLoaderBackend:
     def read_slot_curve(self, index):
         """Read a slot and parse it. Returns (header, points, raw_text).
 
-        header and points are None when the slot is empty or the reply is not
-        a curve; raw_text is always whatever came back, so the caller can
-        print it. Used for the before-and-after snapshots that let
+        header and points are None only when the reply is not a curve at
+        all; raw_text is always whatever came back, so the caller can print
+        it. Used for the before-and-after snapshots that let
         classify_verify() say 'nothing was written' as a fact rather than an
         inference.
+
+        An untouched user slot answers with a placeholder header and no
+        points, and that is parsed (allow_empty=True) rather than thrown
+        away: header['no_points'] is then True. The caller needs to be able
+        to tell "the slot is empty" from "the slot would not parse", and
+        before this it could not.
         """
         text = self.read_curve(index)
         if not text.strip():
             return None, None, text
         try:
-            header, points = parse_crv_text(text, f"slot {index}")
+            header, points = parse_crv_text(text, f"slot {index}",
+                                            allow_empty=True)
         except CurveFileError:
             return None, None, text
         return header, points, text
@@ -2494,6 +2658,26 @@ class CurveLoaderGUI:
         # window driven any other way loses the callback outright. The
         # sibling Cryocon modules queue for the same reason.
         self._events = queue.Queue()
+        # SHUTDOWN (added 12 Sep 2026, after 'Tcl_AsyncDelete: async handler
+        # deleted by the wrong thread' on closing the window).
+        #
+        # The worker is a daemon thread that closes over self, and self holds
+        # every widget and so the Tk interpreter. Destroying the root while
+        # that thread is still running left the LAST reference to the
+        # interpreter on the worker, and the launcher drops the main thread's
+        # copy the moment mainloop() returns (runpy discards the __main__
+        # namespace). Whenever the worker then finished, Tk was torn down on
+        # a thread that did not create it, which is exactly what that message
+        # says. So: the send loop can now be asked to stop, the window waits
+        # for the worker before destroying anything, and the after() chain is
+        # cancelled rather than left to fire into a dead interpreter.
+        # Which number goes after CALCUR, as a plain string. The radio
+        # button in the Advanced panel writes it. See _calcur_index_for().
+        self._addressing = 'senix'
+        self._stop_flag = threading.Event()
+        self._closing = False
+        self._worker = None
+        self._poll_id = None
         self.backend = CurveLoaderBackend(log=self.log)
         self.logo_image = None
         self.is_connected = False
@@ -3150,12 +3334,40 @@ class CurveLoaderGUI:
             justify='left').grid(row=7, column=0, columnspan=2, sticky='w',
                                  padx=10, pady=(0, 8))
 
+        ttk.Label(self.advanced_frame, text="CALCUR number:",
+                  background=self.CLR_FRAME_BG).grid(
+            row=8, column=0, sticky='w', padx=10, pady=4)
+        self.addressing_var = tk.StringVar(value=self._addressing)
+        addressing_box = ttk.Frame(self.advanced_frame,
+                                   style='Card.TFrame')
+        addressing_box.grid(row=8, column=1, sticky='w', padx=10, pady=4)
+        for column, (key, label) in enumerate(
+                (('senix', "table index"), ('user', "user curve 1-12"))):
+            ttk.Radiobutton(addressing_box, text=label,
+                            value=key, variable=self.addressing_var,
+                            command=self._addressing_changed).grid(
+                row=0, column=column, sticky='w', padx=(0, 12))
+        ttk.Label(
+            self.advanced_frame,
+            text=("Which number goes after CALCUR. The manual (printed\n"
+                  "p.173) says it is a USER CURVE number, 1 to 12. The\n"
+                  "31 Aug readbacks say CALCUR? takes a table index.\n"
+                  "Both can be true: the query walks the table, the write\n"
+                  "validates 1 to 12. A write above 12 is then discarded\n"
+                  "without a word, which is what a readback showing an\n"
+                  "empty slot after a clean send means. Table index is\n"
+                  "the default; if a send to an index above 12 is\n"
+                  "discarded, try the other one."),
+            background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
+            justify='left').grid(row=9, column=0, columnspan=2, sticky='w',
+                                 padx=10, pady=(0, 8))
+
         ttk.Separator(self.advanced_frame, orient='horizontal').grid(
-            row=8, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
+            row=10, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
         ttk.Button(self.advanced_frame,
                    text="Run the built-in checks (no instrument needed)",
                    command=self._run_self_test).grid(
-            row=9, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
+            row=11, column=0, columnspan=2, sticky='ew', padx=10, pady=4)
         ttk.Label(
             self.advanced_frame,
             text=("Twenty-six checks on the file readers, the unit maths, "
@@ -3163,7 +3375,7 @@ class CurveLoaderGUI:
                   "run on made-up data. Worth a press after\nany edit to "
                   "this file, and before a session on a cold cryostat."),
             background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
-            justify='left').grid(row=10, column=0, columnspan=2, sticky='w',
+            justify='left').grid(row=12, column=0, columnspan=2, sticky='w',
                                  padx=10, pady=(0, 8))
 
     def _line_gap(self):
@@ -3334,9 +3546,10 @@ class CurveLoaderGUI:
             except Exception as exc:          # never let the pump die
                 print(f"Curve loader event {event[0]!r} failed: {exc}")
 
-        if reschedule:
+        if reschedule and not self._closing:
             try:
-                self.root.after(EVENT_POLL_MS, self._drain_events)
+                self._poll_id = self.root.after(EVENT_POLL_MS,
+                                                self._drain_events)
             except tk.TclError:
                 pass                          # the window is closing
 
@@ -3494,10 +3707,17 @@ class CurveLoaderGUI:
             self.multiplier_var.set(fmt6(header['multiplier']))
             self.units_var.set(header['units'])
             self.log("  Header taken from the file itself.")
+            # The .crv carries the CALCUR header type but says nothing about
+            # the input range, and SENTYPE:TYPE is what actually configures
+            # the channel. Left alone it kept whatever was in the box, which
+            # for a diode curve loaded after a Cernox one was an 8 kohm
+            # resistance input.
+            self._suggest_types(source, header_type_is_set=True)
         else:
             self.units_var.set(
                 'LOGOHM' if source['units'] in ('OHMS', 'LOGOHM')
                 else source['units'])
+            self._suggest_types(source)
             # The name follows the file unless the operator has typed their
             # own: X17681.340 loaded after X17680.340 must not go into the
             # instrument labelled X17680.
@@ -3515,6 +3735,67 @@ class CurveLoaderGUI:
                     fmt6(source['meta']['stated_multiplier']))
 
         self._rebuild_curve()
+
+    def _suggest_types(self, source, header_type_is_set=False):
+        """Put the sensor type the file implies into both type boxes.
+
+        Two boxes, two vocabularies, and they do different jobs: the CALCUR
+        header type goes into the curve, and SENTYPE <index>:TYPE sets the
+        input range and excitation. Both used to sit on the Cernox defaults
+        no matter what was loaded, so a DT-470 arrived as an 8 kohm
+        resistance input and the operator had to know to change it.
+
+        An operator override is respected the way _suggest_name() respects
+        one: a box is only rewritten when it still holds this module's own
+        previous suggestion or the Cernox default it started at. Anything
+        typed or picked by hand is left alone and the disagreement is logged
+        instead, because a file that merely LOOKS like a diode must not
+        silently undo a deliberate choice.
+
+        `header_type_is_set` says the CALCUR type came from the file's own
+        header and must not be touched; only the SENTYPE box is filled in.
+        """
+        suggestion = types_for_source(source['units'],
+                                      source['meta'].get('format_code'))
+        if suggestion is None:
+            self.log(f"  Nothing here maps units {source['units']} onto a "
+                     "sensor type, so both type boxes were left as they are. "
+                     "Check them.")
+            return
+        calcur_type, sentype_type = suggestion
+        previous = getattr(self, '_suggested_types', None)
+
+        boxes = [] if header_type_is_set else [
+            ("curve type", self.type_var, calcur_type,
+             CERNOX_DEFAULTS['sensor_type'],
+             previous[0] if previous else None)]
+        boxes.append(
+            ("input type", self.sentype_var, sentype_type,
+             CERNOX_DEFAULTS['sentype_type'],
+             previous[1] if previous else None))
+
+        for label, variable, wanted, default, last in boxes:
+            current = variable.get().strip()
+            if current in (wanted, ''):
+                variable.set(wanted)
+                continue
+            if current == default or (last is not None and current == last):
+                variable.set(wanted)
+                self.log(f"  {label} set to '{wanted}' from the file.")
+                continue
+            self.log(f"  The {label} box still says '{current}'; this file "
+                     f"implies '{wanted}'. It was left as you set it. Check "
+                     "it before sending.")
+        self._suggested_types = (calcur_type, sentype_type)
+
+        coefficient = source['meta'].get('stated_multiplier')
+        if (source['units'] in ('OHMS', 'LOGOHM') and coefficient is not None
+                and coefficient > 0):
+            self.log("  This resistance curve has a POSITIVE temperature "
+                     "coefficient, which is a Platinum RTD, not a Cernox. "
+                     f"The input type was suggested as '{sentype_type}', "
+                     "which is the 8 kohm NTC range. A Pt100 wants R312R1MA "
+                     "and a Pt1000 R2K100UA. Check the input type box.")
 
     @staticmethod
     def _suggest_name(file_name, meta):
@@ -3662,6 +3943,27 @@ class CurveLoaderGUI:
                        "an index the scan calls an empty user slot, or "
                        "switch how the CALCUR index is interpreted.")
             return None
+        if not (MIN_USER_CURVE <= calcur_index <= MAX_USER_CURVE):
+            if not messagebox.askyesno(
+                    "CALCUR Number Out Of Range",
+                    f"The number that would go after CALCUR is "
+                    f"{calcur_index}.\n\n"
+                    f"The manual (printed p.173) says this is a user "
+                    f"curve number, {MIN_USER_CURVE} to {MAX_USER_CURVE}. "
+                    f"{calcur_index} is outside that range, and this "
+                    "firmware discards a write it will not parse WITHOUT "
+                    "REPORTING AN ERROR: the send looks clean and the slot "
+                    "is still empty afterwards.\n\n"
+                    "CALCUR? does answer on a table index, which is why "
+                    "the table index is the default here, but the query "
+                    "and the write need not agree.\n\n"
+                    "If a send to this slot has already come back as "
+                    "'nothing was written', switch 'CALCUR number' to "
+                    "'user curve 1-12' under Advanced and try that "
+                    "instead.\n\nSend anyway?"):
+                self.log(f"Send cancelled: CALCUR {calcur_index} is outside "
+                         f"the manual's {MIN_USER_CURVE} to {MAX_USER_CURVE}.")
+                return None
         if not self.table_map:
             if not messagebox.askyesno(
                     "Table Not Mapped",
@@ -3706,15 +4008,40 @@ class CurveLoaderGUI:
     def _offset_is_confirmed(self):
         return self.senix_offset is not None
 
+    def _addressing_changed(self):
+        """Copy the radio choice where a worker thread may read it."""
+        self._addressing = self.addressing_var.get()
+        self._refresh_slot()
+
     def _calcur_index_for(self, slot):
         """The number to put after CALCUR for this user curve.
 
         Two readings of the manual, and the operator picks. 'user' is what
-        Appendix A says; 'senix' is what both failed transfers are consistent
-        with, where CALCUR 1 addressed a protected factory diode and was
-        discarded without a word.
+        the CALCUR page says -- a user curve number, 1 to 12; 'senix' is the
+        Master Sensor Table index, which is what CALCUR? demonstrably takes
+        on this firmware.
+
+        v1.3 collapsed both onto the table index and dropped the choice. That
+        held for as long as every target was below 12. It stopped holding on
+        11 Sep, when a DT-470 was sent to table index 18: the send was clean,
+        the readback showed the slot still empty, and 18 is outside the range
+        the manual gives for this number. The choice is back, and the default
+        is unchanged so nothing that already worked moves.
         """
-        return self._senix_for(slot)
+        senix = self._senix_for(slot)
+        # self._addressing, not addressing_var.get(): _verify_against() calls
+        # this from the worker thread, and a Tk variable read off the Tk
+        # thread raises 'main thread is not in main loop'. The radio button
+        # copies its choice into the plain attribute, which is a string and
+        # safe to read anywhere. Same reason _expected_header() exists.
+        if getattr(self, '_addressing', 'senix') != 'user':
+            return senix
+        number = self._user_curve_number_for(senix)
+        # Where the scan has not established the offset there is no user
+        # curve number to send, and inventing one would write to whatever
+        # slot the guess landed on. The table index is sent instead and the
+        # check below says the number is out of the manual's range.
+        return senix if number is None else number
 
     def _target_is_protected(self, calcur_index):
         """Why this index must not be written to, or '' if it is fine.
@@ -4252,6 +4579,8 @@ class CurveLoaderGUI:
             return
         self._set_busy(True)
 
+        self._stop_flag.clear()
+
         def target():
             try:
                 function()
@@ -4272,7 +4601,12 @@ class CurveLoaderGUI:
             finally:
                 self._post('busy', False)
 
-        threading.Thread(target=target, daemon=True).start()
+        # Kept, so the window can wait for it instead of destroying the Tk
+        # interpreter out from under it. Named, so a stuck one is
+        # identifiable in a stack dump.
+        self._worker = threading.Thread(target=target, daemon=True,
+                                        name=f"cc34-loader-{description}")
+        self._worker.start()
 
     def _set_progress(self, done, total):
         """Move the progress bar. Safe from the worker thread."""
@@ -4315,7 +4649,8 @@ class CurveLoaderGUI:
                     return
             self.log(f"  Reply in {time.time() - started:.1f} s.")
             try:
-                header, points = parse_crv_text(text, f"slot {slot}")
+                header, points = parse_crv_text(text, f"slot {slot}",
+                                                allow_empty=True)
             except CurveFileError as exc:
                 self.log(f"  The reply could not be read as a curve: {exc}")
                 self.log(f"  Raw reply, first 400 characters:\n{text[:400]}")
@@ -4324,6 +4659,11 @@ class CurveLoaderGUI:
                      f"'{header['sensor_type']}', multiplier "
                      f"{header['multiplier']:+g}, units {header['units']}, "
                      f"{len(points)} points.")
+            if not points:
+                self.log("  No points: this slot is EMPTY. The header above "
+                         "is the placeholder the firmware keeps in an "
+                         "untouched user slot, not a curve. The slot is free "
+                         "to write to.")
             if points:
                 temperatures = [t for t, _ in points]
                 self.log(f"  Covers {min(temperatures):.4g} K to "
@@ -4381,6 +4721,7 @@ class CurveLoaderGUI:
             # as somebody else's curve can only be inferred to mean the send
             # failed; with it, that is a comparison. It costs one query.
             baseline_header = None
+            baseline_points = None
             try:
                 baseline_header, baseline_points, _ = \
                     self.backend.read_slot_curve(calcur_index)
@@ -4388,15 +4729,23 @@ class CurveLoaderGUI:
                 self.log(f"  Could not read the slot before sending: {exc}. "
                          "Carrying on; the check afterwards will be a little "
                          "less definite.")
-            if baseline_header is not None:
+            if baseline_header is not None and not baseline_points:
+                self.log(f"  Slot {slot} is EMPTY: it answers with the "
+                         f"placeholder header '{baseline_header['name']}' "
+                         f"({baseline_header['sensor_type']}, "
+                         f"{baseline_header['units']}) and no points. "
+                         "Nothing is stored there to lose.")
+            elif baseline_header is not None:
                 self.log(f"  Slot {slot} currently holds "
                          f"'{baseline_header['name']}', "
                          f"{baseline_header['sensor_type']}, "
                          f"{baseline_header['units']}, "
                          f"{len(baseline_points)} points. That is what is "
                          "about to be overwritten.")
+            if baseline_header is not None:
                 refusal = overwrite_refusal(baseline_header, name,
-                                            allow_overwrite)
+                                            allow_overwrite,
+                                            baseline_points=baseline_points)
                 if refusal:
                     self.log("REFUSED. " + refusal)
                     self._post('dialog', 'error', "Slot Is Occupied",
@@ -4406,6 +4755,7 @@ class CurveLoaderGUI:
                      f"(CALCUR {calcur_index}) ...")
             self.backend.send_curve(
                 calcur_index, lines, ending, gap=gap,
+                should_stop=self._stop_flag.is_set,
                 progress=lambda done, total, line: self._set_progress(
                     done, total))
             self.log(f"  All lines sent. Waited {CURVE_SETTLE_S:.1f} s for "
@@ -4492,7 +4842,8 @@ class CurveLoaderGUI:
                        "key) before using this sensor.")
             return 'empty'
         try:
-            header, read_points = parse_crv_text(text, f"slot {slot}")
+            header, read_points = parse_crv_text(text, f"slot {slot}",
+                                                 allow_empty=True)
         except CurveFileError as exc:
             self.log(f"VERIFY FAILED: the reply could not be read as a "
                      f"curve: {exc}")
@@ -4746,13 +5097,25 @@ class CurveLoaderGUI:
                 else:
                     detail = "the slot is empty"
                 record(2, f"read CALCUR {calcur_index} baseline", True, detail)
+            elif not baseline_points:
+                # A placeholder header and no points. The slot is empty,
+                # however much its 'User Sensor 4' line reads like a name.
+                record(2, f"read CALCUR {calcur_index} baseline", True,
+                       f"empty: the placeholder header "
+                       f"'{baseline_header['name']}' "
+                       f"({baseline_header['sensor_type']}, "
+                       f"{baseline_header['units']}) and no points. Nothing "
+                       "stored there to lose.")
+                self.log("  If the readback in step 5 still shows this "
+                         "placeholder, the send did not take.")
             else:
                 detail = (f"holds '{baseline_header['name']}', "
                           f"{baseline_header['sensor_type']}, "
                           f"{baseline_header['units']}, "
                           f"{len(baseline_points)} points")
                 refusal = overwrite_refusal(baseline_header, expected['name'],
-                                            allow_overwrite)
+                                            allow_overwrite,
+                                            baseline_points=baseline_points)
                 if refusal:
                     record(2, f"read CALCUR {calcur_index} baseline", False,
                            detail + ". " + refusal)
@@ -4782,6 +5145,7 @@ class CurveLoaderGUI:
                          f"{slot} (CALCUR {calcur_index}) ...")
                 self.backend.send_curve(
                     calcur_index, lines, ending, gap=gap,
+                    should_stop=self._stop_flag.is_set,
                     progress=lambda done, total, line: self._set_progress(
                         done, total))
             except Exception as exc:
@@ -4948,12 +5312,56 @@ class CurveLoaderGUI:
             if not messagebox.askyesno(
                     "Still Working",
                     "An instrument operation is still running. Closing now "
-                    "could leave a partial curve in the slot.\n\nClose "
-                    "anyway?"):
+                    "could leave a partial curve in the slot.\n\nThe "
+                    "window will ask the transfer to stop at the end of the "
+                    "line it is on and wait a few seconds for it, so the "
+                    "slot is left in a known state.\n\nClose anyway?"):
                 return
+        self._closing = True
+        # Ask the send loop to stop between lines. It cannot be interrupted
+        # mid-line, and should not be: a line half on the wire is worse than
+        # a line too many.
+        self._stop_flag.set()
+        if self._poll_id is not None:
+            try:
+                self.root.after_cancel(self._poll_id)
+            except tk.TclError:
+                pass
+            self._poll_id = None
+        self._wait_for_worker()
         if self.is_connected:
             self.backend.disconnect()
         self.root.destroy()
+
+    def _wait_for_worker(self, timeout_s=WORKER_JOIN_TIMEOUT_S):
+        """Wait for the instrument job to finish before Tk is torn down.
+
+        Nothing here is cosmetic. The worker holds a reference to this
+        window, and through it to the Tk interpreter; if it outlives
+        destroy() it becomes the last holder, and the interpreter is then
+        freed on a thread that did not create it.
+
+        The queue is drained while waiting, without rescheduling, so the
+        last lines the worker writes on its way out still reach the console
+        instead of being lost.
+        """
+        worker = self._worker
+        if worker is None or not worker.is_alive():
+            return
+        deadline = time.time() + timeout_s
+        while worker.is_alive() and time.time() < deadline:
+            worker.join(0.05)
+            try:
+                self._drain_events(reschedule=False)
+                self.root.update_idletasks()
+            except tk.TclError:
+                break
+        if worker.is_alive():
+            # A CALCUR? read can sit inside pyvisa for twelve seconds and a
+            # VISA call cannot be cancelled from here. Said out loud rather
+            # than hidden: this is the one case the wait cannot make safe.
+            print(f"Curve loader: the '{worker.name}' thread is still "
+                  f"running after {timeout_s:.0f} s; closing anyway.")
 
 
 # ===============================================================================
@@ -5380,6 +5788,88 @@ def _selftest_cases():
         check(backend.resolve_line_ending(b'\r\n') == b'\r\n',
               "an explicit choice was overridden")
 
+    # -- 27: an empty user slot is empty, however its header reads ----------
+    def case_empty_slot_is_not_occupied():
+        # Exactly what table index 18 answered on 11 Sep 2026, when a clean
+        # send was followed by "the reply could not be read as a curve" and,
+        # with the command echoed, by "the slot already holds a curve named
+        # 'User Sensor 4'". It is neither: it is an empty slot.
+        empty = "User Sensor 4\nSiDiode\n-1.000000\nVolts\n;\n"
+        header, points = parse_crv_text(empty, "slot 18", allow_empty=True)
+        check(points == [], "an empty slot parsed with no points")
+        check(header['no_points'] is True, "it is flagged as empty")
+        check(header['name'] == 'User Sensor 4', header['name'])
+        check(overwrite_refusal(header, 'DT-470 SD',
+                                baseline_points=points) == "",
+              "an empty slot was refused as occupied")
+        # The echo used to decide whether the same five lines parsed at all.
+        echoed, _ = parse_crv_text("CALCUR? 18\n" + empty, "slot 18",
+                                   allow_empty=True)
+        check(echoed['name'] == 'User Sensor 4', "the echo changed the read")
+        check(overwrite_refusal(echoed, 'DT-470 SD', baseline_points=[]) == "",
+              "the echoed reply was refused as occupied")
+        # A real curve of another name is still refused, which is the point
+        # of the check that was over-reaching.
+        real = {'name': 'CX1030 X17680', 'sensor_type': 'R8K10UA',
+                'units': 'LOGOHM', 'no_points': False}
+        check(overwrite_refusal(real, 'DT-470 SD',
+                                baseline_points=[(4.0, 3.0), (300.0, 1.0)]),
+              "a real curve of another name was allowed through")
+        check(overwrite_refusal(real, 'DT-470 SD', True,
+                                baseline_points=[(4.0, 3.0)]) == "",
+              "the Advanced override did not work")
+        # A file on disk with no points is still a bad file.
+        try:
+            parse_crv_text(empty, "a file")
+        except CurveFileError:
+            pass
+        else:
+            raise AssertionError("a pointless file was accepted")
+
+    # -- 28: a discarded send reads as 'nothing was written' ----------------
+    def case_discarded_send_is_named():
+        expected = {'name': 'DT-470 SD', 'sensor_type': 'Diode',
+                    'multiplier': '-1.0', 'units': 'VOLTS'}
+        still_empty = {'name': 'User Sensor 4', 'sensor_type': 'SiDiode',
+                       'multiplier': -1.0, 'units': 'VOLTS',
+                       'no_points': True}
+        comparison = {'matched': False, 'sent_count': 88, 'read_count': 0,
+                      'problems': [], 'worst_reading_error': 0.0,
+                      'worst_temperature_error': 0.0, 'worst_point': 0,
+                      'worst_temperature_limit': 0.0,
+                      'worst_reading_limit': 0.0}
+        verdict, headline, advice = classify_verify(
+            expected, still_empty, comparison, baseline_header=still_empty)
+        check(verdict == 'not_written', verdict)
+        check('still EMPTY' in headline, headline)
+        check('1 to 12' in advice, "the CALCUR range was not mentioned")
+
+    # -- 29: the file chooses the sensor type ------------------------------
+    def case_type_follows_the_file():
+        check(types_for_source('VOLTS', 2) == ('Diode', 'Diode'),
+              "a V/K curve did not choose the diode type")
+        check(types_for_source('VOLTS', 1) == ('TC80', 'TC80'),
+              "an mV/K curve did not choose the thermocouple type")
+        check(types_for_source('LOGOHM', 4) == ('R8K10UA', 'R8K10UA'),
+              "a log-ohm curve did not choose the NTC range")
+        check(types_for_source('VOLTS') == ('Diode', 'Diode'),
+              "units alone did not choose a type")
+        check(types_for_source('BANANAS') is None, "a bad unit was mapped")
+
+    # -- 30: a diode curve on a resistance INPUT type is an error ----------
+    def case_volts_on_a_resistance_input():
+        # The CALCUR header type was already checked. SENTYPE:TYPE, which is
+        # what actually configures the channel, was not: peak_ohms is None
+        # for a volts curve, so the whole block was skipped.
+        points = [(300.0, 0.5), (77.0, 1.0), (4.2, 1.6)]
+        errors, _, _ = analyse_curve(points, 'VOLTS', 'Diode', -1.0,
+                                     'DT-470 SD', sentype_type='R8K10UA')
+        check(any('resistance input' in message for message in errors),
+              "a diode curve on an 8 kohm input was allowed")
+        errors, _, _ = analyse_curve(points, 'VOLTS', 'Diode', -1.0,
+                                     'DT-470 SD', sentype_type='Diode')
+        check(not errors, errors)
+
     return [
         ("fmt6 writes six digits, never an exponent", case_fmt6),
         ("a .340 file is read reading-first", case_parse_340),
@@ -5422,6 +5912,14 @@ def _selftest_cases():
         ("the Appendix A offset is only the unconfirmed fallback",
          case_senix),
         ("the line-ending rule follows the interface", case_line_ending),
+        ("REGRESSION: an empty user slot is not an occupied one",
+         case_empty_slot_is_not_occupied),
+        ("REGRESSION: a discarded send is named, not called unreadable",
+         case_discarded_send_is_named),
+        ("the sensor type is chosen from the file",
+         case_type_follows_the_file),
+        ("a volts curve on a resistance input type is an error",
+         case_volts_on_a_resistance_input),
     ]
 
 
