@@ -699,6 +699,35 @@ def scan_instruments(skip_addresses=None, gauge=None):
 
 
 # -----------------------------------------------------------------------------
+#  Diagnostic tools
+# -----------------------------------------------------------------------------
+# Programs that interrogate an instrument and write a log, rather than
+# measuring a sample. They live in their own place - Tools > Diagnostic
+# Tools, and a "Diagnostic Tools" suite in Advanced Options - because
+# they are not a step in any measurement: you open one when something
+# does not add up and you want to know what the instrument really does.
+#
+# The rule for anything listed here: it must be READ-ONLY. A diagnostic
+# that can change the instrument is a diagnostic nobody dares run while
+# an experiment is going, which is exactly when it is needed.
+#
+# Why the first one exists: the Cryo-con SCPI set is shared across the
+# 24C / 32 / 32B / 34 / 62 family, PICA's Cryo-con modules were written
+# against the Model 32/32B manual, and the Model 34's own manual does not
+# document all of it. A Cryo-con refuses a command it does not know by
+# not answering at all - no error string, nothing in the error queue - so
+# a wrong mnemonic surfaces as a VISA timeout indistinguishable from a
+# dead bus, and can live in a measurement module for months. (One did:
+# LOOP <n>:OUTPWR?, found 17 Sep 2026.) The only cure is to ask the
+# instrument, which is what the diagnostics program does.
+#
+# Each entry: (menu label, SCRIPT_PATHS key).
+DIAGNOSTIC_TOOLS = [
+    ("Cryocon 34 Diagnostics (read-only survey)…", "Cryocon Diagnostics"),
+]
+
+
+# -----------------------------------------------------------------------------
 #  Measurement catalogue (mirrors the module suites; maps to SCRIPT_PATHS keys)
 # -----------------------------------------------------------------------------
 # Each module: (label, script_key, family) where family is 'control' | 'sensing'
@@ -895,6 +924,16 @@ CATALOG = [
             ("AC R vs. T (T Sensing, L340)", "K197A AC R-T (T_Sensing, L340)", "sensing"),
             ("AC R vs. T (T Sensing, Cryocon 34)", "K197A AC R-T (T_Sensing, CC34)", "sensing"),
         ],
+    },
+    {
+        'category': "Diagnostic Tools",
+        'type': "Read Only",
+        'instruments': "Cryocon 34",
+        # Not a measurement suite. These interrogate an instrument and
+        # write a log; none of them can change anything, so any of them
+        # is safe to run against a live experiment. See DIAGNOSTIC_TOOLS.
+        'modules': [(label, key, "sensing")
+                    for label, key in DIAGNOSTIC_TOOLS],
     },
 ]
 
@@ -1687,6 +1726,18 @@ class PICALauncherV2:
         tools_menu.add_command(label="Plotter Utility", command=launch_plotter_utility)
         tools_menu.add_command(label="Pressure Gauge (TPG 361)…",
                                command=self.open_pressure_gauge_dialog)
+        tools_menu.add_separator()
+        # Diagnostic Tools: read-only programs that interrogate an
+        # instrument and write a log, rather than measuring a sample.
+        # Kept in their own submenu because they are not part of any
+        # measurement and are reached for when something does not add up.
+        diagnostics_menu = tk.Menu(tools_menu, tearoff=0, font=self.FONT_MENU)
+        for label, script_key in DIAGNOSTIC_TOOLS:
+            diagnostics_menu.add_command(
+                label=label,
+                command=lambda key=script_key: self.launch_script(key))
+        tools_menu.add_cascade(label="Diagnostic Tools",
+                               menu=diagnostics_menu)
         tools_menu.add_separator()
         tools_menu.add_command(label="PICA Utils…", command=self.open_tools_popup)
         menubar.add_cascade(label="Tools", menu=tools_menu)

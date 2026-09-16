@@ -50,6 +50,24 @@ Rev 3.03A at GPIB1::12:
     sensor fault, '.......' for a reading off the calibration curve) are
     reported as those conditions instead of raising a bare number error.
 
+v1.3, 17 Sep 2026. Adds "Run Self-Test (read-only survey)" to the
+Advanced / System panel. The mnemonics above were verified against the
+Model 32/32B manual, and the Model 34's own manual does not document all
+of them: INPUT:SENPR, INPUT:ISENIX, INPUT:USENIX, LOOP:MAXPWR,
+LOOP:MAXSET and LOOP:OUTPWR are absent from it. LOOP:OUTPWR turned out to
+be absent from the 24C manual too, and had been sitting in the dielectric
+temperature scan's per-sweep heater read, where a Cryo-con's way of
+refusing an unknown command - no reply at all, so a VISA timeout - fed a
+retry-forever reconnect loop. The self-test sends every query these
+programmes rely on, times it, records the reply verbatim and reports
+which mnemonics THIS unit accepts. It also sweeps the Master Sensor
+Table index by index - what sensor types this controller supports, which
+user slots hold a calibrated curve, what type strings the firmware
+itself uses and which curve each input is running on - because the
+manual's Appendix A gives two contradictory answers for where the user
+block starts. It writes nothing, so it is safe to run against a
+controller driving a live experiment.
+
 NOTE on the integral term: on a Cryocon, I is a time in SECONDS and a
 LARGER value means SLOWER integral action. This is the opposite sense to
 the Lake Shore 350, where a larger I is faster. Lakeshore PID numbers must
@@ -57,12 +75,20 @@ not be copied across.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext, Canvas
+from tkinter import ttk, messagebox, scrolledtext, Canvas, filedialog
 import os
+import queue
 import re
+import threading
 import time
 import traceback
 from datetime import datetime
+
+# threading + queue are used by ONE feature: the read-only self-test at the
+# bottom of this file. It deliberately sends commands the instrument may not
+# answer, and a probe that waits out a VISA timeout on the Tk thread freezes
+# the window. filedialog is the self-test's 'Save Log As...'. Everything else
+# in this programme still runs on the Tk thread.
 
 # --- Optional Packages ---
 try:
@@ -1107,7 +1133,7 @@ class DirectControlGUI:
     Disconnect is non-destructive - instrument settings persist.
     """
 
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "1.3"
     PROGRAM_NAME = "Cryocon 34 Direct Control Utility"
 
     # Color scheme (identical to reference programme)
@@ -1162,6 +1188,9 @@ class DirectControlGUI:
         # once rather than every tick.
         self._poll_stage = 0
         self._poll_notes = {}
+        # The read-only self-test window, while one is open. Only one at a
+        # time: two callers on one VISA session read each other's replies.
+        self._self_test_window = None
 
         self.setup_styles()
         self.create_widgets()
@@ -2004,18 +2033,27 @@ class DirectControlGUI:
             row=5, column=0, columnspan=2,
             sticky='ew', padx=10, pady=2)
 
+        # Read-only behaviour survey. Placed above the two buttons that do
+        # change the instrument, because this one does not.
+        ttk.Button(
+            frame,
+            text="Run Self-Test (read-only survey)",
+            command=self._open_self_test).grid(
+            row=6, column=0, columnspan=2,
+            sticky='ew', padx=10, pady=2)
+
         ttk.Button(
             frame,
             text="Save Config to Flash (SYSTEM:NVSAVE)",
             command=self._save_to_flash).grid(
-            row=6, column=0, columnspan=2,
+            row=7, column=0, columnspan=2,
             sticky='ew', padx=10, pady=2)
 
         ttk.Button(
             frame,
             text="⚠ Hardware Reset (*RST)",
             command=self._factory_reset).grid(
-            row=7, column=0, columnspan=2,
+            row=8, column=0, columnspan=2,
             sticky='ew', padx=10, pady=2)
 
     def _create_overtemp_panel(self, parent, grid_row):
@@ -3100,6 +3138,27 @@ class DirectControlGUI:
     # POLLING / LIVE STATUS
     # -----------------------------------------------------------------------
 
+    def _open_self_test(self):
+        """Open the read-only self-test window (one at a time).
+
+        A second window would put a second caller on the same VISA
+        session, and both would read each other's replies.
+        """
+        if not self._require_connection():
+            return
+        existing = getattr(self, '_self_test_window', None)
+        if existing is not None:
+            try:
+                existing.win.deiconify()
+                existing.win.lift()
+                existing.win.focus_force()
+                return
+            except Exception:
+                self._self_test_window = None
+        self._self_test_window = CryoconSelfTestWindow(self)
+        self.log("Self-test window opened (read-only; nothing is written "
+                 "to the instrument).")
+
     def _toggle_polling(self):
         """Start or stop the live status polling."""
         if self.polling_active:
@@ -3345,6 +3404,17 @@ class DirectControlGUI:
         appeared hung while closing. If the operator cancels, polling
         resumes.
         """
+        # A self-test worker mid-probe is blocked on VISA. Tell it to stop
+        # and take its window down before anything closes the session
+        # underneath it.
+        self_test = getattr(self, '_self_test_window', None)
+        if self_test is not None:
+            try:
+                self_test._close()
+            except Exception:
+                pass
+            self._self_test_window = None
+
         if self.is_connected:
             was_polling = self.polling_active
             self._stop_polling()
@@ -3361,6 +3431,972 @@ class DirectControlGUI:
                 self._start_polling()
         else:
             self.root.destroy()
+
+
+# ===============================================================================
+# CRYOCON MODEL 34 SELF-TEST  (read-only behaviour survey)
+# ===============================================================================
+#
+# WHY THIS EXISTS
+#
+# Several mnemonics in this programme came from the Model 32/32B manual,
+# because that is the manual that was to hand when it was written. The
+# Model 34's own manual (shipped as "The User Interface - Cryogenic
+# Control Systems, Inc..pdf") does NOT document all of them. On
+# 17 Sep 2026 one of them - LOOP <n>:OUTPWR? - turned out to be absent
+# from both the Model 34 and the 24C manuals, and it had been sitting in
+# the dielectric temperature scan's per-sweep heater read.
+#
+# That one mattered because of HOW a Cryo-con rejects a command it does
+# not know: it does not answer at all. There is no error string, so the
+# call surfaces as a VISA timeout - indistinguishable, at the call site,
+# from a dead bus. Put that inside a measurement loop in front of a
+# retry-forever reconnect handler and an unattended run spends the night
+# reconnecting over a logging column.
+#
+# Guessing from a manual for a different model is how that happened. This
+# self-test asks the instrument itself. It sends every query these
+# programmes rely on, times each one, records the reply verbatim, and
+# says plainly which mnemonics this particular unit and firmware answer.
+#
+# SAFETY: every probe is a QUERY. The self-test sends no write of any
+# kind - no *RST, no CONTROL, no STOP, no setpoint, loop, heater or
+# configuration command - so it is safe to run while the Cryo-con is
+# controlling a live experiment. The only state it touches is the VISA
+# session timeout, which it lowers for the duration (an unknown command
+# costs one whole timeout, and at 10 s a survey of a dozen of them would
+# be minutes of dead air) and restores when it finishes.
+
+# Probes, as (group, command, status, note).
+#
+#   'DOC'    the Model 34 manual documents this command
+#   'UNDOC'  it does not - these are the ones being settled
+#   'FORM'   an alternate or short form the manual shows; checking that
+#            this firmware really accepts it
+CC34_SELF_TEST_PROBES = [
+    # -- identity and firmware ------------------------------------------
+    ("Identity", "*IDN?", "DOC",
+     "manual: 'Cryocon Model 34 Rev <fw><hw>'"),
+    ("Identity", "SYSTEM:HWREV?", "DOC", "hardware revision"),
+    ("Identity", "SYSTEM:FWREV?", "DOC", "firmware revision"),
+    ("Identity", "SYSTEM:NAME?", "DOC", "instrument name string"),
+    ("Identity", "SYSTEM:ADRS?", "DOC", "IEEE-488/USB address"),
+    ("Identity", "*OPC?", "DOC", "expect '1'"),
+    ("Identity", "*ESR?", "DOC", "standard event register"),
+    ("Identity", "*ESE?", "DOC", "standard event enable register"),
+    ("Identity", "*STB?", "UNDOC",
+     "the manual describes the status byte but never lists *STB? itself"),
+    ("Identity", "SYSTEM:REMOTE?", "UNDOC",
+     "the summary lists SYSTEM:REMOTE as set-only - is there a query?"),
+
+    # -- how a reading actually comes back ------------------------------
+    # This is the group behind the '77.350K' bug: a number with a trailing
+    # unit character, which plain float() rejects.
+    ("Reading shape", "INPUT? A", "DOC",
+     "does the reply carry a trailing unit character?"),
+    ("Reading shape", "INPUT A:UNITS?", "DOC", "expect K, C, F, V or O"),
+    ("Reading shape", "INPUT A:TEMPER?", "DOC",
+     "manual's alternate form of INPUT? A"),
+    ("Reading shape", "INP? A", "FORM", "documented short form"),
+    ("Reading shape", "INP A:TEMP?", "FORM", "documented short form"),
+    ("Reading shape", "INPUT? 0", "DOC",
+     "numeric channel form (0-3)"),
+    ("Reading shape", "INPUT? CHA", "DOC", "channel-tag form"),
+    ("Reading shape", "INP A:TEMP?;UNIT?", "FORM",
+     "manual's compound-query example; expect '27.9906K' or two fields"),
+
+    # -- heater read-back: the question this file was written for --------
+    ("Heater read-back", "LOOP 1:HTRREAD?", "DOC",
+     "THE documented heater read-back; manual example reply '22%'"),
+    ("Heater read-back", "LOOP 2:HTRREAD?", "DOC", "same, loop 2"),
+    ("Heater read-back", "LOOP 1:HTRR?", "FORM", "documented short form"),
+    ("Heater read-back", "LOOP 1:OUTPWR?", "UNDOC",
+     "NOT in the Model 34 or 24C manual - does this firmware take it?"),
+    ("Heater read-back", "LOOP 1:PMANUAL?", "DOC",
+     "manual-mode output power setting"),
+    ("Heater read-back", "LOOP 3:HTRREAD?", "UNDOC",
+     "a Model 34 has two loops; a 24C has four. Expect this to be "
+     "refused - it tells us the loop count from the instrument itself"),
+
+    # -- the other mnemonics this programme inherited from the 32B -------
+    ("Undocumented set", "LOOP 1:MAXPWR?", "UNDOC",
+     "not in the Model 34 manual"),
+    ("Undocumented set", "LOOP 1:MAXSET?", "UNDOC",
+     "not in the Model 34 manual"),
+    ("Undocumented set", "INPUT A:SENPR?", "UNDOC",
+     "not in the Model 34 manual; raw sensor Volts/Ohms"),
+    ("Undocumented set", "INPUT A:ISENIX?", "UNDOC",
+     "not in the Model 34 manual; factory sensor index"),
+    ("Undocumented set", "INPUT A:USENIX?", "UNDOC",
+     "not in the Model 34 manual; user curve index"),
+    ("Undocumented set", "INPUT A:SENIX?", "DOC",
+     "the form the Model 34 manual DOES document"),
+
+    # -- loop state, read only -------------------------------------------
+    ("Loop 1 state", "CONTROL?", "DOC", "are the loops engaged?"),
+    ("Loop 1 state", "SYSTEM:LOOP?", "DOC", "expect ON or OFF"),
+    ("Loop 1 state", "LOOP 1:SOURCE?", "DOC", "controlling input channel"),
+    ("Loop 1 state", "LOOP 1:SETPT?", "DOC", "setpoint"),
+    ("Loop 1 state", "LOOP 1:TYPE?", "DOC", "OFF/PID/MAN/TABLE/RAMPP/RAMPT"),
+    ("Loop 1 state", "LOOP 1:RANGE?", "DOC", "primary heater range"),
+    ("Loop 1 state", "LOOP 1:LOAD?", "DOC", "25 or 50 ohm"),
+    ("Loop 1 state", "LOOP 1:RATE?", "DOC", "ramp rate, units/min"),
+    ("Loop 1 state", "LOOP 1:RAMP?", "DOC", "is a ramp in progress?"),
+    ("Loop 1 state", "LOOP 1:PGAIN?", "DOC", "P"),
+    ("Loop 1 state", "LOOP 1:IGAIN?", "DOC",
+     "I - on a Cryo-con this is SECONDS and larger is SLOWER"),
+    ("Loop 1 state", "LOOP 1:DGAIN?", "DOC", "D"),
+    ("Loop 1 state", "LOOP 1:TABLEIX?", "DOC", "PID table index"),
+    ("Loop 1 state", "LOOP 1:NAME?", "DOC", "loop name string"),
+    ("Loop 1 state", "PIDTABLE? 1", "DOC",
+     "name of PID table 1 - what LOOP:TABLEIX selects"),
+    ("Loop 1 state", "PIDTABLE 1:NENTRY?", "DOC", "its number of entries"),
+    ("Loop 1 state", "HEATER:AUTOTUNE:STATUS?", "DOC",
+     "autotune state; the manual prefixes autotune with HEATER or AOUT"),
+    ("Loop 1 state", "HEATER:AUTOTUNE:DELTAP?", "DOC",
+     "autotune maximum power excursion"),
+
+    # -- safety cut-out ---------------------------------------------------
+    ("Safety", "OVERTEMP:ENABLE?", "DOC", "over-temperature disconnect"),
+    ("Safety", "OVERTEMP:SOURCE?", "DOC", "its source channel"),
+    ("Safety", "OVERTEMP:TEMP?", "DOC", "its trip temperature"),
+    ("Safety", "SYSTEM:LOCKOUT?", "DOC", "front-panel keypad lockout"),
+
+    # -- system -----------------------------------------------------------
+    ("System", "SYSTEM:AMBIENT?", "DOC", "internal reference temperature"),
+    ("System", "SYSTEM:HTRHST?", "DOC", "heater heatsink temperature"),
+    ("System", "SYSTEM:DISTC?", "DOC",
+     "display filter time constant - it filters EVERY reported reading"),
+    ("System", "SYSTEM:DRES?", "DOC",
+     "display resolution - it sets the LENGTH of the '-------' fault run"),
+    ("System", "SYSTEM:LINEFREQ?", "DOC", "AC line frequency setting"),
+    ("System", "SYSTEM:CJTEMP?", "DOC", "cold-junction compensation temp"),
+    ("System", "SYSTEM:REMLED?", "DOC", "remote LED state"),
+    ("System", "SYSTEM:CONTRAST?", "DOC", "VFD contrast (Model 34/62 only)"),
+    ("System", "RELAYS? 1", "DOC", "relay status (Model 34/62 only)"),
+    ("System", "RELAYS? 2", "DOC", "relay 2"),
+    ("System", "STATS:TIME?", "DOC",
+     "minutes of accumulated input statistics - a free drift measure the "
+     "passive modules could log without any extra plumbing"),
+]
+
+# Channels swept in the per-channel section.
+CC34_SELF_TEST_CHANNELS = ("A", "B", "C", "D")
+
+CC34_SELF_TEST_CHANNEL_PROBES = [
+    ("INPUT? {ch}", "DOC", "reading, in that channel's OWN display units"),
+    ("INPUT {ch}:UNITS?", "DOC", "K, C, F, V or O"),
+    ("INPUT {ch}:SENIX?", "DOC",
+     "sensor index into the Master Sensor Table; 0 means no sensor"),
+    ("INPUT {ch}:NAME?", "DOC", "channel name string"),
+    ("INPUT {ch}:BIAS?", "DOC", "excitation bias type (Model 32/34 only)"),
+    ("INPUT {ch}:ALARM?", "DOC", "alarm status: '--', 'SF', 'HI' or 'LO'"),
+    ("INPUT {ch}:ALARM:HIGHEST?", "DOC", "high alarm setpoint"),
+    ("INPUT {ch}:ALARM:LOWEST?", "DOC", "low alarm setpoint"),
+    ("INPUT {ch}:ALARM:HIENA?", "DOC", "high alarm enable"),
+    ("INPUT {ch}:ALARM:LOENA?", "DOC", "low alarm enable"),
+    ("INPUT {ch}:ALARM:FAULT?", "DOC", "sensor-fault alarm enable"),
+    ("INPUT {ch}:MINIMUM?", "DOC", "statistics since the last STATS:RESET"),
+    ("INPUT {ch}:MAXIMUM?", "DOC", "statistics since the last STATS:RESET"),
+    ("INPUT {ch}:VARIANCE?", "DOC", "statistics since the last STATS:RESET"),
+    ("INPUT {ch}:SLOPE?", "DOC",
+     "best-fit drift rate - would answer 'is it settled?' in one query"),
+]
+
+
+# -- sensor curves and sensor types -------------------------------------
+#
+# The Model 34 stores sensor types in a Master Sensor Table: a factory
+# block that cannot be edited, then twelve user curve slots for
+# calibrated sensors (a Cernox has to go in one of these - the Model 34
+# ships no Cernox curve of its own).
+#
+# THE MANUAL CONTRADICTS ITSELF ABOUT WHERE THE USER SLOTS START.
+# Appendix A's "Factory Installed Curves" runs index 0-13, ending at
+# '13 AuFe 0.07%'. Its "User Installed Sensor Curves" on the very next
+# page says 'Senix index 10 = User 1' through '21 = User 12'. Index 10
+# cannot be both 'TC type K' and 'User Sensor 1'. Work on this firmware
+# in Sep 2026 put the user block at index 15-26 (user curve n = index
+# n + 14), which matches neither table.
+#
+# So the map is not read out of the manual, it is read off the
+# instrument: sweep SENTYPE? over the index range and print the name at
+# every index. Whatever comes back IS the map, and the type strings that
+# come back ARE this firmware's vocabulary - which matters, because
+# CALCUR silently discards a whole curve block whose type field it
+# cannot identify.
+CC34_SENSOR_TABLE_MAX_INDEX = 30
+
+# Asked only at an index whose SENTYPE? answered, so an empty tail past
+# the end of the table does not cost three timeouts per index.
+CC34_SENSOR_TABLE_DETAIL = ("SENTYPE {ix}:TYPE?", "SENTYPE {ix}:MULTIPLY?")
+
+# CALCUR? is deliberately NOT sent. It returns a whole curve block - a
+# header plus up to 200 points - and a single query() reads one line,
+# which would leave the rest of the block queued on the bus and
+# desynchronise every reply after it. That is not a thing to do to a
+# controller running an experiment. The curve contents already have
+# their own read-only window: Sensor_Curve_Viewer_CC34_GUI.py.
+CC34_SELF_TEST_SKIPPED = [
+    ("CALCUR? <ix>",
+     "returns a multi-line curve block; one query() would leave the rest "
+     "on the bus. Use Sensor_Curve_Viewer_CC34_GUI.py instead."),
+    ("SENTYPE <ix>:NAME <name>, CALCUR <n>, INPUT <ch>:SENIX <ix>",
+     "writes. This survey never writes."),
+]
+
+# Bus-timing section. Both bursts are the same harmless query; the point
+# is whether back-to-back traffic without the pacing gap still answers.
+# CRYOCON_MIN_GAP_S exists because of a write timeout seen on a Rev 3.03A
+# unit, and nobody has since measured whether it is still needed.
+CC34_SELF_TEST_BURST_COMMAND = "INPUT? A"
+CC34_SELF_TEST_BURST_N = 10
+
+# A shorter VISA timeout while the survey runs (see SAFETY above).
+CC34_SELF_TEST_TIMEOUT_MS = 3000
+
+
+class CryoconSelfTest:
+    """Runs the probe list against a live CryoconLink, on a worker thread.
+
+    Results are pushed onto a queue as ('line', text) / ('progress', a, b)
+    / ('done', summary) tuples. Nothing here touches Tk: a worker that
+    calls into the window, or into root.after(), raises 'main thread is
+    not in main loop' as soon as the main thread is not sitting in
+    mainloop(), and the message is lost. The window drains the queue from
+    its own after() chain instead.
+    """
+
+    def __init__(self, link, out_queue, stop_event):
+        self.link = link
+        self.queue = out_queue
+        self.stop = stop_event
+        self.rows = []          # (group, command, status, verdict, ms, raw)
+        self.sensor_table = {}  # index -> (name, type, multiplier) or None
+
+    # -- output helpers --
+
+    def _emit(self, text=""):
+        self.queue.put(("line", text))
+
+    def _progress(self, done, total):
+        self.queue.put(("progress", done, total))
+
+    # -- one probe --
+
+    def _probe(self, group, command, status, note):
+        """Send one query. Never raises: a probe that fails IS the result."""
+        started = time.time()
+        try:
+            raw = self.link.query(command)
+            elapsed = (time.time() - started) * 1000.0
+            if raw == "":
+                verdict = "EMPTY"
+            elif raw.strip().upper().startswith("NACK"):
+                verdict = "NACK"
+            else:
+                verdict = "OK"
+        except Exception as exc:
+            elapsed = (time.time() - started) * 1000.0
+            raw = f"{type(exc).__name__}: {exc}"
+            # A Cryo-con does not answer a command it does not know, so a
+            # timeout here is the instrument saying "I do not take that",
+            # not necessarily a bus fault.
+            verdict = "TIMEOUT" if "TMO" in raw or "imeout" in raw else "ERROR"
+        self.rows.append((group, command, status, verdict, elapsed, raw))
+        flag = {"OK": "  ", "NACK": "!!", "EMPTY": "??",
+                "TIMEOUT": "XX", "ERROR": "XX"}.get(verdict, "??")
+        self._emit(f" {flag} {command:<24} {verdict:<8} "
+                   f"{elapsed:7.0f} ms  {raw!r}")
+        if note:
+            self._emit(f"                                 -- {note}")
+        return verdict
+
+    # -- the survey --
+
+    def run(self):
+        try:
+            self._run()
+        except Exception:
+            # Format the traceback HERE, on the thread where the exception
+            # is live. traceback.format_exc() on the Tk thread has no live
+            # exception and prints 'NoneType: None'.
+            self._emit("")
+            self._emit("SELF-TEST ABORTED - unexpected fault:")
+            for line in traceback.format_exc().splitlines():
+                self._emit("    " + line)
+            self.queue.put(("done", None))
+
+    def _run(self):
+        channel_probes = [
+            (f"Channel {ch}", tmpl.format(ch=ch), st, note)
+            for ch in CC34_SELF_TEST_CHANNELS
+            for tmpl, st, note in CC34_SELF_TEST_CHANNEL_PROBES
+        ]
+        all_probes = list(CC34_SELF_TEST_PROBES) + channel_probes
+        total = len(all_probes)
+
+        self._emit("=" * 78)
+        self._emit("CRYOCON MODEL 34 SELF-TEST - read-only behaviour survey")
+        self._emit("=" * 78)
+        self._emit(f"Started        : {datetime.now():%Y-%m-%d %H:%M:%S}")
+        self._emit(f"VISA address   : {self.link.address}")
+        self._emit(f"*IDN?          : {self.link.idn}")
+        self._emit(f"Probe timeout  : {CC34_SELF_TEST_TIMEOUT_MS} ms "
+                   f"(normal operating timeout {CRYOCON_TIMEOUT_MS} ms)")
+        self._emit(f"Pacing gap     : {CRYOCON_MIN_GAP_S * 1000:.0f} ms "
+                   "between operations")
+        self._emit("")
+        self._emit("Every probe below is a QUERY. Nothing is written to the")
+        self._emit("instrument, so its loops, heater and settings are")
+        self._emit("untouched. Columns: verdict, round trip, raw reply.")
+        self._emit("")
+        self._emit("  OK       answered")
+        self._emit("  TIMEOUT  no reply - on a Cryo-con this is how an")
+        self._emit("           unrecognised command fails")
+        self._emit("  NACK     explicitly not acknowledged")
+        self._emit("  EMPTY    answered with nothing")
+        self._emit("")
+
+        last_group = None
+        for index, (group, command, status, note) in enumerate(all_probes, 1):
+            if self.stop.is_set():
+                self._emit("")
+                self._emit("-- stopped by the operator --")
+                break
+            if group != last_group:
+                self._emit("")
+                self._emit(f"--- {group} " + "-" * max(0, 62 - len(group)))
+                last_group = group
+            self._probe(group, command, status, note)
+            self._progress(index, total)
+
+        if not self.stop.is_set():
+            self._sensor_table()
+            self._framing()
+            self._bus_timing()
+            self._error_queue()
+            self._not_asked()
+        self._summary()
+        self.queue.put(("done", self.rows))
+
+    # -- sensor types and calibration curves --
+
+    def _sensor_table(self):
+        """Read the Master Sensor Table off the instrument, index by index.
+
+        This is the section that says what sensor types this controller
+        supports and which curves are loaded where. See the note on
+        CC34_SENSOR_TABLE_MAX_INDEX for why it is swept rather than taken
+        from the manual's Appendix A.
+        """
+        self._emit("")
+        self._emit("--- Master Sensor Table " + "-" * 47)
+        self._emit("  Every sensor type this controller knows, read from the")
+        self._emit("  instrument. The factory block cannot be edited; the")
+        self._emit("  user slots are where a calibrated Cernox or diode goes.")
+        self._emit("")
+        self._emit(f"  {'ix':>3}  {'name':<20} {'type':<12} multiplier")
+        self._emit(f"  {'-' * 3}  {'-' * 20} {'-' * 12} {'-' * 10}")
+
+        for index in range(0, CC34_SENSOR_TABLE_MAX_INDEX + 1):
+            if self.stop.is_set():
+                return
+            try:
+                name = self.link.query(f"SENTYPE? {index}")
+            except Exception as exc:
+                self.sensor_table[index] = None
+                self._emit(f"  {index:>3}  -- no reply "
+                           f"({type(exc).__name__}) --")
+                # Past the end of the table every index behaves the same
+                # way. Two in a row is enough to stop asking.
+                if self._tail_is_empty(index):
+                    self._emit(f"       (nothing answers from index "
+                               f"{index - 1} on; end of table)")
+                    return
+                continue
+            details = {}
+            for template in CC34_SENSOR_TABLE_DETAIL:
+                command = template.format(ix=index)
+                try:
+                    details[template] = self.link.query(command)
+                except Exception as exc:
+                    details[template] = f"<{type(exc).__name__}>"
+            stype = details.get("SENTYPE {ix}:TYPE?", "")
+            mult = details.get("SENTYPE {ix}:MULTIPLY?", "")
+            self.sensor_table[index] = (name, stype, mult)
+            self._emit(f"  {index:>3}  {name:<20} {stype:<12} {mult}")
+
+    def _tail_is_empty(self, index):
+        """True when this index and the one before it both said nothing."""
+        return (index >= 1
+                and self.sensor_table.get(index) is None
+                and self.sensor_table.get(index - 1, "x") is None)
+
+    # -- how replies are framed on the wire --
+
+    def _framing(self):
+        """The reply exactly as it arrives, before anything strips it.
+
+        CryoconLink.query() returns reply.strip(), so a trailing '\\r\\n',
+        a stray space or a unit character is invisible everywhere else in
+        these programmes. The '77.350K' bug lived in that gap.
+        """
+        self._emit("")
+        self._emit("--- Reply framing " + "-" * 53)
+        instrument = self.link.instrument
+        for attribute in ("read_termination", "write_termination",
+                          "send_end", "timeout"):
+            try:
+                self._emit(f"  session {attribute:<18} = "
+                           f"{getattr(instrument, attribute, '<n/a>')!r}")
+            except Exception as exc:
+                self._emit(f"  session {attribute:<18} = <{exc}>")
+        self._emit("  Replies below are UNSTRIPPED - what came off the bus:")
+        for command in ("*IDN?", "INPUT? A", "INPUT A:UNITS?",
+                        "LOOP 1:HTRREAD?"):
+            if self.stop.is_set():
+                return
+            try:
+                raw = instrument.query(command)
+                self.link._last_io = time.time()
+                self._emit(f"    {command:<20} {raw!r}")
+            except Exception as exc:
+                self._emit(f"    {command:<20} <{type(exc).__name__}: {exc}>")
+
+    # -- what was deliberately left out --
+
+    def _not_asked(self):
+        self._emit("")
+        self._emit("--- Deliberately NOT sent " + "-" * 45)
+        for command, why in CC34_SELF_TEST_SKIPPED:
+            self._emit(f"  {command}")
+            self._emit(f"      {why}")
+
+    # -- bus behaviour --
+
+    def _bus_timing(self):
+        """Is the pacing gap still needed on this unit?
+
+        CRYOCON_MIN_GAP_S was added after a Rev 3.03A unit refused a write
+        that followed too closely on the last one. Nobody has measured
+        since. Both bursts send the same harmless reading query.
+        """
+        self._emit("")
+        self._emit("--- Bus timing " + "-" * 56)
+        self._emit(f"  {CC34_SELF_TEST_BURST_N} x {CC34_SELF_TEST_BURST_COMMAND!r}, "
+                   "paced then unpaced. Queries only.")
+
+        paced = self._burst(paced=True)
+        self._emit(f"  paced   ({CRYOCON_MIN_GAP_S * 1000:.0f} ms gap): "
+                   f"{paced['ok']}/{paced['n']} answered, "
+                   f"min {paced['min']:.0f} / mean {paced['mean']:.0f} / "
+                   f"max {paced['max']:.0f} ms")
+        unpaced = self._burst(paced=False)
+        self._emit(f"  unpaced (no gap)   : "
+                   f"{unpaced['ok']}/{unpaced['n']} answered, "
+                   f"min {unpaced['min']:.0f} / mean {unpaced['mean']:.0f} / "
+                   f"max {unpaced['max']:.0f} ms")
+        if unpaced["ok"] < unpaced["n"]:
+            self._emit("  => back-to-back traffic DOES drop commands on this "
+                       "unit. Keep the pacing gap.")
+        else:
+            self._emit("  => back-to-back traffic answered cleanly here. The "
+                       "pacing gap costs "
+                       f"{CRYOCON_MIN_GAP_S * 1000:.0f} ms per operation.")
+        for entry in unpaced["failures"]:
+            self._emit(f"     failure: {entry}")
+
+    def _burst(self, paced):
+        """N reads in a row, with or without the pacing gap."""
+        command = CC34_SELF_TEST_BURST_COMMAND
+        times, ok, failures = [], 0, []
+        for _ in range(CC34_SELF_TEST_BURST_N):
+            if self.stop.is_set():
+                break
+            started = time.time()
+            try:
+                if paced:
+                    self.link.query(command)
+                else:
+                    # Straight at the resource, so the gap is skipped. The
+                    # link's own clock is kept honest for whatever runs
+                    # after the self-test.
+                    self.link.instrument.query(command)
+                    self.link._last_io = time.time()
+                ok += 1
+            except Exception as exc:
+                failures.append(f"{type(exc).__name__}: {exc}")
+            times.append((time.time() - started) * 1000.0)
+        if not times:
+            times = [0.0]
+        return {"n": len(times), "ok": ok, "failures": failures,
+                "min": min(times), "max": max(times),
+                "mean": sum(times) / len(times)}
+
+    def _error_queue(self):
+        """Drain SYSTEM:ERROR? after the survey.
+
+        The interesting question: do the commands that TIMED OUT above
+        leave anything behind here, or does an unrecognised Cryo-con
+        command vanish without trace? If it vanishes, a wrong mnemonic can
+        only ever be found by reading the manual - which is the whole
+        reason this self-test exists.
+        """
+        self._emit("")
+        self._emit("--- Error queue after the survey " + "-" * 38)
+        for _ in range(10):
+            if self.stop.is_set():
+                break
+            try:
+                reply = self.link.query("SYSTEM:ERROR?")
+            except Exception as exc:
+                self._emit(f"  SYSTEM:ERROR? did not answer: "
+                           f"{type(exc).__name__}: {exc}")
+                break
+            self._emit(f"  {reply!r}")
+            if not reply or reply.strip() in ("0", "NO ERROR", "No Error",
+                                              "0,\"No error\""):
+                break
+
+    # -- verdict --
+
+    def _summary(self):
+        by_verdict = {}
+        for row in self.rows:
+            by_verdict.setdefault(row[3], []).append(row)
+        answered = len(by_verdict.get("OK", []))
+
+        self._emit("")
+        self._emit("=" * 78)
+        self._emit("SUMMARY")
+        self._emit("=" * 78)
+        self._emit(f"  {answered} of {len(self.rows)} probes answered.")
+
+        # The whole point: which of the undocumented mnemonics work here.
+        undoc = [r for r in self.rows if r[2] == "UNDOC"]
+        if undoc:
+            self._emit("")
+            self._emit("  Mnemonics the Model 34 manual does NOT document:")
+            for _group, command, _st, verdict, ms, _raw in undoc:
+                taken = "ACCEPTED by this unit" if verdict == "OK" \
+                    else f"REJECTED ({verdict})"
+                self._emit(f"    {command:<24} {taken}  [{ms:.0f} ms]")
+            self._emit("")
+            self._emit("    An ACCEPTED one is safe to keep using on THIS")
+            self._emit("    controller but is still not in the manual, so")
+            self._emit("    prefer the documented form where one exists.")
+            self._emit("    A REJECTED one must be replaced: it costs a full")
+            self._emit("    VISA timeout every time it is sent.")
+
+        forms = [r for r in self.rows if r[2] == "FORM" and r[3] != "OK"]
+        if forms:
+            self._emit("")
+            self._emit("  Documented short/alternate forms this firmware "
+                       "did NOT take:")
+            for _group, command, _st, verdict, _ms, _raw in forms:
+                self._emit(f"    {command:<24} {verdict}")
+
+        doc_failed = [r for r in self.rows if r[2] == "DOC" and r[3] != "OK"]
+        if doc_failed:
+            self._emit("")
+            self._emit("  DOCUMENTED commands that did not answer (worth a "
+                       "second look - a wiring, option or firmware issue):")
+            for _group, command, _st, verdict, _ms, _raw in doc_failed:
+                self._emit(f"    {command:<24} {verdict}")
+
+        self._sensor_summary()
+        self._reading_chain_summary()
+
+        slow = sorted(self.rows, key=lambda r: -r[4])[:5]
+        self._emit("")
+        self._emit("  Slowest probes:")
+        for _group, command, _st, _verdict, ms, _raw in slow:
+            self._emit(f"    {command:<24} {ms:7.0f} ms")
+        self._emit("")
+        self._emit(f"Finished       : {datetime.now():%Y-%m-%d %H:%M:%S}")
+        self._emit("=" * 78)
+
+    def _sensor_summary(self):
+        """Where the factory block ends, where the user slots start, and
+        which of them are in use - read off the instrument, not the
+        manual, which contradicts itself here."""
+        answered = {ix: v for ix, v in self.sensor_table.items()
+                    if v is not None}
+        if not answered:
+            return
+        self._emit("")
+        self._emit("  Sensor table, as this controller reports it:")
+        self._emit(f"    {len(answered)} entries, index {min(answered)} to "
+                   f"{max(answered)}; nothing answers past "
+                   f"{max(answered)}")
+
+        # The user block is bracketed by the slots that still carry their
+        # factory placeholder name. A loaded curve sits INSIDE that
+        # bracket under its own name, so the bracket has to be found
+        # first and the loaded slots read off inside it.
+        placeholders = {ix for ix, v in answered.items()
+                        if v[0].strip().lower().startswith("user sensor")}
+        if placeholders:
+            first, last = min(placeholders), max(placeholders)
+            self._emit(f"    user curve slots are index {first}-{last}")
+            self._emit(f"    => user curve n is table index n + {first - 1}")
+            self._emit("       (Appendix A of the manual gives two different")
+            self._emit("        answers for this and neither may be right)")
+            loaded = {ix: answered[ix] for ix in range(first, last + 1)
+                      if ix in answered and ix not in placeholders}
+            if loaded:
+                self._emit("    user slots with a curve loaded:")
+                for ix in sorted(loaded):
+                    name, stype, mult = loaded[ix]
+                    self._emit(f"      index {ix} (user curve "
+                               f"{ix - first + 1}): {name}")
+                    self._emit(f"          type={stype} multiplier={mult}")
+                self._emit("      A NEGATIVE multiplier means a negative")
+                self._emit("      temperature coefficient (Cernox, RuOx); a")
+                self._emit("      positive one a diode or Pt RTD. A curve")
+                self._emit("      loaded with the wrong sign reads plausible")
+                self._emit("      nonsense and nothing announces it.")
+            else:
+                self._emit("    every user slot still has its default name "
+                           "- no calibrated curve is loaded")
+
+        vocabulary = sorted({v[1].strip() for v in answered.values()
+                             if v[1] and not v[1].startswith("<")})
+        if vocabulary:
+            self._emit("")
+            self._emit("    Sensor TYPE strings this firmware actually uses:")
+            self._emit(f"      {', '.join(vocabulary)}")
+            self._emit("      These, not the manual's list, are the spellings")
+            self._emit("      a CALCUR header must use. A type field the")
+            self._emit("      firmware cannot identify makes it discard the")
+            self._emit("      whole curve block without saying so.")
+
+        # Which curve each input is actually running on.
+        in_use = {}
+        for _group, command, _st, verdict, _ms, raw in self.rows:
+            match = re.match(r"INPUT ([A-D]):SENIX\?$", command)
+            if match and verdict == "OK":
+                in_use[match.group(1)] = raw.strip()
+        if in_use:
+            self._emit("")
+            self._emit("    Curve in use on each input:")
+            for channel in sorted(in_use):
+                index_text = in_use[channel]
+                try:
+                    entry = answered.get(int(float(index_text)))
+                except (TypeError, ValueError):
+                    entry = None
+                label = entry[0] if entry else "<index not in the table>"
+                if index_text.strip() in ("0", "0.0"):
+                    label = "None - this input is switched OFF"
+                self._emit(f"      input {channel}: SENIX {index_text} "
+                           f"-> {label}")
+
+    def _reading_chain_summary(self):
+        """Settings that quietly shape every number these programmes log."""
+        values = {}
+        for _group, command, _st, verdict, _ms, raw in self.rows:
+            if verdict == "OK":
+                values[command] = raw.strip()
+
+        distc = values.get("SYSTEM:DISTC?")
+        dres = values.get("SYSTEM:DRES?")
+        if not (distc or dres):
+            return
+        self._emit("")
+        self._emit("  What shapes the numbers this controller reports:")
+        if distc:
+            self._emit(f"    SYSTEM:DISTC = {distc} s display filter.")
+            self._emit("      The manual is explicit that INPUT? is filtered")
+            self._emit("      by this, so it is applied to EVERY temperature")
+            self._emit("      these programmes log, not just the front panel.")
+            try:
+                seconds = float(re.sub(r"[^0-9.]", "", distc) or 0)
+            except ValueError:
+                seconds = 0.0
+            if seconds >= 8:
+                self._emit("      At this setting a temperature ramp is")
+                self._emit("      visibly smeared and a step is delayed.")
+                self._emit("      Worth reducing before ramp measurements.")
+        if dres:
+            self._emit(f"    SYSTEM:DRES = {dres} display resolution.")
+            self._emit("      This sets how many dashes a sensor fault comes")
+            self._emit("      back as, which is why the fault strings are")
+            self._emit("      matched by shape ('-{2,}') and not by a fixed")
+            self._emit("      seven characters.")
+
+
+class CryoconSelfTestWindow:
+    """The self-test window: run it, watch it, save the log.
+
+    Opened from the Advanced / System panel of the direct-control GUI.
+    The parent's status polling is stopped while this runs - two callers
+    on one VISA session interleave their traffic and both get nonsense.
+    """
+
+    POLL_MS = 60        # how often the queue is drained
+
+    def __init__(self, parent_gui):
+        self.parent = parent_gui
+        self.link = parent_gui.backend.link
+        self.queue = queue.Queue()
+        self.stop_event = threading.Event()
+        self.worker = None
+        self.after_id = None
+        self.saved_timeout = None
+        self.resume_polling = False
+        self.lines = []
+
+        self.win = tk.Toplevel(parent_gui.root)
+        self.win.title("Cryocon Model 34 - Self-Test (read-only)")
+        self.win.geometry("900x640")
+        self.win.protocol("WM_DELETE_WINDOW", self._close)
+        self._build()
+
+    # -- layout --
+
+    def _build(self):
+        head = ttk.Frame(self.win, padding=(12, 10, 12, 6))
+        head.pack(fill='x')
+        ttk.Label(
+            head,
+            text="Cryocon Model 34 behaviour survey",
+            font=("Segoe UI", 13, "bold")).pack(anchor='w')
+        ttk.Label(
+            head,
+            text=("Sends every query these programmes rely on, times each "
+                  "one and records the reply verbatim,\nso which mnemonics "
+                  "this unit actually accepts stops being a guess.\n\n"
+                  "READ-ONLY: not one write is sent - no *RST, no CONTROL, "
+                  "no STOP, no setpoint, loop or heater\ncommand - so it is "
+                  "safe to run while the controller is driving a live "
+                  "experiment.\n\n"
+                  "This runs on the session this window already has. For "
+                  "the deeper survey - reading noise and\nresolution, the "
+                  "real update rate, the lowest workable VISA timeout, a "
+                  "soak test - open\nDiagnostics_CC34_GUI.py "
+                  "(launcher: Tools > Diagnostic Tools)."),
+            justify='left').pack(anchor='w', pady=(4, 0))
+
+        bar = ttk.Frame(self.win, padding=(12, 4))
+        bar.pack(fill='x')
+        self.run_btn = ttk.Button(bar, text="Run Self-Test",
+                                  command=self._start)
+        self.run_btn.pack(side='left')
+        self.stop_btn = ttk.Button(bar, text="Stop", command=self._stop,
+                                   state='disabled')
+        self.stop_btn.pack(side='left', padx=(6, 0))
+        self.save_btn = ttk.Button(bar, text="Save Log As...",
+                                   command=self._save_as, state='disabled')
+        self.save_btn.pack(side='left', padx=(6, 0))
+        self.copy_btn = ttk.Button(bar, text="Copy All",
+                                   command=self._copy, state='disabled')
+        self.copy_btn.pack(side='left', padx=(6, 0))
+        ttk.Button(bar, text="Close", command=self._close).pack(side='right')
+
+        prog = ttk.Frame(self.win, padding=(12, 2))
+        prog.pack(fill='x')
+        self.progress = ttk.Progressbar(prog, mode='determinate')
+        self.progress.pack(side='left', fill='x', expand=True)
+        self.status_var = tk.StringVar(value="Ready.")
+        ttk.Label(prog, textvariable=self.status_var,
+                  width=28).pack(side='right', padx=(10, 0))
+
+        self.text = scrolledtext.ScrolledText(
+            self.win, wrap='none', font=("Consolas", 9),
+            bg="#1E1E1E", fg="#DCDCDC", insertbackground="#DCDCDC")
+        self.text.pack(fill='both', expand=True, padx=12, pady=(6, 12))
+        self.text.config(state='disabled')
+
+    # -- running --
+
+    def _start(self):
+        if self.worker is not None and self.worker.is_alive():
+            return
+        if not self.parent.is_connected or not self.parent.backend.is_connected:
+            messagebox.showerror(
+                "Not Connected",
+                "Connect to the Cryocon before running the self-test.",
+                parent=self.win)
+            return
+        self.link = self.parent.backend.link
+
+        # One VISA session, one caller. Two after() chains talking to the
+        # same instrument interleave and both read the wrong replies.
+        self.resume_polling = self.parent.polling_active
+        if self.resume_polling:
+            self.parent._stop_polling()
+            self.parent.log("Status polling paused for the self-test.")
+
+        # A probe that is not answered costs one whole timeout.
+        try:
+            self.saved_timeout = self.link.instrument.timeout
+            self.link.instrument.timeout = CC34_SELF_TEST_TIMEOUT_MS
+        except Exception:
+            self.saved_timeout = None
+
+        self.lines = []
+        self.text.config(state='normal')
+        self.text.delete('1.0', 'end')
+        self.text.config(state='disabled')
+        self.stop_event.clear()
+        self.run_btn.config(state='disabled')
+        self.stop_btn.config(state='normal')
+        self.save_btn.config(state='disabled')
+        self.copy_btn.config(state='disabled')
+        self.progress.config(value=0, maximum=100)
+        self.status_var.set("Running...")
+
+        tester = CryoconSelfTest(self.link, self.queue, self.stop_event)
+        self.worker = threading.Thread(target=tester.run, daemon=True)
+        self.worker.start()
+        self._pump()
+
+    def _stop(self):
+        self.stop_event.set()
+        self.status_var.set("Stopping...")
+
+    def _pump(self):
+        """Drain the worker's queue on the Tk thread."""
+        try:
+            while True:
+                item = self.queue.get_nowait()
+                kind = item[0]
+                if kind == "line":
+                    self._append(item[1])
+                elif kind == "progress":
+                    done, total = item[1], item[2]
+                    self.progress.config(value=done, maximum=total)
+                    self.status_var.set(f"Probe {done} of {total}")
+                elif kind == "done":
+                    self._finish()
+                    return
+        except queue.Empty:
+            pass
+        self.after_id = self.win.after(self.POLL_MS, self._pump)
+
+    def _append(self, line):
+        self.lines.append(line)
+        self.text.config(state='normal')
+        self.text.insert('end', line + "\n")
+        self.text.see('end')
+        self.text.config(state='disabled')
+
+    def _finish(self):
+        self.after_id = None
+        if self.saved_timeout is not None:
+            try:
+                self.link.instrument.timeout = self.saved_timeout
+            except Exception:
+                pass
+            self.saved_timeout = None
+        self.run_btn.config(state='normal')
+        self.stop_btn.config(state='disabled')
+        self.save_btn.config(state='normal')
+        self.copy_btn.config(state='normal')
+        self.status_var.set("Finished.")
+        self.progress.config(value=self.progress["maximum"])
+
+        path = self._autosave()
+        if path:
+            self._append("")
+            self._append(f"Log saved to: {path}")
+            self.parent.log(f"Self-test finished. Log saved to {path}")
+        else:
+            self.parent.log("Self-test finished (log not auto-saved; use "
+                            "Save Log As...).")
+
+        self._resume_parent_polling()
+
+    def _resume_parent_polling(self):
+        """Put the parent's status poll back, if this window paused it.
+
+        Guarded on the connection: _start_polling() opens an error dialog
+        when there is none, and this can run while the main window is
+        already on its way out.
+        """
+        if not self.resume_polling:
+            return
+        self.resume_polling = False
+        try:
+            if self.parent.is_connected and self.parent.backend.is_connected:
+                self.parent._start_polling()
+        except Exception:
+            pass
+
+    # -- the log --
+
+    def _text(self):
+        return "\n".join(self.lines) + "\n"
+
+    def _autosave(self):
+        """Write the log beside the operator's home directory.
+
+        Auto-saved rather than offered, because the whole value of this
+        window is the file that leaves the lab with you, and a dialog is
+        one more thing to forget at the end of a long session.
+        """
+        name = (f"CC34_selftest_"
+                f"{datetime.now():%Y%m%d_%H%M%S}.txt")
+        path = os.path.join(os.path.expanduser("~"), name)
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(self._text())
+                fh.flush()
+                os.fsync(fh.fileno())
+            return path
+        except Exception as exc:
+            self._append(f"Could not auto-save the log: {exc}")
+            return None
+
+    def _save_as(self):
+        path = filedialog.asksaveasfilename(
+            parent=self.win, defaultextension=".txt",
+            filetypes=[("Text file", "*.txt"), ("All files", "*.*")],
+            initialfile=f"CC34_selftest_{datetime.now():%Y%m%d_%H%M%S}.txt")
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(self._text())
+            self.parent.log(f"Self-test log saved to {path}")
+        except Exception as exc:
+            messagebox.showerror("Save Failed", str(exc), parent=self.win)
+
+    def _copy(self):
+        try:
+            self.win.clipboard_clear()
+            self.win.clipboard_append(self._text())
+            self.status_var.set("Copied to clipboard.")
+        except Exception as exc:
+            messagebox.showerror("Copy Failed", str(exc), parent=self.win)
+
+    # -- teardown --
+
+    def _close(self):
+        """Stop the worker, put the session back as it was, then close.
+
+        No confirmation dialog: the self-test writes nothing, so there is
+        nothing to lose but the on-screen copy of a log that has already
+        been saved to disk.
+        """
+        self.stop_event.set()
+        if self.after_id is not None:
+            try:
+                self.win.after_cancel(self.after_id)
+            except Exception:
+                pass
+            self.after_id = None
+        if self.saved_timeout is not None:
+            try:
+                self.link.instrument.timeout = self.saved_timeout
+            except Exception:
+                pass
+            self.saved_timeout = None
+        self._resume_parent_polling()
+        self.parent._self_test_window = None
+        self.win.destroy()
 
 
 # ---------------------------------------------------------------------------
