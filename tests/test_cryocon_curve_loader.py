@@ -36,6 +36,7 @@ Runnable as plain Python as well as under pytest.
 import importlib.util
 import math
 import os
+import re
 import sys
 import tempfile
 
@@ -490,7 +491,7 @@ def test_no_input_type_means_the_range_check_is_said_to_be_skipped():
     """Silence is not the same as a pass, so the gap is stated as a warning."""
     points = _cernox_curve()
     errors, warnings, stats = LOADER.analyse_curve(
-        points, "LOGOHM", "ACR", -1.0, "CX1030 X17680")
+        points, "LOGOHM", "R8K10UA", -1.0, "CX1030 X17680")
     assert errors == [], errors
     assert "full_scale" not in stats
     assert any("no input type was named" in message
@@ -1136,30 +1137,49 @@ def test_the_cernox_defaults_are_the_ones_in_table_4():
 
 
 def test_the_two_sensor_type_vocabularies_stay_separate():
-    """The 29 Aug 2026 failure, kept as a test.
+    """The 29 Aug 2026 failure, and how 15 Sep 2026 settled it.
 
     The manual prints one list for the CALCUR header (p.173) and a different
-    one for SENTYPE:TYPE (p.187). v1.3 offers both for the header, because
-    SENTYPE? showed the R-names are this firmware's own vocabulary while the
-    manual prints ACR, and nothing offline can decide between them. What
-    must not blur is which list the manual actually printed for the header:
-    the warning that names the discrepancy is built from it.
+    one for SENTYPE:TYPE (p.187), and for three weeks this module offered
+    both because nothing offline could decide between them.
+
+    The type probe of 15 Sep decided it on the instrument. Sent to table
+    index 19 on the Rev 3.03A unit: 'R8K10UA' was kept, 'ACR' and 'Diode'
+    were both discarded whole. The DT-470 transfer that followed, with
+    'SIDiode' in the header, landed with all 88 points. The full table scan
+    agrees -- every type string the instrument prints is from the R-name
+    family and neither 'ACR' nor 'Diode' appears anywhere on it.
+
+    So the header vocabulary IS the SENTYPE vocabulary here. What must not
+    blur is which list the manual actually printed, because the refusal
+    message is built from the difference.
     """
     assert "R8K10UA" not in LOADER.CALCUR_MANUAL_TYPE_LIST
     assert "ACR" in LOADER.CALCUR_MANUAL_TYPE_LIST
     assert "ACR" not in LOADER.SENTYPE_SENSOR_TYPES
-    # Both spellings are offered for the header while the question is open.
+    # Both spellings are still RECOGNISED, so a header typed from the manual
+    # is explained rather than merely rejected as an unknown word.
     assert "ACR" in LOADER.CALCUR_SENSOR_TYPES
     assert "R8K10UA" in LOADER.CALCUR_SENSOR_TYPES
-    # A header type from the SENTYPE list warns and says the question is
-    # open; it no longer blocks, because the send that provoked that rule
-    # went to a protected factory slot and never tested the type at all.
+    # What was watched landing, and what was watched being discarded.
+    assert set(LOADER.CALCUR_VERIFIED_TYPES) == {"R8K10UA", "SIDiode"}
+    assert set(LOADER.CALCUR_REJECTED_TYPES) == {"ACR", "Diode"}
+    # The name the instrument keeps passes clean, with no leftover warning
+    # that the question is still open. It is not.
     points = _cernox_curve()
     errors, warnings, _ = LOADER.analyse_curve(
         points, "LOGOHM", "R8K10UA", -1.0, "CX1030 X17680",
         sentype_type="R8K10UA")
     assert errors == [], errors
-    assert any("not settled" in message for message in warnings), warnings
+    assert not any("not settled" in message for message in warnings), warnings
+    # The names it discards are refused before anything reaches the bus,
+    # because the instrument's way of refusing them is to say nothing at all.
+    for rejected, replacement in (("ACR", "R8K10UA"), ("Diode", "SIDiode")):
+        errors, _, _ = LOADER.analyse_curve(
+            points, "LOGOHM", rejected, -1.0, "CX1030 X17680",
+            sentype_type="R8K10UA")
+        assert any("discards" in message for message in errors), rejected
+        assert any(replacement in message for message in errors), rejected
 
 
 def test_the_model_34_limits_are_the_ones_in_the_manual():
@@ -1667,10 +1687,17 @@ def test_a_discarded_send_is_reported_as_nothing_written():
         expected, still_empty, comparison, baseline_header=still_empty)
     assert verdict == 'not_written'
     assert "still EMPTY" in headline
-    # And it names the CALCUR range, which is the first thing to check when a
-    # whole block is discarded: the manual gives 1 to 12 for that number and
-    # index 18 is outside it.
-    assert "1 to 12" in advice
+    # Until v1.4 this asserted that the advice named the CALCUR range, 1 to
+    # 12, on the theory that index 18 was outside it and that was why the
+    # block vanished. Both halves of that turned out to be wrong: the user
+    # block on this firmware is index 15 to 26, so 18 is a perfectly legal
+    # target, and the 15 Sep probe showed the real cause was the header type
+    # -- 'Diode', exactly as sent here, was discarded whole while 'SIDiode'
+    # landed with all 88 points. The advice must now point at the two things
+    # that were actually wrong, and must NOT repeat the manual's range.
+    assert "empty user slot" in advice, advice
+    assert "SIDiode" in advice, advice
+    assert "1 to 12" not in advice, advice
 
 
 # ---------------------------------------------------------------------------
@@ -1681,7 +1708,7 @@ def test_a_discarded_send_is_reported_as_nothing_written():
 # so a diode curve sat on an 8 kohm resistance input until somebody noticed.
 
 def test_a_dt470_340_chooses_the_diode_type_by_itself():
-    assert LOADER.types_for_source("VOLTS", 2) == ("Diode", "Diode")
+    assert LOADER.types_for_source("VOLTS", 2) == ("SIDiode", "SIDiode")
 
 
 def test_a_millivolt_curve_is_a_thermocouple_not_a_diode():
@@ -1720,18 +1747,19 @@ def test_a_340_carries_its_data_format_code_through():
     assert source['units'] == "VOLTS"
     assert source['meta']['format_code'] == 2
     assert LOADER.types_for_source(
-        source['units'], source['meta']['format_code']) == ("Diode", "Diode")
+        source['units'],
+        source['meta']['format_code']) == ("SIDiode", "SIDiode")
 
 
 def test_a_diode_curve_on_a_resistance_input_type_is_an_error():
     # SENTYPE:TYPE is what configures the channel, and for a VOLTS curve the
     # whole input-range block used to be skipped, so nothing checked it.
     points = [(300.0, 0.52), (80.0, 1.02), (4.2, 1.63)]
-    errors, _, _ = LOADER.analyse_curve(points, "VOLTS", "Diode", -1.0,
+    errors, _, _ = LOADER.analyse_curve(points, "VOLTS", "SIDiode", -1.0,
                                         "DT-470 SD", sentype_type="R8K10UA")
     assert any("resistance input" in message for message in errors)
-    errors, _, _ = LOADER.analyse_curve(points, "VOLTS", "Diode", -1.0,
-                                        "DT-470 SD", sentype_type="Diode")
+    errors, _, _ = LOADER.analyse_curve(points, "VOLTS", "SIDiode", -1.0,
+                                        "DT-470 SD", sentype_type="SIDiode")
     assert errors == []
 
 
@@ -1760,3 +1788,279 @@ def test_send_curve_passes_the_chosen_gap_to_every_line():
         LOADER.CURVE_SETTLE_S = original
     assert sent == 8
     assert backend.link.gaps == [0.25] * 8
+
+
+# ---------------------------------------------------------------------------
+# THE PROBE TIDIES UP AFTER ITSELF  (v1.4, 16 Sep 2026)
+# ---------------------------------------------------------------------------
+#
+# The probe of 15 Sep left 'P17 R8K10UA' in Master Sensor Table index 18: a
+# two-point straight line, VOLTS units on an 8 kohm resistance range, sitting
+# in a real user slot looking like a curve somebody meant to store. It is
+# still there. The probe was written assuming the real curve would be sent to
+# the same index immediately afterwards, and when it was not, nothing tidied.
+
+class SlotStoreInstrument(FakeInstrument):
+    """A fake Cryo-con whose CALCUR writes actually change what CALCUR? reads.
+
+    FakeInstrument answers from a class-level `stored` dict that no write ever
+    updates, which is fine for asserting what went onto the wire but cannot
+    show whether a slot ended up in the right state. Anything about restoring
+    a slot needs a fake that remembers.
+    """
+
+    def __init__(self, slots=None, **kwargs):
+        super().__init__(**kwargs)
+        self.slots = dict(slots or {})
+        self._writing_to = None
+        self._buffer = []
+
+    def write_raw(self, payload):
+        self.raw_writes.append(payload)
+        line = payload.decode("ascii").strip()
+        match = re.match(r'^CALCUR\s+(\d+)$', line, re.I)
+        if match:
+            self._writing_to = int(match.group(1))
+            self._buffer = []
+            return
+        if self._writing_to is None:
+            return
+        if line == ";":
+            self.slots[self._writing_to] = self._buffer + [";"]
+            self._writing_to = None
+            self._buffer = []
+            return
+        self._buffer.append(line)
+
+    def write(self, command):
+        self.writes.append(command)
+        match = re.match(r'^CALCUR\?\s+(\d+)$', command.strip(), re.I)
+        if match:
+            self._pending = list(self.slots.get(int(match.group(1)), []))
+
+
+def _empty_slot_lines(number):
+    """What an untouched user slot answers with on this firmware."""
+    return ["User Sensor " + str(number), "SiDiode", "-1.000000", "VOLTS", ";"]
+
+
+def _store_backend(slots):
+    instrument = SlotStoreInstrument(slots=slots)
+    backend, _ = _connected_backend(instrument)
+    return backend, instrument
+
+
+class _NoWaiting:
+    """Strip the inter-line pacing so a test is not a real second long."""
+
+    def __enter__(self):
+        self.settle = LOADER.CURVE_SETTLE_S
+        self.gap = LOADER.CURVE_LINE_GAP_S
+        LOADER.CURVE_SETTLE_S = 0.0
+        LOADER.CURVE_LINE_GAP_S = 0.0
+        return self
+
+    def __exit__(self, *exc):
+        LOADER.CURVE_SETTLE_S = self.settle
+        LOADER.CURVE_LINE_GAP_S = self.gap
+        return False
+
+
+def test_the_probe_puts_back_a_curve_that_was_already_in_the_slot():
+    held = LOADER.build_crv_lines("CX1030 X17680", "R8K10UA", -1.0, "LOGOHM",
+                                  [(325.0, 1.64523), (4.0, 2.94699)])
+    backend, instrument = _store_backend({16: held})
+    with _NoWaiting():
+        restored, message = backend.cleanup_probe_slot(16, held, b"")
+    assert restored is True, message
+    assert "put back" in message
+    # Not just the report: the slot itself has to hold the original again.
+    assert instrument.slots[16][0] == "CX1030 X17680"
+    assert instrument.slots[16][1] == "R8K10UA"
+    header, points = LOADER.parse_crv_text("\n".join(instrument.slots[16]))
+    assert len(points) == 2
+
+
+def test_the_probe_says_so_when_it_cannot_empty_a_slot_it_filled():
+    """The slot-18 failure, kept as a test.
+
+    An empty slot cannot be made empty again: CALCUR writes a curve, and
+    nothing in the Edition 4 command set deletes one. What must NOT happen is
+    what happened on 15 Sep -- the leftover staying there with nothing said.
+    """
+    leftover = ["DEL42 R8K10UA", "R8K10UA", "-1.000000", "VOLTS",
+                "0.079330   480.000000", "1.704190   1.000000", ";"]
+    backend, instrument = _store_backend({18: leftover})
+    restored, message = backend.cleanup_probe_slot(18, None, b"")
+    assert restored is False
+    # It must name the slot, name what is in it, and say what to do.
+    assert "18" in message
+    assert "DEL42 R8K10UA" in message
+    assert "rubbish" in message or "overwrite" in message
+    # And it must not have invented an undocumented delete command.
+    assert not instrument.raw_writes, instrument.raw_writes
+
+
+def test_an_untouched_slot_after_a_probe_reports_nothing_left_behind():
+    backend, _ = _store_backend({20: _empty_slot_lines("6")})
+    restored, message = backend.cleanup_probe_slot(20, None, b"")
+    assert restored is True
+    assert "Nothing was left behind" in message
+
+
+def test_probe_leftovers_are_named_so_they_read_as_rubbish():
+    """'P17 R8K10UA' looked like a curve. 'DEL17 ...' does not."""
+    backend, instrument = _store_backend({20: _empty_slot_lines("6")})
+    with _NoWaiting():
+        results = backend.probe_calcur_type(
+            20, ["R8K10UA", "SIDiode"], "VOLTS", -1.0,
+            [(480.0, 0.07933), (1.0, 1.70419)], b"")
+    assert len(results) == 2
+    assert instrument.slots[20][0].startswith("DEL"), instrument.slots[20]
+    # The probe must send exactly two points, not the whole curve.
+    _, points = LOADER.parse_crv_text("\n".join(instrument.slots[20]))
+    assert len(points) == 2
+    # And the name must stay inside the instrument's 15-character field, or
+    # the probe's own "did the name survive?" test compares a truncation
+    # against what it sent and reports every candidate as discarded.
+    for line in instrument.slots[20][:1]:
+        assert len(line) <= LOADER.MAX_NAME_CHARS, line
+
+
+def test_probe_names_stay_distinct_between_candidates():
+    """A fixed probe name cannot tell 'landed' from 'the last one is still
+    there', and a discarded resend then reads as ACCEPTED."""
+    backend, instrument = _store_backend({20: _empty_slot_lines("6")})
+    sent_names = []
+    original = LOADER.CurveLoaderBackend.send_curve
+
+    def spy(self, index, lines, ending, gap=None):
+        sent_names.append(lines[0])
+        return original(self, index, lines, ending, gap)
+
+    LOADER.CurveLoaderBackend.send_curve = spy
+    try:
+        with _NoWaiting():
+            backend.probe_calcur_type(
+                20, ["R8K10UA", "SIDiode", "ACR"], "VOLTS", -1.0,
+                [(480.0, 0.07933), (1.0, 1.70419)], b"")
+    finally:
+        LOADER.CurveLoaderBackend.send_curve = original
+    assert len(sent_names) == 3
+    assert len(set(sent_names)) == 3, sent_names
+    assert all(len(name) <= LOADER.MAX_NAME_CHARS for name in sent_names)
+    assert all(name.startswith("DEL") for name in sent_names), sent_names
+
+
+def test_a_restore_works_from_whatever_state_the_probe_left():
+    """The worst moment to give up tidying is the moment tidying matters.
+
+    cleanup_probe_slot() is called from a finally: block, so it has to work
+    on a slot left in an arbitrary state, not only on the tidy one a probe
+    that ran to completion leaves.
+    """
+    held = LOADER.build_crv_lines("CX1030 X17681", "R8K10UA", -1.0, "LOGOHM",
+                                  [(325.0, 1.65330), (4.0, 3.04306)])
+    backend, instrument = _store_backend({17: held})
+    instrument.slots[17] = ["DEL42 ACR", "ACR", "-1.0", "LOGOHM",
+                            "1.0   300.0", "2.0   100.0", ";"]
+    with _NoWaiting():
+        restored, message = backend.cleanup_probe_slot(17, held, b"")
+    assert restored is True, message
+    assert instrument.slots[17][0] == "CX1030 X17681"
+    _, points = LOADER.parse_crv_text("\n".join(instrument.slots[17]))
+    assert len(points) == 2
+
+
+def test_a_restore_that_does_not_take_is_reported_as_a_failure():
+    """Saying 'put back' without checking would be worse than not trying."""
+    held = LOADER.build_crv_lines("CX1030 X17680", "R8K10UA", -1.0, "LOGOHM",
+                                  [(325.0, 1.64523), (4.0, 2.94699)])
+    backend, instrument = _store_backend({16: held})
+
+    # A slot that ignores the write, which is exactly how this firmware
+    # refuses a header it cannot parse.
+    instrument.write_raw = lambda payload: instrument.raw_writes.append(
+        payload)
+    instrument.slots[16] = ["DEL42 ACR", "ACR", "-1.0", "LOGOHM",
+                            "1.0   300.0", "2.0   100.0", ";"]
+    with _NoWaiting():
+        restored, message = backend.cleanup_probe_slot(16, held, b"")
+    assert restored is False, message
+    assert "could NOT be put back" in message
+    assert "CX1030 X17680" in message and "DEL42 ACR" in message
+
+
+# ---------------------------------------------------------------------------
+# THE TYPE TABLES AGREE WITH EACH OTHER
+# ---------------------------------------------------------------------------
+
+def test_the_verified_and_rejected_type_tables_are_consistent():
+    """A name cannot be both watched landing and watched being discarded."""
+    verified = set(LOADER.CALCUR_VERIFIED_TYPES)
+    rejected = set(LOADER.CALCUR_REJECTED_TYPES)
+    assert not (verified & rejected), verified & rejected
+    # Every name in either table must be one the module can describe, or the
+    # refusal message names a replacement the type box will not accept.
+    for name in verified | rejected:
+        assert name in LOADER.CALCUR_SENSOR_TYPES, name
+    # Every provenance string says WHEN, so a later reader can weigh it
+    # instead of taking it on trust.
+    for provenance in list(LOADER.CALCUR_VERIFIED_TYPES.values()) + \
+            list(LOADER.CALCUR_REJECTED_TYPES.values()):
+        assert "2026" in provenance, provenance
+    # The replacement each refusal offers must itself be verified, or the
+    # advice sends the operator from one discarded header to another.
+    for rejected_name in rejected:
+        replacement = ('SIDiode' if rejected_name.lower() == 'diode'
+                       else 'R8K10UA')
+        assert replacement in verified, (rejected_name, replacement)
+
+
+def test_every_type_the_file_can_choose_is_one_the_instrument_keeps():
+    """The suggestion the operator is most likely to accept unread.
+
+    _suggest_types() fills both boxes from the file. If it ever suggests a
+    name this firmware discards, the default path through the GUI ends in a
+    silent failure -- which is exactly what happened to the DT-470 on
+    15 Sep, when data format 2 suggested 'Diode'.
+    """
+    suggestions = set()
+    for pair in LOADER.TYPES_FOR_LAKESHORE_FORMAT.values():
+        suggestions.update(pair)
+    for pair in LOADER.TYPES_FOR_UNITS.values():
+        suggestions.update(pair)
+    for name in suggestions:
+        assert name not in LOADER.CALCUR_REJECTED_TYPES, (
+            name + " is suggested from a file but this firmware discards it")
+        assert name in LOADER.CALCUR_SENSOR_TYPES, name
+        assert name in LOADER.SENTYPE_SENSOR_TYPES, (
+            name + " is suggested as an input type but SENTYPE has no such "
+            "name")
+
+
+def test_the_cernox_defaults_are_names_this_firmware_keeps():
+    assert LOADER.CERNOX_DEFAULTS['sensor_type'] in \
+        LOADER.CALCUR_VERIFIED_TYPES
+    assert LOADER.CERNOX_DEFAULTS['sentype_type'] in \
+        LOADER.SENTYPE_SENSOR_TYPES
+    assert LOADER.CERNOX_DEFAULTS['sensor_type'] not in \
+        LOADER.CALCUR_REJECTED_TYPES
+
+
+def test_a_rejected_header_type_is_refused_before_anything_is_sent():
+    """The refusal has to happen in analyse_curve, not at the readback.
+
+    A discarded block is the most expensive failure this module has: the
+    instrument says nothing, the slot keeps what it had, and the point count
+    that comes back belongs to somebody else's curve. Catching it offline is
+    the whole difference between a warning and an afternoon.
+    """
+    points = [(480.0, 0.07933), (1.0, 1.70419)]
+    for rejected in LOADER.CALCUR_REJECTED_TYPES:
+        units = "VOLTS" if rejected.lower() == "diode" else "LOGOHM"
+        errors, _, _ = LOADER.analyse_curve(
+            points if units == "VOLTS" else _cernox_curve(),
+            units, rejected, -1.0, "SOME SENSOR",
+            sentype_type="SIDiode" if units == "VOLTS" else "R8K10UA")
+        assert any("discards" in message for message in errors), rejected

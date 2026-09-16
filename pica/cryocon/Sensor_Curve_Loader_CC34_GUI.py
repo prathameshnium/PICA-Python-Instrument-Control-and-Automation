@@ -77,11 +77,17 @@ module now keeps two separate lists instead of one.
         "<sensor type> is from the following list: Diode, ACR, 31kR, 3.1kR,
          312R, 625R, TC80, TC40 and None. If the sensor type cannot be
          identified, Diode is used."
-     R8K10UA IS NOT ON THAT LIST. Putting it in a CALCUR header is by
-     definition unidentifiable, and the documented consequence is the silent
-     diode substitution. For an NTC resistor -- Cernox, Ruthenium-Oxide,
-     Germanium, Carbon Glass, thermistors -- the CALCUR spelling is ACR.
-     CALCUR_SENSOR_TYPES below is that list in full.
+     R8K10UA IS NOT ON THAT LIST, and for three weeks this module took that
+     at face value and told the operator to use ACR for an NTC resistor.
+
+     THAT IS WRONG ON THIS INSTRUMENT, and it was wrong in the direction
+     that costs the most, because the instrument's way of disagreeing is to
+     say nothing. See the v1.4 note at the foot of this docstring: the type
+     probe of 15 Sep 2026 sent ACR and Diode and watched both blocks be
+     discarded whole, sent R8K10UA and SIDiode and watched both be kept.
+     CALCUR_SENSOR_TYPES below is the manual's list, retained so a header
+     typed from the manual can be recognised and explained; what is actually
+     sent comes from CALCUR_VERIFIED_TYPES.
 
   2. The SENTYPE:TYPE input configuration. Printed p.187:
         "Diode for Silicon Diodes. R16K10UA, R8K10UA, R6K100UA, R2K100UA,
@@ -97,9 +103,13 @@ module now keeps two separate lists instead of one.
     kohm full-scale range fits it with room to spare. That row describes the
     SENTYPE:TYPE step, not the CALCUR header.
   - So a Cernox takes TWO commands, in this order:
-        CALCUR <n>   with header type ACR      (the curve itself)
-        SENTYPE <n+9>:TYPE R8K10UA             (the input range and current)
-    run_full_sequence() does them in that order and verifies each.
+        CALCUR <n>   with header type R8K10UA  (the curve itself)
+        SENTYPE <n>:TYPE R8K10UA               (the input range and current)
+    run_full_sequence() does them in that order and verifies each. Both use
+    the same name on this firmware; the manual's 'ACR' for the first is what
+    the probe of 15 Sep watched being discarded. The index is NOT n+9 either
+    -- see the Appendix A note further down; on this unit it is n+14, and
+    the module derives it from the scan rather than from either number.
   - LOGOHM is the base-10 log of ohms. The manual asks for it on Cernox,
     Ruthenium-Oxide, Germanium, Carbon Glass and thermistors because their
     resistance curve is far more linear in log form, and the instrument
@@ -188,6 +198,45 @@ v1.1, 31 Aug 2026. The 29 Aug transfer to X17680 failed and this is what
           before the next, stopping at the first failure, with a summary;
         - run_self_test(): 26 offline checks, several of them regressions on
           the above. Run with --selftest or from the Advanced panel.
+v1.4, 16 Sep 2026. The type probe was finally run against the instrument on
+      15 Sep and answered the question this module had been hedging since
+      29 Aug. Three separate pieces of evidence, all from that afternoon:
+
+        - the probe on table index 19: header type 'R8K10UA' was KEPT;
+          'ACR' and 'Diode' were both DISCARDED, the slot still holding the
+          previous probe afterwards, so neither block landed at all;
+        - the DT-470 transfer twenty minutes later, header type 'SIDiode':
+          kept, with the name, the multiplier, the units and all 88 points.
+          Read back off the instrument and compared point for point against
+          the source file, it is identical;
+        - the full table scan: every type string the instrument prints is
+          from the R-name family -- SNONE, SIDIODE, R312R1MA, R2K100UA,
+          R8K10UA, TC80. Neither 'ACR' nor 'Diode' appears anywhere on it.
+
+      So this firmware has ONE sensor-type vocabulary and both commands use
+      it. What changed here:
+
+        - the defaults and the file-driven suggestions now send the
+          firmware's spelling: SIDiode for a diode, R8K10UA for an NTC;
+        - 'ACR' and 'Diode' in a CALCUR header are refused before anything
+          reaches the bus, naming what to use instead. They are still
+          RECOGNISED, so a header typed from the manual is explained rather
+          than rejected as an unknown word;
+        - CALCUR_VERIFIED_TYPES and CALCUR_REJECTED_TYPES record what was
+          watched happening and when, so a later reader can weigh the
+          evidence rather than take this note on trust;
+        - probe_calcur_type() now tidies up after itself. The probe of
+          15 Sep left 'P17 R8K10UA' in table index 18 -- a two-point
+          straight line with VOLTS units on an 8 kohm resistance range,
+          sitting in a real user slot looking like a curve somebody meant to
+          store. The slot is now read before the probe and written back
+          after it, in a finally: block so that a probe which fails part way
+          still tidies. An empty slot cannot be made empty again (nothing in
+          the Edition 4 command set deletes a user curve, and this module
+          will not guess at an undocumented one), so that case is reported
+          by name instead of being left silent;
+        - the probe's throwaway curves are now named 'DELnn ...' rather than
+          'Pnn ...', so a leftover says what it is.
 """
 
 import tkinter as tk
@@ -441,7 +490,8 @@ CALCUR_SENSOR_TYPES = {
     'ACR':    (None,   'ohm',
                "AC resistance bridge - Cernox, RuOx, Germanium, Carbon "
                "Glass, thermistors. THE CALCUR SPELLING FOR AN NTC SENSOR"),
-    'Diode':  (2.5,    'V',   "2.5 V FS - silicon and GaAlAs diodes"),
+    'Diode':  (2.5,    'V',   "2.5 V FS - silicon and GaAlAs diodes. THE "
+                              "MANUAL'S SPELLING; THIS FIRMWARE DISCARDS IT"),
     '31kR':   (31.3e3, 'ohm', "31.3 kohm FS - Pt 10k / high-value resistors"),
     '3.1kR':  (3.13e3, 'ohm', "3.13 kohm FS - Platinum 1000 and similar"),
     '625R':   (625.0,  'ohm', "625 ohm FS - Platinum 100 above 800 K"),
@@ -466,7 +516,10 @@ SENTYPE_SENSOR_TYPES = {
     'R2K100UA': (2.0e3,  'ohm', "2 kohm FS, 100 uA - Platinum 1000"),
     'R625R1MA': (625.0,  'ohm', "625 ohm FS, 1 mA - Platinum 100 above 800 K"),
     'R312R1MA': (312.0,  'ohm', "312 ohm FS, 1 mA - Platinum 100 below 800 K"),
-    'Diode':    (2.5,    'V',   "2.5 V FS, 10 uA - silicon and GaAlAs diodes"),
+    'SIDiode':  (2.5,    'V',   "2.5 V FS, 10 uA - silicon and GaAlAs diodes. "
+                                "THIS FIRMWARE'S OWN SPELLING"),
+    'Diode':    (2.5,    'V',   "2.5 V FS, 10 uA - the manual's spelling of "
+                                "the same thing"),
     'TC80':     (0.080,  'V',   "80 mV FS - thermocouple"),
     'TC40':     (0.040,  'V',   "40 mV FS - thermocouple"),
     'Snone':    (None,   '',    "disable the input channel"),
@@ -480,12 +533,48 @@ SENTYPE_SENSOR_TYPES = {
 # failure never tested the type at all. Neither name is now assumed to be
 # right, both are offered for the CALCUR header, and probe_calcur_type()
 # settles it against the instrument in about a second per candidate.
+#
+# v1.4, 16 Sep 2026. The probe was run and the question is now ANSWERED, on
+# this unit, by three separate pieces of evidence from 15 Sep:
+#
+#   * the type probe on table index 19: 'R8K10UA' was kept, 'ACR' and
+#     'Diode' were both DISCARDED -- the slot still held the previous probe
+#     afterwards, so neither block landed at all;
+#   * the DT-470 transfer that followed, with 'SIDiode' in the header: kept,
+#     with the name, the multiplier, the units and all 88 points intact;
+#   * the full table scan: every type string the instrument printed is from
+#     the R-name family (SNONE, SIDIODE, R312R1MA, R2K100UA, R8K10UA, TC80).
+#     'ACR' and 'Diode' appear nowhere on the instrument.
+#
+# So this firmware has ONE sensor-type vocabulary and both commands use it.
+# The manual's p.173 CALCUR list is not it. The defaults below now send the
+# firmware's spelling, and the manual's names are kept only so that a header
+# typed from the manual is recognised and explained rather than silently
+# discarded a fourth time.
 CALCUR_MANUAL_TYPE_LIST = tuple(CALCUR_SENSOR_TYPES)
 CALCUR_SENSOR_TYPES.update(SENTYPE_SENSOR_TYPES)
 
-# Header types worth trying for an NTC resistor, best first. The firmware's
-# own spelling leads; the manual's CALCUR page follows.
-CALCUR_TYPE_CANDIDATES = ('R8K10UA', 'ACR', 'Diode')
+# Header types this lab has WATCHED land on the Rev 3.03A unit, and the date
+# it watched them. Nothing else has been proved, and nothing else is claimed.
+CALCUR_VERIFIED_TYPES = {
+    'R8K10UA': "kept by the type probe of 15 Sep 2026",
+    'SIDiode': "kept, with all 88 points, by the DT-470 transfer of "
+               "15 Sep 2026",
+}
+
+# Header types this lab has WATCHED be discarded, with the same provenance.
+# A send using one of these is stopped before it reaches the bus, because the
+# instrument's way of refusing it is to say nothing at all.
+CALCUR_REJECTED_TYPES = {
+    'ACR': "discarded by the type probe of 15 Sep 2026; the word appears "
+           "nowhere on this instrument",
+    'Diode': "discarded by the type probe of 15 Sep 2026. This firmware "
+             "spells a silicon diode 'SIDiode'",
+}
+
+# Header types worth trying, best first, when the probe is still needed --
+# which is now only on a unit this lab has not tested. Verified names lead.
+CALCUR_TYPE_CANDIDATES = ('R8K10UA', 'SIDiode', 'ACR', 'Diode')
 
 # Every name this module recognises anywhere, for full-scale lookups and for
 # callers that predate the split. Membership in this does NOT mean a name is
@@ -526,11 +615,15 @@ CERNOX_DEFAULTS = {
 # VOLTS, and the units alone cannot tell those two apart.
 #
 # Each value is (CALCUR header type, SENTYPE input type).
+#
+# 16 Sep 2026: format 2 now suggests 'SIDiode', not 'Diode'. That one word is
+# the difference between the transfer of 15 Sep that was discarded whole and
+# the one, twenty minutes later, that landed with all 88 points.
 TYPES_FOR_LAKESHORE_FORMAT = {
-    1: ('TC80', 'TC80'),            # mV/K   - thermocouple
-    2: ('Diode', 'Diode'),          # V/K    - silicon or GaAlAs diode
-    3: ('R8K10UA', 'R8K10UA'),      # Ohm/K
-    4: ('R8K10UA', 'R8K10UA'),      # Log Ohm/K
+    1: ('TC80', 'TC80'),                # mV/K   - thermocouple
+    2: ('SIDiode', 'SIDiode'),          # V/K    - silicon or GaAlAs diode
+    3: ('R8K10UA', 'R8K10UA'),          # Ohm/K
+    4: ('R8K10UA', 'R8K10UA'),          # Log Ohm/K
 }
 
 # The fallback when the file states no format code, e.g. a .dat or a .tbl.
@@ -539,7 +632,7 @@ TYPES_FOR_LAKESHORE_FORMAT = {
 # is flagged rather than guessed at, because its curve has a POSITIVE
 # temperature coefficient and that is visible in the data.
 TYPES_FOR_UNITS = {
-    'VOLTS':  ('Diode', 'Diode'),
+    'VOLTS':  ('SIDiode', 'SIDiode'),
     'OHMS':   ('R8K10UA', 'R8K10UA'),
     'LOGOHM': ('R8K10UA', 'R8K10UA'),
 }
@@ -1259,15 +1352,25 @@ def analyse_curve(points, units, sensor_type, multiplier, name,
 
     # Sensor type against the data. This is the check that catches a Cernox
     # about to be installed on a 312 ohm Platinum range.
-    if sensor_type in SENTYPE_SENSOR_TYPES and \
-            sensor_type not in CALCUR_MANUAL_TYPE_LIST:
-        warnings.append(
-            f"'{sensor_type}' is this firmware's own type name, reported by "
-            "SENTYPE? across the factory table, but the manual's CALCUR page "
-            "(printed p.173) prints a different list for the header: "
-            f"{', '.join(CALCUR_MANUAL_TYPE_LIST)}. Which of the two the "
-            "header parser wants is not settled. Nothing here can decide it; "
-            "the readback will, and the type probe settles it in one press.")
+    #
+    # 16 Sep 2026: the manual-versus-firmware question this used to warn
+    # about is settled, so it no longer warns about it. What it does instead
+    # is refuse the two names that were WATCHED being discarded, because the
+    # instrument's way of refusing a header it dislikes is to say nothing and
+    # keep whatever was in the slot -- a failure that costs a readback and a
+    # confused half hour every time, and that has now cost three.
+    if sensor_type in CALCUR_REJECTED_TYPES:
+        replacement = ('SIDiode' if sensor_type.lower() == 'diode'
+                       else 'R8K10UA')
+        errors.append(
+            f"'{sensor_type}' is printed in the manual but this firmware "
+            "discards a CALCUR header that uses it: "
+            f"{CALCUR_REJECTED_TYPES[sensor_type]}. "
+            f"A discarded block is not reported by the instrument; the slot "
+            f"simply keeps whatever it already held. Use '{replacement}' "
+            "instead, which this lab has watched land. If you are on a "
+            "different unit and believe otherwise, run the type probe: it "
+            "settles it against that instrument in a few seconds.")
     if sensor_type not in CALCUR_SENSOR_TYPES:
         errors.append(
                 f"'{sensor_type}' is not one of the types the CALCUR header "
@@ -1895,19 +1998,20 @@ def classify_verify(expected, header, comparison, baseline_header=None):
             advice = (
                 "A block that is discarded outright is refused before any "
                 "point is stored, so check what the instrument parses "
-                "first, in this order: (1) the number after CALCUR. The "
-                "manual (printed p.173) says it is a USER CURVE number, 1 "
-                "to 12, not a Master Sensor Table index; an index above 12 "
-                "is out of that range and this firmware discards such a "
-                "write without a word. The Advanced panel now lets you "
-                "address the slot either way. (2) the sensor type is one "
-                "the CALCUR header accepts -- the manual prints "
-                + ", ".join(CALCUR_MANUAL_TYPE_LIST) +
-                "; the type probe (step 4) settles which spelling this "
-                "firmware keeps. (3) the name is 4 to 15 printable ASCII "
-                "characters. (4) the units are OHMS, VOLTS or LOGOHM. Only "
-                "if all four are already right is the line ending worth "
-                "trying.")
+                "first, in this order: (1) the number after CALCUR. Map the "
+                "Master Sensor Table and use the index the scan calls an "
+                "empty user slot -- Appendix A's numbering is wrong on this "
+                "firmware, and a write into the factory block is discarded "
+                "without a word. (2) the sensor type. On the Rev 3.03A unit "
+                "in this lab the header wants the firmware's own names, "
+                "which are " + ", ".join(sorted(CALCUR_VERIFIED_TYPES)) +
+                " for the sensors here; the manual's p.173 list ("
+                + ", ".join(CALCUR_MANUAL_TYPE_LIST) + ") was tried on "
+                "15 Sep 2026 and discarded. The type probe (step 4) settles "
+                "it on whatever unit you are on. (3) the name is 4 to 15 "
+                "printable ASCII characters. (4) the units are OHMS, VOLTS "
+                "or LOGOHM. Only if all four are already right is the line "
+                "ending worth trying.")
             return ('not_written', headline, advice)
         if identical_to_baseline:
             headline = (
@@ -1923,14 +2027,14 @@ def classify_verify(expected, header, comparison, baseline_header=None):
             "The point count is NOT evidence here: those points belong to "
             "the curve that was already in the slot, so a shortfall means "
             "nothing and changing the line ending will not help. Check, in "
-            "this order: (1) the sensor type is one the CALCUR header "
-            "accepts -- the manual prints "
-            + ", ".join(CALCUR_MANUAL_TYPE_LIST) +
-            "; this firmware may want its own SENTYPE names instead, and the "
-            "type probe (step 4) settles which; (2) the name is 4 to 15 "
-            "printable ASCII characters; (3) the units are OHMS, VOLTS or "
-            "LOGOHM. Only if all three are already right is the line ending "
-            "worth trying.")
+            "this order: (1) the sensor type. This firmware wants its own "
+            "SENTYPE names in the CALCUR header, not the manual's p.173 "
+            "list: " + ", ".join(sorted(CALCUR_VERIFIED_TYPES)) + " have "
+            "been watched landing, " + ", ".join(sorted(CALCUR_REJECTED_TYPES))
+            + " watched being discarded. The type probe (step 4) settles it "
+            "on any unit; (2) the name is 4 to 15 printable ASCII "
+            "characters; (3) the units are OHMS, VOLTS or LOGOHM. Only if "
+            "all three are already right is the line ending worth trying.")
         return ('not_written', headline, advice)
 
     if substituted and fields['name'][2] and fields['units'][2]:
@@ -2505,16 +2609,26 @@ class CurveLoaderBackend:
         # previous probe's block is still there", and a discarded resend
         # then reads as ACCEPTED. Two digits from the clock, checked
         # against what the slot holds now, keep every run distinct.
+        #
+        # 16 Sep 2026: the prefix is 'DEL' rather than 'P' because of what
+        # was found in slot 18. A probe of 15 Sep left 'P17 R8K10UA' behind,
+        # the real curve went to a different slot, and the leftover has sat
+        # there since looking like a curve somebody meant to store -- a
+        # two-point straight line, VOLTS units on an 8 kohm resistance
+        # range, which is exactly the header that reads a plausible wrong
+        # temperature instead of failing. A name that says DELETE is a name
+        # nobody has to work that out about. cleanup_probe_slot() below is
+        # the actual fix; this is so the failure of the fix is legible.
         nonce = int(time.time()) % 90 + 10
         try:
             held, _, _ = self.read_slot_curve(index)
             while held is not None and str(held.get('name', '')).strip() \
-                    .startswith(f"P{nonce:02d} "):
+                    .startswith(f"DEL{nonce:02d} "):
                 nonce = nonce % 90 + 11
         except Exception:
             pass
         for candidate in candidates:
-            probe_name = f"P{nonce:02d} " + candidate[:9]
+            probe_name = f"DEL{nonce:02d} " + candidate[:7]
             lines = build_crv_lines(probe_name, candidate, multiplier,
                                     units, ends)
             if log:
@@ -2537,6 +2651,83 @@ class CurveLoaderBackend:
                 log(f"    name back as '{header['name'].strip()}', type "
                     f"'{kept}', units '{units_kept}' -- {verdict}.")
         return results
+
+    def cleanup_probe_slot(self, index, baseline_lines, line_ending,
+                           log=None):
+        """Put the slot back the way the probe found it, or say it cannot.
+
+        Added 16 Sep 2026 after slot 18 was found still holding
+        'P17 R8K10UA', a two-point straight line left by a probe of the day
+        before. The probe was written on the assumption that the real curve
+        would be sent to the same index immediately afterwards, and when it
+        was not, the rubbish stayed: a real user slot occupied by something
+        that looks like a curve, with a header -- R8K10UA against VOLTS --
+        that would read a plausible wrong temperature if a channel were ever
+        pointed at it. An operation that leaves the instrument dirty when
+        the operator walks away is an operation that has to tidy up after
+        itself.
+
+        `baseline_lines` is the .crv block the slot held before the probe,
+        as read back off the instrument, or None if it held nothing.
+
+        There are two cases and only one of them is clean:
+
+          - the slot held a curve. It is written back, verified, and the
+            slot is exactly as it was.
+          - the slot was an untouched placeholder. Nothing here can make it
+            untouched again: CALCUR writes a curve, and nothing in the
+            Edition 4 command set deletes one. Rather than guess at an
+            undocumented command on an instrument that answers a write it
+            dislikes with silence, this reports the leftover by name and
+            says which slot needs overwriting. That is a worse outcome than
+            a restore and it is an HONEST one, which the old behaviour of
+            saying nothing at all was not.
+
+        Returns (restored, message).
+        """
+        if not self.link:
+            raise ConnectionError("Not connected to instrument.")
+        if baseline_lines:
+            if log:
+                log("  Putting back the curve that was in the slot before "
+                    "the probe...")
+            self.send_curve(index, baseline_lines, line_ending)
+            header, points, _ = self.read_slot_curve(index)
+            name = str((header or {}).get('name', '')).strip()
+            if header is not None and name == str(baseline_lines[0]).strip():
+                message = (f"Index {index} has been put back as it was: "
+                           f"'{name}', {len(points)} points.")
+                if log:
+                    log(f"  {message}")
+                return True, message
+            message = (
+                f"Index {index} could NOT be put back. It held '"
+                f"{str(baseline_lines[0]).strip()}' before the probe and now "
+                f"reads '{name}'. Read it and restore it by hand before "
+                "anything uses that slot.")
+            if log:
+                log(f"  {message}")
+            return False, message
+
+        header, _, _ = self.read_slot_curve(index)
+        leftover = str((header or {}).get('name', '')).strip()
+        if header is None or header.get('no_points'):
+            message = (f"Index {index} is back to an empty placeholder "
+                       f"('{leftover}'). Nothing was left behind.")
+            if log:
+                log(f"  {message}")
+            return True, message
+        message = (
+            f"Index {index} was an empty user slot before the probe and now "
+            f"holds the probe leftover '{leftover}'. Nothing in the Edition "
+            "4 command set deletes a user curve, so this module will not "
+            "guess at one: the slot cannot be made empty again from here. "
+            "Send the real curve to index "
+            f"{index} to overwrite it, or leave it and remember that "
+            f"'{leftover}' is rubbish, not a calibration.")
+        if log:
+            log(f"  {message}")
+        return False, message
 
     def read_slot_curve(self, index):
         """Read a slot and parse it. Returns (header, points, raw_text).
@@ -2616,7 +2807,7 @@ class CurveLoaderGUI:
     what would be sent, so nothing goes to the instrument unseen.
     """
 
-    PROGRAM_VERSION = "1.3"
+    PROGRAM_VERSION = "1.4"
     PROGRAM_NAME = "Cryocon 34 Sensor Curve Loader"
 
     # Colour scheme, shared with the sibling Cryocon modules.
@@ -2987,13 +3178,16 @@ class CurveLoaderGUI:
         self.sentype_var.trace_add('write', lambda *_: self._rebuild_curve())
         ttk.Label(
             frame,
-            text=("Two different lists, two different commands. The curve\n"
-                  "type above goes in the CALCUR header and its list is\n"
-                  "Diode, ACR, 31kR, 3.1kR, 312R, 625R, TC80, TC40, None.\n"
-                  "The input type here goes in SENTYPE <index>:TYPE and sets\n"
-                  "the range and excitation; Table 4 gives R8K10UA for a\n"
-                  "Cernox. Sending a SENTYPE name in a CALCUR header is what\n"
-                  "makes the instrument silently store a diode instead."),
+            text=("Two commands. The curve type above goes in the CALCUR\n"
+                  "header; the input type here goes in SENTYPE <index>:TYPE\n"
+                  "and sets the range and the excitation.\n"
+                  "The manual prints two different vocabularies for them.\n"
+                  "This firmware uses ONE, its own: SIDiode for a diode,\n"
+                  "R8K10UA for a Cernox, in both boxes. The manual's\n"
+                  "'Diode' and 'ACR' were sent on 15 Sep 2026 and the\n"
+                  "instrument discarded the whole block without a word, so\n"
+                  "both are refused here before anything reaches the bus.\n"
+                  "On another unit, run the type probe and let it decide."),
             background=self.CLR_FRAME_BG, font=('Segoe UI', 9),
             justify='left').grid(row=32, column=0, columnspan=2, sticky='w',
                                  padx=10, pady=(0, 6))
@@ -3911,16 +4105,16 @@ class CurveLoaderGUI:
             self.type_hint.config(text=CALCUR_SENSOR_TYPES[chosen][2])
         elif chosen in SENTYPE_SENSOR_TYPES:
             self.type_hint.config(
-                text=(f"'{chosen}' is a SENTYPE:TYPE name and the CALCUR "
-                      "header will not recognise it, so the instrument would "
-                      "silently store a diode. Use ACR here for an NTC "
-                      f"sensor and put {chosen} in the input type field "
-                      "below."))
+                text=(f"'{chosen}' is a SENTYPE:TYPE name. Edition 4 says "
+                      "the CALCUR header will not take one; this firmware "
+                      "takes nothing else. Put it in both boxes."))
         else:
             self.type_hint.config(
                 text=("Not one of the types the CALCUR header accepts "
-                      f"({', '.join(CALCUR_SENSOR_TYPES)}). The manual says "
-                      "an unidentified type is silently replaced by Diode."))
+                      f"({', '.join(CALCUR_SENSOR_TYPES)}). An unidentified "
+                      "type is not reported: the block is discarded, or the "
+                      "type is replaced with a diode, and either way the "
+                      "instrument says nothing."))
 
     # -----------------------------------------------------------------------
     # WHERE THE SLOT ACTUALLY IS  (v1.2)
@@ -4124,8 +4318,12 @@ class CurveLoaderGUI:
                 f"{index}, once for each of {', '.join(candidates)}, and "
                 "reads the header back each time.\n\nWhichever spelling "
                 "comes back with its name intact is the one this firmware "
-                "accepts. Whatever is left in the slot afterwards is "
-                "rubbish and must be overwritten by the real curve.\n\n"
+                "accepts.\n\nWhatever the slot held before is read first "
+                "and written back afterwards. If it was an EMPTY slot it "
+                "cannot be made empty again -- nothing in the Edition 4 "
+                "command set deletes a user curve -- so the probe leftover "
+                "stays there until the real curve overwrites it, and you "
+                "will be told so by name.\n\n"
                 "No loop, setpoint, heater or reset command is sent.\n\n"
                 "Go ahead?"):
             self.log("Type probe cancelled.")
@@ -4143,9 +4341,46 @@ class CurveLoaderGUI:
             self.log("")
             self.log(f"Probing which CALCUR header type index {index} "
                      "accepts.")
-            results = self.backend.probe_calcur_type(
-                index, candidates, units, multiplier, points, ending,
-                log=self.log)
+            # What the slot holds NOW, before anything is written to it, so
+            # it can be put back afterwards. Read first and read once: the
+            # probe is about to overwrite it several times over.
+            baseline_lines = None
+            try:
+                held, held_points, _ = self.backend.read_slot_curve(index)
+                if held is not None and held_points:
+                    baseline_lines = build_crv_lines(
+                        held['name'], held['sensor_type'],
+                        held['multiplier'], held['units'], held_points)
+                    self.log(f"  Index {index} holds '{held['name']}' with "
+                             f"{len(held_points)} points. It has been read "
+                             "and will be written back when the probe is "
+                             "done.")
+                else:
+                    self.log(f"  Index {index} is an empty user slot. There "
+                             "is nothing to put back, and nothing here can "
+                             "make it empty again afterwards.")
+            except Exception as exc:
+                self.log(f"  Could not read index {index} before probing: "
+                         f"{type(exc).__name__}: {exc}. The probe is going "
+                         "ahead, but nothing can be restored afterwards.")
+
+            try:
+                results = self.backend.probe_calcur_type(
+                    index, candidates, units, multiplier, points, ending,
+                    log=self.log)
+            finally:
+                # Runs whether the probe finished, failed or raised. A probe
+                # that dies half way is precisely when the slot is left in
+                # the worst state, and precisely when the old code tidied up
+                # least.
+                self.log("")
+                try:
+                    self.backend.cleanup_probe_slot(
+                        index, baseline_lines, ending, log=self.log)
+                except Exception as exc:
+                    self.log(f"  Could not tidy index {index} afterwards: "
+                             f"{type(exc).__name__}: {exc}. Read that slot "
+                             "and see what is in it before using it.")
             landed = [row for row in results if row[2]]
             self.log("")
             self.log("PROBE RESULT")
@@ -5487,42 +5722,72 @@ def _selftest_cases():
     # -- 9: a SENTYPE name in a CALCUR header warns, and does not block ------
     def case_sentype_name_warns():
         # v1.2 made this an error on the strength of the manual. The 31 Aug
-        # scan showed the firmware's own vocabulary IS the R-names, and that
-        # the 29 Aug failure was a protected slot, not the type. So it warns
-        # and says the question is open, rather than deciding it.
+        # scan showed the firmware's own vocabulary IS the R-names, so v1.3
+        # warned that the question was open. The probe of 15 Sep closed it:
+        # R8K10UA lands. It is now the right answer and must pass clean.
         points = [(325.0, 1.64523), (4.0, 2.94699)]
         errors, warnings, _ = analyse_curve(points, 'LOGOHM', 'R8K10UA', -1.0,
-                                            "CX1030 X17680")
+                                            "CX1030 X17680",
+                                            sentype_type='R8K10UA')
         check(not errors, errors)
-        check(any('not settled' in message for message in warnings), warnings)
+        check(not any('not settled' in message for message in warnings),
+              f"the type question is settled and must not still be raised: "
+              f"{warnings}")
         # a name in neither list is still an error
         errors, _, _ = analyse_curve(points, 'LOGOHM', 'NOSUCHTYPE', -1.0,
                                      "CX1030 X17680")
         check(errors, "an unknown type was accepted")
 
-    # -- 10: REGRESSION. ACR is accepted for a log-ohm NTC curve ------------
+    # -- 10: REGRESSION. a header type this firmware discards is BLOCKED ----
     def case_acr_accepted():
+        # Until 15 Sep this case asserted the opposite: that ACR was accepted
+        # for a log-ohm NTC curve, on the authority of the manual's p.173
+        # list. The probe of that afternoon sent exactly that header and the
+        # instrument discarded the whole block without a word, twice, as it
+        # did for 'Diode'. Both are now refused before they reach the bus,
+        # because a silent discard is the most expensive failure this module
+        # has: it costs a readback, a wrong diagnosis and an hour, and it has
+        # now done so three times.
         points = [(325.0, 1.64523), (4.0, 2.94699)]
         errors, _, _ = analyse_curve(points, 'LOGOHM', 'ACR', -1.0,
-                                     "CX1030 X17680")
-        check(not errors, errors)
+                                     "CX1030 X17680",
+                                     sentype_type='R8K10UA')
+        check(any('discards' in message for message in errors),
+              f"ACR must be refused: {errors}")
+        check(any('R8K10UA' in message for message in errors),
+              "and the refusal must name what to use instead")
+        errors, _, _ = analyse_curve([(480.0, 0.07933), (1.0, 1.70419)],
+                                     'VOLTS', 'Diode', -1.0,
+                                     "DT470 STANDARD",
+                                     sentype_type='SIDiode')
+        check(any('discards' in message for message in errors),
+              f"'Diode' must be refused: {errors}")
+        check(any('SIDiode' in message for message in errors),
+              "and the refusal must name the spelling that lands")
+        # The spelling that IS kept must sail through, or this has simply
+        # moved the obstruction rather than removed it.
+        errors, _, _ = analyse_curve([(480.0, 0.07933), (1.0, 1.70419)],
+                                     'VOLTS', 'SIDiode', -1.0,
+                                     "DT470 STANDARD",
+                                     sentype_type='SIDiode')
+        check(not errors, f"SIDiode landed on the real instrument: {errors}")
 
     # -- 10b: the input-range check now keys on the SENTYPE type ------------
     def case_range_headroom():
         # X17681's cold end, 3.04306 logohm = 1104 ohm, fits 8 kohm.
         points = [(325.0, 1.65330), (4.0, 3.04306)]
         errors, warnings, stats = analyse_curve(
-            points, 'LOGOHM', 'ACR', -1.0, "CX1030 X17681",
+            points, 'LOGOHM', 'R8K10UA', -1.0, "CX1030 X17681",
             sentype_type='R8K10UA')
         check(not errors, errors)
         check(abs(stats['peak_ohms'] - 1104.23) < 0.5, stats)
         # the same curve on a 625 ohm input is off the top of the range
-        errors, _, _ = analyse_curve(points, 'LOGOHM', 'ACR', -1.0,
+        errors, _, _ = analyse_curve(points, 'LOGOHM', 'R8K10UA', -1.0,
                                      "CX1030 X17681",
                                      sentype_type='R625R1MA')
         check(any('full scale' in message for message in errors), errors)
         # and with no input type named, the gap is stated, not passed silently
-        _, warnings, _ = analyse_curve(points, 'LOGOHM', 'ACR', -1.0,
+        _, warnings, _ = analyse_curve(points, 'LOGOHM', 'R8K10UA', -1.0,
                                        "CX1030 X17681")
         check(any('no input type was named' in message
                   for message in warnings), warnings)
@@ -5530,7 +5795,7 @@ def _selftest_cases():
     # -- 11: a volts curve on a resistance type is an error -----------------
     def case_units_type_clash():
         points = [(325.0, 0.5), (4.0, 1.6)]
-        errors, _, _ = analyse_curve(points, 'VOLTS', 'ACR', -1.0,
+        errors, _, _ = analyse_curve(points, 'VOLTS', 'R8K10UA', -1.0,
                                      "Some Diode")
         check(any('VOLTS' in message for message in errors), errors)
 
@@ -5842,17 +6107,33 @@ def _selftest_cases():
             expected, still_empty, comparison, baseline_header=still_empty)
         check(verdict == 'not_written', verdict)
         check('still EMPTY' in headline, headline)
-        check('1 to 12' in advice, "the CALCUR range was not mentioned")
+        # This case is the DT-470 send of 15 Sep, header type 'Diode',
+        # discarded whole. Until v1.4 the advice sent the operator to look
+        # up the manual's user-curve range, 1 to 12 -- which is wrong on
+        # this firmware and was not what went wrong here anyway. It must now
+        # point at the two things that were: map the table for the index,
+        # and use the spelling this instrument keeps.
+        check('empty user slot' in advice,
+              f"the advice must send the operator to the scan: {advice}")
+        check('SIDiode' in advice,
+              f"and must name the spelling that lands: {advice}")
+        check('15 Sep 2026' in advice,
+              "and must say when that was watched happening")
+        check('1 to 12' not in advice,
+              "Appendix A's range is wrong on this firmware and must go")
 
     # -- 29: the file chooses the sensor type ------------------------------
     def case_type_follows_the_file():
-        check(types_for_source('VOLTS', 2) == ('Diode', 'Diode'),
-              "a V/K curve did not choose the diode type")
+        # 'SIDiode', not 'Diode': one word, and it is the difference
+        # between the send of 15 Sep that was discarded whole and the one
+        # twenty minutes later that landed with all 88 points.
+        check(types_for_source('VOLTS', 2) == ('SIDiode', 'SIDiode'),
+              "a V/K curve must choose the spelling this firmware keeps")
         check(types_for_source('VOLTS', 1) == ('TC80', 'TC80'),
               "an mV/K curve did not choose the thermocouple type")
         check(types_for_source('LOGOHM', 4) == ('R8K10UA', 'R8K10UA'),
               "a log-ohm curve did not choose the NTC range")
-        check(types_for_source('VOLTS') == ('Diode', 'Diode'),
+        check(types_for_source('VOLTS') == ('SIDiode', 'SIDiode'),
               "units alone did not choose a type")
         check(types_for_source('BANANAS') is None, "a bad unit was mapped")
 
@@ -5862,12 +6143,12 @@ def _selftest_cases():
         # what actually configures the channel, was not: peak_ohms is None
         # for a volts curve, so the whole block was skipped.
         points = [(300.0, 0.5), (77.0, 1.0), (4.2, 1.6)]
-        errors, _, _ = analyse_curve(points, 'VOLTS', 'Diode', -1.0,
+        errors, _, _ = analyse_curve(points, 'VOLTS', 'SIDiode', -1.0,
                                      'DT-470 SD', sentype_type='R8K10UA')
         check(any('resistance input' in message for message in errors),
               "a diode curve on an 8 kohm input was allowed")
-        errors, _, _ = analyse_curve(points, 'VOLTS', 'Diode', -1.0,
-                                     'DT-470 SD', sentype_type='Diode')
+        errors, _, _ = analyse_curve(points, 'VOLTS', 'SIDiode', -1.0,
+                                     'DT-470 SD', sentype_type='SIDiode')
         check(not errors, errors)
 
     return [
@@ -5879,9 +6160,9 @@ def _selftest_cases():
         ("thinning keeps both ends and invents nothing", case_thin),
         ("extending adds only beyond the ends", case_extend),
         ("a built block parses back to the same numbers", case_round_trip),
-        ("a SENTYPE name in a CALCUR header warns without blocking",
+        ("REGRESSION: R8K10UA in a CALCUR header is now the right answer",
          case_sentype_name_warns),
-        ("REGRESSION: ACR is accepted for a log-ohm NTC curve",
+        ("REGRESSION: a header type this firmware discards is blocked",
          case_acr_accepted),
         ("the input-range check keys on the SENTYPE type",
          case_range_headroom),

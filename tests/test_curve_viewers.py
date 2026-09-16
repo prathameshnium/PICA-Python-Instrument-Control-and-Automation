@@ -928,3 +928,352 @@ def test_the_cryocon_viewer_also_reaches_the_end_of_show_curve():
         assert len(drawn[0][1]) == len(points)
     finally:
         root.destroy()
+
+
+# ---------------------------------------------------------------------------
+# THE CC34 VIEWER AND THE CC34 LOADER HAVE TO AGREE  (16 Sep 2026)
+# ---------------------------------------------------------------------------
+#
+# Every module in this suite is self-contained on purpose: the two Cryocon
+# modules each hold their own copy of what a sensor type is and what a curve
+# looks like, so either can be dropped on a machine on its own. The cost of
+# that is drift, and drift here is not cosmetic -- the viewer exists to tell
+# an operator whether what the loader sent is right, and it cannot do that
+# from a different idea of what right means.
+#
+# These tests are the seam. They do not ask the two files to share code; they
+# ask them to agree about the instrument.
+
+CC34_LOADER_PATH = os.path.join(REPO_ROOT, "pica", "cryocon",
+                                "Sensor_Curve_Loader_CC34_GUI.py")
+cc34_loader = _load("cc34_curve_loader", CC34_LOADER_PATH)
+
+
+def _cc34_real_table():
+    """The Master Sensor Table this lab's Model 34 answered with, 15 Sep 2026.
+
+    Read off the instrument with SENTYPE?, not invented. Tests that ask what
+    this firmware does should ask it of this rather than of something shaped
+    to make them pass.
+    """
+    rows = [(0, 'None', 'SNONE', '0.0'),
+            (1, 'Lakeshore 10', 'SIDIODE', '-1.0'),
+            (2, 'Lakeshore 11', 'SIDIODE', '-1.0'),
+            (3, 'Cryocal D3', 'SIDIODE', '-1.0'),
+            (4, 'SI 410', 'SIDIODE', '-1.0'),
+            (5, 'Pt100 3902', 'R312R1MA', '1.0'),
+            (6, 'Pt100 385', 'R312R1MA', '1.0'),
+            (7, 'Pt1K 385', 'R2K100UA', '10.0'),
+            (8, 'Pt1K 375', 'R2K100UA', '10.0'),
+            (9, 'TC K Extern', 'TC80', '0.1'),
+            (10, 'TC E Extern', 'TC80', '0.1'),
+            (11, 'TC T Extern', 'TC80', '0.1'),
+            (12, 'TC type K', 'TC80', '1.0'),
+            (13, 'TC type E', 'TC80', '1.0'),
+            (14, 'TC type T', 'TC80', '1.0'),
+            (15, 'S700', 'SIDIODE', '-1.0'),
+            (16, 'CX1030 X17680', 'R8K10UA', '-1.0'),
+            (17, 'CX1030 X17681', 'R8K10UA', '-1.0'),
+            (18, 'P17 R8K10UA', 'R8K10UA', '-1.0'),
+            (19, 'DT470 STANDARD1', 'SIDIODE', '-1.0')]
+    rows += [(20 + n, "User Sensor " + "6789ABC"[n], 'SIDIODE', '-1.0')
+             for n in range(7)]
+    entries = [{'index': i, 'name': n, 'type': t, 'multiplier': m}
+               for i, n, t, m in rows]
+    entries += [{'index': i, 'name': None, 'type': None, 'multiplier': None}
+                for i in range(27, 32)]
+    return entries
+
+
+_REAL_CC34_TABLE = _cc34_real_table()
+
+
+def test_the_real_table_maps_to_the_offset_the_instrument_uses():
+    """Appendix A says 9. This instrument says 14, and it is the instrument.
+
+    The 29 and 31 Aug failures were both writes into the factory block on
+    the strength of the manual's number.
+    """
+    blocks = cc34.map_table_blocks(_REAL_CC34_TABLE)
+    assert blocks['offset'] == 14
+    assert (blocks['user_first'], blocks['user_last']) == (15, 26)
+    assert blocks['factory_last'] == 14
+    assert blocks['disagreement'] == 0
+    assert blocks['offset'] != cc34.APPENDIX_A_OFFSET
+    # The two Cryocon modules derive this separately, from their own copies
+    # of the rule, and they must not differ: the loader picks the index to
+    # write to and the viewer says whether that index was a user slot. A
+    # disagreement here means one of them calls a factory entry writable.
+    loader_map = cc34_loader.analyse_sensor_table(_REAL_CC34_TABLE)
+    assert loader_map['senix_offset'] == blocks['offset'], (
+        loader_map['senix_offset'], blocks['offset'])
+    assert loader_map['user_block_start'] == blocks['user_first'], loader_map
+    assert loader_map['confidence'] == 'confirmed', loader_map['notes']
+
+
+def test_both_cc34_modules_refuse_to_guess_an_offset_with_no_placeholder():
+    """A table with every user slot filled gives no evidence, so neither
+    module may fall back on Appendix A's number."""
+    filled = [entry for entry in _REAL_CC34_TABLE
+              if cc34.user_slot_number(entry['name']) is None]
+    assert cc34.map_table_blocks(filled)['offset'] is None
+    loader_map = cc34_loader.analyse_sensor_table(filled)
+    assert loader_map['senix_offset'] is None, loader_map
+    assert loader_map['confidence'] != 'confirmed', loader_map
+
+
+def test_the_cc34_viewer_and_loader_agree_on_what_each_type_measures():
+    """Volts or ohms, for every name either module knows.
+
+    The viewer decides 'this diode is stored on a resistance range' from
+    TYPE_UNIT_FAMILY; the loader refuses the same thing from the unit field
+    of its own type tables. If they ever disagree, one of them passes a curve
+    the other calls broken, and an operator has no way to tell which.
+    """
+    for name, (_, unit, _) in cc34_loader.SENSOR_TYPES.items():
+        if not unit:                      # 'None'/'Snone' measure nothing
+            continue
+        expected = 'V' if unit == 'V' else 'ohm'
+        seen = cc34.type_unit_family(name)
+        assert seen == expected, (name, seen, expected)
+
+
+def test_the_cc34_viewer_knows_every_type_the_loader_can_send():
+    """A type the loader will send must be one the viewer can check.
+
+    An unknown type is reported by the viewer as 'not checked', which is
+    honest but useless, and it is exactly the curve most worth checking.
+    """
+    for name in cc34_loader.CALCUR_VERIFIED_TYPES:
+        assert cc34.type_unit_family(name) is not None, name
+        assert cc34.normalise_type(name) in cc34.TYPE_FULL_SCALE, name
+    for name in cc34_loader.SENTYPE_SENSOR_TYPES:
+        if name.lower() in ('snone', 'none'):
+            continue
+        assert cc34.type_unit_family(name) is not None, name
+
+
+def test_the_two_modules_agree_on_the_full_scale_of_each_input():
+    for name, (full_scale, unit, _) in cc34_loader.SENSOR_TYPES.items():
+        folded = cc34.normalise_type(name)
+        if folded not in cc34.TYPE_FULL_SCALE:
+            continue
+        viewer_scale, viewer_unit = cc34.TYPE_FULL_SCALE[folded]
+        assert viewer_scale == full_scale, (name, viewer_scale, full_scale)
+        if unit:
+            assert viewer_unit == unit, (name, viewer_unit, unit)
+
+
+def test_the_two_modules_agree_on_the_manual_type_lists():
+    assert set(cc34.MANUAL_CALCUR_TYPES) == \
+        set(cc34_loader.CALCUR_MANUAL_TYPE_LIST)
+
+
+def test_the_viewer_agrees_that_this_firmware_discards_acr_and_diode():
+    """One fact, recorded in two files, which must not drift apart."""
+    report = "\n".join(cc34.type_vocabulary_report(_REAL_CC34_TABLE))
+    for rejected in cc34_loader.CALCUR_REJECTED_TYPES:
+        assert "not seen  " + rejected in report, rejected
+    # And the spelling the loader will actually send is one the instrument
+    # was seen using.
+    seen = {cc34.normalise_type(t)
+            for t in cc34.summarise_observed_types(_REAL_CC34_TABLE)}
+    for verified in cc34_loader.CALCUR_VERIFIED_TYPES:
+        assert cc34.normalise_type(verified) in seen, verified
+
+
+# ---------------------------------------------------------------------------
+# THE .340 THE VIEWER WRITES IS ONE THE LOADER CAN READ
+# ---------------------------------------------------------------------------
+#
+# This is the round trip that proves a transfer: read a curve off the Cryocon,
+# write it as a .340, put it back through the loader and get the same numbers.
+# It is also the only check that the export is a real Lake Shore file rather
+# than something only this suite can read.
+
+def _cc34_curve(units="VOLTS", sensor_type="SiDiode", rising=False):
+    if rising:
+        points = [(50.0, 20.0), (117.0, 50.0), (260.0, 100.0),
+                  (500.0, 200.0)]
+    else:
+        points = [(0.079330, 480.0), (0.458600, 325.0), (0.975500, 100.0),
+                  (1.107020, 30.0), (1.704190, 1.0)]
+    header = {'name': 'DT470 STANDARD1', 'sensor_type': sensor_type,
+              'multiplier': 1.0 if rising else -1.0,
+              'multiplier_text': '1.000000' if rising else '-1.000000',
+              'units': units,
+              'point_texts': [("%.6f" % r, "%.6f" % t) for r, t in points],
+              'no_points': False}
+    return header, points
+
+
+def test_a_340_written_by_the_cc34_viewer_loads_in_the_cc34_loader():
+    for units, kind, rising in (("VOLTS", "SiDiode", False),
+                                ("OHMS", "R312R1MA", True),
+                                ("LOGOHM", "R8K10UA", False)):
+        header, points = _cc34_curve(units, kind, rising)
+        text = cc34.build_lakeshore_340_text(
+            header, points, index=19, idn="Cryocon Model 34, Rev 3.03A",
+            address="GPIB0::23::INSTR")
+        lines = cc34_loader._clean_lines(text)
+        read, read_units, meta = cc34_loader._parse_lakeshore_340(
+            lines, "exported")
+        assert read_units == units, (units, read_units)
+        # _parse_lakeshore_340 returns (temperature, reading); the viewer
+        # holds (reading, temperature). Same pairs, opposite order.
+        assert sorted((r, t) for t, r in read) == sorted(points), units
+        # The coefficient has to survive, or the sensor loads inverted.
+        expected_sign = 1.0 if rising else -1.0
+        assert meta['stated_multiplier'] == expected_sign, (units, meta)
+
+
+def test_a_340_written_by_the_cc34_viewer_states_a_count_that_is_true():
+    """The loader refuses a file whose stated count and rows disagree.
+
+    That refusal is what makes a truncated export loud instead of silent, so
+    the export must never be the thing that trips it.
+    """
+    header, points = _cc34_curve()
+    text = cc34.build_lakeshore_340_text(header, points, index=19)
+    stated = [line for line in text.splitlines()
+              if line.startswith("Number of Breakpoints")][0]
+    assert str(len(points)) in stated
+    # Parsing must not raise, which is what a disagreement would do.
+    cc34_loader._parse_lakeshore_340(cc34_loader._clean_lines(text), "x")
+
+
+def test_the_cc34_340_export_keeps_the_instruments_own_numerals():
+    """Six digits is what the instrument stores; re-rounding loses the last.
+
+    The .crv export already promises this. The .340 must make the same
+    promise, or the two exports of one curve disagree in the last digit and
+    nobody can say which is the instrument.
+    """
+    header, points = _cc34_curve()
+    text = cc34.build_lakeshore_340_text(header, points, index=19)
+    for reading_text, temperature_text in header['point_texts']:
+        assert reading_text in text, reading_text
+        assert temperature_text in text, temperature_text
+
+
+def test_the_cc34_340_export_round_trips_the_curve_that_is_really_loaded():
+    """The DT-470 in slot 19, end to end, against its own source file.
+
+    The instrument holds it, the viewer writes it out, the loader reads it
+    back. If any step reorders the columns the values survive but the sensor
+    is inverted, and nothing downstream would notice.
+    """
+    crv = ("DT470 STANDARD1\nSiDiode\n-1.000000\nVOLTS\n"
+           "0.079330   480.000000\n"
+           "0.975500   100.000000\n"
+           "1.107020   30.000000\n"
+           "1.704190   1.000000\n;")
+    header, points = cc34.parse_calcur_block(crv, "slot 19")
+    text = cc34.build_lakeshore_340_text(header, points, index=19)
+    read, units, meta = cc34_loader._parse_lakeshore_340(
+        cc34_loader._clean_lines(text), "round trip")
+    assert units == "VOLTS"
+    assert meta['format_code'] == 2
+    # Coldest point is the highest voltage, both before and after.
+    assert min(t for t, _ in read) == 1.0
+    assert max(r for _, r in read) == 1.704190
+    coldest = [r for t, r in read if t == 1.0][0]
+    assert coldest == 1.704190, "the columns must not have been swapped"
+    # And the loader would pick the diode type for it, not the Cernox range.
+    assert cc34_loader.types_for_source(units, meta['format_code']) == \
+        ("SIDiode", "SIDiode")
+
+
+# ---------------------------------------------------------------------------
+# THE VIEWER STAYS PASSIVE
+# ---------------------------------------------------------------------------
+
+def test_nothing_added_to_the_cc34_viewer_can_write():
+    """The type query and the checks are new code on a read-only module.
+
+    The link refuses anything without a '?', so this asserts the new paths
+    ask for nothing that could be refused -- a feature that trips the guard
+    is a feature that does not work, and it would only be found on a bench.
+    """
+    asked = []
+
+    class Link:
+        def ask(self, command):
+            assert cc34.is_query(command), command
+            asked.append(command)
+            if ":TYPE?" in command.upper():
+                return "SIDIODE"
+            if ":MULTIPLY?" in command.upper():
+                return "-1.0"
+            return "User Sensor 5"
+
+    backend = cc34.CurveViewerBackend.__new__(cc34.CurveViewerBackend)
+    backend.link = Link()
+    backend.log = lambda message: None
+    entries = backend.scan_sensor_table(first=15, last=17)
+    assert len(entries) == 3
+    assert asked and all(cc34.is_query(command) for command in asked)
+    # The type report is pure arithmetic on what came back: it must not send
+    # anything of its own.
+    before = len(asked)
+    cc34.type_vocabulary_report(entries)
+    cc34.table_geometry_report(entries)
+    cc34.audit_curve(19, {'name': 'X', 'sensor_type': 'SiDiode',
+                          'multiplier': -1.0, 'units': 'VOLTS'},
+                     [(0.1, 300.0), (0.2, 100.0)], entries)
+    assert len(asked) == before, asked[before:]
+
+
+def test_the_channel_read_stops_asking_for_commands_that_do_not_exist():
+    """ISENIX and USENIX time out on this firmware, ten seconds each.
+
+    Asked on all four inputs that is eighty seconds of waiting for
+    information that is not there, which is what the log of 15 Sep shows.
+    They are still asked ONCE, because a module that stops looking cannot
+    notice it was wrong.
+    """
+    asked = []
+
+    class Link:
+        def ask(self, command):
+            asked.append(command)
+            if "ISENIX" in command or "USENIX" in command:
+                raise IOError("VI_ERROR_TMO: Timeout expired")
+            if command.startswith("INPUT?"):
+                return "77.35"
+            return "17"
+
+    backend = cc34.CurveViewerBackend.__new__(cc34.CurveViewerBackend)
+    backend.link = Link()
+    backend.log = lambda message: None
+    answers = backend.read_channel_sensors()
+
+    assert set(answers) == set(cc34.INPUT_CHANNELS)
+    assert sum(1 for c in asked if "ISENIX" in c) == 1, asked
+    assert sum(1 for c in asked if "USENIX" in c) == 1, asked
+    # SENIX and the reading are still asked on every channel.
+    assert sum(1 for c in asked if ":SENIX?" in c) == len(cc34.INPUT_CHANNELS)
+    # Every channel reports something for the ones that were not asked, so
+    # the display never shows a blank that reads like an answer.
+    for channel in cc34.INPUT_CHANNELS:
+        for key in ("ISENIX", "USENIX"):
+            assert answers[channel][key].startswith("<"), answers[channel]
+        assert answers[channel]["SENIX"] == "17"
+
+
+def test_a_firmware_that_answers_the_alternates_is_still_asked_all_three():
+    """The other half of the rule above: do not stop looking on a unit that
+    has them."""
+    asked = []
+
+    class Link:
+        def ask(self, command):
+            asked.append(command)
+            return "11"
+
+    backend = cc34.CurveViewerBackend.__new__(cc34.CurveViewerBackend)
+    backend.link = Link()
+    backend.log = lambda message: None
+    backend.read_channel_sensors()
+    for name in ("ISENIX", "USENIX"):
+        assert sum(1 for c in asked if name in c) == len(cc34.INPUT_CHANNELS)
