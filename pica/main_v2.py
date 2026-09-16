@@ -729,11 +729,28 @@ def scan_instruments(skip_addresses=None, gauge=None):
 # installed pica_suite is shadowing this working tree. It touches no
 # instrument.
 #
+# The third and fourth go down the remaining two layers. "System and
+# Drivers" asks what this computer has installed for talking to
+# instruments -- NI-488.2, NI-VISA, the Keysight IO libraries -- and
+# reads each driver DLL's bit-ness straight out of its PE header, which
+# is the one thing that explains a VISA that will not load. "Communication
+# Interfaces" asks what is physically there: GPIB cards and USB-GPIB
+# adapters, serial and USB-serial ports, USB controller generations,
+# network interfaces, and the VISA addresses they add up to. It stops
+# short of identification on purpose -- no *IDN? and no serial port is
+# ever opened, because opening one asserts DTR and can reset whatever is
+# on the other end. Identification stays with the Instrument Status
+# window and the Full VISA / GPIB Scanner.
+#
 # Each entry: (menu label, SCRIPT_PATHS key).
 DIAGNOSTIC_TOOLS = [
     ("Cryocon 34 Diagnostics (read-only survey)…", "Cryocon Diagnostics"),
     ("Python Environment Check (packages, 32/64-bit)…",
      "Python Environment Diagnostics"),
+    ("System and Drivers (NI-488.2, VISA, DLLs)…",
+     "System and Driver Diagnostics"),
+    ("Communication Interfaces (GPIB, USB, serial, LAN)…",
+     "Communication Interface Diagnostics"),
 ]
 
 
@@ -938,7 +955,7 @@ CATALOG = [
     {
         'category': "Diagnostic Tools",
         'type': "Read Only",
-        'instruments': "Cryocon 34 · no instrument (Python check)",
+        'instruments': "Cryocon 34 · no instrument (machine and bus checks)",
         # Not a measurement suite. These interrogate an instrument and
         # write a log; none of them can change anything, so any of them
         # is safe to run against a live experiment. See DIAGNOSTIC_TOOLS.
