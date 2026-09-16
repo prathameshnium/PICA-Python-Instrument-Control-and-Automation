@@ -54,6 +54,60 @@ ALL_GUI_MODULES = [
     "pica.utils.GPIB_Instrument_Scanner_GUI",
     "pica.utils.PlotterUtil_GUI",
     "pica.utils.SCPI_Console_GUI",
+
+    # --- Added to the test registry: instantiation-verified GUI modules. ---
+    # Keep this list complete; tests/test_gui_module_registry.py fails if a
+    # *_GUI.py module is neither listed here nor in its documented exclusions.
+    # PPMS
+    "pica.PPMS.PPMS_Plotter_GUI",
+    "pica.PPMS.PPMS_SeqVisualizer_GUI",
+    # cryocon
+    "pica.cryocon.Diagnostics_CC34_GUI",
+    "pica.cryocon.Sensor_Curve_Viewer_CC34_GUI",
+    # keithley
+    "pica.keithley.k197a.Monitor_K197A_GUI",
+    "pica.keithley.k6221_k197a.Frequency_Scan_K6221_K197A_GUI",
+    "pica.keithley.k6221_k197a.IV_AC_K6221_K197A_GUI",
+    "pica.keithley.k6221_k197a.RT_AC_K6221_K197A_CC34_T_Sensing_GUI",
+    "pica.keithley.k6221_k197a.RT_AC_K6221_K197A_L340_T_Control_GUI",
+    "pica.keithley.k6221_k197a.RT_AC_K6221_K197A_L340_T_Sensing_GUI",
+    "pica.keithley.k6221_k197a.RT_AC_K6221_K197A_L350_T_Control_GUI",
+    "pica.keithley.k6221_k197a.RT_AC_K6221_K197A_L350_T_Sensing_GUI",
+    "pica.keithley.k6517b.Pyroelectricity.Polling_K6517B_GUI",
+    # keysight
+    "pica.keysight.Correction_OpenShort_E4980A_GUI",
+    "pica.keysight.Frequency_Scan_E4980A_GUI",
+    "pica.keysight.Step_Frequency_Scan_E4980A_GUI",
+    "pica.keysight.Step_Frequency_Scan_L340_E4980A_GUI",
+    "pica.keysight.Temprature_Scan_E4980A_GUI",
+    "pica.keysight.Temprature_Scan_L340_E4980A_GUI",
+    "pica.keysight.Temprature_Scan_Passive_E4980A_GUI",
+    # lakeshore
+    "pica.lakeshore.Sensor_Curve_Loader_L340_L350_GUI",
+    "pica.lakeshore.Sensor_Curve_Viewer_L340_GUI",
+    "pica.lakeshore.Sensor_Curve_Viewer_L350_GUI",
+    # lockin
+    "pica.lockin.sr830.AC_Resistivity_K6221_SR830_GUI",
+    "pica.lockin.sr830.Comms_SR830_GUI",
+    "pica.lockin.sr830.Frequency_Scan_K6221_SR830_GUI",
+    "pica.lockin.sr830.IV_AC_K6221_SR830_GUI",
+    "pica.lockin.sr830.RT_AC_K6221_SR830_CC34_T_Sensing_GUI",
+    "pica.lockin.sr830.RT_AC_K6221_SR830_L340_T_Control_GUI",
+    "pica.lockin.sr830.RT_AC_K6221_SR830_L340_T_Sensing_GUI",
+    "pica.lockin.sr830.RT_AC_K6221_SR830_L350_T_Control_GUI",
+    "pica.lockin.sr830.RT_AC_K6221_SR830_L350_T_Sensing_GUI",
+    # novocontrol
+    "pica.novocontrol.Frequency_Scan_AlphaAN_32bit_GUI",
+    # pfeiffer
+    "pica.pfeiffer.Pressure_Log_TPG361_GUI",
+    # tektronix
+    "pica.tektronix.Function_Gen_AFG3022B_GUI",
+    # utils
+    "pica.utils.Diagnostics_Comms_Interfaces_GUI",
+    "pica.utils.Diagnostics_Python_Env_GUI",
+    "pica.utils.Diagnostics_System_Info_GUI",
+    "pica.utils.GPIB_Scanner_32bit_GUI",
+    "pica.utils.Quick_Calc_GUI",
 ]
 
 APP_NAME = "PICA Command Line Interface"

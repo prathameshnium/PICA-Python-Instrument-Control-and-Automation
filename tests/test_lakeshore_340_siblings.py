@@ -191,7 +191,10 @@ def test_cli_lists_the_twins_next_to_their_350_entries():
     cli = importlib.import_module("pica.cli")
     mods = set(cli.ALL_GUI_MODULES)
     for m in list(mods):
-        if "L350" in m and "lakeshore.T_Control_L350_RangeControl" not in m \
+        # A module naming both instruments (e.g. Sensor_Curve_Loader_L340_L350)
+        # is its own twin; the L350->L340 swap would build a nonsense name.
+        if "L350" in m and "L340" not in m \
+                and "lakeshore.T_Control_L350_RangeControl" not in m \
                 and "DirectControl" not in m and "Step_GUI_advanced" not in m:
             twin = m.replace("L350", "L340")
             assert twin in mods, f"CLI lists {m} but not {twin}"

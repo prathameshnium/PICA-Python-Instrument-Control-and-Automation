@@ -6,6 +6,9 @@ import matplotlib
 
 # Force Agg backend immediately when tests start
 matplotlib.use('Agg')
+# Import pyplot explicitly: safe_matplotlib's teardown touches matplotlib.pyplot,
+# which only resolves if pyplot has already been imported by something else.
+import matplotlib.pyplot as plt
 
 @pytest.fixture
 def safe_matplotlib():
@@ -13,7 +16,7 @@ def safe_matplotlib():
     Ensures plots are closed after test to free memory.
     """
     yield
-    matplotlib.pyplot.close('all')
+    plt.close('all')
 
 @pytest.fixture
 def mock_tkinter():
@@ -38,6 +41,13 @@ def mock_tkinter():
     
     # Mock libraries that would otherwise create windows or require hardware
     mocked_modules = {
+        # '_tkinter' and the matplotlib Tk backends are stubbed so the suite runs
+        # on machines with an incomplete Tcl install, where importing a GUI module
+        # otherwise dies with "Failed to load Tcl_SetVar". CI has a working Tcl,
+        # but developer machines frequently do not.
+        '_tkinter': MagicMock(),
+        'matplotlib.backends.backend_tkagg': MagicMock(),
+        'matplotlib.backends._backend_tk': MagicMock(),
         'tkinter': mock_tk_app,
         'tkinter.ttk': MagicMock(),
         'tkinter.messagebox': MagicMock(),
