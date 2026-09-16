@@ -232,6 +232,13 @@ class PICALauncherApp:
         # Read-only companions to the loader: they browse and export the
         # curves an instrument already holds and cannot write to it.
         "Cryocon Sensor Curve Viewer": resource_path("cryocon/Sensor_Curve_Viewer_CC34_GUI.py"),
+        # Diagnostic tools: read-only programs that interrogate an
+        # instrument and write a log, rather than measuring a sample.
+        # They exist because the Cryo-con SCPI set is shared across the
+        # 24C/32/32B/34/62 family and the Model 34's own manual does not
+        # document all of it - so what a command really does has to be
+        # asked of the instrument, not read out of the wrong manual.
+        "Cryocon Diagnostics": resource_path("cryocon/Diagnostics_CC34_GUI.py"),
         "Lakeshore Sensor Curve Viewer": resource_path("lakeshore/Sensor_Curve_Viewer_L350_GUI.py"),
         "LCR C-V Measurement": resource_path("keysight/CV_KE4980A_GUI.py"),
         # Guided OPEN/SHORT correction of the E4980A (Advanced Options only).

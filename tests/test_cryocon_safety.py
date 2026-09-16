@@ -525,6 +525,32 @@ ALLOWED_CRYOCON_COMMANDS = {
     "SYSTEM:LOCKOUT", "SYSTEM:LOCKOUT?", "SYSTEM:DRES", "SYSTEM:DRES?",
     "SYSTEM:DISTC", "SYSTEM:DISTC?", "SYSTEM:AMBIENT?", "SYSTEM:ERROR?",
     "SYSTEM:NVSAVE",
+
+    # -- read-only self-test survey (direct-control module, 17 Sep 2026) --
+    #
+    # The survey exists BECAUSE this list was taken from the Model 32/32B
+    # manual: six of the mnemonics above (LOOP:OUTPWR?, LOOP:MAXPWR?,
+    # LOOP:MAXSET?, INPUT:SENPR?, INPUT:ISENIX?, INPUT:USENIX?) are in no
+    # Model 34 manual, and a Cryo-con answers a command it does not know
+    # with silence rather than an error. The survey asks the instrument
+    # which ones it really takes.
+    #
+    # Every mnemonic below is a QUERY and appears only in the survey's
+    # probe tables. Adding a WRITE here would still be a deliberate act -
+    # and test_cryocon_self_test.py separately refuses any write path in
+    # the survey at all. Manual references are on each probe in the source.
+    "*OPC?", "*ESR?", "*ESE?", "*STB?",
+    "INPUT:TEMPER?", "INP?", "INP:TEMP?", "INP:UNIT?",
+    "INPUT:SENIX?", "INPUT:BIAS?", "INPUT:ALARM:FAULT?",
+    "INPUT:MINIMUM?", "INPUT:MAXIMUM?", "INPUT:VARIANCE?", "INPUT:SLOPE?",
+    "LOOP:HTRR?", "LOOP:TABLEIX?", "LOOP:NAME?",
+    "SENTYPE?", "SENTYPE:TYPE?", "SENTYPE:MULTIPLY?",
+    "PIDTABLE?", "PIDTABLE:NENTRY?",
+    "HEATER:AUTOTUNE:STATUS?", "HEATER:AUTOTUNE:DELTAP?",
+    "SYSTEM:LOOP?", "SYSTEM:HWREV?", "SYSTEM:FWREV?", "SYSTEM:NAME?",
+    "SYSTEM:ADRS?", "SYSTEM:REMOTE?", "SYSTEM:HTRHST?", "SYSTEM:CJTEMP?",
+    "SYSTEM:LINEFREQ?", "SYSTEM:REMLED?", "SYSTEM:CONTRAST?",
+    "RELAYS?", "STATS:TIME?",
 }
 
 
