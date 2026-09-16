@@ -132,11 +132,17 @@ class FakeCryocon:
     write, so a stray one cannot hide."""
 
     def __init__(self, temp="77.350K", units="K", heater="12.5%",
-                 idn="Cryocon Model 34, Rev 3.03A"):
+                 idn="Cryocon Model 34, Rev 3.03A",
+                 heater_query="HTRREAD?"):
         self.idn = idn
         self.temp = temp
         self.units = units
         self.heater = heater
+        # Which heater read-back this firmware answers. The Model 34
+        # manual documents LOOP:HTRREAD? and nothing else; anything else
+        # is left unanswered, which on a real Cryo-con is a VISA timeout,
+        # not an error string. None = no heater read-back at all.
+        self.heater_query = heater_query
         self.writes = []
         self.queries = []
         self.closed = False
@@ -159,8 +165,10 @@ class FakeCryocon:
             return self.units
         if cmd.startswith("INPUT?"):
             return self.temp
-        if cmd.startswith("LOOP") and cmd.endswith("OUTPWR?"):
-            return self.heater
+        if cmd.startswith("LOOP"):
+            if self.heater_query and cmd.endswith(self.heater_query):
+                return self.heater
+            raise FakeVisaTimeout()     # unknown mnemonic: no reply
         return "0"
 
     def clear(self):
@@ -283,6 +291,8 @@ def _passive_backend(cryocon):
     backend.link = _fake_link(cryocon)
     backend.idn = cryocon.idn
     backend.status_reports = 0
+    backend.heater_query = None
+    backend.heater_probed = False
     return backend
 
 
@@ -453,15 +463,21 @@ def test_temperature_is_read_with_input_query_in_every_cc34_module():
     for key, src in CC_SOURCES.items():
         assert 'INPUT? {ch}' in src, key
         assert 'INPUT {ch}:UNITS?' in src, key
-    assert "LOOP {loop}:OUTPWR?" in CC_SOURCES["passive"]
+    # The heater read-back the Model 34 manual documents (LOOP:HTRREAD?)
+    # is the one the passive scan asks for first. OUTPWR? is in neither
+    # the Model 34 nor the 24C manual and survives only as a fallback.
+    assert passive_cc.CRYOCON_HEATER_QUERIES[0] == "HTRREAD?"
+    assert "LOOP {loop}:{query}" in CC_SOURCES["passive"]
 
 
 def test_the_passive_scan_reads_the_heater_like_the_base_read_htr():
     cryo = FakeCryocon(heater="12.5%")
     backend = _passive_backend(cryo)
     assert backend.get_heater_output() == 12.5
-    assert cryo.queries == ["LOOP 1:OUTPWR?"]
+    # One probe, then the settled command; both are the documented one.
+    assert cryo.queries == ["LOOP 1:HTRREAD?", "LOOP 1:HTRREAD?"]
     assert cryo.writes == []
+    cryo.queries.clear()
     # A status reply is NaN (a heater that cannot be read is not a
     # reason to stop a dielectric scan) ...
     cryo.heater = "N/A"
@@ -702,7 +718,8 @@ def test_the_module_line_names_the_file():
 def test_the_version_line_marks_the_cc34_sibling():
     assert "1.8-PPMS-Sync-CC34" in CC_SOURCES["sync"]
     assert '"1.5-CC34"' in CC_SOURCES["master"]
-    assert "V: 1.6" in CC_SOURCES["passive"]
+    assert "V: 1.7" in CC_SOURCES["passive"]
+    assert '"1.7-CC34"' in CC_SOURCES["passive"]
 
 
 if __name__ == "__main__":

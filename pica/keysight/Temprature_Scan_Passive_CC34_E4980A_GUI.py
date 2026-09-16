@@ -4,7 +4,7 @@ Purpose:             GUI module for Temperature-Dependent Dielectric
                      Measurement (Keysight E4980A + Cryocon Model 34).
 Original Authors:    Prathamesh Deshmukh (template programs)
 Integrated by:       AI-assisted merge per design specification
-Version:             V: 1.6  (v1.3 multi-day hardening: 400 K kill
+Version:             V: 1.7  (v1.3 multi-day hardening: 400 K kill
                      switch, retry-forever comm recovery, fsync-per-point
                      writes, timestamped T-log, bounded console, optional
                      plot thinning, Windows keep-awake;
@@ -27,7 +27,15 @@ Version:             V: 1.6  (v1.3 multi-day hardening: 400 K kill
                      error now reaches the reconnect loop instead of being
                      swallowed; NaN temperatures no longer freeze the
                      x-axis; the runtime-error handler no longer prints
-                     'NoneType: None'.)
+                     'NoneType: None';
+                     v1.7, 17 Sep 2026: heater read-back fixed. The
+                     Model 34 manual documents LOOP <n>:HTRREAD?, not
+                     OUTPWR? - an undocumented mnemonic that a Cryo-con
+                     answers with a timeout, which on every sweep would
+                     have driven the retry-forever reconnect loop all
+                     night over a logging column. The query is now
+                     settled once at Start (HTRREAD? first, OUTPWR? as a
+                     fallback) and falls back to logging NaN.)
 
 Differences from the Lakeshore 350 version, all forced by the instrument:
 
@@ -247,6 +255,24 @@ CRYOCON_INPUT_CHANNELS = ('A', 'B', 'C', 'D')
 # Control loops. Loop 1 is the primary heater; its output power is read
 # (never set) so the T-log keeps the heater column the Lakeshore file has.
 CRYOCON_HEATER_LOOP = '1'
+
+# How that output power is asked for. The Model 34 manual's Remote Command
+# Summary lists exactly one heater read-back:
+#
+#     LOOP:HTRREAD?   "Queries the output current of the selected control
+#                      loop. This is a numeric field that is a percent of
+#                      full scale."   (example reply: '22%')
+#
+# 'OUTPWR' appears nowhere in the Model 34 manual, and nowhere in the
+# 24C manual either; it belongs to other Cryo-con controllers. It is kept
+# here only as a second guess for a firmware that answers the older
+# mnemonic. Which one THIS unit accepts is settled once, at Start, by
+# Cryocon34_Backend.probe_heater_command(): an unknown command on a
+# Cryo-con times out rather than answering, and a timeout on every sweep
+# would otherwise drive the worker's retry-forever reconnect loop all
+# night over a logging column. If neither is answered the column logs NaN
+# and the run carries on.
+CRYOCON_HEATER_QUERIES = ('HTRREAD?', 'OUTPWR?')
 
 # Factory address, used only as a last-resort hint. Identification is by
 # *IDN? content, so a re-addressed Cryocon is still found.
@@ -533,6 +559,10 @@ class Cryocon34_Backend:
         self.link = CryoconLink(visa_address, log=self.log)
         self.idn = self.link.idn
         self.status_reports = 0     # sensor-fault readings seen so far
+        # Which heater read-back this unit answers; settled at Start by
+        # probe_heater_command(). None once probed = no read-back at all.
+        self.heater_query = None
+        self.heater_probed = False
         if not is_cryocon_idn(self.idn):
             self.link.close()
             raise ConnectionError(
@@ -562,6 +592,8 @@ class Cryocon34_Backend:
         value = self.get_temperature()
         self.log(f"  Cryocon channel {ch}: {value:.4f} K, units K. "
                  "Heater and loop state unchanged.")
+        # Settle the heater read-back here, while Start is still attended.
+        self.probe_heater_command()
         return value
 
     def get_temperature(self, sensor=None):
@@ -600,6 +632,61 @@ class Cryocon34_Backend:
                              f"temperature logged as NaN, run continues. {e}")
                 return float('nan')
 
+    def probe_heater_command(self, loop=CRYOCON_HEATER_LOOP):
+        """Settle, once and at Start, how this unit reports heater output.
+
+        The documented Model 34 query is 'LOOP <n>:HTRREAD?'. 'OUTPWR?'
+        is in neither the Model 34 nor the 24C manual and is tried only
+        as a second guess (see CRYOCON_HEATER_QUERIES). An unrecognised
+        command does not come back with an error string on a Cryo-con,
+        it comes back as a VISA timeout, which is indistinguishable from
+        a dead bus at the call site - so the guessing is confined to
+        Start, where somebody is watching, instead of happening on every
+        sweep in front of the retry-forever reconnect loop.
+
+        Sets self.heater_query to the mnemonic that answered, or to None
+        if none did, and returns it. With None the Heater_pct column
+        logs NaN for the rest of the run and the bus is left alone.
+        """
+        self.heater_probed = True
+        answered_but_not_a_number = None
+        for query in CRYOCON_HEATER_QUERIES:
+            command = f'LOOP {loop}:{query}'
+            try:
+                raw = self.link.query(command)
+            except Exception as e:
+                self.log(f"  Heater read-back '{command}' did not answer "
+                         f"({e}); trying the next form.")
+                continue
+            try:
+                value = parse_cryocon_number(raw.rstrip('%'), command)
+            except CryoconStatusError as e:
+                if str(raw).strip().upper().startswith('NACK'):
+                    # 'NACK' is the instrument saying it did not take the
+                    # command at all - a rejection, not a reading. Move on
+                    # rather than settling on a query that can only ever
+                    # produce NaN, once per sweep, all night.
+                    self.log(f"  Heater read-back '{command}' was not "
+                             "acknowledged; trying the next form.")
+                    continue
+                # Otherwise the instrument replied, so it knows the
+                # command; the loop just has nothing to report right now.
+                self.log(f"  Heater read-back '{command}' answered "
+                         f"'{raw}' ({e}).")
+                if answered_but_not_a_number is None:
+                    answered_but_not_a_number = query
+                continue
+            self.heater_query = query
+            self.log(f"  Heater read-back: '{command}' -> {value:.1f} %.")
+            return query
+        self.heater_query = answered_but_not_a_number
+        if self.heater_query is None:
+            self.log("  No heater read-back on this controller "
+                     f"(tried {', '.join(CRYOCON_HEATER_QUERIES)}). "
+                     "Heater_pct will be logged as NaN; the temperature "
+                     "and dielectric data are unaffected.")
+        return self.heater_query
+
     def get_heater_output(self, loop=CRYOCON_HEATER_LOOP):
         """Loop output power as a percentage of full scale. Query only.
 
@@ -610,10 +697,18 @@ class Cryocon34_Backend:
         COMM failure still raises, as 'HTR?' did in the base, so the
         worker's retry-forever reconnect loop sees it instead of the
         error being hidden behind a NaN until the next INPUT?.
+
+        The mnemonic is the one probe_heater_command() settled on at
+        Start. If that found none, nothing is put on the bus at all.
         """
-        raw = self.link.query(f'LOOP {loop}:OUTPWR?')
+        if not self.heater_probed:
+            self.probe_heater_command(loop)
+        if self.heater_query is None:
+            return float('nan')
+        command = f'LOOP {loop}:{self.heater_query}'
+        raw = self.link.query(command)
         try:
-            return parse_cryocon_number(raw.rstrip('%'), 'LOOP OUTPWR')
+            return parse_cryocon_number(raw.rstrip('%'), command)
         except CryoconStatusError:
             return float('nan')
 
@@ -938,7 +1033,9 @@ class Integrated_CT_GUI:
     thrown at it is recorded as-is.
     """
 
-    PROGRAM_VERSION = "1.4"
+    # Was "1.4", the same string the Lakeshore base shows, so the
+    # title bar could not tell the two siblings apart on screen.
+    PROGRAM_VERSION = "1.7-CC34"   # Cryo-con 34 sibling
     LOGO_SIZE = 110
     CONSOLE_MAX_LINES = 2000   # bound console growth on multi-day runs
     PLOT_MAX_POINTS = 10000    # halve plot buffers at this size (if enabled)
@@ -1827,10 +1924,18 @@ class Integrated_CT_GUI:
         # 19-column per-frequency format stays untouched).
         self.t_log_path = os.path.join(
             self.file_location_path, f"{sample_name}_T-log.txt")
+        # Name the heater query that this controller actually answered
+        # at Start (probe_heater_command), so the file says what was
+        # read rather than what the program hoped to read.
+        htr_query = getattr(self.backend.cryocon, 'heater_query', None)
+        htr_note = (f"Heater_pct is LOOP {CRYOCON_HEATER_LOOP}:{htr_query}"
+                    if htr_query else
+                    "no heater read-back on this controller, "
+                    "Heater_pct is NaN")
         with open(self.t_log_path, 'w', encoding='utf-8') as fh:
             fh.write("# Cryocon Model 34, input channel "
                      f"{self.backend.params.get('channel', '?')}, read only; "
-                     "Heater_pct is LOOP 1:OUTPWR?\n")
+                     f"{htr_note}\n")
             fh.write("DateTime\tElapsed_s\tTemperature_K\tHeater_pct\n")
             fh.flush()
             os.fsync(fh.fileno())
