@@ -14,6 +14,7 @@ ALL_GUI_MODULES = [
     "pica.keithley.delta_mode.Delta_RT_K6221_K2182_L350_T_Control_GUI",
     "pica.keithley.delta_mode.IV_K6221_DC_Sweep_GUI",
     "pica.keithley.k2400.IV_K2400_GUI",
+    "pica.keithley.k2400.K2400_DirectControl_GUI",
     "pica.keithley.k2400.RT_K2400_L350_T_Control_GUI",
     "pica.keithley.k2400.RT_K2400_L350_T_Sensing_GUI",
     "pica.keithley.k2400.RT_K2400_CC34_T_Sensing_GUI",

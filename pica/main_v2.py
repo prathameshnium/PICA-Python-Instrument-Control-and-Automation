@@ -723,6 +723,7 @@ CATALOG = [
         'instruments': "K2400 · Lakeshore 350 / 340 or Cryocon 34",
         'modules': [
             ("I-V Sweep", "K2400 I-V", None),
+            ("Direct Control (bench)", "K2400 Direct Control", None),
             ("R vs. T (T Control)", "K2400 R-T", "control"),
             ("R vs. T (T Sensing, L350)", "K2400 R-T (T_Sensing)", "sensing"),
             ("R vs. T (T Control, L340)", "K2400 R-T (L340)", "control"),
@@ -1039,6 +1040,12 @@ QUICK_CATALOG = [
                      'desc': "Current sweep at a fixed temperature: linear "
                              "sweeps, hysteresis loops or a custom current "
                              "list."},
+                    {'label': "Direct Control (bench)",
+                     'key': "K2400 Direct Control", 'family': None,
+                     'desc': "Bench workbench: hold one operating point, set "
+                             "compliance and every source and measure "
+                             "setting by hand, and watch a live reading. "
+                             "Writes no data file."},
                     {'label': "R vs. T (T Control, Lakeshore 350)",
                      'key': "K2400 R-T", 'family': 'control',
                      'desc': "Resistance against temperature, setpoint by "
