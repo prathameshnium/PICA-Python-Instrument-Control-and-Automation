@@ -1257,8 +1257,26 @@ class DiagnosticsGUI:
     PROGRAM_VERSION = "1.0"
     POLL_MS = 60
 
-    CLR_BG = "#1E1E1E"
-    CLR_FG = "#DCDCDC"
+    # House palette, identical to the other PICA modules (see
+    # T_Control_CC34_DirectControl_GUI). A diagnostics console has no reason
+    # to look like a different program from the one that drives the run.
+    CLR_BG_DARK = '#B8A392'
+    CLR_HEADER = '#E5DCD3'
+    CLR_FG_LIGHT = '#2C2825'
+    CLR_FRAME_BG = '#E5DCD3'
+    CLR_INPUT_BG = '#F4EFEA'
+    CLR_TEXT_DARK = '#1A1A1A'
+    CLR_ACCENT_GREEN = '#B68B6E'
+    CLR_ACCENT_RED = '#BA6B5E'
+    CLR_ACCENT_GOLD = '#BA6B5E'
+    CLR_CONSOLE_BG = '#F4EFEA'
+    CLR_GRAPH_BG = '#F4EFEA'
+    CLR_STATUS_OK = '#6B8E4E'
+    CLR_STATUS_BAD = '#BA6B5E'
+
+    FONT_BASE = ('Segoe UI', 11)
+    FONT_TITLE = ('Segoe UI', 13, 'bold')
+    FONT_CONSOLE = ('Consolas', 10)
 
     def __init__(self, root):
         self.root = root
@@ -1266,6 +1284,7 @@ class DiagnosticsGUI:
                         "(read-only)")
         self.root.geometry("1040x760")
         self.root.minsize(820, 560)
+        self.root.configure(bg=self.CLR_BG_DARK)
 
         self.link = None
         self.queue = queue.Queue()
@@ -1276,6 +1295,7 @@ class DiagnosticsGUI:
         self.lines = []
         self.deep_vars = {}
 
+        self.setup_styles()
         self._build()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
         self._log_line(f"{self.PROGRAM_NAME} v{self.PROGRAM_VERSION}")
@@ -1290,19 +1310,113 @@ class DiagnosticsGUI:
             self._log_line("PyVISA is not installed - nothing can be reached.")
             self._log_line("  pip install pyvisa pyvisa-py")
 
+    # -- styles --
+
+    def setup_styles(self):
+        """The shared PICA look: clam, warm panels on the darker backing."""
+        style = ttk.Style(self.root)
+        style.theme_use('clam')
+        style.configure(
+            '.',
+            background=self.CLR_BG_DARK,
+            foreground=self.CLR_FG_LIGHT,
+            font=self.FONT_BASE)
+        style.configure('TFrame', background=self.CLR_BG_DARK)
+        style.configure(
+            'TLabel',
+            background=self.CLR_FRAME_BG,
+            foreground=self.CLR_FG_LIGHT)
+        style.configure('Header.TLabel', background=self.CLR_HEADER)
+        # The description and the status word sit directly on the backing,
+        # not inside a panel, so they need its colour rather than a panel's.
+        style.configure('Backing.TLabel', background=self.CLR_BG_DARK)
+        style.configure(
+            'TButton',
+            font=self.FONT_BASE,
+            padding=(10, 9),
+            foreground=self.CLR_TEXT_DARK,
+            background=self.CLR_HEADER,
+            borderwidth=0,
+            focusthickness=0,
+            focuscolor='none')
+        style.map(
+            'TButton',
+            background=[('active', self.CLR_ACCENT_GOLD),
+                        ('hover', self.CLR_ACCENT_GOLD)],
+            foreground=[('active', self.CLR_TEXT_DARK),
+                        ('hover', self.CLR_TEXT_DARK)])
+        style.configure(
+            'Connect.TButton',
+            background=self.CLR_ACCENT_GREEN,
+            foreground=self.CLR_TEXT_DARK)
+        style.map(
+            'Connect.TButton',
+            background=[('active', '#8AB845'),
+                        ('hover', '#8AB845')])
+        style.configure(
+            'Disconnect.TButton',
+            background=self.CLR_ACCENT_RED,
+            foreground=self.CLR_FG_LIGHT)
+        style.map(
+            'Disconnect.TButton',
+            background=[('active', '#D63C2A'),
+                        ('hover', '#D63C2A')])
+        style.configure(
+            'TLabelframe',
+            background=self.CLR_FRAME_BG,
+            bordercolor=self.CLR_ACCENT_GOLD)
+        style.configure(
+            'TLabelframe.Label',
+            background=self.CLR_FRAME_BG,
+            foreground=self.CLR_FG_LIGHT,
+            font=self.FONT_TITLE)
+        style.configure(
+            'TCheckbutton',
+            background=self.CLR_FRAME_BG,
+            foreground=self.CLR_FG_LIGHT)
+        style.map(
+            'TCheckbutton',
+            background=[('active', self.CLR_FRAME_BG)])
+        style.configure(
+            'TEntry',
+            fieldbackground=self.CLR_GRAPH_BG,
+            foreground=self.CLR_TEXT_DARK,
+            insertcolor=self.CLR_TEXT_DARK)
+        style.configure(
+            'TCombobox',
+            fieldbackground=self.CLR_GRAPH_BG,
+            foreground=self.CLR_TEXT_DARK)
+        style.configure(
+            'TProgressbar',
+            background=self.CLR_ACCENT_GREEN,
+            troughcolor=self.CLR_INPUT_BG,
+            bordercolor=self.CLR_ACCENT_GOLD)
+
     # -- layout --
 
     def _build(self):
+        header = tk.Frame(self.root, bg=self.CLR_HEADER)
+        header.pack(side='top', fill='x')
+        ttk.Label(
+            header,
+            text="Cryocon Model 34 Diagnostics",
+            style='Header.TLabel',
+            font=('Segoe UI', self.FONT_BASE[1] + 4, 'bold'),
+            foreground=self.CLR_ACCENT_GOLD).pack(
+            side='left', padx=20, pady=10)
+        ttk.Label(
+            header, text="read-only", style='Header.TLabel',
+            foreground=self.CLR_STATUS_OK).pack(side='right', padx=20)
+
         head = ttk.Frame(self.root, padding=(12, 10, 12, 4))
         head.pack(fill='x')
-        ttk.Label(head, text="Cryocon Model 34 Diagnostics",
-                  font=("Segoe UI", 14, "bold")).pack(anchor='w')
         ttk.Label(
             head,
+            style='Backing.TLabel',
             text=("Asks the instrument what it actually does. Every probe "
                   "is a query - nothing is written, so this is safe to run "
                   "while the controller is driving an experiment."),
-            wraplength=980, justify='left').pack(anchor='w', pady=(2, 0))
+            wraplength=980, justify='left').pack(anchor='w')
 
         conn = ttk.LabelFrame(self.root, text="Connection",
                               padding=(10, 6))
@@ -1314,9 +1428,11 @@ class DiagnosticsGUI:
         self.address_box.pack(side='left', padx=(6, 6))
         ttk.Button(conn, text="Scan", command=self._scan).pack(side='left')
         self.connect_btn = ttk.Button(conn, text="Connect",
+                                      style='Connect.TButton',
                                       command=self._connect)
         self.connect_btn.pack(side='left', padx=(6, 0))
         self.disconnect_btn = ttk.Button(conn, text="Disconnect",
+                                         style='Disconnect.TButton',
                                          command=self._disconnect,
                                          state='disabled')
         self.disconnect_btn.pack(side='left', padx=(6, 0))
@@ -1353,7 +1469,8 @@ class DiagnosticsGUI:
                                    state='disabled')
         self.copy_btn.pack(side='left', padx=(6, 0))
         self.status_var = tk.StringVar(value="Ready.")
-        ttk.Label(bar, textvariable=self.status_var).pack(side='right')
+        ttk.Label(bar, textvariable=self.status_var,
+                  style='Backing.TLabel').pack(side='right')
 
         prog = ttk.Frame(self.root, padding=(12, 0))
         prog.pack(fill='x')
@@ -1361,8 +1478,11 @@ class DiagnosticsGUI:
         self.progress.pack(fill='x')
 
         self.console = scrolledtext.ScrolledText(
-            self.root, wrap='none', font=("Consolas", 9),
-            bg=self.CLR_BG, fg=self.CLR_FG, insertbackground=self.CLR_FG)
+            self.root, wrap='none', font=self.FONT_CONSOLE,
+            bg=self.CLR_CONSOLE_BG, fg=self.CLR_TEXT_DARK,
+            insertbackground=self.CLR_TEXT_DARK,
+            relief='flat', highlightthickness=1,
+            highlightbackground=self.CLR_ACCENT_GOLD)
         self.console.pack(fill='both', expand=True, padx=12, pady=(6, 12))
         self.console.config(state='disabled')
 
