@@ -57,7 +57,12 @@ The suite performs automated protocols including:
 <p align="center">
   <img src="pica/assets/Images/screenshots/00_PICA_Launcher.png" alt="PICA Launcher — Python GUI dashboard for laboratory instrument control and measurement automation" width="800">
   <br>
-  <em>PICA Launcher Interface (Latte theme) for accessing all measurement modules and utilities.</em>
+  <em>The PICA Launcher. Quick Select picks a category, a module and a protocol, then launches that program; the status bar carries the live temperature and pressure readings and the result of the startup bus scan.</em>
+</p>
+<p align="center">
+  <img src="pica/assets/Images/screenshots/00b_PICA_Launcher_Advanced.png" alt="PICA Launcher Advanced Options — full catalogue of measurement modules grouped by resistance range and instrument" width="800">
+  <br>
+  <em>Advanced Options (Ctrl+Shift+A): every module PICA ships, grouped by measurement range and instrument, for when you already know which program you want.</em>
 </p>
 
 > **More details here:**
