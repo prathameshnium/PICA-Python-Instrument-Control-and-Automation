@@ -176,6 +176,7 @@ class PICALauncherApp:
         "Delta Mode R-T (T_Sensing)": resource_path("keithley/delta_mode/Delta_RT_K6221_K2182_L350_Sensing_GUI.py"),
         "Delta Mode R-T (T_Sensing, CC34)": resource_path("keithley/delta_mode/Delta_RT_K6221_K2182_CC34_Sensing_GUI.py"),
         "K2400 I-V": resource_path("keithley/k2400/IV_K2400_GUI.py"),
+        "K2400 Direct Control": resource_path("keithley/k2400/K2400_DirectControl_GUI.py"),
         "K2400 R-T": resource_path("keithley/k2400/RT_K2400_L350_T_Control_GUI.py"),
         "K2400 R-T (T_Sensing)": resource_path("keithley/k2400/RT_K2400_L350_T_Sensing_GUI.py"),
         "K2400 R-T (T_Sensing, CC34)": resource_path("keithley/k2400/RT_K2400_CC34_T_Sensing_GUI.py"),
