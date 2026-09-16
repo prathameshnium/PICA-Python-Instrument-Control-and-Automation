@@ -1,5 +1,6 @@
 import pytest
 import importlib
+import sys
 import inspect
 from unittest.mock import MagicMock, patch
 import contextlib
@@ -11,8 +12,17 @@ from pica.cli import ALL_GUI_MODULES
 def test_gui_module_initialization(module_path, safe_matplotlib):
 
     try:
-        # 1. Import the module
-        gui_module = importlib.import_module(module_path)
+        # 1. Import the module.
+        # If an earlier test already imported it without the tkinter mock in
+        # place, its module-level `import tkinter as tk` is bound to the REAL
+        # module and the mock_tkinter sys.modules patch cannot rebind it -- the
+        # module then hits real Tk and fails with "no default root window".
+        # Reloading re-executes the module body so `tk` picks up the mock,
+        # making this test independent of test execution order.
+        if module_path in sys.modules:
+            gui_module = importlib.reload(sys.modules[module_path])
+        else:
+            gui_module = importlib.import_module(module_path)
 
         # 2. Find the GUI class
         gui_class = None

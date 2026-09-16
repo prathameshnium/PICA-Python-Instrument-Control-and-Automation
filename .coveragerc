@@ -1,5 +1,5 @@
 [run]
-concurrency = multiprocessing
+concurrency = multiprocessing,thread
 parallel = true
 omit = 
     tests/*
