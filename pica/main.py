@@ -239,6 +239,10 @@ class PICALauncherApp:
         # document all of it - so what a command really does has to be
         # asked of the instrument, not read out of the wrong manual.
         "Cryocon Diagnostics": resource_path("cryocon/Diagnostics_CC34_GUI.py"),
+        # Not an instrument at all: it checks the Python underneath PICA --
+        # interpreter version and bit-ness, and every dependency against the
+        # minimum the project asks for.
+        "Python Environment Diagnostics": resource_path("utils/Diagnostics_Python_Env_GUI.py"),
         "Lakeshore Sensor Curve Viewer": resource_path("lakeshore/Sensor_Curve_Viewer_L350_GUI.py"),
         "LCR C-V Measurement": resource_path("keysight/CV_KE4980A_GUI.py"),
         # Guided OPEN/SHORT correction of the E4980A (Advanced Options only).

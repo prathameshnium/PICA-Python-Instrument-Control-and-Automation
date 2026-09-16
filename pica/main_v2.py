@@ -721,9 +721,19 @@ def scan_instruments(skip_addresses=None, gauge=None):
 # LOOP <n>:OUTPWR?, found 17 Sep 2026.) The only cure is to ask the
 # instrument, which is what the diagnostics program does.
 #
+# The second one answers the layer below: before an instrument can be
+# wrong, the Python running PICA has to be the one you think it is. It
+# reports the interpreter version and whether it is 32- or 64-bit (which
+# decides which NI-488.2 install VISA can load at all), checks every
+# dependency against the minimum the project pins, and says whether an
+# installed pica_suite is shadowing this working tree. It touches no
+# instrument.
+#
 # Each entry: (menu label, SCRIPT_PATHS key).
 DIAGNOSTIC_TOOLS = [
     ("Cryocon 34 Diagnostics (read-only survey)…", "Cryocon Diagnostics"),
+    ("Python Environment Check (packages, 32/64-bit)…",
+     "Python Environment Diagnostics"),
 ]
 
 
@@ -928,7 +938,7 @@ CATALOG = [
     {
         'category': "Diagnostic Tools",
         'type': "Read Only",
-        'instruments': "Cryocon 34",
+        'instruments': "Cryocon 34 · no instrument (Python check)",
         # Not a measurement suite. These interrogate an instrument and
         # write a log; none of them can change anything, so any of them
         # is safe to run against a live experiment. See DIAGNOSTIC_TOOLS.
@@ -2715,7 +2725,11 @@ class PICALauncherV2:
         win = Toplevel(self.root)
         win.title("PICA — Instrument Status")
         win.configure(bg=self.CLR_APP)
-        win.geometry("760x560")
+        # Wider than tall: six chip columns and the widest resource strings in
+        # the scan table both need horizontal room, while the table itself is
+        # scrolled and does not need the height.
+        win.geometry("1020x520")
+        win.minsize(900, 440)
         win.protocol("WM_DELETE_WINDOW", self._close_instrument_status)
         self._status_win = win
 
@@ -2737,7 +2751,7 @@ class PICALauncherV2:
                            "in the background, so a running measurement is never "
                            "disturbed.",
                  bg=self.CLR_APP, fg=self.CLR_TEXT_DIM, font=self.FONT_SMALL,
-                 justify='left', wraplength=820).pack(anchor='w', padx=18, pady=(0, 10))
+                 justify='left', wraplength=970).pack(anchor='w', padx=18, pady=(0, 10))
 
         # --- known instruments, with their lights -------------------------
         panel = tk.Frame(win, bg=self.CLR_PANEL, highlightthickness=1,
@@ -2786,7 +2800,7 @@ class PICALauncherV2:
         table_wrap.columnconfigure(0, weight=1)
         strip['raw'] = tk.Text(
             table_wrap, state='disabled', bg=self.CLR_PANEL2, fg=self.CLR_TEXT,
-            font=self.FONT_MONO, wrap='none', bd=0, relief='flat', height=12)
+            font=self.FONT_MONO, wrap='none', bd=0, relief='flat', height=9)
         strip['raw'].grid(row=0, column=0, sticky='nsew', padx=1, pady=1)
         vbar = ttk.Scrollbar(table_wrap, orient='vertical',
                              command=strip['raw'].yview)
@@ -2798,7 +2812,7 @@ class PICALauncherV2:
 
         strip['raw_note'] = tk.Label(
             win, text="", bg=self.CLR_APP, fg=self.CLR_TEXT_DIM,
-            font=self.FONT_SMALL, anchor='w', justify='left', wraplength=820)
+            font=self.FONT_SMALL, anchor='w', justify='left', wraplength=970)
         strip['raw_note'].pack(fill='x', padx=18, pady=(0, 14))
 
         strip['auto_names'] = True
