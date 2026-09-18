@@ -23,9 +23,11 @@ are absent from it:
 On 17 Sep 2026 LOOP:OUTPWR? turned out to be absent from the 24C manual
 as well, and it had been sitting in the dielectric temperature scan's
 per-sweep heater read. What made that dangerous is HOW a Cryo-con refuses
-a command it does not recognise: it does not answer. No error string, no
-entry in the error queue - just silence, so the call surfaces as a VISA
-timeout, indistinguishable at the call site from a dead bus. Inside a
+a command it does not recognise: it does not answer. No error string, and
+nothing usable at the call site - just silence, so the call surfaces as a
+VISA timeout, indistinguishable from a dead bus. (The error queue does
+collect undocumented numeric codes, but far fewer than the commands that
+were refused, and only after the fact.) Inside a
 measurement loop, in front of a retry-forever reconnect handler, that is
 a night of reconnecting over a logging column.
 
@@ -109,7 +111,9 @@ CRYOCON_STATUS_STRINGS = {
 }
 
 _CRYOCON_NUMBER_RE = re.compile(r'[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?')
-# Matched by shape, because SYSTEM:DRES sets how long the runs are.
+# Matched by shape rather than by a fixed seven characters: the lab
+# unit ran DRES=2 and still sent a seven-character run, so the length
+# is not tied to DRES, and another unit's may differ.
 _CRYOCON_FAULT_RE = re.compile(r'^-{2,}$')
 _CRYOCON_RANGE_RE = re.compile(r'^\.{2,}$')
 
@@ -366,7 +370,8 @@ CC34_PROBES = [
     ("System", "SYSTEM:DISTC?", "DOC",
      "display filter time constant - it filters EVERY reported reading"),
     ("System", "SYSTEM:DRES?", "DOC",
-     "display resolution - it sets the LENGTH of the '-------' fault run"),
+     "display resolution - front panel only; the bus still answered to "
+     "six decimals with DRES=2 on 17 Sep 2026"),
     ("System", "SYSTEM:LINEFREQ?", "DOC", "AC line frequency setting"),
     ("System", "SYSTEM:CJTEMP?", "DOC", "cold-junction compensation temp"),
     ("System", "SYSTEM:REMLED?", "DOC", "remote LED state"),
@@ -715,8 +720,10 @@ class CryoconSurvey:
         self._emit("")
         self._emit("  OK       answered")
         self._emit("  TIMEOUT  no reply - on a Cryo-con this is how an")
-        self._emit("           unrecognised command fails. There is no error")
-        self._emit("           string and nothing lands in the error queue.")
+        self._emit("           unrecognised command fails. There is no")
+        self._emit("           error string, so the call site cannot tell")
+        self._emit("           it from a dead bus. See the error-queue")
+        self._emit("           section below for what the queue does keep.")
         self._emit("  NACK     explicitly not acknowledged")
         self._emit("  EMPTY    answered with nothing")
 

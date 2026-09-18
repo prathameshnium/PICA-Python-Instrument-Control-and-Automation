@@ -12,6 +12,7 @@ Runnable as plain Python as well as under pytest.
 
 import importlib.util
 import os
+import re
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -526,6 +527,49 @@ ALLOWED_CRYOCON_COMMANDS = {
     "SYSTEM:DISTC", "SYSTEM:DISTC?", "SYSTEM:AMBIENT?", "SYSTEM:ERROR?",
     "SYSTEM:NVSAVE",
 
+    # -- sensor curve table (Sensor_Curve_Loader / Sensor_Curve_Viewer) --
+    #
+    # Calibration Curve chapter of the Cryo-con User's Guide. CALCUR is the
+    # curve block itself: the write form is sent line by line as raw bytes
+    # and terminated with ';', and CALCUR? answers a MULTI-LINE block, which
+    # is why no diagnostic sends it - one query() would read one line and
+    # desynchronise the session. SENTYPE names and types a Master Sensor
+    # Table slot; INPUT:SENIX points an input at one.
+    "CALCUR", "CALCUR?", "INPUT:SENIX",
+    "SENTYPE:NAME", "SENTYPE:NAME?", "SENTYPE:TYPE", "SENTYPE:TYPE?",
+
+    # -- loop addressing by NAME (Diagnostics_CC34_GUI, opt-in section) --
+    #
+    # The open question from 17 Sep 2026: every LOOP <n>:...? and CONTROL?
+    # times out, while PIDTABLE 1:NENTRY? and HEATER:AUTOTUNE:STATUS? - the
+    # same shape - answer. The hypothesis is that this firmware addresses
+    # loops by NAME, HEATER being loop 1 and AOUT loop 2, which is how the
+    # manual's own autotune and AOUT:MODE examples are written.
+    #
+    # All queries, all in the opt-in "Loop addressing" probe table. They
+    # are here so the hypothesis can be TESTED against the instrument; none
+    # is used by a measurement module and none may be until it answers.
+    "HEATER:HTRREAD?", "HEATER:OUTPWR?", "HEATER:PMANUAL?",
+    "HEATER:MAXPWR?", "HEATER:MAXSET?", "HEATER:TABLEIX?", "HEATER:NAME?",
+    "HEATER:SETPT?", "HEATER:SOURCE?", "HEATER:TYPE?", "HEATER:RANGE?",
+    "HEATER:LOAD?", "HEATER:RATE?", "HEATER:RAMP?",
+    "HEATER:PGAIN?", "HEATER:IGAIN?", "HEATER:DGAIN?",
+    "HEATER:AUTOTUNE:STATUS?", "HEATER:AUTOTUNE:DELTAP?",
+    "AOUT:SETPT?", "AOUT:TYPE?", "AOUT:MODE?", "AOUT:HTRREAD?",
+
+    # -- deliberately WRONG spellings (Diagnostics_CC34_GUI) --
+    #
+    # Sent on purpose, to prove they are refused. The 17 Sep runs showed
+    # the parser is whitespace- and form-fussy ('INPUT? A' works, 'INPUT ? A'
+    # and 'INPUT?A' do not), and that several documented commands time out.
+    # These near-misses ask whether a short form is what the firmware wants.
+    # A measurement module using one of these would be a bug; that is caught
+    # by test_the_passive_module_uses_only_query_mnemonics and by the fact
+    # that they appear only in the diagnostics probe tables.
+    "INPUT:SENP?", "LOOP:SETP?", "SYSTEM:HOME?", "SYSTEM:LINEF?",
+    "SYSTEM:LINEFREQ?", "PIDTABLE?", "PIDTABLE:NENTRY?", "RELAYS?",
+    "STATS:TIME?",
+
     # -- read-only self-test survey (direct-control module, 17 Sep 2026) --
     #
     # The survey exists BECAUSE this list was taken from the Model 32/32B
@@ -621,6 +665,190 @@ def test_the_mnemonic_reducer_follows_the_scpi_semicolon_rule():
 def test_the_audit_would_actually_catch_an_invented_command():
     """A test that cannot fail is not a test."""
     for mnemonic in _mnemonics("LOOP 1:TURBO 9"):
+        assert mnemonic not in ALLOWED_CRYOCON_COMMANDS
+
+
+# Every subsystem root a Cryo-con owns. A mnemonic whose root is not one of
+# these belongs to the other instrument in a combined module (a Keithley, an
+# E4980A, an SR830) and is none of this audit's business.
+#
+# Matched CASE-SENSITIVELY, and that is deliberate. Every Cryo-con command in
+# PICA is written fully upper case; the SCPI short-form capitalisation
+# 'SYSTem:ZCHeck' is a Keithley 6517B idiom. Without the case rule the shared
+# SYSTEM root would drag three Keithley zero-check commands into a Cryo-con
+# audit. test_the_root_filter_tells_the_two_system_subsystems_apart pins this.
+CRYOCON_SUBSYSTEM_ROOTS = (
+    "AOUT", "CALCUR", "CONTROL", "HEATER", "INPUT", "LOOP", "OVERTEMP",
+    "PIDTABLE", "RELAYS", "SENTYPE", "STATS", "STOP", "SYSTEM",
+)
+
+
+def _is_cryocon_mnemonic(mnemonic):
+    if "{" in mnemonic:
+        return False            # an f-string placeholder, not a mnemonic
+    root = mnemonic.split(":")[0].rstrip("?")
+    if root not in CRYOCON_SUBSYSTEM_ROOTS:
+        return False
+    # A bare root with no sub-mnemonic and no '?' is a reducer artefact off
+    # a prose string, not something anyone can put on a bus. CONTROL and
+    # STOP are the two real bare commands.
+    if ":" not in mnemonic and not mnemonic.endswith("?"):
+        return mnemonic in ("CONTROL", "STOP")
+    return True
+
+
+# Only strings SHAPED like a command are audited. Without this, prose such
+# as "CONTROL, loop, heater or setpoint command exists" would be read as a
+# CONTROL command, and a log line as a dozen of them.
+_COMMAND_SHAPE = re.compile(
+    r'^\*?[A-Z][A-Z0-9]*[?]?(?:[ :][A-Za-z0-9_?:*{} -]*)?$')
+
+
+def _looks_like_a_cryocon_command(text):
+    text = text.strip()
+    if not text or len(text) > 48 or "," in text or "." in text:
+        return False
+    root = re.split(r'[ :;]', text, 1)[0].rstrip("?")
+    return root in CRYOCON_SUBSYSTEM_ROOTS and bool(_COMMAND_SHAPE.match(text))
+
+
+def _string_value(node):
+    """The literal text of a str constant or an f-string, placeholders
+    collapsed to '{}' so 'INPUT? {channel}' still reduces to 'INPUT?'."""
+    import ast
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return "".join(v.value if isinstance(v, ast.Constant) and
+                       isinstance(v.value, str) else "{}"
+                       for v in node.values)
+    return None
+
+
+def _cryocon_commands_in(source):
+    """Every Cryo-con command string a module can put on the bus.
+
+    Deliberately wider than _all_commands(), which only reads literals
+    passed straight to write()/query()/_write()/_query() or assigned to a
+    variable called 'cmd'. That misses three shapes this repo uses
+    constantly, and LOOP:OUTPWR? hid in the first of them:
+
+      * a module-level constant sent later - CRYOCON_STOP_COMMAND = "STOP"
+        then link.write(CRYOCON_STOP_COMMAND)
+      * a literal handed to a differently named helper - self.ask(...),
+        probe_heater_command(...), _safe_query(...)
+      * a probe TABLE - ("LOOP 1:HTRREAD?", "why we ask") in a list of
+        tuples, which is how both diagnostic surveys hold their commands
+
+    So: resolve simple constants, accept ANY callee, and read the first
+    element of every tuple. The shape filter above keeps prose out.
+    """
+    import ast
+    tree = ast.parse(source)
+    constants = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        text = _string_value(node.value)
+        if text is None:
+            continue
+        for target in node.targets:
+            if getattr(target, "id", None):
+                constants[target.id] = text
+
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            args = list(node.args) + [kw.value for kw in node.keywords]
+            for arg in args:
+                text = _string_value(arg)
+                if text is None and isinstance(arg, ast.Name):
+                    text = constants.get(arg.id)
+                if text and _looks_like_a_cryocon_command(text):
+                    found.append(text)
+        elif isinstance(node, ast.Tuple) and node.elts:
+            text = _string_value(node.elts[0])
+            if text and _looks_like_a_cryocon_command(text):
+                found.append(text)
+    return found
+
+
+def _every_module_that_talks_to_a_cryocon():
+    """Found by the marker constant, not listed by hand.
+
+    This is the whole point of the 17 Sep 2026 lesson. LOOP:OUTPWR? lived
+    for weeks in Temprature_Scan_Passive_CC34_E4980A_GUI.py and in
+    RT_K6517B_CC34_T_Sensing_GUI.py, and the audit below - the one test
+    written to catch exactly that - only ever looked at the two modules in
+    pica/cryocon/. It could not have found it. Discovering the modules
+    means a new one is covered the day it is written, not the day someone
+    remembers to add it here.
+    """
+    found = {}
+    for folder, _dirs, names in os.walk(os.path.join(REPO_ROOT, "pica")):
+        if "__pycache__" in folder:
+            continue
+        for name in sorted(names):
+            if not name.endswith(".py"):
+                continue
+            path = os.path.join(folder, name)
+            source = open(path, encoding="utf-8").read()
+            if "CRYOCON_IDN_MARKERS" in source:
+                found[os.path.relpath(path, REPO_ROOT)] = source
+    return found
+
+
+def test_the_cryocon_audit_covers_every_module_that_talks_to_one():
+    """A guard that inspects two files out of fifteen is not a guard."""
+    modules = _every_module_that_talks_to_a_cryocon()
+    assert len(modules) >= 15, sorted(modules)
+    flat = {path.replace("\\", "/") for path in modules}
+    for expected in ("pica/cryocon/T_Sensing_CC34_GUI.py",
+                     "pica/cryocon/T_Control_CC34_DirectControl_GUI.py",
+                     "pica/keysight/Temprature_Scan_Passive_CC34_E4980A_GUI.py",
+                     "pica/keithley/k6517b/High_Resistance/"
+                     "RT_K6517B_CC34_T_Sensing_GUI.py"):
+        assert expected in flat, sorted(flat)
+
+
+def test_no_cryocon_command_in_ANY_module_is_outside_the_vetted_list():
+    """The same audit as above, over every module that talks to a Cryo-con.
+
+    A Cryo-con answers a mnemonic it does not recognise with silence, so a
+    wrong one cannot be caught at the call site - it looks exactly like a
+    dead bus. It has to be caught here.
+    """
+    offenders = []
+    for path, source in sorted(_every_module_that_talks_to_a_cryocon().items()):
+        for command in _cryocon_commands_in(source):
+            for mnemonic in _mnemonics(command):
+                if not _is_cryocon_mnemonic(mnemonic):
+                    continue
+                if mnemonic not in ALLOWED_CRYOCON_COMMANDS:
+                    offenders.append(f"{path}: {command!r} uses "
+                                     f"unvetted {mnemonic!r}")
+    assert not offenders, chr(10).join(offenders)
+
+
+def test_the_root_filter_tells_the_two_system_subsystems_apart():
+    """RT_K6517B_CC34_T_Sensing_GUI.py drives a Keithley 6517B AND a
+    Cryo-con. Both have a SYSTEM subsystem. The Keithley's zero-check
+    commands must not be audited as Cryo-con mnemonics, and the Cryo-con's
+    must not be let through as Keithley ones."""
+    for keithley in ("SYSTem:ZCHeck", "SYSTem:ZCORrect",
+                     "SYSTem:ZCORrect:ACQuire"):
+        assert not _is_cryocon_mnemonic(keithley), keithley
+    for cryocon in ("SYSTEM:DRES?", "SYSTEM:ERROR?", "INPUT?", "LOOP:SETPT",
+                    "CALCUR?", "SENTYPE:NAME"):
+        assert _is_cryocon_mnemonic(cryocon), cryocon
+
+
+def test_the_cross_module_audit_would_catch_the_bug_that_started_all_this():
+    """LOOP:OUTPWR? is still vetted - the decision was probe-once-then-fall-
+    back, so a Model 32/32B keeps the feature - but an INVENTED mnemonic in
+    one of the thirteen modules the old audit never read must fail."""
+    for mnemonic in _mnemonics("LOOP 1:TURBO 9"):
+        assert _is_cryocon_mnemonic(mnemonic)
         assert mnemonic not in ALLOWED_CRYOCON_COMMANDS
 
 
