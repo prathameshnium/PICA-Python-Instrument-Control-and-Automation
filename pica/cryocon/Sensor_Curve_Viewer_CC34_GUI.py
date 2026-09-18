@@ -75,12 +75,23 @@ SENTYPE? <index>, SENTYPE <index>:TYPE?, SENTYPE <index>:MULTIPLY?  (p.187)
   The name, sensor type and multiplier of one Master Sensor Table entry.
   Three fast queries. This is what the slot list is built from.
 
-INPUT <ch>:SENIX?   (p.187, with local caveats)
-  Which sensor index an input channel is using. The Rev 3.03A unit in this
-  lab also answers ISENIX? and USENIX?, which Edition 4 does not list, and
-  the three number differently. All three are asked and all three answers are
-  shown, so the operator can see which scheme this firmware is using instead
-  of this module picking one and being quietly wrong.
+INPUT <ch>:SENIX?   (p.187)
+  Which sensor index an input channel is using, as a Master Sensor Table
+  index. The only indexing scheme this firmware has.
+
+  This block used to claim the lab's Rev 3.03A unit "also answers ISENIX?
+  and USENIX?". It does not. The diagnostics survey settled it on
+  2026-09-17 (two runs, GPIB0::23): INPUT <ch>:ISENIX? and
+  INPUT <ch>:USENIX? both time out, on every channel, exactly as
+  INPUT <ch>:SENPR? does. Edition 4 does not list any of the three and
+  this firmware does not have them.
+
+  They are still ASKED, once, on the first channel, because a Model 32/32B
+  or another firmware may have them and the operator should see which
+  scheme is in play rather than have this module pick one and be quietly
+  wrong. When both go unanswered on the first channel they are dropped for
+  the rest of the sweep - a timeout costs the full CRYOCON_TIMEOUT_MS, and
+  paying that eight more times for an answer already known is waste.
 
 INPUT? <ch>
   One temperature reading, for context. A run of dashes means a sensor fault

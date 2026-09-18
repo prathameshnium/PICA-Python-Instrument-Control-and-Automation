@@ -437,6 +437,92 @@ CC34_SYNTAX_VARIANTS = [
 CC34_BURST_COMMAND = "INPUT? A"
 CC34_BURST_N = 10
 
+
+# -- loop addressing ----------------------------------------------------
+#
+# THE OPEN QUESTION FROM THE 17 Sep 2026 RUNS.
+#
+# On the lab unit (Model 34, Rev 3.03A, firmware 3.03, hardware A) EVERY
+# 'LOOP <n>:...?' query timed out - all eighteen of them, on loops 1, 2
+# and 3, including the documented LOOP 1:HTRREAD? and its short form
+# LOOP 1:HTRR?. So did CONTROL?. Two identical runs, twenty minutes
+# apart, agreed exactly.
+#
+# It is not a parser-shape problem: 'PIDTABLE 1:NENTRY?' has the same
+# <KEYWORD> <number>:<SUBKEY>? shape and answered fine. It is not a
+# wedged bus either: queries either side of the LOOP block answered
+# normally. And it is not that the loops are idle - SYSTEM:LOOP? answered
+# 'OFF' and HEATER:AUTOTUNE:STATUS? answered 'Idle'.
+#
+# What DID answer points at the cause. The autotune commands are the one
+# place the manual spells the output channel out: "<oc> is the output
+# channel to tune and may be either HEATER or AOUT". 'HEATER:AUTOTUNE:
+# STATUS?' answered. And the manual contradicts its own LOOP chapter in
+# two places - it calls the ramp query "the HEATER:RAMP? Command" (p.64)
+# and gives 'AOUT: MODE HTR' as the worked example for what it documents
+# as 'LOOP 2:MODE' (p.165).
+#
+# So the hypothesis this section tests is that on this firmware the
+# control loops are addressed by NAME - HEATER for loop 1, AOUT for
+# loop 2 - and 'LOOP <n>:' is a different model's or a different
+# firmware's spelling.
+#
+# It matters a great deal: every setpoint, PID, range and heater command
+# in T_Control_CC34_DirectControl_GUI.py is written 'LOOP <n>:'.
+#
+# The section short-circuits. It asks 'HEATER:SETPT?' first; if that
+# answers, it sweeps the HEATER/AOUT family and skips the LOOP spelling
+# variants, and vice versa - so it is quick when something works and
+# only slow when everything is refused.
+CC34_LOOP_PROBE = "HEATER:SETPT?"
+
+CC34_LOOP_BY_NAME = [
+    ("HEATER:SETPT?", "loop 1 setpoint"),
+    ("HEATER:TYPE?", "loop 1 control type"),
+    ("HEATER:SOURCE?", "loop 1 controlling input"),
+    ("HEATER:RANGE?", "loop 1 heater range"),
+    ("HEATER:LOAD?", "loop 1 heater load resistance"),
+    ("HEATER:RATE?", "loop 1 ramp rate"),
+    ("HEATER:RAMP?", "the manual calls this 'the HEATER:RAMP? Command'"),
+    ("HEATER:PGAIN?", "loop 1 P"),
+    ("HEATER:IGAIN?", "loop 1 I (SECONDS on a Cryo-con; larger is SLOWER)"),
+    ("HEATER:DGAIN?", "loop 1 D"),
+    ("HEATER:HTRREAD?", "loop 1 heater read-back - the one PICA needs"),
+    ("HEATER:OUTPWR?", "the older mnemonic, under the name prefix"),
+    ("HEATER:PMANUAL?", "loop 1 manual output power"),
+    ("HEATER:MAXPWR?", "loop 1 maximum power"),
+    ("HEATER:MAXSET?", "loop 1 maximum setpoint"),
+    ("HEATER:TABLEIX?", "loop 1 PID table index"),
+    ("HEATER:NAME?", "loop 1 name string"),
+    ("AOUT:SETPT?", "loop 2 setpoint"),
+    ("AOUT:TYPE?", "loop 2 control type"),
+    ("AOUT:MODE?", "the manual's worked example is 'AOUT: MODE HTR'"),
+    ("AOUT:HTRREAD?", "loop 2 output read-back"),
+]
+
+CC34_LOOP_SPELLINGS = [
+    ("LOOP 1:SETPT?", "the spelling the manual's LOOP chapter documents"),
+    ("LOOP1:SETPT?", "no space after the keyword"),
+    ("LOOP 1::SETPT?", "the manual's own Query Syntax line uses '::' twice"),
+    ("LOOP:SETPT?", "no loop number at all"),
+    ("LOOP 0:SETPT?", "zero-based loop numbering"),
+    ("LOO 1:SETPT?", "short form of the keyword"),
+    ("LOOP 1:SETP?", "short form of the sub-mnemonic"),
+    ("CONTROL?", "are the loops engaged - also timed out on 17 Sep"),
+    ("CONT?", "its short form"),
+]
+
+# Odds and ends the 17 Sep runs left hanging. All cheap, all queries.
+CC34_LOOSE_ENDS = [
+    ("PIDTABLE? 0", "PIDTABLE? 1 answered 'PID Table 2' - off by one?"),
+    ("PIDTABLE? 2", "so what does table 2 call itself?"),
+    ("RELAYS? 0", "RELAYS? 1 answered and RELAYS? 2 timed out"),
+    ("RELAYS?", "with no index at all"),
+    ("SYSTEM:LINEF?", "SYSTEM:LINEFREQ? timed out; try the short form"),
+    ("SYSTEM:HOME?", "documented as set-only, like SYSTEM:REMOTE was"),
+    ("INPUT A:SENP?", "short form of the SENPR? that timed out"),
+]
+
 # Deep sections. Each is off by default because each costs real time.
 CC34_NOISE_SAMPLES = 30             # repeated reads for resolution/noise
 CC34_UPDATE_RATE_SECONDS = 6.0      # how long to watch for a value change
@@ -468,6 +554,8 @@ CC34_NOT_SENT = [
 
 # The optional deep sections, as (key, label, rough cost, default).
 CC34_DEEP_SECTIONS = [
+    ("loops", "Loop addressing - why LOOP <n>: does not answer",
+     "~20 s, or ~90 s if nothing answers", False),
     ("noise", "Reading resolution and short-term noise",
      f"{CC34_NOISE_SAMPLES} reads, ~5 s", False),
     ("update", "How often the reading actually changes",
@@ -586,6 +674,8 @@ class CryoconSurvey:
             self._sensor_table()
             self._framing()
             self._bus_timing()
+            if "loops" in self.deep:
+                self._loop_addressing()
             if "noise" in self.deep:
                 self._noise()
             if "update" in self.deep:
@@ -771,6 +861,102 @@ class CryoconSurvey:
                 "min": min(times), "max": max(times),
                 "mean": sum(times) / len(times)}
 
+    # -- deep section: how the control loops are addressed --
+
+    def _loop_addressing(self):
+        """Settle how this firmware addresses its control loops.
+
+        See the note on CC34_LOOP_PROBE for why. Short-circuits on the
+        first probe so it is quick when something works.
+        """
+        self._heading("Loop addressing")
+        self._emit("  On the lab unit every 'LOOP <n>:...?' timed out while")
+        self._emit("  HEATER:AUTOTUNE:STATUS? answered. The manual calls the")
+        self._emit("  ramp query 'the HEATER:RAMP? Command' in one place and")
+        self._emit("  'LOOP 1:RAMP?' in another, so the loops may be")
+        self._emit("  addressed by NAME (HEATER = loop 1, AOUT = loop 2)")
+        self._emit("  rather than by number on this firmware.")
+        self._emit("")
+
+        by_name_works = self._loop_try(CC34_LOOP_PROBE,
+                                       "probe: does the name form answer?")
+
+        if by_name_works:
+            self._emit("")
+            self._emit("  The NAME form answers. Sweeping HEATER / AOUT:")
+            answered = self._loop_sweep(CC34_LOOP_BY_NAME)
+            self._emit("")
+            self._emit("  Checking the numbered form once, for the record:")
+            numbered = self._loop_sweep(CC34_LOOP_SPELLINGS[:1])
+            self._verdict_by_name(answered, numbered)
+        else:
+            self._emit("")
+            self._emit("  The name form did not answer either. Trying every")
+            self._emit("  spelling of the numbered form:")
+            spellings = self._loop_sweep(CC34_LOOP_SPELLINGS)
+            self._emit("")
+            self._emit("  ... and the rest of the name family, in case only")
+            self._emit("  SETPT is missing:")
+            named = self._loop_sweep(CC34_LOOP_BY_NAME[:6])
+            self._verdict_neither(spellings, named)
+
+        self._emit("")
+        self._emit("  Loose ends from the 17 Sep runs:")
+        self._loop_sweep(CC34_LOOSE_ENDS)
+
+    def _loop_try(self, command, note):
+        """One probe, recorded in the rows like any other."""
+        return self._probe("Loop addressing", command, "UNDOC", note) == "OK"
+
+    def _loop_sweep(self, table):
+        """Probe a table, returning the commands that answered."""
+        answered = []
+        for command, note in table:
+            if self.stop.is_set():
+                break
+            if self._probe("Loop addressing", command, "UNDOC", note) == "OK":
+                answered.append(command)
+        return answered
+
+    def _verdict_by_name(self, answered, numbered):
+        self._emit("")
+        self._emit("  => SETTLED: this firmware addresses its control loops")
+        self._emit("     BY NAME. HEATER is loop 1, AOUT is loop 2.")
+        self._emit(f"     {len(answered)} of the name-form queries answered; "
+                   f"{len(numbered)} of the numbered form did.")
+        if answered:
+            self._emit("     Working:")
+            for command in answered:
+                self._emit(f"       {command}")
+        self._emit("")
+        self._emit("     T_Control_CC34_DirectControl_GUI.py writes every")
+        self._emit("     setpoint, PID, range and heater command as")
+        self._emit("     'LOOP <n>:...'. On this controller none of those")
+        self._emit("     reach the instrument - they time out - so direct")
+        self._emit("     temperature CONTROL from PICA does not work here")
+        self._emit("     until they are rewritten to the name form.")
+        self._emit("     Sensing is unaffected: INPUT? is a different")
+        self._emit("     subsystem and answered throughout.")
+
+    def _verdict_neither(self, spellings, named):
+        self._emit("")
+        if spellings or named:
+            self._emit("  => PARTLY SETTLED. These answered:")
+            for command in spellings + named:
+                self._emit(f"       {command}")
+            self._emit("     Use those spellings and re-run this section.")
+        else:
+            self._emit("  => NOT SETTLED. No spelling of a control-loop")
+            self._emit("     query answered at all, by number or by name,")
+            self._emit("     while INPUT? and the SYSTEM group answered")
+            self._emit("     throughout. That is not a syntax question any")
+            self._emit("     more - it points at the control-loop subsystem")
+            self._emit("     itself being unavailable on this unit (an")
+            self._emit("     option not fitted, a firmware build without it,")
+            self._emit("     or a fault). Worth a call to Cryo-con with this")
+            self._emit("     log, and worth checking whether the front panel")
+            self._emit("     can set a setpoint at all.")
+
     # -- deep section: resolution and noise --
 
     def _noise(self):
@@ -811,8 +997,11 @@ class CryoconSurvey:
         if steps:
             self._emit(f"  smallest step between distinct values: "
                        f"{min(steps):.6g}")
-            self._emit("    That is the resolution actually reaching the bus;")
-            self._emit("    it follows SYSTEM:DRES, not the sensor.")
+            self._emit("    The step in the READING, not the instrument's")
+            self._emit("    resolution: the bus reply is full precision")
+            self._emit("    whatever SYSTEM:DRES is set to (the lab unit ran")
+            self._emit("    DRES=2 and still answered to six decimals on")
+            self._emit("    17 Sep 2026). DRES shortens the DISPLAY only.")
         if len(distinct) == 1:
             self._emit("    Every reading identical. Either the cryostat is")
             self._emit("    very still, or the display filter (SYSTEM:DISTC)")
@@ -820,8 +1009,15 @@ class CryoconSurvey:
         self._emit(f"  a few raw replies: "
                    f"{', '.join(repr(r) for r in raws[:4])}")
         self._emit("")
-        self._emit("  => a settle-band or drift limit tighter than the")
+        self._emit("  => at the temperature this was measured at, a")
+        self._emit("     settle-band or drift limit tighter than the")
         self._emit(f"     peak-to-peak above ({spread:.6g}) can never be met.")
+        self._emit("     This number belongs to THIS sensor at THIS")
+        self._emit("     temperature and does not carry: a Cernox near room")
+        self._emit("     temperature is at the flat end of its curve and is")
+        self._emit("     far noisier in kelvin than the same sensor at 30 K.")
+        self._emit("     Re-measure at the working temperature before")
+        self._emit("     setting a tolerance from it.")
 
     # -- deep section: update rate --
 
@@ -1050,10 +1246,14 @@ class CryoconSurvey:
         timed_out = sum(1 for r in self.rows if r[3] == "TIMEOUT")
         if timed_out:
             self._emit(f"  {timed_out} probe(s) timed out during this survey.")
-            self._emit("  If the queue above is empty, an unrecognised")
-            self._emit("  command leaves NO trace on this instrument - which")
-            self._emit("  is exactly why a wrong mnemonic can live in a")
-            self._emit("  measurement module for months.")
+            self._emit("  On the lab unit (17 Sep 2026) the queue came back")
+            self._emit("  as a short run of bare numbers - so an unrecognised")
+            self._emit("  command DOES leave something behind. The codes are")
+            self._emit("  not documented anywhere in the Model 34 manual, and")
+            self._emit("  there were far fewer of them than timed-out probes,")
+            self._emit("  so the queue is a hint, not an audit trail. It")
+            self._emit("  still cannot be read at the call site: the call")
+            self._emit("  itself only ever reports a VISA timeout.")
 
     def _not_sent(self):
         self._heading("Deliberately NOT sent")
@@ -1133,26 +1333,53 @@ class CryoconSurvey:
         self._emit(f"    {len(answered)} entries, index {min(answered)} to "
                    f"{max(answered)}; nothing answers past {max(answered)}")
 
-        # The user block is bracketed by the slots that still carry their
-        # factory placeholder name. A loaded curve sits INSIDE that
-        # bracket under its own name, so the bracket has to be found
-        # first and the loaded slots read off inside it.
-        placeholders = {ix for ix, v in answered.items()
-                        if v[0].strip().lower().startswith("user sensor")}
-        if placeholders:
-            first, last = min(placeholders), max(placeholders)
-            self._emit(f"    user curve slots are index {first}-{last}")
-            self._emit(f"    => user curve n is table index n + {first - 1}")
-            self._emit("       (Appendix A of the manual gives two different")
-            self._emit("        answers for this and neither may be right)")
+        # Where the user block starts is read out of the PLACEHOLDER NAMES,
+        # not out of which index the first placeholder sits at.
+        #
+        # This is the 17 Sep 2026 lesson. On the lab unit the first five
+        # user slots already hold named curves (S700, CX1030 X17680,
+        # CX1030 X17681, P17 R8K10UA, DT470 STANDARD1), so the lowest
+        # slot still SAYING "User Sensor ..." was index 20 - and index 20
+        # is 'User Sensor 6'. Bracketing by index alone reported the user
+        # block as 20-26 and the offset as n+19, both wrong. The name
+        # carries the user-curve number, so 'User Sensor 6' at index 20
+        # gives the offset directly: 20 - 6 = 14.
+        offsets = {}
+        for index, entry in answered.items():
+            match = re.match(r"user\s*sensor\s*([0-9A-C])\s*$",
+                             entry[0].strip(), re.IGNORECASE)
+            if not match:
+                continue
+            token = match.group(1).upper()
+            # The Cryo-con names slots 10, 11 and 12 'A', 'B' and 'C'.
+            number = (int(token) if token.isdigit()
+                      else 10 + ord(token) - ord("A"))
+            offsets[index - number] = offsets.get(index - number, 0) + 1
+
+        if offsets:
+            offset = max(offsets, key=offsets.get)
+            first, last = offset + 1, offset + 12
+            self._emit(f"    user curve slots are index {first}-{last} "
+                       f"(12 slots)")
+            self._emit(f"    => user curve n is table index n + {offset}")
+            self._emit("       Read off the placeholder names themselves")
+            self._emit("       ('User Sensor 6' at index "
+                       f"{offset + 6} gives the offset), because")
+            self._emit("       Appendix A of the manual gives two different")
+            self._emit("       answers for this and neither matches.")
+            if len(offsets) > 1:
+                self._emit(f"       NOTE: the names imply more than one "
+                           f"offset {sorted(offsets)} - read the table above.")
             loaded = {ix: answered[ix] for ix in range(first, last + 1)
-                      if ix in answered and ix not in placeholders}
+                      if ix in answered
+                      and not answered[ix][0].strip().lower().startswith(
+                          "user sensor")}
             if loaded:
                 self._emit("    user slots with a curve loaded:")
                 for ix in sorted(loaded):
                     name, stype, mult = loaded[ix]
                     self._emit(f"      index {ix} (user curve "
-                               f"{ix - first + 1}): {name}")
+                               f"{ix - offset}): {name}")
                     self._emit(f"          type={stype} multiplier={mult}")
                 self._emit("      A NEGATIVE multiplier means a negative")
                 self._emit("      temperature coefficient (Cernox, RuOx); a")
@@ -1162,6 +1389,12 @@ class CryoconSurvey:
             else:
                 self._emit("    every user slot still has its default name "
                            "- no calibrated curve is loaded")
+            factory = sorted(ix for ix in answered if ix < first)
+            if factory:
+                self._emit(f"    factory block is index {factory[0]}-"
+                           f"{factory[-1]}, and it is NOT the list in the")
+                self._emit("    manual's Appendix A - check the table above")
+                self._emit("    before quoting a factory curve by index.")
 
         vocabulary = sorted({v[1].strip() for v in answered.values()
                              if v[1] and not v[1].startswith("<")})
@@ -1227,10 +1460,12 @@ class CryoconSurvey:
                 self._emit("      Worth reducing before ramp measurements.")
         if dres:
             self._emit(f"    SYSTEM:DRES = {dres} display resolution.")
-            self._emit("      This sets how many dashes a sensor fault comes")
-            self._emit("      back as, which is why the fault strings are")
-            self._emit("      matched by shape ('-{2,}') and not by a fixed")
-            self._emit("      seven characters.")
+            self._emit("      It shortens the front-panel display. It does")
+            self._emit("      NOT shorten what comes over the bus: on the lab")
+            self._emit("      unit, DRES=2 still gave six-decimal readings and")
+            self._emit("      a seven-character '-------' fault string. The")
+            self._emit("      fault strings are matched by shape anyway, so")
+            self._emit("      a unit that does shorten them still parses.")
         if non_kelvin:
             self._emit("    CHANNELS NOT REPORTING KELVIN:")
             for channel, unit in sorted(non_kelvin.items()):
