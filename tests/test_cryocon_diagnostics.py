@@ -371,14 +371,21 @@ def test_an_unexpected_fault_still_ends_with_a_done_message():
     assert kinds[-1] == "done", kinds[-4:]
 
 
-def test_the_error_queue_section_ties_timeouts_back_to_an_empty_queue():
-    """If an unrecognised command leaves no trace, a wrong mnemonic can
-    only ever be caught by reading the manual. The log should say so."""
+def test_the_error_queue_section_reports_what_came_back():
+    """The 17 Sep 2026 runs disproved the original claim here. The queue
+    was NOT empty - it answered with a short run of bare numbers - so an
+    unrecognised command does leave something behind. But there were far
+    fewer codes than timed-out probes and none of them is documented, so
+    the log must not promise it is an audit trail, and must still say the
+    call site only ever sees a VISA timeout."""
     lines, _rows = _run(FakeCryoconResource())
     text = "\n".join(lines)
     assert "Error queue after the survey" in text
     assert "probe(s) timed out during this survey" in text
-    assert "leaves NO trace" in text
+    assert "DOES leave something behind" in text
+    assert "not an audit trail" in text
+    assert "only ever reports a VISA timeout" in text
+    assert "leaves NO trace" not in text
 
 
 # ===========================================================================
@@ -455,6 +462,271 @@ def test_calcur_is_never_sent():
     resource = FakeCryoconResource()
     _run(resource, deep=ALL_DEEP)
     assert not any(q.strip().startswith("CALCUR") for q in resource.queries)
+
+
+# ===========================================================================
+# 3b. The lab unit, as the 17 Sep 2026 runs actually found it
+# ===========================================================================
+#
+# Two runs twenty minutes apart agreed exactly, so these are facts about
+# the instrument, not one bad reading. They are pinned here because the
+# first version of the summary drew the WRONG conclusion from them.
+
+# The real Master Sensor Table off GPIB0::23, 17 Sep 2026. Factory block
+# 0-14 (and it is NOT the manual's Appendix A list), twelve user slots
+# 15-26, of which the first five already hold named curves.
+LAB_SENSOR_TABLE = {
+    0: ("None", "SNONE", "0.0"),
+    1: ("Lakeshore 10", "SIDIODE", "-1.0"),
+    2: ("Lakeshore 11", "SIDIODE", "-1.0"),
+    3: ("Cryocal D3", "SIDIODE", "-1.0"),
+    4: ("SI 410", "SIDIODE", "-1.0"),
+    5: ("Pt100 3902", "R312R1MA", "1.0"),
+    6: ("Pt100 385", "R312R1MA", "1.0"),
+    7: ("Pt1K 385", "R2K100UA", "10.0"),
+    8: ("Pt1K 375", "R2K100UA", "10.0"),
+    9: ("TC K Extern", "TC80", "0.1"),
+    10: ("TC E Extern", "TC80", "0.1"),
+    11: ("TC T Extern", "TC80", "0.1"),
+    12: ("TC type K", "TC80", "1.0"),
+    13: ("TC type E", "TC80", "1.0"),
+    14: ("TC type T", "TC80", "1.0"),
+    15: ("S700", "SIDIODE", "-1.0"),
+    16: ("CX1030 X17680", "R8K10UA", "-1.0"),
+    17: ("CX1030 X17681", "R8K10UA", "-1.0"),
+    18: ("P17 R8K10UA", "R8K10UA", "-1.0"),
+    19: ("DT470 STANDARD1", "SIDIODE", "-1.0"),
+    20: ("User Sensor 6", "SIDIODE", "-1.0"),
+    21: ("User Sensor 7", "SIDIODE", "-1.0"),
+    22: ("User Sensor 8", "SIDIODE", "-1.0"),
+    23: ("User Sensor 9", "SIDIODE", "-1.0"),
+    24: ("User Sensor A", "SIDIODE", "-1.0"),
+    25: ("User Sensor B", "SIDIODE", "-1.0"),
+    26: ("User Sensor C", "SIDIODE", "-1.0"),
+}
+LAB_SENIX = {"A": "17", "B": "16", "C": "1", "D": "1"}
+
+
+def _lab_resource(**kwargs):
+    kwargs.setdefault("sensor_table", dict(LAB_SENSOR_TABLE))
+    kwargs.setdefault("senix", dict(LAB_SENIX))
+    kwargs.setdefault("distc", "0.5")
+    kwargs.setdefault("dres", "2")
+    return FakeCryoconResource(**kwargs)
+
+
+def test_the_user_offset_comes_from_the_placeholder_names_not_the_index():
+    """THE 17 Sep regression.
+
+    The lab unit's first five user slots already hold named curves, so
+    the lowest slot still SAYING 'User Sensor ...' is index 20 - and it
+    is 'User Sensor 6'. Bracketing by index reported the user block as
+    20-26 and the offset as n+19. Both wrong: the name carries the user
+    number, so 20 - 6 = 14, and the block is 15-26.
+    """
+    lines, _rows = _run(_lab_resource())
+    text = "\n".join(lines)
+    assert "user curve slots are index 15-26" in text, text[-2500:]
+    assert "user curve n is table index n + 14" in text
+    assert "n + 19" not in text
+    assert "index 20-26" not in text
+
+
+def test_the_named_curves_inside_the_user_block_are_all_listed():
+    lines, _rows = _run(_lab_resource())
+    text = "\n".join(lines)
+    assert "user slots with a curve loaded:" in text
+    for index, number, name in ((15, 1, "S700"),
+                                (16, 2, "CX1030 X17680"),
+                                (17, 3, "CX1030 X17681"),
+                                (18, 4, "P17 R8K10UA"),
+                                (19, 5, "DT470 STANDARD1")):
+        assert f"index {index} (user curve {number}): {name}" in text, name
+    assert "no calibrated curve is loaded" not in text
+
+
+def test_the_factory_block_is_flagged_as_not_matching_appendix_a():
+    """The real factory list is Lakeshore 10 / Lakeshore 11 / Cryocal D3
+    ..., not the Cryocon S700 / LS DT-670 / LS DT-470 of Appendix A. The
+    S700 is a USER curve here."""
+    lines, _rows = _run(_lab_resource())
+    text = "\n".join(lines)
+    assert "factory block is index 0-14" in text
+    assert "NOT the list in the" in text
+
+
+def test_each_input_is_matched_to_the_curve_it_is_running_on_for_real():
+    lines, _rows = _run(_lab_resource())
+    text = "\n".join(lines)
+    assert "input A: SENIX 17 -> CX1030 X17681" in text
+    assert "input B: SENIX 16 -> CX1030 X17680" in text
+    assert "input C: SENIX 1 -> Lakeshore 10" in text
+
+
+def test_a_table_whose_user_slots_are_all_default_still_reads_right():
+    """The simple case must not regress while fixing the hard one."""
+    lines, _rows = _run(FakeCryoconResource())
+    text = "\n".join(lines)
+    assert "user curve slots are index 15-26" in text
+    assert "user curve n is table index n + 14" in text
+    assert "no calibrated curve is loaded" in text
+
+
+def test_the_bus_reply_is_full_precision_whatever_dres_says():
+    """DRES=2 on the lab unit still gave six-decimal readings and a
+    seven-character '-------'. The log used to claim DRES set both."""
+    lines, _rows = _run(_lab_resource(
+        readings=["316.680847", "317.405518", "315.176880"]), deep=("noise",))
+    text = "\n".join(lines)
+    assert "DRES shortens the DISPLAY only" in text
+    assert "It does" in text and "NOT shorten what comes over the bus" in text
+    assert "it follows SYSTEM:DRES" not in text
+
+
+def test_the_noise_figure_is_marked_as_sensor_and_temperature_specific():
+    """The lab run measured 4 K peak-to-peak - on a Cernox sitting at
+    316 K, which is the flat end of its curve. Quoting that as a floor at
+    30 K would be nonsense."""
+    lines, _rows = _run(_lab_resource(
+        readings=["316.68", "318.44", "314.37", "317.59"]), deep=("noise",))
+    text = "\n".join(lines)
+    assert "belongs to THIS sensor at THIS" in text
+    assert "Re-measure at the working temperature" in text
+
+
+# ===========================================================================
+# 3c. Loop addressing - the open question from 17 Sep
+# ===========================================================================
+
+class LoopByNameResource(FakeCryoconResource):
+    """A unit that answers HEATER:/AOUT: and refuses every LOOP <n>:.
+
+    This is what the lab unit's behaviour points at: eighteen LOOP
+    queries timed out while HEATER:AUTOTUNE:STATUS? answered.
+    """
+
+    def query(self, command):
+        cmd = command.strip()
+        if cmd.upper().startswith("LOOP") or cmd.upper().startswith("LOO "):
+            self.queries.append(cmd)
+            raise FakeVisaTimeout(cmd)
+        if cmd.upper().startswith(("HEATER:", "AOUT:")):
+            self.queries.append(cmd)
+            if "HTRREAD?" in cmd.upper() or "OUTPWR?" in cmd.upper():
+                return "22%"
+            return "100.000000"
+        return FakeCryoconResource.query(self, command)
+
+
+class NoLoopsAtAllResource(FakeCryoconResource):
+    """A unit where no control-loop query answers in any spelling."""
+
+    def query(self, command):
+        cmd = command.strip()
+        if cmd.upper().startswith(("LOOP", "LOO ", "HEATER:", "AOUT:",
+                                   "CONTROL", "CONT?")):
+            self.queries.append(cmd)
+            raise FakeVisaTimeout(cmd)
+        return FakeCryoconResource.query(self, command)
+
+
+def test_the_loop_section_is_a_checkbox_and_off_by_default():
+    keys = {key: default
+            for key, _label, _cost, default in diag.CC34_DEEP_SECTIONS}
+    assert keys["loops"] is False
+    lines, _rows = _run(_lab_resource())
+    assert "Loop addressing" not in "\n".join(lines)
+
+
+def test_it_settles_the_name_form_when_that_is_what_answers():
+    resource = LoopByNameResource()
+    lines, _rows = _run(resource, deep=("loops",))
+    text = "\n".join(lines)
+    assert "SETTLED: this firmware addresses its control loops" in text
+    assert "BY NAME. HEATER is loop 1, AOUT is loop 2." in text
+    assert "HEATER:HTRREAD?" in resource.queries
+    assert "AOUT:SETPT?" in resource.queries
+
+
+def test_it_names_the_consequence_for_the_direct_control_module():
+    """Every setpoint, PID, range and heater command in the direct
+    control GUI is written 'LOOP <n>:'. If that form does not reach the
+    instrument, temperature control from PICA does not work here."""
+    lines, _rows = _run(LoopByNameResource(), deep=("loops",))
+    text = "\n".join(lines)
+    assert "T_Control_CC34_DirectControl_GUI.py" in text
+    assert "does not work here" in text
+    assert "Sensing is unaffected" in text
+
+
+def test_it_short_circuits_instead_of_trying_every_spelling():
+    """When the name form answers, the numbered spellings are not swept -
+    each refusal costs a whole timeout.
+
+    Only the spelling table is checked: the core survey sends its own
+    LOOP queries earlier in the run, and those are not this section's.
+    """
+    resource = LoopByNameResource()
+    _run(resource, deep=("loops",))
+    # Only the LOOP-prefixed spellings can be attributed to this section:
+    # the core survey sends CONTROL? on its own, earlier in the run.
+    skipped = [s for s, _n in diag.CC34_LOOP_SPELLINGS[1:]
+               if s.upper().startswith(("LOOP", "LOO "))]
+    assert skipped, "nothing to check - the spelling table changed shape"
+    for spelling in skipped:
+        assert spelling not in resource.queries, spelling
+    # The one it does try, for the record, is the documented spelling.
+    assert diag.CC34_LOOP_SPELLINGS[0][0] == "LOOP 1:SETPT?"
+
+
+def test_it_says_plainly_when_nothing_answers_in_any_spelling():
+    resource = NoLoopsAtAllResource()
+    lines, _rows = _run(resource, deep=("loops",))
+    text = "\n".join(lines)
+    assert "NOT SETTLED" in text
+    assert "subsystem" in text and "unavailable" in text
+    assert "call to Cryo-con with this" in text
+    # ... and it did try every spelling before saying so.
+    for spelling, _note in diag.CC34_LOOP_SPELLINGS:
+        assert spelling in resource.queries, spelling
+
+
+def test_the_spellings_include_the_manuals_own_double_colon():
+    """The manual's Query Syntax lines write 'LOOP <no>::SOURCE?' and
+    'LOOP <no>::SETPT' with two colons, in two separate places."""
+    spellings = [s for s, _n in diag.CC34_LOOP_SPELLINGS]
+    assert "LOOP 1::SETPT?" in spellings
+    assert "LOOP1:SETPT?" in spellings
+    assert "LOOP 0:SETPT?" in spellings
+    assert "CONTROL?" in spellings
+
+
+def test_the_loose_ends_from_the_17_sep_runs_are_all_chased():
+    loose = [c for c, _n in diag.CC34_LOOSE_ENDS]
+    # PIDTABLE? 1 answered 'PID Table 2' - an off-by-one worth settling.
+    assert "PIDTABLE? 0" in loose and "PIDTABLE? 2" in loose
+    # RELAYS? 1 answered, RELAYS? 2 timed out.
+    assert "RELAYS? 0" in loose and "RELAYS?" in loose
+    # SYSTEM:LINEFREQ? timed out though the manual documents it.
+    assert "SYSTEM:LINEF?" in loose
+
+
+def test_every_loop_section_probe_is_still_a_query():
+    # 'PIDTABLE? 0' and 'RELAYS? 1' put the '?' on the keyword and the
+    # index after it, so the test is that a '?' is present at all.
+    for table in (diag.CC34_LOOP_BY_NAME, diag.CC34_LOOP_SPELLINGS,
+                  diag.CC34_LOOSE_ENDS):
+        for command, _note in table:
+            assert "?" in command, command
+            assert not any(command.upper().startswith(w) for w in
+                           ("*RST", "*CLS", "CONTROL ", "STOP", "CALCUR")),                 command
+    assert "?" in diag.CC34_LOOP_PROBE
+
+
+def test_the_loop_section_writes_nothing_even_when_nothing_answers():
+    resource = NoLoopsAtAllResource()
+    _run(resource, deep=("loops",))
+    assert resource.writes == [], resource.writes
 
 
 # ===========================================================================

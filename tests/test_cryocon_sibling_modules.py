@@ -72,7 +72,12 @@ class FakeVisaTimeout(IOError):
 
 
 class FakeInstrument:
-    def __init__(self, idn, temp="77.350K", write_timeouts=0):
+    def __init__(self, idn, temp="77.350K", write_timeouts=0,
+                 heater_query="HTRREAD?"):
+        # Which heater read-back this firmware answers. None = none of
+        # them, which is what the lab's Model 34 does: every LOOP <n>:...?
+        # query times out there (diagnostics survey, 2026-09-17).
+        self.heater_query = heater_query
         self.idn = idn
         self.temp = temp
         self.writes = []
@@ -96,8 +101,14 @@ class FakeInstrument:
             return "K"
         if cmd.startswith("INPUT?"):
             return self.temp
-        if "OUTPWR?" in cmd:
-            return "0.0"
+        if cmd.startswith("LOOP"):
+            # The Model 34 manual documents exactly one heater read-back,
+            # LOOP <n>:HTRREAD?. Anything else gets no reply, which is how
+            # a Cryo-con refuses. `heater_query=None` is the lab unit,
+            # where even HTRREAD? goes unanswered (2026-09-17).
+            if self.heater_query and cmd.endswith(self.heater_query):
+                return "0.0"
+            raise FakeVisaTimeout()
         return "0"
 
     def close(self):
@@ -107,11 +118,13 @@ class FakeInstrument:
 class FakeBus:
     """The lab bus of 29 Aug 2026: Cryocon on GPIB0::12, LS350 on GPIB1::12."""
 
-    def __init__(self, cryocon_write_timeouts=0, cryocon_temp="77.350K"):
+    def __init__(self, cryocon_write_timeouts=0, cryocon_temp="77.350K",
+                 cryocon_heater_query="HTRREAD?"):
         self.instruments = {
             "GPIB0::12::INSTR": FakeInstrument(
                 CRYOCON_IDN, temp=cryocon_temp,
-                write_timeouts=cryocon_write_timeouts),
+                write_timeouts=cryocon_write_timeouts,
+                heater_query=cryocon_heater_query),
             "GPIB1::12::INSTR": FakeInstrument(LAKESHORE_IDN),
         }
         self.opened = []
@@ -335,6 +348,116 @@ def test_the_two_gui_thread_modules_were_left_alone():
         assert "data_queue" not in SOURCES[key], key
         assert "threading.Thread" not in SOURCES[key], key
         assert "traceback.format_exc()" in SOURCES[key], key
+
+
+# ===========================================================================
+# The heater read-back  (K6517B, 18 Sep 2026)
+# ===========================================================================
+#
+# RT_K6517B_CC34 is the only one of the four siblings that reads a heater.
+# It sent 'LOOP <n>:OUTPWR?' on EVERY data point - a mnemonic in neither
+# the Model 34 nor the 24C manual. A Cryo-con refuses by not answering, so
+# that surfaced as a VISA timeout per point, indistinguishable from a dead
+# bus. The diagnostics survey of 2026-09-17 confirmed OUTPWR? is refused,
+# and so is the documented HTRREAD? - on this unit every LOOP query times
+# out. So the module must cope with "no heater read-back at all".
+
+def _k6517b_backend(bus):
+    """A connected Cryocon34_Backend of the K6517B module."""
+    module = MODULES["k6517b"]
+    return module.Cryocon34_Backend("GPIB0::12::INSTR", log=lambda m: None)
+
+
+def test_the_documented_heater_query_is_the_one_tried_first():
+    module = MODULES["k6517b"]
+    assert module.CRYOCON_HEATER_QUERIES[0] == "HTRREAD?"
+    assert "OUTPWR?" in module.CRYOCON_HEATER_QUERIES     # fallback only
+    assert "LOOP {loop}:OUTPWR?" not in SOURCES["k6517b"]
+
+
+def test_a_firmware_with_htrread_settles_on_it_and_stops_guessing():
+    module = MODULES["k6517b"]
+    bus = FakeBus()
+    with patch_bus(module, bus):
+        backend = _k6517b_backend(bus)
+        backend.probe_heater_command(1)
+        assert backend.heater_probed is True
+        assert backend.heater_query == "HTRREAD?", backend.heater_query
+        bus.cryocon.queries.clear()
+        assert backend.get_heater_output(1) == 0.0
+    assert bus.cryocon.queries == ["LOOP 1:HTRREAD?"], bus.cryocon.queries
+    assert bus.cryocon.writes == []
+
+
+def test_the_lab_unit_gets_nan_and_no_further_bus_traffic():
+    """THE regression. On the lab controller neither mnemonic answers, so
+    the per-point read must stop asking instead of timing out on every
+    point of the run."""
+    module = MODULES["k6517b"]
+    bus = FakeBus(cryocon_heater_query=None)
+    with patch_bus(module, bus):
+        backend = _k6517b_backend(bus)
+        backend.probe_heater_command(1)
+        assert backend.heater_query is None
+        before = len(bus.cryocon.queries)
+        for _ in range(5):
+            value = backend.get_heater_output(1)
+            assert value != value, value          # NaN
+    assert len(bus.cryocon.queries) == before, bus.cryocon.queries[before:]
+    assert bus.cryocon.writes == []
+
+
+def test_an_older_firmware_that_only_knows_outpwr_is_still_read():
+    module = MODULES["k6517b"]
+    bus = FakeBus(cryocon_heater_query="OUTPWR?")
+    with patch_bus(module, bus):
+        backend = _k6517b_backend(bus)
+        backend.probe_heater_command(1)
+        assert backend.heater_query == "OUTPWR?", backend.heater_query
+        bus.cryocon.queries.clear()
+        assert backend.get_heater_output(1) == 0.0
+    assert bus.cryocon.queries == ["LOOP 1:OUTPWR?"], bus.cryocon.queries
+
+
+def test_the_probe_uses_its_own_short_timeout_and_restores_it():
+    """The operating timeout is 10 s for a worst case on a busy bus. A
+    probe is a pure wait for a command the instrument has already declined
+    to answer, so it gets its own, much shorter one - and the session must
+    be handed back exactly as it was found."""
+    module = MODULES["k6517b"]
+    assert module.CRYOCON_PROBE_TIMEOUT_MS < module.CRYOCON_TIMEOUT_MS
+    bus = FakeBus(cryocon_heater_query=None)
+    with patch_bus(module, bus):
+        backend = _k6517b_backend(bus)
+        before = bus.cryocon.timeout
+        backend.probe_heater_command(1)
+        assert bus.cryocon.timeout == before, bus.cryocon.timeout
+
+
+def test_the_pacing_gap_and_operating_timeout_are_left_alone():
+    """The user's standing instruction is to keep the bus slow. Only the
+    probe wait was shortened."""
+    module = MODULES["k6517b"]
+    assert module.CRYOCON_MIN_GAP_S == 0.08
+    assert module.CRYOCON_TIMEOUT_MS == 10000
+
+
+def test_the_probe_runs_at_start_not_in_the_measurement_loop():
+    source = SOURCES["k6517b"]
+    assert "self.cryocon.probe_heater_command(1)" in source
+    initialize = source[source.index("def initialize_instruments"):]
+    initialize = initialize[:initialize.index("def _perform_keithley_zero")]
+    assert "probe_heater_command" in initialize
+
+
+def test_the_heater_read_is_still_never_a_write():
+    module = MODULES["k6517b"]
+    for bus in (FakeBus(), FakeBus(cryocon_heater_query=None)):
+        with patch_bus(module, bus):
+            backend = _k6517b_backend(bus)
+            backend.probe_heater_command(1)
+            backend.get_heater_output(1)
+        assert bus.cryocon.writes == [], bus.cryocon.writes
 
 
 if __name__ == "__main__":

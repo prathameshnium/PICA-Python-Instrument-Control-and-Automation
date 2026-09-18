@@ -4031,26 +4031,53 @@ class CryoconSelfTest:
                    f"{max(answered)}; nothing answers past "
                    f"{max(answered)}")
 
-        # The user block is bracketed by the slots that still carry their
-        # factory placeholder name. A loaded curve sits INSIDE that
-        # bracket under its own name, so the bracket has to be found
-        # first and the loaded slots read off inside it.
-        placeholders = {ix for ix, v in answered.items()
-                        if v[0].strip().lower().startswith("user sensor")}
-        if placeholders:
-            first, last = min(placeholders), max(placeholders)
-            self._emit(f"    user curve slots are index {first}-{last}")
-            self._emit(f"    => user curve n is table index n + {first - 1}")
-            self._emit("       (Appendix A of the manual gives two different")
-            self._emit("        answers for this and neither may be right)")
+        # Where the user block starts is read out of the PLACEHOLDER NAMES,
+        # not out of which index the first placeholder sits at.
+        #
+        # This is the 17 Sep 2026 lesson. On the lab unit the first five
+        # user slots already hold named curves (S700, CX1030 X17680,
+        # CX1030 X17681, P17 R8K10UA, DT470 STANDARD1), so the lowest
+        # slot still SAYING "User Sensor ..." was index 20 - and index 20
+        # is 'User Sensor 6'. Bracketing by index alone reported the user
+        # block as 20-26 and the offset as n+19, both wrong. The name
+        # carries the user-curve number, so 'User Sensor 6' at index 20
+        # gives the offset directly: 20 - 6 = 14.
+        offsets = {}
+        for index, entry in answered.items():
+            match = re.match(r"user\s*sensor\s*([0-9A-C])\s*$",
+                             entry[0].strip(), re.IGNORECASE)
+            if not match:
+                continue
+            token = match.group(1).upper()
+            # The Cryo-con names slots 10, 11 and 12 'A', 'B' and 'C'.
+            number = (int(token) if token.isdigit()
+                      else 10 + ord(token) - ord("A"))
+            offsets[index - number] = offsets.get(index - number, 0) + 1
+
+        if offsets:
+            offset = max(offsets, key=offsets.get)
+            first, last = offset + 1, offset + 12
+            self._emit(f"    user curve slots are index {first}-{last} "
+                       f"(12 slots)")
+            self._emit(f"    => user curve n is table index n + {offset}")
+            self._emit("       Read off the placeholder names themselves")
+            self._emit("       ('User Sensor 6' at index "
+                       f"{offset + 6} gives the offset), because")
+            self._emit("       Appendix A of the manual gives two different")
+            self._emit("       answers for this and neither matches.")
+            if len(offsets) > 1:
+                self._emit(f"       NOTE: the names imply more than one "
+                           f"offset {sorted(offsets)} - read the table above.")
             loaded = {ix: answered[ix] for ix in range(first, last + 1)
-                      if ix in answered and ix not in placeholders}
+                      if ix in answered
+                      and not answered[ix][0].strip().lower().startswith(
+                          "user sensor")}
             if loaded:
                 self._emit("    user slots with a curve loaded:")
                 for ix in sorted(loaded):
                     name, stype, mult = loaded[ix]
                     self._emit(f"      index {ix} (user curve "
-                               f"{ix - first + 1}): {name}")
+                               f"{ix - offset}): {name}")
                     self._emit(f"          type={stype} multiplier={mult}")
                 self._emit("      A NEGATIVE multiplier means a negative")
                 self._emit("      temperature coefficient (Cernox, RuOx); a")
@@ -4060,6 +4087,12 @@ class CryoconSelfTest:
             else:
                 self._emit("    every user slot still has its default name "
                            "- no calibrated curve is loaded")
+            factory = sorted(ix for ix in answered if ix < first)
+            if factory:
+                self._emit(f"    factory block is index {factory[0]}-"
+                           f"{factory[-1]}, and it is NOT the list in the")
+                self._emit("    manual's Appendix A - check the table above")
+                self._emit("    before quoting a factory curve by index.")
 
         vocabulary = sorted({v[1].strip() for v in answered.values()
                              if v[1] and not v[1].startswith("<")})
@@ -4121,10 +4154,12 @@ class CryoconSelfTest:
                 self._emit("      Worth reducing before ramp measurements.")
         if dres:
             self._emit(f"    SYSTEM:DRES = {dres} display resolution.")
-            self._emit("      This sets how many dashes a sensor fault comes")
-            self._emit("      back as, which is why the fault strings are")
-            self._emit("      matched by shape ('-{2,}') and not by a fixed")
-            self._emit("      seven characters.")
+            self._emit("      It shortens the front-panel display. It does")
+            self._emit("      NOT shorten what comes over the bus: on the lab")
+            self._emit("      unit, DRES=2 still gave six-decimal readings and")
+            self._emit("      a seven-character '-------' fault string. The")
+            self._emit("      fault strings are matched by shape anyway, so")
+            self._emit("      a unit that does shorten them still parses.")
 
 
 class CryoconSelfTestWindow:

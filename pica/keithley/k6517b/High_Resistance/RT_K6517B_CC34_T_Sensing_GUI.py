@@ -103,6 +103,37 @@ CRYOCON_MIN_GAP_S = 0.08            # minimum gap between consecutive operations
 CRYOCON_CONNECT_ATTEMPTS = 3        # tries for the first '*IDN?'
 CRYOCON_RETRY_WAIT_S = 1.5          # pause between those tries
 
+# How long to wait for a reply to a command we are not sure exists.
+#
+# Deliberately NOT the operating timeout above. The 10 s is there for a
+# worst case on a busy bus, and the 80 ms pacing gap is there because
+# back-to-back traffic once made this firmware refuse a write; neither
+# has anything to do with a command the instrument has already declined
+# to answer. A Cryo-con refuses by staying silent, so a probe of a
+# mnemonic this unit may not have is a pure wait, and waiting ten
+# seconds for it does not make the instrument any happier.
+#
+# 3 s is not a guess: it is what the diagnostics survey
+# (pica/cryocon/Diagnostics_CC34_GUI.py) used against this exact unit on
+# 2026-09-17, twice, and it separated the answered commands (82-108 ms)
+# from the refused ones cleanly. That is roughly 30x the slowest real
+# reply. The operating timeout and the pacing gap are untouched.
+CRYOCON_PROBE_TIMEOUT_MS = 3000
+
+# The heater read-back, in the order it is tried once at Start.
+#
+# The Model 34 manual's Remote Command Summary documents exactly one:
+# LOOP <n>:HTRREAD? ("output current of the selected control loop", per
+# cent of full scale). 'OUTPWR' is in neither the Model 34 nor the 24C
+# manual and is kept only as a second guess for older firmware.
+#
+# On the lab unit (2026-09-17) NEITHER answers: every LOOP <n>:...? query
+# times out there, along with CONTROL?, while INPUT? and the SYSTEM group
+# answer normally. So on that controller this settles to "no heater
+# read-back", the column logs NaN, and the bus is left alone - instead of
+# a timeout on EVERY data point feeding the reconnect handling.
+CRYOCON_HEATER_QUERIES = ('HTRREAD?', 'OUTPWR?')
+
 # Timeout for the identification pass, matched to the standalone GPIB
 # scanner so this module does not call an instrument silent that the scanner
 # reads without trouble.
@@ -353,6 +384,10 @@ class Cryocon34_Backend:
         # seconds after a bus scan had identified the instrument.
         self.instrument, self.idn = open_cryocon_session(visa_address, log=log)
         print(f"Cryocon Connected: {self.idn}")
+        # Which heater read-back this unit answers; settled at Start by
+        # probe_heater_command(). None once probed = no read-back at all.
+        self.heater_query = None
+        self.heater_probed = False
 
     def verify_units(self, sensor):
         """Confirm the channel reports Kelvin.
@@ -398,15 +433,80 @@ class Cryocon34_Backend:
                           f"temperature logged as NaN, run continues. {e}")
                 return float('nan')
 
-    def get_heater_output(self, loop):
-        """Control loop output power in percent (read-only)."""
-        raw = self.instrument.query(f'LOOP {loop}:OUTPWR?').strip()
+    def probe_heater_command(self, loop=1):
+        """Settle, once and at Start, how this unit reports heater output.
+
+        See CRYOCON_HEATER_QUERIES and CRYOCON_PROBE_TIMEOUT_MS. The
+        guessing is confined to Start, where somebody is watching, rather
+        than happening on every data point: an unrecognised command on a
+        Cryo-con comes back as a VISA timeout, which at the call site is
+        indistinguishable from a dead bus.
+
+        Sets self.heater_query to the mnemonic that answered, or to None
+        if none did, and returns it. With None the heater column logs NaN
+        and nothing further is put on the bus.
+        """
+        self.heater_probed = True
+        answered_but_not_a_number = None
+        saved_timeout = getattr(self.instrument, 'timeout', None)
         try:
-            return parse_cryocon_number(raw, f"loop {loop} output power")
+            if saved_timeout is not None:
+                self.instrument.timeout = CRYOCON_PROBE_TIMEOUT_MS
+            for query in CRYOCON_HEATER_QUERIES:
+                command = f'LOOP {loop}:{query}'
+                try:
+                    raw = self.instrument.query(command).strip()
+                except Exception as e:
+                    print(f"  Heater read-back '{command}' did not answer "
+                          f"({type(e).__name__}); trying the next form.")
+                    continue
+                try:
+                    value = parse_cryocon_number(raw.rstrip('%'), command)
+                except CryoconStatusError as e:
+                    if raw.upper().startswith('NACK'):
+                        # Not taken at all - a rejection, not a reading.
+                        print(f"  Heater read-back '{command}' was not "
+                              "acknowledged; trying the next form.")
+                        continue
+                    # The instrument replied, so it knows the command; the
+                    # loop just has nothing to report right now.
+                    print(f"  Heater read-back '{command}' answered "
+                          f"'{raw}' ({e}).")
+                    if answered_but_not_a_number is None:
+                        answered_but_not_a_number = query
+                    continue
+                self.heater_query = query
+                print(f"  Heater read-back: '{command}' -> {value:.1f} %.")
+                return query
+        finally:
+            if saved_timeout is not None:
+                self.instrument.timeout = saved_timeout
+        self.heater_query = answered_but_not_a_number
+        if self.heater_query is None:
+            print("  No heater read-back on this controller (tried "
+                  f"{', '.join(CRYOCON_HEATER_QUERIES)}). The heater column "
+                  "will be NaN; temperature and resistance are unaffected.")
+        return self.heater_query
+
+    def get_heater_output(self, loop=1):
+        """Control loop output power in percent (read-only).
+
+        Uses the mnemonic probe_heater_command() settled at Start. If it
+        found none, nothing is put on the bus at all - this is called for
+        every data point.
+        """
+        if not self.heater_probed:
+            self.probe_heater_command(loop)
+        if self.heater_query is None:
+            return float('nan')
+        command = f'LOOP {loop}:{self.heater_query}'
+        raw = self.instrument.query(command).strip()
+        try:
+            return parse_cryocon_number(raw.rstrip('%'), command)
         except CryoconStatusError:
             # The heater column is context, not the measurement. A loop that
             # is off or not configured must not stop the run.
-            return 0.0
+            return float('nan')
 
     def close(self):
         if self.instrument:
@@ -436,6 +536,8 @@ class Combined_Backend:
         print("\n--- [Backend] Initializing Instruments ---")
         self.cryocon = Cryocon34_Backend(self.params['cryocon_visa'])
         self.cryocon.verify_units(self.CC_CHANNEL)
+        # Settle the heater read-back here, while Start is still attended.
+        self.cryocon.probe_heater_command(1)
         print("Cryocon 34 connection is passive. No settings will be changed.")
 
         self.keithley = Keithley6517B(self.params['keithley_visa'])
