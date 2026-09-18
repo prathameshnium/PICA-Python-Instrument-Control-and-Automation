@@ -388,6 +388,47 @@ def test_the_error_queue_section_reports_what_came_back():
     assert "leaves NO trace" not in text
 
 
+def test_no_disproved_claim_survives_anywhere_in_the_log_or_the_source():
+    """The 17 Sep 2026 corrections were made in the summary sections but
+    the SAME claims had been written in three other places: the legend
+    emitted at the top of every log, the SYSTEM:DRES? probe annotation,
+    and the module docstring. The old guard above tested for one exact
+    phrase, so the other wordings went straight through it.
+
+    This one tests the CLAIM, not a phrase, and it tests the source file
+    as well as the emitted log - a wrong sentence in a comment is still a
+    wrong sentence the next reader believes.
+
+    Disproved by the two lab logs:
+      - the error queue answered '8','4','1','4',... - not nothing
+      - DRES=2 still gave six-decimal replies and a 7-char fault run,
+        so DRES sets neither the bus resolution nor the run length
+    """
+    lines, _rows = _run(FakeCryoconResource())
+    joiner = chr(10)
+    haystacks = {"the emitted log": joiner.join(lines),
+                 "the source": SOURCE}
+
+    claims = [
+        # (regex, what the lab logs actually showed)
+        (r"nothing lands in the error queue",
+         "the queue came back with bare numeric codes"),
+        (r"no entry in the error queue",
+         "the queue came back with bare numeric codes"),
+        (r"LENGTH of the '-+' fault run",
+         "DRES=2 still produced a seven-character run"),
+        (r"SYSTEM:DRES sets how long the runs are",
+         "DRES=2 still produced a seven-character run"),
+        (r"it follows SYSTEM:DRES, not the sensor",
+         "the bus reply is full precision regardless of DRES"),
+    ]
+    for where, text in haystacks.items():
+        for pattern, disproved_by in claims:
+            assert not re.search(pattern, text), (
+                f"{where} still carries a claim the lab runs disproved: "
+                f"{pattern!r} - {disproved_by}")
+
+
 # ===========================================================================
 # 3. Sensor types and calibration curves
 # ===========================================================================

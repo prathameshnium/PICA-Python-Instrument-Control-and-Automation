@@ -3568,7 +3568,8 @@ CC34_SELF_TEST_PROBES = [
     ("System", "SYSTEM:DISTC?", "DOC",
      "display filter time constant - it filters EVERY reported reading"),
     ("System", "SYSTEM:DRES?", "DOC",
-     "display resolution - it sets the LENGTH of the '-------' fault run"),
+     "display resolution - front panel only; the bus still answered to "
+     "six decimals with DRES=2 on 17 Sep 2026"),
     ("System", "SYSTEM:LINEFREQ?", "DOC", "AC line frequency setting"),
     ("System", "SYSTEM:CJTEMP?", "DOC", "cold-junction compensation temp"),
     ("System", "SYSTEM:REMLED?", "DOC", "remote LED state"),
