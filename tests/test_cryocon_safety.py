@@ -949,9 +949,29 @@ def _looks_like_a_cryocon_command(text):
     return root in CRYOCON_SUBSYSTEM_ROOTS and bool(_COMMAND_SHAPE.match(text))
 
 
+# One printf conversion spec: %s, %d, %.4f, %(name)s, %-8r ... and '%%'.
+_PRINTF_SPEC = re.compile(
+    r"%(?:\([^)]*\))?[#0 +-]*(?:\*|\d+)?(?:\.(?:\*|\d+))?[hlL]?"
+    r"[diouxXeEfFgGcrsa%]")
+
+
 def _string_value(node):
-    """The literal text of a str constant or an f-string, placeholders
-    collapsed to '{}' so 'INPUT? {channel}' still reduces to 'INPUT?'."""
+    """The literal text of a command string, placeholders collapsed to '{}'
+    so 'INPUT? {channel}' still reduces to 'INPUT?'.
+
+    Four shapes build a command in this repo, and every one must be read -
+    a shape this returns None for is a shape the audit cannot see:
+
+      * a plain literal              'INPUT? A'
+      * an f-string                  f'INPUT? {self.channel}'
+      * printf formatting            'INPUT? %s' % self.channel
+      * concatenation / str.format   'INPUT? ' + ch, 'INPUT? {}'.format(ch)
+
+    The printf shape was missing until 25 Sep 2026, and it is the ONLY way
+    the two AC sensing modules (K6221+K197A, K6221+SR830) build their
+    Cryo-con queries - so the cross-module audit read zero commands from
+    them. test_the_audit_reads_printf_formatted_commands pins the fix.
+    """
     import ast
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
@@ -959,6 +979,24 @@ def _string_value(node):
         return "".join(v.value if isinstance(v, ast.Constant) and
                        isinstance(v.value, str) else "{}"
                        for v in node.values)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+        template = _string_value(node.left)
+        if template is None:
+            return None         # a number modulo something, not a string
+        return _PRINTF_SPEC.sub(
+            lambda m: "%" if m.group() == "%%" else "{}", template)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _string_value(node.left), _string_value(node.right)
+        if left is None and right is None:
+            return None         # arithmetic, or two variables
+        return (left if left is not None else "{}") + \
+            (right if right is not None else "{}")
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "format"):
+        template = _string_value(node.func.value)
+        if template is None:
+            return None
+        return re.sub(r"\{[^{}]*\}", "{}", template)
     return None
 
 
@@ -1121,6 +1159,69 @@ def test_the_cross_module_audit_would_catch_the_bug_that_started_all_this():
     for mnemonic in _mnemonics("LOOP 1:TURBO 9"):
         assert _is_cryocon_mnemonic(mnemonic)
         assert mnemonic not in ALLOWED_CRYOCON_COMMANDS
+
+
+def test_the_audit_reads_printf_formatted_commands():
+    """The shape the two AC modules use. Before 25 Sep 2026 the audit read
+    zero Cryo-con commands from either of them."""
+    source = (
+        "def f(self, loop):\n"
+        "    self.instrument.query('INPUT? %s' % self.channel)\n"
+        "    self.instrument.query('INPUT %s:UNITS?' % (self.channel,))\n"
+        "    self.instrument.write('LOOP %d:SETPT %.3f' % (loop, 300.0))\n"
+        "    self.instrument.write('HEATER:PMANUAL %(p)-5.1f' % {'p': 5})\n")
+    assert _cryocon_commands_in(source) == [
+        "INPUT? {}", "INPUT {}:UNITS?", "LOOP {}:SETPT {}", "HEATER:PMANUAL {}"]
+    reduced = [m for c in _cryocon_commands_in(source) for m in _mnemonics(c)]
+    assert reduced == ["INPUT?", "INPUT:UNITS?", "LOOP:SETPT", "HEATER:PMANUAL"]
+    # '%%' is a literal percent sign, not a placeholder.
+    import ast
+    node = ast.parse("'%d%% of %s' % (5, x)", mode="eval").body
+    assert _string_value(node) == "{}% of {}"
+
+
+def test_the_audit_reads_concatenated_and_str_format_commands():
+    source = (
+        "def f(self, ch):\n"
+        "    self.instrument.query('INPUT? ' + ch)\n"
+        "    self.instrument.query('INPUT {}:UNITS?'.format(ch))\n"
+        "    self.instrument.query('INPUT {c}:NAME?'.format(c=ch))\n"
+        "    x = 1 + 2\n"
+        "    y = n % 3\n")
+    assert _cryocon_commands_in(source) == [
+        "INPUT? {}", "INPUT {}:UNITS?", "INPUT {}:NAME?"]
+
+
+def test_the_audit_would_catch_an_invented_mnemonic_behind_printf():
+    """The failure mode the fix exists for: a wrong mnemonic hidden in a
+    %-formatted string must reach the whitelist check, not slip past it."""
+    source = "q = self.instrument.query('INPUT %s:TURBO?' % self.channel)\n"
+    mnemonics = [m for c in _cryocon_commands_in(source) for m in _mnemonics(c)]
+    assert mnemonics == ["INPUT:TURBO?"]
+    assert _is_cryocon_mnemonic("INPUT:TURBO?")
+    assert "INPUT:TURBO?" not in ALLOWED_CRYOCON_COMMANDS
+
+
+def test_every_cryocon_module_contributes_commands_to_the_audit():
+    """A module the audit extracts nothing from is a module it cannot
+    guard. Every one of the fifteen at least reads a temperature."""
+    silent = [path for path, source in
+              sorted(_every_module_that_talks_to_a_cryocon().items())
+              if not any(_is_cryocon_mnemonic(m)
+                         for c in _cryocon_commands_in(source)
+                         for m in _mnemonics(c))]
+    assert not silent, silent
+
+
+def test_the_two_ac_modules_are_audited_on_their_real_queries():
+    modules = {path.replace("\\", "/"): source for path, source in
+               _every_module_that_talks_to_a_cryocon().items()}
+    for path in ("pica/keithley/k6221_k197a/"
+                 "RT_AC_K6221_K197A_CC34_T_Sensing_GUI.py",
+                 "pica/lockin/sr830/RT_AC_K6221_SR830_CC34_T_Sensing_GUI.py"):
+        mnemonics = {m for c in _cryocon_commands_in(modules[path])
+                     for m in _mnemonics(c)}
+        assert {"INPUT?", "INPUT:UNITS?"} <= mnemonics, (path, mnemonics)
 
 
 def test_the_passive_module_uses_only_query_mnemonics():

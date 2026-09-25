@@ -60,7 +60,18 @@
                Model 6220/6221 Reference Manual, Section 7 "Wave Functions"
                Cryo-con Model 34 User's Guide, "Remote Operation"
  AUTHOR:       Prathamesh Deshmukh
- VERSION:      V: 1.0
+ VERSION:      V: 1.1
+               1.1, 25 Sep 2026: hardened for unattended overnight runs, on
+               the Temprature_Scan_Passive v1.3 pattern. A comm error no
+               longer ends the run: it is logged, every instrument is closed,
+               re-opened and set up again from the run's own parameters
+               (5 -> 10 -> 30 -> 60 s between tries, for ever, Stop stays
+               live), the drive goes back on, Auto Phase / Auto Gain run again
+               if they were asked for, and logging resumes into the same file.
+               Rows are fsync'd, and buffered in order if the disk will not
+               take them. No dialog opens during or after a run -- log, status
+               line and a beep. Windows is kept awake while the run lasts,
+               and Cryo-con queries are held 0.08 s apart.
 ===============================================================================
 """
 
@@ -73,6 +84,12 @@ import re
 import time
 import threading
 import queue
+# stdlib: Windows keep-awake (SetThreadExecutionState); a no-op elsewhere
+import ctypes
+# stdlib: a short traceback for every comm error in the run log
+import traceback
+# stdlib: rows held back, in order, while the disk will not take them
+from collections import deque
 from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -84,6 +101,13 @@ try:
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
+
+# --- winsound for unattended-run alerts (stdlib, Windows only; optional) ---
+try:
+    import winsound
+    HAS_WINSOUND = True
+except ImportError:
+    HAS_WINSOUND = False
 
 # --- Packages for Back end ---
 try:
@@ -157,7 +181,7 @@ def diagnose_connection_failure(what, address, error):
         "  - no other program is currently holding the GPIB board.",
     ]
 
-PROGRAM_VERSION = "1.0"
+PROGRAM_VERSION = "1.1"  # 25 Sep 2026: unattended-run hardening
 MODULE_NAME = "RT_AC_K6221_SR830_CC34_T_Sensing_GUI.py"
 PROGRAM_TITLE = "AC R-T (T Sensing, CC34) - Keithley 6221 + SR830 + Cryocon 34"
 FILE_SUFFIX = "AC_RT_Sensing_CC34"
@@ -455,6 +479,10 @@ class SR830Lockin:
     def read_sensitivity(self):
         return int(float(self.instrument.query('SENS?').strip()))
 
+    def read_phase(self):
+        """PHAS?: the reference phase in use, in degrees."""
+        return float(self.instrument.query('PHAS?').strip())
+
     def auto_gain(self):
         """AGAN. Does nothing above a 1 s time constant, so the caller checks."""
         self.instrument.write('AGAN')
@@ -747,6 +775,7 @@ CRYOCON_ADDRESS_HINT = "::23::INSTR"
 CRYOCON_IDN_MARKERS = ("CRYOCON", "CRYO-CON", "CRYO CON")
 
 CRYOCON_TIMEOUT_MS = 10000          # per-operation VISA timeout
+CRYOCON_MIN_GAP_S = 0.08            # minimum gap between consecutive operations
 CRYOCON_OPEN_SETTLE_S = 0.30        # pause after open, before the first command
 CRYOCON_CONNECT_ATTEMPTS = 3        # tries for the first '*IDN?'
 CRYOCON_RETRY_WAIT_S = 1.5          # pause between those tries
@@ -832,11 +861,47 @@ def is_cryocon_idn(idn):
     return any(marker in str(idn).upper() for marker in CRYOCON_IDN_MARKERS)
 
 
+class _PacedCryoconSession:
+    """Holds consecutive Cryo-con queries CRYOCON_MIN_GAP_S apart.
+
+    Rev 3.03A firmware is slow, and back-to-back traffic is what provoked the
+    viWrite timeout of 28 Aug 2026. Everything but query() -- timeout,
+    close() -- is handed straight to the VISA session underneath. There is
+    deliberately no write() here: this module never writes to the Cryo-con.
+    """
+
+    def __init__(self, session):
+        # Through __dict__, so that __setattr__ below is not triggered.
+        self.__dict__['_session'] = session
+        self.__dict__['_last_io'] = 0.0
+
+    def query(self, command):
+        # CRYOCON_MIN_GAP_S is read here, at call time, not captured.
+        gap = CRYOCON_MIN_GAP_S - (time.time() - self._last_io)
+        if gap > 0:
+            time.sleep(gap)
+        try:
+            return self._session.query(command)
+        finally:
+            self.__dict__['_last_io'] = time.time()
+
+    def __getattr__(self, name):
+        try:
+            session = self.__dict__['_session']
+        except KeyError:
+            raise AttributeError(name)
+        return getattr(session, name)
+
+    def __setattr__(self, name, value):
+        setattr(self.__dict__['_session'], name, value)
+
+
 def open_cryocon_session(visa_address, log=None):
     """Open a Cryo-con session, retrying the first '*IDN?'.
 
-    Returns (instrument, idn). Raises ConnectionError if nothing answers, or
-    if what answers is not a Cryo-con.
+    Returns (instrument, idn), the instrument wrapped so that its queries are
+    paced (_PacedCryoconSession). Raises ConnectionError if nothing answers,
+    or if what answers is not a Cryo-con.
     """
     if pyvisa is None:
         raise ConnectionError(
@@ -848,7 +913,7 @@ def open_cryocon_session(visa_address, log=None):
     for attempt in range(1, CRYOCON_CONNECT_ATTEMPTS + 1):
         inst = None
         try:
-            inst = rm.open_resource(visa_address)
+            inst = _PacedCryoconSession(rm.open_resource(visa_address))
             inst.timeout = CRYOCON_TIMEOUT_MS
             # The Cryocon GPIB port frames lines with EOI and no EOS
             # character, so the PyVISA termination defaults are left alone.
@@ -1090,6 +1155,14 @@ class ACResistanceCC34SensingGUI:
     LOGO_SIZE = 110
     LEFT_PANEL_WIDTH = 560
 
+    # SetThreadExecutionState flags (Windows keep-awake during a run)
+    ES_CONTINUOUS = 0x80000000
+    ES_SYSTEM_REQUIRED = 0x00000001
+
+    # Waits before each reconnect attempt after a comm error, escalating and
+    # then holding at the last one for as long as the instruments stay away.
+    RECONNECT_BACKOFF_S = (5, 10, 30, 60)
+
     try:
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
         LOGO_FILE_PATH = os.path.join(
@@ -1160,6 +1233,11 @@ class ACResistanceCC34SensingGUI:
         self.enum_widgets = {}
         self.entries = {}
         self.params = None
+
+        # Rows that failed to reach disk (network share / disk hiccup);
+        # retried before every later write so a point is never dropped.
+        self._pending_rows = deque(maxlen=20000)
+        self._write_error_logged = False
 
         self.setup_styles()
         self.create_widgets()
@@ -1653,6 +1731,43 @@ class ACResistanceCC34SensingGUI:
         self.console_widget.see('end')
         self.console_widget.config(state='disabled')
 
+    def _set_keep_awake(self, enable):
+        """Stop Windows from sleeping mid-run (the display may still sleep).
+        Best-effort no-op on other platforms.
+
+        The execution state belongs to the calling thread, so the worker
+        sets it as a run starts and clears it in its own finally.
+        """
+        try:
+            flags = self.ES_CONTINUOUS | (
+                self.ES_SYSTEM_REQUIRED if enable else 0)
+            ctypes.windll.kernel32.SetThreadExecutionState(flags)
+        except Exception:
+            pass
+
+    def _beep(self, times=1):
+        """Audible alert, Tk thread only, in place of a dialog.
+
+        A run ends overnight with nobody at the PC, and a messagebox nobody
+        is there to click must never sit over it. Beeps in a daemon thread
+        so the GUI never blocks; falls back to the Tk bell. winsound only
+        imports on Windows, so HAS_WINSOUND is the platform check too.
+        """
+        if HAS_WINSOUND:
+            def _do_beep():
+                try:
+                    for _ in range(max(1, times)):
+                        winsound.Beep(1000, 500)
+                        time.sleep(0.2)
+                except Exception:
+                    pass
+            threading.Thread(target=_do_beep, daemon=True).start()
+        else:
+            try:
+                self.root.bell()
+            except Exception:
+                pass
+
     # --------------------------------------------------------- worker plumbing
     def _process_action_queue(self):
         try:
@@ -1978,6 +2093,8 @@ class ACResistanceCC34SensingGUI:
                 self.params['sample'], self.params['operator'],
                 self.source, self.detector, self.thermometer,
                 detector_settings, self.params))
+            handle.flush()
+            os.fsync(handle.fileno())
         return filename
 
     def _detector_settings(self):
@@ -2021,25 +2138,86 @@ class ACResistanceCC34SensingGUI:
                 moved = True
         return moved
 
-    def _prepare_instruments(self):
-        """Configure everything, open the file, and return its name."""
-        params = self.params
+    def _keep_auto_phase(self):
+        """Adopt the phase Auto Phase found as the run's phase, once.
+
+        A reconnect restores the lock-in from the run's stored parameters.
+        Without this it would put back the phase typed in the GUI, and Auto
+        Phase would then re-zero at whatever the temperature is by then: X
+        and Y would step at every recovery although nothing about the
+        sample changed. Reading the phase back once, after the Start-time
+        Auto Phase has settled, keeps a recovery invisible in the data.
+        Auto Gain still reruns after a reconnect; it changes the range,
+        not the value.
+        """
+        detector = self.params['detector']
+        if not detector['auto_phase']:
+            return
         with self.io_lock:
-            codes = params['detector']['codes']
-            self.detector.configure_for_external_reference(
-                params['detector']['harmonic'], params['detector']['phase'],
-                codes['isrc'], codes['icpl'], codes['ignd'], codes['ilin'],
-                codes['sync'], codes['sens'], codes['oflt'], codes['ofsl'],
-                codes['rmod'])
-            self.source.prepare(
-                params['compliance'], USE_PHASE_MARKER,
-                params['pmark_line'], params['pmark_phase'])
-            code, text = self.source.read_error()
-            settings = self._detector_settings()
+            phase = self.detector.read_phase()
+        detector['phase'] = phase
+        detector['auto_phase'] = False
+        self.data_queue.put((
+            'log', "Auto Phase settled at %.2f deg. A reconnect restores "
+                   "this phase rather than zeroing it again." % phase))
+
+    def _configure_instruments(self):
+        """Put the SR830 and the 6221 into the run's state.
+
+        The caller holds io_lock. Used at Start and again after every
+        reconnect, from the run's stored parameters, so a power-cycled
+        instrument comes back set up exactly as it was. Returns the lock-in
+        settings the file header records.
+        """
+        params = self.params
+        codes = params['detector']['codes']
+        self.detector.configure_for_external_reference(
+            params['detector']['harmonic'], params['detector']['phase'],
+            codes['isrc'], codes['icpl'], codes['ignd'], codes['ilin'],
+            codes['sync'], codes['sens'], codes['oflt'], codes['ofsl'],
+            codes['rmod'])
+        self.source.prepare(
+            params['compliance'], USE_PHASE_MARKER,
+            params['pmark_line'], params['pmark_phase'])
+        code, text = self.source.read_error()
+        settings = self._detector_settings()
         if code:
             self.data_queue.put(
                 ('log', "6221 reported error %d: %s" % (code, text)))
+        return settings
+
+    def _prepare_instruments(self):
+        """Configure everything, open the file, and return its name."""
+        with self.io_lock:
+            settings = self._configure_instruments()
         return self._open_log_file(settings)
+
+    def _reconnect_instruments(self):
+        """Close and re-open all three instruments, and set them up again.
+
+        Worker thread only. A power-cycled 6221 or SR830 has lost its state,
+        so each one is opened fresh -- *IDN? checked again, OUTX 1 sent
+        again, the Cryocon's channel re-checked for Kelvin -- and configured
+        from the run's stored parameters exactly as at Start. No new file is
+        opened: the run keeps appending to the one it has. The drive is not
+        switched on here; the worker puts it back through _apply_drive with
+        the run's frequency and current, settles, and runs the auto
+        functions again if they were asked for, exactly as at Start.
+        """
+        source_address = self.source.address
+        detector_address = self.detector.address
+        thermometer_address = self.thermometer.address
+        channel = self.thermometer.channel
+        with self.io_lock:
+            for instrument in (self.source, self.detector, self.thermometer):
+                try:
+                    instrument.close()   # the 6221 drops its output first
+                except Exception:
+                    pass
+            self.source = K6221WaveSource(source_address)
+            self.detector = SR830Lockin(detector_address)
+            self.thermometer = Cryocon34Monitor(thermometer_address, channel)
+            self._configure_instruments()
 
     def _apply_drive(self, frequency, current_peak):
         """Set the 6221 going, and refuse to carry on if it complained."""
@@ -2069,33 +2247,74 @@ class ACResistanceCC34SensingGUI:
         self.data_queue.put(('point', point))
 
     def _run_worker(self):
-        """Hold one drive setpoint and log R against whatever T is doing."""
+        """Hold one drive setpoint and log R against whatever T is doing.
+
+        A comm error never ends the run: it is logged, the instruments are
+        re-opened and set up again (_reconnect_with_backoff, which waits for
+        ever), the drive goes back on, and logging resumes into the same
+        file on the same elapsed-time axis. Only the stop window, Stop, or
+        a genuine bug ends it.
+        """
         params = self.params
         temperature_params = params['temperature']
         frequency = params['frequency']
         current_peak = params['current_peak']
         current_rms = rms_from_peak(current_peak)
-        first_point = True
+        settling = ("Drive on at %.4f Hz, %.4E A rms. Settling %.2f s."
+                    % (frequency, current_rms, params['settle']))
         reason = "Stopped."
+        self._set_keep_awake(True)
         try:
+            # A failure here ends the attempt: the operator has just pressed
+            # Start and is there to read it, and no file exists yet to keep
+            # writing to.
             self.data_queue.put(
                 ('log', "Output file: %s" % self._prepare_instruments()))
 
-            self._apply_drive(frequency, current_peak)
-            self.data_queue.put((
-                'status', "Drive on at %.4f Hz, %.4E A rms. Settling %.2f s."
-                % (frequency, current_rms, params['settle'])))
-            if not self._sleep_interruptibly(params['settle']):
-                return
-            if self._auto_functions(first_point):
-                if not self._sleep_interruptibly(params['settle']):
-                    return
-            first_point = False
-
+            drive_on = False
+            comm_failures = 0
             while not self.stop_requested:
-                with self.io_lock:
-                    temperature = self.thermometer.read_temperature()
-                point = self._measure_point(frequency, current_rms)
+                try:
+                    if not drive_on:
+                        # At Start, and again after every reconnect, which
+                        # leaves each instrument freshly set up and the 6221
+                        # off: drive on, settle, auto functions, settle. The
+                        # re-initialisation put the lock-in back on the run's
+                        # phase and the entered sensitivity, so Auto Gain
+                        # runs again if it was asked for. Auto Phase runs
+                        # once only: _keep_auto_phase() makes the phase it
+                        # found the one every reconnect restores.
+                        self._apply_drive(frequency, current_peak)
+                        drive_on = True
+                        self.data_queue.put(('status', settling))
+                        if not self._sleep_interruptibly(params['settle']):
+                            break
+                        if self._auto_functions(True):
+                            if not self._sleep_interruptibly(
+                                    params['settle']):
+                                break
+                            self._keep_auto_phase()
+                    with self.io_lock:
+                        temperature = self.thermometer.read_temperature()
+                    point = self._measure_point(frequency, current_rms)
+                except Exception:
+                    # Comm glitch (GPIB/VISA/instrument power blip): never
+                    # give up -- log, back off, reconnect, resume. A sensor
+                    # fault is not one of these: it arrives as a NaN reading.
+                    comm_failures += 1
+                    self.data_queue.put((
+                        'log', "COMM ERROR (failure #%d): %s"
+                        % (comm_failures, traceback.format_exc(limit=3))))
+                    self.data_queue.put((
+                        'status',
+                        "Communication error (failure #%d). Reconnecting to "
+                        "the instruments; the run continues. Stop stays "
+                        "live." % comm_failures))
+                    if not self._reconnect_with_backoff(comm_failures):
+                        break           # Stop was pressed during the wait
+                    drive_on = False
+                    continue
+                comm_failures = 0
                 self._emit_point(point, frequency, current_peak, current_rms,
                                  temperature)
                 self.data_queue.put((
@@ -2123,9 +2342,39 @@ class ACResistanceCC34SensingGUI:
 
             self.data_queue.put(('done', reason))
         except Exception as exc:
+            # Last-resort net for a genuine (non-comm) bug. The traceback is
+            # formatted HERE, in the thread where the exception is live.
+            self.data_queue.put(
+                ('log', "WORKER TRACEBACK:\n%s" % traceback.format_exc()))
             self.data_queue.put(('failed', exc))
         finally:
             self._safe_shutdown()
+            self._set_keep_awake(False)
+
+    def _reconnect_with_backoff(self, attempt):
+        """Worker thread: wait, then close and re-open every instrument,
+        escalating the wait between tries (5 -> 10 -> 30 -> 60 s, then 60 s
+        for ever). Stop is checked every 0.1 s throughout the wait. Loops
+        until reconnected; returns False only if Stop was requested."""
+        backoffs = self.RECONNECT_BACKOFF_S
+        while not self.stop_requested:
+            delay_s = backoffs[min(attempt - 1, len(backoffs) - 1)]
+            self.data_queue.put(
+                ('log', "Reconnect attempt in %d s (Stop stays live)..."
+                 % delay_s))
+            if not self._sleep_interruptibly(delay_s):
+                return False
+            try:
+                self._reconnect_instruments()
+            except Exception as exc:
+                attempt += 1
+                self.data_queue.put(('log', "Reconnect failed: %s" % exc))
+                continue
+            self.data_queue.put(
+                ('log', "Reconnected. Drive going back on; logging resumes "
+                 "into the same file."))
+            return True
+        return False
 
     def _safe_shutdown(self):
         """The current comes off here, in the thread that put it on.
@@ -2159,42 +2408,111 @@ class ACResistanceCC34SensingGUI:
         return not self.stop_requested
 
     def _process_data_queue(self):
+        """Drain the worker's queue on the Tk thread.
+
+        One bad item must never stop the pump: a GUI-side failure is logged
+        and the next item is still processed, and the re-scheduling lives in
+        a finally. A frozen-looking but live window silently dropping points
+        is the worst thing an overnight run can do.
+        """
+        terminal = None
         try:
             while True:
                 kind, payload = self.data_queue.get_nowait()
-                if kind == 'log':
-                    self.log(payload)
-                elif kind == 'status':
-                    self.status_var.set(payload)
-                elif kind == 'point':
-                    self._record_point(payload)
-                elif kind == 'failed':
-                    self.log("RUNTIME ERROR: %s" % payload)
-                    self.status_var.set("Stopped on an error. Current is off.")
-                    self._finish_run()
-                    return
-                elif kind == 'done':
-                    message = payload or "Finished."
-                    self.status_var.set("%s The 6221 output is off." % message)
-                    self.log("%s The 6221 output is off." % message)
-                    self._finish_run()
-                    return
+                if kind in ('failed', 'done'):
+                    terminal = (kind, payload)
+                    break
+                try:
+                    if kind == 'log':
+                        self.log(payload)
+                    elif kind == 'status':
+                        self.status_var.set(payload)
+                    elif kind == 'point':
+                        self._record_point(payload)
+                except Exception:
+                    try:
+                        self.log("GUI ERROR (non-fatal): %s"
+                                 % traceback.format_exc())
+                    except Exception:
+                        pass
         except queue.Empty:
             pass
-        if self.is_running:
-            self.root.after(200, self._process_data_queue)
+        finally:
+            try:
+                if terminal is not None:
+                    self._end_of_run(*terminal)
+                elif self.is_running:
+                    self.root.after(200, self._process_data_queue)
+            except tk.TclError:
+                pass   # the window is already gone
+
+    def _end_of_run(self, kind, payload):
+        """The run is over. Log line, status line and a beep -- never a
+        dialog: the run may well have ended at 3 a.m. with nobody there."""
+        try:
+            if kind == 'failed':
+                self.log("RUNTIME ERROR: %s" % payload)
+                self.status_var.set("Stopped on an error. Current is off.")
+            else:
+                message = payload or "Finished."
+                self.status_var.set("%s The 6221 output is off." % message)
+                self.log("%s The 6221 output is off." % message)
+            # One last try for rows the disk refused during the run.
+            self._flush_pending_rows()
+            if self._pending_rows:
+                self.log("WARNING: %d row(s) still could not be written. "
+                         "They are held and retried on the next write."
+                         % len(self._pending_rows))
+        finally:
+            self._finish_run()
+            self._beep(times=3 if kind == 'failed' else 1)
+
+    # Safe per-row file writing: open / append / close, plus fsync, so a
+    # power cut cannot lose a row the OS was still holding.
+    def _durable_write(self, path, text):
+        """Append text and force it to the physical disk immediately.
+
+        No encoding is named: the header is written with the platform
+        default, and every row goes the same way, byte for byte as before.
+        """
+        with open(path, 'a') as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+
+    def _write_or_buffer(self, path, text):
+        """Write a row durably; on a disk or share hiccup, hold it for the
+        next write so a measured point is never silently dropped. While
+        rows are pending, new rows join the queue behind them, so the file
+        keeps its order."""
+        if self._pending_rows:
+            self._pending_rows.append((path, text))
+            return
+        try:
+            self._durable_write(path, text)
+        except OSError as exc:
+            self._pending_rows.append((path, text))
+            if not self._write_error_logged:
+                self._write_error_logged = True
+                self.log("WRITE ERROR: %s -- holding rows and retrying "
+                         "before every write." % exc)
+
+    def _flush_pending_rows(self):
+        """Retry the held rows, oldest first. Stops at the first failure."""
+        while self._pending_rows:
+            path, text = self._pending_rows[0]
+            try:
+                self._durable_write(path, text)
+            except OSError:
+                return   # still failing; keep them, retry next time
+            self._pending_rows.popleft()
+        if self._write_error_logged:
+            self._write_error_logged = False
+            self.log("Write path recovered; held rows written.")
 
     def _record_point(self, point):
-        self.readout_vars['resistance'].set("%.5G" % point['resistance'])
-        self.readout_vars['voltage'].set("%.4E" % point['x'])
-        self.readout_vars['theta'].set("%.3f" % point['theta'])
-        self.readout_vars['freq'].set("%.4f" % point['locked_hz'])
-        self.readout_vars['temperature'].set(
-            "%.3f" % point['temperature'])
-
-        for problem in point['problems']:
-            self.log("WARNING: %s" % problem)
-
+        # The row goes to disk before anything is drawn, so a GUI-side
+        # failure can never cost a data point.
         flags = "; ".join(point['problems']) if point['problems'] else "ok"
         if self.data_filepath:
             fields = [
@@ -2214,8 +2532,18 @@ class ACResistanceCC34SensingGUI:
                 "" if point['sheet'] is None else "%.6E" % point['sheet'],
                 flags.replace(',', ';'),
             ])
-            with open(self.data_filepath, 'a') as handle:
-                handle.write(",".join(fields) + "\n")
+            self._flush_pending_rows()
+            self._write_or_buffer(self.data_filepath, ",".join(fields) + "\n")
+
+        self.readout_vars['resistance'].set("%.5G" % point['resistance'])
+        self.readout_vars['voltage'].set("%.4E" % point['x'])
+        self.readout_vars['theta'].set("%.3f" % point['theta'])
+        self.readout_vars['freq'].set("%.4f" % point['locked_hz'])
+        self.readout_vars['temperature'].set(
+            "%.3f" % point['temperature'])
+
+        for problem in point['problems']:
+            self.log("WARNING: %s" % problem)
 
         self.data_storage['x'].append(point['temperature'])
         self.data_storage['y'].append(point['resistance'])

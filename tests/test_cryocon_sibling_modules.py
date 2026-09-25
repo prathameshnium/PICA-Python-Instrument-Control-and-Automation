@@ -342,17 +342,20 @@ def test_the_k6517b_worker_also_ships_its_traceback():
     assert "RUNTIME ERROR: {traceback.format_exc()}" not in source
 
 
-def test_the_two_gui_thread_modules_were_left_alone():
+def test_the_two_gui_thread_modules_still_measure_on_the_gui_thread():
     """k2400 and k2400_2182 run the loop on the GUI thread via root.after.
 
     Their format_exc() sits inside a live except block on the same thread,
-    so it prints the real traceback. There is no bug to fix, and no queue
-    to fix it in.
+    so it prints the real traceback. There is no worker, and no queue to
+    ship a traceback through. v1.1 (25 Sep 2026) hardening adds exactly
+    ONE thread to each: the daemon beep in _beep(), never a measurement.
     """
     for key in ("k2400", "k2400_2182"):
-        assert "data_queue" not in SOURCES[key], key
-        assert "threading.Thread" not in SOURCES[key], key
-        assert "traceback.format_exc()" in SOURCES[key], key
+        source = SOURCES[key]
+        assert "data_queue" not in source, key
+        assert source.count("threading.Thread(") == source.count(
+            "threading.Thread(target=_do_beep, daemon=True)") == 1, key
+        assert "traceback.format_exc(" in source, key
 
 
 # ===========================================================================

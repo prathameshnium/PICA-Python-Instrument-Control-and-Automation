@@ -226,6 +226,96 @@ def test_lakeshore_parser():
     assert m.parse_lakeshore_temperature("garbage") is None
 
 
+class _ScriptedInstrument:
+    """Replies from a list; an exception instance in it is raised."""
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.queries = []
+
+    def query(self, command):
+        self.queries.append(command)
+        reply = self.replies.pop(0) if len(self.replies) > 1 \
+            else self.replies[0]
+        if isinstance(reply, BaseException):
+            raise reply
+        return reply
+
+
+def _bare_ls350(replies):
+    link = object.__new__(m.Lakeshore350_Link)
+    link.channel = "A"
+    link.instrument = _ScriptedInstrument(replies)
+    return link
+
+
+def test_a_lakeshore_fault_reading_of_zero_is_no_reading():
+    """The 350 answers KRDG? with 0 for a sensor fault. The parser's
+    docstring said the CALLER flags it; no caller did, so 0.0 K went into
+    t_min and the header's 'min(K): 0.0000'. 25 Sep 2026 audit."""
+    for raw in ("+0.00000E+00", "0", "0.000"):
+        value, echoed = _bare_ls350([raw]).read_temperature()
+        assert value is None, (raw, value)
+        assert echoed == raw.strip()
+    value, _ = _bare_ls350(["+2.95000E+02\r\n"]).read_temperature()
+    assert value == 295.0
+
+
+def test_a_lakeshore_reading_that_is_not_a_number_is_no_reading():
+    value, _ = _bare_ls350(["garbage"]).read_temperature()
+    assert value is None
+
+
+def test_the_tolerant_read_never_raises_and_reconnects_once():
+    """A thermometer glitch must not kill a scan: one reconnect, then
+    None - and never a second reconnect inside the same read."""
+    class DeadThermo:
+        def __init__(self):
+            self.reads = 0
+            self.reconnects = 0
+
+        def read_temperature(self):
+            self.reads += 1
+            raise IOError("VI_ERROR_TMO")
+
+        def reconnect(self):
+            self.reconnects += 1
+
+    gui = object.__new__(m.FieldStepFreqScanGUI)
+    gui.thermo = DeadThermo()
+    gui.lines = []
+    gui.log = gui.lines.append
+    value, raw = gui._w_read_T_tolerant()
+    assert value is None and raw == "comm error", (value, raw)
+    assert gui.thermo.reads == 2 and gui.thermo.reconnects == 1
+
+
+def test_the_tolerant_read_recovers_after_one_reconnect():
+    class OnceDead:
+        def __init__(self):
+            self.calls = 0
+
+        def read_temperature(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise IOError("VI_ERROR_TMO")
+            return 77.35, "77.350"
+
+        def reconnect(self):
+            pass
+
+    gui = object.__new__(m.FieldStepFreqScanGUI)
+    gui.thermo = OnceDead()
+    gui.log = lambda msg: None
+    assert gui._w_read_T_tolerant() == (77.35, "77.350")
+
+
+def test_the_tolerant_read_without_a_thermometer_is_quietly_none():
+    gui = object.__new__(m.FieldStepFreqScanGUI)
+    gui.thermo = None
+    assert gui._w_read_T_tolerant() == (None, "")
+
+
 def test_cryocon_parser_numbers():
     assert m.parse_cryocon_temperature("77.350") == 77.35
     assert m.parse_cryocon_temperature("77.350K") == 77.35

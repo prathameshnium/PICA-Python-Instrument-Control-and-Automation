@@ -54,6 +54,13 @@ v1.4, 25 Sep 2026. Addresses the control loops BY NAME (HEATER = loop 1,
 AOUT = loop 2), which is the only form the lab Model 34 answers; the
 numbered form stays as a probed fallback.
 
+v1.5, 25 Sep 2026. Live polling tells a refused query from a dead bus.
+The lab unit refuses CONTROL?, and each poll cycle paid a 10 s timeout
+for it on the Tk thread; a genuinely dead bus was polled for ever,
+because every field swallowed its own timeout. A field that has never
+answered is now asked once and then left alone; a timeout on one that
+has answered stops polling. See DirectControlGUI._poll_field.
+
 v1.3, 17 Sep 2026. Adds "Run Self-Test (read-only survey)" to the
 Advanced / System panel. The mnemonics above were verified against the
 Model 32/32B manual, and the Model 34's own manual does not document all
@@ -1132,6 +1139,19 @@ class Cryocon34Backend:
 
     def set_alarm(self, channel, high, low, high_enable, low_enable):
         """Set the high/low alarm setpoints and their enables."""
+        if channel not in self.INPUT_CHANNELS:
+            raise ValueError(
+                f"Channel must be one of {self.INPUT_CHANNELS}, "
+                f"got {channel}")
+        for name, value in (("High alarm", high), ("Low alarm", low)):
+            # The only setter without a range check, so the only one that
+            # would pass a NaN or an infinity straight to the instrument.
+            if not float('-inf') < value < float('inf'):
+                raise ValueError(f"{name} must be a finite number, "
+                                 f"got {value}")
+        if low > high:
+            raise ValueError(
+                f"Low alarm {low} must not exceed the high alarm {high}")
         cmd = (f"INPUT {channel}:ALARM:HIGHEST {high};"
                f"LOWEST {low};"
                f"HIENA {'YES' if high_enable else 'NO'};"
@@ -1282,7 +1302,8 @@ class DirectControlGUI:
     # 1.4: loops addressed BY NAME (HEATER/AOUT). Every command this
     #      module sent before was 'LOOP <n>:...' and none of it ever
     #      reached the lab unit. See Cryocon34Backend.LOOP_NAMES.
-    PROGRAM_VERSION = "1.4"
+    # 1.5: polling asks a refused query once, and stops on a dead bus.
+    PROGRAM_VERSION = "1.5"
     PROGRAM_NAME = "Cryocon 34 Direct Control Utility"
 
     # Color scheme (identical to reference programme)
@@ -1337,6 +1358,10 @@ class DirectControlGUI:
         # once rather than every tick.
         self._poll_stage = 0
         self._poll_notes = {}
+        # What this firmware refuses is re-learned on every Start, so a
+        # restart after a firmware change or a bus fix asks afresh.
+        self._poll_refused = set()
+        self._poll_answered = set()
         # The read-only self-test window, while one is open. Only one at a
         # time: two callers on one VISA session read each other's replies.
         self._self_test_window = None
@@ -2623,11 +2648,21 @@ class DirectControlGUI:
         return None
 
     def _read_float_entry(self, entry, label):
-        """Parse an entry as a float, raising a readable ValueError."""
+        """Parse an entry as a float, raising a readable ValueError.
+
+        float() also accepts 'nan' and 'inf'. The range checks in the
+        setters happen to reject both, but set_alarm had none, so typing
+        'nan' sent 'INPUT A:ALARM:HIGHEST nan' to the instrument. Refused
+        here, for every field, with the field named.
+        """
         try:
-            return float(entry.get())
+            value = float(entry.get())
         except ValueError:
             raise ValueError(f"{label} must be a numeric value.")
+        if not float('-inf') < value < float('inf'):     # NaN fails too
+            raise ValueError(f"{label} must be a finite number, "
+                             f"not '{entry.get().strip()}'.")
+        return value
 
     # -----------------------------------------------------------------------
     # CONNECTION HANDLERS
@@ -3331,6 +3366,10 @@ class DirectControlGUI:
         self.polling_active = True
         self._poll_stage = 0
         self._poll_notes = {}
+        # What this firmware refuses is re-learned on every Start, so a
+        # restart after a firmware change or a bus fix asks afresh.
+        self._poll_refused = set()
+        self._poll_answered = set()
         self.poll_btn.config(text="Stop Polling")
         self.log(f"Live status polling started ({self.POLL_STAGE_COUNT} "
                  f"groups at {self.POLL_STAGE_MS} ms; full refresh every "
@@ -3379,8 +3418,9 @@ class DirectControlGUI:
             # tick. Stop the loop; the operator restarts it once the bus
             # answers again. A sensor fault ('-------', '.......') is a
             # CryoconStatusError handled inside the stage and never lands
-            # here.
-            if pyvisa is not None and isinstance(e, pyvisa.VisaIOError):
+            # here, and neither does a query this firmware simply refuses
+            # (see _poll_field).
+            if self._is_bus_error(e):
                 self.log("Live status polling stopped: the instrument did "
                          "not answer. Check the bus, then press Start "
                          "Polling again.")
@@ -3394,6 +3434,73 @@ class DirectControlGUI:
 
     POLL_STAGE_MS = 400        # gap between groups
     POLL_STAGE_COUNT = 7       # so a full refresh takes about 2.8 s
+
+    # Fields whose query every Cryo-con answers, so a timeout on one of
+    # them is the bus and never the firmware. An input with nothing on it
+    # still answers INPUT? - with '-------', as channels B-D of the lab
+    # unit do.
+    POLL_ALWAYS_ANSWERED = tuple(
+        f'temp_{ch}' for ch in Cryocon34Backend.INPUT_CHANNELS)
+
+    @staticmethod
+    def _is_bus_error(exc):
+        """A failure of the bus or the session, not of one reply.
+
+        Runs inside every field's except clause, so it must not raise
+        itself: a pyvisa without VisaIOError (a stub, a broken install)
+        answers False rather than taking the poll loop down with it.
+        """
+        if isinstance(exc, ConnectionError):
+            return True
+        visa_error = getattr(pyvisa, 'VisaIOError', None)
+        return isinstance(visa_error, type) and isinstance(exc, visa_error)
+
+    def _poll_field(self, key, read, render, on_error=None):
+        """Refresh one status label, and decide what a failure means.
+
+        A Cryo-con answers a query it does not take with silence, so a
+        refused query and a dead bus look identical at the call site: a
+        full VISA timeout. The lab Model 34 refuses CONTROL? (5 of 5
+        diagnostic runs, 25 Sep 2026). Before v1.5 every per-field except
+        clause swallowed that timeout, so the "stop on a bus error" branch
+        in _poll_loop could never run: CONTROL? froze the window for 10 s
+        in every 2.8 s cycle, and a genuinely dead bus was polled for ever.
+        Now:
+
+          - a field that has not answered since polling started is taken
+            to be refused by this firmware. It costs its timeout ONCE, is
+            logged once, shows 'no answer', and is not asked again until
+            polling is restarted;
+          - a field that HAS answered, or one of POLL_ALWAYS_ANSWERED,
+            timing out means the bus has gone. The error goes up to
+            _poll_loop, which stops polling, and nothing else in the stage
+            is asked - one timeout, not eight;
+          - any other failure (a status string, an unparseable reply) is the
+            field's own business: on_error deals with it, or the label is
+            left as it was.
+        """
+        refused = self.__dict__.setdefault('_poll_refused', set())
+        answered = self.__dict__.setdefault('_poll_answered', set())
+        if key in refused:
+            return
+        try:
+            text = render(read())
+        except Exception as e:
+            if not self._is_bus_error(e):
+                if on_error is not None:
+                    on_error(e)
+                return
+            if key in answered or key in self.POLL_ALWAYS_ANSWERED:
+                raise
+            refused.add(key)
+            self.status_labels[key].config(text="no answer")
+            self._poll_note(key, f"{key}: no answer ({type(e).__name__}). "
+                                 "This unit does not seem to take that query, "
+                                 "so it is not asked again until polling is "
+                                 "restarted.")
+            return
+        answered.add(key)
+        self.status_labels[key].config(text=text)
 
     def _poll_stage_dispatch(self, stage):
         if stage == 0:
@@ -3411,126 +3518,101 @@ class DirectControlGUI:
         else:
             self._poll_range_and_safety()
 
+    def _show_temperature_problem(self, ch, e):
+        """Name the condition instead of showing a bare 'Error': an unused
+        channel reads as a sensor fault, and that is worth seeing."""
+        if isinstance(e, CryoconStatusError):
+            self.status_labels[f'temp_{ch}'].config(text="no sensor")
+            self._poll_note(f'temp_{ch}', str(e))
+        else:
+            self.status_labels[f'temp_{ch}'].config(text="Error")
+            self._poll_note(f'temp_{ch}', f"{type(e).__name__}: {e}")
+
     def _poll_temperatures(self):
-        if True:
-            # Temperatures and alarm flags (all channels). The reading is
-            # in each channel's own display units, so the units are shown
-            # alongside rather than assumed to be Kelvin.
-            for ch in Cryocon34Backend.INPUT_CHANNELS:
-                try:
-                    temp = self.backend.get_temperature(ch)
-                    self.status_labels[f'temp_{ch}'].config(
-                        text=f"{temp:.3f} {self.channel_units[ch]}".strip())
-                except CryoconStatusError as e:
-                    # Name the condition instead of showing a bare 'Error':
-                    # an unused channel reads as a sensor fault, and that is
-                    # worth seeing on the panel.
-                    self.status_labels[f'temp_{ch}'].config(text="no sensor")
-                    self._poll_note(f'temp_{ch}', str(e))
-                except Exception as e:
-                    self.status_labels[f'temp_{ch}'].config(
-                        text="Error")
-                    self._poll_note(f'temp_{ch}', f"{type(e).__name__}: {e}")
-                try:
-                    self.status_labels[f'alarm_{ch}'].config(
-                        text=self.backend.get_alarm_status(ch))
-                except Exception:
-                    pass
+        # Temperatures and alarm flags (all channels). The reading is in
+        # each channel's own display units, so the units are shown
+        # alongside rather than assumed to be Kelvin.
+        for ch in Cryocon34Backend.INPUT_CHANNELS:
+            self._poll_field(
+                f'temp_{ch}',
+                lambda ch=ch: self.backend.get_temperature(ch),
+                lambda temp, ch=ch: (
+                    f"{temp:.3f} {self.channel_units[ch]}".strip()),
+                on_error=lambda e, ch=ch: self._show_temperature_problem(
+                    ch, e))
+            self._poll_field(
+                f'alarm_{ch}',
+                lambda ch=ch: self.backend.get_alarm_status(ch),
+                lambda text: text)
 
     def _poll_power(self):
-        if True:
-            # Loop output power and heater read-back
-            for loop in Cryocon34Backend.LOOPS:
-                try:
-                    pwr = self.backend.get_output_power(loop)
-                    self.status_labels[f'outpwr_{loop}'].config(
-                        text=f"{pwr:.1f} %")
-                except Exception:
-                    self.status_labels[f'outpwr_{loop}'].config(
-                        text="Error")
-                try:
-                    self.status_labels[f'htrread_{loop}'].config(
-                        text=self.backend.get_heater_readback(loop))
-                except Exception:
-                    pass
+        # Loop output power and heater read-back
+        for loop in Cryocon34Backend.LOOPS:
+            self._poll_field(
+                f'outpwr_{loop}',
+                lambda loop=loop: self.backend.get_output_power(loop),
+                lambda pwr: f"{pwr:.1f} %",
+                on_error=lambda e, loop=loop: self.status_labels[
+                    f'outpwr_{loop}'].config(text="Error"))
+            self._poll_field(
+                f'htrread_{loop}',
+                lambda loop=loop: self.backend.get_heater_readback(loop),
+                lambda text: text)
 
     def _poll_control_and_setpoints(self):
-        if True:
-            # Control engage status
-            try:
-                self.status_labels['control_status'].config(
-                    text=self.backend.get_control_status())
-            except Exception:
-                pass
-
-            # Setpoints
-            for loop in Cryocon34Backend.LOOPS:
-                try:
-                    sp = self.backend.get_setpoint(loop)
-                    self.status_labels[f'setpoint_{loop}'].config(
-                        text=f"{sp:.3f}")
-                except Exception:
-                    pass
+        # Control engage status. CONTROL? is refused by the lab unit, so
+        # this field reads 'no answer' there after the first cycle.
+        self._poll_field('control_status',
+                         lambda: self.backend.get_control_status(),
+                         lambda text: text)
+        # Setpoints
+        for loop in Cryocon34Backend.LOOPS:
+            self._poll_field(
+                f'setpoint_{loop}',
+                lambda loop=loop: self.backend.get_setpoint(loop),
+                lambda sp: f"{sp:.3f}")
 
     def _poll_pid(self):
-        if True:
-            # PID gains
-            for loop in Cryocon34Backend.LOOPS:
-                try:
-                    p, i, d = self.backend.get_pid(loop)
-                    self.status_labels[f'pid_{loop}'].config(
-                        text=f"P={p}, I={i} s, D={d}")
-                except Exception:
-                    pass
+        # PID gains
+        for loop in Cryocon34Backend.LOOPS:
+            self._poll_field(
+                f'pid_{loop}',
+                lambda loop=loop: self.backend.get_pid(loop),
+                lambda pid: f"P={pid[0]}, I={pid[1]} s, D={pid[2]}")
 
     def _poll_type_and_source(self):
-        if True:
-            # Control type and source channel
-            for loop in Cryocon34Backend.LOOPS:
-                try:
-                    ctype = self.backend.get_loop_type(loop)
-                    source = self.backend.get_loop_source(loop)
-                    self.status_labels[f'type_{loop}'].config(
-                        text=f"{ctype} / {source}")
-                except Exception:
-                    pass
+        # Control type and source channel
+        for loop in Cryocon34Backend.LOOPS:
+            self._poll_field(
+                f'type_{loop}',
+                lambda loop=loop: (self.backend.get_loop_type(loop),
+                                   self.backend.get_loop_source(loop)),
+                lambda pair: f"{pair[0]} / {pair[1]}")
 
     def _poll_ramp(self):
-        if True:
-            # Ramp state and rate
-            for loop in Cryocon34Backend.LOOPS:
-                try:
-                    state = self.backend.get_ramp_status(loop)
-                    rate = self.backend.get_rate(loop)
-                    self.status_labels[f'ramp_{loop}'].config(
-                        text=f"{state}, {rate} /min")
-                except Exception:
-                    pass
+        # Ramp state and rate
+        for loop in Cryocon34Backend.LOOPS:
+            self._poll_field(
+                f'ramp_{loop}',
+                lambda loop=loop: (self.backend.get_ramp_status(loop),
+                                   self.backend.get_rate(loop)),
+                lambda pair: f"{pair[0]}, {pair[1]} /min")
 
     def _poll_range_and_safety(self):
-        if True:
-            # Loop 1 heater range and load
-            try:
-                self.status_labels['range_1'].config(
-                    text=f"{self.backend.get_range()} / "
-                         f"{self.backend.get_load()} ohm")
-            except Exception:
-                pass
-
-            # Over-temperature disconnect
-            try:
-                enable, source, temp = self.backend.get_overtemp()
-                self.status_labels['overtemp'].config(
-                    text=f"{enable}, {source}, {temp}")
-            except Exception:
-                pass
-
-            # Keypad lockout
-            try:
-                self.status_labels['lockout'].config(
-                    text=self.backend.get_lockout())
-            except Exception:
-                pass
+        # Loop 1 heater range and load
+        self._poll_field(
+            'range_1',
+            lambda: (self.backend.get_range(), self.backend.get_load()),
+            lambda pair: f"{pair[0]} / {pair[1]} ohm")
+        # Over-temperature disconnect
+        self._poll_field(
+            'overtemp',
+            lambda: self.backend.get_overtemp(),
+            lambda ot: f"{ot[0]}, {ot[1]}, {ot[2]}")
+        # Keypad lockout
+        self._poll_field('lockout',
+                         lambda: self.backend.get_lockout(),
+                         lambda text: text)
 
     def _poll_note(self, key, message):
         """Log a polling problem once per field, not once per second."""

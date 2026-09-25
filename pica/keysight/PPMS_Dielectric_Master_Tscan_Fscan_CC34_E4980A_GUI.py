@@ -3477,6 +3477,12 @@ class PPMSMasterGUI:
         self._last_temp = float("nan")
         self._glitch_candidate = None
         self._glitch_total = 0
+        # CC34-8: sensor-down state is per run too. A run stopped while the
+        # sensor was 'down' otherwise hands the next run the short re-read
+        # window with its one warning already spent.
+        self._invalid_streak = 0
+        self._invalid_recoveries = 0
+        self._sensor_down_logged = False
         self.pause_button.config(text="Pause")
 
         for L in (self.plot_t, self.plot_temp, self.plot_target,
@@ -4725,8 +4731,13 @@ class PPMSMasterGUI:
             temp = self._log_temperature_point(target_temp,
                                                measuring_flag=1)
             row_T = temp if math.isfinite(temp) else self._last_temp
-            if math.isfinite(row_T):
-                sweep_temps.append(row_T)
+            # Only a reading taken DURING this sweep counts towards the
+            # median that names the file. The fallback used to be appended
+            # too, so a sensor down for the whole sweep produced a file
+            # named after an old reading, headed 'median over N readings'
+            # when there had been none.
+            if math.isfinite(temp):
+                sweep_temps.append(temp)
             row = [freq] + vals + [row_T]
             self._write_or_buffer(
                 fpath, "\t".join(f"{v:.6E}" for v in row) + "\n")

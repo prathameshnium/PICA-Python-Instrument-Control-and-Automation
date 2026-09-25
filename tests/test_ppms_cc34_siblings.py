@@ -1127,6 +1127,130 @@ def test_the_v2_catalogue_entries_resolve_to_real_scripts():
         assert wanted in labels, wanted
 
 
+# ------------------------------------- a sweep taken while the sensor is down
+#
+# The 25 Sep 2026 NaN-flow audit: the fallback temperature a row carries
+# when the probe read fails (the last valid reading) was also appended to
+# sweep_temps - the list documented as 'valid measured T over the sweep'
+# that names the file and heads it with 'T_sample_median ... over N
+# readings'. A probe down for the whole sweep therefore produced a file
+# named after an old reading, claiming N readings that were never taken.
+
+class _FakeLCR:
+    DATA_HEADER = "freq\tcols"
+
+    def perform_measurement(self, freq, delay):
+        return 1.0e6, -1.0e5, 0
+
+
+def _sweep_harness(module, key, temps, last_temp, tmpdir):
+    """A bare GUI object that runs the real _run_frequency_sweep, with the
+    probe reading scripted and real files written into tmpdir."""
+    import collections
+    import queue
+    cls = (module.PPMSSyncGUI if key == "sync" else module.PPMSMasterGUI)
+    gui = object.__new__(cls)
+    gui.is_running = True
+    gui._paused = False
+    gui._skip_requested = False
+    gui._skip_step_requested = False
+    gui._worker_phase = None
+    gui._pending_rows = collections.deque()
+    gui._write_error_logged = False
+    gui.cmd_queue = queue.Queue()
+    gui.gui_queue = queue.Queue()
+    gui.params = {"channel": "A", "mode": "flat", "tol": 0.5,
+                  "tol_table": None}
+    gui.lcr_params = {"sample_name": "S", "ac_bias": 1.0, "dc_bias": 0.0,
+                      "aper": "MED", "delay": 0.0}
+    gui.sweep_frequencies = [1e3, 1e4, 1e5]
+    gui.fscan_dir = gui.save_dir = tmpdir
+    gui.lcr_backend = _FakeLCR()
+    gui._lcr_measure_forever = lambda freq: (1.0e6, -1.0e5, 0)
+    gui._last_temp = last_temp
+    script = list(temps)
+
+    def log_point(target, measuring_flag=0):
+        value = script.pop(0) if script else float("nan")
+        if math.isfinite(value):
+            gui._last_temp = value
+        return value
+
+    gui._log_temperature_point = log_point
+    return gui
+
+
+def _only_scan_file(tmpdir):
+    names = [n for n in os.listdir(tmpdir) if n.endswith("_FreqScan.txt")]
+    assert len(names) == 1, names
+    with open(os.path.join(tmpdir, names[0]), encoding="utf-8") as fh:
+        return names[0], fh.read()
+
+
+def test_a_sweep_with_the_sensor_down_throughout_claims_no_median():
+    import tempfile
+    for key, module in CC_MODULES.items():
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gui = _sweep_harness(module, key, [float("nan")] * 3,
+                                 last_temp=100.0, tmpdir=tmpdir)
+            gui._run_frequency_sweep(110.0, 0, 3)
+            name, text = _only_scan_file(tmpdir)
+            assert "T_sample_median" not in text, (key, text[:300])
+            # Three data rows were still written: the electrical data is
+            # kept, only the thermometry is missing.
+            rows = [ln for ln in text.splitlines()
+                    if ln[:1].isdigit()]
+            assert len(rows) == 3, (key, rows)
+            # Each row carries the fallback (the last good reading, as
+            # DATA-1 documents) - but it is not counted as a measurement.
+            assert all(ln.endswith("1.000000E+02") for ln in rows), rows
+
+
+def test_the_median_counts_only_readings_taken_during_the_sweep():
+    """Two good readings and one failure: the median is over TWO, and the
+    fallback value (the last good reading) is not counted a second time."""
+    import tempfile
+    for key, module in CC_MODULES.items():
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gui = _sweep_harness(module, key,
+                                 [110.0, 111.0, float("nan")],
+                                 last_temp=100.0, tmpdir=tmpdir)
+            gui._run_frequency_sweep(110.0, 0, 3)
+            name, text = _only_scan_file(tmpdir)
+            assert "T_sample_median = 110.5000 K over 2 readings" in text, \
+                (key, text[:400])
+            assert "110p50K" in name, (key, name)
+
+
+def test_a_clean_sweep_is_named_after_its_own_median():
+    import tempfile
+    for key, module in CC_MODULES.items():
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gui = _sweep_harness(module, key, [80.0, 80.2, 80.1],
+                                 last_temp=float("nan"), tmpdir=tmpdir)
+            gui._run_frequency_sweep(80.0, 0, 3)
+            name, text = _only_scan_file(tmpdir)
+            assert "T_sample_median = 80.1000 K over 3 readings" in text, \
+                (key, text[:400])
+            assert "80p10K" in name, (key, name)
+
+
+def test_every_run_starts_with_fresh_sensor_down_state():
+    """A run stopped while the probe was 'down' must not hand the next run
+    a live streak (short re-read window) and a spent warning."""
+    import inspect
+    for key, module in CC_MODULES.items():
+        cls = (module.PPMSSyncGUI if key == "sync" else module.PPMSMasterGUI)
+        start = (cls.start_sequence if key == "sync" else cls.start_protocol)
+        src = inspect.getsource(start)
+        for reset in ("self._invalid_streak = 0",
+                      "self._invalid_recoveries = 0",
+                      "self._sensor_down_logged = False",
+                      'self._last_temp = float("nan")',
+                      "self._glitch_candidate = None"):
+            assert reset in src, (key, reset)
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):

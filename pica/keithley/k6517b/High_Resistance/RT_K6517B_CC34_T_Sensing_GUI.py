@@ -14,6 +14,20 @@ Purpose: GUI module for RT K6517B CC34 T Sensing GUI v1.
          *RST, no CONTROL/STOP and no heater, loop or configuration command,
          so whatever is driving the temperature keeps running untouched.
 
+         v4.4, 25 Sep 2026: unattended overnight-run hardening, the v1.3
+         pattern of Temprature_Scan_Passive_CC34_E4980A_GUI.py. A comm
+         error no longer ends the run: it is logged, both instruments are
+         re-opened -- the 6517B reset, zero-corrected and its source
+         re-applied exactly as at Start, the Cryocon re-checked for Kelvin
+         and its heater read-back carried over, never re-probed -- with a
+         5 -> 10 -> 30 -> 60 s backoff, until they answer or Stop is
+         pressed. Every data row is fsync'd (and buffered, then retried in
+         order, if the disk or share hiccups); Windows is kept awake for
+         the run; consecutive Cryocon queries (INPUT? then the heater read,
+         every point) are held CRYOCON_MIN_GAP_S apart; and once a run has
+         started nothing opens a modal dialog -- a runtime error or Stop is
+         a console line, a banner and a beep.
+
 Cryocon SCPI verified against the Cryo-con User's Guide; the command set is
 common to the Model 32/32B/34 family:
   - INPUT? <ch>          -> channel temperature in that channel's display units
@@ -33,6 +47,8 @@ import os
 import re
 import time
 import traceback
+import ctypes  # stdlib: Windows keep-awake (SetThreadExecutionState) during a run; the call is a try/except no-op elsewhere
+from collections import deque  # stdlib: in-order buffer of data rows that failed to reach disk, retried every point
 from datetime import datetime
 import csv
 from matplotlib.figure import Figure
@@ -41,6 +57,14 @@ import matplotlib.gridspec as gridspec
 import matplotlib as mpl
 import runpy
 from multiprocessing import Process
+
+# --- winsound for unattended-run alerts (stdlib, Windows only; optional) ---
+# A beep, not a dialog, is what announces a runtime error or a Stop.
+try:
+    import winsound
+    HAS_WINSOUND = True
+except ImportError:
+    HAS_WINSOUND = False
 
 # --- Pillow for Logo Image ---
 try:
@@ -89,6 +113,11 @@ except ImportError:
 #      Cryo-con's own factory address. Selection is by '*IDN?' content, so a
 #      re-addressed Cryocon is still found and a stranger on the factory
 #      address is not mistaken for one.
+#
+#   4. CRYOCON_MIN_GAP_S was declared here and never applied (found
+#      25 Sep 2026), so INPUT? and the heater read went out back to back
+#      on every point. open_cryocon_session() now hands back a
+#      _PacedCryoconSession, which holds consecutive queries that far apart.
 #
 # Nothing in this block writes to the instrument.
 
@@ -237,10 +266,54 @@ def is_cryocon_idn(idn):
     return any(marker in str(idn).upper() for marker in CRYOCON_IDN_MARKERS)
 
 
+class _PacedCryoconSession:
+    """A Cryo-con session whose consecutive queries are CRYOCON_MIN_GAP_S apart.
+
+    Back-to-back traffic once made this firmware refuse a command; the gap
+    is the cure and the user wants the bus kept slow. Everything except
+    query() -- close(), the timeout the heater probe shortens and restores,
+    anything else -- is forwarded to the real session untouched. There is
+    deliberately no write() of its own: this module never writes to the
+    Cryocon, and a stray write must reach the real session, where it can
+    be seen, rather than hide in here.
+    """
+
+    def __init__(self, session):
+        # Straight into __dict__ so __setattr__ below is not triggered:
+        # these two belong to the proxy, every other name to the session.
+        self.__dict__['_session'] = session
+        self.__dict__['_last_io'] = 0.0
+
+    def query(self, command):
+        # The gap is read at call time, so a test can set it to 0.
+        wait = CRYOCON_MIN_GAP_S - (time.time() - self._last_io)
+        if wait > 0:
+            time.sleep(wait)
+        try:
+            return self._session.query(command)
+        finally:
+            # Measured from the END of the exchange, failed ones included.
+            self.__dict__['_last_io'] = time.time()
+
+    def __getattr__(self, name):
+        # Only reached for names the proxy does not hold itself.
+        try:
+            session = self.__dict__['_session']
+        except KeyError:
+            raise AttributeError(name) from None
+        return getattr(session, name)
+
+    def __setattr__(self, name, value):
+        # .timeout and the like must land on the real VISA resource.
+        setattr(self.__dict__['_session'], name, value)
+
+
 def open_cryocon_session(visa_address, log=None):
     """Open a Cryo-con session, retrying the first '*IDN?'.
 
-    Returns (instrument, idn). Raises ConnectionError if nothing answers, or
+    Returns (instrument, idn), the instrument being a _PacedCryoconSession
+    so every query on it, the '*IDN?' included, keeps CRYOCON_MIN_GAP_S
+    from the one before. Raises ConnectionError if nothing answers, or
     if what answers is not a Cryo-con: this module logs the temperature that
     the whole run is indexed by, so reading it off the wrong instrument is
     worse than not running at all.
@@ -255,7 +328,7 @@ def open_cryocon_session(visa_address, log=None):
     for attempt in range(1, CRYOCON_CONNECT_ATTEMPTS + 1):
         inst = None
         try:
-            inst = rm.open_resource(visa_address)
+            inst = _PacedCryoconSession(rm.open_resource(visa_address))
             inst.timeout = CRYOCON_TIMEOUT_MS
             # The Cryocon GPIB port frames lines with EOI and no EOS
             # character, so the PyVISA termination defaults are left alone.
@@ -560,14 +633,7 @@ class Combined_Backend:
         self.cryocon.probe_heater_command(1)
         print("Cryocon 34 connection is passive. No settings will be changed.")
 
-        self.keithley = Keithley6517B(self.params['keithley_visa'])
-        print(f"Keithley Connected: {self.keithley.id}")
-        self._perform_keithley_zero_check()
-
-        self.keithley.source_voltage = self.params['source_voltage']
-        self.keithley.current_nplc = 1
-        self.keithley.enable_source()
-        print(f"Keithley source enabled: {self.params['source_voltage']} V")
+        self._open_keithley()
 
     def _perform_keithley_zero_check(self):
         print("  --- Starting Keithley Zero Correction ---")
@@ -587,6 +653,47 @@ class Combined_Backend:
         time.sleep(1)
         print("  Zero Correction Complete.")
 
+    def _open_keithley(self):
+        """Open the 6517B and configure it as Start always has.
+
+        One path for Start and for reconnect(), so a power-cycled
+        electrometer comes back reset, zero-corrected and sourcing exactly
+        as it did at Start.
+        """
+        self.keithley = Keithley6517B(self.params['keithley_visa'])
+        print(f"Keithley Connected: {self.keithley.id}")
+        self._perform_keithley_zero_check()
+
+        self.keithley.source_voltage = self.params['source_voltage']
+        self.keithley.current_nplc = 1
+        self.keithley.enable_source()
+        print(f"Keithley source enabled: {self.params['source_voltage']} V")
+
+    def reconnect(self):
+        """Close both sessions and re-open them from the stored params.
+
+        Used by the worker's retry-forever loop after a comm failure. The
+        6517B goes through the Start path again (_open_keithley). The
+        Cryocon is re-opened (settle delay, retried '*IDN?', identity check)
+        and its channel re-checked for Kelvin -- queries only. Its heater
+        read-back is carried over from Start and NOT settled again: that
+        guessing is Start-only by design, because an unanswered candidate
+        costs a timeout that mid-run looks exactly like a dead bus.
+        """
+        heater_query = getattr(self.cryocon, 'heater_query', None)
+        try:
+            self.close_instruments()
+        except Exception as e:
+            print(f"  Pre-reconnect cleanup warning: {e}")
+        cryocon = Cryocon34_Backend(self.params['cryocon_visa'])
+        # Set before anything else can fail, so a later retry still finds
+        # the read-back that was settled at Start.
+        cryocon.heater_query = heater_query
+        cryocon.heater_probed = True
+        self.cryocon = cryocon
+        self.cryocon.verify_units(self.CC_CHANNEL)
+        self._open_keithley()
+
     def get_measurement(self):
         time.sleep(self.params['delay'])
         current_temp = self.cryocon.get_temperature(self.CC_CHANNEL)
@@ -603,9 +710,21 @@ class Combined_Backend:
 
     def close_instruments(self):
         print("\n--- [Backend] Closing all instrument connections. ---")
+        # Each instrument on its own: a session that died with its
+        # instrument (the reconnect case) raises, and that must not leave
+        # the other one open.
         if self.keithley:
-            self.keithley.shutdown()
-            print("  Keithley connection closed and source OFF.")
+            try:
+                self.keithley.shutdown()
+                print("  Keithley connection closed and source OFF.")
+            except Exception as e:
+                print(f"  Warning: Keithley shutdown did not complete: {e}")
+            try:
+                # shutdown() turns the source off but leaves the VISA
+                # session open, and a reconnect opens a fresh one.
+                self.keithley.adapter.close()
+            except Exception:
+                pass
         if self.cryocon:
             self.cryocon.close()
             print("  Cryocon connection closed (heater state unchanged).")
@@ -618,9 +737,16 @@ class Combined_Backend:
 class Integrated_RT_GUI:
     # 4.3: heater read-back candidates carry their own prefix, and
     #      HEATER:OUTPWR? leads. See CRYOCON_HEATER_QUERIES.
-    PROGRAM_VERSION = "4.3"
+    # 4.4: unattended-run hardening -- retry-forever reconnect, fsync'd
+    #      rows, keep-awake, paced Cryocon, no dialogs once running.
+    PROGRAM_VERSION = "4.4"
     LOGO_SIZE = 110
     LEFT_PANEL_WIDTH = 400  # default sash position so the left panel starts fully visible
+    CONSOLE_MAX_LINES = 2000   # one line per point: bound it for overnight runs
+
+    # SetThreadExecutionState flags (Windows keep-awake during a run)
+    ES_CONTINUOUS = 0x80000000
+    ES_SYSTEM_REQUIRED = 0x00000001
 
     try:
         # Robust path finding for assets
@@ -675,6 +801,15 @@ class Integrated_RT_GUI:
         self.data_queue = queue.Queue()
         self.measurement_thread = None
         self._plot_dirty = False
+        # Stop signal the worker can WAIT on, so a reconnect backoff (up to
+        # 60 s) is cut short the moment Stop is pressed.
+        self.stop_event = threading.Event()
+        self._stopping = False          # re-entrancy guard for stop
+        self._close_after_stop = False  # destroy the window once stopped
+        # Rows that failed to reach disk (network share / disk hiccup);
+        # retried before every new row so none is silently dropped.
+        self._pending_rows = deque(maxlen=20000)
+        self._write_error_logged = False
 
         self.setup_styles()
         self.create_widgets()
@@ -743,6 +878,7 @@ class Integrated_RT_GUI:
 
     def create_widgets(self):
         self.create_header()
+        self.create_banner()
         self.main_pane = ttk.PanedWindow(self.root, orient='horizontal')
         self.main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
@@ -826,6 +962,7 @@ class Integrated_RT_GUI:
 
         header_frame = tk.Frame(self.root, bg=self.CLR_HEADER)
         header_frame.pack(side='top', fill='x')
+        self.header_frame = header_frame  # the banner packs just below it
 
         # --- Plotter Launch Button ---
         plotter_button = ttk.Button(
@@ -861,6 +998,43 @@ class Integrated_RT_GUI:
             side='right',
             padx=20,
             pady=10)
+
+    def create_banner(self):
+        """A one-line alert strip under the header.
+
+        This is what replaces the modal dialog once a run has started: a
+        messagebox raised at 02:00 blocks the queue pump behind a button
+        nobody is there to press. The banner shouts without stopping
+        anything.
+        """
+        self.banner_var = tk.StringVar(value="")
+        self.banner = tk.Label(
+            self.root, textvariable=self.banner_var, bg=self.CLR_ACCENT_RED,
+            fg=self.CLR_HEADER, font=self.FONT_TITLE, anchor='w', padx=12)
+        # Not packed yet -- it appears only when there is something to say.
+
+    def _show_banner(self, message):
+        try:
+            self.banner_var.set(message)
+            if not self.banner.winfo_ismapped():
+                self.banner.pack(side='top', fill='x', after=self.header_frame)
+        except tk.TclError:
+            pass   # window already destroyed
+
+    def _clear_banner(self):
+        try:
+            self.banner_var.set("")
+            if self.banner.winfo_ismapped():
+                self.banner.pack_forget()
+        except tk.TclError:
+            pass
+
+    def _alert(self, message, beeps=1):
+        """Console line + banner + beep: never a dialog once a run has
+        started, because an overnight run has nobody there to click OK."""
+        self.log(message)
+        self._show_banner(message)
+        self._beep(times=beeps)
 
     def create_info_frame(self, parent):
         frame = LabelFrame(
@@ -1176,11 +1350,61 @@ class Integrated_RT_GUI:
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.console_widget.config(state='normal')
         self.console_widget.insert('end', f"[{timestamp}] {message}\n")
+        # Trim to the last CONSOLE_MAX_LINES: an unbounded Text widget is
+        # the main cause of Tk slowdown/freeze on overnight runs.
+        try:
+            line_count = int(
+                self.console_widget.index('end-1c').split('.')[0])
+            if line_count > self.CONSOLE_MAX_LINES:
+                self.console_widget.delete(
+                    '1.0', f'{line_count - self.CONSOLE_MAX_LINES + 1}.0')
+        except tk.TclError:
+            pass
         self.console_widget.see('end')
         self.console_widget.config(state='disabled')
 
+    def _set_keep_awake(self, enable):
+        """Stop Windows from sleeping mid-run (display may still sleep).
+        Best-effort no-op on other platforms."""
+        try:
+            flags = self.ES_CONTINUOUS | (
+                self.ES_SYSTEM_REQUIRED if enable else 0)
+            ctypes.windll.kernel32.SetThreadExecutionState(flags)
+        except Exception:
+            pass
+
+    def _beep(self, times=1):
+        """Audible alert (main/Tk thread only). Beeps in a daemon thread
+        so the GUI never blocks; falls back to the Tk bell. Used instead
+        of modal dialogs once a run has started -- a messagebox nobody is
+        there to click must never linger over an overnight run.
+        winsound imports only on Windows, so HAS_WINSOUND is the platform
+        check."""
+        if HAS_WINSOUND:
+            def _do_beep():
+                try:
+                    for _ in range(max(1, times)):
+                        winsound.Beep(1000, 500)
+                        time.sleep(0.2)
+                except RuntimeError:
+                    pass   # no sound device; the banner still shows
+            threading.Thread(target=_do_beep, daemon=True).start()
+        else:
+            try:
+                self.root.bell()
+            except Exception:
+                pass
+
     def start_measurement(self):
         try:
+            # Two workers on one set of instruments would interleave their
+            # queries. Only reachable if a Stop gave up waiting (15 s) on a
+            # worker stuck in a long VISA call.
+            if (self.measurement_thread is not None
+                    and self.measurement_thread.is_alive()):
+                raise RuntimeError(
+                    "The previous run is still letting go of the "
+                    "instruments. Wait a few seconds and press Start again.")
             params = {
                 'sample_name': self.entries["Sample Name"].get(),
                 'source_voltage': float(self.entries["Source Voltage"].get()),
@@ -1212,9 +1436,24 @@ class Integrated_RT_GUI:
                                  "Applied Voltage (V)",
                                  "Measured Current (A)",
                                  "Resistance (Ohm)"])
+                f.flush()
+                os.fsync(f.fileno())
 
             self.log(
                 f"Output file created: {os.path.basename(self.data_filepath)}")
+
+            # A fresh run starts clean: no rows buffered by an earlier run's
+            # write failures, nothing an earlier worker queued after its pump
+            # had stopped, no Stop signal and no banner left over.
+            self._pending_rows.clear()
+            self._write_error_logged = False
+            while True:
+                try:
+                    self.data_queue.get_nowait()
+                except queue.Empty:
+                    break
+            self.stop_event.clear()
+            self._clear_banner()
 
             # --- START LOGGING DIRECTLY ---
             self.is_running = True
@@ -1230,6 +1469,7 @@ class Integrated_RT_GUI:
 
             self.canvas.draw_idle()
 
+            self._set_keep_awake(True)   # overnight run: no system sleep
             self.log("Starting passive data logging...")
             self.start_time = time.time()
 
@@ -1246,81 +1486,263 @@ class Integrated_RT_GUI:
                 f"Could not start measurement.\n{e}")
 
     def stop_measurement(self, from_user=True):
-        if self.is_running:
-            self.is_running = False
-            self.log("Measurement stopped by user.")
-            self.canvas.draw_idle()
-            self.start_button.config(state='normal')
-            self.stop_button.config(state='disabled')
+        # The sessions are closed only once the worker has let go of them,
+        # found by a non-blocking root.after() poll so the GUI never
+        # freezes. Closing them under a worker that is mid-query -- or
+        # mid-reconnect, about to re-enable the 6517B source -- is what
+        # this avoids.
+        if self._stopping or not self.is_running:
+            return
+        self._stopping = True
+        self.is_running = False
+        self.stop_event.set()
+        self.stop_button.config(state='disabled')
+        if from_user:
+            self.log("Stop requested; waiting for the worker to finish...")
+        self._stop_deadline = time.time() + 15.0
+        self._poll_worker_stopped(from_user)
+
+    def _poll_worker_stopped(self, from_user):
+        t = self.measurement_thread
+        if (
+            t is not None
+            and t.is_alive()
+            and time.time() < self._stop_deadline
+        ):
+            self.root.after(
+                200, lambda: self._poll_worker_stopped(from_user))
+            return
+        if t is not None and t.is_alive():
+            self.log("WARNING: worker did not exit in 15 s; "
+                     "closing sessions anyway.")
+        self._finalize_stop(from_user)
+
+    def _finalize_stop(self, from_user):
+        self._set_keep_awake(False)  # allow system sleep again
+        # Whatever the worker queued on its way out (its last point, its
+        # last log lines) is written, not left behind in the queue.
+        self._process_data_queue()
+        self._flush_pending_rows()
+        if self._pending_rows:
+            self.log(f"WARNING: {len(self._pending_rows)} data row(s) could "
+                     f"not be written to {self.data_filepath}.")
+        self._refresh_plot()   # is_running is False: no reschedule
+        self.canvas.draw_idle()
+        self.start_button.config(state='normal')
+        try:
             self.backend.close_instruments()
-            if from_user:
-                messagebox.showinfo(
-                    "Info", "Measurement stopped and instruments disconnected.")
+        except Exception as e:
+            self.log(f"WARNING: error closing instruments: {e}")
+        self._stopping = False
+
+        if self._close_after_stop:
+            self.root.destroy()
+            return
+        if from_user:
+            # No dialog: log + banner + beep, like every other run event.
+            self._alert("Measurement stopped by user; instruments "
+                        "disconnected.")
 
     def _measurement_worker(self):
-        """Worker thread to perform measurements and put data into a queue."""
-        while self.is_running:
-            try:
-                temp, htr, cur, res = self.backend.get_measurement()
+        """Worker thread: measure (after the logging delay), queue, repeat.
+
+        A comm error (GPIB/VISA timeout, instrument power blip, garbled
+        reply, a heater read that stops answering) never ends the run: it
+        is logged with a short traceback, both instruments are re-opened
+        (_reconnect_with_backoff), and measuring resumes. The elapsed-time
+        origin is not touched. A Cryocon sensor fault is not a comm error:
+        get_temperature() gives NaN and the point is logged as usual.
+        """
+        try:
+            comm_failures = 0
+            while self.is_running and not self.stop_event.is_set():
+                try:
+                    temp, htr, cur, res = self.backend.get_measurement()
+                    comm_failures = 0
+                except Exception as e:
+                    # Never give up: log, back off, reconnect, resume.
+                    comm_failures += 1
+                    self.data_queue.put(
+                        f"LOG:COMM ERROR (failure #{comm_failures}): "
+                        f"{traceback.format_exc(limit=3)}")
+                    self.data_queue.put(
+                        f"BANNER:Comm error at {datetime.now():%H:%M:%S} "
+                        f"(failure #{comm_failures}, {type(e).__name__}). "
+                        "Reconnecting; the run continues.")
+                    if not self._reconnect_with_backoff(comm_failures):
+                        break   # Stop requested during the backoff
+                    continue
                 elapsed = time.time() - self.start_time
                 self.data_queue.put((temp, htr, cur, res, elapsed))
+        except Exception as e:
+            # Last-resort net for an unexpected (non-comm) bug only; comm
+            # errors are handled by the retry loop above.
+            # Ship the worker's own traceback. Calling format_exc() on
+            # the GUI thread renders 'NoneType: None', because no
+            # exception is live there -- that is what hid the original
+            # fault on 28 Aug 2026.
+            self.data_queue.put((e, traceback.format_exc()))
+
+    def _reconnect_with_backoff(self, attempt):
+        """Worker-thread helper: close and re-open both instruments,
+        escalating the wait between tries (5 -> 10 -> 30 -> 60 s cap).
+        Loops until reconnected; returns False only if Stop was
+        requested while waiting or reconnecting."""
+        backoffs = (5, 10, 30, 60)
+        while self.is_running and not self.stop_event.is_set():
+            delay_s = backoffs[min(attempt - 1, len(backoffs) - 1)]
+            self.data_queue.put(
+                f"LOG:Reconnect attempt in {delay_s} s "
+                "(Stop stays responsive)...")
+            deadline = time.time() + delay_s
+            while time.time() < deadline:
+                if self.stop_event.wait(1.0):
+                    return False
+            try:
+                self.backend.reconnect()
             except Exception as e:
-                # Ship the worker's own traceback. Calling format_exc() on
-                # the GUI thread renders 'NoneType: None', because no
-                # exception is live there -- that is what hid the original
-                # fault on 28 Aug 2026.
-                self.data_queue.put((e, traceback.format_exc()))
-                break
+                attempt += 1
+                self.data_queue.put(f"LOG:Reconnect failed: {e}")
+                continue
+            if self.stop_event.is_set():
+                # Stop came while the instruments were re-opening, and its
+                # own close may already have run: close what was just
+                # opened, so the 6517B source is not left on after Stop.
+                try:
+                    self.backend.close_instruments()
+                except Exception:
+                    pass
+                return False
+            self.data_queue.put(
+                f"BANNER:Reconnected at {datetime.now():%H:%M:%S} after a "
+                "comm error; measurement resumed.")
+            return True
+        return False
 
     def _process_data_queue(self):
-        """Processes data from the queue to update the GUI."""
+        """Drains the worker's queue on the Tk thread.
+
+        One bad item never stops the pump (per-item try/except), and the
+        re-scheduling lives in a finally, so a GUI-side error cannot leave
+        a live-looking window that has silently stopped writing data.
+        """
+        terminal = None
         try:
             while not self.data_queue.empty():
                 data = self.data_queue.get_nowait()
-                # The worker sends (exception, formatted traceback).
-                if isinstance(data, tuple) and data and isinstance(
-                        data[0], Exception):
-                    exc, tb_text = data[0], data[1]
-                    self.log(f"RUNTIME ERROR: {exc}")
-                    self.log(tb_text)
-                    self.stop_measurement(False)
-                    messagebox.showerror(
-                        "Runtime Error", f"A critical error occurred: {exc}")
-                    return
-                if isinstance(data, Exception):
-                    self.log(f"RUNTIME ERROR: {data}")
-                    self.stop_measurement(False)
-                    messagebox.showerror(
-                        "Runtime Error", f"A critical error occurred: {data}")
-                    return
-
-                temp, htr, cur, res, elapsed = data
-                self.log(f"T:{temp:.3f}K | R:{res:.3e}Ω | I:{cur:.3e}A")
-                with open(self.data_filepath, 'a', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(
-                        [
-                            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            f"{elapsed:.2f}",
-                            f"{temp:.4f}",
-                            f"{htr:.2f}",
-                            f"{self.backend.params['source_voltage']:.4e}",
-                            f"{cur:.4e}",
-                            f"{res:.4e}"])
-
-                self.data_storage['time'].append(elapsed)
-                self.data_storage['temperature'].append(temp)
-                self.data_storage['current'].append(cur)
-                self.data_storage['resistance'].append(res)
-                # Mark that the plot needs a refresh; actual redraw is
-                # decoupled and throttled (see _refresh_plot).
-                self._plot_dirty = True
-
+                try:
+                    if isinstance(data, str) and data.startswith("LOG:"):
+                        self.log(data[4:])
+                    elif isinstance(data, str) and data.startswith("BANNER:"):
+                        self.log(data[7:])
+                        self._show_banner(data[7:])
+                    # The worker sends (exception, formatted traceback).
+                    elif isinstance(data, tuple) and data and isinstance(
+                            data[0], Exception):
+                        exc, tb_text = data[0], data[1]
+                        self.log(f"RUNTIME ERROR: {exc}")
+                        self.log(tb_text)
+                        terminal = exc      # defer; keep draining
+                    elif isinstance(data, Exception):
+                        self.log(f"RUNTIME ERROR: {data}")
+                        terminal = data
+                    else:
+                        self._handle_new_data_point(data)
+                except Exception:
+                    # A GUI-side failure (plot/log/file) must never kill
+                    # this pump: acquisition continues in the worker and
+                    # the next items still get processed.
+                    try:
+                        self.log("GUI ERROR (non-fatal): "
+                                 f"{traceback.format_exc()}")
+                    except Exception:
+                        pass
         except queue.Empty:
             pass
+        finally:
+            try:
+                if terminal is not None:
+                    self._handle_runtime_error(terminal)
+                elif self.is_running:
+                    self.root.after(200, self._process_data_queue)
+            except tk.TclError:
+                pass   # window already destroyed
 
-        if self.is_running:
-            self.root.after(200, self._process_data_queue)
+    def _handle_runtime_error(self, exception):
+        # UNATTENDED POLICY: no modal dialog -- runs go overnight with
+        # nobody at the PC, and a messagebox here would also block this
+        # pump. The worker's traceback was already logged by the pump (it
+        # is formatted in the worker thread, where the exception is live).
+        self.log(f"RUNTIME ERROR: {type(exception).__name__}: {exception}")
+        self.stop_measurement(False)
+        self._alert(f"Measurement stopped by an unexpected error: "
+                    f"{exception}. All data written so far is on disk.",
+                    beeps=3)
+
+    # --- Durable writes: open / append / flush / fsync / close per row,
+    # --- so a power cut cannot lose OS-buffered rows.
+    def _durable_write(self, path, text):
+        """Append text and force it to the physical disk immediately."""
+        # newline='' keeps the csv '\r\n' row ending exactly as before.
+        with open(path, 'a', newline='') as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+
+    def _write_or_buffer(self, path, row_str):
+        """Write a row durably; on a disk/share hiccup, buffer it for a
+        retry before the next row so measured data is never silently
+        dropped. While rows are pending, new rows go straight to the
+        buffer to keep the file in order."""
+        if self._pending_rows:
+            self._pending_rows.append((path, row_str))
+            return
+        try:
+            self._durable_write(path, row_str)
+        except OSError as e:
+            self._pending_rows.append((path, row_str))
+            if not self._write_error_logged:
+                self._write_error_logged = True
+                self.log(f"WRITE ERROR: {e} - buffering rows and "
+                         "retrying before every new point.")
+
+    def _flush_pending_rows(self):
+        while self._pending_rows:
+            path, row = self._pending_rows[0]
+            try:
+                self._durable_write(path, row)
+            except OSError:
+                return   # still failing; keep buffer, retry next point
+            self._pending_rows.popleft()
+        if self._write_error_logged:
+            self._write_error_logged = False
+            self.log("Write path recovered; buffered rows flushed.")
+
+    def _handle_new_data_point(self, data):
+        """Unpacks, saves and logs a single data point."""
+        temp, htr, cur, res, elapsed = data
+        # The row the csv module wrote before 25 Sep 2026, byte for byte:
+        # no field can hold a comma, quote or newline, so none was ever
+        # quoted, and csv ends a row with '\r\n'. NaN stays 'nan'.
+        row = ",".join([
+            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            f"{elapsed:.2f}",
+            f"{temp:.4f}",
+            f"{htr:.2f}",
+            f"{self.backend.params['source_voltage']:.4e}",
+            f"{cur:.4e}",
+            f"{res:.4e}"]) + "\r\n"
+        self._flush_pending_rows()
+        self._write_or_buffer(self.data_filepath, row)
+        self.log(f"T:{temp:.3f}K | R:{res:.3e}Ω | I:{cur:.3e}A")
+
+        self.data_storage['time'].append(elapsed)
+        self.data_storage['temperature'].append(temp)
+        self.data_storage['current'].append(cur)
+        self.data_storage['resistance'].append(res)
+        # Mark that the plot needs a refresh; actual redraw is
+        # decoupled and throttled (see _refresh_plot).
+        self._plot_dirty = True
 
     def _refresh_plot(self):
         """Redraws the plots at a fixed cadence, independent of data rate.
@@ -1450,8 +1872,13 @@ class Integrated_RT_GUI:
         if self.is_running:
             if messagebox.askyesno("Exit",
                                    "Measurement running. Stop and exit?"):
+                # The window goes once the worker has let go of the
+                # instruments (_finalize_stop), not before.
+                self._close_after_stop = True
                 self.stop_measurement(from_user=False)
-                self.root.destroy()
+        elif self._stopping:
+            # Stop already in progress -- just close once it finishes.
+            self._close_after_stop = True
         else:
             self.root.destroy()
 

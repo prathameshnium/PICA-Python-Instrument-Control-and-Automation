@@ -494,7 +494,13 @@ class Lakeshore350_Link:
         if self.instrument is None:
             raise ConnectionError("Not connected to the Lake Shore 350.")
         raw = self.instrument.query(f"KRDG? {self.channel}").strip()
-        return parse_lakeshore_temperature(raw), raw
+        value = parse_lakeshore_temperature(raw)
+        # The 350 answers a sensor fault with 0 (see the parser). 0 K is
+        # not a reading, so it is None here - exactly what a Cryo-con
+        # status reply gives - and never reaches t_min or the header.
+        if value == 0.0:
+            value = None
+        return value, raw
 
     def reconnect(self):
         self.close()
