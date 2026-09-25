@@ -18,7 +18,9 @@ Cryocon SCPI verified against the Cryo-con User's Guide; the command set is
 common to the Model 32/32B/34 family:
   - INPUT? <ch>          -> channel temperature in that channel's display units
   - INPUT <ch>:UNITS?    -> display units (K, C, F, V or O)
-  - LOOP <n>:OUTPWR?     -> control loop output power in percent
+  - HEATER:OUTPWR?       -> control loop 1 output power in percent
+                            (this firmware addresses loops by NAME;
+                             every LOOP <n>:... form times out)
   - GPIB: factory address 12, EOI framing, no EOS terminator
 """
 
@@ -125,14 +127,30 @@ CRYOCON_PROBE_TIMEOUT_MS = 3000
 # The Model 34 manual's Remote Command Summary documents exactly one:
 # LOOP <n>:HTRREAD? ("output current of the selected control loop", per
 # cent of full scale). 'OUTPWR' is in neither the Model 34 nor the 24C
-# manual and is kept only as a second guess for older firmware.
+# manual. On the lab unit the manual is wrong about both halves of that.
 #
-# On the lab unit (2026-09-17) NEITHER answers: every LOOP <n>:...? query
-# times out there, along with CONTROL?, while INPUT? and the SYSTEM group
-# answer normally. So on that controller this settles to "no heater
-# read-back", the column logs NaN, and the bus is left alone - instead of
-# a timeout on EVERY data point feeding the reconnect handling.
-CRYOCON_HEATER_QUERIES = ('HTRREAD?', 'OUTPWR?')
+# 2026-09-17: every LOOP <n>:...? timed out, so this settled to "no heater
+# read-back" - correct behaviour, but for the wrong reason.
+# 2026-09-25, five runs agreeing exactly
+# (Untracked_Stuff/Diagnostics/log_25_09_26/):
+#
+#     HEATER:OUTPWR?    -> '0'        ANSWERS
+#     HEATER:HTRREAD?   -> TIMEOUT
+#     LOOP 1:HTRREAD?   -> TIMEOUT
+#     LOOP 1:OUTPWR?    -> TIMEOUT
+#
+# The loops are addressed by NAME on this firmware (HEATER = loop 1,
+# AOUT = loop 2), and under that prefix it takes the UNDOCUMENTED OUTPWR?
+# and refuses the documented HTRREAD?. So the prefix is part of what is in
+# question, and these are full commands rather than sub-mnemonics. The one
+# that works on the lab unit is first, so a normal Start pays one query
+# instead of four timeouts.
+CRYOCON_HEATER_QUERIES = (
+    'HEATER:OUTPWR?',
+    'HEATER:HTRREAD?',
+    'LOOP {loop}:HTRREAD?',
+    'LOOP {loop}:OUTPWR?',
+)
 
 # Timeout for the identification pass, matched to the standalone GPIB
 # scanner so this module does not call an instrument silent that the scanner
@@ -453,7 +471,7 @@ class Cryocon34_Backend:
             if saved_timeout is not None:
                 self.instrument.timeout = CRYOCON_PROBE_TIMEOUT_MS
             for query in CRYOCON_HEATER_QUERIES:
-                command = f'LOOP {loop}:{query}'
+                command = query.format(loop=loop)
                 try:
                     raw = self.instrument.query(command).strip()
                 except Exception as e:
@@ -473,11 +491,11 @@ class Cryocon34_Backend:
                     print(f"  Heater read-back '{command}' answered "
                           f"'{raw}' ({e}).")
                     if answered_but_not_a_number is None:
-                        answered_but_not_a_number = query
+                        answered_but_not_a_number = command
                     continue
-                self.heater_query = query
+                self.heater_query = command
                 print(f"  Heater read-back: '{command}' -> {value:.1f} %.")
-                return query
+                return command
         finally:
             if saved_timeout is not None:
                 self.instrument.timeout = saved_timeout
@@ -499,7 +517,9 @@ class Cryocon34_Backend:
             self.probe_heater_command(loop)
         if self.heater_query is None:
             return float('nan')
-        command = f'LOOP {loop}:{self.heater_query}'
+        # heater_query is the WHOLE command, prefix included, because
+        # the prefix is part of what was settled at Start.
+        command = self.heater_query
         raw = self.instrument.query(command).strip()
         try:
             return parse_cryocon_number(raw.rstrip('%'), command)
@@ -596,7 +616,9 @@ class Combined_Backend:
 
 
 class Integrated_RT_GUI:
-    PROGRAM_VERSION = "4.2"
+    # 4.3: heater read-back candidates carry their own prefix, and
+    #      HEATER:OUTPWR? leads. See CRYOCON_HEATER_QUERIES.
+    PROGRAM_VERSION = "4.3"
     LOGO_SIZE = 110
     LEFT_PANEL_WIDTH = 400  # default sash position so the left panel starts fully visible
 

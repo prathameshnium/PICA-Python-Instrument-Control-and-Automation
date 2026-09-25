@@ -12,7 +12,7 @@ What is pinned down here:
      sends is one the E4980A User's Guide documents, with the documented
      argument syntax. ':FETC?' is parsed as '<A>,<B>,<status>'.
   2. The Cryocon side uses the right equivalent at every Lakeshore call
-     site: KRDG? -> INPUT?, HTR? -> LOOP 1:OUTPWR?, RANGE 1,0 -> STOP. No
+     site: KRDG? -> INPUT?, HTR? -> HEATER:OUTPWR?, RANGE 1,0 -> STOP. No
      KRDG?/SETP/RANGE/HTR? survives in a CC34 file, and no *RST, CONTROL,
      SETPT, RATE or RANGE write exists anywhere.
   3. The passive scan's Cryocon writes: a default session (checkbox off)
@@ -133,16 +133,16 @@ class FakeCryocon:
 
     def __init__(self, temp="77.350K", units="K", heater="12.5%",
                  idn="Cryocon Model 34, Rev 3.03A",
-                 heater_query="HTRREAD?"):
+                 heater_query="HEATER:OUTPWR?"):
         self.idn = idn
         self.temp = temp
         self.units = units
         self.heater = heater
         # Which heater read-back this firmware answers. The Model 34
-        # manual documents LOOP:HTRREAD? and nothing else; anything else
+        # The WHOLE command this firmware answers, prefix included; the
         # is left unanswered, which on a real Cryo-con is a VISA timeout,
         # not an error string. None = no heater read-back at all.
-        self.heater_query = heater_query
+        self.heater_query = heater_query    # None = no read-back
         self.writes = []
         self.queries = []
         self.closed = False
@@ -165,8 +165,9 @@ class FakeCryocon:
             return self.units
         if cmd.startswith("INPUT?"):
             return self.temp
-        if cmd.startswith("LOOP"):
-            if self.heater_query and cmd.endswith(self.heater_query):
+        if cmd.split(":")[0].rstrip("?").split()[0] in (
+                "LOOP", "HEATER", "AOUT"):
+            if self.heater_query and cmd == self.heater_query:
                 return self.heater
             raise FakeVisaTimeout()     # unknown mnemonic: no reply
         return "0"
@@ -463,11 +464,20 @@ def test_temperature_is_read_with_input_query_in_every_cc34_module():
     for key, src in CC_SOURCES.items():
         assert 'INPUT? {ch}' in src, key
         assert 'INPUT {ch}:UNITS?' in src, key
-    # The heater read-back the Model 34 manual documents (LOOP:HTRREAD?)
-    # is the one the passive scan asks for first. OUTPWR? is in neither
-    # the Model 34 nor the 24C manual and survives only as a fallback.
-    assert passive_cc.CRYOCON_HEATER_QUERIES[0] == "HTRREAD?"
-    assert "LOOP {loop}:{query}" in CC_SOURCES["passive"]
+    # The heater read-back the lab unit ANSWERS (HEATER:OUTPWR?) is the
+    # one the passive scan asks for first. The manual disagrees - see
+    # test_lcr_cc34_manual_conformance.py - but the manual is wrong about
+    # this firmware in both directions, the prefix and the mnemonic, so
+    # the order follows the instrument. The numbered form stays in the
+    # list behind it, for a Model 32/32B.
+    queries = passive_cc.CRYOCON_HEATER_QUERIES
+    assert queries[0] == "HEATER:OUTPWR?", queries
+    assert "LOOP {loop}:HTRREAD?" in queries, queries
+    # Each candidate carries its own prefix, so the probe formats a whole
+    # command instead of gluing "LOOP {loop}:" onto a sub-mnemonic - that
+    # glue is what made the prefix unquestionable, and it was wrong.
+    assert "query.format(loop=loop)" in CC_SOURCES["passive"]
+    assert "LOOP {loop}:{query}" not in CC_SOURCES["passive"]
 
 
 def test_the_passive_scan_reads_the_heater_like_the_base_read_htr():
@@ -475,7 +485,7 @@ def test_the_passive_scan_reads_the_heater_like_the_base_read_htr():
     backend = _passive_backend(cryo)
     assert backend.get_heater_output() == 12.5
     # One probe, then the settled command; both are the documented one.
-    assert cryo.queries == ["LOOP 1:HTRREAD?", "LOOP 1:HTRREAD?"]
+    assert cryo.queries == ["HEATER:OUTPWR?", "HEATER:OUTPWR?"]
     assert cryo.writes == []
     cryo.queries.clear()
     # A status reply is NaN (a heater that cannot be read is not a
@@ -718,8 +728,8 @@ def test_the_module_line_names_the_file():
 def test_the_version_line_marks_the_cc34_sibling():
     assert "1.8-PPMS-Sync-CC34" in CC_SOURCES["sync"]
     assert '"1.5-CC34"' in CC_SOURCES["master"]
-    assert "V: 1.7" in CC_SOURCES["passive"]
-    assert '"1.7-CC34"' in CC_SOURCES["passive"]
+    assert "V: 1.8" in CC_SOURCES["passive"]
+    assert '"1.8-CC34"' in CC_SOURCES["passive"]
 
 
 if __name__ == "__main__":

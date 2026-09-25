@@ -112,19 +112,61 @@ STRICT_MODEL_34 = {
         "STOP -> disengage both control loops and disconnect the heater",
 }
 
-# Documented by neither the Model 34 nor the 24C manual. Tried once, at
-# Start, only as a fallback for a firmware that answers the older
-# mnemonic - never as the first or the only thing asked for.
+# Commands the manual does NOT document but the lab instrument DOES answer,
+# each with the run that established it. This category exists because on
+# 2026-09-25 the manual turned out to be wrong about this firmware in both
+# directions at once - five diagnostic runs agreeing exactly, in
+# Untracked_Stuff/Diagnostics/log_25_09_26/:
+#
+#   * the loops are addressed BY NAME, HEATER = loop 1 and AOUT = loop 2.
+#     Every 'LOOP <n>:...' in the manual's LOOP chapter times out, in every
+#     spelling. 15 name-form queries answered; 0 numbered ones did.
+#   * under that prefix the unit answers the UNDOCUMENTED 'OUTPWR?' and
+#     refuses the documented 'HTRREAD?'.
+#
+# Keeping this separate from STRICT_MODEL_34 is the point. The manual is
+# still the manual; these are measurements. Anything here must cite the log
+# that proves it, and a command in NEITHER table still fails the audit.
+INSTRUMENT_VERIFIED = {
+    r"HEATER:OUTPWR\?":
+        "answers '0' on the lab Model 34 Rev 3.03A (log_25_09_26, 5 runs); "
+        "undocumented, and the documented HEATER:HTRREAD? times out",
+    r"HEATER:SETPT\?":
+        "answers '330.000000K' (log_25_09_26); the loop-addressing probe",
+}
+
+# Documented by neither the Model 34 nor the 24C manual, and not verified on
+# the lab unit either. Tried once, at Start, only as a fallback for a
+# firmware that answers a different spelling - never as the only thing asked
+# for, and never inside the measurement loop.
 TOLERATED_FALLBACKS = {
     r"LOOP [12]:OUTPWR\?":
         "not in the Model 34 or 24C manual; fallback probe only",
+    r"HEATER:HTRREAD\?":
+        "the documented mnemonic under the verified prefix; times out on "
+        "the lab unit but is the form another firmware would take",
 }
 
 _STRICT = [re.compile(p) for p in STRICT_MODEL_34]
+_VERIFIED = [re.compile(p) for p in INSTRUMENT_VERIFIED]
 _FALLBACK = [re.compile(p) for p in TOLERATED_FALLBACKS]
 
 
 def _is_documented(command):
+    """In the Model 34 manual, or measured on the lab Model 34.
+
+    Both count as "this command is legitimate": a mnemonic the instrument
+    demonstrably answers is not a guess, even when the manual omits it. The
+    two sources are kept in separate tables above so it is always clear
+    which one a given command rests on.
+    """
+    cmd = command.strip()
+    return (any(p.fullmatch(cmd) for p in _STRICT)
+            or any(p.fullmatch(cmd) for p in _VERIFIED))
+
+
+def _is_in_the_manual(command):
+    """Strictly the manual - no hardware measurements."""
     return any(p.fullmatch(command.strip()) for p in _STRICT)
 
 
@@ -156,12 +198,15 @@ class StrictCryocon:
 
     def __init__(self, temp="77.3500", units="K", heater="22%",
                  idn="Cryocon Model 34, Rev 3.03A", extra=(),
-                 heater_query="HTRREAD?"):
+                 heater_query="HEATER:OUTPWR?"):
         self.idn = idn
         self.temp = temp
         self.units = units
         self.heater = heater
-        self.heater_query = heater_query    # None = no read-back at all
+        # The WHOLE command this firmware answers, prefix included, because
+        # the prefix is the half the manual gets wrong. Defaults to what the
+        # lab unit does. None = no read-back at all.
+        self.heater_query = heater_query
         self.extra = tuple(extra)
         self.writes = []
         self.queries = []
@@ -196,8 +241,13 @@ class StrictCryocon:
             return self.units
         if cmd.startswith("INPUT?"):
             return self.temp
-        if cmd.startswith("LOOP"):
-            if self.heater_query and cmd.endswith(self.heater_query):
+        if cmd.split(":")[0].rstrip("?").split()[0] in (
+                "LOOP", "HEATER", "AOUT"):
+            # One spelling answers; every other is met with silence, which
+            # is how a Cryo-con refuses. No catch-all: a fake that answers
+            # whatever it is asked agrees with the code by construction and
+            # can never disagree with the instrument.
+            if self.heater_query and cmd == self.heater_query:
                 return self.heater
             self.rejected.append(cmd)
             raise FakeVisaTimeout(cmd)
@@ -352,12 +402,21 @@ def test_every_cryocon_mnemonic_in_the_sources_is_in_the_manual():
             "Model 34 command")
 
 
-def test_outpwr_is_never_the_command_a_module_reaches_for_first():
-    """The regression this file was written for. OUTPWR? may exist as a
-    fallback; it may not be the first or the only heater read-back."""
+def test_the_heater_read_is_never_a_single_unconditional_guess():
+    """The regression this file was written for, restated.
+
+    The original bug was not the mnemonic OUTPWR? - on the lab unit that
+    mnemonic is the one that WORKS. The bug was sending one unprobed guess
+    on every data point. So what this pins is the shape: more than one
+    candidate, every one carrying its prefix, the first one being the one
+    the instrument is known to answer, and each verified or tolerated."""
     queries = passive.CRYOCON_HEATER_QUERIES
-    assert queries[0] == "HTRREAD?", queries
-    assert "OUTPWR?" in queries, queries    # kept, but only as a fallback
+    assert len(queries) > 1, queries
+    assert queries[0] == "HEATER:OUTPWR?", queries
+    for candidate in queries:
+        filled = candidate.replace("{loop}", "1")
+        assert ":" in filled, candidate
+        assert _is_documented(filled) or _is_tolerated(filled), candidate
     for key, src in CC_SOURCES.items():
         if key == "passive":
             continue
@@ -441,30 +500,45 @@ def _passive_cryocon(bus):
         "GPIB0::23::INSTR", channel="A", log=lambda m: None)
 
 
-def test_a_documented_firmware_settles_on_htrread_at_start():
+def test_the_lab_unit_settles_on_heater_outpwr_at_start():
+    """What the instrument actually does: name prefix, undocumented
+    mnemonic, and no further guessing once it is settled."""
     bus = FakeBus()
     with patch_bus(passive, bus):
         cryo = _passive_cryocon(bus)
         cryo.verify_channel()
         assert cryo.heater_probed is True
-        assert cryo.heater_query == "HTRREAD?"
+        assert cryo.heater_query == "HEATER:OUTPWR?", cryo.heater_query
+        bus.cryocon.queries.clear()
+        assert cryo.get_heater_output() == 22.0
+        cryo.close()
+    assert bus.cryocon.queries == ["HEATER:OUTPWR?"], bus.cryocon.queries
+    assert bus.cryocon.rejected == [], bus.cryocon.rejected
+
+
+def test_a_firmware_that_only_knows_the_documented_form_is_still_read():
+    """A unit that takes the manual's numbered LOOP <n>:HTRREAD? and
+    nothing else still gets its heater column. That is what keeping the
+    numbered form as a fallback is for; it costs extra queries once, at
+    Start, and none afterwards."""
+    bus = FakeBus(cryocon=StrictCryocon(heater_query="LOOP 1:HTRREAD?"))
+    with patch_bus(passive, bus):
+        cryo = _passive_cryocon(bus)
+        cryo.verify_channel()
+        assert cryo.heater_query == "LOOP 1:HTRREAD?", cryo.heater_query
         bus.cryocon.queries.clear()
         assert cryo.get_heater_output() == 22.0
         cryo.close()
     assert bus.cryocon.queries == ["LOOP 1:HTRREAD?"], bus.cryocon.queries
-    assert bus.cryocon.rejected == [], bus.cryocon.rejected
 
 
-def test_an_older_firmware_that_only_knows_outpwr_is_still_read():
-    """A unit that answers the undocumented mnemonic and not the
-    documented one still gets its heater column - the fallback exists
-    for exactly this - and it costs one extra query, once, at Start."""
+def test_an_older_firmware_that_only_knows_numbered_outpwr_is_still_read():
     bus = FakeBus(cryocon=StrictCryocon(
-        extra=("OUTPWR?",), heater_query="OUTPWR?"))
+        extra=("OUTPWR?",), heater_query="LOOP 1:OUTPWR?"))
     with patch_bus(passive, bus):
         cryo = _passive_cryocon(bus)
         cryo.verify_channel()
-        assert cryo.heater_query == "OUTPWR?", cryo.heater_query
+        assert cryo.heater_query == "LOOP 1:OUTPWR?", cryo.heater_query
         bus.cryocon.queries.clear()
         assert cryo.get_heater_output() == 22.0
         cryo.close()
@@ -525,7 +599,7 @@ def test_a_real_comm_failure_after_the_probe_still_raises():
     with patch_bus(passive, bus):
         cryo = _passive_cryocon(bus)
         cryo.verify_channel()
-        assert cryo.heater_query == "HTRREAD?"
+        assert cryo.heater_query == "HEATER:OUTPWR?"
         bus.cryocon.dead = True
         try:
             cryo.get_heater_output()
@@ -555,11 +629,13 @@ def test_a_nack_is_a_rejection_not_an_answer():
     heater column AND a pointless query on every sweep for the rest of
     the run, so a NACK moves the probe on to the next form."""
     bus = FakeBus(cryocon=StrictCryocon(
-        extra=("OUTPWR?",), heater="NACK", heater_query="HTRREAD?"))
+        extra=("OUTPWR?",), heater="NACK", heater_query="HEATER:OUTPWR?"))
     with patch_bus(passive, bus):
         cryo = _passive_cryocon(bus)
         cryo.verify_channel()
-        # HTRREAD? said NACK; OUTPWR? is not answered by this unit either.
+        # HEATER:OUTPWR? said NACK, and no other spelling answers on
+        # this unit, so the probe must settle on "none" rather than on a
+        # query that can only ever yield NaN, once per sweep, all night.
         assert cryo.heater_query is None, cryo.heater_query
         before = len(bus.cryocon.queries)
         assert math.isnan(cryo.get_heater_output())
@@ -576,7 +652,7 @@ def test_the_probe_is_only_ever_run_once():
         for _ in range(4):
             cryo.get_heater_output()
         cryo.close()
-    assert bus.cryocon.queries == ["LOOP 1:HTRREAD?"] * 4, bus.cryocon.queries
+    assert bus.cryocon.queries == ["HEATER:OUTPWR?"] * 4, bus.cryocon.queries
 
 
 # ===========================================================================
@@ -603,8 +679,11 @@ def test_the_t_log_header_names_the_query_that_actually_answered():
     with tempfile.TemporaryDirectory() as tmpdir:
         gui, _ = _run_gui_files(tmpdir, StrictCryocon())
         header = open(gui.t_log_path, encoding="utf-8").readline()
-    assert "LOOP 1:HTRREAD?" in header, header
-    assert "OUTPWR" not in header, header
+    # The header must name the command that ANSWERED, prefix included -
+    # otherwise a file from this unit and a file from one taking the
+    # documented form are indistinguishable after the fact.
+    assert "HEATER:OUTPWR?" in header, header
+    assert "LOOP 1:" not in header, header
     assert "input channel A" in header, header
 
 

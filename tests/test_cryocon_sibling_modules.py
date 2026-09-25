@@ -73,10 +73,12 @@ class FakeVisaTimeout(IOError):
 
 class FakeInstrument:
     def __init__(self, idn, temp="77.350K", write_timeouts=0,
-                 heater_query="HTRREAD?"):
-        # Which heater read-back this firmware answers. None = none of
-        # them, which is what the lab's Model 34 does: every LOOP <n>:...?
-        # query times out there (diagnostics survey, 2026-09-17).
+                 heater_query="HEATER:OUTPWR?"):
+        # The WHOLE heater read-back command this firmware answers, prefix
+        # included - because the prefix is the half that was wrong. The lab
+        # unit answers 'HEATER:OUTPWR?' and refuses every other spelling,
+        # including the documented 'LOOP 1:HTRREAD?' (2026-09-25, five
+        # runs). None = a controller that answers no heater read-back.
         self.heater_query = heater_query
         self.idn = idn
         self.temp = temp
@@ -101,12 +103,15 @@ class FakeInstrument:
             return "K"
         if cmd.startswith("INPUT?"):
             return self.temp
-        if cmd.startswith("LOOP"):
-            # The Model 34 manual documents exactly one heater read-back,
-            # LOOP <n>:HTRREAD?. Anything else gets no reply, which is how
-            # a Cryo-con refuses. `heater_query=None` is the lab unit,
-            # where even HTRREAD? goes unanswered (2026-09-17).
-            if self.heater_query and cmd.endswith(self.heater_query):
+        if cmd.split(":")[0].rstrip("?").split()[0] in (
+                "LOOP", "HEATER", "AOUT", "CONTROL", "STOP"):
+            # Manual-accurate, and this is the point of the whole file: the
+            # fake answers ONE spelling and refuses every other, because a
+            # Cryo-con refuses by not answering at all. A fake with a
+            # catch-all reply agrees with whatever the code asks and so can
+            # never disagree with the instrument - which is exactly how
+            # 'LOOP 1:OUTPWR?' lived in a measurement loop for weeks.
+            if self.heater_query and cmd == self.heater_query:
                 return "0.0"
             raise FakeVisaTimeout()
         return "0"
@@ -119,7 +124,7 @@ class FakeBus:
     """The lab bus of 29 Aug 2026: Cryocon on GPIB0::12, LS350 on GPIB1::12."""
 
     def __init__(self, cryocon_write_timeouts=0, cryocon_temp="77.350K",
-                 cryocon_heater_query="HTRREAD?"):
+                 cryocon_heater_query="HEATER:OUTPWR?"):
         self.instruments = {
             "GPIB0::12::INSTR": FakeInstrument(
                 CRYOCON_IDN, temp=cryocon_temp,
@@ -368,25 +373,49 @@ def _k6517b_backend(bus):
     return module.Cryocon34_Backend("GPIB0::12::INSTR", log=lambda m: None)
 
 
-def test_the_documented_heater_query_is_the_one_tried_first():
+def test_the_query_that_actually_works_is_the_one_tried_first():
+    """Reversed on 2026-09-25. The manual documents LOOP <n>:HTRREAD? and
+    does not document OUTPWR? at all; the lab unit answers HEATER:OUTPWR?
+    and refuses all three others. So the candidate list is ordered by what
+    the instrument does, not by what the manual says, and a normal Start
+    pays one query instead of three timeouts before it.
+
+    Every candidate carries its prefix, because the prefix was the half
+    that was wrong: the mnemonic OUTPWR? was fine all along."""
     module = MODULES["k6517b"]
-    assert module.CRYOCON_HEATER_QUERIES[0] == "HTRREAD?"
-    assert "OUTPWR?" in module.CRYOCON_HEATER_QUERIES     # fallback only
-    assert "LOOP {loop}:OUTPWR?" not in SOURCES["k6517b"]
+    assert module.CRYOCON_HEATER_QUERIES[0] == "HEATER:OUTPWR?"
+    for candidate in module.CRYOCON_HEATER_QUERIES:
+        assert ":" in candidate, f"{candidate!r} carries no prefix"
+    # The numbered form stays available for a Model 32/32B.
+    assert "LOOP {loop}:HTRREAD?" in module.CRYOCON_HEATER_QUERIES
+    assert "LOOP {loop}:OUTPWR?" in module.CRYOCON_HEATER_QUERIES
 
 
-def test_a_firmware_with_htrread_settles_on_it_and_stops_guessing():
+def test_the_lab_unit_settles_on_heater_outpwr_and_stops_guessing():
     module = MODULES["k6517b"]
-    bus = FakeBus()
+    bus = FakeBus()                       # defaults to the lab unit
     with patch_bus(module, bus):
         backend = _k6517b_backend(bus)
         backend.probe_heater_command(1)
         assert backend.heater_probed is True
-        assert backend.heater_query == "HTRREAD?", backend.heater_query
+        assert backend.heater_query == "HEATER:OUTPWR?", backend.heater_query
+        bus.cryocon.queries.clear()
+        assert backend.get_heater_output(1) == 0.0
+    assert bus.cryocon.queries == ["HEATER:OUTPWR?"], bus.cryocon.queries
+    assert bus.cryocon.writes == []
+
+
+def test_a_firmware_that_only_knows_the_documented_form_is_still_read():
+    """A Model 32/32B, or any unit that takes the manual's numbered form."""
+    module = MODULES["k6517b"]
+    bus = FakeBus(cryocon_heater_query="LOOP 1:HTRREAD?")
+    with patch_bus(module, bus):
+        backend = _k6517b_backend(bus)
+        backend.probe_heater_command(1)
+        assert backend.heater_query == "LOOP 1:HTRREAD?", backend.heater_query
         bus.cryocon.queries.clear()
         assert backend.get_heater_output(1) == 0.0
     assert bus.cryocon.queries == ["LOOP 1:HTRREAD?"], bus.cryocon.queries
-    assert bus.cryocon.writes == []
 
 
 def test_the_lab_unit_gets_nan_and_no_further_bus_traffic():
@@ -407,16 +436,31 @@ def test_the_lab_unit_gets_nan_and_no_further_bus_traffic():
     assert bus.cryocon.writes == []
 
 
-def test_an_older_firmware_that_only_knows_outpwr_is_still_read():
+def test_an_older_firmware_that_only_knows_numbered_outpwr_is_still_read():
     module = MODULES["k6517b"]
-    bus = FakeBus(cryocon_heater_query="OUTPWR?")
+    bus = FakeBus(cryocon_heater_query="LOOP 1:OUTPWR?")
     with patch_bus(module, bus):
         backend = _k6517b_backend(bus)
         backend.probe_heater_command(1)
-        assert backend.heater_query == "OUTPWR?", backend.heater_query
+        assert backend.heater_query == "LOOP 1:OUTPWR?", backend.heater_query
         bus.cryocon.queries.clear()
         assert backend.get_heater_output(1) == 0.0
     assert bus.cryocon.queries == ["LOOP 1:OUTPWR?"], bus.cryocon.queries
+
+
+def test_every_candidate_is_tried_in_order_before_giving_up():
+    """A unit that answers only the LAST candidate must still be read. The
+    fake refuses the other three exactly as the instrument does, so this
+    also pins the order the probe walks them in."""
+    module = MODULES["k6517b"]
+    bus = FakeBus(cryocon_heater_query="LOOP 1:OUTPWR?")
+    with patch_bus(module, bus):
+        backend = _k6517b_backend(bus)
+        backend.probe_heater_command(1)
+    asked = [q for q in bus.cryocon.queries
+             if "OUTPWR" in q or "HTRREAD" in q]
+    assert asked == ["HEATER:OUTPWR?", "HEATER:HTRREAD?",
+                     "LOOP 1:HTRREAD?", "LOOP 1:OUTPWR?"], asked
 
 
 def test_the_probe_uses_its_own_short_timeout_and_restores_it():

@@ -259,9 +259,11 @@ def _connected_backend(fake=None):
 
 
 def test_pid_is_one_compound_command_on_the_loop_path():
+    """Name form, because that is what the lab unit answers - see
+    test_the_numbered_form_is_still_available_for_other_firmware."""
     backend, fake = _connected_backend()
     cmd = backend.set_pid(1, 0.2, 1, 0)
-    assert cmd == "LOOP 1:PGAIN 0.2;IGAIN 1;DGAIN 0"
+    assert cmd == "HEATER:PGAIN 0.2;IGAIN 1;DGAIN 0"
     assert fake.writes == [cmd]
 
 
@@ -269,7 +271,7 @@ def test_an_immediate_setpoint_leaves_ramp_mode_first():
     """Setting SETPT without clearing RampP would ramp instead of jumping."""
     backend, fake = _connected_backend()
     cmd = backend.set_setpoint_immediate(1, 300)
-    assert cmd == "LOOP 1:TYPE PID;SETPT 300"
+    assert cmd == "HEATER:TYPE PID;SETPT 300"
     assert fake.writes == [cmd]
 
 
@@ -278,13 +280,13 @@ def test_a_ramped_setpoint_sets_the_rate_before_the_setpoint():
     backend, _fake = _connected_backend()
     cmd = backend.set_setpoint_with_ramp(1, 100, 0.5)
     assert cmd.index("RATE") < cmd.index("SETPT")
-    assert cmd == "LOOP 1:RATE 0.5;TYPE RampP;SETPT 100"
+    assert cmd == "HEATER:RATE 0.5;TYPE RampP;SETPT 100"
 
 
 def test_heater_range_and_load_are_loop_1_only():
     backend, _fake = _connected_backend()
-    assert backend.set_range("Low") == "LOOP 1:RANGE Low"
-    assert backend.set_load(50) == "LOOP 1:LOAD 50"
+    assert backend.set_range("Low") == "HEATER:RANGE Low"
+    assert backend.set_load(50) == "HEATER:LOAD 50"
 
 
 def test_control_and_stop_are_the_documented_bare_commands():
@@ -296,7 +298,216 @@ def test_control_and_stop_are_the_documented_bare_commands():
 
 def test_loop_source_is_written_as_a_channel_name():
     backend, _fake = _connected_backend()
-    assert backend.set_loop_source(1, "B") == "LOOP 1:SOURCE CHB"
+    assert backend.set_loop_source(1, "B") == "HEATER:SOURCE CHB"
+
+
+# ------------------------------------------------- direct control: addressing
+
+class LabModel34(FakeCryocon):
+    """The lab Cryo-con Model 34, Rev 3.03A, as five diagnostic runs on
+    2026-09-25 recorded it (Untracked_Stuff/Diagnostics/log_25_09_26/).
+
+    Loops are addressed BY NAME. Every 'LOOP <n>:...' is met with silence,
+    which on a Cryo-con is how a command it does not recognise fails - no
+    error string, nothing the call site can distinguish from a dead bus.
+
+    It answers only what the instrument answered. That is the whole point:
+    a fake that replies to whatever the code asks agrees with the code by
+    construction, so it can never disagree with the instrument, and that is
+    how 'LOOP 1:OUTPWR?' survived in a measurement loop for weeks.
+    """
+
+    ANSWERS = {
+        "HEATER:SETPT?": "330.000000K",
+        "HEATER:TYPE?": "RAMPT",
+        "HEATER:SOURCE?": "CHA",
+        "HEATER:RANGE?": "5.0W",
+        "HEATER:LOAD?": "50",
+        "HEATER:RATE?": "1.000000",
+        "HEATER:RAMP?": "NO",
+        "HEATER:PGAIN?": "0.500000",
+        "HEATER:IGAIN?": "1.000000",
+        "HEATER:DGAIN?": "1.000000",
+        "HEATER:OUTPWR?": "0",
+        "HEATER:PMANUAL?": "100",
+        "AOUT:SETPT?": "100.000000K",
+        "AOUT:TYPE?": "RAMPP",
+        "AOUT:MODE?": "HTR",
+    }
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.answers.update(self.ANSWERS)
+
+    def query(self, command):
+        cmd = command.strip()
+        self.queries.append(cmd)
+        if cmd in self.answers:
+            return self.answers[cmd]
+        # Refused the way the instrument refuses: nothing comes back.
+        raise IOError("VI_ERROR_TMO (-1073807339): Timeout expired before "
+                      f"operation completed. (no reply to {cmd!r})")
+
+
+def _lab_backend():
+    """A backend connected to a fake of the real lab unit."""
+    fake = LabModel34()
+    with _PatchVisa(control, fake):
+        backend = control.Cryocon34Backend(log=lambda m: None)
+        backend.rm = control.pyvisa.ResourceManager()
+        backend.connect("GPIB1::23::INSTR")
+    return backend, fake
+
+
+def test_connecting_to_the_lab_unit_settles_on_the_name_form():
+    """End-to-end: against a controller that answers only HEATER/AOUT, the
+    connect probe must choose the name form without being told."""
+    backend, fake = _lab_backend()
+    assert backend.loop_prefix_mode == 'name', backend.loop_prefix_mode
+    assert fake.writes == [], fake.writes
+    assert "HEATER:SETPT?" in fake.queries
+    # It must not have needed the numbered probe at all: the name form
+    # answered first, so LOOP 1:SETPT? was never sent.
+    assert "LOOP 1:SETPT?" not in fake.queries, fake.queries
+
+
+def test_every_control_command_reaches_the_lab_unit():
+    """THE regression. Before this rewrite each of these went out as
+    'LOOP <n>:...' and the lab controller answered none of them - PICA
+    could not control it at all, and nothing said so."""
+    backend, fake = _lab_backend()
+    sent = [
+        backend.set_pid(1, 0.5, 1, 0),
+        backend.set_setpoint_immediate(1, 300),
+        backend.set_setpoint_with_ramp(1, 100, 0.5),
+        backend.set_rate(1, 2),
+        backend.set_loop_type(1, "PID"),
+        backend.set_loop_source(1, "A"),
+        backend.set_range("Mid"),
+        backend.set_load(50),
+        backend.set_manual_power(1, 10),
+        backend.set_loop_type(2, "Off"),
+    ]
+    for command in sent:
+        assert command.startswith(("HEATER:", "AOUT:")), command
+        assert not command.startswith("LOOP"), command
+    assert fake.writes == sent, (fake.writes, sent)
+
+
+def test_the_readers_come_back_with_the_instruments_own_numbers():
+    backend, _fake = _lab_backend()
+    assert backend.get_setpoint(1) == 330.0
+    assert backend.get_loop_type(1) == "RAMPT"
+    assert backend.get_loop_source(1) == "CHA"
+    assert backend.get_load() == "50"
+    assert backend.get_pid(1) == (0.5, 1.0, 1.0)
+    assert backend.get_setpoint(2) == 100.0
+    assert backend.get_loop_type(2) == "RAMPP"
+
+
+def test_the_heater_readback_settles_on_outpwr_on_the_lab_unit():
+    """HEATER:HTRREAD? is the documented one and it times out here;
+    HEATER:OUTPWR? is undocumented and it works."""
+    backend, fake = _lab_backend()
+    assert backend.heater_query == 'OUTPWR?', backend.heater_query
+    fake.queries.clear()
+    assert backend.get_output_power(1) == 0.0
+    assert fake.queries == ["HEATER:OUTPWR?"], fake.queries
+
+
+def test_a_numbered_only_controller_falls_back_and_still_works():
+    """A Model 32/32B, or any firmware that takes the manual's form."""
+    fake = FakeCryocon(answers={
+        "LOOP 1:SETPT?": "300.0",
+        "LOOP 1:OUTPWR?": "12",
+    })
+    with _PatchVisa(control, fake):
+        backend = control.Cryocon34Backend(log=lambda m: None)
+        backend.rm = control.pyvisa.ResourceManager()
+        backend.connect("GPIB0::12::INSTR")
+    assert backend.loop_prefix_mode == 'number', backend.loop_prefix_mode
+    assert backend.set_pid(1, 1, 1, 0) == "LOOP 1:PGAIN 1;IGAIN 1;DGAIN 0"
+    assert backend.get_setpoint(1) == 300.0
+
+
+def test_a_fresh_connection_reprobes_instead_of_trusting_the_last_one():
+    """Disconnecting and connecting elsewhere must not carry the previous
+    instrument's addressing form across."""
+    backend, _fake = _lab_backend()
+    assert backend.loop_prefix_mode == 'name'
+    assert backend.heater_query == 'OUTPWR?'
+    backend.disconnect()
+    assert backend.loop_prefix_mode == 'name'   # the default, not a memory
+    assert backend.heater_query is None
+
+
+
+def test_loop_2_is_addressed_as_aout():
+    backend, _fake = _connected_backend()
+    assert backend.set_loop_type(2, "PID") == "AOUT:TYPE PID"
+    assert backend.set_setpoint_immediate(2, 100) == "AOUT:TYPE PID;SETPT 100"
+
+
+def test_the_numbered_form_is_still_available_for_other_firmware():
+    """A Model 32/32B presumably takes the manual's LOOP <n>: form. The
+    prefix is settled once per connection, so flipping the mode flips every
+    command - there is no second place that spells a loop out."""
+    backend, _fake = _connected_backend()
+    backend.loop_prefix_mode = 'number'
+    assert backend.set_pid(1, 1, 1, 0) == "LOOP 1:PGAIN 1;IGAIN 1;DGAIN 0"
+    assert backend.set_range("Low") == "LOOP 1:RANGE Low"
+    assert backend.set_loop_type(2, "PID") == "LOOP 2:TYPE PID"
+
+
+def test_the_addressing_form_is_probed_by_QUERY_not_guessed():
+    """Both probes are queries: connecting must not write anything."""
+    backend, fake = _connected_backend()
+    assert fake.writes == [], fake.writes
+    assert backend.loop_prefix_mode in ('name', 'number')
+
+
+def test_a_unit_that_answers_neither_form_defaults_to_the_name_form():
+    """Defaulting to the numbered form is the bug this replaces: on the lab
+    unit it reaches nothing, silently."""
+    backend, _fake = _connected_backend()
+    backend.loop_prefix_mode = None
+    backend._query = lambda command: ""
+    assert backend._probe_loop_prefix() == 'name'
+    assert backend.loop_prefix_mode == 'name'
+
+
+def test_the_heater_readback_mnemonic_is_probed_and_prefers_OUTPWR():
+    """Manual documents HTRREAD?; the lab unit answers OUTPWR? and refuses
+    HTRREAD?. So OUTPWR? is asked FIRST and the answer is remembered."""
+    control_backend = control.Cryocon34Backend
+    assert control_backend.HEATER_READ_CANDIDATES[0] == 'OUTPWR?'
+    backend, _fake = _connected_backend()
+    asked = []
+
+    def only_outpwr(command):
+        asked.append(command)
+        if command.endswith("OUTPWR?"):
+            return "0"
+        raise IOError("VI_ERROR_TMO")
+
+    backend._query = only_outpwr
+    assert backend._probe_heater_query() == 'OUTPWR?'
+    assert asked == ["HEATER:OUTPWR?"], asked
+
+
+def test_a_unit_answering_no_heater_mnemonic_reads_NaN_and_stops_asking():
+    """A refused Cryo-con command costs a whole VISA timeout and looks like
+    a dead bus. Retrying one per poll is what turns a logging column into a
+    night of spurious reconnects."""
+    backend, _fake = _connected_backend()
+    backend._query = lambda command: (_ for _ in ()).throw(IOError("TMO"))
+    assert backend._probe_heater_query() is None
+    asked = []
+    backend._query = lambda command: asked.append(command)
+    value = backend.get_output_power(1)
+    assert value != value, value           # NaN
+    assert backend.get_heater_readback(1) == 'nan'
+    assert asked == [], asked
 
 
 # ---------------------------------------- direct control: input validation
@@ -557,6 +768,21 @@ ALLOWED_CRYOCON_COMMANDS = {
     "HEATER:AUTOTUNE:STATUS?", "HEATER:AUTOTUNE:DELTAP?",
     "AOUT:SETPT?", "AOUT:TYPE?", "AOUT:MODE?", "AOUT:HTRREAD?",
 
+    # The same subsystem in its WRITE form. T_Control builds every loop
+    # command through Cryocon34Backend._loop(), so each of these is the
+    # name-form twin of a LOOP:... entry above; the audit expands the
+    # prefix placeholder and checks both spellings.
+    "HEATER:PGAIN", "HEATER:IGAIN", "HEATER:DGAIN", "HEATER:SETPT",
+    "HEATER:RATE", "HEATER:TYPE", "HEATER:SOURCE", "HEATER:RANGE",
+    "HEATER:LOAD", "HEATER:MAXPWR", "HEATER:MAXSET", "HEATER:PMANUAL",
+    "AOUT:SETPT", "AOUT:TYPE",
+    "AOUT:PGAIN", "AOUT:IGAIN", "AOUT:DGAIN", "AOUT:RATE", "AOUT:SOURCE",
+    "AOUT:RANGE", "AOUT:LOAD", "AOUT:MAXPWR", "AOUT:MAXSET",
+    "AOUT:PMANUAL", "AOUT:RAMP?", "AOUT:OUTPWR?", "AOUT:PMANUAL?",
+    "AOUT:RATE?", "AOUT:SOURCE?", "AOUT:PGAIN?", "AOUT:IGAIN?",
+    "AOUT:DGAIN?", "AOUT:RANGE?", "AOUT:LOAD?", "AOUT:MAXPWR?",
+    "AOUT:MAXSET?", "AOUT:HTRR?", "HEATER:HTRR?",
+
     # -- deliberately WRONG spellings (Diagnostics_CC34_GUI) --
     #
     # Sent on purpose, to prove they are refused. The 17 Sep runs showed
@@ -650,6 +876,8 @@ def test_no_cryocon_command_outside_the_vetted_mnemonic_list():
                          ("T_Control_CC34_DirectControl_GUI.py", CONTROL_SOURCE)):
         for command in _all_commands(source):
             for mnemonic in _mnemonics(command):
+                if not _is_cryocon_mnemonic(mnemonic):
+                    continue
                 assert mnemonic in ALLOWED_CRYOCON_COMMANDS,                     f"{name}: {command!r} uses unvetted {mnemonic!r}"
 
 
@@ -708,6 +936,15 @@ def _looks_like_a_cryocon_command(text):
     text = text.strip()
     if not text or len(text) > 48 or "," in text or "." in text:
         return False
+    # Prose beginning with a subsystem keyword - "CONTROL is deliberately NOT
+    # sent: ...", "CONTROL engages every enabled loop; STOP" - otherwise
+    # reads as a command. What separates them is English: a real command has
+    # at most one all-lowercase word in it (a lower-case spelling probe like
+    # 'input? a'), while a sentence has several.
+    lowercase_words = sum(1 for word in re.split(r'[\s;:]+', text)
+                          if word and word.isalpha() and word.islower())
+    if lowercase_words > 1:
+        return False
     root = re.split(r'[ :;]', text, 1)[0].rstrip("?")
     return root in CRYOCON_SUBSYSTEM_ROOTS and bool(_COMMAND_SHAPE.match(text))
 
@@ -756,6 +993,32 @@ def _cryocon_commands_in(source):
             if getattr(target, "id", None):
                 constants[target.id] = text
 
+    # Only a module that actually builds loop commands through a prefix
+    # helper gets its '{}:' strings expanded. Without this, an ordinary log
+    # line like f"{channel}: SENIX {n}" in the curve viewer would be read as
+    # a HEATER:SENIX command.
+    builds_loop_commands = "def _loop(" in source
+
+    def add(text, found):
+        """Record a command, expanding a leading loop-prefix placeholder.
+
+        T_Control builds every loop command as f"{self._loop(loop)}:..."
+        so that the name form and the numbered form are decided in one
+        place. The literal text is therefore '{}:PGAIN {p};...', whose root
+        is a placeholder - and a placeholder root would drop the command
+        out of this audit entirely, which is how a wrong sub-mnemonic could
+        walk straight back in. Expand it to every prefix _loop() can
+        actually return, so BOTH spellings are audited.
+        """
+        if builds_loop_commands and text.startswith("{}:"):
+            for prefix in ("HEATER", "AOUT", "LOOP 1", "LOOP 2"):
+                candidate = prefix + text[2:]
+                if _looks_like_a_cryocon_command(candidate):
+                    found.append(candidate)
+            return
+        if _looks_like_a_cryocon_command(text):
+            found.append(text)
+
     found = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
@@ -764,12 +1027,20 @@ def _cryocon_commands_in(source):
                 text = _string_value(arg)
                 if text is None and isinstance(arg, ast.Name):
                     text = constants.get(arg.id)
-                if text and _looks_like_a_cryocon_command(text):
-                    found.append(text)
+                if text:
+                    add(text, found)
+        elif isinstance(node, ast.Assign):
+            text = _string_value(node.value)
+            if text:
+                add(text, found)
         elif isinstance(node, ast.Tuple) and node.elts:
             text = _string_value(node.elts[0])
-            if text and _looks_like_a_cryocon_command(text):
-                found.append(text)
+            if text:
+                add(text, found)
+        elif isinstance(node, ast.Return):
+            text = _string_value(node.value)
+            if text:
+                add(text, found)
     return found
 
 

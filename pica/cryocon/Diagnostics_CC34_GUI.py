@@ -1,7 +1,9 @@
 """
 Module: Diagnostics_CC34_GUI.py
-Purpose: Read-only diagnostic console for the Cryocon (Cryogenic Control
-         Systems) Model 34 Cryogenic Temperature Controller.
+Purpose: Diagnostic console for the Cryocon (Cryogenic Control Systems)
+         Model 34 Cryogenic Temperature Controller. The survey and every
+         deep section are READ-ONLY; one opt-in Advanced test writes, and
+         says so on its face.
 
          Asks the instrument what it actually does, instead of trusting a
          manual for a different model, and writes the answers to a log
@@ -56,7 +58,7 @@ WHAT IT DOES
 
 SAFETY
 
-Every probe is a QUERY. This program has no write path at all: no *RST
+Every probe in the survey is a QUERY. The survey has no write path: no *RST
 (on a Cryo-con that is a ~15 s hardware reset), no CONTROL, no STOP, no
 setpoint, loop, heater, range or configuration command. It is safe to run
 against a controller that is driving a live experiment. The only state it
@@ -75,7 +77,9 @@ import time
 import tkinter as tk
 import traceback
 from datetime import datetime
-from tkinter import ttk, messagebox, scrolledtext, filedialog
+from tkinter import (ttk, messagebox, scrolledtext, filedialog,
+                     simpledialog)   # simpledialog: typed confirmation
+                                     # before the one test that writes
 
 try:
     import pyvisa
@@ -166,11 +170,19 @@ def parse_cryocon_number(raw, what, channel=None):
 
 
 class CryoconLink:
-    """One paced, read-only VISA session, opened with retries.
+    """One paced VISA session, opened with retries. Read-only in practice.
 
-    There is deliberately no write() on this class. A write path that
-    exists is a write path that can be called by mistake, and the whole
-    value of this program is that it cannot disturb a running experiment.
+    There is deliberately no write() on this class. A write path named
+    write() on the object every read goes through is a write path that gets
+    called by mistake, and the core survey's whole value is that it cannot
+    disturb a running experiment.
+
+    write_once() exists for the advanced tests only - the STOP test, which
+    cannot be done any other way because STOP returns nothing. It is named
+    so that it cannot be reached by autocompleting "write", it refuses to be
+    used by the survey, and everything that calls it goes through
+    CryoconWriteGate, which checks the command against CC34_ALLOWED_WRITES
+    first. Grep for write_once to find every write this program can make.
     """
 
     def __init__(self, visa_address, timeout_ms=CRYOCON_TIMEOUT_MS, log=None):
@@ -235,6 +247,24 @@ class CryoconLink:
             "Check that the instrument is powered, that its SYS menu has "
             "RIO-Port set to GPIB rather than RS-232, and that RIO-Address "
             "matches this VISA address.")
+
+    def write_once(self, command):
+        """Put one command on the bus. The ONLY write path in this program.
+
+        Paced like every read, and it does not try to read a reply: STOP,
+        CONTROL and the setpoint writes answer nothing, so waiting for an
+        answer would cost a whole timeout and leave the session out of step.
+
+        Not called by CryoconSurvey - only by CryoconWriteGate, which vets
+        the command first. See CC34_ALLOWED_WRITES.
+        """
+        if self.instrument is None:
+            raise ConnectionError("Not connected.")
+        self._pace()
+        try:
+            self.instrument.write(command)
+        finally:
+            self._last_io = time.time()
 
     def _pace(self):
         gap = CRYOCON_MIN_GAP_S - (time.time() - self._last_io)
@@ -551,7 +581,9 @@ CC34_NOT_SENT = [
      "on the bus. Use Sensor_Curve_Viewer_CC34_GUI.py instead."),
     ("*RST, *CLS, CONTROL, STOP, SYSTEM:NVSAVE",
      "writes, and *RST on a Cryo-con is a ~15 s hardware reset. This "
-     "program has no write path at all."),
+     "writes. The survey has no write path at all - only the opt-in "
+     "Advanced STOP test writes, and only STOP, CONTROL and the "
+     "setpoint/type/range commands it needs to arm and restore."),
     ("SENTYPE <ix>:NAME <name>, CALCUR <n>, INPUT <ch>:SENIX <ix>",
      "writes. Curve loading belongs to Sensor_Curve_Loader_CC34_GUI.py, "
      "which asks before it changes anything."),
@@ -574,6 +606,426 @@ CC34_DEEP_SECTIONS = [
     ("soak", "Soak test",
      f"{CC34_SOAK_QUERIES} queries, ~{CC34_SOAK_QUERIES * 0.1:.0f} s", False),
 ]
+
+
+# ===============================================================================
+# ADVANCED TESTS - THE ONLY PART OF THIS PROGRAM THAT WRITES
+# ===============================================================================
+#
+# Everything above is read-only and stays that way: CryoconLink has no
+# write() and CryoconSurvey has no write path, both enforced by
+# tests/test_cryocon_diagnostics.py. This section is separate, off by
+# default, and asks for typed confirmation before it sends anything.
+#
+# It exists because one question cannot be answered any other way.
+#
+# THE QUESTION: does STOP actually do anything on this controller?
+#
+# STOP is the 400 K safety kill in
+# Temprature_Scan_Passive_CC34_E4980A_GUI.py (CRYOCON_STOP_COMMAND) and the
+# "disengage loops at Start" checkbox. It is a WRITE, and it returns
+# nothing, so a read-only survey cannot test it. Until 2026-09-25 the whole
+# LOOP subsystem was silent on this unit, which raised the real possibility
+# that the kill switch had never done anything at all.
+#
+# STOP answers nothing, so it can only be judged by its EFFECT: read the
+# loop state, send STOP once, read the same state again, compare. That
+# became possible only when the name form was settled, because
+# HEATER:TYPE? and AOUT:TYPE? are what "the loops are engaged" is read from.
+
+# Read before and after. All queries. These are what "engaged" is read
+# from, so they are what a working STOP has to change.
+# The 400 K safety kill, spelled exactly as
+# Temprature_Scan_Passive_CC34_E4980A_GUI.py spells it. Named here rather
+# than written inline so the two cannot drift apart: a test that verifies a
+# different string from the one the measurement module sends is worthless.
+CC34_STOP_COMMAND = "STOP"
+
+CC34_STOP_STATE_PROBES = [
+    ("SYSTEM:LOOP?", "master loop enable - the clearest single indicator"),
+    ("HEATER:TYPE?", "loop 1 control type; STOP should leave it Off"),
+    ("HEATER:OUTPWR?", "loop 1 output power, percent"),
+    ("HEATER:SETPT?", "loop 1 setpoint - recorded so it can be put back"),
+    ("HEATER:RANGE?", "loop 1 heater range - recorded for the same reason"),
+    ("AOUT:TYPE?", "loop 2 control type"),
+    ("AOUT:SETPT?", "loop 2 setpoint"),
+    ("INPUT? A", "channel A, so the log says how warm it was at the time"),
+]
+
+# Arming, for the case where the loops are already off and STOP therefore
+# has nothing to disengage - the likely case, since SYSTEM:LOOP? read OFF on
+# 2026-09-25. Manual mode at ZERO per cent: the loop counts as engaged so
+# STOP has something to act on, but the heater is commanded to no power at
+# all. Least invasive way to give STOP a job. Still a write, so it is a
+# separate opt-in from the STOP test itself.
+CC34_STOP_ARM_COMMANDS = [
+    ("HEATER:PMANUAL 0", "manual output power to ZERO first, so engaging "
+                         "the loop cannot heat anything"),
+    ("HEATER:TYPE Man", "loop 1 to manual mode at that zero power"),
+    ("CONTROL", "engage the enabled loops - now STOP has something to do"),
+]
+
+# Every command this program is allowed to write, ever. The gate below
+# refuses anything else, so the blast radius of the advanced tests is this
+# list and nothing more. Restore commands are matched by prefix because
+# their value comes from the instrument.
+CC34_ALLOWED_WRITES = ("STOP", "CONTROL", "HEATER:PMANUAL ", "HEATER:TYPE ",
+                       "HEATER:SETPT ", "HEATER:RANGE ", "AOUT:TYPE ",
+                       "AOUT:SETPT ")
+
+# How long to let the instrument act before reading the state back. STOP is
+# a front-panel-level action, and the display filter (SYSTEM:DISTC, 0.5 s on
+# the lab unit) also smooths what INPUT? reports.
+CC34_STOP_SETTLE_S = 2.0
+
+
+class CryoconWriteGate:
+    """The one place this program can put a write on the bus.
+
+    Deliberately NOT a method on CryoconLink. That class has no write() and
+    keeps none: a write path that exists on the object every read goes
+    through is a write path that gets called by mistake. Reaching a write
+    here means constructing this gate on purpose.
+
+    Every command is checked against CC34_ALLOWED_WRITES first, so *RST
+    (a ~15 s hardware reset on a Cryo-con), *CLS, SYSTEM:NVSAVE and CALCUR
+    cannot be sent from this program even by a coding mistake.
+    """
+
+    def __init__(self, link):
+        self.link = link
+        self.sent = []
+
+    @staticmethod
+    def is_allowed(command):
+        text = str(command).strip()
+        return any(text == allowed.strip() if allowed.endswith(" ") is False
+                   else text.startswith(allowed)
+                   for allowed in CC34_ALLOWED_WRITES)
+
+    def send(self, command):
+        """Write one allowed command. Raises ValueError on anything else."""
+        text = str(command).strip()
+        if not self.is_allowed(text):
+            raise ValueError(
+                f"{text!r} is not in this program's allowed-write list. "
+                "The advanced tests may send only "
+                f"{', '.join(CC34_ALLOWED_WRITES)}.")
+        self.link.write_once(text)
+        self.sent.append(text)
+        return text
+
+
+class CryoconStopTest:
+    """Reads the loop state, writes STOP once, reads it back, and says
+    whether STOP did anything.
+
+    Pushes ('line', text) / ('done', verdict) onto a queue, exactly like
+    CryoconSurvey, and touches no Tk object for the same reason: a worker
+    thread that calls into Tk raises 'main thread is not in main loop' the
+    moment the main thread leaves mainloop(), and the message is lost.
+
+    `arm` is passed in rather than read from a widget, so a checkbox cannot
+    change under the worker mid-run.
+    """
+
+    def __init__(self, link, out_queue, stop_event, arm=False):
+        self.link = link
+        self.queue = out_queue
+        self.stop = stop_event
+        self.arm = bool(arm)
+        self.gate = CryoconWriteGate(link)
+        self.before = {}
+        self.after = {}
+        self.armed_state = {}
+        self.verdict = None
+
+    # -- output --
+
+    def _emit(self, text=""):
+        self.queue.put(("line", text))
+
+    def _heading(self, title):
+        self._emit("")
+        self._emit(f"--- {title} " + "-" * max(0, 72 - len(title)))
+
+    # -- bus --
+
+    def _read_state(self, into, label):
+        """Every state probe, recorded. A probe that fails IS a result."""
+        for command, note in CC34_STOP_STATE_PROBES:
+            if self.stop.is_set():
+                return
+            try:
+                raw = self.link.query(command)
+                verdict = "OK" if str(raw).strip() else "EMPTY"
+            except Exception as exc:
+                raw = f"{type(exc).__name__}: {exc}"
+                verdict = ("TIMEOUT" if "TMO" in raw or "imeout" in raw
+                           else "ERROR")
+            into[command] = (verdict, str(raw).strip())
+            flag = "  " if verdict == "OK" else "XX"
+            self._emit(f" {flag} {command:<18} {verdict:<8} "
+                       f"{str(raw).strip()!r}")
+            if note and label == "before":
+                self._emit(f"                        -- {note}")
+
+    def _write(self, command, note=""):
+        """Send one write through the gate, and say so in the log.
+
+        A failed write is reported and the run continues: what matters
+        afterwards is the record of what was attempted.
+        """
+        try:
+            self.gate.send(command)
+            self._emit(f" -> WROTE  {command}")
+        except Exception as exc:
+            self._emit(f" XX WRITE FAILED  {command}  "
+                       f"({type(exc).__name__}: {exc})")
+        if note:
+            self._emit(f"                        -- {note}")
+
+    def _restore_recipe(self, state):
+        """The commands that put this controller back as it was found.
+
+        Printed BEFORE anything is written, so that if the run is
+        interrupted - a crash, a closed window, a pulled cable - the log
+        already contains what is needed to undo it.
+        """
+        wanted = [
+            ("HEATER:SETPT?", "HEATER:SETPT {}"),
+            ("HEATER:RANGE?", "HEATER:RANGE {}"),
+            ("HEATER:TYPE?", "HEATER:TYPE {}"),
+            ("AOUT:SETPT?", "AOUT:SETPT {}"),
+            ("AOUT:TYPE?", "AOUT:TYPE {}"),
+        ]
+        lines = []
+        for probe, template in wanted:
+            verdict, raw = state.get(probe, ("MISSING", ""))
+            if verdict != "OK" or not raw:
+                continue
+            value = raw.rstrip("%")
+            # Setpoints come back with their unit attached ('330.000000K');
+            # the SET form does not take one.
+            if probe.endswith("SETPT?") and value and value[-1].isalpha():
+                value = value[:-1]
+            if value:
+                lines.append(template.format(value))
+        return lines
+
+    @staticmethod
+    def _looks_engaged(state):
+        """Is a control loop engaged, as far as the replies can say?
+
+        SYSTEM:LOOP? is trusted first: it is the one probe that speaks
+        directly to "are the loops running". Falling back to the TYPE
+        fields, anything other than Off on either loop counts as engaged.
+        """
+        master = state.get("SYSTEM:LOOP?", ("", ""))[1].strip().upper()
+        if master in ("ON", "1"):
+            return True
+        if master in ("OFF", "0"):
+            return False
+        types = [state.get(f"{name}:TYPE?", ("", ""))[1].strip().upper()
+                 for name in ("HEATER", "AOUT")]
+        return any(kind and kind not in ("OFF",) for kind in types)
+
+    # -- the run --
+
+    def run(self):
+        try:
+            self._run()
+        except Exception:
+            # Formatted HERE, on the thread where the exception is live.
+            self._emit("")
+            self._emit("STOP TEST ABORTED - unexpected fault:")
+            for line in traceback.format_exc().splitlines():
+                self._emit("    " + line)
+            self._emit("")
+            self._emit("The controller may have been left armed. Use the")
+            self._emit("restore recipe printed above, and check the front")
+            self._emit("panel before walking away.")
+            self.queue.put(("done", "ABORTED"))
+
+    def _run(self):
+        self._emit("=" * 78)
+        self._emit("ADVANCED TEST - DOES 'STOP' ACTUALLY DO ANYTHING?")
+        self._emit("=" * 78)
+        self._emit(f"Started        : {datetime.now():%Y-%m-%d %H:%M:%S}")
+        self._emit(f"VISA address   : {self.link.address}")
+        self._emit(f"*IDN?          : {self.link.idn}")
+        self._emit(f"Arm loop first : {'YES' if self.arm else 'no'}")
+        self._emit("")
+        self._emit("THIS TEST WRITES. Everything else in this program is")
+        self._emit("read-only; this section is not. It sends STOP, which")
+        self._emit("disengages every control loop and drops the heater.")
+        self._emit("")
+        self._emit("Allowed writes, and nothing else can be sent:")
+        self._emit(f"  {', '.join(CC34_ALLOWED_WRITES)}")
+        self._emit("")
+        self._emit("STOP returns nothing, so it cannot be judged by its")
+        self._emit("reply - only by its effect. The loop state is read")
+        self._emit("before and after and compared.")
+
+        self._heading("Loop state BEFORE")
+        self._read_state(self.before, "before")
+        if self.stop.is_set():
+            self.queue.put(("done", "STOPPED"))
+            return
+
+        recipe = self._restore_recipe(self.before)
+        self._heading("How to put this controller back as it was found")
+        if recipe:
+            self._emit("  Printed before anything is written, so this log is")
+            self._emit("  a complete record even if the run is interrupted.")
+            self._emit("")
+            for line in recipe:
+                self._emit(f"    {line}")
+            self._emit("")
+            self._emit("  Then CONTROL to re-engage, if it was engaged.")
+        else:
+            self._emit("  Nothing readable to restore - the state probes")
+            self._emit("  above did not answer. Read the front panel before")
+            self._emit("  going further.")
+
+        engaged = self._looks_engaged(self.before)
+        self._heading("Is there anything for STOP to do?")
+        self._emit(f"  Loops look {'ENGAGED' if engaged else 'IDLE'} before "
+                   "the test.")
+        if not engaged and not self.arm:
+            self._emit("")
+            self._emit("  The loops are already idle, so STOP changing")
+            self._emit("  nothing would prove nothing. Tick 'Arm loop 1")
+            self._emit("  safely first' to give STOP something to disengage:")
+            self._emit("  manual mode at ZERO per cent, which engages the")
+            self._emit("  loop without commanding any heater power.")
+
+        if self.arm:
+            self._heading("Arming loop 1 - manual mode, ZERO power")
+            for command, note in CC34_STOP_ARM_COMMANDS:
+                if self.stop.is_set():
+                    self.queue.put(("done", "STOPPED"))
+                    return
+                self._write(command, note)
+            time.sleep(CC34_STOP_SETTLE_S)
+            self._emit("")
+            self._emit("  State after arming:")
+            self._read_state(self.armed_state, "armed")
+            if not self._looks_engaged(self.armed_state):
+                self._heading("VERDICT")
+                self._emit("  ARMING DID NOT TAKE. The loops did not engage,")
+                self._emit("  so STOP still has nothing to act on and this")
+                self._emit("  test cannot decide anything.")
+                self._emit("")
+                self._emit("  That is itself a finding: if CONTROL cannot")
+                self._emit("  engage a loop, PICA cannot drive this")
+                self._emit("  controller at all.")
+                self._emit("")
+                self._emit("  Restoring what was read at the start.")
+                for line in recipe:
+                    self._write(line)
+                self.verdict = "INCONCLUSIVE - arming failed"
+                self.queue.put(("done", self.verdict))
+                return
+
+        self._heading("Sending STOP - once")
+        self._write(CC34_STOP_COMMAND,
+                    "the 400 K safety kill in the passive dielectric scan")
+        time.sleep(CC34_STOP_SETTLE_S)
+
+        self._heading("Loop state AFTER")
+        self._read_state(self.after, "after")
+
+        # Compare against the state STOP was actually given to act on. With
+        # arming, that is the armed state, not the state found at the start:
+        # comparing before/after there would print "nothing changed" directly
+        # under a verdict of STOP WORKS, because arming and STOP cancel out.
+        reference = self.armed_state if self.arm else self.before
+        reference_label = "armed" if self.arm else "before"
+
+        self._heading(f"What changed ({reference_label} -> after)")
+        changed = []
+        for command, _note in CC34_STOP_STATE_PROBES:
+            if command == "INPUT? A":
+                continue            # the temperature moves on its own
+            was = reference.get(command, ("MISSING", ""))
+            now = self.after.get(command, ("MISSING", ""))
+            mark = "  "
+            if was != now:
+                changed.append(command)
+                mark = "=>"
+            self._emit(f" {mark} {command:<18} {was[1]!r}  ->  {now[1]!r}")
+        if self.arm:
+            self._emit("")
+            self._emit("  Compared against the ARMED state, which is what")
+            self._emit("  STOP was given to act on. The state found at the")
+            self._emit("  very start is in the first table above.")
+
+        was_engaged = self._looks_engaged(reference)
+        now_engaged = self._looks_engaged(self.after)
+
+        self._heading("VERDICT")
+        if was_engaged and not now_engaged:
+            self.verdict = "STOP WORKS"
+            self._emit("  STOP WORKS on this controller. The loops were")
+            self._emit("  engaged and STOP disengaged them.")
+            self._emit("")
+            self._emit("  So the 400 K kill in")
+            self._emit("  Temprature_Scan_Passive_CC34_E4980A_GUI.py is real")
+            self._emit("  protection, and the 'disengage loops at Start' box")
+            self._emit("  does what it says.")
+        elif was_engaged and now_engaged:
+            self.verdict = "STOP DID NOTHING"
+            self._emit("  STOP DID NOTHING. The loops were engaged before")
+            self._emit("  and they are still engaged after.")
+            self._emit("")
+            self._emit("  THIS IS A SAFETY FINDING. The 400 K kill switch in")
+            self._emit("  Temprature_Scan_Passive_CC34_E4980A_GUI.py writes")
+            self._emit(f"  '{CC34_STOP_COMMAND}' and nothing else. If that")
+            self._emit("  command does not disengage the loops, an overheat")
+            self._emit("  is NOT being stopped by software. Do not rely on")
+            self._emit("  it. The instrument's own OVERTEMP - a hardware")
+            self._emit("  disconnect - and the front panel are the real")
+            self._emit("  protection until this is fixed.")
+        elif not was_engaged:
+            self.verdict = "INCONCLUSIVE - nothing was engaged"
+            self._emit("  INCONCLUSIVE. Nothing was engaged before STOP, so")
+            self._emit("  STOP changing nothing says nothing about whether")
+            self._emit("  STOP works.")
+            self._emit("")
+            self._emit("  Run it again with 'Arm loop 1 safely first'.")
+        else:
+            self.verdict = "UNCLEAR"
+            self._emit("  UNCLEAR - the state probes did not give a clean")
+            self._emit("  before/after picture. Read the table above.")
+
+        self._emit("")
+        if changed:
+            self._emit(f"  {len(changed)} state probe(s) changed: "
+                       f"{', '.join(changed)}")
+        else:
+            self._emit("  Not one state probe changed.")
+
+        self._heading("Restoring the state read at the start")
+        if recipe:
+            for line in recipe:
+                if self.stop.is_set():
+                    break
+                self._write(line)
+            self._emit("")
+            self._emit("  CONTROL is deliberately NOT sent: re-engaging a")
+            self._emit("  heater loop is not something a test should do")
+            self._emit("  behind you. If the loops were engaged when you")
+            self._emit("  started, engage them yourself.")
+        else:
+            self._emit("  Nothing readable to restore.")
+
+        self._emit("")
+        self._emit(f"Writes sent ({len(self.gate.sent)}): "
+                   f"{', '.join(self.gate.sent) or 'none'}")
+        self._emit(f"Finished       : {datetime.now():%Y-%m-%d %H:%M:%S}")
+        self._emit("=" * 78)
+        self.queue.put(("done", self.verdict))
 
 
 class CryoconSurvey:
@@ -1496,7 +1948,10 @@ class DiagnosticsGUI:
     """
 
     PROGRAM_NAME = "Cryocon 34 Diagnostics"
-    PROGRAM_VERSION = "1.0"
+    # 1.1: corrections from the 17 Sep runs, the "Loop addressing"
+    #      section that settled them, and the one Advanced test that
+    #      WRITES - the STOP test. Everything else stays read-only.
+    PROGRAM_VERSION = "1.1"
     POLL_MS = 60
 
     # House palette, identical to the other PICA modules (see
@@ -1542,11 +1997,18 @@ class DiagnosticsGUI:
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
         self._log_line(f"{self.PROGRAM_NAME} v{self.PROGRAM_VERSION}")
         self._log_line("")
-        self._log_line("Read-only. This program has no write path: no *RST,")
-        self._log_line("no CONTROL, no STOP, no setpoint, loop or heater")
-        self._log_line("command. Safe to run against a live experiment.")
+        self._log_line("The survey and every deep section are READ-ONLY:")
+        self._log_line("no *RST, no CONTROL, no STOP, no setpoint, loop or")
+        self._log_line("heater command. Safe against a live experiment.")
         self._log_line("")
         self._log_line("Scan, pick the Cryocon, Connect, then Run Survey.")
+        self._log_line("")
+        self._log_line("ONE exception, at the bottom of the window:")
+        self._log_line("  Advanced tests > Run STOP Test  DOES write. It")
+        self._log_line("  disengages the control loops, because that is the")
+        self._log_line("  only way to find out whether STOP still works on")
+        self._log_line("  this unit. It is off until you tick it and type a")
+        self._log_line("  confirmation, and it puts the settings back.")
         if not PYVISA_AVAILABLE:
             self._log_line("")
             self._log_line("PyVISA is not installed - nothing can be reached.")
@@ -1696,6 +2158,53 @@ class DiagnosticsGUI:
                 row=column // 2, column=column % 2, sticky='w',
                 padx=(0, 20), pady=1)
 
+        # -- advanced tests: the only part of this program that writes ----
+        #
+        # Kept in its own frame, below the read-only sections, with the
+        # warning on the face of it rather than buried in a dialog. The
+        # Run button is separate from "Run Survey" so that nobody starts a
+        # write by pressing the button they always press.
+        adv = ttk.LabelFrame(
+            self.root,
+            text="Advanced tests - THESE WRITE TO THE INSTRUMENT",
+            padding=(10, 6))
+        adv.pack(fill='x', padx=12, pady=4)
+        ttk.Label(
+            adv,
+            text=("Everything above is read-only. This is not.\n\n"
+                  "Does STOP actually do anything on this unit?  STOP is the "
+                  "400 K safety kill in the passive\ndielectric scan and the "
+                  "\"disengage loops at Start\" box. It returns nothing, so "
+                  "the only way to\ntest it is to send it and watch the loop "
+                  "state: read it, send STOP once, read it again.\n\n"
+                  "IT WILL DISENGAGE EVERY CONTROL LOOP AND DROP THE HEATER. "
+                  "Do not run it while a\nmeasurement depends on this "
+                  "controller holding temperature. The log prints how to put\n"
+                  "the settings back BEFORE it writes anything, and puts them "
+                  "back itself at the end.\n\n"
+                  "Only these commands can ever be sent: "
+                  + ", ".join(CC34_ALLOWED_WRITES) + "."),
+            justify='left').grid(row=0, column=0, columnspan=2, sticky='w',
+                                 pady=(0, 6))
+        self.stop_test_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            adv,
+            text="I understand this writes - enable the STOP test",
+            variable=self.stop_test_var,
+            command=self._sync_stop_test).grid(row=1, column=0, sticky='w')
+        self.stop_arm_var = tk.BooleanVar(value=False)
+        self.arm_check = ttk.Checkbutton(
+            adv,
+            text=("Arm loop 1 safely first (manual mode at ZERO power) - "
+                  "needed if the loops are already off"),
+            variable=self.stop_arm_var, state='disabled')
+        self.arm_check.grid(row=2, column=0, sticky='w')
+        self.stop_test_btn = ttk.Button(
+            adv, text="Run STOP Test (writes)", command=self._start_stop_test,
+            state='disabled')
+        self.stop_test_btn.grid(row=1, column=1, rowspan=2, sticky='e',
+                                padx=(20, 0))
+
         bar = ttk.Frame(self.root, padding=(12, 4))
         bar.pack(fill='x')
         self.run_btn = ttk.Button(bar, text="Run Survey", command=self._start,
@@ -1810,6 +2319,7 @@ class DiagnosticsGUI:
         self.connect_btn.config(state='disabled')
         self.disconnect_btn.config(state='normal')
         self.run_btn.config(state='normal')
+        self._sync_stop_test()
 
     def _disconnect(self):
         if self.worker is not None and self.worker.is_alive():
@@ -1824,6 +2334,80 @@ class DiagnosticsGUI:
         self.connect_btn.config(state='normal')
         self.disconnect_btn.config(state='disabled')
         self.run_btn.config(state='disabled')
+        self._sync_stop_test()
+
+    # -- the advanced (writing) test --
+
+    def _sync_stop_test(self):
+        """The STOP test needs BOTH a connection and the acknowledgement
+        ticked. Unticking it also clears the arm box, so an arming choice
+        made earlier cannot survive into a later session unnoticed."""
+        enabled = bool(self.link) and self.stop_test_var.get()
+        self.stop_test_btn.config(state='normal' if enabled else 'disabled')
+        self.arm_check.config(state='normal' if enabled else 'disabled')
+        if not self.stop_test_var.get():
+            self.stop_arm_var.set(False)
+
+    def _start_stop_test(self):
+        """Confirm in words, then run the one test that writes.
+
+        Typed confirmation rather than a yes/no box: this disengages a
+        heater loop, and a reflexive click on "Yes" is exactly what a
+        confirmation is supposed to catch.
+        """
+        if self.worker is not None and self.worker.is_alive():
+            return
+        if self.link is None or not self.link.is_connected:
+            messagebox.showerror("Not Connected", "Connect first.")
+            return
+
+        arm = bool(self.stop_arm_var.get())
+        detail = (
+            "This WRITES to the Cryocon.\n\n"
+            f"It will send {CC34_STOP_COMMAND}, which disengages every "
+            "control loop and drops the heater.\n\n")
+        if arm:
+            detail += (
+                "You have also asked it to ARM loop 1 first: "
+                "HEATER:PMANUAL 0, HEATER:TYPE Man, CONTROL. That engages "
+                "the loop at ZERO per cent power, so STOP has something to "
+                "disengage. No heat is commanded at any point.\n\n")
+        detail += (
+            "The settings read at the start are printed in the log BEFORE "
+            "anything is written, and written back at the end. CONTROL is "
+            "not re-sent: if the loops were engaged, engage them yourself "
+            "afterwards.\n\n"
+            "Do NOT run this if a measurement depends on this controller "
+            "holding temperature right now.\n\n"
+            "Type  RUN STOP TEST  to continue:")
+        answer = simpledialog.askstring(
+            "Confirm a test that writes", detail, parent=self.root)
+        if (answer or "").strip().upper() != "RUN STOP TEST":
+            self._log_line("")
+            self._log_line("STOP test cancelled - nothing was written.")
+            return
+
+        try:
+            self.saved_timeout = self.link.instrument.timeout
+            self.link.instrument.timeout = CC34_SURVEY_TIMEOUT_MS
+        except Exception:
+            self.saved_timeout = None
+
+        self.stop_event.clear()
+        self.run_btn.config(state='disabled')
+        self.stop_test_btn.config(state='disabled')
+        self.stop_btn.config(state='normal')
+        self.save_btn.config(state='disabled')
+        self.copy_btn.config(state='disabled')
+        self.disconnect_btn.config(state='disabled')
+        self.progress.config(value=0, maximum=100)
+        self.status_var.set("STOP test running (writing)...")
+        self._log_line("")
+
+        test = CryoconStopTest(self.link, self.queue, self.stop_event, arm=arm)
+        self.worker = threading.Thread(target=test.run, daemon=True)
+        self.worker.start()
+        self._pump()
 
     # -- running --
 
@@ -1888,6 +2472,7 @@ class DiagnosticsGUI:
         self.save_btn.config(state='normal')
         self.copy_btn.config(state='normal')
         self.disconnect_btn.config(state='normal')
+        self._sync_stop_test()
         self.status_var.set("Finished.")
         self.progress.config(value=self.progress["maximum"])
         path = self._autosave()

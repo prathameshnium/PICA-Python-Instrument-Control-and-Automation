@@ -726,8 +726,11 @@ def test_closing_the_main_window_takes_the_self_test_down_first():
 
 
 def test_the_version_marks_the_self_test_build():
-    assert dc.DirectControlGUI.PROGRAM_VERSION == "1.3"
+    assert dc.DirectControlGUI.PROGRAM_VERSION == "1.4"
+    # The self-test build is still described in the header, and so is
+    # the name-form rewrite that followed it.
     assert "v1.3, 17 Sep 2026" in SOURCE
+    assert "v1.4, 25 Sep 2026" in SOURCE
 
 
 if __name__ == "__main__":

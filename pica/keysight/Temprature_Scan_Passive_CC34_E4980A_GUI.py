@@ -4,7 +4,7 @@ Purpose:             GUI module for Temperature-Dependent Dielectric
                      Measurement (Keysight E4980A + Cryocon Model 34).
 Original Authors:    Prathamesh Deshmukh (template programs)
 Integrated by:       AI-assisted merge per design specification
-Version:             V: 1.7  (v1.3 multi-day hardening: 400 K kill
+Version:             V: 1.8  (v1.3 multi-day hardening: 400 K kill
                      switch, retry-forever comm recovery, fsync-per-point
                      writes, timestamped T-log, bounded console, optional
                      plot thinning, Windows keep-awake;
@@ -263,16 +263,36 @@ CRYOCON_HEATER_LOOP = '1'
 #                      loop. This is a numeric field that is a percent of
 #                      full scale."   (example reply: '22%')
 #
-# 'OUTPWR' appears nowhere in the Model 34 manual, and nowhere in the
-# 24C manual either; it belongs to other Cryo-con controllers. It is kept
-# here only as a second guess for a firmware that answers the older
-# mnemonic. Which one THIS unit accepts is settled once, at Start, by
+# ... and the lab unit refuses it. On 2026-09-25, five diagnostic runs
+# agreeing exactly (Untracked_Stuff/Diagnostics/log_25_09_26/):
+#
+#     HEATER:OUTPWR?    -> '0'        ANSWERS
+#     HEATER:HTRREAD?   -> TIMEOUT
+#     LOOP 1:HTRREAD?   -> TIMEOUT    (the documented one)
+#     LOOP 1:OUTPWR?    -> TIMEOUT
+#
+# So the original bug was the PREFIX, not the mnemonic: this firmware
+# addresses its loops by NAME (HEATER = loop 1, AOUT = loop 2) and under
+# that prefix it takes the undocumented OUTPWR? and refuses the documented
+# HTRREAD?. Neither the manual nor the earlier correction predicts that,
+# which is exactly why the mnemonic is asked of the instrument rather than
+# chosen here.
+#
+# Full commands, not sub-mnemonics, because the prefix is part of what is
+# in question. Ordered with the one that works on the lab unit first, so a
+# normal run pays one query instead of four timeouts; the rest are for
+# other firmware. Settled once, at Start, by
 # Cryocon34_Backend.probe_heater_command(): an unknown command on a
 # Cryo-con times out rather than answering, and a timeout on every sweep
 # would otherwise drive the worker's retry-forever reconnect loop all
-# night over a logging column. If neither is answered the column logs NaN
+# night over a logging column. If none is answered the column logs NaN
 # and the run carries on.
-CRYOCON_HEATER_QUERIES = ('HTRREAD?', 'OUTPWR?')
+CRYOCON_HEATER_QUERIES = (
+    'HEATER:OUTPWR?',
+    'HEATER:HTRREAD?',
+    'LOOP {loop}:HTRREAD?',
+    'LOOP {loop}:OUTPWR?',
+)
 
 # Factory address, used only as a last-resort hint. Identification is by
 # *IDN? content, so a re-addressed Cryocon is still found.
@@ -651,7 +671,7 @@ class Cryocon34_Backend:
         self.heater_probed = True
         answered_but_not_a_number = None
         for query in CRYOCON_HEATER_QUERIES:
-            command = f'LOOP {loop}:{query}'
+            command = query.format(loop=loop)
             try:
                 raw = self.link.query(command)
             except Exception as e:
@@ -674,11 +694,11 @@ class Cryocon34_Backend:
                 self.log(f"  Heater read-back '{command}' answered "
                          f"'{raw}' ({e}).")
                 if answered_but_not_a_number is None:
-                    answered_but_not_a_number = query
+                    answered_but_not_a_number = command
                 continue
-            self.heater_query = query
+            self.heater_query = command
             self.log(f"  Heater read-back: '{command}' -> {value:.1f} %.")
-            return query
+            return command
         self.heater_query = answered_but_not_a_number
         if self.heater_query is None:
             self.log("  No heater read-back on this controller "
@@ -705,7 +725,9 @@ class Cryocon34_Backend:
             self.probe_heater_command(loop)
         if self.heater_query is None:
             return float('nan')
-        command = f'LOOP {loop}:{self.heater_query}'
+        # heater_query is the WHOLE command, prefix included, because the
+        # prefix is part of what probe_heater_command() settled.
+        command = self.heater_query
         raw = self.link.query(command)
         try:
             return parse_cryocon_number(raw.rstrip('%'), command)
@@ -1035,7 +1057,10 @@ class Integrated_CT_GUI:
 
     # Was "1.4", the same string the Lakeshore base shows, so the
     # title bar could not tell the two siblings apart on screen.
-    PROGRAM_VERSION = "1.7-CC34"   # Cryo-con 34 sibling
+    # 1.8-CC34: heater read-back candidates carry their own prefix, and
+    #           HEATER:OUTPWR? leads - it is the one the lab unit
+    #           answers. See CRYOCON_HEATER_QUERIES.
+    PROGRAM_VERSION = "1.8-CC34"   # Cryo-con 34 sibling
     LOGO_SIZE = 110
     CONSOLE_MAX_LINES = 2000   # bound console growth on multi-day runs
     PLOT_MAX_POINTS = 10000    # halve plot buffers at this size (if enabled)
@@ -1928,7 +1953,7 @@ class Integrated_CT_GUI:
         # at Start (probe_heater_command), so the file says what was
         # read rather than what the program hoped to read.
         htr_query = getattr(self.backend.cryocon, 'heater_query', None)
-        htr_note = (f"Heater_pct is LOOP {CRYOCON_HEATER_LOOP}:{htr_query}"
+        htr_note = (f"Heater_pct is {htr_query}"
                     if htr_query else
                     "no heater read-back on this controller, "
                     "Heater_pct is NaN")

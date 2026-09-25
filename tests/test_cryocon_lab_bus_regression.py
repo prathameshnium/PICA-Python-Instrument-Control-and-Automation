@@ -100,8 +100,10 @@ class FakeInstrument:
             return self.temps.get(cmd.split()[-1].strip(), "-------")
         if cmd.startswith("LOOP"):
             # Model 34 manual: the only documented heater read-back is
-            # LOOP <n>:HTRREAD?. An unknown mnemonic gets no reply.
-            if "HTRREAD?" in cmd:
+            # HEATER:OUTPWR? on this unit (log_25_09_26, five runs): the
+            # loops are addressed by name and the documented HTRREAD?
+            # times out. An unknown mnemonic gets no reply at all.
+            if cmd == "HEATER:OUTPWR?":
                 return "0.0"
             raise FakeVisaTimeout()
         # Every other status query the panel makes: a plausible scalar is
@@ -460,7 +462,8 @@ def test_a_passive_session_leaves_no_writes_on_the_bus():
 
 
 def test_the_scan_reads_the_heater_without_touching_it():
-    """LOOP 1:HTRREAD? is a query. The scan must never own the heater."""
+    """The heater read-back is a query. The scan must never own the
+    heater - it reads a controller somebody else is driving."""
     bus = FakeBus()
     with patch_bus(dscan, bus):
         backend = dscan.Cryocon34_Backend("GPIB0::12::INSTR", channel="A")
@@ -468,7 +471,7 @@ def test_the_scan_reads_the_heater_without_touching_it():
         backend.close()
     assert power == 0.0, power
     assert bus.cryocon.writes == [], bus.cryocon.writes
-    assert any("HTRREAD?" in q for q in bus.cryocon.queries),         bus.cryocon.queries
+    assert any(q == "HEATER:OUTPWR?" for q in bus.cryocon.queries),         bus.cryocon.queries
 
 
 if __name__ == "__main__":

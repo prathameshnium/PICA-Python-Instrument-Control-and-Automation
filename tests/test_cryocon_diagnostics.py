@@ -305,6 +305,281 @@ def test_no_dangerous_mnemonic_is_anywhere_in_the_probe_tables():
         assert banned not in text, banned
 
 
+# ===========================================================================
+# 1b. The Advanced STOP test - the ONE thing in this program that writes
+# ===========================================================================
+#
+# STOP is the 400 K safety kill in the passive dielectric scan. It returns
+# nothing, so it cannot be tested by its reply - only by sending it and
+# reading the loop state either side. That is a write, so it lives behind
+# its own button, its own acknowledgement checkbox and a typed confirmation,
+# and it can send nothing outside CC34_ALLOWED_WRITES.
+#
+# The survey's read-only guarantee above is unchanged and still tested: what
+# follows is about keeping this one exception narrow and honest.
+
+class StopTestResource(FakeCryoconResource):
+    """A controller whose loop state actually responds to STOP.
+
+    `stop_works` False models the feared case: STOP is accepted on the bus
+    and changes nothing, which is exactly what would make the 400 K kill
+    switch a decoration.
+    """
+
+    def __init__(self, engaged=True, stop_works=True, **kwargs):
+        super().__init__(**kwargs)
+        self.engaged = engaged
+        self.stop_works = stop_works
+
+    def _state(self, command):
+        if command == "SYSTEM:LOOP?":
+            return "ON" if self.engaged else "OFF"
+        if command == "HEATER:TYPE?":
+            return "RAMPT" if self.engaged else "Off"
+        if command == "AOUT:TYPE?":
+            return "RAMPP" if self.engaged else "Off"
+        if command == "HEATER:OUTPWR?":
+            return "12" if self.engaged else "0"
+        if command == "HEATER:SETPT?":
+            return "330.000000K"
+        if command == "HEATER:RANGE?":
+            return "5.0W"
+        if command == "AOUT:SETPT?":
+            return "100.000000K"
+        return None
+
+    def query(self, command):
+        cmd = command.strip()
+        answer = self._state(cmd)
+        if answer is not None:
+            self.queries.append(cmd)
+            return answer
+        return super().query(cmd)
+
+    def write(self, command):
+        cmd = command.strip()
+        self.writes.append(cmd)
+        if cmd == "STOP" and self.stop_works:
+            self.engaged = False
+        elif cmd == "CONTROL":
+            self.engaged = True
+
+
+def _run_stop_test(resource, arm=False):
+    """Drive CryoconStopTest against a fake, collecting its lines."""
+    link = diag.CryoconLink.__new__(diag.CryoconLink)
+    link.address = "GPIB1::23::INSTR"
+    link.idn = "Cryocon Model 34, Rev 3.03A"
+    link.instrument = resource
+    link.timeout_ms = 3000
+    link._last_io = 0.0
+    link._log = lambda message: None
+    link.rm = None
+
+    out = queue.Queue()
+    stop = threading.Event()
+    test = diag.CryoconStopTest(link, out, stop, arm=arm)
+    saved = diag.CC34_STOP_SETTLE_S
+    diag.CC34_STOP_SETTLE_S = 0.0          # no real waiting in a test
+    try:
+        test.run()
+    finally:
+        diag.CC34_STOP_SETTLE_S = saved
+    lines, verdict = [], None
+    while True:
+        try:
+            item = out.get_nowait()
+        except queue.Empty:
+            break
+        if item[0] == "line":
+            lines.append(item[1])
+        elif item[0] == "done":
+            verdict = item[1]
+    return lines, verdict, test
+
+
+def test_the_write_gate_allows_only_the_commands_the_test_needs():
+    gate = diag.CryoconWriteGate
+    for allowed in ("STOP", "CONTROL", "HEATER:PMANUAL 0", "HEATER:TYPE Man",
+                    "HEATER:SETPT 330", "HEATER:RANGE 5.0W",
+                    "AOUT:TYPE RAMPP", "AOUT:SETPT 100"):
+        assert gate.is_allowed(allowed), allowed
+
+
+def test_the_write_gate_can_never_send_a_destructive_command():
+    """*RST is a ~15 s hardware reset to power-up defaults; NVSAVE burns
+    flash; CALCUR overwrites a calibration curve. None of them can leave
+    this program even if something calls the gate with one."""
+    gate = diag.CryoconWriteGate
+    for banned in ("*RST", "*CLS", "SYSTEM:NVSAVE", "CALCUR 15",
+                   "INPUT A:SENIX 20", "SENTYPE 15:NAME x", "STOPX",
+                   "HEATER:TYPEMan", "OVERTEMP:ENABLE OFF"):
+        assert not gate.is_allowed(banned), banned
+
+
+def test_the_gate_refuses_at_send_time_and_not_just_in_the_predicate():
+    class Recorder:
+        def __init__(self):
+            self.sent = []
+
+        def write_once(self, command):
+            self.sent.append(command)
+
+    recorder = Recorder()
+    gate = diag.CryoconWriteGate(recorder)
+    try:
+        gate.send("*RST")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("the gate sent *RST")
+    assert recorder.sent == [], recorder.sent
+    assert gate.sent == [], gate.sent
+
+
+def test_the_survey_still_has_no_write_path_of_its_own():
+    """The exception must stay in its own class. If CryoconSurvey could
+    write, every deep section would become unsafe to run on a live
+    experiment, which is the property the whole program rests on."""
+    assert ".write(" not in inspect.getsource(diag.CryoconSurvey)
+    assert "write_once" not in inspect.getsource(diag.CryoconSurvey)
+    assert not hasattr(diag.CryoconLink, "write")
+
+
+def test_stop_that_works_is_reported_as_working():
+    resource = StopTestResource(engaged=True, stop_works=True)
+    lines, verdict, _test = _run_stop_test(resource)
+    text = chr(10).join(lines)
+    assert verdict == "STOP WORKS", verdict
+    assert "STOP WORKS on this controller" in text
+    assert "STOP" in resource.writes
+
+
+def test_stop_that_does_nothing_is_reported_as_a_safety_finding():
+    """THE case this test was built for. If STOP is accepted and changes
+    nothing, the 400 K kill in the passive dielectric scan is not
+    protecting anything, and the log has to say so in those words."""
+    resource = StopTestResource(engaged=True, stop_works=False)
+    lines, verdict, _test = _run_stop_test(resource)
+    text = chr(10).join(lines)
+    assert verdict == "STOP DID NOTHING", verdict
+    assert "THIS IS A SAFETY FINDING" in text
+    assert "Temprature_Scan_Passive_CC34_E4980A_GUI.py" in text
+    assert "Do not rely on" in text
+
+
+def test_an_idle_controller_is_reported_inconclusive_not_working():
+    """With nothing engaged, STOP changing nothing proves nothing. Calling
+    that a pass would be worse than not running the test."""
+    resource = StopTestResource(engaged=False, stop_works=True)
+    lines, verdict, _test = _run_stop_test(resource)
+    text = chr(10).join(lines)
+    assert verdict.startswith("INCONCLUSIVE"), verdict
+    assert "Arm loop 1 safely first" in text
+
+
+def test_arming_commands_power_down_before_they_engage():
+    """Order matters: PMANUAL 0 must reach the instrument BEFORE the loop is
+    engaged, or engaging it could briefly drive the heater at whatever
+    manual power was left set - 100% on the lab unit as of 25 Sep 2026."""
+    commands = [c for c, _note in diag.CC34_STOP_ARM_COMMANDS]
+    assert commands.index("HEATER:PMANUAL 0") < commands.index("CONTROL")
+    assert commands.index("HEATER:TYPE Man") < commands.index("CONTROL")
+    assert "0" in commands[0], commands[0]
+
+
+def test_arming_an_idle_controller_gives_stop_something_to_do():
+    resource = StopTestResource(engaged=False, stop_works=True)
+    lines, verdict, test = _run_stop_test(resource, arm=True)
+    assert verdict == "STOP WORKS", (verdict, chr(10).join(lines))
+    # Armed at zero power first, then STOP.
+    assert test.gate.sent[:4] == ["HEATER:PMANUAL 0", "HEATER:TYPE Man",
+                                  "CONTROL", "STOP"], test.gate.sent
+
+
+def test_an_armed_run_compares_against_the_armed_state_not_the_start():
+    """Arming engages the loop and STOP disengages it, so before/after are
+    identical. Comparing those would print "Not one state probe changed"
+    directly under a verdict of STOP WORKS - a report that contradicts
+    itself is worse than no report."""
+    resource = StopTestResource(engaged=False, stop_works=True)
+    lines, verdict, _test = _run_stop_test(resource, arm=True)
+    text = chr(10).join(lines)
+    assert verdict == "STOP WORKS", verdict
+    assert "What changed (armed -> after)" in text
+    assert "Not one state probe changed" not in text
+    assert "state probe(s) changed: SYSTEM:LOOP?" in text
+
+
+def test_an_unarmed_run_still_compares_against_the_starting_state():
+    resource = StopTestResource(engaged=True, stop_works=True)
+    lines, verdict, _test = _run_stop_test(resource, arm=False)
+    text = chr(10).join(lines)
+    assert verdict == "STOP WORKS", verdict
+    assert "What changed (before -> after)" in text
+
+
+def test_the_restore_recipe_is_printed_before_anything_is_written():
+    """If the run dies half way - a crash, a closed window, a pulled cable -
+    the log must already say how to put the controller back."""
+    resource = StopTestResource(engaged=True)
+    lines, _verdict, _test = _run_stop_test(resource)
+    first_write = next(i for i, line in enumerate(lines)
+                       if line.startswith(" -> WROTE"))
+    recipe_at = next(i for i, line in enumerate(lines)
+                     if "HEATER:SETPT 330" in line)
+    assert recipe_at < first_write, (recipe_at, first_write)
+
+
+def test_the_setpoint_unit_is_stripped_from_the_restore_command():
+    """HEATER:SETPT? answers '330.000000K'; the SET form takes no unit, so
+    writing the reply back verbatim would be rejected."""
+    resource = StopTestResource(engaged=True)
+    _lines, _verdict, test = _run_stop_test(resource)
+    restores = [c for c in test.gate.sent if c.startswith("HEATER:SETPT ")]
+    assert restores == ["HEATER:SETPT 330.000000"], restores
+
+
+def test_the_state_is_put_back_after_the_test():
+    resource = StopTestResource(engaged=True)
+    _lines, _verdict, test = _run_stop_test(resource)
+    assert "HEATER:TYPE RAMPT" in test.gate.sent, test.gate.sent
+    assert "AOUT:TYPE RAMPP" in test.gate.sent, test.gate.sent
+    # CONTROL is NOT re-sent: re-engaging a heater loop behind the operator
+    # is not something a test may do.
+    assert test.gate.sent.count("CONTROL") == 0, test.gate.sent
+
+
+def test_the_log_names_every_write_it_made():
+    resource = StopTestResource(engaged=True)
+    lines, _verdict, test = _run_stop_test(resource)
+    text = chr(10).join(lines)
+    assert f"Writes sent ({len(test.gate.sent)})" in text
+    for command in test.gate.sent:
+        assert command in text, command
+
+
+def test_the_stop_command_matches_the_one_the_measurement_module_sends():
+    """A test that verifies a different string from the one the passive scan
+    actually writes would be worthless."""
+    path = os.path.join(
+        project_root, "pica", "keysight",
+        "Temprature_Scan_Passive_CC34_E4980A_GUI.py")
+    source = open(path, encoding="utf-8").read()
+    assert f'CRYOCON_STOP_COMMAND = "{diag.CC34_STOP_COMMAND}"' in source
+
+
+def test_the_program_no_longer_claims_to_have_no_write_path():
+    """It did claim that, and it was true until the STOP test was added.
+    Leaving the claim in place would make the log lie about the one thing a
+    reader most needs to know - which is the exact class of bug this whole
+    programme exists to catch."""
+    lines, _rows = _run(FakeCryoconResource())
+    text = chr(10).join(lines) + SOURCE
+    assert "no write path at all: no *RST" not in text
+    assert "This program has no write path at all." not in text
+
+
 def test_the_deliberate_omissions_are_written_down():
     lines, _rows = _run(FakeCryoconResource())
     text = "\n".join(lines)

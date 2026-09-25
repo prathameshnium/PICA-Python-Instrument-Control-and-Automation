@@ -718,7 +718,9 @@ def scan_instruments(skip_addresses=None, gauge=None):
 # not answering at all - no error string, nothing in the error queue - so
 # a wrong mnemonic surfaces as a VISA timeout indistinguishable from a
 # dead bus, and can live in a measurement module for months. (One did:
-# LOOP <n>:OUTPWR?, found 17 Sep 2026.) The only cure is to ask the
+# LOOP <n>:OUTPWR?, found 17 Sep 2026 - whose real fault turned out on
+# 25 Sep to be the LOOP <n>: prefix, not the OUTPWR? mnemonic.) The
+# only cure is to ask the
 # instrument, which is what the diagnostics program does.
 #
 # The second one answers the layer below: before an instrument can be

@@ -50,11 +50,27 @@ Rev 3.03A at GPIB1::12:
     sensor fault, '.......' for a reading off the calibration curve) are
     reported as those conditions instead of raising a bare number error.
 
+v1.4, 25 Sep 2026. Addresses the control loops BY NAME (HEATER = loop 1,
+AOUT = loop 2), which is the only form the lab Model 34 answers; the
+numbered form stays as a probed fallback.
+
 v1.3, 17 Sep 2026. Adds "Run Self-Test (read-only survey)" to the
 Advanced / System panel. The mnemonics above were verified against the
 Model 32/32B manual, and the Model 34's own manual does not document all
 of them: INPUT:SENPR, INPUT:ISENIX, INPUT:USENIX, LOOP:MAXPWR,
-LOOP:MAXSET and LOOP:OUTPWR are absent from it. LOOP:OUTPWR turned out to
+LOOP:MAXSET and LOOP:OUTPWR are absent from it.
+
+On 2026-09-25 that turned out to be only half the story. This firmware
+addresses its control loops BY NAME - HEATER is loop 1, AOUT is loop 2 -
+and every numbered 'LOOP <n>:...' times out, in every spelling. So none
+of the setpoint, PID, range, load or heater commands this module sent
+had ever reached the lab controller, silently, because a Cryo-con
+refuses by not answering. Under the name prefix the unit answers the
+UNDOCUMENTED OUTPWR? and refuses the documented HTRREAD?, so the manual
+is wrong in both directions at once. Both forms are kept and the right
+one is settled per connection: see LOOP_NAMES and _probe_loop_prefix().
+
+LOOP:OUTPWR turned out to
 be absent from the 24C manual too, and had been sitting in the dielectric
 temperature scan's per-sweep heater read, where a Cryo-con's way of
 refusing an unknown command - no reply at all, so a VISA timeout - fed a
@@ -541,6 +557,27 @@ class Cryocon34Backend:
     # --- Control loops (Loop 1 is the primary heater) ---
     LOOPS = ['1', '2']
 
+    # --- How this firmware ADDRESSES those loops -------------------------
+    #
+    # Settled on the lab unit 2026-09-25, five diagnostic runs agreeing
+    # exactly (Untracked_Stuff/Diagnostics/log_25_09_26/): a Model 34 at
+    # Rev 3.03A addresses its control loops BY NAME, not by number.
+    #
+    #   HEATER:SETPT?  -> '330.000000K'      LOOP 1:SETPT?  -> TIMEOUT
+    #   AOUT:SETPT?    -> '100.000000K'      LOOP 2:SETPT?  -> TIMEOUT
+    #
+    # 15 name-form queries answered; 0 of the numbered form did, in any
+    # spelling. Every command this backend sent before that run was
+    # numbered, so none of them ever reached the instrument - PICA could
+    # not control this unit at all, silently, because an unrecognised
+    # Cryo-con command is answered with nothing rather than an error.
+    #
+    # The numbered form is what the manual's LOOP chapter documents and is
+    # presumably what a Model 32/32B takes, so it is kept as a fallback
+    # rather than deleted: the prefix is settled ONCE per connection by
+    # _probe_loop_prefix() and then reused, never guessed per command.
+    LOOP_NAMES = {'1': 'HEATER', '2': 'AOUT'}
+
     # --- Display units for INPUT <ch>:UNITS ---
     DISPLAY_UNITS = {
         'K': "Kelvin",
@@ -571,6 +608,14 @@ class Cryocon34Backend:
     def __init__(self, log=None):
         self.link = None
         self.rm = None
+        # Settled once per connection by _probe_loop_prefix(). 'name' until
+        # an instrument says otherwise: see LOOP_NAMES above for why the
+        # default is the name form and not the manual's numbered one.
+        self.loop_prefix_mode = 'name'
+        # Settled once per connection by _probe_heater_query(). The lab unit
+        # answers HEATER:OUTPWR? and refuses HEATER:HTRREAD?, which is the
+        # opposite of what the manual documents.
+        self.heater_query = None
         self.log = log if callable(log) else (lambda msg: print(msg))
         if pyvisa:
             try:
@@ -613,6 +658,11 @@ class Cryocon34Backend:
                 f"'{idn}'. Refusing to send control commands. Scan the bus "
                 f"and pick the Cryocon's actual address (it does not have to "
                 f"be {CRYOCON_ADDRESS_HINT}).")
+        # Two read-only probes, here rather than inside the control panels,
+        # so the addressing form and the heater read-back mnemonic are known
+        # before the first command is built and are never guessed again.
+        self._probe_loop_prefix()
+        self._probe_heater_query()
         return idn
 
     def identify_resources(self, resources):
@@ -661,6 +711,9 @@ class Cryocon34Backend:
                 print(f"  Warning during disconnect: {e}")
             finally:
                 self.link = None
+                # The next instrument may not be this one.
+                self.loop_prefix_mode = 'name'
+                self.heater_query = None
 
     @property
     def is_connected(self):
@@ -701,6 +754,49 @@ class Cryocon34Backend:
             raise ValueError(f"Loop must be 1 or 2, got {loop}")
         return str(loop)
 
+    # -- Loop addressing: name form or numbered form --
+
+    def _probe_loop_prefix(self):
+        """Settle how this controller wants its loops addressed. Once.
+
+        Read-only: both probes are queries, so nothing about the running
+        experiment changes. Called from connect(), after the *IDN? check,
+        so the answer is in hand before any control command is built.
+
+        Falls back to the name form if NEITHER answers, because that is
+        what the lab unit takes and because the alternative - defaulting to
+        a form known not to work there - is the bug this replaces.
+        """
+        for mode, probe in (('name', 'HEATER:SETPT?'),
+                            ('number', 'LOOP 1:SETPT?')):
+            try:
+                reply = self._query(probe)
+            except Exception:
+                continue
+            if str(reply).strip():
+                self.loop_prefix_mode = mode
+                self.log(f"  Loop addressing: {mode} form "
+                         f"({probe} answered '{str(reply).strip()}').")
+                return mode
+        self.loop_prefix_mode = 'name'
+        self.log("  Loop addressing: neither HEATER:SETPT? nor "
+                 "LOOP 1:SETPT? answered. Defaulting to the name form "
+                 "(HEATER/AOUT), which is what the lab Model 34 takes. "
+                 "Control commands may not reach this unit - check the "
+                 "CC34 diagnostics tool.")
+        return 'name'
+
+    def _loop(self, loop):
+        """The command prefix for a loop, in whichever form this unit takes.
+
+        '1' -> 'HEATER' or 'LOOP 1'.  Every loop command is built through
+        this, so the form is decided in exactly one place.
+        """
+        loop = self._check_loop(loop)
+        if self.loop_prefix_mode == 'number':
+            return f"LOOP {loop}"
+        return self.LOOP_NAMES[loop]
+
     # -- PID gains (Manual: LOOP:PGAIN / IGAIN / DGAIN) --
     # P: 0 to 1000, unitless
     # I: 0 to 1000 SECONDS   (larger = slower integral action)
@@ -715,16 +811,17 @@ class Cryocon34Backend:
             raise ValueError(f"I must be 0-1000 seconds, got {i}")
         if not (0 <= d <= 1000):
             raise ValueError(f"D must be 0-1000 /second, got {d}")
-        cmd = f"LOOP {loop}:PGAIN {p};IGAIN {i};DGAIN {d}"
+        cmd = f"{self._loop(loop)}:PGAIN {p};IGAIN {i};DGAIN {d}"
         self._write(cmd)
         return cmd
 
     def get_pid(self, loop):
         """Query the gain terms. Returns (P, I, D) as floats."""
         loop = self._check_loop(loop)
-        p = self._to_float(self._query(f"LOOP {loop}:PGAIN?"), "PGAIN?")
-        i = self._to_float(self._query(f"LOOP {loop}:IGAIN?"), "IGAIN?")
-        d = self._to_float(self._query(f"LOOP {loop}:DGAIN?"), "DGAIN?")
+        prefix = self._loop(loop)
+        p = self._to_float(self._query(f"{prefix}:PGAIN?"), "PGAIN?")
+        i = self._to_float(self._query(f"{prefix}:IGAIN?"), "IGAIN?")
+        d = self._to_float(self._query(f"{prefix}:DGAIN?"), "DGAIN?")
         return p, i, d
 
     # -- Setpoint (Manual: LOOP:SETPT, LOOP:RATE, LOOP:TYPE) --
@@ -740,7 +837,7 @@ class Cryocon34Backend:
         loop = self._check_loop(loop)
         if not (0 <= value <= 1000):
             raise ValueError(f"Setpoint must be 0-1000 K, got {value}")
-        cmd = f"LOOP {loop}:TYPE PID;SETPT {value}"
+        cmd = f"{self._loop(loop)}:TYPE PID;SETPT {value}"
         self._write(cmd)
         return cmd
 
@@ -756,14 +853,15 @@ class Cryocon34Backend:
         if not (0 < rate_per_min <= 100):
             raise ValueError(
                 f"Ramp rate must be >0 and <=100 K/min, got {rate_per_min}")
-        cmd = f"LOOP {loop}:RATE {rate_per_min};TYPE RampP;SETPT {value}"
+        cmd = f"{self._loop(loop)}:RATE {rate_per_min};TYPE RampP;SETPT {value}"
         self._write(cmd)
         return cmd
 
     def get_setpoint(self, loop):
         """Query the current setpoint for the given loop."""
         loop = self._check_loop(loop)
-        return self._to_float(self._query(f"LOOP {loop}:SETPT?"), "SETPT?")
+        return self._to_float(
+            self._query(f"{self._loop(loop)}:SETPT?"), "SETPT?")
 
     def set_rate(self, loop, rate_per_min):
         """Set the ramp rate (units/minute) without touching the setpoint."""
@@ -771,19 +869,20 @@ class Cryocon34Backend:
         if not (0 <= rate_per_min <= 100):
             raise ValueError(
                 f"Ramp rate must be 0-100 K/min, got {rate_per_min}")
-        cmd = f"LOOP {loop}:RATE {rate_per_min}"
+        cmd = f"{self._loop(loop)}:RATE {rate_per_min}"
         self._write(cmd)
         return cmd
 
     def get_rate(self, loop):
         """Query the ramp rate in units/minute."""
         loop = self._check_loop(loop)
-        return self._to_float(self._query(f"LOOP {loop}:RATE?"), "RATE?")
+        return self._to_float(
+            self._query(f"{self._loop(loop)}:RATE?"), "RATE?")
 
     def get_ramp_status(self, loop):
         """Query whether a ramp is in progress. Returns 'ON' or 'OFF'."""
         loop = self._check_loop(loop)
-        return self._query(f"LOOP {loop}:RAMP?")
+        return self._query(f"{self._loop(loop)}:RAMP?")
 
     # -- Control type and source channel (Manual: LOOP:TYPE / LOOP:SOURCE) --
 
@@ -794,14 +893,14 @@ class Cryocon34Backend:
             raise ValueError(
                 f"Control type must be one of "
                 f"{list(self.CONTROL_TYPES)}, got {control_type}")
-        cmd = f"LOOP {loop}:TYPE {control_type}"
+        cmd = f"{self._loop(loop)}:TYPE {control_type}"
         self._write(cmd)
         return cmd
 
     def get_loop_type(self, loop):
         """Query the loop control type."""
         loop = self._check_loop(loop)
-        return self._query(f"LOOP {loop}:TYPE?")
+        return self._query(f"{self._loop(loop)}:TYPE?")
 
     def set_loop_source(self, loop, channel):
         """Set which input channel the loop controls from."""
@@ -810,14 +909,14 @@ class Cryocon34Backend:
             raise ValueError(
                 f"Channel must be one of {self.INPUT_CHANNELS}, "
                 f"got {channel}")
-        cmd = f"LOOP {loop}:SOURCE CH{channel}"
+        cmd = f"{self._loop(loop)}:SOURCE CH{channel}"
         self._write(cmd)
         return cmd
 
     def get_loop_source(self, loop):
         """Query the loop's controlling input channel (e.g. 'CHA')."""
         loop = self._check_loop(loop)
-        return self._query(f"LOOP {loop}:SOURCE?")
+        return self._query(f"{self._loop(loop)}:SOURCE?")
 
     # -- Heater range and load (Manual: LOOP 1:RANGE / LOOP 1:LOAD) --
     # Both are Loop 1 (primary heater) commands only.
@@ -828,25 +927,25 @@ class Cryocon34Backend:
             raise ValueError(
                 f"Range must be one of {list(self.HEATER_RANGES)}, "
                 f"got {range_value}")
-        cmd = f"LOOP 1:RANGE {range_value}"
+        cmd = f"{self._loop(1)}:RANGE {range_value}"
         self._write(cmd)
         return cmd
 
     def get_range(self):
         """Query the Loop 1 heater range."""
-        return self._query("LOOP 1:RANGE?")
+        return self._query(f"{self._loop(1)}:RANGE?")
 
     def set_load(self, ohms):
         """Set the Loop 1 heater load resistance (50 or 25 ohm)."""
         if str(ohms) not in ('50', '25'):
             raise ValueError(f"Load must be 50 or 25 ohm, got {ohms}")
-        cmd = f"LOOP 1:LOAD {ohms}"
+        cmd = f"{self._loop(1)}:LOAD {ohms}"
         self._write(cmd)
         return cmd
 
     def get_load(self):
         """Query the Loop 1 heater load resistance."""
-        return self._query("LOOP 1:LOAD?")
+        return self._query(f"{self._loop(1)}:LOAD?")
 
     # -- Output limits (Manual: LOOP:MAXPWR / LOOP:MAXSET) --
 
@@ -856,7 +955,7 @@ class Cryocon34Backend:
         if not (0 <= percent <= 100):
             raise ValueError(
                 f"Maximum power must be 0-100 %, got {percent}")
-        cmd = f"LOOP {loop}:MAXPWR {percent}"
+        cmd = f"{self._loop(loop)}:MAXPWR {percent}"
         self._write(cmd)
         return cmd
 
@@ -864,7 +963,7 @@ class Cryocon34Backend:
         """Query the loop's maximum output power in percent."""
         loop = self._check_loop(loop)
         return self._to_float(
-            self._query(f"LOOP {loop}:MAXPWR?"), "MAXPWR?")
+            self._query(f"{self._loop(loop)}:MAXPWR?"), "MAXPWR?")
 
     def set_max_setpoint(self, loop, value):
         """Set the loop's maximum allowed setpoint."""
@@ -872,7 +971,7 @@ class Cryocon34Backend:
         if not (0 <= value <= 1000):
             raise ValueError(
                 f"Maximum setpoint must be 0-1000 K, got {value}")
-        cmd = f"LOOP {loop}:MAXSET {value}"
+        cmd = f"{self._loop(loop)}:MAXSET {value}"
         self._write(cmd)
         return cmd
 
@@ -880,7 +979,7 @@ class Cryocon34Backend:
         """Query the loop's maximum allowed setpoint."""
         loop = self._check_loop(loop)
         return self._to_float(
-            self._query(f"LOOP {loop}:MAXSET?"), "MAXSET?")
+            self._query(f"{self._loop(loop)}:MAXSET?"), "MAXSET?")
 
     # -- Manual power (Manual: LOOP:PMANUAL) --
     # Only used while the loop's TYPE is Man.
@@ -891,7 +990,7 @@ class Cryocon34Backend:
         if not (0 <= percent <= 100):
             raise ValueError(
                 f"Manual power must be 0-100 %, got {percent}")
-        cmd = f"LOOP {loop}:PMANUAL {percent}"
+        cmd = f"{self._loop(loop)}:PMANUAL {percent}"
         self._write(cmd)
         return cmd
 
@@ -899,20 +998,67 @@ class Cryocon34Backend:
         """Query the manual output power setting in percent."""
         loop = self._check_loop(loop)
         return self._to_float(
-            self._query(f"LOOP {loop}:PMANUAL?"), "PMANUAL?")
+            self._query(f"{self._loop(loop)}:PMANUAL?"), "PMANUAL?")
 
-    # -- Output readback (Manual: LOOP:OUTPWR? / LOOP:HTRREAD?) --
+    # -- Output readback --
+    #
+    # The manual documents HTRREAD? and does not document OUTPWR? at all.
+    # The lab unit does the opposite: under the name prefix it answers
+    # OUTPWR? with '0' and refuses HTRREAD? outright (2026-09-25, five runs).
+    # So the mnemonic cannot be taken from the manual OR from the earlier
+    # correction - it has to be asked of the instrument, once, and the
+    # answer kept. Order below puts the one that works on the lab unit
+    # first; the rest are for other firmware.
+    HEATER_READ_CANDIDATES = ('OUTPWR?', 'HTRREAD?', 'HTRR?')
+
+    def _probe_heater_query(self):
+        """Settle which heater read-back mnemonic this unit answers.
+
+        All queries, so nothing is disturbed. Sets self.heater_query to the
+        sub-mnemonic that answered, or leaves it None - in which case the
+        read-back reads NaN and, importantly, sends NOTHING further. A
+        refused Cryo-con command costs a full VISA timeout and looks exactly
+        like a dead bus, so retrying one per poll is what turns a logging
+        column into a night of spurious reconnects.
+        """
+        prefix = self._loop(1)
+        for candidate in self.HEATER_READ_CANDIDATES:
+            try:
+                reply = self._query(f"{prefix}:{candidate}")
+            except Exception:
+                continue
+            if str(reply).strip():
+                self.heater_query = candidate
+                self.log(f"  Heater read-back: {prefix}:{candidate} "
+                         f"answered '{str(reply).strip()}'.")
+                return candidate
+        self.heater_query = None
+        self.log("  Heater read-back: none of "
+                 f"{', '.join(self.HEATER_READ_CANDIDATES)} answered under "
+                 f"'{prefix}:'. Heater output will read NaN and will not be "
+                 "asked for again this session.")
+        return None
 
     def get_output_power(self, loop):
-        """Commanded output power of the loop, percent of full scale."""
+        """Commanded output power of the loop, percent of full scale.
+
+        NaN if this controller answers no read-back mnemonic - never a
+        further query, which is what keeps a refused command out of the
+        poll loop.
+        """
         loop = self._check_loop(loop)
+        if not self.heater_query:
+            return float('nan')
         return self._to_float(
-            self._query(f"LOOP {loop}:OUTPWR?"), "OUTPWR?")
+            self._query(f"{self._loop(loop)}:{self.heater_query}"),
+            self.heater_query)
 
     def get_heater_readback(self, loop):
-        """Measured heater output from the independent read-back circuit."""
+        """Measured heater output, as the raw reply (may carry a '%')."""
         loop = self._check_loop(loop)
-        return self._query(f"LOOP {loop}:HTRREAD?")
+        if not self.heater_query:
+            return 'nan'
+        return self._query(f"{self._loop(loop)}:{self.heater_query}")
 
     # -- Temperature readings (Manual: INPUT? / INPUT:SENPR?) --
     # INPUT? reports in the CHANNEL's display units, not always Kelvin.
@@ -1133,7 +1279,10 @@ class DirectControlGUI:
     Disconnect is non-destructive - instrument settings persist.
     """
 
-    PROGRAM_VERSION = "1.3"
+    # 1.4: loops addressed BY NAME (HEATER/AOUT). Every command this
+    #      module sent before was 'LOOP <n>:...' and none of it ever
+    #      reached the lab unit. See Cryocon34Backend.LOOP_NAMES.
+    PROGRAM_VERSION = "1.4"
     PROGRAM_NAME = "Cryocon 34 Direct Control Utility"
 
     # Color scheme (identical to reference programme)
@@ -3505,7 +3654,42 @@ CC34_SELF_TEST_PROBES = [
     ("Reading shape", "INP A:TEMP?;UNIT?", "FORM",
      "manual's compound-query example; expect '27.9906K' or two fields"),
 
+    # -- loop addressing: the answer, now that it is settled -------------
+    #
+    # Placed FIRST among the loop probes because it decides how to read
+    # every one below it. On the lab unit the name form answers and the
+    # numbered form does not (2026-09-25, five runs). This module now
+    # sends the name form, so the self-test must show it working - and
+    # show the numbered form failing - on the controller in front of it.
+    ("Loop addressing", "HEATER:SETPT?", "VERIFIED",
+     "loop 1 setpoint by NAME - what this module now sends"),
+    ("Loop addressing", "HEATER:TYPE?", "VERIFIED", "loop 1 control type"),
+    ("Loop addressing", "HEATER:SOURCE?", "VERIFIED",
+     "loop 1 controlling input"),
+    ("Loop addressing", "HEATER:RANGE?", "VERIFIED", "loop 1 heater range"),
+    ("Loop addressing", "HEATER:LOAD?", "VERIFIED", "loop 1 load resistance"),
+    ("Loop addressing", "HEATER:RATE?", "VERIFIED", "loop 1 ramp rate"),
+    ("Loop addressing", "HEATER:RAMP?", "VERIFIED", "is a ramp running?"),
+    ("Loop addressing", "HEATER:PGAIN?", "VERIFIED", "loop 1 P"),
+    ("Loop addressing", "HEATER:IGAIN?", "VERIFIED",
+     "loop 1 I - SECONDS on a Cryo-con, and larger is SLOWER"),
+    ("Loop addressing", "HEATER:DGAIN?", "VERIFIED", "loop 1 D"),
+    ("Loop addressing", "AOUT:SETPT?", "VERIFIED", "loop 2 setpoint"),
+    ("Loop addressing", "AOUT:TYPE?", "VERIFIED", "loop 2 control type"),
+    ("Loop addressing", "AOUT:MODE?", "VERIFIED",
+     "the manual's worked example is 'AOUT: MODE HTR'"),
+    ("Loop addressing", "LOOP 1:SETPT?", "DOC",
+     "the numbered form the manual documents - expected to TIME OUT here; "
+     "if it answers, this unit takes both and the fallback is live"),
+
     # -- heater read-back: the question this file was written for --------
+    ("Heater read-back", "HEATER:OUTPWR?", "VERIFIED",
+     "the read-back that WORKS on the lab unit, undocumented though it is"),
+    ("Heater read-back", "HEATER:HTRREAD?", "DOC",
+     "the documented mnemonic under the verified prefix - times out on the "
+     "lab unit, which is why the probe tries more than one"),
+    ("Heater read-back", "HEATER:PMANUAL?", "VERIFIED",
+     "loop 1 manual output power"),
     ("Heater read-back", "LOOP 1:HTRREAD?", "DOC",
      "THE documented heater read-back; manual example reply '22%'"),
     ("Heater read-back", "LOOP 2:HTRREAD?", "DOC", "same, loop 2"),
@@ -4005,6 +4189,32 @@ class CryoconSelfTest:
                        "second look - a wiring, option or firmware issue):")
             for _group, command, _st, verdict, _ms, _raw in doc_failed:
                 self._emit(f"    {command:<24} {verdict}")
+
+        # VERIFIED = undocumented, but measured working on the lab Model 34
+        # on 2026-09-25. These are the commands this module now SENDS, so a
+        # summary that stayed silent about them would be hiding the half of
+        # the report a reader most needs: whether the controller in front of
+        # them behaves like the one the rewrite was based on.
+        verified = [r for r in self.rows if r[2] == "VERIFIED"]
+        if verified:
+            failed = [r for r in verified if r[3] != "OK"]
+            self._emit("")
+            self._emit("  Commands verified on the lab Model 34 (2026-09-25) "
+                       "but absent from the manual:")
+            self._emit(f"    {len(verified) - len(failed)} of "
+                       f"{len(verified)} answered here.")
+            for _group, command, _st, verdict, ms, _raw in verified:
+                mark = "  " if verdict == "OK" else "XX"
+                self._emit(f"    {mark} {command:<24} {verdict}")
+            if failed:
+                self._emit("")
+                self._emit("    This controller does NOT behave like the lab "
+                           "unit. The loop commands this module sends are the "
+                           "name form (HEATER/AOUT); if those failed above, "
+                           "temperature control will not work here and "
+                           "Cryocon34Backend.loop_prefix_mode should have "
+                           "fallen back to the numbered form - check the "
+                           "connect log.")
 
         self._sensor_summary()
         self._reading_chain_summary()
