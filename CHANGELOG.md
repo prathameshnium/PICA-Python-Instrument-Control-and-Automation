@@ -1,13 +1,23 @@
 go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases) and [tags](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tags), for the finalised released versions
 ## Instrument & Software Update Log
 ---
-### [1.0.6] - Upcoming (in testing)
+### [1.0.6] - 2026-10-06  (Current)
 
 - **Novocontrol Alpha-A Support (experimental)**: New broadband dielectric spectroscopy frequency-scan module (GUI + `Instrument_Control` CLI template) with WinDETA-compatible exports and a dedicated GPIB runbook (`docs/Novocontrol_GPIB_Runbook.md`).
 - **AC Measurement Modules (experimental)**: Ten new four-probe AC modules built around the Keithley 6221 as the AC current source, in two matched sets of five — I-V (current-amplitude sweep at fixed frequency), frequency scan, R-T under Lakeshore 350 control, and passive R-T against the Lakeshore 350 and the Cryo-con 34.
   - **6221 + SR830** (`pica/lockin/sr830/`): phase-sensitive detection. `R = X / I_rms` with `I_rms = I_peak / sqrt(2)`; the 6221 phase marker on trigger-link line 3 is the SR830's reference, and every point checks `LIAS?` and compares `FREQ?` against the programmed frequency so an unplugged reference cable is reported as an error rather than as a plausible resistance.
   - **6221 + Keithley 197A** (`pica/keithley/k6221_k197a/`): the same measurement with a broadband true-RMS DMM in place of the lock-in. `R = V_rms / I_rms`, magnitude only — there is no reference, so nothing outside the drive frequency is rejected and the resistance is an **upper bound**. The spread across the averaged readings is logged next to the mean, a drive outside the meter's AC volts band is flagged on every point, and the 197-dialect command set carries the same UNVERIFIED warning as `Monitor_K197A_GUI.py`.
   - Both sets write the PICA commented-header `.dat` format with optional bar / van der Pauw resistivity, take the current off in the thread that put it on on every exit path (finished, stopped or thrown), and put the heater back to off with it in the T-Control modules. The passive modules never write to their thermometer.
+- **Cryo-con 34 Support (experimental)**: Temperature sensing, direct control, a sensor-curve loader and viewer (`CALCUR`), and a read-only diagnostic console (`pica/cryocon/`). Cryo-con 34 sensing variants of the Delta, K2400, K2400 + 2182 and K6517B R-T programs, the E4980A passive temperature scan, and the PPMS dielectric programs.
+- **Lakeshore 340 Support (experimental)**: L340 ports of temperature sensing, direct control, range control and step control (standard and advanced), plus L340 variants of the Delta, K2400, K2400 + 2182 and K6517B R-T programs, the pyroelectric module, and the E4980A temperature-scan, step-frequency-scan and PPMS dielectric programs. New sensor-curve loader for the 340/350 and a curve viewer for each.
+- **PPMS Dielectric Master (Tscan + Fscan)**: Unattended multi-day protocol combining passive warming temperature scans and temperature-stepped frequency scans on the E4980A, with the thermometer read-only and per-run cooldowns. The PPMS-synchronised frequency scan now logs the measured temperature per row, resynchronises after a desync, and filters thermometer glitches. New **Field Step Frequency Scan** for fields and temperatures set by hand on the PPMS.
+- **E4980A Open/Short Correction**: Guided correction that backs up what the meter holds, redoes OPEN / SHORT one screen at a time, verifies the residuals and logs every command.
+- **I-V Modules (K2400, K2400 + 2182, K6517B)**: Rewritten sweep logic with "0 to Max", "Loop" and "Custom List" sweeps (paste a list straight from the List Maker); every sweep hits Max exactly and never overshoots. **Fix:** the K2400 I-V module now tells the 2400 to measure volts — after `*RST` it measured current only, so the voltage column read `+9.91E+37`.
+- **Keithley 2400 Direct Control**: Bench workbench that holds one operating point with a live reading (source, compliance, ranges, NPLC, sensing, terminals, filter).
+- **New Instruments**: Keithley 197A monitor, SR830 comms console, Pfeiffer TPG 361 pressure logger (USB / Ethernet, no GPIB), and Tektronix AFG 3022B function generator control.
+- **Diagnostic Tools (read-only)**: Comms interfaces, Python environment and system info panels in the Tools menu; GPIB Lifeline console that talks to the NI-488.2 DLL directly when PyVISA cannot; 32-bit GPIB scanner (GUI + CLI) and a 32-bit Alpha-A frequency-scan build.
+- **Calculators**: Magnetodielectric (MD) ratio calculator and a multi-PID setpoint simulator for CCR / LN2 probes.
+- **PICA Utils Portable**: The instrument-free utilities (plotters, PPMS planning tools, calculators) frozen into one standalone Windows `.exe`; CI builds it and attaches it to each release.
 - **SCPI Console**: Interactive console for raw SCPI commands to any VISA instrument.
 - **List Maker** (`pica/utils/List_Maker_GUI.py`, Calculators group): builds a comma-separated list for pasting into any scan program. Linear, log or 1/x spacing (even in 1/x, output in x), by point count or step size, optional whole-numbers mode (round half away from zero, consecutive repeats dropped before the pattern is applied). A pattern then goes on top: loop (up then back down), sawtooth, square, sine, or a hysteresis loop with 4 quadrants (+max to -max and back) or 5 (virgin curve first), each with a cycle count; turning points are repeated by default. Live plot with a log-y toggle, decimals / scientific / separator controls, copy and save-as-text. A second tab reads a pasted list back and reports its count, range, spacing type and step.
 - **Plotting Engine**: Removed blitting (fixes high-DPI scaling issues), movable legends, scroll fixes, AM/PM timestamps.
@@ -19,7 +29,7 @@ go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-C
 
 ---
 
-### [1.0.5] - 2026-06-24  (Current)
+### [1.0.5] - 2026-06-24
 
 - **Project Version**:v1.0.5: Lakeshore Enhancements, New Utilities & Core Fixes.
 

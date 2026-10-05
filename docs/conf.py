@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath('..'))
 project = 'PICA'
 copyright = '2026, Prathamesh Deshmukh'
 author = 'Prathamesh Deshmukh'
-release = '1.0.5'
+release = '1.0.6'
 
 # -- General configuration ---------------------------------------------------
 extensions = [

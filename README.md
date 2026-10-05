@@ -36,9 +36,7 @@
 
 ---
 
-> **v1.0.5 is now live!** Lakeshore enhancements, new utilities & core fixes. Install or upgrade via pip: `pip install --upgrade pica-suite`
->
-> **v1.0.6 is coming soon** — bringing Novocontrol Alpha-A broadband dielectric spectroscopy, an interactive SCPI console, plotting engine improvements, and more. See the [preview below](#coming-soon-in-v106).
+> **v1.0.6 is now live!** Cryo-con 34 and Lakeshore 340 support, AC resistivity, a PPMS dielectric master protocol, diagnostics and new utilities. Install or upgrade via pip: `pip install --upgrade pica-suite`
 
 ---
 
@@ -72,8 +70,7 @@ The suite performs automated protocols including:
 ## Table of Contents
 
 - [Overview](#overview)
-- [What's New in v1.0.5](#whats-new-in-v105)
-- [Coming Soon in v1.0.6](#coming-soon-in-v106)
+- [What's New in v1.0.6](#whats-new-in-v106)
 - [Motivation](#motivation)
 - [Key Features](#key-features)
 - [Design and Implementation](#design-and-implementation)
@@ -89,35 +86,25 @@ The suite performs automated protocols including:
 
 ---
 
-## What's New in v1.0.5
+## What's New in v1.0.6
 
-**v1.0.5** (June 2026) is the latest release and is available on PyPI and GitHub Releases.
+**v1.0.6** (October 2026) is the latest release and is available on PyPI and GitHub Releases.
 
 ```bash
-pip install pica-suite==1.0.5
+pip install pica-suite==1.0.6
 # or upgrade from a previous version:
 pip install --upgrade pica-suite
 ```
 
-Highlights — *Lakeshore enhancements, new utilities & core fixes*:
+Highlights — *new temperature controllers, AC resistivity & dielectric automation*:
 
-* **Advanced Temperature Step Control (Lakeshore 350):** a new self-contained controller with adaptive ramp rates, an editable low-temperature rate-cap table (tames overshoot on LN2-dewar probes below 100 K), approach-from-one-side mode for hysteresis-sensitive measurements, configurable stability criteria, and per-setpoint summary logging. [Details below](#advanced-temperature-step-control-lakeshore-350).
-* **Upgraded Step Frequency Scan (Keysight E4980A):** the combined dielectric temperature-step / frequency-sweep program now embeds the same advanced ramp and stabilization logic for unattended overnight runs.
-* **Core fixes:** real-time plotting stability, safer instrument shutdown paths, and general maintenance across measurement modules.
+* **Cryo-con 34 and Lakeshore 340 (experimental):** temperature sensing, direct and step control, sensor-curve loading and viewing, plus Cryo-con / L340 variants of the R-T, pyroelectric and dielectric programs.
+* **AC resistivity (experimental):** Keithley 6221 AC source with an SR830 lock-in or a Keithley 197A DMM — I-V, frequency scan and R-T modules.
+* **Dielectric:** PPMS Dielectric Master (unattended Tscan + Fscan), Field Step Frequency Scan, E4980A open/short correction, and Novocontrol Alpha-A broadband spectroscopy (experimental).
+* **I-V fixes:** reworked sweeps with custom lists for the K2400, K2400 + 2182 and K6517B; the K2400 I-V module now reads voltage correctly.
+* **Launcher v2, diagnostics & utilities:** Quick Select launcher, read-only diagnostic tools, SCPI console, List Maker, MD ratio calculator, PPMS helpers, and a portable utilities `.exe`.
 
 For the full changelog, see [`CHANGELOG.md`](CHANGELOG.md).
-
-### Coming Soon in v1.0.6
-
-The next release is in active daily testing on lab hardware and will add:
-
-* **Broadband Dielectric Spectroscopy (experimental):** a new **Novocontrol Alpha-A** frequency-scan module (GUI + CLI template) with WinDETA-compatible data exports, plus a dedicated [Novocontrol GPIB runbook](docs/Novocontrol_GPIB_Runbook.md).
-* **SCPI Console:** an interactive console for sending raw SCPI commands to any VISA instrument — ideal for debugging and driver development.
-* **Plotting engine improvements:** more robust scaling on high-DPI displays, movable plot legends, and smoother scrolling in long parameter panels.
-* **Expanded test suite:** frequency-scan outputs validated against reference WinDETA exports.
-* Plus smaller PPMS helper utilities (plotter, sequence visualizer, time estimator) and general maintenance.
-
-Watch the [releases page](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases) or `pip install --upgrade pica-suite` once it lands.
 
 ---
 
@@ -247,7 +234,7 @@ PICA is available on [PyPI](https://pypi.org/project/pica-suite/) and structured
 pip install pica-suite
 ```
 
-To upgrade to the latest version (currently **v1.0.5**):
+To upgrade to the latest version (currently **v1.0.6**):
 
 ```bash
 pip install --upgrade pica-suite
@@ -400,8 +387,8 @@ For downloadable release builds, please visit the [releases page](https://github
 
 PICA evolved from simple offline scripts in 2022 to a full-stack automated suite.
 
-  * **v1.0.6 (Upcoming):** Novocontrol Alpha-A broadband dielectric spectroscopy (experimental), SCPI console, and plotting engine improvements.
-  * **v1.0.5 (Latest):** Advanced Lakeshore temperature step control (adaptive ramp rates, low-temperature safety caps), upgraded step frequency scan, new utilities, and core fixes. Available on [PyPI](https://pypi.org/project/pica-suite/).
+  * **v1.0.6 (Latest):** Cryo-con 34 and Lakeshore 340 support, AC resistivity (SR830 / 197A), PPMS dielectric master protocol, Novocontrol Alpha-A (experimental), I-V fixes, launcher v2, diagnostic tools and new utilities. Available on [PyPI](https://pypi.org/project/pica-suite/).
+  * **v1.0.5:** Advanced Lakeshore temperature step control (adaptive ramp rates, low-temperature safety caps), upgraded step frequency scan, new utilities, and core fixes.
   * **v1.0.4:** Documentation infrastructure release — Read the Docs integration, preprint page with automated PDF build, and CI/CD workflow updates.
   * **v1.0.3:** GUI refreshed with the **Latte** theme — lighter, warmer, and less dark. First release published to PyPI.
   * **v1.0.1 / v1.0.0 (Initial Public Release):** Version numbering was reset from legacy development builds (v17.0) to v1.0.0 to standardize the package for public distribution and citation.
@@ -446,7 +433,7 @@ If you use this software in your research, please cite it:
   day          = 26,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {1.0.5},
+  version      = {1.0.6},
   doi          = {10.5281/zenodo.18377217},
   url          = {https://doi.org/10.5281/zenodo.18377217}
 }
