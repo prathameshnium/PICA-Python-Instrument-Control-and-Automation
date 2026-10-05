@@ -355,6 +355,8 @@ Upon launching PICA (`pica-gui`), select your desired measurement module from th
 
 ## Running Tests Locally
 
+**Test coverage:** the suite has 2,100+ tests, all run against mocked VISA instruments, so no hardware is needed. They cover **36% of the statements in `pica/`** (measured 2026-10-06 with `--cov=pica`, v1.0.6). Live numbers are on [Codecov](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation).
+
 To run the test suite locally, first install the development dependencies:
 ```bash
 pip install -r requirements-dev.txt
