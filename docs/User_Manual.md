@@ -12,13 +12,11 @@ myst:
 ---
 
 :::{note}
-**v1.0.6 is now live!** Cryo-con 34 and Lakeshore 340 support, AC resistivity, PPMS dielectric master protocol, diagnostics and new utilities. Install or upgrade via pip:
+**v1.0.6 is now live!** Cryo-con 34 and Lakeshore 340 support, AC resistivity, PPMS dielectric master protocol, Novocontrol Alpha-A broadband dielectric spectroscopy (experimental), an interactive SCPI console, plotting engine improvements, diagnostics and new utilities. Install or upgrade via pip:
 
 ```bash
 pip install --upgrade pica-suite
 ```
-
-**v1.0.6 is coming soon** — bringing Novocontrol Alpha-A broadband dielectric spectroscopy (experimental), an interactive SCPI console, and plotting engine improvements.
 :::
 
 ---
@@ -30,6 +28,7 @@ pip install --upgrade pica-suite
 3. [Installation & Setup](#3-installation--setup)
 4. [Safety Precautions](#4-safety-precautions)
 5. [Core Utilities](#5-core-utilities)
+   * [Launcher v2: Quick Select and Advanced Options](#55-launcher-v2-quick-select-and-advanced-options)
 6. [Supported Measurement Modules](#6-supported-measurement-modules)
    * [Ultra Low Resistance Measurements](#61-ultra-low-resistance-measurements)
    * [General Transport (Standard I-V & R-T)](#62-general-transport-standard-i-v--r-t)
@@ -69,7 +68,7 @@ PICA was constructed on a core philosophy of **robustness, modularity, and acces
 Python was selected as the foundational language for PICA due to its ubiquity in the scientific community:
 * **Scientific Ecosystem:** Libraries like `NumPy` (array operations), `Pandas` (data structuring), and `Matplotlib` (publication-quality plotting) create a seamless workflow from acquisition to analysis.
 * **PyVISA Integration:** The [`PyVISA`](https://github.com/pyvisa/pyvisa) library provides platform-independent wrappers for VISA drivers, allowing communication via simple, readable commands (e.g., ``instrument.query('*IDN?')``) rather than complex low-level protocols.
-* **Cross-Platform:** PICA runs on Windows, Linux, and macOS with minimal modification, accommodating diverse lab environments.
+* **Portability:** Python and PyVISA are available on Windows, Linux and macOS. PICA itself is currently validated on Windows only; Linux support is experimental (see [3.1 System Prerequisites](#31-system-prerequisites)).
 
 ### 2.2 The Case for GUIs
 While early automation scripts often rely on Command Line Interfaces (CLIs), the final PICA suite prioritizes full-featured GUIs built with `Tkinter`. This strategic decision was guided by:
@@ -174,7 +173,10 @@ PICA is structured as a standard Python package. The following instructions are 
     A second launcher ships alongside the classic one. It opens on the
     **Quick Select** screen — three dropdowns (category, module, protocol)
     that narrow a measurement down in plain language — and keeps the full card
-    grid in an **Advanced Options** window (`Ctrl+Shift+A`). See
+    grid in an **Advanced Options** window (`Ctrl+Shift+A`, or the Tools
+    menu). Advanced Options lists every module unfiltered, including those
+    Quick Select leaves out (Cryo-con 34 and Lakeshore 340 variants,
+    temperature utilities, Novocontrol Alpha-AN, bench multimeter). See
     [Launcher v2](#55-launcher-v2-quick-select-and-advanced-options).
     ```bash
     python run_pica_v2.py
@@ -621,14 +623,17 @@ This mainframe has **no DC bias hardware** — the module never transmits a bias
 
 ### 6.9 Standalone Temperature Utilities
 
-**Target Hardware:** Lake Shore 350 Temperature Controller.
+**Target Hardware:** Lake Shore 350 and 340 Temperature Controllers, Cryo-con 34 (experimental).
 
 PICA also includes standalone utilities for monitoring and controlling temperature, independent of other measurement modules.
 
   * **Temperature Monitor:** A simple interface for logging temperature from multiple types of sensors.
   * **Temperature Control:** A dedicated module for setting temperature ramps, controlling heater outputs, and managing control loops.
   * **Step-wise Control (Basic):** A step-sequence controller that ramps to each setpoint, waits for stabilization, and hands off to an external measurement.
-  * **Step-wise Control (Advanced)** *(new in v1.0.5)*: A self-contained advanced version of the step-sequence controller. It adds an **adaptive ramp rate** (computed per step and hard-capped by an editable low-temperature rate table, taming overshoot on LN2-dewar probes below 100 K), an optional **approach-from-one-side** mode for hysteresis-sensitive measurements, configurable **stability criteria** (tolerance band, rolling window, drift limit, timeout), and per-setpoint summary logging alongside safety features such as a hard kill-switch temperature and a soft Max-Temp limit with graceful abort.
+  * **Step-wise Control (Advanced)** *(new in v1.0.6)*: A self-contained advanced version of the step-sequence controller. It adds an **adaptive ramp rate** (computed per step and hard-capped by an editable low-temperature rate table, taming overshoot on LN2-dewar probes below 100 K), an optional **approach-from-one-side** mode for hysteresis-sensitive measurements, configurable **stability criteria** (tolerance band, rolling window, drift limit, timeout), and per-setpoint summary logging alongside safety features such as a hard kill-switch temperature and a soft Max-Temp limit with graceful abort.
+  * **Lakeshore 340 versions** *(v1.0.6, experimental)*: sensing, direct control, range control and step control (standard and advanced) in `pica/lakeshore/`, as separate `*_L340_*` programs.
+  * **Cryo-con 34** *(v1.0.6, experimental)*: temperature sensing, direct control and a read-only diagnostic console in `pica/cryocon/`.
+  * **Sensor curve tools** *(v1.0.6)*: loaders that write a sensor calibration curve into the Lakeshore 340/350 or the Cryo-con 34, and viewers that read back the curves a controller holds.
 
 :::{figure} Images/screenshots/Lakeshore_Temp_Monitor.png
 :alt: Lakeshore Temp Monitor
@@ -832,6 +837,8 @@ Example: `SampleA_2025-12-04_1430_IV_Sweep.dat`
 PICA uses standard VISA resource strings. While the defaults below are common, users should verify their specific instrument addresses using the built-in **Instrument Scanner** or front-panel settings.
 
   * **Lake Shore 350:** `GPIB1::15::INSTR`
+  * **Lake Shore 340:** `GPIB1::19::INSTR`
+  * **Cryo-con 34:** `GPIB1::23::INSTR`
   * **Keithley 2400:** `GPIB1::4::INSTR`
   * **Keithley 6221:** `GPIB0::13::INSTR`
   * **Keithley 2182:** `GPIB0::7::INSTR`
@@ -880,8 +887,8 @@ The full preprint of the PICA software suite, detailing its design, implementati
 @software{Deshmukh_PICA_2026,
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
   title        = {{PICA: Advanced High-Precision Transport Measurement Automation with Python}},
-  month        = jan,
-  day          = 26,
+  month        = oct,
+  day          = 6,
   year         = 2026,
   publisher    = {Zenodo},
   version      = {1.0.6},
@@ -910,7 +917,7 @@ verification of the 197A command table against its printed interface manual.*
 In the future, we also plan to develop executable (`.exe`) versions of the PICA software suite. This will remove the need for users to manage Python environments and dependencies, further simplifying the setup process and facilitating rapid adoption in laboratories.
 
 ### 11.3 New Utilities and Analysis Modules
-We plan to add more utility modules, such as a PID simulator for temperature controller PID values calibration and various simple data analysis modules. These additions will help to streamline the entire process from measurement to analysis, making PICA a more self-contained ecosystem.
+A multi-PID setpoint simulator for CCR and LN2 probes now ships as `pica/utils/PID_Simulator_GUI.py` (v1.0.6). We plan to add more utility modules, such as simple data analysis modules. These additions will help to streamline the entire process from measurement to analysis, making PICA a more self-contained ecosystem.
 
 
 ## 12. Adding a New Instrument
@@ -939,7 +946,7 @@ This project is licensed under the MIT License - see the [LICENSE](https://githu
 
 ## 15. Appendix A: Project File Structure
 
-For developers and advanced users, the following reference outlines the PICA directory structure (abridged, v1.0.5).
+For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.6; test files and assets abridged).
 
 :::{note}
 Adding a new module to the main launcher into the GUI requires modifying `pica/main.py`.
@@ -952,104 +959,204 @@ belongs on the Quick Select screen.
 PICA (Root Directory)/
     .coveragerc
     .gitignore
+    .readthedocs.yaml
     CHANGELOG.md
     CITATION.cff
     CODE_OF_CONDUCT.md
     CONTRIBUTING.md
     LICENSE
     MANIFEST.in
+    PICA_Utils_Portable.spec
     README.md
+    codecov.yml
     pica_cli.py
+    pica_utils_portable.py
     pyproject.toml
     requirements-dev.txt
     requirements.txt
+    robots.txt
     run_pica.py
+    run_pica_v2.py
+    setup.cfg
+    setup.py
     .github/
         workflows/
+            build_portable_utils.yml
+            build_preprint.yml
             codeql.yml
+            docs.yml
             draft-pdf.yml
             lint.yml
             test.yml
     docs/
         Instruments_Manuals_Lists.md
+        Novocontrol_GPIB_Runbook.md
         User_Manual.md
+        conf.py
+        index.md
+        requirements.txt
     examples/
+        Low_R_Test_10ohm_20251218_163101_IV.dat
         examples.md
     paper/
         paper.bib
         paper.md
     pica/
-        __init__.py
         cli.py
         main.py
-        assets/                 <-- Images, Logos, Icons
-            Images/
-            LOGO/
+        main_v2.py
+        assets/                 <-- Images, logos, icons
+        PPMS/                   <-- PPMS helper utilities
+            PPMS_Plotter_GUI.py
+            PPMS_SeqVisualizer_GUI.py
+            PPMS_TimeEstimator_GUI.py
+        cryocon/                <-- Temperature control and sensing (Cryo-con 34)
+            Diagnostics_CC34_GUI.py
+            Sensor_Curve_Loader_CC34_GUI.py
+            Sensor_Curve_Viewer_CC34_GUI.py
+            T_Control_CC34_DirectControl_GUI.py
+            T_Sensing_CC34_GUI.py
         keithley/
-            delta_mode/         <-- Low Resistance (K6221 + K2182)
+            delta_mode/         <-- Ultra low resistance (K6221 + K2182)
+                Delta_RT_K6221_K2182_CC34_Sensing_GUI.py
+                Delta_RT_K6221_K2182_L340_Sensing_GUI.py
+                Delta_RT_K6221_K2182_L340_T_Control_GUI.py
                 Delta_RT_K6221_K2182_L350_Sensing_GUI.py
                 Delta_RT_K6221_K2182_L350_T_Control_GUI.py
                 IV_K6221_DC_Sweep_GUI.py
                 Instrument_Control/
-            k2400/              <-- Mid Resistance (K2400 Standard)
+                    Delta_K6221_K2182_L350_T_Sensing_Instrument_Control.py
+                    Delta_K6221_K2182_Simple_Instrument_Control.py
+            k197a/              <-- Bench DMM logging (K197A)
+                Monitor_K197A_GUI.py
+                Instrument_Control/
+                    Monitor_K197A_Instrument_Control.py
+            k2400/              <-- Mid resistance (K2400)
                 IV_K2400_GUI.py
+                K2400_DirectControl_GUI.py
+                RT_K2400_CC34_T_Sensing_GUI.py
+                RT_K2400_L340_T_Control_GUI.py
+                RT_K2400_L340_T_Sensing_GUI.py
                 RT_K2400_L350_T_Control_GUI.py
                 RT_K2400_L350_T_Sensing_GUI.py
                 Instrument_Control/
-            k2400_2182/         <-- Mid Resistance (High Precision)
+                    IV_K2400_Loop_Instrument_Control.py
+            k2400_2182/         <-- Mid resistance, high precision (K2400 + K2182)
                 IV_K2400_K2182_GUI.py
+                RT_K2400_K2182_CC34_T_Sensing_GUI.py
+                RT_K2400_K2182_L340_T_Control_GUI.py
+                RT_K2400_K2182_L340_T_Sensing_GUI.py
                 RT_K2400_K2182_L350_T_Sensing_GUI.py
                 RT_K2400_K2182_T_Control_GUI.py
                 Instrument_Control/
-            k6221_k197a/        <-- AC transport with a DMM (magnitude only)
-                IV_AC_K6221_K197A_GUI.py
+                    IV_K2400_K2182_Instrument_Control.py
+            k6221_k197a/        <-- AC transport with a DMM (K6221 + K197A)
                 Frequency_Scan_K6221_K197A_GUI.py
+                IV_AC_K6221_K197A_GUI.py
+                RT_AC_K6221_K197A_CC34_T_Sensing_GUI.py
+                RT_AC_K6221_K197A_L340_T_Control_GUI.py
+                RT_AC_K6221_K197A_L340_T_Sensing_GUI.py
                 RT_AC_K6221_K197A_L350_T_Control_GUI.py
                 RT_AC_K6221_K197A_L350_T_Sensing_GUI.py
-                RT_AC_K6221_K197A_CC34_T_Sensing_GUI.py
-            k6517b/             <-- High Resistance & Pyroelectric
-                High_Resistance/
+            k6517b/
+                High_Resistance/ <-- High resistance (K6517B)
                     IV_K6517B_GUI.py
+                    RT_K6517B_CC34_T_Sensing_GUI.py
+                    RT_K6517B_L340_T_Control_GUI.py
+                    RT_K6517B_L340_T_Sensing_GUI.py
                     RT_K6517B_L350_T_Control_GUI.py
                     RT_K6517B_L350_T_Sensing_GUI.py
                     Instrument_Control/
-                Pyroelectricity/
+                        IV_K6517B_L350_T_Control_Instrument_Control.py
+                        IV_K6517B_Simple_Instrument_Control.py
+                Pyroelectricity/ <-- Pyroelectric current and poling (K6517B)
+                    Polling_K6517B_GUI.py
+                    Pyroelectric_K6517B_L340_GUI.py
                     Pyroelectric_K6517B_L350_GUI.py
                     Instrument_Control/
-        keysight/               <-- Capacitance (E4980A)
+                        Current_K6517B_Simple_Instrument_Control.py
+                        Poling_K6517B_Instrument_Control.py
+                        PyroDataVisualization_Simple_Instrument_Control.py
+                        Pyroelectric_K6517B_Working_Instrument_Control.py
+        keysight/               <-- Capacitance and dielectric (E4980A)
             CV_KE4980A_GUI.py
+            Correction_OpenShort_E4980A_GUI.py
+            Field_Step_Freq_Scan_E4980A_GUI.py
+            Frequency_Scan_E4980A_GUI.py
+            PPMS_Dielectric_Master_Tscan_Fscan_CC34_E4980A_GUI.py
+            PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI.py
+            PPMS_Dielectric_Master_Tscan_Fscan_L340_E4980A_GUI.py
+            PPMS_Sync_Freq_Scan_CC34_E4980A_GUI.py
+            PPMS_Sync_Freq_Scan_E4980A_GUI.py
+            PPMS_Sync_Freq_Scan_L340_E4980A_GUI.py
+            Step_Frequency_Scan_E4980A_GUI.py
+            Step_Frequency_Scan_L340_E4980A_GUI.py
+            Temprature_Scan_E4980A_GUI.py
+            Temprature_Scan_L340_E4980A_GUI.py
+            Temprature_Scan_Passive_CC34_E4980A_GUI.py
+            Temprature_Scan_Passive_E4980A_GUI.py
+            Temprature_Scan_Passive_L340_E4980A_GUI.py
             Instrument_Control/
-        novocontrol/            <-- Broadband Dielectric (Alpha-AN)
-            Frequency_Scan_AlphaAN_GUI.py
-            Instrument_Control/
-        lakeshore/              <-- Temperature Control
+                CV_KE4980A_Simple_Instrument_Control.py
+        lakeshore/              <-- Temperature control and sensing (L350 / L340)
+            Sensor_Curve_Loader_L340_L350_GUI.py
+            Sensor_Curve_Viewer_L340_GUI.py
+            Sensor_Curve_Viewer_L350_GUI.py
+            T_Control_L340_DirectControl_GUI.py
+            T_Control_L340_RangeControl_GUI.py
+            T_Control_L340_Step_GUI.py
+            T_Control_L340_Step_GUI_advanced.py
+            T_Control_L350_DirectControl_GUI.py
             T_Control_L350_RangeControl_GUI.py
+            T_Control_L350_Step_GUI.py
+            T_Control_L350_Step_GUI_advanced.py
+            T_Sensing_L340_GUI.py
             T_Sensing_L350_GUI.py
             Instrument_Control/
-        lockin/                 <-- Lock-in Amplifiers (Experimental)
-            sr830/
-                Comms_SR830_GUI.py
+                T_Control_L350_Simple_Instrument_Control.py
+        lockin/
+            sr830/              <-- AC transport with a lock-in (K6221 + SR830)
                 AC_Resistivity_K6221_SR830_GUI.py
-                IV_AC_K6221_SR830_GUI.py
+                Comms_SR830_GUI.py
                 Frequency_Scan_K6221_SR830_GUI.py
+                IV_AC_K6221_SR830_GUI.py
+                RT_AC_K6221_SR830_CC34_T_Sensing_GUI.py
+                RT_AC_K6221_SR830_L340_T_Control_GUI.py
+                RT_AC_K6221_SR830_L340_T_Sensing_GUI.py
                 RT_AC_K6221_SR830_L350_T_Control_GUI.py
                 RT_AC_K6221_SR830_L350_T_Sensing_GUI.py
-                RT_AC_K6221_SR830_CC34_T_Sensing_GUI.py
                 Instrument_Control/
-        utils/                  <-- Core Utilities
+                    Comms_SR830_Instrument_Control.py
+        novocontrol/            <-- Broadband dielectric (Alpha-AN)
+            Frequency_Scan_AlphaAN_32bit_GUI.py
+            Frequency_Scan_AlphaAN_GUI.py
+            Instrument_Control/
+                AlphaAN_FreqScan_Instrument_Control.py
+        pfeiffer/               <-- Pressure logging (TPG 361)
+            Pressure_Log_TPG361_GUI.py
+        tektronix/              <-- Function generator (AFG 3022B)
+            Function_Gen_AFG3022B_GUI.py
+        utils/                  <-- Scanners, diagnostics, plotters and calculators
+            Diagnostics_Comms_Interfaces_GUI.py
+            Diagnostics_Python_Env_GUI.py
+            Diagnostics_System_Info_GUI.py
             GPIB_Instrument_Scanner_GUI.py
+            GPIB_Lifeline_CLI.py
+            GPIB_Scanner_32bit_CLI.py
+            GPIB_Scanner_32bit_GUI.py
+            GPIB_VISA_InterfaceTest_Simple_Instrument_Control.py
             GUI_Basic_Format.py
+            List_Maker_GUI.py
+            MD_Ratio_Calculator_GUI.py
+            PE_plotter.py
+            PID_Simulator_GUI.py
             PlotterUtil_GUI.py
+            Quick_Calc_GUI.py
+            SCPI_Console_GUI.py
+            Time_Utility_GUI.py
+            Unit_Converter_GUI.py
             parser.py
-    tests/                      <-- Automated Test Suite
+    tests/                      <-- Automated test suite (pytest, mocked VISA)
         conftest.py
-        test_backends_logic.py
-        test_deep_simulation.py
-        test_entry_points.py
-        test_full_stack_simulation.py
-        test_gui_layouts.py
-        test_gui_modules_initialization.py
-        test_package_integrity.py
-        test_pica_launcher.py
-        test_utilities_logic.py
+        test_*.py               (67 files)
 ```

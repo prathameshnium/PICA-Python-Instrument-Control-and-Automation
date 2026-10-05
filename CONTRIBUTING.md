@@ -115,9 +115,9 @@ Start with the basic instrument communication, then add measurement protocols, d
 
 To make your new module accessible from the main dashboard:
 
-1.  Open `pica/main.py`.
-2.  Find the section where the instrument buttons are created (search for a `tk.Button` that launches an existing module).
-3.  Add a new `tk.Button` for your module. The button's `command` should be a function that launches your new `..._GUI.py` script. You can model this on the existing launcher functions.
+1.  **Classic launcher (`pica-gui`):** open `pica/main.py`, add your script to the `SCRIPT_PATHS` dictionary (a display key mapped to `resource_path("vendor/.../Your_Module_GUI.py")`), then add an entry `(button label, script key)` to the button list of the matching `self._create_suite_frame(...)` call in `create_launcher_panel`. Add `'control'` or `'sensing'` as a third item if the module drives or only reads a temperature controller.
+2.  **Launcher v2 (`run_pica_v2.py`):** add the same entry to the matching group in `CATALOG` in `pica/main_v2.py` so it appears in Advanced Options, and to `QUICK_CATALOG` if it also belongs on the Quick Select screen.
+3.  Run the launcher tests (`python -B -m pytest tests/test_gui_module_registry.py tests/test_launcher_v2_wiring.py -p no:cacheprovider`) to check that every key points to a file that exists.
 
 #### 5. Test and Document
 

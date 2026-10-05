@@ -78,7 +78,7 @@ The suite performs automated protocols including:
 - [Utilities & Tools](#utilities--tools)
 - [Demonstration of PICA (Screencast)](#demonstration-of-pica-screencast)
 - [Getting Started](#getting-started)
-- [Running the Software](#running-the-software)
+- [Running the Software](#running-the-software) (incl. Launcher v2 Quick Select and Advanced Options)
 - [Resources & Documentation](#resources--documentation)
 - [Citation](#citation)
 - [Authors & Funding](#authors--funding)
@@ -295,6 +295,16 @@ pip install --upgrade pica-suite
     python run_pica_v2.py
     ```
 
+    **Advanced Options** (`Ctrl+Shift+A`, or the Tools menu) is the expert
+    route: every module PICA ships on one screen, grouped by measurement range
+    and instrument, with nothing filtered. Use it when you already know which
+    program you want, and for anything Quick Select does not list: the
+    Cryo-con 34 and Lakeshore 340 twins of most programs, the standalone
+    temperature utilities, the Novocontrol Alpha-AN and the bench multimeter.
+    It opens maximised, has the same File / Tools / View / Help menus as the
+    main window, a folder shortcut on every card to the module's source, and an
+    inline console.
+
 3.  **Command Line Interface (CLI)**
     For headless operation (e.g., Raspberry Pi).
     ```bash
@@ -387,8 +397,8 @@ For downloadable release builds, please visit the [releases page](https://github
 
 PICA evolved from simple offline scripts in 2022 to a full-stack automated suite.
 
-  * **v1.0.6 (Latest):** Cryo-con 34 and Lakeshore 340 support, AC resistivity (SR830 / 197A), PPMS dielectric master protocol, Novocontrol Alpha-A (experimental), I-V fixes, launcher v2, diagnostic tools and new utilities. Available on [PyPI](https://pypi.org/project/pica-suite/).
-  * **v1.0.5:** Advanced Lakeshore temperature step control (adaptive ramp rates, low-temperature safety caps), upgraded step frequency scan, new utilities, and core fixes.
+  * **v1.0.6 (Latest):** Advanced Lakeshore step control (adaptive ramp rates, low-temperature safety caps), Cryo-con 34 and Lakeshore 340 support, AC resistivity (SR830 / 197A), PPMS dielectric master protocol, Novocontrol Alpha-A (experimental), I-V fixes, launcher v2, diagnostic tools and new utilities. Available on [PyPI](https://pypi.org/project/pica-suite/).
+  * **v1.0.5:** E4980A frequency and temperature scan programs, Lakeshore 350 direct and step control, K6517B poling, new utilities (P-E plotter, calculators, unit converter) and core fixes.
   * **v1.0.4:** Documentation infrastructure release — Read the Docs integration, preprint page with automated PDF build, and CI/CD workflow updates.
   * **v1.0.3:** GUI refreshed with the **Latte** theme — lighter, warmer, and less dark. First release published to PyPI.
   * **v1.0.1 / v1.0.0 (Initial Public Release):** Version numbering was reset from legacy development builds (v17.0) to v1.0.0 to standardize the package for public distribution and citation.
@@ -429,8 +439,8 @@ If you use this software in your research, please cite it:
 @software{Deshmukh_PICA_2026,
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
   title        = {{PICA: Advanced High-Precision Transport Measurement Automation with Python}},
-  month        = jan,
-  day          = 26,
+  month        = oct,
+  day          = 6,
   year         = 2026,
   publisher    = {Zenodo},
   version      = {1.0.6},

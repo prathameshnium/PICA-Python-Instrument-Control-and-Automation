@@ -31,7 +31,13 @@ go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-C
 
 ### [1.0.5] - 2026-06-24
 
-- **Project Version**:v1.0.5: Lakeshore Enhancements, New Utilities & Core Fixes.
+- **Dielectric Spectroscopy (Keysight E4980A)**: New frequency scan, temperature scan (Lakeshore 350 control), passive temperature scan and step frequency scan programs; the C-V module was reworked.
+- **Lakeshore 350**: New direct-control program (setpoint, ramp, heater range, PID and zones) and a step controller that stabilises at each setpoint and then hands off to an external measurement.
+- **Keithley 6517B**: New high-voltage poling program; pyroelectric module updated. Plotting in the 6517B modules simplified (blitting removed) to fix redraw errors.
+- **T-Control Modules**: Heater range 5 and a 5 K stabilisation window in the Delta, K2400, K2400 + 2182, K6517B and pyroelectric T-Control programs.
+- **Utilities**: P-E loop plotter, Quick Calc, Time Utility and Unit Converter; the Plotter Utility now reads dielectric data files.
+- **Launcher**: Impedance-spectroscopy and utilities sections, step-control entry, zoomable layout and a live temperature poll in the dashboard.
+- **Documentation**: User Manual aligned with Read the Docs; `pip install pica-suite` instructions added.
 
 ---
 
