@@ -1,20 +1,11 @@
 name: Build Portable PICA Utils
 
 # Freezes pica_utils_portable.py into a single Windows .exe that needs no
-# Python and no packages on the target machine. Run it by hand from the
-# Actions tab, or push a v* tag to also attach the exe to that release.
+# Python and no packages on the target machine. Manual only: run it by hand
+# from the Actions tab. Tag pushes and PRs no longer trigger it. Running it
+# against a v* tag ref still attaches the exe to that release.
 on:
   workflow_dispatch:
-  push:
-    # Tags only, with no path filter: GitHub ANDs tag and path filters, so a
-    # release tag would otherwise be skipped unless those files also changed.
-    tags:
-      - 'v*'
-  pull_request:
-    paths:
-      - 'pica_utils_portable.py'
-      - 'PICA_Utils_Portable.spec'
-      - '.github/workflows/build_portable_utils.yml'
 
 permissions:
   contents: write   # needed only by the release step on a tag
