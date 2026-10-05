@@ -304,9 +304,10 @@ person actually thinks in:
 1. **Category** — *DC Resistance*, *AC Resistance*, *Impedance Spectroscopy*
    or *Pyroelectric*.
 2. **Module** — the resistance range or the measurement style. Under DC
-   Resistance: *Ultra Low Resistance* (10 nΩ – 1 µΩ), *Low Resistance* (above
-   1 µΩ), *Resistance, High Precision* (1 µΩ – 100 MΩ), *Normal Resistance*
-   (100 µΩ – 200 MΩ) and *High Resistance* (1 Ω – 10 PΩ). Ultra Low and Low
+   Resistance: *Ultra Low Resistance* (~10 nΩ – 1 µΩ), *Low Resistance* (above
+   ~1 µΩ), *Resistance, High Precision* (~1 µΩ – 100 MΩ), *Normal Resistance*
+   (~100 µΩ – 200 MΩ) and *High Resistance* (~1 Ω – 10 PΩ). The ranges are
+   approximate, which is what the "~" says. Ultra Low and Low
    run the same delta-mode scripts; they are listed separately because a
    10 nΩ contact and a 10 mΩ film are different measurements to the person
    making them, whatever the instrument pair.

@@ -1013,9 +1013,11 @@ QUICK_CATALOG = [
                 "arrangement. The modules below use different instrument "
                 "pairs for different resistance ranges; pick the one whose "
                 "range covers the sample.",
+        # The ranges in the names are approximate (hence the "~"): they are
+        # where each instrument pair is comfortable, not hard limits.
         'modules': [
             {
-                'name': "Ultra Low Resistance (10 nΩ – 1 µΩ)",
+                'name': "Ultra Low Resistance (~10 nΩ – 1 µΩ)",
                 'desc': "Keithley 6221 current source with a Keithley 2182 "
                         "nanovoltmeter in delta mode. The current is reversed "
                         "at every point and the two readings are averaged, "
@@ -1043,7 +1045,7 @@ QUICK_CATALOG = [
                 ],
             },
             {
-                'name': "Low Resistance (above 1 µΩ)",
+                'name': "Low Resistance (above ~1 µΩ)",
                 # Same scripts as the entry above -- see the note at the head
                 # of QUICK_CATALOG for why the range is split in two.
                 'desc': "The same Keithley 6221 and Keithley 2182 delta-mode "
@@ -1070,7 +1072,7 @@ QUICK_CATALOG = [
                 ],
             },
             {
-                'name': "Resistance, High Precision (1 µΩ – 100 MΩ)",
+                'name': "Resistance, High Precision (~1 µΩ – 100 MΩ)",
                 'desc': "Keithley 2400 SourceMeter as the current source and "
                         "a Keithley 2182 nanovoltmeter to read the sample "
                         "voltage, in a true four-wire arrangement. Better "
@@ -1097,7 +1099,7 @@ QUICK_CATALOG = [
                 ],
             },
             {
-                'name': "Normal Resistance (100 µΩ – 200 MΩ)",
+                'name': "Normal Resistance (~100 µΩ – 200 MΩ)",
                 'desc': "A single Keithley 2400 SourceMeter sources the "
                         "current and measures the voltage. The simplest "
                         "wiring on the ITMS rack, and the usual choice for "
@@ -1127,7 +1129,7 @@ QUICK_CATALOG = [
                 ],
             },
             {
-                'name': "High Resistance (1 Ω – 10 PΩ)",
+                'name': "High Resistance (~1 Ω – 10 PΩ)",
                 'desc': "Keithley 6517B electrometer. A voltage is applied "
                         "and the leakage current, down to the pA and fA "
                         "range, is measured. For insulators, ceramics, "
@@ -1698,8 +1700,16 @@ class PICALauncherV2:
                         borderwidth=0)
 
     # --------------------------------------------------------------- menu bar
-    def _build_menubar(self):
-        menubar = tk.Menu(self.root, font=self.FONT_MENU)
+    # Built once for the main window and again for the Advanced Options
+    # window: the expert window lives maximised on its own, and a user in it
+    # should not have to find the main window to open a file, reach a tool
+    # or read the manual. Every entry acts on the launcher, not on the window
+    # the menu hangs from, so the two bars are the same menu twice. The key
+    # bindings are global (bind_all) and are registered only with the root.
+    def _build_menubar(self, win=None):
+        if win is None:
+            win = self.root
+        menubar = tk.Menu(win, font=self.FONT_MENU)
 
         # Classic File menu: opening things comes first, then the app commands.
         file_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
@@ -1731,16 +1741,17 @@ class PICALauncherV2:
         file_menu.add_command(label="Exit", accelerator="Alt+F4", command=self.root.destroy)
         menubar.add_cascade(label="File", menu=file_menu)
 
-        self.root.bind_all("<Control-o>", lambda _e: self.open_data_file())
-        self.root.bind_all("<Control-g>", lambda _e: self.open_data_as_graph())
-        self.root.bind_all("<Control-O>", lambda _e: self.open_folder())
-        self.root.bind_all("<Control-q>", lambda _e: self.open_sequence_file())
-        self.root.bind_all("<Control-p>",
-                           lambda _e: self.open_ppms_data_as_plot())
-        # Ctrl+Shift+A: the expert door. Tk reports the shifted letter as an
-        # upper-case keysym, so the binding is on "A", not "a".
-        self.root.bind_all("<Control-Shift-KeyPress-A>",
-                           lambda _e: self.open_advanced())
+        if win is self.root:
+            self.root.bind_all("<Control-o>", lambda _e: self.open_data_file())
+            self.root.bind_all("<Control-g>", lambda _e: self.open_data_as_graph())
+            self.root.bind_all("<Control-O>", lambda _e: self.open_folder())
+            self.root.bind_all("<Control-q>", lambda _e: self.open_sequence_file())
+            self.root.bind_all("<Control-p>",
+                               lambda _e: self.open_ppms_data_as_plot())
+            # Ctrl+Shift+A: the expert door. Tk reports the shifted letter as
+            # an upper-case keysym, so the binding is on "A", not "a".
+            self.root.bind_all("<Control-Shift-KeyPress-A>",
+                               lambda _e: self.open_advanced())
 
         tools_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
         # Advanced Options sits at the top of Tools: it is the one entry an
@@ -1788,7 +1799,8 @@ class PICALauncherV2:
         help_menu.add_command(label="About PICA", command=self.show_about)
         menubar.add_cascade(label="Help", menu=help_menu)
 
-        self.root.config(menu=menubar)
+        win.config(menu=menubar)
+        return menubar
 
     # ------------------------------------------------------------ status strip
     # The strip is the bottom band of a PICA window: a temperature snapshot,
@@ -2934,6 +2946,9 @@ class PICALauncherV2:
             pass
         win.protocol("WM_DELETE_WINDOW", self._close_advanced)
         self._adv_win = win
+        # The same File / Tools / View / Help bar as the main window, so the
+        # expert window is a complete launcher on its own.
+        self._build_menubar(win)
 
         # Letterhead-style band, as on the main window's rail: institute logo
         # with the institute name and the programme's full name stacked beside
@@ -3468,7 +3483,8 @@ class PICALauncherV2:
                                ("SCPI Console", "SCPI Console")]),
             ("Calculators", [("Quick Calc", "Quick Calc"),
                              ("Time Utility", "Time Utility"),
-                             ("Unit Converter", "Unit Converter")]),
+                             ("Unit Converter", "Unit Converter"),
+                             ("List Maker", "List Maker")]),
         ]
 
     def open_tools_popup(self):
