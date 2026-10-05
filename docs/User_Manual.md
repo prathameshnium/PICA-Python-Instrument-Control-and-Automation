@@ -970,7 +970,8 @@ PICA (Root Directory)/
     README.md
     codecov.yml
     pica_cli.py
-    pica_utils_portable.py
+    tools/
+        pica_utils_portable.py
     pyproject.toml
     requirements-dev.txt
     requirements.txt
@@ -1003,7 +1004,7 @@ PICA (Root Directory)/
         paper.md
     pica/
         cli.py
-        main.py
+        main.py                 <-- Legacy launcher (superseded by main_v2.py)
         main_v2.py
         assets/                 <-- Images, logos, icons
         PPMS/                   <-- PPMS helper utilities

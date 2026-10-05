@@ -1,8 +1,13 @@
 '''
 ===============================================================================
- PROGRAM:      PICA Launcher
+ PROGRAM:      PICA Launcher (LEGACY)
 
  PURPOSE:      A graphical dashboard for launching PICA measurement scripts.
+
+ STATUS:       Legacy. Superseded by launcher v2 (pica/main_v2.py, run with
+               `python run_pica_v2.py`). Kept because main_v2 imports its
+               shared helpers from here and the `pica-gui` entry point still
+               opens it. New modules go into CATALOG in main_v2.py.
 
  AUTHOR:       Prathamesh Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee

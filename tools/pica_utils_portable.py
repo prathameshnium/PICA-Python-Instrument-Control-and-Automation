@@ -12,7 +12,7 @@
  PICA_Utils_Portable.spec and .github/workflows/build_portable_utils.yml), so
  a colleague can run the utilities on a machine with no Python and no packages
  installed. It also runs straight from the repository with `python
- pica_utils_portable.py`.
+ tools/pica_utils_portable.py`.
 
  The hardware-facing utilities (GPIB / VISA Scanner, SCPI Console) and the
  MD Ratio Calculator are deliberately NOT bundled — the first two are useless
@@ -40,9 +40,16 @@ PROGRAM_VERSION = "1.0"
 
 FROZEN = getattr(sys, 'frozen', False)
 
+# This file lives in tools/, one level below the repo root that holds pica/.
+# Run from source, put the repo root first on sys.path so "import pica..."
+# binds to this checkout and not to an older copy in site-packages.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if not FROZEN and REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 # When frozen, PyInstaller unpacks the bundle here; the logo the tool scripts
 # look for (../assets/LOGO/...) lives under it.
-BUNDLE_DIR = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+BUNDLE_DIR = getattr(sys, '_MEIPASS', REPO_ROOT)
 ICON_FILE = os.path.join(BUNDLE_DIR, 'pica', 'assets', 'LOGO', 'PICA_LOGO.ico')
 
 

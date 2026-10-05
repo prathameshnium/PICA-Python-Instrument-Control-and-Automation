@@ -2,6 +2,8 @@
 
 **Open-source Python suite for laboratory instrument control and automation** — GPIB/VISA & SCPI orchestration of Keithley, Keysight, Lakeshore, and Novocontrol instruments for cryogenic transport, resistivity, I-V, dielectric, and pyroelectric measurements.
 
+**📖 Documentation: [prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/)** · [User Manual](docs/User_Manual.md) · [PyPI](https://pypi.org/project/pica-suite/) · Install: `pip install pica-suite`
+
 <p align="center">
   <img src="pica/assets/LOGO/PICA_LOGO_NBG.png" alt="PICA logo — Python Instrument Control and Automation suite" width="250">
 </p>

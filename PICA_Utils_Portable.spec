@@ -11,7 +11,7 @@ Build locally with:  pyinstaller --noconfirm PICA_Utils_Portable.spec
 block_cipher = None
 
 a = Analysis(
-    ['pica_utils_portable.py'],
+    ['tools/pica_utils_portable.py'],
     pathex=['.'],
     binaries=[],
     # The tool scripts resolve their logo as <module dir>/../assets/LOGO/...,

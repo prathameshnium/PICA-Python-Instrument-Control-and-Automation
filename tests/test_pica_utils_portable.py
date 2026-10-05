@@ -1,5 +1,5 @@
 """
-Purpose: Guard the portable PICA Utils launcher (pica_utils_portable.py).
+Purpose: Guard the portable PICA Utils launcher (tools/pica_utils_portable.py).
 
 The launcher is frozen into a standalone .exe by the "Build Portable PICA
 Utils" workflow, where a renamed class or a moved module shows up only as a
@@ -23,6 +23,10 @@ import pytest
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
+
+tools_dir = os.path.join(project_root, 'tools')
+if tools_dir not in sys.path:
+    sys.path.insert(0, tools_dir)
 
 import pica_utils_portable as pup  # noqa: E402
 
@@ -73,7 +77,7 @@ def test_selftest_reports_all_tools(tmp_path):
 
 
 def test_instrument_utilities_stay_out_of_the_portable_build():
-    source = open(os.path.join(project_root, 'pica_utils_portable.py'),
+    source = open(os.path.join(tools_dir, 'pica_utils_portable.py'),
                   encoding='utf-8').read()
     for module in ('SCPI_Console_GUI', 'GPIB_Instrument_Scanner_GUI',
                    'MD_Ratio_Calculator_GUI'):

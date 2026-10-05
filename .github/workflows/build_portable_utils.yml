@@ -1,6 +1,6 @@
 name: Build Portable PICA Utils
 
-# Freezes pica_utils_portable.py into a single Windows .exe that needs no
+# Freezes tools/pica_utils_portable.py into a single Windows .exe that needs no
 # Python and no packages on the target machine. Manual only: run it by hand
 # from the Actions tab. Tag pushes and PRs no longer trigger it. Running it
 # against a v* tag ref still attaches the exe to that release.

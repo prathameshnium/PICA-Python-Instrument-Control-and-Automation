@@ -18,11 +18,21 @@ PICA (**Python Instrument Control and Automation**) is a modular, open-source Py
 
 ## Quick Start
 
-```bash
-# Install
-pip install .
+**Recommended: install from PyPI**
 
-# Launch GUI
+```bash
+pip install pica-suite
+```
+
+**Or install from source** (inside a clone of the repository):
+
+```bash
+pip install .
+```
+
+Then launch the GUI:
+
+```bash
 pica-gui
 ```
 
