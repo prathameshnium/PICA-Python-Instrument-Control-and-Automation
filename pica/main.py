@@ -587,7 +587,10 @@ class PICALauncherApp:
             img.thumbnail((self.LOGO_SIZE, self.LOGO_SIZE),
                           Image.Resampling.LANCZOS)
             # Keep a reference to the image to prevent garbage collection
-            self.logo_image = ImageTk.PhotoImage(img)
+            # Explicit master so the image lives in this window's Tk
+            # interpreter, not Tk's default root (several roots exist
+            # under the test suite).
+            self.logo_image = ImageTk.PhotoImage(img, master=canvas)
             canvas.create_image(
                 self.LOGO_SIZE / 2,
                 self.LOGO_SIZE / 2,

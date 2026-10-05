@@ -2339,7 +2339,10 @@ class PICALauncherV2:
         try:
             img = Image.open(self.LOGO_FILE)
             img.thumbnail((size, size), Image.Resampling.LANCZOS)
-            return ImageTk.PhotoImage(img)
+            # Explicit master: without it the image is registered with
+            # Tk's default root, and a window on another root (the tests
+            # build several) fails with 'image "pyimageN" doesn't exist'.
+            return ImageTk.PhotoImage(img, master=self.root)
         except Exception as e:
             self.log(f"ERROR: Failed to load logo. {e}")
             return None

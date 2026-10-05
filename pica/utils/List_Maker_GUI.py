@@ -365,7 +365,7 @@ def apply_pattern(base, pattern="none", cycles=1, repeat_turning_points=True, ho
     return out
 
 
-def format_values(values, decimals=2, scientific=False, separator=",", integers=False):
+def format_values(values, decimals=4, scientific=False, separator=",", integers=False):
     """Render the list as text."""
     decimals = max(0, int(decimals))
     parts = []
@@ -512,7 +512,9 @@ class PICAListMakerApp:
         self.repeat_turn_var = tk.BooleanVar(value=True)
 
         # --- Output format ---
-        self.decimals_var = tk.StringVar(value="2")
+        # 4 decimals by default: a dense-near-zero list (0.01, 0.316 ...)
+        # survives the copy; 2 decimals turned such values into "0.00".
+        self.decimals_var = tk.StringVar(value="4")
         self.sci_var = tk.BooleanVar(value=False)
         self.sep_var = tk.StringVar(value="comma")
 
@@ -798,7 +800,7 @@ class PICAListMakerApp:
         try:
             decimals = int(float(self.decimals_var.get()))
         except ValueError:
-            decimals = 2
+            decimals = 4
         text = format_values(vals, decimals=decimals, scientific=self.sci_var.get(),
                              separator=SEPARATORS.get(self.sep_var.get(), ","),
                              integers=self.integers_var.get() and not self.sci_var.get())
