@@ -1,7 +1,17 @@
 go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases) and [tags](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tags), for the finalised released versions
 ## Instrument & Software Update Log
 ---
-### [1.0.6] - 2026-10-06  (Current)
+### [1.0.7] - Unreleased
+
+Documentation and packaging so far; more to be added before release.
+
+- **Linux install guide**: full installation instructions for Linux in the README and the user manual (venv, tkinter, `pyvisa-py`, USB-TMC / serial / GPIB setup, known differences), with a clear warning that running against real instruments on Linux is not yet verified.
+- **Linux report issue template**: a dedicated template for Linux problems and successes that asks for the VISA backend, `pyvisa-info` output and GPIB/USB/serial permission details. The Windows bug-report template now points Linux users to it.
+- **"Windows only" warning retired**: the platform list in the README and the manual now states what is verified on each OS instead of contradicting the Linux guide.
+- **PyPI classifiers**: Windows, POSIX Linux, Python 3.10 / 3.11 / 3.12 and Intended Audience :: Science/Research.
+- **CI**: a dedicated "GUI smoke test (Linux, Xvfb)" job opens every launcher program with a real Tk under Xvfb on Python 3.12, and fails if the windows were skipped rather than opened.
+
+### [1.0.6] - 2026-10-06
 
 - **Novocontrol Alpha-A Support (experimental)**: New broadband dielectric spectroscopy frequency-scan module (GUI + `Instrument_Control` CLI template) with WinDETA-compatible exports and a dedicated GPIB runbook (`docs/Novocontrol_GPIB_Runbook.md`).
 - **AC Measurement Modules (experimental)**: Ten new four-probe AC modules built around the Keithley 6221 as the AC current source, in two matched sets of five — I-V (current-amplitude sweep at fixed frequency), frequency scan, R-T under Lakeshore 350 control, and passive R-T against the Lakeshore 350 and the Cryo-con 34.

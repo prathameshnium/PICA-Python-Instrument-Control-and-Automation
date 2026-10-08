@@ -97,8 +97,8 @@ To ensure measurement reliability, all of these modules were thoroughly tested w
 
 # AI usage disclosure
 
-The core instrument control algorithms, measurement logic, and primary programs were developed by the authors prior to the use of AI-based assistance. The Gemini (model: gemini-2.5-pro) was employed in the later phases of development exclusively to refine exception-handling mechanisms, improve overall code robustness, professionalism, and accelerate the implementation of Tkinter-based GUI layouts.
-For this manuscript and the documentation, Gemini was used exclusively for linguistic and grammatical refinement. All AI-generated content was rigorously reviewed and validated by the authors, who retain full responsibility for the accuracy and integrity of this work.
+The core instrument control algorithms, measurement logic, and primary programs were developed by the authors prior to the use of AI-based assistance. Gemini (Google, model: gemini-2.5-pro) and Claude (Anthropic) were employed in the later phases of development exclusively to refine exception-handling mechanisms, improve overall code robustness, professionalism, and accelerate the implementation of Tkinter-based GUI layouts.
+For this manuscript and the documentation, Gemini and Claude were used exclusively for linguistic and grammatical refinement. All AI-generated content was rigorously reviewed and validated by the authors, who retain full responsibility for the accuracy and integrity of this work.
 
 # Acknowledgements
 

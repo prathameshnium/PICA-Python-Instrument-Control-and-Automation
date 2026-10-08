@@ -456,6 +456,12 @@ For downloadable release builds, please visit the [releases page](https://github
 
 PICA evolved from simple offline scripts in 2022 to a full-stack automated suite.
 
+  * **v1.0.7 (in progress, unreleased):** documentation and packaging so far; more to be added before release.
+    * Full Linux install guide in the README and the user manual, with a clear warning that running against real instruments on Linux is not yet verified.
+    * New "Linux report" issue template for Linux problems and successes; the Windows bug-report template now points Linux users to it.
+    * The old "Windows only" warning retired; the platform list now states what is verified on each OS.
+    * PyPI classifiers for Windows, Linux, Python 3.10-3.12 and Science/Research.
+    * Dedicated CI job that opens every GUI window on Linux under Xvfb with Python 3.12.
   * **v1.0.6 (Latest):** Advanced Lakeshore step control (adaptive ramp rates, low-temperature safety caps), Cryo-con 34 and Lakeshore 340 support, AC resistivity (SR830 / 197A), PPMS dielectric master protocol, Novocontrol Alpha-A (experimental), I-V fixes, launcher v2, diagnostic tools and new utilities. Available on [PyPI](https://pypi.org/project/pica-suite/).
   * **v1.0.5:** E4980A frequency and temperature scan programs, Lakeshore 350 direct and step control, K6517B poling, new utilities (P-E plotter, calculators, unit converter) and core fixes.
   * **v1.0.4:** Documentation infrastructure release — Read the Docs integration, preprint page with automated PDF build, and CI/CD workflow updates.
