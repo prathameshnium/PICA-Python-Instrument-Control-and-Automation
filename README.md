@@ -270,6 +270,18 @@ pip install --upgrade pica-suite
     pip install --force-reinstall .
     ```
 
+3.  **Development install (for contributors)**
+
+    To work on PICA itself, install it in editable mode together with the test and lint tools. Edits to the source then take effect without reinstalling:
+    ```bash
+    pip install -e .
+    pip install -r requirements-dev.txt
+    ```
+    Then run the test suite to confirm the setup (see [Running Tests Locally](#running-tests-locally)):
+    ```bash
+    pytest
+    ```
+
     *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow [`PyVISA`](https://github.com/pyvisa/pyvisa) to communicate with the hardware.*
 
 ### Option 3: Installing on Linux
