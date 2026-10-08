@@ -283,7 +283,7 @@ pip install --upgrade pica-suite
 |---|---|---|
 | `pip install` | ✅ | ✅ |
 | Test suite (mocked instruments) | ✅ | ✅ |
-| All 100 programs in the launcher, plus both launchers, open | — | ✅ |
+| All 100 programs in the launcher, plus both launchers, open | ✅ real Tk windows under xvfb (`tests/test_gui_windows_open_for_real.py`) | ✅ |
 | Measurement against real instruments | ❌ not yet verified | ❌ not yet verified |
 
 **1. Install the system packages.** Tkinter and the emoji font are usually not part of a minimal install. Without the font, the icons on buttons show as empty boxes.
