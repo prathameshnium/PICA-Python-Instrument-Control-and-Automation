@@ -68,7 +68,7 @@ PICA was constructed on a core philosophy of **robustness, modularity, and acces
 Python was selected as the foundational language for PICA due to its ubiquity in the scientific community:
 * **Scientific Ecosystem:** Libraries like `NumPy` (array operations), `Pandas` (data structuring), and `Matplotlib` (publication-quality plotting) create a seamless workflow from acquisition to analysis.
 * **PyVISA Integration:** The [`PyVISA`](https://github.com/pyvisa/pyvisa) library provides platform-independent wrappers for VISA drivers, allowing communication via simple, readable commands (e.g., ``instrument.query('*IDN?')``) rather than complex low-level protocols.
-* **Portability:** Python and PyVISA are available on Windows, Linux and macOS. PICA itself is currently validated on Windows only; Linux support is experimental (see [3.1 System Prerequisites](#31-system-prerequisites)).
+* **Portability:** Python and PyVISA are available on Windows, Linux and macOS. PICA is validated with real instruments on Windows. On Linux, installation, tests and GUIs are verified, but measurements against real instruments are not yet (see [Installing on Linux](#installing-on-linux)).
 
 ### 2.2 The Case for GUIs
 While early automation scripts often rely on Command Line Interfaces (CLIs), the final PICA suite prioritizes full-featured GUIs built with `Tkinter`. This strategic decision was guided by:
@@ -98,14 +98,13 @@ This approach, however, leads to a considerable degree of code repetition becaus
 
 #### System Requirements & Compatibility
 
-**Supported Platform:** Windows 10 / 11
-**Architecture:** x86_64
+**Platforms:**
+- **Windows 10 / 11 (x86_64):** fully supported, and used daily in the lab with real instruments.
+- **Linux:** installation, tests and GUIs verified, but measurements against real instruments not yet verified. See [Installing on Linux](#installing-on-linux).
+- **macOS:** not tested.
 
-:::{important}
-**Windows Only**
-PICA is currently designed and validated exclusively for Windows environments.
-Linux and macOS are **not currently supported** due to dependencies on Windows-specific GUI libraries and font rendering.
-Attempting to run this software on non-Windows platforms may result in crashes or UI failures. Linux support is experimental for now.
+:::{note}
+The 32-bit Novocontrol Alpha-AN frequency scan and the 32-bit GPIB scanner call Windows' `gpib-32.dll` directly, so they run on Windows only.
 :::
 
 #### Software Dependencies
@@ -124,7 +123,7 @@ Choose one of the following:
 
 ### 3.2 Getting Started
 
-PICA is structured as a standard Python package. The following instructions are for the supported Windows platform.
+PICA is structured as a standard Python package. The steps below are for Windows, the platform PICA is validated on in the lab. For Linux, see [Installing on Linux](#installing-on-linux).
 
 1.  **Clone the Repository**
     ```bash
@@ -152,6 +151,82 @@ PICA is structured as a standard Python package. The following instructions are 
     ```
 
     *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow [`PyVISA`](https://github.com/pyvisa/pyvisa) to communicate with the hardware.*
+
+#### Installing on Linux
+
+:::{warning}
+**Talking to real instruments from Linux has not been verified yet.** Installation, the full test suite and every GUI window have been checked on Linux, but no measurement has yet been run against real hardware from a Linux machine. Lab use so far has been on Windows. If something does not work, please [open a Linux issue](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues/new?template=linux_report.md) with your distribution, your VISA backend and the instrument model.
+:::
+
+**What has been checked:**
+
+| Check | Ubuntu 24.04, Python 3.10 (CI, every push) | Ubuntu 26.04, Python 3.14 (manual) |
+|---|---|---|
+| `pip install` | ✅ | ✅ |
+| Test suite (mocked instruments) | ✅ | ✅ |
+| All 100 programs in the launcher, plus both launchers, open | — | ✅ |
+| Measurement against real instruments | ❌ not yet verified | ❌ not yet verified |
+
+**1. Install the system packages.** Tkinter and the emoji font are usually not part of a minimal install. Without the font, the icons on buttons show as empty boxes.
+
+```bash
+# Debian / Ubuntu
+sudo apt install python3-venv python3-tk fonts-noto-color-emoji
+
+# Fedora
+sudo dnf install python3-tkinter google-noto-color-emoji-fonts
+
+# Arch
+sudo pacman -S tk noto-fonts-emoji
+```
+
+**2. Create a virtual environment and install PICA.**
+
+```bash
+python3 -m venv ~/pica-venv
+source ~/pica-venv/bin/activate
+pip install pica-suite
+```
+
+**3. Set up a VISA backend.** On Linux, PICA uses the pure-Python [`pyvisa-py`](https://github.com/pyvisa/pyvisa-py) backend, which `pip install pica-suite` installs for you. Each kind of connection needs one extra piece:
+
+| Connection | What you need |
+|---|---|
+| Ethernet (LAN / VXI-11 / raw socket) | Nothing extra |
+| Serial (RS-232 / USB-serial adapter) | Nothing extra (`pyserial` is installed with PICA, via PyMeasure) |
+| USB (USB-TMC instruments) | `pip install pyusb`, plus a udev rule giving your user access to the device ([pyvisa-py docs](https://pyvisa.readthedocs.io/projects/pyvisa-py/en/latest/)) |
+| GPIB card | The [linux-gpib](https://linux-gpib.sourceforge.io/) kernel driver for your card, then `pip install "pica-suite[gpib]"` |
+
+NI-VISA also exists for Linux, but only for a few distributions. See [NI's Linux support page](https://www.ni.com/en/support/documentation/compatibility/21/ni-hardware-and-operating-system-compatibility.html).
+
+To use serial ports, your user must be in the `dialout` group. Log out and back in after running this:
+
+```bash
+sudo usermod -aG dialout $USER
+```
+
+Check that the backend sees your instruments:
+
+```bash
+pyvisa-info
+python -c "import pyvisa; print(pyvisa.ResourceManager('@py').list_resources())"
+```
+
+**4. Run PICA.** Start it the same way as on Windows (see [Running the Software](#33-running-the-software)):
+
+```bash
+pica-gui
+```
+
+**Differences from Windows:**
+- **Sleep during overnight runs.** On Windows, PICA stops the PC from sleeping during a run. On Linux it can't, so block sleep yourself, for example by launching PICA through `systemd-inhibit`:
+  ```bash
+  systemd-inhibit --what=idle:sleep --why="PICA measurement" pica-gui
+  ```
+- **Alert sounds.** The end-of-run and alarm beeps use the system bell on Linux, which may be muted. The on-screen banners and logs still appear.
+- **Different fonts.** Linux draws the windows with its default fonts, usually DejaVu. The layout is the same, but the text is slightly wider.
+- **Windows-only modules.** The **32-bit** Novocontrol Alpha-AN frequency scan and the **32-bit GPIB scanner** call Windows' `gpib-32.dll` directly, so they will not work on Linux. They still open, but report that the driver is Windows-only. The regular Alpha-AN module goes through VISA and is not affected.
+
 
 ### 3.3 Running the Software
 
@@ -213,26 +288,6 @@ To see the coverage percentage on your local machine, run this command instead:
 ```powershell
 python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
 ```
-
-#### Experimental Linux Instructions
-
-:::{warning}
-**Experimental Support:** The following instructions are for experimental purposes only. PICA is not officially supported on Linux (for now), and you will likely encounter functional or UI-related issues.
-:::
-
-For users who wish to experiment with PICA on Linux, please be aware of the following:
-
-1.  **Prerequisites:**
-    *   **Tkinter Dependency:** On Linux, you must ensure `tkinter` is installed, as it is often not included by default.
-        -   On Debian/Ubuntu: `sudo apt-get install python3-tk`
-        -   For other distributions, use your package manager to install `python3-tk`.
-    *   **Virtual Environment Activation:** To activate the virtual environment, use:
-        ```bash
-        source venv/bin/activate
-        ```
-
-2.  **Installation:**
-    Follow the standard installation steps outlined in section [3.2 Getting Started](#32-getting-started). While the commands should run, be aware that the application GUI may not function correctly.
 
 ## 4. Safety Precautions
 

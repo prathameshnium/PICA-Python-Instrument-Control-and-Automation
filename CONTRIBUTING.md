@@ -24,9 +24,13 @@ When reporting a bug, please include as much detail as possible:
 *   **PICA version:** Specify the [version](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases) of PICA you are using.
 *   **Operating system:** Your OS and version (e.g., Windows 10, Ubuntu 20.04).
 *   **Hardware setup:** Briefly describe your instrument setup if relevant.
-*   **Error messages/logs:** Include any relevant error messages or console output.
+*   **Measurement module:** The script file name or launcher label of the module involved.
+*   **Error messages/logs:** The module's console log (Ctrl+A, Ctrl+C in the console pane) and any terminal traceback.
 
-You can use the [bug report issue template](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues/new?assignees=&labels=bug&projects=&template=bug_report.md&title=%5BBUG%5D) to ensure you provide all necessary information.
+Two issue templates collect this for you:
+
+*   [Bug report (Windows)](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues/new?template=bug_report.md) for Windows, the platform PICA is validated on with real instruments.
+*   [Linux report](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues/new?template=linux_report.md) for anything Linux-specific. Running against real instruments from Linux is not yet verified, so successes are as welcome as problems. This template also asks for the VISA backend, `pyvisa-info` output and GPIB/USB/serial permission details.
 
 ## Contributing Code
 
