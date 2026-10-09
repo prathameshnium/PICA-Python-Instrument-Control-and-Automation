@@ -496,7 +496,7 @@ The software synchronizes the source and voltmeter via a **hardware trigger link
 :width: 600px
 :align: center
 
-I-V sweep measurement using the Sweep Mode, designed for low-resistance measurements with a Keithley 6221 and 2182.
+I-V sweep measurement using the Sweep Mode, designed for low-resistance measurements with a Keithley 6221 and 2182. Sweep types: linear or logarithmic Start to Stop, or a Custom List of currents (uA) pasted from the List Maker; the 105 mA source limit is checked before the instruments are touched.
 :::
 
 :::{figure} Images/screenshots/K6221_RT_Control.png

@@ -4,8 +4,9 @@ pica/utils/List_Maker_GUI.py renders a list with format_values(): fixed
 decimals, scientific or whole numbers, joined by one of six separators
 (comma, comma+space, newline, semicolon, space, tab), copied to the
 clipboard or saved as .txt. The Custom List box of IV_K2400_GUI.py (uA),
-IV_K6517B_GUI.py (V) and IV_K2400_K2182_GUI.py (mA) must take every one of
-those renderings back unchanged.
+IV_K6517B_GUI.py (V), IV_K2400_K2182_GUI.py (mA) and
+IV_K6221_DC_Sweep_GUI.py (uA, K6221 + K2182 passthrough) must take every one
+of those renderings back unchanged.
 
 Checked here, for every spacing x pattern x separator x number format the
 List Maker offers:
@@ -46,6 +47,7 @@ PATHS = {
     "k2182": os.path.join(REPO_ROOT, "pica", "keithley", "k2400_2182", "IV_K2400_K2182_GUI.py"),
     "k6517b": os.path.join(REPO_ROOT, "pica", "keithley", "k6517b", "High_Resistance",
                            "IV_K6517B_GUI.py"),
+    "k6221": os.path.join(REPO_ROOT, "pica", "keithley", "delta_mode", "IV_K6221_DC_Sweep_GUI.py"),
 }
 
 
@@ -58,7 +60,7 @@ def _load(name, path):
 
 
 LM = _load("listmaker_for_iv_test", PATHS["listmaker"])
-IV = {k: _load(f"iv_{k}_for_listmaker_test", PATHS[k]) for k in ("k2400", "k2182", "k6517b")}
+IV = {k: _load(f"iv_{k}_for_listmaker_test", PATHS[k]) for k in ("k2400", "k2182", "k6517b", "k6221")}
 
 try:
     import pytest
@@ -233,6 +235,43 @@ def _k2182_gui(custom):
     return gui
 
 
+def _k6221_gui(custom):
+    m = IV["k6221"]
+    gui = object.__new__(m.Passthrough_IV_GUI)
+    gui.sweep_type_var = _Entry(m.SWEEP_CUSTOM)
+    gui.entries = {k: _Entry(v) for k, v in {"Sample Name": "LM", "Delay": "0.2",
+                                              "Initial Delay": "0", "Compliance": "10",
+                                              "Start Current": "", "Stop Current": "",
+                                              "Num Points": ""}.items()}
+    gui.k6221_cb = _Entry("GPIB0::13::INSTR")
+    gui.custom_list_text = _Entry(custom)
+    gui.save_path = tempfile.gettempdir()
+    return gui
+
+
+def test_k6221_accepts_a_list_maker_loop_in_micro_amps():
+    vals = LM.apply_pattern(LM.base_list(-10, 10, "symlog", n=9, near_zero=0.1), "loop", cycles=1)
+    for sep in SEPARATORS:
+        text = LM.format_values(vals, decimals=3, separator=sep)
+        params, pts = _k6221_gui(text)._collect_params()
+        want = np.array([float(f"{v:.3f}") for v in vals]) * 1e-6
+        assert np.allclose(pts, want, rtol=0, atol=1e-18), repr(sep)
+        assert len(pts) == len(vals)
+        assert 0.0 in list(pts), "exact 0 uA must survive into the sweep"
+    assert math.isclose(params['max_abs_current_A'], 10e-6)
+    assert params['sweep_type'] == IV["k6221"].SWEEP_CUSTOM
+
+
+def test_k6221_refuses_a_list_maker_list_above_105_ma():
+    text = LM.format_values(LM.base_list(0, 200000, "linear", n=5), decimals=0, separator=",")  # 200 mA in uA
+    try:
+        _k6221_gui(text)._collect_params()
+    except ValueError as e:
+        assert "limit" in str(e)
+    else:
+        raise AssertionError("200 mA sweep accepted")
+
+
 def test_k2400_accepts_a_list_maker_hysteresis_in_micro_amps():
     vals = LM.apply_pattern(LM.base_list(0, 100, "linear", step=25), "hyst5", cycles=1)
     text = LM.format_values(vals, decimals=2, separator=", ")
@@ -331,7 +370,8 @@ def test_clipboard_copy_paste_between_the_two_windows():
             got = m.parse_custom_list(pasted)
             assert got == [float(f"{v:.2f}") for v in maker.values], key
         # and through the real custom box of the K2400 and 6517B windows
-        for key, cls in (("k2400", "MeasurementAppGUI"), ("k6517b", "HighResistanceIV_GUI")):
+        for key, cls in (("k2400", "MeasurementAppGUI"), ("k6517b", "HighResistanceIV_GUI"),
+                         ("k6221", "Passthrough_IV_GUI")):
             m = IV[key]
             win = tk.Toplevel(root)
             win.withdraw()
@@ -343,11 +383,16 @@ def test_clipboard_copy_paste_between_the_two_windows():
             app.entries["Sample Name"].insert(0, "LM")
             if key == "k2400":
                 app.entries["Compliance"].insert(0, "10")   # no default in the window
-            app.file_location_path = tempfile.gettempdir()
-            app.keithley_combobox['values'] = ("GPIB0::1::INSTR",)
-            app.keithley_combobox.set("GPIB0::1::INSTR")
+            if key == "k6221":
+                app.save_path = tempfile.gettempdir()
+                app.k6221_cb['values'] = ("GPIB0::13::INSTR",)
+                app.k6221_cb.set("GPIB0::13::INSTR")
+            else:
+                app.file_location_path = tempfile.gettempdir()
+                app.keithley_combobox['values'] = ("GPIB0::1::INSTR",)
+                app.keithley_combobox.set("GPIB0::1::INSTR")
             params, pts = app._collect_params()
-            scale = 1e-6 if key == "k2400" else 1.0
+            scale = 1e-6 if key in ("k2400", "k6221") else 1.0
             assert np.allclose(pts, np.array([float(f"{v:.2f}") for v in maker.values]) * scale), key
             win.destroy()
     finally:

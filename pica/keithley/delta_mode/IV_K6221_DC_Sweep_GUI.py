@@ -1,9 +1,26 @@
 """
-Purpose: GUI for performing current-voltage (I-V) sweeps using a Keithley 6221 Current Source and a Keithley 2182A Nanovoltmeter. 
+Purpose: GUI for performing current-voltage (I-V) sweeps using a Keithley 6221 Current Source and a Keithley 2182A Nanovoltmeter.
 
 Author: Prathamesh Deshmukh
 Date: October 2025
-Version: 1.6
+Version: 1.7
+
+v1.7 (09 Oct 2026) - custom list + zero fixes
+  * Sweep types: "Start → Stop (linear)", "Start → Stop (log)" and
+    "Custom List". The point generator is a pure, testable function
+    (build_sweep_points) shared in spirit with the other I-V modules; the
+    custom list accepts commas, semicolons, spaces, tabs and new lines, so
+    every rendering of utils/List_Maker_GUI.py pastes straight in.
+  * Currents are entered in µA (Start/Stop and the custom list); the
+    K6221 limit of 105 mA is checked BEFORE the instrument is touched.
+  * FIX: Start validation used Python truthiness, so a Start or Stop
+    Current of 0, or a 0 s delay, was refused with "All fields ... are
+    required". Zero is now accepted wherever it is meaningful (linear and
+    custom sweeps, delays); the log sweep still refuses a zero crossing.
+  * FIX: the resistance at I = 0 was written as inf and fed to the plot.
+    It is now NaN (as in the other I-V modules) and skipped when plotting.
+  * Data-file header carries program, sweep type, list and parameters;
+    written with an explicit encoding and ASCII-safe labels.
 """
 
 import tkinter as tk
@@ -99,6 +116,124 @@ def launch_gpib_scanner():
     except Exception as e:
         messagebox.showerror("Launch Error", f"Failed to launch GPIB Scanner: {e}")
 
+# ===============================================================================
+# SWEEP GENERATION  (pure functions; inlined so the module stays standalone.
+# parse_custom_list / check_sweep_limits / ascii_label are the same code as
+# in IV_K2400_GUI.py, IV_K2400_K2182_GUI.py and IV_K6517B_GUI.py, so a list
+# made with utils/List_Maker_GUI.py reads identically in every I-V module.)
+# ===============================================================================
+
+SWEEP_LINEAR = "Start → Stop (linear)"
+SWEEP_LOG = "Start → Stop (log)"
+SWEEP_CUSTOM = "Custom List"
+SWEEP_TYPES = (SWEEP_LINEAR, SWEEP_LOG, SWEEP_CUSTOM)
+
+# Keithley 6221: 105 mA is the full scale of the 100 mA source range
+# (SOUR:CURR -105e-3 to 105e-3 A); compliance 0.1 V to 105 V.
+K6221_MAX_CURRENT_A = 0.105
+K6221_MAX_COMPLIANCE_V = 105.0
+
+# Shown inside the custom-list box the first time "Custom List" is chosen,
+# so the expected format is visible without reading a manual. It is a valid
+# list (µA): a full loop with fine steps near zero and coarse steps at the top.
+CUSTOM_LIST_EXAMPLE = (
+    "0, 1, 2, 5, 10, 20, 50, 100,\n"
+    "50, 20, 10, 5, 2, 1, 0,\n"
+    "-1, -2, -5, -10, -20, -50, -100,\n"
+    "-50, -20, -10, -5, -2, -1, 0")
+
+
+def parse_custom_list(text):
+    """Parse a user-typed list of numbers.
+
+    Commas, semicolons, spaces, tabs and new lines all separate values, so
+    a column pasted from a spreadsheet works as well as "0, 1, 2". Blank
+    tokens are ignored. Raises ValueError naming the first bad token.
+    Returns a plain list of floats (in the unit the user typed).
+    """
+    if text is None:
+        raise ValueError("Custom list is empty.")
+    cleaned = text.replace(",", " ").replace(";", " ")
+    tokens = cleaned.split()
+    if not tokens:
+        raise ValueError("Custom list is empty.")
+    values = []
+    for tok in tokens:
+        try:
+            v = float(tok)
+        except ValueError:
+            raise ValueError(
+                f"Custom list: '{tok}' is not a number. Use values such as "
+                f"'0, 1, 2, 5' separated by commas, spaces or new lines.")
+        if not np.isfinite(v):
+            raise ValueError(f"Custom list: '{tok}' is not a finite number.")
+        values.append(v)
+    return values
+
+
+def build_sweep_points(sweep_type, start_val=0.0, stop_val=0.0, num_points=2,
+                       custom_values=None):
+    """Return the ordered array of source set-points for one run.
+
+    sweep_type     one of SWEEP_TYPES
+    start_val, stop_val, num_points   for the two Start → Stop modes
+    custom_values  list of floats for "Custom List" (already parsed)
+
+    Linear: num_points points from start to stop inclusive; zero anywhere
+    is fine. Log: points spaced evenly in log10(|I|); start and stop must
+    be non-zero and of the same sign. Values come back in the unit they
+    were given in; the caller applies check_sweep_limits.
+    """
+    if sweep_type == SWEEP_CUSTOM:
+        if not custom_values:
+            raise ValueError("Custom list is empty.")
+        return np.asarray([float(v) for v in custom_values], dtype=float)
+
+    if sweep_type not in (SWEEP_LINEAR, SWEEP_LOG):
+        raise ValueError(f"Unknown sweep type '{sweep_type}'.")
+    try:
+        n = int(num_points)
+    except (TypeError, ValueError):
+        raise ValueError("Number of Points must be a whole number of 2 or more.")
+    if n < 2:
+        raise ValueError("Number of Points must be 2 or more.")
+    a, b = float(start_val), float(stop_val)
+    if not (np.isfinite(a) and np.isfinite(b)):
+        raise ValueError("Start and Stop Current must be finite numbers.")
+
+    if sweep_type == SWEEP_LINEAR:
+        pts = np.linspace(a, b, n)
+        pts[0], pts[-1] = a, b          # kill the float residue on the ends
+        return pts
+
+    if a == 0 or b == 0 or a * b < 0:
+        raise ValueError("Log sweep cannot start at, stop at or cross zero. "
+                         "Use a linear sweep or a Custom List instead.")
+    pts = np.logspace(np.log10(abs(a)), np.log10(abs(b)), n) * np.sign(a)
+    pts[0], pts[-1] = a, b
+    return pts
+
+
+def ascii_label(text):
+    """Data-file-safe version of a GUI label: the arrows in the sweep-type
+    names and the micro sign are replaced so the header never depends on
+    the console code page (cp1252 on the lab PCs cannot encode the arrow).
+    """
+    return (str(text).replace("\u2192", "->").replace("\u00b5", "u")
+            .replace("\u03a9", "Ohm").encode("ascii", "replace").decode("ascii"))
+
+
+def check_sweep_limits(points, limit, unit_name):
+    """Raise ValueError if any |point| exceeds the hardware limit."""
+    if len(points) == 0:
+        raise ValueError("The sweep contains no points.")
+    worst = float(np.max(np.abs(points)))
+    if worst > limit:
+        raise ValueError(
+            f"Sweep reaches {worst:g} {unit_name}, above the instrument "
+            f"limit of {limit:g} {unit_name}.")
+
+
 # -------------------------------------------------------------------------------
 # --- BACKEND INSTRUMENT CONTROL ---
 # -------------------------------------------------------------------------------
@@ -170,7 +305,7 @@ class Backend_Passthrough:
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 class Passthrough_IV_GUI:
-    PROGRAM_VERSION = "1.6"
+    PROGRAM_VERSION = "1.7"
     LOGO_SIZE = 110
     LEFT_PANEL_WIDTH = 500  # default sash position so the left panel starts fully visible
     LOGO_FILE_PATH = resource_path("../../assets/LOGO/UGC_DAE_CSR_NBG.jpeg") # Path to your logo image
@@ -183,6 +318,7 @@ class Passthrough_IV_GUI:
         self.root = root; self.root.title("K6221/2182 I-V Sweep")
         self.root.geometry("1600x950"); self.root.minsize(1300, 850); self.root.configure(bg=self.CLR_BG_DARK)
         self.is_running = False; self.sweep_thread = None; self.logo_image = None
+        self.save_path = None
         self.backend = Backend_Passthrough(); self.data_storage = {'current': [], 'voltage': [], 'resistance': []}
         self.setup_styles(); self.create_widgets(); self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
@@ -190,6 +326,7 @@ class Passthrough_IV_GUI:
         style = ttk.Style(self.root); style.theme_use('clam'); style.configure('TFrame', background=self.CLR_BG_DARK); style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE); style.configure('TRadiobutton', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
         style.map('TRadiobutton', background=[('active', self.CLR_BG_DARK)]); style.configure('TButton', font=self.FONT_BASE, padding=(10, 9))
+        style.configure('Hint.TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=('Segoe UI', 9))
         style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN, font=('Segoe UI', 11, 'bold')); style.map('Start.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
         style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG_LIGHT, font=('Segoe UI', 11, 'bold')); style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
         mpl.rcParams.update({'font.family': 'Segoe UI', 'font.size': 11, 'axes.titlesize': 15, 'axes.labelsize': 13})
@@ -291,7 +428,7 @@ class Passthrough_IV_GUI:
         ttk.Label(frame, text="Mumbai Centre", font=institute_font, background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
 
         ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
- 
+
         # Program details
         details_text = ("Program Name: Delta Mode I-V Sweep\n"
                         "Instruments: K6221 (Source), K2182 (Meter)\n"
@@ -311,53 +448,200 @@ class Passthrough_IV_GUI:
         frame = LabelFrame(parent, text='Sweep Parameters', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE); frame.pack(pady=5, padx=10, fill='x')
         for i in range(2): frame.grid_columnconfigure(i, weight=1)
         self.entries = {}; pady_val, padx_val = (5, 5), 10
-        
+
         Label(frame, text="Sample Name:").grid(row=0, column=0, columnspan=2, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Sample Name"] = Entry(frame, font=self.FONT_BASE); self.entries["Sample Name"].grid(row=1, column=0, columnspan=2, padx=padx_val, pady=(0, 10), sticky='ew')
-        
+
         Label(frame, text="Keithley 6221 (GPIB Address):").grid(row=2, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.k6221_cb = ttk.Combobox(frame, font=self.FONT_BASE, state='readonly'); self.k6221_cb.grid(row=3, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew');
         self.scan_button = ttk.Button(frame, text="Scan", command=self.start_visa_scan); self.scan_button.grid(row=3, column=1, padx=(5, padx_val), pady=(0,5), sticky='ew')
 
-        Label(frame, text="Start Current (A):").grid(row=4, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Start Current"] = Entry(frame, font=self.FONT_BASE); self.entries["Start Current"].grid(row=5, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Start Current"].insert(0, "-1E-5")
-        Label(frame, text="Stop Current (A):").grid(row=4, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Stop Current"] = Entry(frame, font=self.FONT_BASE); self.entries["Stop Current"].grid(row=5, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Stop Current"].insert(0, "1E-5")
-        
-        Label(frame, text="Number of Points:").grid(row=6, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Num Points"] = Entry(frame, font=self.FONT_BASE); self.entries["Num Points"].grid(row=7, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Num Points"].insert(0, "51")
-        Label(frame, text="Step Delay (s):").grid(row=6, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Delay"] = Entry(frame, font=self.FONT_BASE); self.entries["Delay"].grid(row=7, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Delay"].insert(0, "0.2")
-        
-        Label(frame, text="Initial Settle Delay (s):").grid(row=8, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Initial Delay"] = Entry(frame, font=self.FONT_BASE); self.entries["Initial Delay"].grid(row=9, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Initial Delay"].insert(0, "2.0")
-        Label(frame, text="Compliance (V):").grid(row=8, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Compliance"] = Entry(frame, font=self.FONT_BASE); self.entries["Compliance"].grid(row=9, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Compliance"].insert(0, "10")
-        
-        self.sweep_scale_var = tk.StringVar(value="Linear")
-        scale_frame = ttk.Frame(frame); scale_frame.grid(row=10, column=0, columnspan=2, padx=padx_val, pady=(5,0), sticky='w')
-        Label(scale_frame, text="Sweep Scale:").pack(side='left', anchor='w')
-        ttk.Radiobutton(scale_frame, text="Linear", variable=self.sweep_scale_var, value="Linear").pack(side='left', padx=(10,5))
-        ttk.Radiobutton(scale_frame, text="Logarithmic", variable=self.sweep_scale_var, value="Logarithmic").pack(side='left')
-        
-        ttk.Button(frame, text="Browse Save Location...", command=self._browse_save).grid(row=11, column=0, columnspan=2, padx=padx_val, pady=4, sticky='ew')
-        self.start_button = ttk.Button(frame, text="Start Sweep", command=self.start_sweep, style='Start.TButton'); self.start_button.grid(row=12, column=0, padx=(padx_val, 5), pady=(10, 10), sticky='ew')
-        self.stop_button = ttk.Button(frame, text="Stop Sweep", command=self.stop_sweep, style='Stop.TButton', state='disabled'); self.stop_button.grid(row=12, column=1, padx=(5, padx_val), pady=(10, 10), sticky='ew')
+        # --- Sweep type: linear / log / custom list ---
+        Label(frame, text="Sweep Type:").grid(row=4, column=0, padx=padx_val, pady=pady_val, sticky='w')
+        # Explicit master: a StringVar without one binds to Tk's default
+        # root, which may belong to another window in the same process.
+        self.sweep_type_var = tk.StringVar(master=self.root)
+        self.sweep_type_cb = ttk.Combobox(frame, textvariable=self.sweep_type_var, state='readonly', font=self.FONT_BASE, values=list(SWEEP_TYPES))
+        self.sweep_type_cb.grid(row=5, column=0, columnspan=2, padx=padx_val, pady=(0, 5), sticky='ew')
+        self.sweep_type_cb.set(SWEEP_LINEAR)
+        self.sweep_type_cb.bind("<<ComboboxSelected>>", self._on_sweep_type_change)
+
+        # Row widgets are remembered per sweep type so the panel only shows
+        # the entries the chosen type uses.
+        self._rows = {}
+        lbl = Label(frame, text="Start Current (µA):"); lbl.grid(row=6, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Start Current"] = Entry(frame, font=self.FONT_BASE); self.entries["Start Current"].grid(row=7, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Start Current"].insert(0, "-10")
+        self._rows["Start Current"] = (lbl, self.entries["Start Current"])
+        lbl = Label(frame, text="Stop Current (µA):"); lbl.grid(row=6, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Stop Current"] = Entry(frame, font=self.FONT_BASE); self.entries["Stop Current"].grid(row=7, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Stop Current"].insert(0, "10")
+        self._rows["Stop Current"] = (lbl, self.entries["Stop Current"])
+        lbl = Label(frame, text="Number of Points:"); lbl.grid(row=8, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Num Points"] = Entry(frame, font=self.FONT_BASE); self.entries["Num Points"].grid(row=9, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Num Points"].insert(0, "51")
+        self._rows["Num Points"] = (lbl, self.entries["Num Points"])
+
+        self.custom_list_label = Label(frame, text="Custom Current List (µA):")
+        self.custom_list_label.grid(row=10, column=0, columnspan=2, padx=padx_val, pady=(6, 0), sticky='w')
+        self.custom_list_hint = ttk.Label(
+            frame,
+            style='Hint.TLabel',
+            text=("Separate values with commas, spaces or new lines (paste from the "
+                  "List Maker). Points are sourced in the order written, e.g.\n"
+                  "0, 1, 2, 5, 10, 5, 2, 1, 0, -1, -2, -5, -10, -5, -2, -1, 0"),
+            wraplength=self.LEFT_PANEL_WIDTH - 60,
+            justify='left')
+        self.custom_list_hint.grid(row=11, column=0, columnspan=2, padx=padx_val, sticky='w')
+        self.custom_list_text = scrolledtext.ScrolledText(frame, height=5, font=self.FONT_BASE, wrap='word')
+        self.custom_list_text.grid(row=12, column=0, columnspan=2, padx=padx_val, pady=(0, 6), sticky='ew')
+
+        Label(frame, text="Step Delay (s):").grid(row=13, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Delay"] = Entry(frame, font=self.FONT_BASE); self.entries["Delay"].grid(row=14, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Delay"].insert(0, "0.2")
+        Label(frame, text="Initial Settle Delay (s):").grid(row=13, column=1, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Initial Delay"] = Entry(frame, font=self.FONT_BASE); self.entries["Initial Delay"].grid(row=14, column=1, padx=(5, padx_val), pady=(0, 5), sticky='ew'); self.entries["Initial Delay"].insert(0, "2.0")
+        Label(frame, text="Compliance (V):").grid(row=15, column=0, padx=padx_val, pady=pady_val, sticky='w'); self.entries["Compliance"] = Entry(frame, font=self.FONT_BASE); self.entries["Compliance"].grid(row=16, column=0, padx=(padx_val, 5), pady=(0, 5), sticky='ew'); self.entries["Compliance"].insert(0, "10")
+
+        ttk.Button(frame, text="Browse Save Location...", command=self._browse_save).grid(row=17, column=0, columnspan=2, padx=padx_val, pady=4, sticky='ew')
+        self.start_button = ttk.Button(frame, text="Start Sweep", command=self.start_sweep, style='Start.TButton'); self.start_button.grid(row=18, column=0, padx=(padx_val, 5), pady=(10, 10), sticky='ew')
+        self.stop_button = ttk.Button(frame, text="Stop Sweep", command=self.stop_sweep, style='Stop.TButton', state='disabled'); self.stop_button.grid(row=18, column=1, padx=(5, padx_val), pady=(10, 10), sticky='ew')
+        self._on_sweep_type_change()
+
+    def _on_sweep_type_change(self, event=None):
+        """Show only the entries that the chosen sweep type uses."""
+        if not hasattr(self, 'sweep_type_var'):
+            return
+        selection = self.sweep_type_var.get()
+        show_range = selection in (SWEEP_LINEAR, SWEEP_LOG)
+        for key in ("Start Current", "Stop Current", "Num Points"):
+            for w in self._rows[key]:
+                w.grid() if show_range else w.grid_remove()
+        show_custom = selection == SWEEP_CUSTOM
+        for w in (self.custom_list_label, self.custom_list_hint, self.custom_list_text):
+            w.grid() if show_custom else w.grid_remove()
+        if show_custom:
+            # Show the worked example the first time the box appears so the
+            # expected format is obvious; the user overwrites it freely.
+            try:
+                if not self.custom_list_text.get("1.0", tk.END).strip():
+                    self.custom_list_text.insert("1.0", CUSTOM_LIST_EXAMPLE)
+            except tk.TclError:
+                pass
+
     def create_console_frame(self, parent): frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE); self.console = scrolledtext.ScrolledText(frame, state='disabled', bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0); self.console.pack(pady=5, padx=5, fill='both', expand=True); return frame
     def create_graph_frame(self, parent): container = LabelFrame(parent, text='I-V Curve', relief='groove', bg=self.CLR_GRAPH_BG, fg=self.CLR_TEXT_DARK, font=self.FONT_TITLE); container.pack(fill='both', expand=True, padx=5, pady=5); self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG); self.canvas = FigureCanvasTkAgg(self.figure, container); gs = gridspec.GridSpec(2, 1, figure=self.figure); self.ax_main = self.figure.add_subplot(gs[0]); self.ax_sub = self.figure.add_subplot(gs[1]); self.line_main, = self.ax_main.plot([], [], 'o-', c=self.CLR_ACCENT_RED, markersize=4); self.ax_main.set_title("I-V Curve", fontweight='bold'); self.ax_main.set_xlabel("Current (A)"); self.ax_main.set_ylabel("Voltage (V)"); self.line_sub, = self.ax_sub.plot([], [], 's:', c=self.CLR_ACCENT_GREEN, markersize=4); self.ax_sub.set_xlabel("Current (A)"); self.ax_sub.set_ylabel("Resistance (Ω)"); [ax.grid(True, ls='--', alpha=0.6) for ax in [self.ax_main, self.ax_sub]]; self.figure.tight_layout(pad=3.0); self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
     def log(self, message): ts = datetime.now().strftime("%H:%M:%S"); self.console.config(state='normal'); self.console.insert('end', f"[{ts}] {message}\n"); self.console.see('end'); self.console.config(state='disabled')
+
+    # ------------------------------------------------------------------
+    def _collect_params(self):
+        """Read and validate every entry. Returns (params, points_A).
+        Raises ValueError with a message the user can act on. Nothing here
+        touches the instrument. Zero is a valid entry wherever it is
+        meaningful (no truthiness tests)."""
+        sweep_type = self.sweep_type_var.get()
+        params = {
+            'name': self.entries["Sample Name"].get().strip(),
+            'sweep_type': sweep_type,
+            'k6221_visa': self.k6221_cb.get(),
+            'save_path': self.save_path,
+            'start_uA': 0.0, 'stop_uA': 0.0, 'points': 0,
+            'custom_list_str': '',
+        }
+        if not params['name']:
+            raise ValueError("Sample Name is required.")
+        if not params['k6221_visa']:
+            raise ValueError("Select the Keithley 6221 GPIB address (Scan).")
+        if not params['save_path']:
+            raise ValueError("Choose a save location first (Browse Save Location...).")
+        if not os.path.isdir(params['save_path']):
+            raise ValueError(f"Save location does not exist:\n{params['save_path']}")
+
+        def _num(key, label):
+            try:
+                return float(self.entries[key].get().strip())
+            except ValueError:
+                raise ValueError(f"{label} must be a number.")
+
+        params['delay'] = _num("Delay", "Step Delay (s)")
+        if params['delay'] < 0:
+            raise ValueError("Step Delay (s) cannot be negative.")
+        params['initial_delay'] = _num("Initial Delay", "Initial Settle Delay (s)")
+        if params['initial_delay'] < 0:
+            raise ValueError("Initial Settle Delay (s) cannot be negative.")
+        params['compliance'] = _num("Compliance", "Compliance (V)")
+        if not (0 < params['compliance'] <= K6221_MAX_COMPLIANCE_V):
+            raise ValueError(
+                f"Compliance must be between 0 and {K6221_MAX_COMPLIANCE_V:g} V.")
+
+        custom_values = None
+        if sweep_type == SWEEP_CUSTOM:
+            params['custom_list_str'] = self.custom_list_text.get("1.0", tk.END)
+            custom_values = parse_custom_list(params['custom_list_str'])
+        else:
+            params['start_uA'] = _num("Start Current", "Start Current (µA)")
+            params['stop_uA'] = _num("Stop Current", "Stop Current (µA)")
+            try:
+                params['points'] = int(self.entries["Num Points"].get().strip())
+            except ValueError:
+                raise ValueError("Number of Points must be a whole number (2 or more).")
+
+        points_uA = build_sweep_points(
+            sweep_type,
+            start_val=params['start_uA'],
+            stop_val=params['stop_uA'],
+            num_points=params['points'],
+            custom_values=custom_values)
+        points_A = points_uA * 1e-6
+        check_sweep_limits(points_A, K6221_MAX_CURRENT_A, "A")
+        params['max_abs_current_A'] = float(np.max(np.abs(points_A)))
+        return params, points_A
+
+    def _write_file_header(self, params, n_points):
+        """One parameter per line, every value with its unit, so the file
+        is self-describing without the GUI. Columns are SI (A, V, Ohm)."""
+        with open(self.data_filepath, 'w', newline='', encoding='utf-8') as f:
+            f.write(f"# Program: K6221/2182 I-V Sweep v{self.PROGRAM_VERSION}\n")
+            f.write(f"# Sample: {params['name']}\n")
+            f.write(f"# Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"# Source: Keithley 6221 at {params['k6221_visa']} (DC current)\n")
+            f.write("# Meter: Keithley 2182 via 6221 RS-232 passthrough (DC voltage)\n")
+            f.write(f"# Sweep type: {ascii_label(params['sweep_type'])}\n")
+            if params['sweep_type'] == SWEEP_CUSTOM:
+                f.write(f"# Custom list (uA): {' '.join(params['custom_list_str'].split())}\n")
+            else:
+                f.write(f"# Start current (uA): {params['start_uA']:g}\n")
+                f.write(f"# Stop current (uA): {params['stop_uA']:g}\n")
+            f.write(f"# Number of points: {n_points}\n")
+            f.write(f"# Max |current| (A): {params['max_abs_current_A']:.6e}\n")
+            f.write(f"# Compliance (V): {params['compliance']:g}\n")
+            f.write(f"# Step delay (s): {params['delay']:g}\n")
+            f.write(f"# Initial settle delay (s): {params['initial_delay']:g}\n")
+            f.write("# Columns: set current in A, measured voltage in V, resistance V/I in Ohm\n")
+            f.write("# Resistance is NaN where the set current is 0 A\n")
+            writer = csv.writer(f)
+            writer.writerow(["Set Current (A)", "Measured Voltage (V)", "Resistance (Ohm)"])
+
+    def _append_row(self, current, voltage, resistance):
+        with open(self.data_filepath, 'a', newline='', encoding='utf-8') as f:
+            csv.writer(f).writerow([f"{current:.6e}", f"{voltage:.6e}", f"{resistance:.6e}"])
+            try:
+                f.flush(); os.fsync(f.fileno())
+            except Exception:
+                pass
+
     def start_sweep(self):
+        if self.is_running:
+            return
         try:
-            self.params = { 'name': self.entries["Sample Name"].get(), 'start_i': float(self.entries["Start Current"].get()), 'stop_i': float(self.entries["Stop Current"].get()), 'points': int(self.entries["Num Points"].get()), 'delay': float(self.entries["Delay"].get()), 'initial_delay': float(self.entries["Initial Delay"].get()), 'compliance': float(self.entries["Compliance"].get()), 'k6221_visa': self.k6221_cb.get() }
-            if not all(p for k, p in self.params.items() if k != 'name') or not hasattr(self, 'save_path'): raise ValueError("All fields and a save location are required.")
-            self.start_button.config(state='disabled'); self.stop_button.config(state='normal'); self.is_running = True; [self.data_storage[key].clear() for key in self.data_storage]; [line.set_data([], []) for line in [self.line_main, self.line_sub]]; self.ax_main.set_title(f"I-V Curve: {self.params['name']}"); self.canvas.draw()
-            self.sweep_thread = threading.Thread(target=self._sweep_worker, args=(self.params,), daemon=True); self.sweep_thread.start()
+            self.params, points = self._collect_params()
         except Exception as e:
-            self.log(f"ERROR on startup: {traceback.format_exc()}"); messagebox.showerror("Input Error", f"{e}")
+            self.log(f"Input error: {e}"); messagebox.showerror("Input Error", f"{e}"); return
+        try:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S"); filename = f"{self.params['name']}_{ts}_IV.dat"
+            self.data_filepath = os.path.join(self.params['save_path'], filename)
+            self._write_file_header(self.params, len(points))
+            self.log(f"Data file: {self.data_filepath}")
+            self.log(f"Sweep: {ascii_label(self.params['sweep_type'])}, {len(points)} points, "
+                     f"|I|max = {self.params['max_abs_current_A']:.4e} A")
+            self.start_button.config(state='disabled'); self.stop_button.config(state='normal'); self.is_running = True; [self.data_storage[key].clear() for key in self.data_storage]; [line.set_data([], []) for line in [self.line_main, self.line_sub]]; self.ax_main.set_title(f"I-V Curve: {self.params['name']}"); self.canvas.draw()
+            self.sweep_thread = threading.Thread(target=self._sweep_worker, args=(self.params, points), daemon=True); self.sweep_thread.start()
+        except Exception as e:
+            self.log(f"ERROR on startup: {traceback.format_exc()}"); messagebox.showerror("Startup Error", f"{e}")
     def stop_sweep(self):
         if self.is_running: self.is_running = False; self.log("Stop command received..."); self.stop_button.config(state='disabled')
-    def _sweep_worker(self, params):
+    def _sweep_worker(self, params, current_points):
         try:
             self.backend.connect(params['k6221_visa']); self.backend.configure_instruments(params['compliance'])
-            if self.sweep_scale_var.get() == 'Linear': current_points = np.linspace(params['start_i'], params['stop_i'], params['points'])
-            else:
-                if params['start_i'] * params['stop_i'] <= 0: self.log("ERROR: Log sweep cannot cross zero."); self.root.after(0, self._sweep_cleanup_ui); return
-                start_log, stop_log = np.log10(abs(params['start_i'])), np.log10(abs(params['stop_i'])); log_sweep = np.logspace(start_log, stop_log, params['points']); current_points = log_sweep * np.sign(params['start_i'])
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S"); filename = f"{params['name']}_{ts}_IV.dat"
-            self.data_filepath = os.path.join(self.save_path, filename)
-            with open(self.data_filepath, 'w', newline='') as f: csv.writer(f).writerow([f"# Sample: {params['name']}"]); csv.writer(f).writerow(["Set Current (A)", "Measured Voltage (V)", "Resistance (Ohm)"])
 
             self.log("Sweep process starting...")
             self.log(f"Applying dummy current (1e-13 A) for stabilization..."); self.backend.set_current(1e-13)
@@ -376,10 +660,16 @@ class Passthrough_IV_GUI:
         finally:
             self.is_running = False; self.backend.close(); self.root.after(0, self._sweep_cleanup_ui)
     def _update_ui_with_point(self, current, voltage):
-        resistance = voltage/current if current != 0 else float('inf'); self.log(f"  Read: {voltage:.6e} V, R: {resistance:.6e} Ω")
+        # R is undefined at I = 0: store NaN (never inf) and skip it in the plot.
+        resistance = voltage / current if current != 0 else float('nan'); self.log(f"  Read: {voltage:.6e} V, R: {resistance:.6e} Ω")
         self.data_storage['current'].append(current); self.data_storage['voltage'].append(voltage); self.data_storage['resistance'].append(resistance)
-        with open(self.data_filepath, 'a', newline='') as f: csv.writer(f).writerow([f"{current:.6e}", f"{voltage:.6e}", f"{resistance:.6e}"])
-        self.line_main.set_data(self.data_storage['current'], self.data_storage['voltage']); self.line_sub.set_data(self.data_storage['current'], self.data_storage['resistance'])
+        try:
+            self._append_row(current, voltage, resistance)
+        except Exception as e:
+            self.log(f"ERROR writing data file: {e}")
+        c = np.array(self.data_storage['current'], dtype=float); v = np.array(self.data_storage['voltage'], dtype=float); r = np.array(self.data_storage['resistance'], dtype=float)
+        ok_v = np.isfinite(c) & np.isfinite(v); ok_r = ok_v & np.isfinite(r)
+        self.line_main.set_data(c[ok_v], v[ok_v]); self.line_sub.set_data(c[ok_r], r[ok_r])
         for ax in [self.ax_main, self.ax_sub]: ax.relim(); ax.autoscale_view(True)
         self.figure.tight_layout(pad=3.0); self.canvas.draw_idle()
     def _sweep_cleanup_ui(self):
