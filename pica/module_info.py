@@ -771,6 +771,105 @@ def module_info(key, quick_catalog=None):
 
 
 # -----------------------------------------------------------------------------
+#  Display names
+# -----------------------------------------------------------------------------
+# A catalogue label such as "I-V Sweep" or "R vs. T (T Control)" is clear
+# inside its Advanced Options card, which names the instruments above it.
+# Out of that context -- in the search results, or a card on its own -- it
+# says nothing about which bench it runs on. display_name() puts the
+# instruments in front, short but complete:
+#
+#     I-V Sweep            ->  Keithley 2400 — I-V Sweep
+#     R vs. T (T Control)  ->  Keithley 2400 + 2182 — R vs. T (T Control, L350)
+#     Temperature Ramp (L350)  ->  Lakeshore 350 — Temperature Ramp
+#
+# The thermometer is named once: in the label for a measurement module, in
+# front for a temperature tool. Derived from the 'instruments' line of each
+# MODULE_INFO entry, so a new module gets its name with nothing else to edit.
+_THERMOMETERS = ("Lakeshore 350", "Lakeshore 340", "Cryo-con 34")
+# How a name gives an instrument: maker and model, no more.
+_SHORT_INSTRUMENT_NAMES = [
+    ("Keysight E4980A precision LCR meter", "Keysight E4980A"),
+    ("Keithley 2400 SourceMeter", "Keithley 2400"),
+    ("Keithley 6517B electrometer", "Keithley 6517B"),
+    ("Stanford Research SR830 lock-in", "SR830 lock-in"),
+    ("Novocontrol Alpha-AN analyser with ZG4 sample interface",
+     "Novocontrol Alpha-AN"),
+    ("Keithley 197A multimeter on AC volts", "Keithley 197A"),
+    ("Keithley 197A with its Model 1973A / 1972A IEEE-488 card",
+     "Keithley 197A"),
+    ("Pfeiffer TPG 361 SingleGauge", "Pfeiffer TPG 361"),
+    ("Lakeshore 350 or Lakeshore 340", "Lakeshore 350 / 340"),
+    ("optional Lakeshore 350 or Cryo-con 34", ""),
+]
+# A thermometer as a module label writes it. Longest first, so
+# "L340 / L350" is taken whole rather than as "L340" and a stray "/ L350".
+_LABEL_THERMOMETER = r"(L340 / L350|L350|L340|Cryocon 34|Cryo-con 34)"
+
+
+def instrument_names(key):
+    """The instruments a program opens, as short names.
+
+    'Keithley 2400 (current source), Keithley 2182 (nanovoltmeter),
+    Lakeshore 350'  ->  ['Keithley 2400 + 2182', 'Lakeshore 350'].
+    Empty for a program that touches no instrument.
+    """
+    text = re.sub(r"\([^)]*\)", "", MODULE_INFO.get(key, {}).get('instruments', ""))
+    for long_name, short_name in _SHORT_INSTRUMENT_NAMES:
+        text = text.replace(long_name, short_name)
+    parts = [p.strip() for p in re.split(r"[,;]", text) if p.strip()]
+    if not parts or parts[0].lower().startswith(("none", "every", "the one")):
+        return []
+    names, last_maker = [], None
+    for part in parts:
+        words = part.split()
+        maker = words[0] if len(words) > 1 else None
+        if maker and maker == last_maker and names:
+            names[-1] += " + " + " ".join(words[1:])     # Keithley 6221 + 2182
+        else:
+            names.append(part)
+        last_maker = maker
+    return names
+
+
+def _without_thermometer(label):
+    """'Step-wise Control (Basic, L350)' -> 'Step-wise Control (Basic)'.
+
+    Also a leading one: 'Cryocon 34 Diagnostics' -> 'Diagnostics'.
+    """
+    text = re.sub(r"^" + _LABEL_THERMOMETER + r"\s+", "", label)
+    text = re.sub(r"\s*,\s*" + _LABEL_THERMOMETER + r"\b", "", text)
+    text = re.sub(r"\(\s*" + _LABEL_THERMOMETER + r"\s*,\s*", "(", text)
+    text = re.sub(r"\s*\(\s*" + _LABEL_THERMOMETER + r"\s*\)", "", text)
+    return text.strip()
+
+
+def display_name(key, label, family=None):
+    """A short, complete name for one program: instruments, then label."""
+    label = label.rstrip("…").strip()
+    names = instrument_names(key)
+    measuring = [n for n in names if not n.startswith(_THERMOMETERS)]
+    thermometers = [n for n in names if n.startswith(_THERMOMETERS)]
+    if measuring:
+        shown = label
+        # A label that names no thermometer uses the Lakeshore 350; say so.
+        if (thermometers and thermometers[0] == "Lakeshore 350"
+                and not re.search(_LABEL_THERMOMETER, shown)):
+            if "(T Control)" in shown:
+                shown = shown.replace("(T Control)", "(T Control, L350)")
+            elif family in ('control', 'sensing', 'master'):
+                shown += " (L350)"
+        # "Keithley 197A — 197A Reading Monitor": say the model once.
+        first, _, rest = shown.partition(" ")
+        if rest and any(first in n.split() for n in measuring):
+            shown = rest
+        return f"{' + '.join(measuring)} — {shown}"
+    if thermometers:
+        return f"{thermometers[0]} — {_without_thermometer(label)}"
+    return label
+
+
+# -----------------------------------------------------------------------------
 #  Fuzzy search
 # -----------------------------------------------------------------------------
 # A small scorer rather than a dependency: the whole corpus is a hundred
@@ -779,7 +878,10 @@ def module_info(key, quick_catalog=None):
 # would be a step backwards.
 #
 # Scoring, per query word, against one entry:
-#   * substring of the entry's NAME (label, category, script key)  -> 100
+#   * substring of the entry's TITLE (its display name and label)  -> 100
+#   * substring of the rest of its NAME (category, key, script)    ->  90
+#     ("pyro" ranks PyroCurrent above the Voltage Polling module that
+#     merely shares the Pyroelectric category)
 #   * substring of the name with spaces and punctuation removed     ->  80
 #     ("k2400rt" finds "K2400 R-T")
 #   * substring of the entry's full TEXT (descriptions, inputs ...) ->  60
@@ -909,7 +1011,8 @@ def build_search_index(catalog, quick_catalog, script_paths,
         seen.add(key)
         info = module_info(key)
         script = os.path.basename(script_paths.get(key, "") or "")
-        name_parts = [label, category, key, script]
+        shown = display_name(key, label, family)
+        name_parts = [shown, label, category, key, script]
         text_parts = name_parts + [cat_instruments, group,
                                    info['what'], info['instruments'],
                                    info['inputs'], info.get('note', "")]
@@ -921,10 +1024,12 @@ def build_search_index(catalog, quick_catalog, script_paths,
         if experimental:
             text_parts.append("experimental")
         name = _norm(" ".join(name_parts))
+        title = _norm(shown + " " + label)
         text = _norm(" ".join(text_parts))
         index.append({
             'key': key,
             'label': label,
+            'name': shown,
             'category': category,
             'family': family,
             'group': group,
@@ -933,8 +1038,10 @@ def build_search_index(catalog, quick_catalog, script_paths,
             'snippet': info['what'],
             'script': script,
             '_name': name,
+            '_title': title,
             '_name_squashed': _squash(name),
             '_label_squashed': _squash(label),
+            '_shown_squashed': _squash(shown),
             '_name_words': frozenset(_words(name)),
             '_text': text,
             '_text_words': frozenset(_words(text)),
@@ -951,6 +1058,10 @@ def build_search_index(catalog, quick_catalog, script_paths,
 
 def _expand_query(query):
     """Query words plus their aliases: a list of (word, alternatives)."""
+    # "r-t", "i-v", "c-v": single letters joined by a hyphen are one word
+    # here, not two letters too short to search on.
+    query = re.sub(r"(?<![a-z0-9])([a-z])-([a-z])(?![a-z0-9])", r"\1\2",
+                   (query or "").lower())
     terms = []
     for word in _words(_norm(query)):
         alts = [word]
@@ -960,23 +1071,45 @@ def _expand_query(query):
     return terms
 
 
+def _contains(word, text):
+    """Substring test, stricter for short words and phrases.
+
+    A word of one or two letters ("iv", "rt") must start a word, so "iv"
+    does not find "drivers". A phrase ("r t", "r vs. t", from the alias
+    table) must stand as whole words at both ends, so "r t" does not find
+    "monitor t sensing". Anything else may sit anywhere ("2400" finds
+    "k2400").
+    """
+    if " " in word:
+        pattern = r"(?<![a-z0-9])" + re.escape(word) + r"(?![a-z0-9])"
+        return re.search(pattern, text) is not None
+    if len(word) <= 2:
+        return re.search(r"(?<![a-z0-9])" + re.escape(word), text) is not None
+    return word in text
+
+
 def _score_word(alts, entry, fuzzy):
     best = 0
     for word in alts:
         squashed = _squash(word)
         close = fuzzy.get(word, frozenset())
-        if word in entry['_name']:
+        if _contains(word, entry['_title']):
             score = 100
-        elif squashed and squashed in entry['_name_squashed']:
+        elif _contains(word, entry['_name']):
+            score = 90
+        # Punctuation-blind ("k2400rt" finds "K2400 R-T"), so only for words
+        # of three letters or more: "iv" squashed into "drivers" is noise.
+        elif len(squashed) >= 3 and squashed in entry['_name_squashed']:
             score = 80
-        elif word in entry['_text']:
+        elif _contains(word, entry['_text']):
             score = 60
         elif close & entry['_name_words']:
             score = 55
         elif close & entry['_text_words']:
             score = 40
-        elif (len(squashed) >= 3
-              and _is_subsequence(squashed, entry['_label_squashed'])):
+        elif len(squashed) >= 3 and (
+                _is_subsequence(squashed, entry['_label_squashed'])
+                or _is_subsequence(squashed, entry['_shown_squashed'])):
             score = 30
         else:
             score = 0
@@ -1011,7 +1144,7 @@ def search_modules(index, query, limit=12):
         if total:
             # Shorter labels first among equals: the module itself, not the
             # longer sibling that happens to contain the same words.
-            hits.append((total, -len(entry['label']), entry))
+            hits.append((total, -len(entry['name']), entry))
     hits.sort(key=lambda h: (-h[0], -h[1]))
     out = []
     for total, _neg, entry in hits[:limit]:

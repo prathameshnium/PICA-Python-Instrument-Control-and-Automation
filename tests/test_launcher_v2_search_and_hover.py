@@ -1,4 +1,4 @@
-"""Launcher v2: the toolbar search box and the hover card in Advanced Options.
+"""Launcher v2: the Ctrl+F module search and the hover card in Advanced Options.
 
 Two layers:
 
@@ -132,6 +132,70 @@ def test_module_info_returns_a_copy():
     assert mi.MODULE_INFO["K2400 I-V"]["what"] != "changed"
 
 
+# ------------------------------------------------------- the index covers all
+def test_every_launchable_program_is_in_the_search_index():
+    """Measurement modules, diagnostics and every PICA Util: all searchable.
+
+    The one launcher entry left out is "PICA Help", which opens the README
+    rather than starting a program.
+    """
+    indexed = {e["key"] for e in INDEX}
+    missing = sorted(set(SCRIPT_PATHS) - indexed - {"PICA Help"})
+    assert not missing, f"launchable but not searchable: {missing}"
+
+
+def test_every_diagnostic_tool_is_searchable_by_the_word():
+    keys = set(_keys("diagnostics", limit=20))
+    for _label, key in launcher.DIAGNOSTIC_TOOLS:
+        assert key in keys, key
+
+
+def test_every_pica_util_is_in_the_index():
+    groups = launcher.PICALauncherV2._utils_groups(launcher.PICALauncherV2)
+    named = {label for _title, tools in groups for label, _target in tools}
+    indexed = {e["label"] for e in INDEX}
+    assert named <= indexed, named - indexed
+
+
+# ------------------------------------------------------------ display names
+def test_every_program_has_a_distinct_full_name():
+    names = [e["name"] for e in INDEX]
+    assert len(names) == len(set(names)), "two programs share a name"
+
+
+def test_a_measurement_name_leads_with_its_instruments():
+    by_key = {e["key"]: e["name"] for e in INDEX}
+    assert by_key["K2400 I-V"] == "Keithley 2400 — I-V Sweep"
+    assert by_key["K6517B I-V"] == "Keithley 6517B — I-V Sweep"
+    assert by_key["K2400_2182 I-V"] == "Keithley 2400 + 2182 — I-V Sweep"
+    assert by_key["Delta Mode I-V Sweep"] == "Keithley 6221 + 2182 — Sweep Mode I-V"
+    assert by_key["SR830 AC R-T (T_Sensing, CC34)"] == \
+        "Keithley 6221 + SR830 lock-in — AC R vs. T (T Sensing, Cryocon 34)"
+
+
+def test_a_name_says_which_thermometer_once():
+    by_key = {e["key"]: e["name"] for e in INDEX}
+    # The bare "(T Control)" gains its default controller.
+    assert by_key["K2400 R-T"] == "Keithley 2400 — R vs. T (T Control, L350)"
+    assert by_key["Pyroelectric Current"] == \
+        "Keithley 6517B — PyroCurrent vs. T (L350)"
+    # A temperature tool leads with the controller and does not repeat it.
+    assert by_key["Lakeshore Temp Control"] == "Lakeshore 350 — Temperature Ramp"
+    assert by_key["Lakeshore 340 Step Control (Advanced)"] == \
+        "Lakeshore 340 — Step-wise Control (Advanced)"
+    assert by_key["Lakeshore Sensor Curve Loader"] == \
+        "Lakeshore 350 / 340 — Sensor Curve Loader"
+    assert by_key["Cryocon Diagnostics"] == \
+        "Cryo-con 34 — Diagnostics (read-only survey)"
+    assert by_key["K197A Monitor"] == "Keithley 197A — Reading Monitor"
+    for name in by_key.values():
+        assert "(/)" not in name and "()" not in name and not name.endswith("…")
+
+
+def test_no_full_name_is_too_long_for_a_row():
+    assert max(len(e["name"]) for e in INDEX) <= 80
+
+
 # ------------------------------------------------------------------ the index
 def test_the_index_covers_every_catalogue_row_once():
     keys = [e["key"] for e in INDEX]
@@ -208,6 +272,30 @@ def test_initials_find_the_module_by_its_label():
     assert keys and all(k.startswith("Delta Mode R-T") for k in keys[:3])
 
 
+def test_short_words_match_only_at_the_start_of_a_word():
+    """'iv' must not find 'drivers', nor 'r t' find 'monitor t sensing'."""
+    hits = _keys("iv", limit=30)
+    assert len(hits) >= 6
+    for key in hits:
+        name = next(e["name"] for e in INDEX if e["key"] == key)
+        assert "I-V" in name, name
+    for not_iv in ("System and Driver Diagnostics", "SR830 AC Resistivity"):
+        assert not_iv not in hits      # "drivers", "resistivity"
+    top = _keys("rt", limit=6)
+    assert all("R-T" in k for k in top), top
+
+
+def test_hyphenated_letters_read_as_one_word():
+    assert _keys("r-t", limit=6) == _keys("rt", limit=6)
+    assert _keys("i-v", limit=6) == _keys("iv", limit=6)
+    assert _keys("c-v")[0] == "LCR C-V Measurement"
+
+
+def test_a_match_in_the_module_name_beats_one_in_its_category():
+    top = _keys("pyro", limit=2)
+    assert set(top) == {"Pyroelectric Current", "Pyroelectric Current (L340)"}
+
+
 def test_every_word_must_match():
     assert _keys("delta zzqx") == []
     assert _keys("zzqx") == []
@@ -238,14 +326,24 @@ def _method_source(name):
     return inspect.getsource(getattr(launcher.PICALauncherV2, name))
 
 
-def test_both_toolbars_carry_the_search_box():
-    assert "_build_search_box(toolbar)" in _method_source("_build_toolbar")
-    assert "_build_search_box(adv_tools)" in _method_source("open_advanced")
+def test_no_toolbar_carries_a_search_box_any_more():
+    """The search is a Ctrl+F panel; neither toolbar builds a search field."""
+    assert "search" not in _method_source("_build_toolbar").lower().replace(
+        "research", "")
+    assert not hasattr(launcher.PICALauncherV2, "_build_search_box")
+    assert "Entry(" not in _method_source("_build_toolbar")
 
 
-def test_the_search_box_has_a_keyboard_shortcut():
-    assert '"<Control-f>"' in _method_source("_build_menubar")
-    assert "_focus_search" in _method_source("_build_menubar")
+def test_ctrl_f_opens_the_search():
+    source = _method_source("_build_menubar")
+    assert '"<Control-f>"' in source and '"<Control-F>"' in source
+    assert "_search_shortcut" in source
+
+
+def test_the_tools_menu_offers_the_search_with_its_shortcut():
+    source = _method_source("_build_menubar")
+    assert 'label="Search Modules…", accelerator="Ctrl+F"' in source
+    assert "self.open_search(w)" in source
 
 
 def test_every_card_row_gets_a_hover_card():
@@ -314,15 +412,18 @@ def _labels_in(widget):
     return out
 
 
-def test_tk_typing_opens_results_and_enter_launches(tk_launcher):
+def test_tk_ctrl_f_opens_results_and_enter_launches(tk_launcher):
     root, app = tk_launcher
-    entry = app._search_boxes[0]
-    app._search_focus_in(entry)
-    entry._search_var.set("k2400 rt")
+    entry = app.open_search()
+    root.update()
+    assert app._search_win is not None and app._search_win.winfo_exists()
+    entry.insert(0, "k2400 rt")
     results = app.run_search(entry)
     root.update()
     assert results and results[0]["key"] == "K2400 R-T"
-    assert app._search_win is not None and app._search_win.winfo_exists()
+    # Rows are the full names: instruments first, never a bare "I-V Sweep".
+    assert app._search_list.get(0).strip() == results[0]["name"]
+    assert results[0]["name"].startswith("Keithley 2400")
     # The card beside the list describes the highlighted result.
     assert "MEASURES" in _labels_in(app._search_card)
     launched = []
@@ -336,9 +437,8 @@ def test_tk_typing_opens_results_and_enter_launches(tk_launcher):
 
 def test_tk_no_match_shows_a_hint_and_escape_closes(tk_launcher):
     root, app = tk_launcher
-    entry = app._search_boxes[0]
-    app._search_focus_in(entry)
-    entry._search_var.set("zzqx")
+    entry = app.open_search()
+    entry.insert(0, "zzqx")
     assert app.run_search(entry) == []
     root.update()
     assert app._search_win is not None
@@ -353,7 +453,6 @@ def test_tk_advanced_rows_open_a_hover_card(tk_launcher):
     root, app = tk_launcher
     app.open_advanced()
     root.update()
-    assert len(app._search_boxes) == 2
 
     rows = []
 
@@ -371,8 +470,10 @@ def test_tk_advanced_rows_open_a_hover_card(tk_launcher):
     win = app._hover_win
     assert win is not None and win.winfo_exists()
     texts = _labels_in(win)
-    for caption in ("MEASURES", "INSTRUMENTS", "YOU ENTER", "SCRIPT", "T CONTROL"):
+    for caption in ("MEASURES", "INSTRUMENTS", "INPUT FIELDS", "SCRIPT", "T CONTROL"):
         assert caption in texts
+    # The card heads with the full name, not the bare row label.
+    assert "Keithley 2400 — R vs. T (T Control, L350)" in texts
     assert "RT_K2400_L350_T_Control_GUI.py" in texts
     assert mi.MODULE_INFO["K2400 R-T"]["what"] in texts
     # Wider than a tooltip, still well short of a screen. The width follows
@@ -384,5 +485,4 @@ def test_tk_advanced_rows_open_a_hover_card(tk_launcher):
     assert app._hover_win is None
     app._close_advanced()
     root.update()
-    assert len(app._search_boxes) == 1
     assert isinstance(root, tk.Tk)

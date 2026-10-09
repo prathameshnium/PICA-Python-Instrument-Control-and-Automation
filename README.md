@@ -62,7 +62,7 @@ The suite performs automated protocols including:
 <p align="center">
   <img src="pica/assets/Images/screenshots/00b_PICA_Launcher_Advanced.png" alt="PICA Launcher Advanced Options — full catalogue of measurement modules grouped by resistance range and instrument" width="800">
   <br>
-  <em>Advanced Options (Ctrl+Shift+A): every module PICA ships, grouped by measurement range and instrument, for when you already know which program you want. Hovering a row opens a card describing the measurement, its instruments and its inputs; the toolbar search box (Ctrl+F) finds any module by a few letters.</em>
+  <em>Advanced Options (Ctrl+Shift+A): every module PICA ships, grouped by measurement range and instrument, for when you already know which program you want. Hovering a row opens a card describing the measurement, its instruments and its inputs; Ctrl+F opens a search that finds any module by a few letters.</em>
 </p>
 
 > **More details here:**
@@ -394,10 +394,13 @@ pica-gui
     main window, a folder shortcut on every card to the module's source, and an
     inline console. Rest the pointer on any module row and a card says what
     the program measures, which instruments it opens and what it will ask
-    for. Both windows also carry a **search box** (`Ctrl+F`): a fuzzy search
-    over module names, instruments, descriptions and input fields — `k2400
-    rt`, `butterfly`, `cc34`, even a misspelt `resistence` — with Enter
-    launching the highlighted result.
+    for. In either window, **`Ctrl+F`** (or Tools → Search Modules…) opens a
+    search in the middle of the window: a fuzzy search over every program PICA
+    can start, measurement modules, diagnostics and utilities alike, by
+    name, instrument, description or input field — `k2400 rt`, `butterfly`,
+    `cc34`, even a misspelt `resistence`. Each result is listed by its full
+    name, instruments first (*Keithley 2400 — I-V Sweep*), and Enter
+    launches the highlighted one.
 
 3.  **Command Line Interface (CLI)**
     For headless operation (e.g., Raspberry Pi).

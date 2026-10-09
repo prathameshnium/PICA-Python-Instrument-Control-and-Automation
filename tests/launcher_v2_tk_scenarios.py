@@ -1,10 +1,10 @@
-"""Live Tk scenarios for the launcher v2 hover cards and search box.
+"""Live Tk scenarios for the launcher v2 hover cards and Ctrl+F search.
 
 NOT collected by a plain `pytest tests/` (the name does not start with
 "test_"). tests/test_launcher_v2_search_hover_regressions.py runs this file
 in a FRESH Python interpreter and fails if any scenario here fails.
 
-Why a fresh interpreter: these scenarios type into the search box, and a key
+Why a fresh interpreter: these scenarios type into the search panel, and a key
 event reaches a widget only if that widget's window holds the keyboard focus.
 Earlier tests in a full run keep a second Tk interpreter alive for the rest
 of the process (tests/test_lakeshore_curve_loader.py shares one root across
@@ -196,6 +196,17 @@ def _close_by_title_bar(win):
     win.tk.call(win.protocol("WM_DELETE_WINDOW"))
 
 
+def _ctrl_f(app, widget):
+    """Press Ctrl+F in `widget`; returns the search entry it opened."""
+    widget.focus_force()
+    _pump(app.root, 30)
+    widget.event_generate("<Control-f>")
+    _pump(app.root, 40)
+    entry = app._search_owner
+    assert entry is not None, "Ctrl+F opened no search"
+    return entry
+
+
 def _focus(app, entry):
     entry.focus_force()
     _pump(app.root, 30)
@@ -266,8 +277,7 @@ def test_advanced_closes_with_a_hover_timer_still_pending(app):
 
 def test_advanced_closes_with_its_search_panel_open(app):
     win = _open_advanced(app)
-    entry = app._search_boxes[-1]
-    _focus(app, entry)
+    entry = _ctrl_f(app, win)
     _type(app, entry, "lcr")
     _settle_search(app)
     assert app._search_win is not None
@@ -275,22 +285,25 @@ def test_advanced_closes_with_its_search_panel_open(app):
     _pump(app.root, 30)
     assert not win.winfo_exists()
     assert app._search_win is None
-    assert len(app._search_boxes) == 1
+    assert str(win) not in app._search_panels
 
 
 def test_advanced_opens_and_closes_again_and_again(app):
     for _ in range(3):
         win = _open_advanced(app)
-        assert len(app._search_boxes) == 2
         rows = _rows(win)
         for row in rows[:6] + rows[-6:]:
             row.event_generate("<Enter>")
             row.event_generate("<Leave>")
         app.root.update()
+        entry = _ctrl_f(app, win)
+        _type(app, entry, "rt")
+        _settle_search(app)
         _close_by_title_bar(win)
         _pump(app.root, 30)
         assert not win.winfo_exists()
-        assert len(app._search_boxes) == 1
+        assert app._search_win is None
+        assert str(win) not in app._search_panels
 
 
 def test_advanced_closes_even_if_the_clean_up_fails(app):
@@ -336,8 +349,7 @@ def test_quitting_the_launcher_mid_use_is_clean(app):
         row.event_generate("<Enter>")
         row.event_generate("<Leave>")
     rows[6].event_generate("<Enter>")       # hover timer left armed
-    entry = app._search_boxes[0]
-    _focus(app, entry)
+    entry = _ctrl_f(app, app.cat_combo)
     _type(app, entry, "delta")              # debounce left pending
     app.root.destroy()
     assert app.errors.callback == []
@@ -352,7 +364,7 @@ def test_resting_on_a_row_opens_its_card(app):
     card = app._hover_win
     assert card is not None and card.winfo_exists()
     texts = _labels(card)
-    for caption in ("MEASURES", "INSTRUMENTS", "YOU ENTER", "SCRIPT"):
+    for caption in ("MEASURES", "INSTRUMENTS", "INPUT FIELDS", "SCRIPT"):
         assert caption in texts
     row.event_generate("<Leave>")
     app.root.update()
@@ -412,7 +424,9 @@ def test_every_row_card_describes_that_row(app):
         assert card is not None
         texts = _labels(card)
         assert mi.MODULE_INFO[key]["what"] in texts, key
-        assert row.cget("text") in texts, key
+        # Headed by the program's full name, which contains the row label.
+        full = mi.display_name(key, row.cget("text"), family_of[key])
+        assert full in texts, key
         app._hide_hover()
     app.root.update()
 
@@ -426,13 +440,112 @@ def test_the_hover_card_is_a_child_of_the_window_not_of_the_row(app):
 
 
 # ------------------------------------------------------------------ search
+def _entries(widget):
+    """Every plain text box under a widget (the search box is one).
+
+    type() rather than isinstance(): a ttk Combobox -- the Quick Select
+    dropdowns -- is an Entry subclass, and is not a search box.
+    """
+    import tkinter as tk
+    out = []
+    for c in widget.winfo_children():
+        if type(c) is tk.Entry:
+            out.append(c)
+        out.extend(_entries(c))
+    return out
+
+
+def test_no_search_box_sits_on_either_window(app):
+    """The search is a Ctrl+F panel now; no window carries a search field."""
+    assert app._search_panels == {}
+    assert _entries(app.root) == []
+    win = _open_advanced(app)
+    assert _entries(win) == []
+    assert app._search_panels == {}
+
+
+def test_ctrl_f_opens_the_panel_centred_with_the_cursor_in_it(app):
+    entry = _ctrl_f(app, app.cat_combo)
+    panel = app._search_win
+    assert panel.winfo_ismapped()
+    assert app.root.focus_get() is entry
+    left = panel.winfo_x()
+    right = app.root.winfo_width() - (left + panel.winfo_width())
+    assert abs(left - right) <= 2, (left, right)          # centred
+    assert panel.winfo_y() < app.root.winfo_height() // 3  # near the top
+    assert V2.SEARCH_HINT in _labels(panel)               # empty: the hint
+
+
+def test_the_panel_is_part_of_the_window_not_a_window_of_its_own(app):
+    import tkinter as tk
+    _ctrl_f(app, app.cat_combo)
+    assert not isinstance(app._search_win, tk.Toplevel)
+    assert app._search_win.winfo_toplevel() is app.root
+
+
+def test_ctrl_f_in_advanced_opens_over_advanced(app):
+    win = _open_advanced(app)
+    entry = _ctrl_f(app, win)
+    assert app._search_window is win
+    assert app._search_win.winfo_toplevel() is win
+    assert win.focus_get() is entry
+
+
+def test_ctrl_f_from_any_other_window_opens_over_the_main_window(app):
+    import tkinter as tk
+    other = tk.Toplevel(app.root)       # e.g. the console or status window
+    other.geometry("300x200+50+50")
+    _pump(app.root, 40)
+    try:
+        _ctrl_f(app, other)
+        assert app._search_window is app.root
+    finally:
+        other.destroy()
+
+
+def test_ctrl_f_again_keeps_the_text_and_selects_it(app):
+    entry = _ctrl_f(app, app.cat_combo)
+    _type(app, entry, "delta")
+    _settle_search(app)
+    entry.event_generate("<Control-f>")
+    _pump(app.root, 40)
+    assert app._search_owner is entry
+    assert entry.get() == "delta"
+    assert entry.selection_present()
+
+
+def test_the_tools_menu_opens_the_search_in_both_windows(app):
+    def item(win):
+        bar = app.root.nametowidget(win.cget("menu"))
+        for i in range(bar.index("end") + 1):
+            if bar.type(i) == "cascade" and bar.entrycget(i, "label") == "Tools":
+                tools = app.root.nametowidget(bar.entrycget(i, "menu"))
+                for j in range(tools.index("end") + 1):
+                    if tools.type(j) == "command" and \
+                            tools.entrycget(j, "label") == "Search Modules…":
+                        return tools, j
+        raise AssertionError("no Tools > Search Modules… entry")
+
+    tools, j = item(app.root)
+    assert tools.entrycget(j, "accelerator") == "Ctrl+F"
+    tools.invoke(j)
+    _pump(app.root, 40)
+    assert app._search_window is app.root
+    app.close_search()
+
+    win = _open_advanced(app)
+    tools, j = item(win)
+    tools.invoke(j)
+    _pump(app.root, 40)
+    assert app._search_window is win
+
+
 def test_typing_keeps_the_focus_in_the_box(app):
-    """THE search fault: the results window took the focus from the box."""
-    entry = app._search_boxes[0]
-    _focus(app, entry)
+    """The old fault: a popup window took the focus from the search box."""
+    entry = _ctrl_f(app, app.cat_combo)
     _type(app, entry, "k2400")
     _settle_search(app)
-    assert app._search_win is not None
+    assert app._search_results
     assert app.root.focus_get() is entry
     _type(app, entry, "k2400 rt")
     _settle_search(app)
@@ -440,40 +553,22 @@ def test_typing_keeps_the_focus_in_the_box(app):
     assert app.root.focus_get() is entry
 
 
-def test_the_panel_lives_inside_the_window_that_owns_the_box(app):
-    import tkinter as tk
-    entry = app._search_boxes[0]
-    _focus(app, entry)
-    _type(app, entry, "delta")
-    _settle_search(app)
-    panel = app._search_win
-    assert not isinstance(panel, tk.Toplevel)
-    assert panel.winfo_toplevel() is app.root
-    assert panel.winfo_ismapped()
-    # Fully inside the window.
-    x, y = panel.winfo_x(), panel.winfo_y()
-    assert x >= 0 and y >= 0
-    assert x + panel.winfo_width() <= app.root.winfo_width() + 1
-
-
-def test_the_panel_is_built_once_and_reused(app):
-    entry = app._search_boxes[0]
-    _focus(app, entry)
+def test_the_panel_is_built_once_per_window_and_reused(app):
+    entry = _ctrl_f(app, app.cat_combo)
+    first = app._search_win
     _type(app, entry, "del")
     _settle_search(app)
-    first = app._search_win
     _type(app, entry, "delta mode")
     _settle_search(app)
     assert app._search_win is first
-    app._search_escape(entry)
-    _type(app, entry, "lcr")
-    _settle_search(app)
-    assert app._search_win is first
+    entry.event_generate("<Escape>")
+    app.root.update()
+    again = _ctrl_f(app, app.cat_combo)
+    assert again is entry and app._search_win is first
 
 
 def test_typing_is_debounced(app):
-    entry = app._search_boxes[0]
-    _focus(app, entry)
+    entry = _ctrl_f(app, app.cat_combo)
     calls = []
     real = app.run_search
     app.run_search = lambda e: (calls.append(e.get()), real(e))[1]
@@ -483,9 +578,21 @@ def test_typing_is_debounced(app):
     assert calls == ["lakeshore"]
 
 
+def test_clearing_the_text_brings_the_hint_back(app):
+    entry = _ctrl_f(app, app.cat_combo)
+    _type(app, entry, "delta")
+    _settle_search(app)
+    assert app._search_results
+    entry.delete(0, "end")
+    entry.event_generate("<KeyRelease>", keysym="BackSpace")
+    _settle_search(app)
+    assert app._search_win is not None              # still open
+    assert app._search_results == []
+    assert V2.SEARCH_HINT in _labels(app._search_win)
+
+
 def test_down_and_up_move_the_highlight_and_the_card_follows(app):
-    entry = app._search_boxes[0]
-    _focus(app, entry)
+    entry = _ctrl_f(app, app.cat_combo)
     _type(app, entry, "k2400 rt")
     _settle_search(app)
     first = app._search_selected()
@@ -493,7 +600,7 @@ def test_down_and_up_move_the_highlight_and_the_card_follows(app):
     app.root.update()
     second = app._search_selected()
     assert second["key"] != first["key"]
-    assert second["label"] in _labels(app._search_card)
+    assert second["name"] in _labels(app._search_card)
     entry.event_generate("<Up>")
     app.root.update()
     assert app._search_selected()["key"] == first["key"]
@@ -505,13 +612,12 @@ def test_down_and_up_move_the_highlight_and_the_card_follows(app):
 
 def test_enter_before_the_pause_only_refreshes(app):
     """Nothing is launched that the user has not seen highlighted."""
-    entry = app._search_boxes[0]
-    _focus(app, entry)
+    entry = _ctrl_f(app, app.cat_combo)
     _type(app, entry, "k2400 rt")
     entry.event_generate("<Return>")      # before the debounce fires
     app.root.update()
     assert app.launched == []
-    assert app._search_win is not None
+    assert app._search_results
     shown = app._search_selected()["key"]
     entry.event_generate("<Return>")
     app.root.update()
@@ -519,22 +625,22 @@ def test_enter_before_the_pause_only_refreshes(app):
     assert app._search_win is None
 
 
-def test_enter_launches_the_highlighted_result(app):
-    entry = app._search_boxes[0]
-    _focus(app, entry)
+def test_enter_launches_the_highlighted_result_and_gives_the_focus_back(app):
+    entry = _ctrl_f(app, app.cat_combo)
     _type(app, entry, "k2400 rt")
     _settle_search(app)
     entry.event_generate("<Down>")
     app.root.update()
     picked = app._search_selected()["key"]
     entry.event_generate("<Return>")
-    app.root.update()
+    _pump(app.root, 30)
     assert app.launched == [picked]
+    assert app._search_win is None
+    assert app.root.focus_get() is app.cat_combo
 
 
 def test_enter_with_no_match_launches_nothing(app):
-    entry = app._search_boxes[0]
-    _focus(app, entry)
+    entry = _ctrl_f(app, app.cat_combo)
     _type(app, entry, "zzqx")
     _settle_search(app)
     assert any("No module matches" in t for t in _labels(app._search_win))
@@ -544,34 +650,29 @@ def test_enter_with_no_match_launches_nothing(app):
     assert app.launched == []
 
 
-def test_escape_closes_then_clears(app):
-    entry = app._search_boxes[0]
-    _focus(app, entry)
+def test_enter_on_an_empty_box_launches_nothing(app):
+    entry = _ctrl_f(app, app.cat_combo)
+    entry.event_generate("<Return>")
+    entry.event_generate("<Return>")
+    app.root.update()
+    assert app.launched == []
+    assert app._search_win is not None
+
+
+def test_escape_closes_and_gives_the_focus_back(app):
+    entry = _ctrl_f(app, app.cat_combo)
     _type(app, entry, "delta")
     _settle_search(app)
     entry.event_generate("<Escape>")
-    app.root.update()
+    _pump(app.root, 30)
     assert app._search_win is None
-    assert entry.get() == "delta"
-    entry.event_generate("<Escape>")
-    app.root.update()
-    assert entry.get() in ("", V2.SEARCH_PLACEHOLDER)
-
-
-def test_clearing_the_box_closes_the_panel(app):
-    entry = app._search_boxes[0]
-    _focus(app, entry)
-    _type(app, entry, "delta")
-    _settle_search(app)
-    entry.delete(0, "end")
-    entry.event_generate("<KeyRelease>", keysym="BackSpace")
-    _settle_search(app)
-    assert app._search_win is None
+    assert app.root.focus_get() is app.cat_combo
+    # The text is kept for the next Ctrl+F.
+    assert _ctrl_f(app, app.cat_combo).get() == "delta"
 
 
 def test_clicking_a_result_selects_it_and_keeps_the_panel(app):
-    entry = app._search_boxes[0]
-    _focus(app, entry)
+    entry = _ctrl_f(app, app.cat_combo)
     _type(app, entry, "k2400 rt")
     _settle_search(app)
     lb = app._search_list
@@ -592,23 +693,21 @@ def test_double_click_launches_the_result(app):
 
     Tk decides what counts as a double-click from the timestamps of real
     pointer events; synthetic presses carry made-up times, and whether Tk
-    pairs them differs between machines (it passed here and failed on the
-    GitHub runners). So the two halves are tested separately and exactly:
-    the binding is on the list, and what it runs launches the clicked row.
+    pairs them differs between machines. So the two halves are tested
+    exactly: the binding is on the list, and what it runs launches the
+    clicked row.
     """
-    entry = app._search_boxes[0]
-    _focus(app, entry)
+    import inspect
+    entry = _ctrl_f(app, app.cat_combo)
     _type(app, entry, "plotter")
     _settle_search(app)
     lb = app._search_list
     assert lb.bind("<Double-Button-1>"), "no double-click binding on the list"
     want = app._search_results[1]["key"]
     bbox = lb.bbox(1)
-    lb.event_generate("<Button-1>", x=bbox[0] + 5, y=bbox[1] + 2)   # first click
+    lb.event_generate("<Button-1>", x=bbox[0] + 5, y=bbox[1] + 2)
     app.root.update()
     assert app._search_selected()["key"] == want
-    # What the binding runs: the launcher's own launch of the selection.
-    import inspect
     panel_source = inspect.getsource(V2._search_panel_for)
     assert ('listbox.bind("<Double-Button-1>", lambda _e: self._search_launch())'
             in panel_source)
@@ -619,8 +718,7 @@ def test_double_click_launches_the_result(app):
 
 
 def test_a_click_elsewhere_closes_the_panel(app):
-    entry = app._search_boxes[0]
-    _focus(app, entry)
+    entry = _ctrl_f(app, app.cat_combo)
     _type(app, entry, "delta")
     _settle_search(app)
     app.launch_btn.event_generate("<Button-1>")
@@ -628,9 +726,17 @@ def test_a_click_elsewhere_closes_the_panel(app):
     assert app._search_win is None
 
 
+def test_a_click_inside_the_panel_keeps_it_open(app):
+    entry = _ctrl_f(app, app.cat_combo)
+    _type(app, entry, "delta")
+    _settle_search(app)
+    app._search_card.event_generate("<Button-1>")
+    app.root.update()
+    assert app._search_win is not None
+
+
 def test_tab_away_closes_the_panel(app):
-    entry = app._search_boxes[0]
-    _focus(app, entry)
+    entry = _ctrl_f(app, app.cat_combo)
     _type(app, entry, "delta")
     _settle_search(app)
     app.cat_combo.focus_force()
@@ -638,69 +744,45 @@ def test_tab_away_closes_the_panel(app):
     assert app._search_win is None
 
 
-def test_the_placeholder_is_never_searched(app):
-    entry = app._search_boxes[0]
-    assert entry.get() == V2.SEARCH_PLACEHOLDER
-    assert app.run_search(entry) == []
-    assert app._search_win is None
-    _focus(app, entry)
-    assert entry.get() == ""
-    app.launch_btn.focus_force()
-    _pump(app.root, 40)
-    assert entry.get() == V2.SEARCH_PLACEHOLDER
-
-
-def test_ctrl_f_focuses_the_box_of_the_window_in_front(app):
-    main_entry = app._search_boxes[0]
-    app.cat_combo.focus_force()
-    _pump(app.root, 30)
-    app.cat_combo.event_generate("<Control-f>")
-    _pump(app.root, 30)
-    assert app.root.focus_get() is main_entry
-
-    win = _open_advanced(app)
-    adv_entry = app._search_boxes[1]
-    win.focus_force()
-    _pump(app.root, 30)
-    win.event_generate("<Control-f>")
-    _pump(app.root, 30)
-    assert app.root.focus_get() is adv_entry
-
-
-def test_the_two_boxes_do_not_share_one_panel(app):
-    win = _open_advanced(app)
-    main_entry, adv_entry = app._search_boxes
-    _focus(app, main_entry)
+def test_opening_in_the_other_window_moves_the_panel(app):
+    main_entry = _ctrl_f(app, app.cat_combo)
     _type(app, main_entry, "delta")
     _settle_search(app)
     main_panel = app._search_win
-    assert main_panel.winfo_toplevel() is app.root
-    win.focus_force()
-    _focus(app, adv_entry)
-    _type(app, adv_entry, "lcr")
-    _settle_search(app)
-    assert app._search_win is not main_panel
-    assert app._search_win.winfo_toplevel() is win
+    win = _open_advanced(app)
+    adv_entry = _ctrl_f(app, win)
+    assert adv_entry is not main_entry
+    assert app._search_window is win
     assert not main_panel.winfo_ismapped()
 
 
-def test_a_pending_search_on_a_destroyed_box_is_harmless(app):
+def test_a_pending_search_on_a_closed_window_is_harmless(app):
     win = _open_advanced(app)
-    adv_entry = app._search_boxes[1]
-    _focus(app, adv_entry)
-    _type(app, adv_entry, "lcr")         # debounce pending
+    entry = _ctrl_f(app, win)
+    _type(app, entry, "lcr")             # debounce pending
     _close_by_title_bar(win)
     _settle_search(app)                  # the timer's moment passes
     assert app._search_win is None
+    assert str(win) not in app._search_panels
 
 
-def test_the_panel_follows_a_window_resize(app):
-    entry = app._search_boxes[0]
-    _focus(app, entry)
+def test_the_panel_stays_centred_after_a_resize(app):
+    entry = _ctrl_f(app, app.cat_combo)
     _type(app, entry, "delta")
     _settle_search(app)
     app.root.geometry("1200x800+0+0")
-    _pump(app.root, 80)
+    _pump(app.root, 120)
     panel = app._search_win
-    assert panel is not None
-    assert panel.winfo_x() + panel.winfo_width() <= app.root.winfo_width() + 1
+    left = panel.winfo_x()
+    right = app.root.winfo_width() - (left + panel.winfo_width())
+    assert abs(left - right) <= 2, (left, right)
+    assert left >= 0 and right >= 0
+
+
+def test_the_panel_fits_a_narrow_window(app):
+    app.root.geometry("700x600+0+0")
+    _pump(app.root, 80)
+    _ctrl_f(app, app.cat_combo)
+    panel = app._search_win
+    assert panel.winfo_x() >= 0
+    assert panel.winfo_x() + panel.winfo_width() <= app.root.winfo_width()
