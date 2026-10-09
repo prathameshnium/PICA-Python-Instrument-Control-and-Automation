@@ -157,7 +157,9 @@ def test_live_tk_scenarios_pass_in_a_fresh_interpreter():
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     proc = subprocess.run(
         [sys.executable, "-B", "-m", "pytest", "-p", "no:cacheprovider",
-         "-q", "-rs", "-o", "addopts=", SCENARIOS],
+         # -rfEs: name failures and errors as well as skips in the
+         # summary (-rs alone dropped the failing scenario's name).
+         "-q", "-rfEs", "-o", "addopts=", SCENARIOS],
         cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=900)
     out = proc.stdout + proc.stderr
     tail = "\n".join(out.splitlines()[-60:])

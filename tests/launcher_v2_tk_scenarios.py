@@ -78,47 +78,87 @@ class TkErrors:
         return self.callback + bg
 
 
+# One Tk root for the whole run; each scenario builds its launcher on a
+# fresh Toplevel and destroys only that. Creating and destroying a Tk root
+# per test is unreliable on Windows: the second or third root can fail with
+# "Can't find a usable tk.tcl" (seen on the GitHub Windows runner), and the
+# scenario then skipped instead of running. tests/test_lakeshore_curve_loader.py
+# shares a root for the same reason.
+_SHARED_ROOT = None
+_SHARED_ROOT_ERROR = None
+
+
+def _shared_root():
+    global _SHARED_ROOT, _SHARED_ROOT_ERROR
+    if _SHARED_ROOT_ERROR is not None:
+        pytest.skip(f"no usable Tk: {_SHARED_ROOT_ERROR}")
+    if _SHARED_ROOT is None:
+        try:
+            import tkinter as tk
+            _SHARED_ROOT = tk.Tk()
+            _SHARED_ROOT.withdraw()
+        except Exception as e:  # no display, incomplete Tcl
+            _SHARED_ROOT_ERROR = e
+            pytest.skip(f"no usable Tk: {e}")
+    return _SHARED_ROOT
+
+
+def _cancel_every_timer(root):
+    """Drop every pending after() job, so none fires into the next scenario.
+
+    Raw 'after cancel' on purpose: tkinter's after_cancel also deletes the
+    job's Tcl command, which the window that scheduled it deletes again when
+    it is destroyed -- the very fault these scenarios guard against.
+    """
+    try:
+        for ident in root.tk.splitlist(root.tk.call("after", "info")):
+            root.tk.call("after", "cancel", ident)
+    except Exception:
+        pass
+
+
 @pytest.fixture
 def app():
-    try:
-        import tkinter as tk
-        root = tk.Tk()
-    except Exception as e:  # no display, mocked tkinter, incomplete Tcl
-        pytest.skip(f"no usable Tk: {e}")
-    if not hasattr(root, "winfo_exists") or type(root).__module__ != "tkinter":
-        pytest.skip("tkinter is mocked in this run")
-    errors = TkErrors(root)
+    import tkinter as tk
+    shared = _shared_root()
+    _cancel_every_timer(shared)
+    shared.update()
+    errors = TkErrors(shared)
+    window = tk.Toplevel(shared)
     launcher_app = V2.__new__(V2)
     launcher_app.start_scan = lambda: None
     launcher_app._open_startup_status = lambda: None
     launcher_app._auto_launch_gpib_scanner = lambda: None
     launcher_app.launched = []
     try:
-        V2.__init__(launcher_app, root)
+        V2.__init__(launcher_app, window)
     except Exception as e:
-        root.destroy()
-        pytest.skip(f"launcher could not be built here: {e}")
+        window.destroy()
+        pytest.fail(f"launcher could not be built: {e}")
     launcher_app.launch_script = lambda key, argv=None: launcher_app.launched.append(key)
-    root.geometry("1400x860+0+0")
-    root.deiconify()
-    _pump(root, 50)
+    window.geometry("1400x860+0+0")
+    window.deiconify()
+    _pump(window, 50)
     launcher_app.errors = errors
     yield launcher_app
     try:
-        alive = bool(root.winfo_exists())
+        alive = bool(window.winfo_exists())
     except Exception:
         alive = False           # the test destroyed the launcher itself
     try:
         if alive:
             if launcher_app._adv_win is not None:
                 launcher_app._close_advanced()
-            _pump(root, 30)
+            _pump(window, 30)
         leftover = errors.all()
     finally:
         try:
-            root.destroy()
-        except Exception:
-            pass
+            if alive:
+                window.destroy()
+        except Exception as e:
+            leftover = list(leftover) + [f"destroying the launcher raised: {e}"]
+        _cancel_every_timer(shared)
+        shared.update()
     assert leftover == [], f"Tk raised during the test: {leftover}"
 
 
@@ -548,19 +588,31 @@ def test_clicking_a_result_selects_it_and_keeps_the_panel(app):
 
 
 def test_double_click_launches_the_result(app):
+    """A double-click on a result launches that result.
+
+    Tk decides what counts as a double-click from the timestamps of real
+    pointer events; synthetic presses carry made-up times, and whether Tk
+    pairs them differs between machines (it passed here and failed on the
+    GitHub runners). So the two halves are tested separately and exactly:
+    the binding is on the list, and what it runs launches the clicked row.
+    """
     entry = app._search_boxes[0]
     _focus(app, entry)
     _type(app, entry, "plotter")
     _settle_search(app)
     lb = app._search_list
+    assert lb.bind("<Double-Button-1>"), "no double-click binding on the list"
     want = app._search_results[1]["key"]
     bbox = lb.bbox(1)
-    x, y = bbox[0] + 5, bbox[1] + 2
-    # Two presses 100 ms apart at one spot: Tk reads them as a double-click.
-    lb.event_generate("<ButtonPress-1>", x=x, y=y, time=1000)
-    lb.event_generate("<ButtonRelease-1>", x=x, y=y, time=1020)
-    lb.event_generate("<ButtonPress-1>", x=x, y=y, time=1100)
-    lb.event_generate("<ButtonRelease-1>", x=x, y=y, time=1120)
+    lb.event_generate("<Button-1>", x=bbox[0] + 5, y=bbox[1] + 2)   # first click
+    app.root.update()
+    assert app._search_selected()["key"] == want
+    # What the binding runs: the launcher's own launch of the selection.
+    import inspect
+    panel_source = inspect.getsource(V2._search_panel_for)
+    assert ('listbox.bind("<Double-Button-1>", lambda _e: self._search_launch())'
+            in panel_source)
+    app._search_launch()
     app.root.update()
     assert app.launched == [want]
     assert app._search_win is None
