@@ -50,6 +50,9 @@ class StubLauncher:
 
     def __init__(self):
         self._last_data_dir = REPO_ROOT
+        # Advanced Options is open: the scanner that comes up with it is due.
+        # (It is skipped if the window was closed before its timer fired.)
+        self._adv_win = object()
         self.messages = []
         self.launched = []
 

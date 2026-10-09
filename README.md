@@ -2,7 +2,7 @@
 
 **Open-source Python suite for laboratory instrument control and automation** — GPIB/VISA & SCPI orchestration of Keithley, Keysight, Lakeshore, and Novocontrol instruments for cryogenic transport, resistivity, I-V, dielectric, and pyroelectric measurements.
 
-**📖 Documentation: [prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/)** · [User Manual](docs/User_Manual.md) · [PyPI](https://pypi.org/project/pica-suite/) · Install: `pip install pica-suite`
+**Documentation: [prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/)** · [User Manual](docs/User_Manual.md) · [PyPI](https://pypi.org/project/pica-suite/) · Install: `pip install pica-suite`
 
 <p align="center">
   <img src="pica/assets/LOGO/PICA_LOGO_NBG.png" alt="PICA logo — Python Instrument Control and Automation suite" width="250">
@@ -293,10 +293,10 @@ pip install --upgrade pica-suite
 
 | Check | Ubuntu 24.04, Python 3.10 (CI, every push) | Ubuntu 26.04, Python 3.14 (manual) |
 |---|---|---|
-| `pip install` | ✅ | ✅ |
-| Test suite (mocked instruments) | ✅ | ✅ |
-| All 100 programs in the launcher, plus both launchers, open | ✅ real Tk windows under xvfb (`tests/test_gui_windows_open_for_real.py`) | ✅ |
-| Measurement against real instruments | ❌ not yet verified | ❌ not yet verified |
+| `pip install` | Yes | Yes |
+| Test suite (mocked instruments) | Yes | Yes |
+| All 100 programs in the launcher, plus both launchers, open | Yes, real Tk windows under xvfb (`tests/test_gui_windows_open_for_real.py`) | Yes |
+| Measurement against real instruments | No, not yet verified | No, not yet verified |
 
 **1. Install the system packages.** Tkinter and the emoji font are usually not part of a minimal install. Without the font, the icons on buttons show as empty boxes.
 

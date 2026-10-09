@@ -1547,12 +1547,14 @@ class PICALauncherV2:
     # columns to four takes a column from four cards deep to three.
     MAX_CARD_COLS = 4
     CARD_MIN_WIDTH = 380
+    CARD_HEADER_ROWS = 4        # a card's title band, in module-row heights
     # Hover card in Advanced Options: how long the pointer rests on a module
     # row before the card opens (a pass across the grid must not throw up a
     # card per row), and how wide its text wraps. The search results panel
-    # reuses the same card at the same width. 2 s: at 0.6 s the card opened
-    # while the pointer was still on its way to a row.
-    HOVER_DELAY_MS = 2000
+    # reuses the same card at the same width. 1 s: at 0.6 s the card opened
+    # while the pointer was still on its way to a row, and at 2 s it felt
+    # like the card was not coming.
+    HOVER_DELAY_MS = 1000
     INFO_WRAP = 430
     SEARCH_ROWS = 10            # visible rows in the search results list
     SEARCH_LIMIT = 24           # results kept per query
@@ -2330,7 +2332,7 @@ class PICALauncherV2:
     SEARCH_WIDTH = 1400         # widest the panel gets; narrower on a small window
     SEARCH_HINT = ("Type a module, an instrument, a quantity or an input field "
                    "— for example  k2400 rt,  lakeshore 340,  dielectric,  "
-                   "pyro,  safety cutoff.")
+                   "pyro.")
     _SEARCH_IGNORED_KEYS = ("Up", "Down", "Return", "KP_Enter", "Escape", "Tab",
                             "Shift_L", "Shift_R", "Control_L", "Control_R",
                             "Alt_L", "Alt_R", "Caps_Lock")
@@ -3009,6 +3011,9 @@ class PICALauncherV2:
         Shared by the rail (140 px) and the Advanced Options header (a
         smaller badge). The caller keeps the returned PhotoImage alive.
         """
+        cache = self.__dict__.setdefault('_logo_cache', {})
+        if size in cache:
+            return cache[size]     # scaled once, reused on every open
         if not (PIL_AVAILABLE and os.path.exists(self.LOGO_FILE)):
             self.log("Logo not loaded: PIL unavailable or file missing.")
             return None
@@ -3018,7 +3023,8 @@ class PICALauncherV2:
             # Explicit master: without it the image is registered with
             # Tk's default root, and a window on another root (the tests
             # build several) fails with 'image "pyimageN" doesn't exist'.
-            return ImageTk.PhotoImage(img, master=self.root)
+            cache[size] = ImageTk.PhotoImage(img, master=self.root)
+            return cache[size]
         except Exception as e:
             self.log(f"ERROR: Failed to load logo. {e}")
             return None
@@ -3082,7 +3088,7 @@ class PICALauncherV2:
         """Re-lay the card grid if the available width changed the column count."""
         if self._rendering or not self._browse_alive():
             return
-        cols = max(1, min(self.MAX_CARD_COLS, width // self.CARD_MIN_WIDTH))
+        cols = self._grid_columns(width)
         self._browse_width = width
         if cols != self._browse_cols:
             self._browse_cols = cols
@@ -3097,9 +3103,9 @@ class PICALauncherV2:
             return False
 
     def _render_cards(self):
-        # Guard: the masonry pass calls update_idletasks, which can dispatch the
-        # canvas <Configure> and re-enter this method mid-build. The grid also
-        # only exists while Advanced Options is open.
+        # Guard: a canvas <Configure> dispatched mid-build must not re-enter
+        # this method. The grid also only exists while Advanced Options is
+        # open.
         if self._rendering or not self._browse_alive():
             return
         self._rendering = True
@@ -3124,15 +3130,22 @@ class PICALauncherV2:
         # 1-module card next to a 7-module one left ~200 px of dead space under
         # it. Independent columns let each card sit right under the previous
         # one; every card goes to whichever column is currently shortest.
+        #
+        # "Shortest" is counted in rows, not measured in pixels: a card is its
+        # header plus one row per module, so the count is as good as a
+        # measurement (a header of four rows reproduces the measured layout
+        # exactly). Measuring meant a full geometry pass after every card,
+        # which both cost most of the build time and painted the grid on
+        # screen one card at a time.
         columns = []
         for c in range(cols):
             col = tk.Frame(self.browse_frame, bg=self.CLR_APP)
             col.grid(row=0, column=c, sticky='new', padx=6)
-            columns.append(col)
+            columns.append([col, 0])
         for cat in CATALOG:
-            self.browse_frame.update_idletasks()   # settle heights before choosing
-            target = min(columns, key=lambda f: f.winfo_reqheight())
-            self._make_card(target, cat, wrap).pack(fill='x', pady=(0, 12))
+            target = min(columns, key=lambda c: c[1])
+            self._make_card(target[0], cat, wrap).pack(fill='x', pady=(0, 12))
+            target[1] += self.CARD_HEADER_ROWS + len(cat['modules'])
 
     def _rebuild_browse(self):
         if not self._browse_alive():
@@ -3624,18 +3637,13 @@ class PICALauncherV2:
             return
 
         win = Toplevel(self.root)
+        # Built hidden and shown once, complete. Shown first, it was filled in
+        # on screen card by card, then laid out a second time when the
+        # maximise arrived -- the slow, flickering open this replaces.
+        win.withdraw()
         win.title("PICA — Advanced Options")
         win.configure(bg=self.CLR_APP)
-        win.geometry("1400x900")
-        # Opens maximised, like the main launcher. This is the window whose
-        # whole job is fitting as many module cards on screen at once as it
-        # can, and a fixed 1400x900 frame on a 1080p screen threw away a third
-        # of the height it could have used -- the geometry above is only what
-        # it restores to.
-        try:
-            win.state('zoomed')
-        except tk.TclError:
-            pass
+        win.geometry(self.ADV_RESTORE_GEOMETRY)
         win.protocol("WM_DELETE_WINDOW", self._close_advanced)
         self._adv_win = win
         # The same File / Tools / View / Help bar as the main window, so the
@@ -3717,14 +3725,59 @@ class PICALauncherV2:
         # three-line tail of the same log, for reading in place.
         self._adv_strip = self._build_status_strip(win, None, console=True,
                                                    console_button=True)
+        # The card grid is laid out once, for the width the window will have
+        # when it is shown -- not for the restore size, which would then be
+        # thrown away and rebuilt the moment the window is maximised.
+        self._browse_width = self._advanced_grid_width(win)
+        self._browse_cols = self._grid_columns(self._browse_width)
         self._build_browse(win)
+        self._show_advanced(win)
         self.log("Advanced Options opened.")
         # The standalone scanner comes up with this window by default: this is
         # the window for someone who came to look at the rack, and the
-        # scanner's address guide is what they reach for. It runs its own pass
-        # over the bus, so it follows a moment later rather than starting
-        # while the window is still drawing.
-        self.root.after(400, self._auto_launch_gpib_scanner)
+        # scanner's address guide is what they reach for. Starting a second
+        # program loads the machine, so it waits until this window is on
+        # screen and settled rather than competing with it for the CPU.
+        self.root.after(1500, self._auto_launch_gpib_scanner)
+
+    # Restore size of Advanced Options; it opens maximised where the platform
+    # can maximise a window (Windows, macOS).
+    ADV_RESTORE_GEOMETRY = "1400x900"
+
+    def _advanced_grid_width(self, win):
+        """The card grid's width once Advanced Options is on screen."""
+        try:
+            width = int(self.ADV_RESTORE_GEOMETRY.split("x")[0])
+            if sys.platform in ("win32", "darwin"):
+                width = win.winfo_screenwidth()
+        except (tk.TclError, ValueError):
+            width = 1400
+        # Less the canvas padding and the scrollbar beside it.
+        return max(self.CARD_MIN_WIDTH, width - 40)
+
+    def _grid_columns(self, width):
+        return max(1, min(self.MAX_CARD_COLS, width // self.CARD_MIN_WIDTH))
+
+    def _show_advanced(self, win):
+        """Put the finished Advanced Options window on screen, maximised.
+
+        It opens maximised, like the main launcher. This is the window whose
+        whole job is fitting as many module cards on screen at once as it
+        can, and a fixed 1400x900 frame on a 1080p screen threw away a third
+        of the height it could have used -- the restore geometry is only what
+        it returns to. Maximising also maps the window on Windows; where it
+        is not supported (X11) the window is simply shown.
+        """
+        try:
+            win.state('zoomed')
+        except tk.TclError:
+            pass
+        try:
+            win.deiconify()
+            win.lift()
+            win.focus_force()
+        except tk.TclError:
+            pass
 
     def _close_advanced(self):
         """Tear down the Advanced window and un-register its status strip.
@@ -4177,6 +4230,8 @@ class PICALauncherV2:
         spawn failure, so this reports to the console and gives up rather than
         raising a dialog the way the menu command does.
         """
+        if self._adv_win is None:
+            return      # Advanced Options was closed before it was due
         if not PYVISA_AVAILABLE:
             self.log("VISA/GPIB scanner not auto-opened: pyvisa is not "
                      "installed.")

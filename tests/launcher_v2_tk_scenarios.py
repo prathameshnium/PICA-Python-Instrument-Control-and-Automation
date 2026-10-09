@@ -786,3 +786,75 @@ def test_the_panel_fits_a_narrow_window(app):
     panel = app._search_win
     assert panel.winfo_x() >= 0
     assert panel.winfo_x() + panel.winfo_width() <= app.root.winfo_width()
+
+
+# ------------------------------------------------- Advanced Options opening
+def test_advanced_builds_its_grid_once_while_hidden(app):
+    """Opening Advanced Options lays the cards out once, before it is shown.
+
+    It used to be shown first and filled in on screen card by card, then laid
+    out a second time when the maximise arrived -- slow, and it flickered.
+    """
+    builds = []
+    real = V2._render_cards_inner
+
+    def counting(self):
+        builds.append(bool(self._adv_win.winfo_ismapped()))
+        real(self)
+    app._render_cards_inner = counting.__get__(app)
+    win = _open_advanced(app)
+    _pump(app.root, 200)
+    assert builds == [False], builds        # one build, window still hidden
+    assert win.winfo_ismapped()             # and then it is shown
+    assert len(_rows(win)) == sum(len(c["modules"]) for c in launcher.CATALOG)
+
+
+def test_advanced_opened_maximised_is_still_built_once(app):
+    """Where the window opens maximised (Windows), the grid is laid out for
+    the maximised width up front, so the maximise does not rebuild it."""
+    import tkinter as tk
+    width = app.root.winfo_screenwidth()
+    builds = []
+    real = V2._render_cards_inner
+    app._render_cards_inner = (lambda self: (builds.append(1), real(self))[1]).__get__(app)
+    original_platform = launcher.sys.platform
+    original_state = tk.Toplevel.state
+
+    def maximise(self, newstate=None):
+        if newstate == "zoomed":
+            self.geometry(f"{width}x800+0+0")
+            return None
+        return original_state(self, newstate)
+    launcher.sys.platform = "win32"
+    tk.Toplevel.state = maximise
+    try:
+        _open_advanced(app)
+        _pump(app.root, 300)
+    finally:
+        launcher.sys.platform = original_platform
+        tk.Toplevel.state = original_state
+    assert builds == [1], builds
+
+
+def test_reopening_advanced_reuses_the_scaled_logo(app):
+    win = _open_advanced(app)
+    first = app._adv_logo_image
+    _close_by_title_bar(win)
+    _pump(app.root, 30)
+    _open_advanced(app)
+    if first is not None:                   # PIL and the logo are available
+        assert app._adv_logo_image is first
+
+
+def test_the_scanner_is_not_started_for_a_closed_advanced_window(app):
+    started = []
+    win = _open_advanced(app)
+    _close_by_title_bar(win)
+    _pump(app.root, 30)
+    launcher_scanner = launcher.launch_gpib_scanner
+    launcher.launch_gpib_scanner = lambda: started.append(1)
+    try:
+        V2._auto_launch_gpib_scanner(app)   # the timer firing late
+    finally:
+        launcher.launch_gpib_scanner = launcher_scanner
+    assert started == []

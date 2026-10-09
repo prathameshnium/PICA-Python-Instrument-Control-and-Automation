@@ -176,3 +176,20 @@ def test_the_scenarios_file_is_not_collected_by_a_plain_run():
     """It must only ever run through the fresh-interpreter test above."""
     assert not os.path.basename(SCENARIOS).startswith("test_")
     assert os.path.exists(SCENARIOS)
+
+
+def test_the_card_grid_never_forces_a_redraw_per_card():
+    """The masonry pass counts rows; it must not run a geometry pass (and so
+    paint) after every card, which made Advanced Options draw itself on
+    screen one card at a time."""
+    import inspect
+    source = inspect.getsource(V2._render_cards_inner)
+    assert "update_idletasks" not in source
+    assert "update()" not in source
+
+
+def test_advanced_options_is_built_hidden_and_shown_once():
+    import inspect
+    source = inspect.getsource(V2.open_advanced)
+    assert source.index("win.withdraw()") < source.index("self._build_browse(win)")
+    assert source.index("self._build_browse(win)") < source.index("self._show_advanced(win)")

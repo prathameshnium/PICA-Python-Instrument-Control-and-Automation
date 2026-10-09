@@ -162,10 +162,10 @@ PICA is structured as a standard Python package. The steps below are for Windows
 
 | Check | Ubuntu 24.04, Python 3.10 (CI, every push) | Ubuntu 26.04, Python 3.14 (manual) |
 |---|---|---|
-| `pip install` | ✅ | ✅ |
-| Test suite (mocked instruments) | ✅ | ✅ |
-| All 100 programs in the launcher, plus both launchers, open | ✅ real Tk windows under xvfb (`tests/test_gui_windows_open_for_real.py`) | ✅ |
-| Measurement against real instruments | ❌ not yet verified | ❌ not yet verified |
+| `pip install` | Yes | Yes |
+| Test suite (mocked instruments) | Yes | Yes |
+| All 100 programs in the launcher, plus both launchers, open | Yes, real Tk windows under xvfb (`tests/test_gui_windows_open_for_real.py`) | Yes |
+| Measurement against real instruments | No, not yet verified | No, not yet verified |
 
 **1. Install the system packages.** Tkinter and the emoji font are usually not part of a minimal install. Without the font, the icons on buttons show as empty boxes.
 
@@ -236,7 +236,7 @@ pica-gui
     pica-gui
     ```
 
-    The PICA Launcher provides a centralized dashboard for all measurement suites. While each module can be launched directly from its card, the launcher also provides a quick way to access the underlying scripts for editing. For developer convenience, each measurement suite card includes a folder icon (📁) in the top-right corner. Clicking this provides a shortcut to the module's Python scripts, allowing for rapid modifications.
+    The PICA Launcher provides a centralized dashboard for all measurement suites. While each module can be launched directly from its card, the launcher also provides a quick way to access the underlying scripts for editing. For developer convenience, each measurement suite card includes a folder button in the top-right corner. Clicking this provides a shortcut to the module's Python scripts, allowing for rapid modifications.
 
     > You can also run any of the individual GUI measurement modules independently. This is useful for quickly accessing a specific measurement without opening the main launcher. To do this, simply run the Python script for the desired module.
     > For example:
@@ -404,7 +404,7 @@ scroll; its bottom strip is the compact one, with the Instrument Status button
 in place of the chips.
 
 **Hover cards (Advanced Options).** Rest the pointer on any module row for
-about two seconds and a card opens beside it. It is headed by the program's
+about a second and a card opens beside it. It is headed by the program's
 full name, instruments first (*Keithley 2400 + 2182 — R vs. T (T Control,
 L350)*), and has four lines: what the program
 *measures* (the quantity, and whether the module drives the temperature or
