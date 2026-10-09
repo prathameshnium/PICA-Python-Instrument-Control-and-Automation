@@ -31,6 +31,18 @@ tu = _load()
 # =============================================================================
 #  The log line (no Tk)
 # =============================================================================
+@pytest.mark.parametrize("seconds, expected", [
+    (0, "00:00:00"),
+    (300.0, "00:05:00"),
+    (299.99, "00:05:00"),               # the last second has not gone yet
+    (299.0, "00:04:59"),
+    (0.4, "00:00:01"),                  # never zero before it is zero
+    (-0.2, "00:00:00"),
+])
+def test_time_left_rounds_up_to_the_whole_second(seconds, expected):
+    assert tu.format_time_left(seconds) == expected
+
+
 @pytest.mark.parametrize("seconds, hundredths, expected", [
     (0, False, "00:00:00"),
     (59.4, False, "00:00:59"),
@@ -140,6 +152,16 @@ def _events(app):
     return [line[21:] for line in app.log_lines]       # without the time stamp
 
 
+# ------------------------------------------------------------- clock
+def test_the_clock_starts_in_12_hour_format(app):
+    assert app.is_12_hour.get() is True
+    app.update_clock_display()
+    assert app.lbl_clock.cget("text")[-2:] in ("AM", "PM")
+    app.is_12_hour.set(False)
+    app.update_clock_display()
+    assert app.lbl_clock.cget("text")[-2:] not in ("AM", "PM")
+
+
 # ------------------------------------------------------------- buttons
 def test_start_is_green_and_turns_into_a_red_stop(app):
     assert _style(app.btn_sw_start) == "Start.TButton"
@@ -224,11 +246,37 @@ def test_timer_start_pause_resume_reset_are_logged(app):
     app.tm_reset()
     events = _events(app)[1:]
     assert events[0] == "TIMER      Started for 00:05:00  |  settle"
-    assert events[1].startswith("TIMER      Paused with 00:04:5")
-    assert events[2].startswith("TIMER      Resumed with 00:04:5")
-    assert events[3].startswith("TIMER      Reset with")
+    # Time left is rounded up, as the display shows it, so a pause straight
+    # after the start reads 00:05:00 on every machine. (Rounded down it was
+    # 00:04:59 on Linux and 00:05:00 on Windows, whose clock is coarser.)
+    assert events[1] == "TIMER      Paused with 00:05:00 left  |  settle"
+    assert events[2] == "TIMER      Resumed with 00:05:00 left  |  settle"
+    assert events[3].startswith("TIMER      Reset with 00:0")
+    assert events[3].endswith("left  |  settle")
     assert app.btn_tm_start.cget("text") == "Start"
     assert str(app.entry_h.cget("state")) == "normal"
+
+
+def test_the_log_and_the_display_agree_on_time_left(app):
+    _set_timer(app, m=5)
+    app.tm_toggle()
+    app.tm_toggle()                      # pause at once
+    shown = app.lbl_timer.cget("text")
+    assert _events(app)[-1].startswith(f"TIMER      Paused with {shown} left")
+
+
+@pytest.mark.parametrize("elapsed", [0.0, 0.004, 0.016, 0.9])
+def test_a_pause_logs_the_same_on_every_clock(app, monkeypatch, elapsed):
+    """Windows' clock may see no time pass between Start and Pause; Linux
+    sees a few milliseconds. Both must log the time left the display shows."""
+    now = [1000.0]
+    monkeypatch.setattr(tu.time, "monotonic", lambda: now[0])
+    _set_timer(app, m=5)
+    app.tm_toggle()
+    now[0] += elapsed
+    app.tm_toggle()
+    assert _events(app)[-1] == "TIMER      Paused with 00:05:00 left"
+    assert app.lbl_timer.cget("text") == "00:05:00"
 
 
 def test_the_timer_finish_is_logged_and_beeps(app):
@@ -275,6 +323,20 @@ def test_a_general_note_is_logged_and_the_box_cleared(app):
     app.log_general_note()
     assert _events(app)[-1] == "NOTE       Note  |  Sample A mounted"
     assert app.entry_log_note.get() == ""
+
+
+def test_a_fresh_window_has_nothing_to_save(app):
+    assert app._unsaved_count() == 0
+    assert app.lbl_log_status.cget("text") == "Nothing to save yet"
+
+
+def test_the_status_counts_unsaved_entries(app):
+    app.entry_log_note.insert(0, "one")
+    app.log_general_note()
+    assert app.lbl_log_status.cget("text") == "1 unsaved entry"
+    app.entry_log_note.insert(0, "two")
+    app.log_general_note()
+    assert app.lbl_log_status.cget("text") == "2 unsaved entries"
 
 
 def test_the_log_is_shown_in_the_console(app):
