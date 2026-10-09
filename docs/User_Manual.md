@@ -384,7 +384,9 @@ three levels — what the measurement is, what range it covers, what the
 protocol does — are on screen at once before anything is launched. The
 descriptions name every instrument in full ("Keithley 2400", not "K2400"),
 since this screen is the one place in PICA that assumes no prior familiarity
-with the rack.
+with the rack. The protocol block ends with a *You enter* line listing the
+fields that program's form will ask for — the same line the hover card and
+the search box show, from the same entry in `pica/module_info.py`.
 
 The **Cryo-con 34** appears in Quick Select under the LCR meter and the
 electrometer only — the two benches it serves — where its protocols sit next
@@ -400,6 +402,31 @@ which Quick Select does not list. The window opens maximised and reflows its
 cards into up to four columns, so a wide screen shows more of them before you
 scroll; its bottom strip is the compact one, with the Instrument Status button
 in place of the chips.
+
+**Hover cards (Advanced Options).** Rest the pointer on any module row for a
+moment and a card opens beside it with four lines: what the program
+*measures* (the quantity, and whether the module drives the temperature or
+only reads it), the *instruments* it opens, written out in full, what *you
+enter* on its form (sample name, start and end temperature, ramp rate, source
+current, compliance, VISA addresses and so on), and the *script* it runs. A
+note is added where one warning matters before launch — experimental, writes
+no data file, needs a reference cable. Move the pointer away and the card
+closes; click the row to launch. The text is kept in `pica/module_info.py`,
+one entry per launchable program, so a new module is described by adding one
+entry there.
+
+**Search (`Ctrl+F`, or the box on the toolbar).** Both windows carry a search
+box next to the toolbar icons. Type a few letters and a list opens under it,
+best match first, with the hover card of the highlighted result beside the
+list; `↑` `↓` move through the list, `Enter` launches, `Esc` closes. The search
+is fuzzy and looks at everything: module names, categories, instrument names,
+the Quick Select descriptions and the fields each program asks for. So
+`k2400 rt` finds the Keithley 2400 R vs. T modules, `butterfly` finds C-V,
+`cc34` or `cryocon` the Cryo-con editions, `safety cutoff` every module with
+that field, and a misspelt `resistence` still finds the resistance modules.
+The rack's shorthand is understood (`lcr`, `iv`, `rt`, `l340`, `lockin`,
+`passive`), and the PICA Utils — plotters, scanners, SCPI console,
+calculators — are in the list as well.
 
 **Console.** Everything the launcher does is logged, whether or not anything
 is showing it. Quick Select keeps it behind the **Console** button on the
@@ -1007,7 +1034,10 @@ For developers and advanced users, the following reference outlines the PICA dir
 Adding a new module to the main launcher into the GUI requires modifying `pica/main.py`.
 For launcher v2, add the same module to `CATALOG` in `pica/main_v2.py` so it
 appears in Advanced Options, and to `QUICK_CATALOG` in the same file if it also
-belongs on the Quick Select screen.
+belongs on the Quick Select screen. Then describe it in `pica/module_info.py`
+(three lines: what it measures, which instruments it opens, what it asks for)
+— that one entry feeds the hover card, the search box and the "You enter"
+line on Quick Select, and a test fails if a catalogue row has no entry.
 :::
 
 ```text
@@ -1061,6 +1091,7 @@ PICA (Root Directory)/
         cli.py
         main.py                 <-- Legacy launcher (superseded by main_v2.py)
         main_v2.py
+        module_info.py          <-- Per-program descriptions + fuzzy search (hover cards, search box)
         assets/                 <-- Images, logos, icons
         PPMS/                   <-- PPMS helper utilities
             PPMS_Plotter_GUI.py

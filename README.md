@@ -62,7 +62,7 @@ The suite performs automated protocols including:
 <p align="center">
   <img src="pica/assets/Images/screenshots/00b_PICA_Launcher_Advanced.png" alt="PICA Launcher Advanced Options — full catalogue of measurement modules grouped by resistance range and instrument" width="800">
   <br>
-  <em>Advanced Options (Ctrl+Shift+A): every module PICA ships, grouped by measurement range and instrument, for when you already know which program you want.</em>
+  <em>Advanced Options (Ctrl+Shift+A): every module PICA ships, grouped by measurement range and instrument, for when you already know which program you want. Hovering a row opens a card describing the measurement, its instruments and its inputs; the toolbar search box (Ctrl+F) finds any module by a few letters.</em>
 </p>
 
 > **More details here:**
@@ -392,7 +392,12 @@ pica-gui
     temperature utilities, the Novocontrol Alpha-AN and the bench multimeter.
     It opens maximised, has the same File / Tools / View / Help menus as the
     main window, a folder shortcut on every card to the module's source, and an
-    inline console.
+    inline console. Rest the pointer on any module row and a card says what
+    the program measures, which instruments it opens and what it will ask
+    for. Both windows also carry a **search box** (`Ctrl+F`): a fuzzy search
+    over module names, instruments, descriptions and input fields — `k2400
+    rt`, `butterfly`, `cc34`, even a misspelt `resistence` — with Enter
+    launching the highlighted result.
 
 3.  **Command Line Interface (CLI)**
     For headless operation (e.g., Raspberry Pi).

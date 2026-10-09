@@ -33,6 +33,17 @@
                Serial (ASRL) resources are never probed at all -- see
                PROBE_RESOURCE_PREFIXES.
 
+ FINDING A MODULE:
+               Both windows carry a search box on their toolbar (Ctrl+F).
+               It is a fuzzy search over the module names, the categories,
+               the instruments, the plain-language descriptions and the
+               input fields, so "k2400 rt", "butterfly" or a misspelt
+               "resistence" all land on the right program; Enter launches
+               the highlighted result. In Advanced Options, resting the
+               pointer on a module row for a moment opens a card that says
+               what the program measures, which instruments it talks to and
+               which fields it will ask for (pica/module_info.py).
+
  AUTHOR:       Prathamesh Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
  INSTITUTE:    UGC-DAE Consortium for Scientific Research, Mumbai Centre
@@ -69,6 +80,15 @@ from pica.main import (
     launch_gpib_scanner,
     launch_plotter_utility,
     PICALauncherApp,
+)
+# What each program measures, which instruments it opens and what it asks
+# for -- the text behind the hover card in Advanced Options and the corpus
+# the toolbar search box ranks. Tk-free, so it is tested on its own.
+from pica.module_info import (
+    UTILITY_TOOLS,
+    module_info,
+    build_search_index,
+    search_modules,
 )
 
 try:
@@ -1525,6 +1545,14 @@ class PICALauncherV2:
     # columns to four takes a column from four cards deep to three.
     MAX_CARD_COLS = 4
     CARD_MIN_WIDTH = 380
+    # Hover card in Advanced Options: how long the pointer rests on a module
+    # row before the card opens (a pass across the grid must not throw up a
+    # card per row), and how wide its text wraps. The search results panel
+    # reuses the same card at the same width.
+    HOVER_DELAY_MS = 600
+    INFO_WRAP = 430
+    SEARCH_ROWS = 10            # visible rows in the search results list
+    SEARCH_LIMIT = 24           # results kept per query
     MANUAL_FILE = resource_path("docs/User_Manual.md")
     README_FILE = resource_path("README.md")
     CHANGELOG_FILE = resource_path("CHANGELOG.md")
@@ -1574,6 +1602,20 @@ class PICALauncherV2:
         self._live_chips = set()
         self._blink_on = True
         self.launched_processes = []
+        # Toolbar search: one index for every search box (the main window's
+        # and Advanced Options'), the popup currently showing results, and
+        # the entries so Ctrl+F can focus the one in the active window.
+        self._search_index = build_search_index(
+            CATALOG, QUICK_CATALOG, self.SCRIPT_PATHS, UTILITY_TOOLS)
+        self._search_boxes = []
+        self._search_win = None         # the results panel on screen, if any
+        self._search_list = None
+        self._search_card = None
+        self._search_results = []
+        self._search_owner = None       # the search box that panel belongs to
+        # The one hover card that may be open, and its pending timer.
+        self._hover_win = None
+        self._hover_after = None
         # Addresses this session has learned must not be probed again. Seeded
         # from the persistent file so a Novocontrol identified on a previous
         # run is skipped from the very first scan of this one.
@@ -1644,17 +1686,22 @@ class PICALauncherV2:
         style.configure('InfoBold.TLabel', background=self.CLR_PANEL, foreground=self.CLR_TEXT,
                         font=self.FONT_INFO_BOLD)
 
+        # The focus ring is hidden by drawing it in the button's own fill.
+        # It was focuscolor='none', which is not a colour: Tk raised a
+        # background error ('unknown color name "none"') every time a
+        # focused button was redrawn.
+
         # Primary launch button (accent fill)
         style.configure('Launch.TButton', font=('Segoe UI', self.FONT_SIZE_BASE, 'bold'),
                         foreground=self.CLR_TEXT_LIGHT, background=self.CLR_ACCENT,
-                        borderwidth=0, focusthickness=0, focuscolor='none', padding=(12, 8))
+                        borderwidth=0, focusthickness=0, focuscolor=self.CLR_ACCENT, padding=(12, 8))
         style.map('Launch.TButton', background=[('active', self.CLR_HOVER),
                                                 ('disabled', self.CLR_BORDER_STRONG)])
 
         # Module row button (flat, left-aligned; maroon hover like v1)
         style.configure('Mod.TButton', font=self.FONT_MOD, anchor='w',
                         foreground=self.CLR_TEXT, background=self.CLR_PANEL,
-                        borderwidth=0, focusthickness=0, focuscolor='none', padding=(8, 6))
+                        borderwidth=0, focusthickness=0, focuscolor=self.CLR_PANEL, padding=(8, 6))
         style.map('Mod.TButton', background=[('active', self.CLR_HOVER)],
                   foreground=[('active', self.CLR_TEXT_LIGHT)])
 
@@ -1667,7 +1714,7 @@ class PICALauncherV2:
         # Icon button for the top-right toolbar (v1 'Icon.TButton')
         style.configure('Icon.TButton', font=('Segoe UI', self.FONT_SIZE_BASE),
                         foreground=self.CLR_TEXT, background=self.CLR_PANEL,
-                        borderwidth=0, focusthickness=0, focuscolor='none',
+                        borderwidth=0, focusthickness=0, focuscolor=self.CLR_PANEL,
                         padding=(4, 2))
         style.map('Icon.TButton', background=[('active', self.CLR_ACCENT_SOFT)])
 
@@ -1752,6 +1799,9 @@ class PICALauncherV2:
             # an upper-case keysym, so the binding is on "A", not "a".
             self.root.bind_all("<Control-Shift-KeyPress-A>",
                                lambda _e: self.open_advanced())
+            # Ctrl+F: the search box of whichever window is in front.
+            self.root.bind_all("<Control-f>", self._focus_search)
+            self.root.bind_all("<Control-F>", self._focus_search)
 
         tools_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
         # Advanced Options sits at the top of Tools: it is the one entry an
@@ -2247,6 +2297,545 @@ class PICALauncherV2:
         gpib_button.pack(side='right', padx=(0, 2))
         self._add_tooltip(gpib_button, "VISA/GPIB Scanner")
 
+        # Search box, left of the icons. Quick Select asks three questions;
+        # someone who already knows the answer types it here instead.
+        self._build_search_box(toolbar).pack(side='right', padx=(0, 10))
+
+    # ------------------------------------------------------------ search box
+    # One fuzzy search over everything the launcher can start. The box sits
+    # on the toolbar of both windows. Typing opens a results panel under it:
+    # the matches on the left and, for the highlighted match, the same card
+    # the hover in Advanced Options shows. Enter launches, Escape closes.
+    #
+    # The panel is a frame PLACED over the window that owns the box, not a
+    # window of its own. A borderless popup window on Windows takes the
+    # keyboard focus when it appears, so letters typed after the first one
+    # were lost and the popup flickered as it was rebuilt on every key. An
+    # overlay inside the same window cannot take the focus, is built once per
+    # box and updated in place, and goes away with its window.
+    #
+    # Every timer here is scheduled AND cancelled on self.root, which lives as
+    # long as the launcher. Cancelling a timer through a different widget
+    # than the one that scheduled it leaves a dead Tcl command registered on
+    # the scheduling widget, and destroying that widget then raises -- which
+    # is what left the Advanced Options window half torn down and impossible
+    # to close.
+    #
+    # The ranking lives in pica/module_info.py (search_modules) and has no Tk
+    # in it, so it is tested on its own.
+    SEARCH_PLACEHOLDER = "Search modules…   Ctrl+F"
+    SEARCH_DEBOUNCE_MS = 150    # pause in typing before the list refreshes
+    _SEARCH_IGNORED_KEYS = ("Up", "Down", "Return", "KP_Enter", "Escape", "Tab",
+                            "Shift_L", "Shift_R", "Control_L", "Control_R",
+                            "Alt_L", "Alt_R", "Caps_Lock")
+
+    def _build_search_box(self, parent, width=30):
+        """A search entry with a placeholder; returns its frame."""
+        box = tk.Frame(parent, bg=self.CLR_PANEL2, highlightthickness=1,
+                       highlightbackground=self.CLR_BORDER)
+        tk.Label(box, text="🔍", bg=self.CLR_PANEL2, fg=self.CLR_TEXT_DIM,
+                 font=self.FONT_SMALL).pack(side='left', padx=(6, 2))
+        var = tk.StringVar()
+        entry = tk.Entry(box, textvariable=var, width=width, relief='flat',
+                         bg=self.CLR_PANEL2, fg=self.CLR_TEXT_FAINT,
+                         insertbackground=self.CLR_TEXT, font=self.FONT_SMALL,
+                         highlightthickness=0)
+        entry.pack(side='left', ipady=4, padx=(0, 6))
+        entry._search_var = var
+        entry._placeholder_on = True
+        entry._search_after = None      # pending debounced search
+        entry._search_shown = None      # query the open panel is showing
+        entry._search_panel = None      # overlay, built on first use
+        var.set(self.SEARCH_PLACEHOLDER)
+
+        entry.bind("<FocusIn>", lambda _e: self._search_focus_in(entry))
+        entry.bind("<FocusOut>", lambda _e: self._search_focus_out(entry))
+        entry.bind("<KeyRelease>", lambda e: self._search_typed(entry, e))
+        entry.bind("<Down>", lambda _e: self._search_move(entry, +1))
+        entry.bind("<Up>", lambda _e: self._search_move(entry, -1))
+        entry.bind("<Return>", lambda _e: self._search_return(entry))
+        entry.bind("<KP_Enter>", lambda _e: self._search_return(entry))
+        entry.bind("<Escape>", lambda _e: self._search_escape(entry))
+        entry.bind("<Destroy>", lambda _e: self._search_box_destroyed(entry),
+                   add='+')
+        # A click anywhere else in the same window closes the panel. Every
+        # child widget carries its toplevel in its bindtags, so one binding
+        # on the toplevel sees every click in that window. A resize moves
+        # the box, so the open panel follows it.
+        top = entry.winfo_toplevel()
+        top.bind("<Button-1>",
+                 lambda e: self._search_click_elsewhere(entry, e), add='+')
+        top.bind("<Configure>",
+                 lambda e: self._search_toplevel_moved(entry, e), add='+')
+        self._search_boxes.append(entry)
+        return box
+
+    def _search_focus_in(self, entry):
+        if entry._placeholder_on:
+            entry._placeholder_on = False
+            entry._search_var.set("")
+            entry.config(fg=self.CLR_TEXT)
+
+    def _search_focus_out(self, entry):
+        try:
+            if not entry._search_var.get().strip():
+                entry._placeholder_on = True
+                entry._search_var.set(self.SEARCH_PLACEHOLDER)
+                entry.config(fg=self.CLR_TEXT_FAINT)
+        except tk.TclError:
+            return      # the box is being destroyed with its window
+        # Tab, or a click on another field of this window, moves the focus
+        # on: close the panel. The focus leaving the application (another
+        # program in front) is no reason to close it.
+        self.root.after_idle(lambda: self._search_close_if_focus_left(entry))
+
+    def _search_close_if_focus_left(self, entry):
+        if self._search_owner is not entry:
+            return
+        try:
+            focused = entry.focus_get()
+        except (tk.TclError, KeyError):
+            return
+        if focused is None or focused is entry:
+            return
+        if self._widget_inside(focused, self._search_win):
+            return
+        self._close_search()
+
+    @staticmethod
+    def _widget_inside(widget, container):
+        if widget is None or container is None:
+            return False
+        try:
+            path, root = str(widget), str(container)
+        except tk.TclError:
+            return False
+        return path == root or path.startswith(root + ".")
+
+    def _search_click_elsewhere(self, entry, event):
+        if self._search_owner is not entry:
+            return
+        if event.widget is entry:
+            return
+        if self._widget_inside(event.widget, self._search_win):
+            return
+        self._close_search()
+
+    def _search_toplevel_moved(self, entry, event):
+        if event.widget is not event.widget.winfo_toplevel():
+            return      # a child's <Configure>, not the window's own
+        if self._search_owner is entry and self._search_win is not None:
+            self._place_search_panel(entry)
+
+    def _search_box_destroyed(self, entry):
+        self._cancel_search_timer(entry)
+        if self._search_owner is entry:
+            self._close_search()
+
+    def _search_escape(self, entry):
+        if self._search_win is not None:
+            self._close_search()
+        else:
+            entry._search_var.set("")
+            entry.winfo_toplevel().focus_set()
+        return "break"
+
+    def _focus_search(self, event=None):
+        """Ctrl+F: focus the search box of the window the key came from."""
+        top = None
+        try:
+            if event is not None and hasattr(event.widget, 'winfo_toplevel'):
+                top = event.widget.winfo_toplevel()
+        except tk.TclError:
+            top = None
+        candidates = [e for e in self._search_boxes if self._alive(e)]
+        for entry in candidates:
+            if top is None or entry.winfo_toplevel() is top:
+                entry.focus_set()
+                entry.select_range(0, 'end')
+                return "break"
+        if candidates:
+            candidates[0].focus_set()
+        return "break"
+
+    @staticmethod
+    def _alive(widget):
+        try:
+            return bool(widget.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def _cancel_search_timer(self, entry):
+        pending = getattr(entry, '_search_after', None)
+        entry._search_after = None
+        if pending is not None:
+            try:
+                self.root.after_cancel(pending)
+            except (tk.TclError, ValueError):
+                pass
+
+    def _search_typed(self, entry, event):
+        if event.keysym in self._SEARCH_IGNORED_KEYS:
+            return
+        # Debounced: the list is refreshed once the typing pauses, not on
+        # every key, so a fast typist is never waiting on the ranking.
+        self._cancel_search_timer(entry)
+        entry._search_after = self.root.after(
+            self.SEARCH_DEBOUNCE_MS, lambda: self._search_timer_fired(entry))
+
+    def _search_timer_fired(self, entry):
+        entry._search_after = None
+        if self._alive(entry):
+            self.run_search(entry)
+
+    def _search_query(self, entry):
+        return "" if entry._placeholder_on else entry._search_var.get()
+
+    def run_search(self, entry):
+        """Rank the index against the entry's text and show the results."""
+        self._cancel_search_timer(entry)
+        query = self._search_query(entry)
+        if not query.strip():
+            self._close_search()
+            return []
+        results = search_modules(self._search_index, query,
+                                 limit=self.SEARCH_LIMIT)
+        self._show_search_results(entry, results)
+        entry._search_shown = query
+        return results
+
+    def _search_panel_for(self, entry):
+        """The overlay results panel for this box, built once."""
+        panel = entry._search_panel
+        if panel is not None and self._alive(panel['frame']):
+            return panel
+        top = entry.winfo_toplevel()
+        frame = tk.Frame(top, bg=self.CLR_PANEL, highlightthickness=1,
+                         highlightbackground=self.CLR_BORDER_STRONG)
+
+        empty = tk.Label(frame, text="No module matches that. Try an "
+                                     "instrument (2400, lakeshore, lcr), a "
+                                     "quantity (resistance, dielectric, pyro) "
+                                     "or a protocol (rt, iv, sensing).",
+                         bg=self.CLR_PANEL, fg=self.CLR_TEXT_DIM,
+                         font=self.FONT_SMALL, wraplength=380, justify='left',
+                         padx=12, pady=10)
+
+        body = tk.Frame(frame, bg=self.CLR_PANEL)
+        left = tk.Frame(body, bg=self.CLR_PANEL)
+        left.pack(side='left', fill='y', padx=(4, 0), pady=4)
+        listbox = tk.Listbox(left, height=self.SEARCH_ROWS, width=60,
+                             font=self.FONT_MOD, bd=0, highlightthickness=0,
+                             activestyle='none', takefocus=0,
+                             bg=self.CLR_PANEL, fg=self.CLR_TEXT,
+                             selectbackground=self.CLR_ACCENT,
+                             selectforeground=self.CLR_TEXT_LIGHT,
+                             exportselection=False)
+        scroll = ttk.Scrollbar(left, orient='vertical', command=listbox.yview)
+        listbox.configure(yscrollcommand=scroll.set)
+        listbox.pack(side='left', fill='y')
+        scroll.pack(side='left', fill='y')
+
+        # A click picks the row without taking the keyboard focus from the
+        # entry, so Up / Down / Enter keep working after a click.
+        def pick(event):
+            if not self._search_results:
+                return "break"
+            i = listbox.nearest(event.y)
+            self._search_select(i)
+            return "break"
+        listbox.bind("<Button-1>", pick)
+        listbox.bind("<Double-Button-1>", lambda _e: self._search_launch())
+
+        tk.Frame(body, bg=self.CLR_BORDER, width=1).pack(side='left', fill='y',
+                                                         pady=4)
+        card = tk.Frame(body, bg=self.CLR_PANEL2, padx=12, pady=10)
+        card.pack(side='left', fill='both', expand=True)
+
+        hint = tk.Label(frame, text="Up / Down choose   ·   Enter launches   ·   "
+                                    "double-click launches   ·   Esc closes",
+                        bg=self.CLR_PANEL, fg=self.CLR_TEXT_FAINT,
+                        font=self.FONT_STRIP, anchor='w')
+        panel = {'frame': frame, 'empty': empty, 'body': body, 'hint': hint,
+                 'list': listbox, 'card': card}
+        entry._search_panel = panel
+        return panel
+
+    def _show_search_results(self, entry, results):
+        if self._search_owner is not None and self._search_owner is not entry:
+            self._close_search()
+        panel = self._search_panel_for(entry)
+        self._search_results = results
+        self._search_owner = entry
+        self._search_win = panel['frame']
+        self._search_list = panel['list']
+        self._search_card = panel['card']
+
+        for part in ('empty', 'body', 'hint'):
+            panel[part].pack_forget()
+        if not results:
+            panel['empty'].pack(fill='x')
+        else:
+            listbox = panel['list']
+            listbox.delete(0, 'end')
+            for rec in results:
+                listbox.insert('end', f" {rec['label']}  —  {rec['category']}")
+            listbox.configure(height=min(self.SEARCH_ROWS, len(results)))
+            panel['body'].pack(fill='both', expand=True)
+            panel['hint'].pack(fill='x', padx=8, pady=(0, 4))
+            self._search_select(0)
+        self._place_search_panel(entry)
+
+    def _place_search_panel(self, entry):
+        """Hang the panel under the box, right edges aligned, inside the window."""
+        frame = self._search_win
+        if frame is None:
+            return
+        top = entry.winfo_toplevel()
+        box = entry.master
+        top.update_idletasks()
+        right = box.winfo_rootx() + box.winfo_width() - top.winfo_rootx()
+        y = box.winfo_rooty() + box.winfo_height() - top.winfo_rooty() + 4
+        width = frame.winfo_reqwidth()
+        # Keep the left edge inside the window on a narrow screen.
+        x = max(right, width + 4)
+        frame.place(x=x, y=y, anchor='ne')
+        frame.lift()
+
+    def _search_select(self, index):
+        lb = self._search_list
+        if lb is None or not self._search_results:
+            return
+        index = max(0, min(len(self._search_results) - 1, index))
+        lb.selection_clear(0, 'end')
+        lb.selection_set(index)
+        lb.activate(index)
+        lb.see(index)
+        self._search_refresh_card()
+
+    def _search_selected(self):
+        lb = self._search_list
+        if lb is None or self._search_win is None or not self._search_results:
+            return None
+        try:
+            sel = lb.curselection()
+        except tk.TclError:
+            return None
+        if not sel:
+            return None
+        return self._search_results[int(sel[0])]
+
+    def _search_refresh_card(self):
+        rec = self._search_selected()
+        card = self._search_card
+        if rec is None or card is None:
+            return
+        for w in card.winfo_children():
+            w.destroy()
+        self._fill_module_info(card, rec['key'], rec['label'],
+                               rec['category'], rec['family'],
+                               experimental=rec.get('experimental'))
+        # The card's height changes with the text; keep the panel in place.
+        if self._search_owner is not None:
+            self._place_search_panel(self._search_owner)
+
+    def _search_move(self, entry, delta):
+        if self._search_win is None or self._search_owner is not entry:
+            self.run_search(entry)
+            return "break"
+        lb = self._search_list
+        if lb is None or not self._search_results:
+            return "break"
+        sel = lb.curselection()
+        cur = int(sel[0]) if sel else -1
+        self._search_select(cur + delta)
+        return "break"
+
+    def _search_return(self, entry):
+        """Enter: show the results for what was typed, or launch the pick.
+
+        If the list on screen is not for the text in the box (Enter came
+        before the typing pause), the first Enter only refreshes the list --
+        nothing is launched that the user has not seen highlighted.
+        """
+        query = self._search_query(entry)
+        if (self._search_win is None or self._search_owner is not entry
+                or entry._search_shown != query):
+            self.run_search(entry)
+            return "break"
+        return self._search_launch()
+
+    def _search_launch(self):
+        rec = self._search_selected()
+        if rec is None:
+            return "break"
+        owner = self._search_owner
+        self._close_search()
+        self.log(f"Search: launching '{rec['label']}' ({rec['key']}).")
+        self.launch_script(rec['key'])
+        self._refresh_strips()
+        if owner is not None and self._alive(owner):
+            owner.winfo_toplevel().focus_set()
+        return "break"
+
+    def _close_search(self):
+        frame = self._search_win
+        owner = self._search_owner
+        self._search_win = None
+        self._search_list = None
+        self._search_card = None
+        self._search_results = []
+        self._search_owner = None
+        if owner is not None:
+            owner._search_shown = None
+        if frame is not None:
+            try:
+                frame.place_forget()
+            except tk.TclError:
+                pass
+
+    # ------------------------------------------------------------ module card
+    # The card: what the program measures, which instruments it opens, what
+    # it will ask for. Shown on hover in Advanced Options and beside the
+    # search results. One renderer for both so they can never disagree.
+    FAMILY_TAGS = {'control': "T CONTROL",
+                   'sensing': "T SENSING",
+                   'master': "MASTER SEQUENCE"}
+
+    def _fill_module_info(self, parent, key, label, category, family=None,
+                          experimental=False, wrap=None):
+        wrap = wrap or self.INFO_WRAP
+        bg = parent.cget('bg')
+        info = module_info(key, QUICK_CATALOG)
+
+        head = tk.Frame(parent, bg=bg)
+        head.pack(fill='x', anchor='w')
+        tk.Label(head, text=label, bg=bg, fg=self.CLR_TEXT,
+                 font=self.FONT_INFO_BOLD, wraplength=wrap - 120,
+                 justify='left', anchor='w').pack(side='left', anchor='w')
+        tag = self.FAMILY_TAGS.get(family)
+        if tag:
+            fg = self.CLR_TEXT_DARK if family == 'sensing' else self.CLR_TEXT_LIGHT
+            colour = {'sensing': self.CLR_FAMILY_SENSING,
+                      'control': self.CLR_FAMILY_CONTROL,
+                      'master': self.CLR_FAMILY_MASTER}[family]
+            tk.Label(head, text=tag, bg=colour, fg=fg, font=self.FONT_LABEL,
+                     padx=5, pady=1).pack(side='left', padx=(8, 0))
+        if experimental:
+            tk.Label(head, text="EXPERIMENTAL", bg=self.CLR_WARN,
+                     fg=self.CLR_TEXT_LIGHT, font=self.FONT_LABEL,
+                     padx=5, pady=1).pack(side='left', padx=(6, 0))
+        tk.Label(parent, text=category, bg=bg, fg=self.CLR_TEXT_DIM,
+                 font=self.FONT_SMALL, wraplength=wrap, justify='left',
+                 anchor='w').pack(fill='x', anchor='w', pady=(0, 8))
+
+        rows = [("MEASURES", info['what']),
+                ("INSTRUMENTS", info['instruments']),
+                ("YOU ENTER", info['inputs'])]
+        if info.get('note'):
+            rows.append(("NOTE", info['note']))
+        script = os.path.basename(self.SCRIPT_PATHS.get(key, "") or "")
+        if script:
+            rows.append(("SCRIPT", script))
+        for caption, text in rows:
+            if not text:
+                continue
+            row = tk.Frame(parent, bg=bg)
+            row.pack(fill='x', anchor='w', pady=(0, 5))
+            tk.Label(row, text=caption, bg=bg, fg=self.CLR_TEXT_FAINT,
+                     font=self.FONT_LABEL, width=12, anchor='nw',
+                     justify='left').pack(side='left', anchor='n')
+            body = tk.Label(row, text=text, bg=bg, fg=self.CLR_TEXT,
+                            font=self.FONT_SMALL, wraplength=wrap - 110,
+                            justify='left', anchor='w')
+            body.pack(side='left', anchor='n', fill='x')
+
+    # ------------------------------------------------------------ hover card
+    def _add_module_hover(self, widget, key, label, category, family=None,
+                          experimental=False):
+        """Open the module card after the pointer rests on `widget`."""
+        def arm(_event):
+            self._cancel_hover()
+            # On self.root, not on the row: see the note at the head of the
+            # search-box section on why a timer is cancelled where it was
+            # scheduled.
+            self._hover_after = self.root.after(
+                self.HOVER_DELAY_MS,
+                lambda: self._show_hover(widget, key, label, category,
+                                         family, experimental))
+
+        def disarm(_event):
+            self._cancel_hover()
+            self._hide_hover()
+
+        widget.bind("<Enter>", arm, add='+')
+        widget.bind("<Leave>", disarm, add='+')
+        widget.bind("<ButtonPress>", disarm, add='+')
+        widget.bind("<Destroy>", disarm, add='+')
+
+    def _cancel_hover(self):
+        pending = self._hover_after
+        self._hover_after = None
+        if pending is not None:
+            try:
+                self.root.after_cancel(pending)
+            except (tk.TclError, ValueError):
+                pass
+
+    def _show_hover(self, widget, key, label, category, family=None,
+                    experimental=False):
+        self._hover_after = None
+        self._hide_hover()
+        if not self._alive(widget):
+            return
+        try:
+            px, py = widget.winfo_pointerx(), widget.winfo_pointery()
+            top = widget.winfo_toplevel()
+        except tk.TclError:
+            return
+        # Parented to the window, not to the row: the row is destroyed (and
+        # rebuilt) whenever the card grid reflows.
+        win = Toplevel(top)
+        win.wm_overrideredirect(True)
+        card = tk.Frame(win, bg=self.CLR_PANEL2, highlightthickness=1,
+                        highlightbackground=self.CLR_BORDER_STRONG,
+                        padx=12, pady=10)
+        card.pack(fill='both', expand=True)
+        self._fill_module_info(card, key, label, category, family,
+                               experimental=experimental)
+        tk.Label(card, text="Click the row to launch", bg=self.CLR_PANEL2,
+                 fg=self.CLR_TEXT_FAINT, font=self.FONT_STRIP,
+                 anchor='w').pack(fill='x', pady=(4, 0))
+        win.update_idletasks()
+        x, y = self._hover_position(px, py, win.winfo_reqwidth(),
+                                    win.winfo_reqheight(),
+                                    widget.winfo_screenwidth(),
+                                    widget.winfo_screenheight())
+        win.wm_geometry(f"+{x}+{y}")
+        self._hover_win = win
+
+    @staticmethod
+    def _hover_position(px, py, w, h, screen_w, screen_h, gap=16):
+        """Top-left corner for a w x h card beside the pointer at (px, py).
+
+        Right of and below the pointer when it fits, otherwise on the other
+        side -- never pushed back on top of the pointer. A card under the
+        pointer takes the <Leave> from the row, closes, re-arms and opens
+        again: on the right-hand column of a wide grid it flickered.
+        """
+        x = px + gap if px + gap + w <= screen_w else px - gap - w
+        y = py + gap if py + gap + h <= screen_h else py - gap - h
+        return max(0, x), max(0, y)
+
+    def _hide_hover(self):
+        win = self._hover_win
+        self._hover_win = None
+        if win is not None:
+            try:
+                win.destroy()
+            except tk.TclError:
+                pass
+
     def _add_tooltip(self, widget, text):
         """Hover tooltip, same behaviour as the v1 launcher's."""
         tip = {'win': None}
@@ -2505,9 +3094,14 @@ class PICALauncherV2:
             row.pack(fill='x')
             strip = tk.Frame(row, bg=family_colors.get(family, self.CLR_PANEL2), width=5)
             strip.pack(side='left', fill='y')
-            ttk.Button(row, text=label, style='Mod.TButton',
-                       command=lambda k=key: self.launch_script(k)).pack(
-                side='left', fill='x', expand=True)
+            button = ttk.Button(row, text=label, style='Mod.TButton',
+                                command=lambda k=key: self.launch_script(k))
+            button._pica_key = key      # which program this row launches
+            button.pack(side='left', fill='x', expand=True)
+            # Rest the pointer on the row and the card says what the program
+            # measures, which instruments it opens and what it asks for.
+            self._add_module_hover(button, key, label, cat['category'],
+                                   family, bool(cat.get('experimental')))
         return card
 
     # ------------------------------------------------ Quick Select (main screen)
@@ -2673,7 +3267,15 @@ class PICALauncherV2:
         tag = {'control': "  ·  T Control",
                'sensing': "  ·  T Sensing",
                'master': "  ·  Master Sequence"}.get(proto['family'], "")
-        self._set_desc('protocol', proto['label'] + tag, proto['desc'])
+        # The protocol's own description, then the fields its form will ask
+        # for -- the same line the hover card and the search panel show, from
+        # the same entry in pica/module_info.py, so a newcomer knows what to
+        # have ready before pressing Launch.
+        text = proto['desc']
+        inputs = module_info(proto['key'])['inputs']
+        if inputs:
+            text += "\n\nYou enter: " + inputs + "."
+        self._set_desc('protocol', proto['label'] + tag, text)
         self._update_needed_instruments(QUICK_CATALOG[cat_idx], module, proto)
         self._set_quick_actions(True)
 
@@ -2999,6 +3601,9 @@ class PICALauncherV2:
                                  command=self._launch_gpib_scanner)
         adv_scanner.pack(side='right', padx=(0, 2))
         self._add_tooltip(adv_scanner, "VISA/GPIB Scanner")
+        # And the same search box, left of them: this window holds every
+        # module, which is exactly where a search earns its place.
+        self._build_search_box(adv_tools).pack(side='right', padx=(0, 10))
 
         title_blk = tk.Frame(head, bg=self.CLR_APP)
         title_blk.pack(side='right', fill='y')
@@ -3038,17 +3643,47 @@ class PICALauncherV2:
         self.root.after(400, self._auto_launch_gpib_scanner)
 
     def _close_advanced(self):
-        """Tear down the Advanced window and un-register its status strip."""
-        strip = getattr(self, '_adv_strip', None)
-        if strip in self._strips:
-            self._strips.remove(strip)
-        self._adv_strip = None
-        # The card grid lives in this window; drop the reference so a stray
-        # refresh cannot reach into a destroyed widget tree.
-        self.browse_frame = None
-        if self._adv_win is not None:
-            self._adv_win.destroy()
+        """Tear down the Advanced window and un-register its status strip.
+
+        The window is destroyed whatever happens in the clean-up before it:
+        a failure there once left the window half torn down -- header, strip
+        and a column of cards gone -- with no way left to close it.
+        """
+        win = self._adv_win
         self._adv_win = None
+        try:
+            strip = getattr(self, '_adv_strip', None)
+            if strip in self._strips:
+                self._strips.remove(strip)
+            self._adv_strip = None
+            # A hover card or a search panel belonging to this window goes
+            # with it; its search box leaves the Ctrl+F list.
+            self._cancel_hover()
+            self._hide_hover()
+            if win is not None and self._widget_inside(self._search_owner, win):
+                self._close_search()
+            if win is not None:
+                self._search_boxes = [e for e in self._search_boxes
+                                      if not self._widget_inside(e, win)]
+            # The card grid lives in this window; drop the reference so a
+            # stray refresh cannot reach into a destroyed widget tree.
+            self.browse_frame = None
+        except Exception as e:      # noqa: BLE001 - closing must not fail
+            self.log(f"WARNING: Advanced Options clean-up: {e}")
+        finally:
+            if win is not None:
+                self._destroy_window(win)
+
+    def _destroy_window(self, win):
+        """Destroy a Toplevel; fall back to Tcl if the Python walk raises."""
+        try:
+            win.destroy()
+        except Exception as e:      # noqa: BLE001
+            self.log(f"WARNING: window destroy raised ({e}); forcing it.")
+            try:
+                self.root.tk.call('destroy', str(win))
+            except tk.TclError:
+                pass
 
     # ------------------------------------------------------- scan lifecycle
     def start_scan(self):
