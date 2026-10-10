@@ -78,7 +78,7 @@ def test_instantiate_gui_layout(module_name, safe_gui_environment):
             del sys.modules[module_name]
         module = importlib.import_module(module_name)
     except ImportError:
-        pytest.skip(f"Could not import {module_name}")
+        pytest.fail(f"Could not import {module_name}")
 
     gui_class = None
     for name, obj in inspect.getmembers(module, inspect.isclass):
