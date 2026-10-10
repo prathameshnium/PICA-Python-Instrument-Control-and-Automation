@@ -945,7 +945,7 @@ def _looks_like_a_cryocon_command(text):
                           if word and word.isalpha() and word.islower())
     if lowercase_words > 1:
         return False
-    root = re.split(r'[ :;]', text, 1)[0].rstrip("?")
+    root = re.split(r'[ :;]', text, maxsplit=1)[0].rstrip("?")
     return root in CRYOCON_SUBSYSTEM_ROOTS and bool(_COMMAND_SHAPE.match(text))
 
 
