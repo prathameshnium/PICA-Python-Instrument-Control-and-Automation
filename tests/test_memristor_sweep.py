@@ -352,7 +352,9 @@ def test_sweep_bus_error_is_retried_and_the_point_repeated():
         reconnects = comment_lines(path, "RECONNECT")
         assert len(retries) == 2 and "n=1" in retries[0] and "n=2" in retries[1]
         assert "error=" in retries[0] and "VI_ERROR_TMO" in retries[0]
-        assert len(reconnects) >= 1 and "after" in reconnects[0]
+        assert len(reconnects) == 1 and "after" in reconnects[0]      # one line per recovered gap
+        assert " | t_s=" in retries[0] and " | what=" in retries[0]      # fields separated by ' | ' like every header line
+        assert " | " in reconnects[0] and "/" not in reconnects[0].split("after")[1].split("|")[0]
         _, _, rows = read_file(path)
         sw = [r["V_set_V"] for r in rows if r["phase"] == "sweep"]
         assert sw == [0.0, 1.0, 2.0, 3.0, 2.0, 1.0, 0.0, -1.0, -2.0, -3.0, -2.0, -1.0, 0.0]

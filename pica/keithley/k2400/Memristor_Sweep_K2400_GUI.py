@@ -13,6 +13,8 @@ v1.1 (11 Oct 2026) - PICA GUI conventions
     could push the old bottom bar out of view).
   * File names follow the PICA convention <sample>_<YYYYMMDD_HHMMSS>_<kind>
     .csv; a rerun in the same second gets _1, _2 ... (never overwrites).
+  * '# RETRY' / '# RECONNECT' lines keep ' | ' between fields like every
+    other header line; one RECONNECT line per recovered gap.
 v1.0 (11 Oct 2026) - first version
   * Shapes: bipolar (+ first / - first), unipolar (+ / -) and ladder; each
     loop starts and ends at 0 V, the turn voltage is measured once and the
@@ -168,11 +170,15 @@ def ascii_text(text):
     return s.encode("ascii", "replace").decode("ascii")
 
 
+def header_line(text):
+    """One header line: ASCII, single line; ' | ' between fields is kept."""
+    s = ascii_text("" if text is None else text)
+    return " ".join(s.replace("\r", " ").replace("\n", " ").split())
+
+
 def header_value(text):
     """One header value: ASCII, one line, no '|' (the pair separator)."""
-    s = ascii_text("" if text is None else text)
-    s = " ".join(s.replace("\r", " ").replace("\n", " ").split())
-    return s.replace("|", "/")
+    return header_line(text).replace("|", "/")
 
 
 def fmt_num(value, digits=8):
@@ -724,7 +730,7 @@ class RunFile:
     def comment(self, text):
         if self.closed:
             return
-        self._fh.write("# " + header_value(text) + "\n")
+        self._fh.write("# " + header_line(text) + "\n")
         self._flush()
 
     def end(self, reason, extra=None):
@@ -794,8 +800,8 @@ class WorkerBase:
     def with_retry(self, fn, what="command"):
         """Run fn(); on BusError retry after 1, 2, 5, 10, 30, 60 s and then
         every 60 s until it succeeds or Stop is pressed. Each attempt is a
-        '# RETRY' line in every open data file; a successful reconnect is a
-        '# RECONNECT' line. Returns fn()'s result."""
+        '# RETRY' line in every open data file; a recovered gap is exactly one
+        '# RECONNECT' line, written when fn() succeeds. Returns fn()'s result."""
         attempt = 0
         gap_start = None
         while True:
@@ -811,16 +817,15 @@ class WorkerBase:
                 if gap_start is None:
                     gap_start = time.perf_counter()
                 delay = RETRY_SCHEDULE_S[min(attempt - 1, len(RETRY_SCHEDULE_S) - 1)]
-                self.comment_all(f"RETRY n={attempt} | t_s={self.t_s():.3f} | what={what} | error={exc}")
+                self.comment_all(f"RETRY n={attempt} | t_s={self.t_s():.3f} | what={what} | error={header_value(exc)}")
                 self.log(f"Bus error ({what}): {exc}. Retry {attempt} in {delay:g} s.")
                 self.status(state=f"reconnecting (attempt {attempt}, next try in {delay:g} s)")
                 if wait_with_stop(delay, self.stop_event, sleep=self.sleep):
                     raise StopRequested()
                 try:
-                    self.link.reconnect()
-                    self.comment_all(f"RECONNECT after {time.perf_counter() - gap_start:.1f} s | attempt {attempt}")
+                    self.link.reconnect()   # the RECONNECT line is written once fn() succeeds
                 except BusError as exc2:
-                    self.comment_all(f"RETRY n={attempt} | t_s={self.t_s():.3f} | what=reconnect | error={exc2}")
+                    self.comment_all(f"RETRY n={attempt} | t_s={self.t_s():.3f} | what=reconnect | error={header_value(exc2)}")
                     continue
 
     # -- startup (protocol 2.2) -------------------------------------------

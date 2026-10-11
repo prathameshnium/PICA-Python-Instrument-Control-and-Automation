@@ -9,12 +9,12 @@ v1.0 (11 Oct 2026) - first version
   * Strictly read-only on the raw files: they are opened for reading only,
     never renamed, moved or rewritten. Results go to <folder>/analysis/ as
     new files whose header names every raw file and every parameter used.
-  * Sweep tab: I-V (linear and log|I|) of sweep files, retention _write_
+  * Sweep tab: I-V (linear and log|I|) of sweep files, retention _write
     files or one cycle of an endurance raw file; V set / V reset by rule 1
     (first compliance point, else current jump > F above a voltage floor;
     V reset = largest drop in |I|) or rule 2 (largest |dI/dV|). A loop
     where nothing passes reports 'none', never 0 or V max.
-  * Retention tab: R against log t for LRS, HRS and control _reads_ files;
+  * Retention tab: R against log t for LRS, HRS and control _reads files;
     ratio criterion (default 10) on a common log-time grid (linear
     interpolation in log t, common window only, stated on the plot) and a
     drift criterion (default 2x relative to R at t = 10 s). No

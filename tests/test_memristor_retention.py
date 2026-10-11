@@ -116,6 +116,18 @@ def test_average_readings_or_flags_and_averages_values():
     assert v is None and trip is None
 
 
+def test_retention_open_analysis_preloads_the_reads_file_of_the_v11_name():
+    base = dict(sample_name="VCO01")
+    with tempfile.TemporaryDirectory() as d:
+        gui = _gui_shell(retention.RetentionGUI, retention, base, d)
+        ts = retention.timestamp_for_name()
+        gui.current_files = [retention.run_file_path(d, "VCO01", "retention_LRS_write", ts),
+                             retention.run_file_path(d, "VCO01", "retention_LRS_reads", ts)]
+        assert [os.path.basename(f) for f in gui.analysis_files()] == [f"VCO01_{ts}_retention_LRS_reads.csv"]
+        gui.companion_path = "other.csv"
+        assert gui.analysis_files()[-1] == "other.csv"
+
+
 def test_retention_gui_warns_when_intermittent_spacing_is_finer_than_the_soak():
     base = dict(sample_name="VCO01", visa_address="GPIB1::24::INSTR", protection="20", state="HRS", swap=False, vmax_write="5",
                 i_cc_write_uA="10", step_v="0.1", dwell_s="0.1", n_confirm="3", v_read="0.1", t_rec="60",
