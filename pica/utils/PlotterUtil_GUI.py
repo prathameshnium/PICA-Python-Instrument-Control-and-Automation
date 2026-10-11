@@ -701,6 +701,8 @@ class PlotterAppGUI:
         delimiter is taken from the data row rather than the first line.
         """
         def is_num(tok):
+            if tok == "":
+                return True  # empty cell = missing value (loads as NaN)
             try:
                 float(tok)
                 return True
@@ -708,7 +710,12 @@ class PlotterAppGUI:
                 return False
 
         def tokenize(s, delim):
-            return [t.strip() for t in (s.split(delim) if delim else s.split()) if t.strip()]
+            # Delimited files keep empty cells so the column count still
+            # matches the header when a row has missing values; whitespace
+            # files cannot carry empties.
+            if delim:
+                return [t.strip() for t in s.split(delim)]
+            return [t for t in s.split() if t]
 
         lines = []
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
@@ -731,7 +738,10 @@ class PlotterAppGUI:
                 if not prev or prev.startswith('#'):
                     continue
                 prev_tokens = tokenize(prev, delim)
-                if len(prev_tokens) == len(tokens) and not all(is_num(t) for t in prev_tokens):
+                n_row = len(tokens)
+                while n_row > 0 and tokens[n_row - 1] == "":
+                    n_row -= 1  # trailing delimiter / missing last cells
+                if len(prev_tokens) in (len(tokens), n_row) and not all(is_num(t) for t in prev_tokens):
                     return j, delim, self._dedupe_headers(prev_tokens)
                 break
             # No matching header line -> headerless file

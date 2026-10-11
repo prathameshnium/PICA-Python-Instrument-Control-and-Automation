@@ -4,6 +4,15 @@ Purpose: Switching I-V sweep of a memristor pellet with current compliance
          on a Keithley 2400 (protocol "Memristor measurement modules for
          PICA" v1.1, Section 3).
 
+v1.1 (11 Oct 2026) - PICA GUI conventions
+  * Information frame with the institute logo; plotter and GPIB-scanner
+    buttons in the header; Browse... button for the output folder.
+  * Electrode, area, thickness, HI-face and Notes entries removed; the
+    [sample] header carries the sample name only (put such details in it).
+  * Start / Stop / Open analysis moved into the left panel (a short screen
+    could push the old bottom bar out of view).
+  * File names follow the PICA convention <sample>_<YYYYMMDD_HHMMSS>_<kind>
+    .csv; a rerun in the same second gets _1, _2 ... (never overwrites).
 v1.0 (11 Oct 2026) - first version
   * Shapes: bipolar (+ first / - first), unipolar (+ / -) and ladder; each
     loop starts and ends at 0 V, the turn voltage is measured once and the
@@ -47,6 +56,13 @@ try:
     HAS_WINSOUND = True
 except ImportError:
     HAS_WINSOUND = False
+
+# --- Pillow for the institute logo (optional; a placeholder is drawn without it) ---
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 # --- PyVISA for the instrument (raw SCPI, no pymeasure: protocol Section 8) ---
 try:
@@ -363,6 +379,24 @@ def resistance_ohm(v_meas, i_a):
 
 def timestamp_for_name(now=None):
     return (now or datetime.now()).strftime("%Y%m%d_%H%M%S")
+
+
+def run_file_path(folder, stem, kind, ts):
+    """<folder>/<sample>_<YYYYMMDD_HHMMSS>_<kind>.csv, the PICA naming
+    (sample, time stamp, measurement kind), so every run gets its own file."""
+    return unique_path(os.path.join(folder, f"{stem}_{ts}_{kind}.csv"))
+
+
+def unique_path(path):
+    """Never overwrite: if the name is taken (a rerun within the same second)
+    append _1, _2, ... before the extension."""
+    if not os.path.exists(path):
+        return path
+    base, ext = os.path.splitext(path)
+    n = 1
+    while os.path.exists(f"{base}_{n}{ext}"):
+        n += 1
+    return f"{base}_{n}{ext}"
 
 
 def iso_now(now=None):
@@ -910,9 +944,14 @@ def gpib_scanner_path():
     return os.path.normpath(os.path.join(here, "..", "..", "utils", "GPIB_Instrument_Scanner_GUI.py"))
 
 
+def plotter_path():
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.normpath(os.path.join(here, "..", "..", "utils", "PlotterUtil_GUI.py"))
+
+
 class MemristorGuiBase:
-    """Layout A (protocol 2.1): inputs left, one figure right, status bar
-    and the buttons along the bottom. Subclasses provide the module inputs,
+    """PICA standard layout (as IV_K6517B_GUI.py / Delta_RT_*_GUI.py): logo,
+    inputs, run buttons and console on the left, Live Graphs on the right. Subclasses provide the module inputs,
     the figure, parameter collection, the worker and the plot update.
 
     Nothing modal is opened during or after a run (PICA unattended rule):
@@ -921,30 +960,38 @@ class MemristorGuiBase:
 
     MODULE_TITLE = "Memristor"
     MODULE_KEY = "sweep"
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "1.1"
+    # Palette, fonts and layout identical to the other PICA modules
+    # (IV_K6517B_GUI.py / Delta_RT_*_GUI.py).
     CLR_BG_DARK, CLR_HEADER, CLR_FG_LIGHT = '#B8A392', '#E5DCD3', '#2C2825'
     CLR_ACCENT_GREEN, CLR_ACCENT_RED, CLR_ACCENT_GOLD = '#B68B6E', '#EF233C', '#BA6B5E'
+    CLR_TEXT_DARK = '#1A1A1A'
     CLR_CONSOLE_BG = '#E5DCD3'
+    CLR_GRAPH_BG = '#F4EFEA'
     CLR_WARN = '#C9A227'
     FONT_SIZE_BASE = 11
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
+    FONT_SUB_LABEL = ('Segoe UI', FONT_SIZE_BASE - 2)
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 2, 'bold')
     FONT_HINT = ('Segoe UI', FONT_SIZE_BASE - 2, 'italic')
+    FONT_CONSOLE = ('Consolas', 10)
     FONT_STATUS = ('Consolas', FONT_SIZE_BASE - 1)
     try:
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
         LOGO_FILE = os.path.join(SCRIPT_DIR, "..", "..", "assets", "LOGO", "UGC_DAE_CSR_NBG.jpeg")
     except NameError:
         LOGO_FILE = "../../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
-    LOGO_SIZE = 90
-    LEFT_PANEL_WIDTH = 520
+    LOGO_SIZE = 110
+    LEFT_PANEL_WIDTH = 500  # default sash position so the left panel starts fully visible
 
     def __init__(self, root):
         self.root = root
         self.root.title(f"Keithley 2400 Memristor {self.MODULE_TITLE}")
         try:
-            self.root.geometry("1650x980")
-            self.root.minsize(1300, 850)
+            # Fit the screen (a 1366x768 lab laptop must still show everything).
+            sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+            self.root.geometry(f"{min(1550, sw - 20)}x{min(900, sh - 90)}+0+0")
+            self.root.minsize(1100, 650)
             self.root.configure(bg=self.CLR_BG_DARK)
         except Exception:
             pass
@@ -979,6 +1026,7 @@ class MemristorGuiBase:
 
     # -- styles / skeleton ---------------------------------------------
     def setup_styles(self):
+        """ttk styles and Matplotlib defaults, as in the other PICA modules."""
         style = ttk.Style(self.root)
         try:
             style.theme_use('clam')
@@ -986,29 +1034,34 @@ class MemristorGuiBase:
             pass
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
-        style.configure('TLabel', background=self.CLR_BG_DARK,
-                        foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
+        style.configure('TLabel', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
         style.configure('Hint.TLabel', font=self.FONT_HINT)
-        style.configure('Warn.TLabel', foreground='#7A5A00', background=self.CLR_WARN, font=self.FONT_HINT)
-        style.configure('TButton', font=self.FONT_BASE, padding=(10, 6))
-        style.map('TButton', foreground=[('!active', '#B8A392'), ('active', '#2C2825')],
-                  background=[('!active', '#BA6B5E'), ('active', '#B8A392')])
-        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN)
-        style.configure('Stop.TButton', background=self.CLR_ACCENT_RED)
+        style.configure('TButton', font=self.FONT_BASE, padding=(10, 8), foreground=self.CLR_ACCENT_GOLD,
+                        background=self.CLR_HEADER, borderwidth=0, focusthickness=0, focuscolor='none')
+        style.map('TButton', background=[('active', self.CLR_ACCENT_GOLD), ('hover', self.CLR_ACCENT_GOLD)],
+                  foreground=[('active', self.CLR_TEXT_DARK), ('hover', self.CLR_TEXT_DARK)])
+        style.configure('Start.TButton', background=self.CLR_ACCENT_GREEN, foreground=self.CLR_TEXT_DARK)
+        style.map('Start.TButton', background=[('active', '#8AB845'), ('hover', '#8AB845')])
+        style.configure('Stop.TButton', background=self.CLR_ACCENT_RED, foreground=self.CLR_FG_LIGHT)
+        style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
         style.configure('TCheckbutton', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
         style.configure('TCombobox', font=self.FONT_BASE)
         mpl.rcParams['font.family'] = 'Segoe UI'
+        mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
+        mpl.rcParams['axes.titlesize'] = self.FONT_SIZE_BASE + 4
+        mpl.rcParams['axes.labelsize'] = self.FONT_SIZE_BASE + 2
 
     def create_widgets(self):
+        """Header on top; left panel (scrollable): Information, Experiment
+        Parameters, module inputs, Instrument & Run, Console Output; right
+        panel: Live Graphs. Same skeleton as IV_K6517B_GUI.py."""
         self.create_header()
         self.main_pane = ttk.PanedWindow(self.root, orient='horizontal')
-        self.main_pane.pack(fill='both', expand=True, padx=10, pady=(10, 0))
+        self.main_pane.pack(fill='both', expand=True, padx=10, pady=10)
 
         left_container = ttk.Frame(self.main_pane, width=self.LEFT_PANEL_WIDTH)
         left_container.pack_propagate(False)
         self.main_pane.add(left_container, weight=0)
-        right_container = tk.Frame(self.main_pane, bg='white')
-        self.main_pane.add(right_container, weight=1)
 
         canvas = Canvas(left_container, bg=self.CLR_BG_DARK, highlightthickness=0)
         scrollbar = ttk.Scrollbar(left_container, orient="vertical", command=canvas.yview)
@@ -1028,11 +1081,18 @@ class MemristorGuiBase:
                 pass
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
+        right_container = tk.Frame(self.main_pane, bg='white')
+        self.main_pane.add(right_container, weight=1)
+
+        # Console and graphs first so that logging and the status strip exist
+        # while the input frames are being built; the console is packed last.
+        console_pane = self.create_console_frame(inner)
+        self.create_graph_frame(right_container)
+        self.create_info_frame(inner)
         self.create_sample_frame(inner)
         self.create_module_inputs(inner)
-        self.create_console_frame(inner)
-        self.create_graph_frame(right_container)
-        self.create_bottom_bar()
+        self.create_run_frame(inner)
+        console_pane.pack(pady=5, padx=10, fill='x')
         self.root.after(50, self._set_default_sash_position)
 
     def _set_default_sash_position(self, attempt=0):
@@ -1050,35 +1110,63 @@ class MemristorGuiBase:
     def create_header(self):
         header = tk.Frame(self.root, bg=self.CLR_HEADER)
         header.pack(side='top', fill='x')
-        ttk.Button(header, text="GPIB scan", command=self.launch_gpib_scanner, width=10).pack(side='right', padx=(0, 10), pady=5)
+        font_title_main = ('Segoe UI', self.FONT_SIZE_BASE + 4, 'bold')
+        ttk.Button(header, text="\U0001F4C8", command=self.launch_plotter, width=3).pack(side='right', padx=10, pady=5)
+        ttk.Button(header, text="\U0001F4DF", command=self.launch_gpib_scanner, width=3).pack(side='right', padx=(0, 5), pady=5)
         Label(header, text=f"Keithley 2400: Memristor {self.MODULE_TITLE}", bg=self.CLR_HEADER,
-              fg=self.CLR_ACCENT_GOLD, font=('Segoe UI', self.FONT_SIZE_BASE + 4, 'bold')).pack(side='left', padx=20, pady=8)
-        Label(header, text=f"Version {self.PROGRAM_VERSION} | protocol v{PROTOCOL_VERSION}", bg=self.CLR_HEADER,
-              fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).pack(side='right', padx=20, pady=8)
+              fg=self.CLR_ACCENT_GOLD, font=font_title_main).pack(side='left', padx=20, pady=10)
+        Label(header, text=f"Version: {self.PROGRAM_VERSION} | protocol v{PROTOCOL_VERSION}", bg=self.CLR_HEADER,
+              fg=self.CLR_FG_LIGHT, font=self.FONT_SUB_LABEL).pack(side='right', padx=20, pady=10)
 
-    # -- helpers for input rows ----------------------------------------
-    def add_entry(self, parent, row, label, key, default, hint=None, width=14):
-        Label(parent, text=label, bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).grid(
-            row=row, column=0, sticky='w', padx=8, pady=3)
-        var = tk.StringVar(value=str(default))
-        entry = Entry(parent, textvariable=var, width=width, font=self.FONT_BASE)
-        entry.grid(row=row, column=1, sticky='w', padx=4, pady=3)
+    # -- helpers for input rows (PICA look: label chip above a full-width
+    #    entry, two columns per frame; the `row` argument is kept for the
+    #    subclasses but placement is automatic) -----------------------------
+    def make_frame(self, parent, title):
+        frame = LabelFrame(parent, text=title, relief='groove', bg=self.CLR_BG_DARK,
+                           fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
+        frame.pack(pady=5, padx=10, fill='x')
+        frame.grid_columnconfigure(0, weight=1, uniform='half')
+        frame.grid_columnconfigure(1, weight=1, uniform='half')
+        frame._slot = 0
+        return frame
+
+    def _cell(self, frame, wide=False):
+        """Next free cell: (label_row, column, columnspan, padx)."""
+        slot = getattr(frame, "_slot", 0)
+        if wide and slot % 2:
+            slot += 1
+        row, col = (slot // 2) * 2, slot % 2
+        frame._slot = slot + (2 if wide else 1)
+        if wide:
+            return row, 0, 2, (10, 10)
+        return row, col, 1, ((10, 5) if col == 0 else (5, 10))
+
+    def _chip(self, frame, text, hint, row, col, colspan, padx):
+        """Label chip (tk default look, as in the other modules) with an
+        optional italic hint to its right."""
+        holder = tk.Frame(frame, bg=self.CLR_BG_DARK)
+        holder.grid(row=row, column=col, columnspan=colspan, padx=padx, pady=(5, 0), sticky='w')
+        Label(holder, text=text).pack(side='left')
         if hint:
-            Label(parent, text=hint, bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_HINT).grid(
-                row=row, column=2, sticky='w', padx=4)
+            ttk.Label(holder, text=hint, style='Hint.TLabel').pack(side='left', padx=(8, 0))
+        return holder
+
+    def add_entry(self, parent, row, label, key, default, hint=None, width=14):
+        r, c, span, padx = self._cell(parent, wide=width > 14)
+        self._chip(parent, label + ":", hint, r, c, span, padx)
+        var = tk.StringVar(master=self.root, value=str(default))
+        entry = Entry(parent, textvariable=var, font=self.FONT_BASE)
+        entry.grid(row=r + 1, column=c, columnspan=span, padx=padx, pady=(0, 5), sticky='ew')
         var.trace_add("write", lambda *a: self.refresh_estimate())
         self.vars[key] = var
         return var
 
     def add_combo(self, parent, row, label, key, values, default, hint=None, width=20, command=None):
-        Label(parent, text=label, bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).grid(
-            row=row, column=0, sticky='w', padx=8, pady=3)
-        var = tk.StringVar(value=str(default))
-        combo = ttk.Combobox(parent, textvariable=var, values=list(values), state='readonly', width=width, font=self.FONT_BASE)
-        combo.grid(row=row, column=1, sticky='w', padx=4, pady=3)
-        if hint:
-            Label(parent, text=hint, bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_HINT).grid(
-                row=row, column=2, sticky='w', padx=4)
+        r, c, span, padx = self._cell(parent)
+        self._chip(parent, label + ":", hint, r, c, span, padx)
+        var = tk.StringVar(master=self.root, value=str(default))
+        combo = ttk.Combobox(parent, textvariable=var, values=list(values), state='readonly', font=self.FONT_BASE)
+        combo.grid(row=r + 1, column=c, columnspan=span, padx=padx, pady=(0, 5), sticky='ew')
         var.trace_add("write", lambda *a: self.refresh_estimate())
         if command is not None:
             combo.bind("<<ComboboxSelected>>", lambda e: command())
@@ -1086,14 +1174,39 @@ class MemristorGuiBase:
         return var
 
     def add_check(self, parent, row, label, key, default=False, hint=None, command=None):
-        var = tk.BooleanVar(value=bool(default))
+        r, c, span, padx = self._cell(parent, wide=True)
+        var = tk.BooleanVar(master=self.root, value=bool(default))
         cb = ttk.Checkbutton(parent, text=label, variable=var, command=command)
-        cb.grid(row=row, column=0, columnspan=2, sticky='w', padx=8, pady=3)
+        cb.grid(row=r, column=c, columnspan=span, padx=padx, pady=(6, 2), sticky='w')
         if hint:
-            Label(parent, text=hint, bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_HINT).grid(
-                row=row, column=2, sticky='w', padx=4)
+            ttk.Label(parent, text=hint, style='Hint.TLabel').grid(row=r + 1, column=c, columnspan=span,
+                                                                   padx=(padx[0] + 24, padx[1]), pady=(0, 4), sticky='w')
         self.vars[key] = var
         return var
+
+    def add_wide_label(self, parent, text, fg=None, bg=None):
+        """Full-width wrapped text (warnings, notices)."""
+        r, c, span, padx = self._cell(parent, wide=True)
+        lbl = Label(parent, text=text, bg=bg or self.CLR_BG_DARK, fg=fg or self.CLR_FG_LIGHT, font=self.FONT_HINT,
+                    wraplength=self.LEFT_PANEL_WIDTH - 60, justify='left', anchor='w')
+        lbl.grid(row=r, column=c, columnspan=span, padx=padx, pady=4, sticky='ew')
+        return lbl
+
+    def add_wide_button(self, parent, text, command, style=None):
+        r, c, span, padx = self._cell(parent, wide=True)
+        btn = ttk.Button(parent, text=text, command=command, style=style) if style else \
+            ttk.Button(parent, text=text, command=command)
+        btn.grid(row=r, column=c, columnspan=span, padx=padx, pady=4, sticky='ew')
+        return btn
+
+    def add_file_row(self, parent, button_text, command, initial="none"):
+        """Full-width button with a path label under it; returns the label."""
+        self.add_wide_button(parent, button_text, command)
+        r, c, span, padx = self._cell(parent, wide=True)
+        lbl = Label(parent, text=initial, bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_HINT,
+                    wraplength=self.LEFT_PANEL_WIDTH - 60, justify='left', anchor='w')
+        lbl.grid(row=r, column=c, columnspan=span, padx=padx, pady=(0, 4), sticky='ew')
+        return lbl
 
     def get_str(self, key):
         try:
@@ -1125,101 +1238,118 @@ class MemristorGuiBase:
             raise ValueError(f"{label} must be a whole number.")
         return int(round(v))
 
-    # -- sample & bench block (protocol 2.1) -------------------------------
-    def create_sample_frame(self, parent):
-        frame = LabelFrame(parent, text='Sample & bench', relief='groove', bg=self.CLR_BG_DARK,
+    # -- information block (PICA convention: logo + institute + program) ----
+    def create_info_frame(self, parent):
+        frame = LabelFrame(parent, text='Information', relief='groove', bg=self.CLR_BG_DARK,
                            fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        frame.pack(pady=(8, 4), padx=10, fill='x')
-        frame.grid_columnconfigure(2, weight=1)
-        r = 0
-        self.add_entry(frame, r, "Sample name *", "sample_name", "", "file name stem", width=22)
+        frame.pack(pady=(10, 10), padx=10, fill='x')
+        frame.grid_columnconfigure(1, weight=1)
+        logo_canvas = Canvas(frame, width=self.LOGO_SIZE, height=self.LOGO_SIZE, bg=self.CLR_BG_DARK, highlightthickness=0)
+        logo_canvas.grid(row=0, column=0, rowspan=2, padx=15, pady=15, sticky='n')
+        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE):
+            try:
+                img = Image.open(self.LOGO_FILE)
+                img.thumbnail((self.LOGO_SIZE, self.LOGO_SIZE), Image.Resampling.LANCZOS)
+                self.logo_image = ImageTk.PhotoImage(img)
+                logo_canvas.create_image(self.LOGO_SIZE / 2, self.LOGO_SIZE / 2, image=self.logo_image)
+            except Exception as exc:
+                self.log(f"WARNING: Could not process logo file: {exc}")
+                logo_canvas.create_text(self.LOGO_SIZE / 2, self.LOGO_SIZE / 2, text="LOGO\nERROR",
+                                        font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
+        else:
+            self.log(f"WARNING: Logo file '{self.LOGO_FILE}' not found or Pillow not installed.")
+            logo_canvas.create_text(self.LOGO_SIZE / 2, self.LOGO_SIZE / 2, text="LOGO\nMISSING",
+                                    font=self.FONT_BASE, fill=self.CLR_FG_LIGHT, justify='center')
+        institute_font = ('Segoe UI', self.FONT_SIZE_BASE + 1, 'bold')
+        ttk.Label(frame, text="UGC-DAE Consortium for Scientific Research", font=institute_font,
+                  background=self.CLR_BG_DARK).grid(row=0, column=1, padx=10, pady=(20, 0), sticky='sw')
+        ttk.Label(frame, text="Mumbai Centre", font=institute_font,
+                  background=self.CLR_BG_DARK).grid(row=1, column=1, padx=10, sticky='nw')
+        ttk.Separator(frame, orient='horizontal').grid(row=2, column=1, sticky='ew', padx=10, pady=8)
+        details_text = (f"Program Name: Memristor {self.MODULE_TITLE}\n"
+                        "Instrument: Keithley 2400 SourceMeter\n"
+                        f"Protocol: Memristor measurement modules v{PROTOCOL_VERSION}")
+        ttk.Label(frame, text=details_text, justify='left',
+                  background=self.CLR_BG_DARK).grid(row=3, column=0, columnspan=2, padx=20, pady=(0, 10), sticky='w')
+
+    # -- experiment parameters (sample name; protocol 2.1) ------------------
+    def create_sample_frame(self, parent):
+        frame = self.make_frame(parent, 'Experiment Parameters')
+        r, c, span, padx = self._cell(frame, wide=True)
+        self._chip(frame, "Sample Name:", "file name stem; add electrode / face / notes to it", r, c, span, padx)
+        self.vars["sample_name"] = tk.StringVar(master=self.root, value="")
+        Entry(frame, textvariable=self.vars["sample_name"], font=self.FONT_BASE).grid(
+            row=r + 1, column=c, columnspan=span, padx=padx, pady=(0, 10), sticky='ew')
         self.vars["sample_name"].trace_add("write", lambda *a: self._update_start_state())
-        r += 1
-        Label(frame, text="Notes *", bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).grid(
-            row=r, column=0, sticky='nw', padx=8, pady=3)
-        self.notes_text = tk.Text(frame, width=30, height=3, font=self.FONT_BASE, wrap='word')
-        self.notes_text.grid(row=r, column=1, columnspan=2, sticky='we', padx=4, pady=3)
-        self.notes_text.bind("<KeyRelease>", lambda e: self._update_start_state())
-        r += 1
-        self.add_entry(frame, r, "Electrode", "electrode", "Ag paste", width=22)
-        r += 1
-        self.add_entry(frame, r, "Area (cm2)", "area_cm2", "", "may stay empty")
-        r += 1
-        self.add_entry(frame, r, "Thickness (mm)", "thickness_mm", "", "may stay empty")
-        r += 1
-        self.add_entry(frame, r, "HI face mark", "hi_face", "face A", width=22)
-        r += 1
-        Label(frame, text="GPIB address", bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).grid(
-            row=r, column=0, sticky='w', padx=8, pady=3)
-        self.vars["visa_address"] = tk.StringVar(value=DEFAULT_GPIB_ADDRESS)
+
+    def create_run_frame(self, parent):
+        """Instrument address, protection, Scan / Browse / Analysis buttons and
+        Start / Stop, laid out as in the other PICA modules."""
+        frame = self.make_frame(parent, 'Instrument & Run')
+        r, c, span, padx = self._cell(frame)
+        self._chip(frame, "Keithley 2400 VISA:", None, r, c, span, padx)
+        self.vars["visa_address"] = tk.StringVar(master=self.root, value=DEFAULT_GPIB_ADDRESS)
         self.visa_combobox = ttk.Combobox(frame, textvariable=self.vars["visa_address"],
-                                          values=[DEFAULT_GPIB_ADDRESS, ALT_GPIB_ADDRESS], width=20, font=self.FONT_BASE)
-        self.visa_combobox.grid(row=r, column=1, sticky='w', padx=4, pady=3)
-        ttk.Button(frame, text="Scan", command=self._scan_for_visa_instruments, width=6).grid(row=r, column=2, sticky='w', padx=4)
-        r += 1
-        self.add_combo(frame, r, "Never-exceed V", "protection", PROTECTION_CHOICES, "20",
-                       ":SOUR:VOLT:PROT, re-sent every run", width=8)
-        r += 1
-        Label(frame, text="Output folder", bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT, font=self.FONT_BASE).grid(
-            row=r, column=0, sticky='w', padx=8, pady=3)
-        self.folder_label = Label(frame, text=self.file_location_path, bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT,
-                                  font=self.FONT_HINT, anchor='w', wraplength=300, justify='left')
-        self.folder_label.grid(row=r, column=1, columnspan=2, sticky='we', padx=4)
+                                          values=[DEFAULT_GPIB_ADDRESS, ALT_GPIB_ADDRESS], font=self.FONT_BASE)
+        self.visa_combobox.grid(row=r + 1, column=c, columnspan=span, padx=padx, pady=(0, 5), sticky='ew')
+        self.add_combo(frame, 0, "Never-exceed V", "protection", PROTECTION_CHOICES, "20", ":SOUR:VOLT:PROT")
+        self.scan_button = self.add_wide_button(frame, "Scan for Instruments", self._scan_for_visa_instruments)
+        self.folder_label = self.add_file_row(frame, "Browse Save Location...", self._browse_file_location,
+                                              self.file_location_path)
+        self.analysis_button = self.add_wide_button(frame, "Open Analysis Utility...", self.open_analysis)
+        r, c, span, padx = self._cell(frame, wide=True)
+        self.start_button = ttk.Button(frame, text="Start Measurement", style='Start.TButton',
+                                       command=self.start_run, state='disabled')
+        self.start_button.grid(row=r, column=0, padx=(10, 5), pady=(10, 4), sticky='ew')
+        self.stop_button = ttk.Button(frame, text="Stop", style='Stop.TButton', command=self.stop_run, state='disabled')
+        self.stop_button.grid(row=r, column=1, padx=(5, 10), pady=(10, 4), sticky='ew')
+        self.start_hint = Label(frame, text="Start needs a sample name.", bg=self.CLR_BG_DARK,
+                                fg=self.CLR_FG_LIGHT, font=self.FONT_HINT, anchor='w')
+        self.start_hint.grid(row=r + 1, column=0, columnspan=2, padx=10, pady=(0, 8), sticky='ew')
 
     def create_module_inputs(self, parent):
         raise NotImplementedError
 
     def create_console_frame(self, parent):
-        frame = LabelFrame(parent, text='Console', relief='groove', bg=self.CLR_BG_DARK,
+        frame = LabelFrame(parent, text='Console Output', relief='groove', bg=self.CLR_BG_DARK,
                            fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        frame.pack(pady=4, padx=10, fill='both', expand=True)
-        self.console = scrolledtext.ScrolledText(frame, height=9, bg=self.CLR_CONSOLE_BG, fg=self.CLR_FG_LIGHT,
-                                                 font=('Consolas', self.FONT_SIZE_BASE - 2), wrap='word', state='disabled')
-        self.console.pack(fill='both', expand=True, padx=5, pady=5)
+        self.console = scrolledtext.ScrolledText(frame, height=9, state='disabled', bg=self.CLR_CONSOLE_BG,
+                                                 fg=self.CLR_FG_LIGHT, font=self.FONT_CONSOLE, wrap='word', bd=0)
+        self.console.pack(pady=5, padx=5, fill='both', expand=True)
         for line in self.pre_init_logs:
             self.log(line)
         self.pre_init_logs = []
+        self.log("Console initialized. Configure parameters and scan for instruments.")
+        if pyvisa is None:
+            self.log("CRITICAL: PyVISA not found. Please run 'pip install pyvisa'.")
+        return frame
 
     def create_graph_frame(self, parent):
-        self.figure = Figure(figsize=(9, 7), dpi=100, facecolor='white')
+        graph_container = LabelFrame(parent, text='Live Graphs', relief='groove', bg=self.CLR_GRAPH_BG,
+                                     fg=self.CLR_BG_DARK, font=self.FONT_TITLE)
+        graph_container.pack(fill='both', expand=True, padx=5, pady=5)
+        # Constrained layout re-flows the axes on every draw, so the gaps stay
+        # tight however the window (and hence the figure) is resized.
+        self.figure = Figure(figsize=(8, 8), dpi=100, facecolor=self.CLR_GRAPH_BG, layout='constrained')
         self.build_figure(self.figure)
-        self.canvas = FigureCanvasTkAgg(self.figure, master=parent)
-        self.canvas.get_tk_widget().pack(fill='both', expand=True)
-        try:
-            self.figure.tight_layout()
-        except Exception:
-            pass
-
-    def build_figure(self, fig):
-        raise NotImplementedError
-
-    def create_bottom_bar(self):
-        bar = tk.Frame(self.root, bg=self.CLR_HEADER)
-        bar.pack(side='bottom', fill='x')
-        status = tk.Frame(bar, bg=self.CLR_HEADER)
-        status.pack(side='top', fill='x', padx=10, pady=(4, 0))
+        # Run status strip under the graphs (state, elapsed, points, file ...),
+        # packed before the canvas so the canvas cannot squeeze it out.
+        status = tk.Frame(graph_container, bg=self.CLR_GRAPH_BG)
+        status.pack(side='bottom', fill='x', padx=10, pady=(0, 6))
         self.status_labels = {}
         for key, text in (("state", "state: idle"), ("elapsed", "elapsed: --"), ("left", "left: --"),
                           ("points", "points: 0"), ("compliance", "compliance: -"), ("file", "file: -")):
-            lbl = Label(status, text=text, bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT, font=self.FONT_STATUS, anchor='w')
+            lbl = Label(status, text=text, bg=self.CLR_GRAPH_BG, fg=self.CLR_FG_LIGHT, font=self.FONT_STATUS, anchor='w')
             lbl.pack(side='left', padx=(0, 18))
             self.status_labels[key] = lbl
-        self.estimate_label = Label(bar, text="estimate: --", bg=self.CLR_HEADER, fg=self.CLR_FG_LIGHT,
+        self.estimate_label = Label(graph_container, text="estimate: --", bg=self.CLR_GRAPH_BG, fg=self.CLR_FG_LIGHT,
                                     font=self.FONT_STATUS, anchor='w')
-        self.estimate_label.pack(side='top', fill='x', padx=10)
-        buttons = tk.Frame(bar, bg=self.CLR_HEADER)
-        buttons.pack(side='top', fill='x', padx=10, pady=6)
-        self.start_button = ttk.Button(buttons, text="Start", style='Start.TButton', command=self.start_run, state='disabled')
-        self.start_button.pack(side='left', padx=(0, 8))
-        self.stop_button = ttk.Button(buttons, text="Stop", style='Stop.TButton', command=self.stop_run, state='disabled')
-        self.stop_button.pack(side='left', padx=(0, 8))
-        self.analysis_button = ttk.Button(buttons, text="Open analysis", command=self.open_analysis)
-        self.analysis_button.pack(side='left', padx=(0, 8))
-        self.folder_button = ttk.Button(buttons, text="Choose folder", command=self._browse_file_location)
-        self.folder_button.pack(side='left', padx=(0, 8))
-        self.start_hint = Label(buttons, text="Start needs a sample name and notes.", bg=self.CLR_HEADER,
-                                fg=self.CLR_FG_LIGHT, font=self.FONT_HINT)
-        self.start_hint.pack(side='left', padx=10)
+        self.estimate_label.pack(side='bottom', fill='x', padx=10)
+        self.canvas = FigureCanvasTkAgg(self.figure, master=graph_container)
+        self.canvas.get_tk_widget().pack(side='top', fill='both', expand=True, padx=5, pady=5)
+
+    def build_figure(self, fig):
+        raise NotImplementedError
 
     # -- console / banner / beep ----------------------------------------
     def log(self, message):
@@ -1256,20 +1386,14 @@ class MemristorGuiBase:
             pass
 
     # -- start gating, estimate ----------------------------------------
-    def notes(self):
-        try:
-            return self.notes_text.get("1.0", "end").strip()
-        except Exception:
-            return ""
-
     def _update_start_state(self):
         try:
-            ok = bool(self.get_str("sample_name")) and bool(self.notes())
+            ok = bool(self.get_str("sample_name"))
             if self.is_running:
                 self.start_button.config(state='disabled')
             else:
                 self.start_button.config(state='normal' if ok else 'disabled')
-            self.start_hint.config(text="" if ok else "Start needs a sample name and notes.")
+            self.start_hint.config(text="" if ok else "Start needs a sample name.")
         except Exception:
             pass
 
@@ -1291,13 +1415,8 @@ class MemristorGuiBase:
     def collect_common_params(self):
         p = {}
         p["sample_name"] = self.get_str("sample_name")
-        p["notes"] = self.notes()
-        if not p["sample_name"] or not p["notes"]:
-            raise ValueError("Sample name and notes are mandatory.")
-        p["electrode"] = self.get_str("electrode")
-        p["area_cm2"] = self.get_float("area_cm2", "Area", 0, allow_empty=True)
-        p["thickness_mm"] = self.get_float("thickness_mm", "Thickness", 0, allow_empty=True)
-        p["hi_face"] = self.get_str("hi_face")
+        if not p["sample_name"]:
+            raise ValueError("Sample name is mandatory.")
         p["visa_address"] = self.get_str("visa_address") or DEFAULT_GPIB_ADDRESS
         p["protection_v"] = parse_protection(self.get_str("protection"))
         p["folder"] = self.file_location_path
@@ -1307,10 +1426,7 @@ class MemristorGuiBase:
         return p
 
     def sample_block(self, p):
-        return ("sample", [("name", p["sample_name"]), ("notes", p["notes"]), ("electrode", p["electrode"]),
-                           ("area_cm2", "" if p["area_cm2"] is None else f"{p['area_cm2']:g}"),
-                           ("thickness_mm", "" if p["thickness_mm"] is None else f"{p['thickness_mm']:g}"),
-                           ("HI_face", p["hi_face"])])
+        return ("sample", [("name", p["sample_name"])])
 
     def instrument_block(self, p, idn, source_range_v, i_cc, extra=None):
         pairs = [("idn", idn), ("address", p["visa_address"]), ("source_range_V", f"{source_range_v:g}"),
@@ -1367,7 +1483,7 @@ class MemristorGuiBase:
         raise NotImplementedError
 
     def describe_params(self, params):
-        return ", ".join(f"{k}={v}" for k, v in params.items() if not k.startswith("_") and k not in ("notes",))
+        return ", ".join(f"{k}={v}" for k, v in params.items() if not k.startswith("_"))
 
     def reset_plot(self):
         pass
@@ -1483,12 +1599,19 @@ class MemristorGuiBase:
                 self.folder_label.config(text=path)
             except Exception:
                 pass
-            self.log(f"Output folder: {path}")
+            self.log(f"Save location set to: {path}")
 
     def launch_gpib_scanner(self):
         path = gpib_scanner_path()
         if not os.path.exists(path):
             self.log(f"GPIB scanner not found at {path}")
+            return
+        Process(target=run_script_process, args=(path, [])).start()
+
+    def launch_plotter(self):
+        path = plotter_path()
+        if not os.path.exists(path):
+            self.log(f"Plotter utility not found at {path}")
             return
         Process(target=run_script_process, args=(path, [])).start()
 
@@ -1629,7 +1752,7 @@ class SweepWorker(WorkerBase):
         self.link.i_cc = p["i_cc_plus"]
 
         ts = timestamp_for_name()
-        path = os.path.join(p["folder"], f"{p['stem']}_sweep_{ts}.csv")
+        path = run_file_path(p["folder"], p["stem"], "sweep", ts)
         blocks = [p["_sample_block"],
                   self.instrument_block_pairs(idn, source_range),
                   ("protocol", [("module", "sweep"), ("mode", SHAPE_KEYS[p["shape"]]),
@@ -1744,13 +1867,10 @@ class SweepWorker(WorkerBase):
 class SweepGUI(MemristorGuiBase):
     MODULE_TITLE = "Sweep"
     MODULE_KEY = "sweep"
-    PROGRAM_VERSION = "1.0"
+    PROGRAM_VERSION = "1.1"
 
     def create_module_inputs(self, parent):
-        frame = LabelFrame(parent, text='Sweep', relief='groove', bg=self.CLR_BG_DARK,
-                           fg=self.CLR_FG_LIGHT, font=self.FONT_TITLE)
-        frame.pack(pady=4, padx=10, fill='x')
-        frame.grid_columnconfigure(2, weight=1)
+        frame = self.make_frame(parent, 'Sweep')
         r = 0
         self.add_combo(frame, r, "Shape", "shape", SHAPES, SHAPE_BIPOLAR_PLUS, width=18, command=self._on_shape); r += 1
         self.add_entry(frame, r, "V max + (V)", "vmax_plus", "5", "at or below never-exceed"); r += 1
@@ -1762,9 +1882,7 @@ class SweepGUI(MemristorGuiBase):
         self.add_entry(frame, r, "Loops", "loops", "1", "full loops"); r += 1
         self.add_entry(frame, r, "Ladder list (V)", "ladder", "", "e.g. 5, 10, 20 (ladder shape only)", width=22); r += 1
         self.add_entry(frame, r, "n confirm", "n_confirm", "3", "points confirming a trip"); r += 1
-        self.warn_label = Label(frame, text="", bg=self.CLR_BG_DARK, fg='#7A3B00', font=self.FONT_HINT,
-                                wraplength=460, justify='left')
-        self.warn_label.grid(row=r, column=0, columnspan=3, sticky='w', padx=8, pady=(4, 2))
+        self.warn_label = self.add_wide_label(frame, "", fg='#7A3B00')
 
     def _on_shape(self):
         self.refresh_estimate()
@@ -1772,6 +1890,8 @@ class SweepGUI(MemristorGuiBase):
     def build_figure(self, fig):
         self.ax_lin = fig.add_subplot(1, 2, 1)
         self.ax_log = fig.add_subplot(1, 2, 2)
+        self.ax_lin.set_title("Current vs. Voltage", fontweight='bold')
+        self.ax_log.set_title("|Current| vs. Voltage", fontweight='bold')
         self.ax_lin.set_xlabel("V (V)")
         self.ax_lin.set_ylabel("I (A)")
         self.ax_log.set_xlabel("V (V)")
@@ -1799,6 +1919,8 @@ class SweepGUI(MemristorGuiBase):
         self.ax_lin.set_ylabel("I (A)")
         self.ax_log.set_ylabel("|I| (A)")
         self.ax_log.set_yscale("log")
+        self.ax_lin.set_title("Current vs. Voltage", fontweight='bold')
+        self.ax_log.set_title("|Current| vs. Voltage", fontweight='bold')
         loops = sorted({r["loop"] for r in self.points})
         for loop in loops:
             for seg in (1, 2, 3, 4):
@@ -1831,10 +1953,6 @@ class SweepGUI(MemristorGuiBase):
             self.figure.suptitle(ascii_text(
                 f"{p['sample_name']} | sweep | {SHAPE_KEYS[p['shape']]} | Vmax +{p['vmax_plus']:g}/-{p['vmax_minus']:g} V | "
                 f"Icc {p['i_cc_plus'] * 1e6:g}/{p['i_cc_minus'] * 1e6:g} uA"), fontsize=10)
-        try:
-            self.figure.tight_layout()
-        except Exception:
-            pass
 
     def _plan_from_inputs(self):
         shape = self.get_str("shape")

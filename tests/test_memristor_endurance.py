@@ -138,8 +138,7 @@ def test_endurance_pulse_mode_uses_zero_autooff_and_writes_one_row_per_pulse():
 
 
 def test_endurance_gui_locks_pulse_mode_behind_lo_earth_and_measured_width():
-    base = dict(sample_name="VCO01", electrode="Ag", area_cm2="", thickness_mm="", hi_face="A",
-                visa_address="GPIB1::24::INSTR", protection="20", mode=endurance.MODE_PULSE, v_set="5", v_reset="5",
+    base = dict(sample_name="VCO01", visa_address="GPIB1::24::INSTR", protection="20", mode=endurance.MODE_PULSE, v_set="5", v_reset="5",
                 step_v="0.1", dwell_s="0.1", i_cc_set_uA="10", i_cc_reset_uA="10", v_read="0.1", t_soak="60",
                 n_cycles="100", max_hours="12", raw_cycles="1-10", n_confirm="3", lo_earthed=False, pulse_set_v="5",
                 pulse_reset_v="5", pulses_per_leg="1", pulse_width_s="", pulse_delay_s="0.001", pulse_nplc="0.01")

@@ -146,10 +146,8 @@ def make_link(mod, fake):
 
 
 def base_params(folder, **extra):
-    p = dict(sample_name="VCO01", notes="dummy load", electrode="Ag paste", area_cm2=None, thickness_mm=None,
-             hi_face="face A", visa_address="FAKE::INSTR", protection_v=20.0, folder=folder, stem="VCO01")
-    p["_sample_block"] = ("sample", [("name", "VCO01"), ("notes", "dummy load"), ("electrode", "Ag paste"),
-                                     ("area_cm2", ""), ("thickness_mm", ""), ("HI_face", "face A")])
+    p = dict(sample_name="VCO01", visa_address="FAKE::INSTR", protection_v=20.0, folder=folder, stem="VCO01")
+    p["_sample_block"] = ("sample", [("name", "VCO01")])
     p.update(extra)
     return p
 
@@ -201,8 +199,6 @@ def _gui_shell(cls, mod, values, folder):
     gui = object.__new__(cls)
     gui.vars = {k: _Var(v) for k, v in values.items()}
     gui.file_location_path = folder
-    gui.notes_text = None
-    gui.notes = lambda: values.get("_notes", "dummy")
     gui.companion_path = ""
     gui.warn_label = None
     return gui
@@ -225,7 +221,7 @@ def run_sweep(fake, folder, stop_after=None, **extra):
     worker = sweep.SweepWorker(p, link, stop, q, sleep=lambda s: None)
     worker.gui_version = "test"
     msgs = run_worker(worker, stop_after, stop, timeout=60)
-    files = [f for f in os.listdir(folder) if "_sweep_" in f]
+    files = [f for f in os.listdir(folder) if "_sweep" in f]
     assert len(files) == 1
     return worker, msgs, os.path.join(folder, files[0])
 
@@ -247,8 +243,8 @@ def run_retention(fake, folder, stop_after=None, **extra):
     worker.gui_version = "test"
     msgs = run_worker(worker, stop_after, stop, timeout=60)
     files = sorted(os.listdir(folder))
-    writes = [f for f in files if "_write_" in f]
-    reads = [f for f in files if "_reads_" in f]
+    writes = [f for f in files if "_write" in f]
+    reads = [f for f in files if "_reads" in f]
     assert len(writes) == 1 and len(reads) == 1
     return worker, msgs, os.path.join(folder, writes[0]), os.path.join(folder, reads[0])
 
@@ -271,8 +267,8 @@ def run_endurance(fake, folder, stop_after=None, **extra):
     worker.gui_version = "test"
     msgs = run_worker(worker, stop_after, stop, timeout=60)
     files = sorted(os.listdir(folder))
-    summ = [f for f in files if "_summary_" in f]
-    raw = [f for f in files if "_raw_" in f]
+    summ = [f for f in files if "_summary" in f]
+    raw = [f for f in files if "_raw" in f]
     assert len(summ) == 1 and len(raw) == 1
     return worker, msgs, os.path.join(folder, summ[0]), os.path.join(folder, raw[0])
 

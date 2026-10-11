@@ -10,6 +10,7 @@ RECONNECT lines, Stop during a retry gap, GUI validation, source hygiene
 import math
 import os
 import queue
+import re
 import sys
 import tempfile
 import threading
@@ -374,7 +375,7 @@ def test_stop_during_a_retry_gap_ends_with_its_own_reason():
         finally:
             sweep.RETRY_SCHEDULE_S = (0.01, 0.01, 0.02)
         assert worker.reason == "stop_button_during_retry"
-        files = [f for f in os.listdir(d) if "_sweep_" in f]
+        files = [f for f in os.listdir(d) if "_sweep" in f]
         header, _, _ = read_file(os.path.join(d, files[0]))
         assert end_reason(header) == "stop_button_during_retry"
         assert len(comment_lines(os.path.join(d, files[0]), "RETRY")) >= 2
@@ -382,9 +383,21 @@ def test_stop_during_a_retry_gap_ends_with_its_own_reason():
         assert fail.writes[-1] == ":OUTP OFF"
 
 
+def test_sweep_file_name_is_sample_timestamp_kind_and_a_rerun_never_overwrites():
+    with tempfile.TemporaryDirectory() as d:
+        ts = sweep.timestamp_for_name()
+        first = sweep.run_file_path(d, "VCO01", "sweep", ts)
+        assert os.path.basename(first) == f"VCO01_{ts}_sweep.csv"
+        assert re.fullmatch(r"VCO01_\d{8}_\d{6}_sweep\.csv", os.path.basename(first))
+        open(first, "w").close()
+        second = sweep.run_file_path(d, "VCO01", "sweep", ts)
+        assert os.path.basename(second) == f"VCO01_{ts}_sweep_1.csv"
+        open(second, "w").close()
+        assert os.path.basename(sweep.run_file_path(d, "VCO01", "sweep", ts)) == f"VCO01_{ts}_sweep_2.csv"
+
+
 def test_sweep_gui_refuses_vmax_above_protection_and_bad_ladder():
-    base = dict(sample_name="VCO01", electrode="Ag", area_cm2="", thickness_mm="", hi_face="A",
-                visa_address="GPIB1::24::INSTR", protection="20", shape=sweep.SHAPE_BIPOLAR_PLUS, vmax_plus="5",
+    base = dict(sample_name="VCO01", visa_address="GPIB1::24::INSTR", protection="20", shape=sweep.SHAPE_BIPOLAR_PLUS, vmax_plus="5",
                 vmax_minus="5", step_v="0.1", dwell_s="0.1", i_cc_plus_uA="10", i_cc_minus_uA="10", loops="1",
                 ladder="", n_confirm="3")
     with tempfile.TemporaryDirectory() as d:

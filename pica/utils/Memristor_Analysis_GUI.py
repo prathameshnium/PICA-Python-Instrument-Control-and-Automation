@@ -386,7 +386,7 @@ class _TabBase:
         self.files = []          # list of (path, header_blocks, columns, rows)
         self.params = {}
         self.results = []
-        left = tk.Frame(self.frame, bg=self.CLR_BG, width=430)
+        left = tk.Frame(self.frame, bg=self.CLR_BG, width=520)
         left.pack(side='left', fill='y')
         left.pack_propagate(False)
         right = tk.Frame(self.frame, bg='white')
@@ -394,7 +394,7 @@ class _TabBase:
         self._build_files_box(left)
         self._build_params(left)
         self._build_results(left)
-        self.figure = Figure(figsize=(8, 6.5), dpi=100, facecolor='white')
+        self.figure = Figure(figsize=(8, 6.5), dpi=100, facecolor='white', layout='constrained')
         self.build_axes()
         self.canvas = FigureCanvasTkAgg(self.figure, master=right)
         self.canvas.get_tk_widget().pack(fill='both', expand=True)
@@ -405,13 +405,17 @@ class _TabBase:
         box.pack(fill='x', padx=8, pady=(8, 4))
         self.listbox = tk.Listbox(box, height=5, font=('Consolas', 9), selectmode='extended')
         self.listbox.pack(fill='x', padx=6, pady=4)
+        # Buttons share the frame width (grid, equal columns) so none can be
+        # clipped by the fixed-width left panel.
         row = tk.Frame(box, bg=self.CLR_BG)
         row.pack(fill='x', padx=6, pady=(0, 6))
-        ttk.Button(row, text="Add...", command=self.add_files_dialog, width=8).pack(side='left', padx=(0, 4))
-        ttk.Button(row, text="Remove", command=self.remove_selected, width=8).pack(side='left', padx=(0, 4))
-        ttk.Button(row, text="Clear", command=self.clear_files, width=8).pack(side='left', padx=(0, 4))
-        ttk.Button(row, text="Compute", command=self.compute, width=9).pack(side='left', padx=(8, 4))
-        ttk.Button(row, text="Export", command=self.export, width=8).pack(side='left')
+        for c in range(3):
+            row.grid_columnconfigure(c, weight=1, uniform='btn')
+        ttk.Button(row, text="Add...", command=self.add_files_dialog).grid(row=0, column=0, sticky='ew', padx=(0, 4), pady=2)
+        ttk.Button(row, text="Remove", command=self.remove_selected).grid(row=0, column=1, sticky='ew', padx=(0, 4), pady=2)
+        ttk.Button(row, text="Clear", command=self.clear_files).grid(row=0, column=2, sticky='ew', pady=2)
+        ttk.Button(row, text="Compute", command=self.compute).grid(row=1, column=0, columnspan=2, sticky='ew', padx=(0, 4), pady=2)
+        ttk.Button(row, text="Export", command=self.export).grid(row=1, column=2, sticky='ew', pady=2)
 
     def _build_params(self, parent):
         self.param_box = LabelFrame(parent, text="Criteria (typed by you, written into the export header)",
@@ -524,10 +528,6 @@ class _TabBase:
         pass
 
     def redraw(self):
-        try:
-            self.figure.tight_layout()
-        except Exception:
-            pass
         self.canvas.draw_idle()
 
 
@@ -852,8 +852,9 @@ class MemristorAnalysisGUI:
         self.tabs = {}
         try:
             self.root.title("Memristor Analysis (read-only)")
-            self.root.geometry("1500x900")
-            self.root.minsize(1200, 750)
+            sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+            self.root.geometry(f"{min(1500, sw - 20)}x{min(900, sh - 90)}+0+0")
+            self.root.minsize(1100, 650)
             self.root.configure(bg=self.CLR_BG)
             mpl.rcParams['font.family'] = 'Segoe UI'
         except Exception:

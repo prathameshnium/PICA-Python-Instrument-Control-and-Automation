@@ -117,8 +117,7 @@ def test_average_readings_or_flags_and_averages_values():
 
 
 def test_retention_gui_warns_when_intermittent_spacing_is_finer_than_the_soak():
-    base = dict(sample_name="VCO01", electrode="Ag", area_cm2="", thickness_mm="", hi_face="A",
-                visa_address="GPIB1::24::INSTR", protection="20", state="HRS", swap=False, vmax_write="5",
+    base = dict(sample_name="VCO01", visa_address="GPIB1::24::INSTR", protection="20", state="HRS", swap=False, vmax_write="5",
                 i_cc_write_uA="10", step_v="0.1", dwell_s="0.1", n_confirm="3", v_read="0.1", t_rec="60",
                 t_soak="60", t_stop="10000", scheme=retention.SCHEME_INTERMITTENT, spacing=retention.SPACING_LINEAR,
                 points_per_decade="10", dt="10", n_avg="3")
