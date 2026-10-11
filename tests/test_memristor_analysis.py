@@ -1,6 +1,6 @@
 """Memristor_Analysis_GUI.py: file reading and header parsing, rule 1 and
 rule 2 for V set / V reset (none when nothing switches), retention
-pairing on the common window only, drift rule, export layout, command-line
+pairing on the common window only, drift rule, command-line
 arguments, file-kind detection from real module outputs, and the proof that
 the raw file is never modified.
 """
@@ -70,21 +70,16 @@ def test_analysis_retention_pairing_uses_the_common_window_only():
     assert analysis.drift_criterion(t, r, 5000, 2.0) == (None, None)
 
 
-def test_analysis_export_writes_into_an_analysis_folder_with_sources_and_parameters():
-    with tempfile.TemporaryDirectory() as d:
-        path = analysis.write_analysis_file(d, "x.csv", ["raw1.csv"], [("rule", "1")], ("a", "b"),
-                                            [("f", 1.5), ("g", None)], notes=["pairing: none"])
-        assert os.path.dirname(path).endswith("analysis")
-        text = open(path, encoding="utf-8").read().splitlines()
-        assert text[0].startswith("# PICA memristor analysis")
-        assert "rule=1" in text[1] and "[source] file=raw1.csv" in text[2] and text[3] == "# pairing: none"
-        assert text[4] == "a,b" and text[5].startswith("f,1.5") and text[6] == "g,"
 
 
 def test_analysis_cli_arguments():
-    args = analysis.parse_args(["--tab", "retention", "--folder", "C:/x", "--file", "a.csv", "--file", "b.csv"])
-    assert args.tab == "retention" and args.folder == "C:/x" and args.file == ["a.csv", "b.csv"]
+    args = analysis.parse_args(["--tab", "retention"])
+    assert args.tab == "retention" and not hasattr(args, "file") and not hasattr(args, "folder")
     assert analysis.parse_args([]).tab is None
+    # the module writes nothing: no export path exists any more
+    assert not hasattr(analysis, "write_analysis_file")
+    src = open(analysis.__file__, encoding="utf-8").read()
+    assert src.count("open(") == 1 and 'open(path, "r"' in src     # the single open is the read-only parser
 
 
 def test_analysis_file_kinds_from_real_outputs():

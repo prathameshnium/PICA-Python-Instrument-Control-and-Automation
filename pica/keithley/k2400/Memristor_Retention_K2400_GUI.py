@@ -392,6 +392,17 @@ def point_line(tag, row):
     return " ".join(parts)
 
 
+EVENT_CODES = {"": 0, "trip_first": 1, "trip_unconfirmed": 2, "trip_confirmed": 3,
+               "trip_confirmed;turnaround": 4, "ovp": 5}
+EVENT_CODE_LEGEND = "0=none 1=trip_first 2=trip_unconfirmed 3=trip_confirmed 4=trip_confirmed+turnaround 5=ovp 9=other"
+
+
+def event_code(event):
+    """Integer for the event_code column: data rows stay all-numeric (no free
+    text, no ';') so Origin and the like import them without surprises."""
+    return EVENT_CODES.get(event or "", 9)
+
+
 def resistance_ohm(v_meas, i_a):
     """V / I, or None when I is exactly zero or either value is missing."""
     if v_meas is None or i_a is None:
@@ -1476,7 +1487,7 @@ class MemristorGuiBase:
                   ("pacing_s", f"{PACING_S:g}"), ("rst_sleep_s", f"{RST_SLEEP_S:g}"),
                   ("settle_s", f"{SETTLE_S:g}"), ("n_settle", str(N_SETTLE_READINGS)),
                   ("ramp_step_s", f"{RAMP_STEP_S:g}"), ("compliance_flag", "STAT bit3 or bit16"),
-                  ("trip_query", ":SENS:CURR:PROT:TRIP?"), ("event_separator", ";")]
+                  ("trip_query", ":SENS:CURR:PROT:TRIP?"), ("event_code", EVENT_CODE_LEGEND)]
         return ("instrument", pairs)
 
     # -- run control -------------------------------------------------------
@@ -1660,14 +1671,8 @@ class MemristorGuiBase:
         if not os.path.exists(path):
             self.log(f"Analysis GUI not found at {path}")
             return
-        argv = ["--tab", self.MODULE_KEY, "--folder", self.file_location_path]
-        for f in self.analysis_files():
-            argv += ["--file", f]
-        Process(target=run_script_process, args=(path, argv)).start()
-        self.log("Analysis GUI opened in a separate process.")
-
-    def analysis_files(self):
-        return list(self.current_files)
+        Process(target=run_script_process, args=(path, ["--tab", self.MODULE_KEY])).start()
+        self.log("Analysis GUI opened in a separate process (choose files there with Add...).")
 
     def _on_closing(self):
         if self.is_running:
@@ -1704,7 +1709,7 @@ SPACINGS = (SPACING_LOG, SPACING_LINEAR)
 V_READ_MAX_V = 1.0
 
 WRITE_COLUMNS = ("t_s", "loop", "segment", "vmax_V", "V_set_V", "V_meas_V", "I_A", "R_ohm",
-                 "compliance_flag", "trip_query", "status_bits", "event", "phase")
+                 "compliance_flag", "trip_query", "status_bits", "event_code", "phase")
 READS_COLUMNS = ("t_since_write_s", "t_wall_s", "phase", "V_set_V", "V_meas_V", "I_A", "R_ohm",
                  "n_avg", "compliance_flag", "trip_query", "status_bits")
 
@@ -1935,7 +1940,7 @@ class RetentionWorker(WorkerBase):
                  ("pacing_s", f"{PACING_S:g}"), ("rst_sleep_s", f"{RST_SLEEP_S:g}"), ("settle_s", f"{SETTLE_S:g}"),
                  ("n_settle", str(N_SETTLE_READINGS)), ("ramp_step_s", f"{RAMP_STEP_S:g}"),
                  ("compliance_flag", "STAT bit3 or bit16"), ("trip_query", ":SENS:CURR:PROT:TRIP?"),
-                 ("event_separator", ";")]
+                 ("event_code", EVENT_CODE_LEGEND)]
         return ("instrument", pairs)
 
     def t_since_write(self):
@@ -1951,7 +1956,8 @@ class RetentionWorker(WorkerBase):
     def write_write_row(self, rd, segment, v_set, event):
         row = {"t_s": self.t_s(), "loop": 1, "segment": segment, "vmax_V": self.p["vmax_write"], "V_set_V": v_set,
                "V_meas_V": rd.v, "I_A": rd.i, "R_ohm": rd.r_ohm, "compliance_flag": rd.compliance_flag,
-               "trip_query": rd.trip_query, "status_bits": rd.stat, "event": event, "phase": "sweep"}
+               "trip_query": rd.trip_query, "status_bits": rd.stat, "event": event,
+               "event_code": event_code(event), "phase": "sweep"}
         self.write_file.write_row([row[c] for c in WRITE_COLUMNS])
         self.post("row", "write", row)
 
@@ -2242,11 +2248,6 @@ class RetentionGUI(MemristorGuiBase):
                 f"t rec {p['t_rec']:g} s t soak {p['t_soak']:g} s t stop {p['t_stop']:g} s | {p['scheme']} | "
                 f"{p['spacing']} ppd {p['points_per_decade']} dt {p['dt']:g} s | n avg {p['n_avg']}")
 
-    def analysis_files(self):
-        files = [f for f in self.current_files if "_reads" in os.path.basename(f)]
-        if self.companion_path:
-            files.append(self.companion_path)
-        return files
 
 
 def main():

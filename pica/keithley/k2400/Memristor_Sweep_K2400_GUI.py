@@ -23,7 +23,9 @@ v1.0 (11 Oct 2026) - first version
     outgoing segment, n confirm further points are taken; when all are
     flagged the segment turns around from the present voltage and the rest
     of the loop is measured. Events: trip_first, trip_unconfirmed,
-    trip_confirmed, trip_confirmed;turnaround (';' separates two events).
+    trip_confirmed, trip_confirmed;turnaround; the file column event_code
+    holds the integer code (0 none, 1 first, 2 unconfirmed, 3 confirmed,
+    4 confirmed+turnaround, 5 ovp) so data rows stay numeric.
   * Separate I cc for the positive and the negative half (K's ruling B9).
   * compliance_flag = status bit 3 or 16 of every :READ?; trip_query =
     :SENS:CURR:PROT:TRIP? sent right after the point; status_bits raw.
@@ -393,6 +395,17 @@ def point_line(tag, row):
             val = "nan" if math.isnan(val) else f"{val:.4g}"
         parts.append(f"{short}={val}")
     return " ".join(parts)
+
+
+EVENT_CODES = {"": 0, "trip_first": 1, "trip_unconfirmed": 2, "trip_confirmed": 3,
+               "trip_confirmed;turnaround": 4, "ovp": 5}
+EVENT_CODE_LEGEND = "0=none 1=trip_first 2=trip_unconfirmed 3=trip_confirmed 4=trip_confirmed+turnaround 5=ovp 9=other"
+
+
+def event_code(event):
+    """Integer for the event_code column: data rows stay all-numeric (no free
+    text, no ';') so Origin and the like import them without surprises."""
+    return EVENT_CODES.get(event or "", 9)
 
 
 def resistance_ohm(v_meas, i_a):
@@ -1479,7 +1492,7 @@ class MemristorGuiBase:
                   ("pacing_s", f"{PACING_S:g}"), ("rst_sleep_s", f"{RST_SLEEP_S:g}"),
                   ("settle_s", f"{SETTLE_S:g}"), ("n_settle", str(N_SETTLE_READINGS)),
                   ("ramp_step_s", f"{RAMP_STEP_S:g}"), ("compliance_flag", "STAT bit3 or bit16"),
-                  ("trip_query", ":SENS:CURR:PROT:TRIP?"), ("event_separator", ";")]
+                  ("trip_query", ":SENS:CURR:PROT:TRIP?"), ("event_code", EVENT_CODE_LEGEND)]
         return ("instrument", pairs)
 
     # -- run control -------------------------------------------------------
@@ -1663,14 +1676,8 @@ class MemristorGuiBase:
         if not os.path.exists(path):
             self.log(f"Analysis GUI not found at {path}")
             return
-        argv = ["--tab", self.MODULE_KEY, "--folder", self.file_location_path]
-        for f in self.analysis_files():
-            argv += ["--file", f]
-        Process(target=run_script_process, args=(path, argv)).start()
-        self.log("Analysis GUI opened in a separate process.")
-
-    def analysis_files(self):
-        return list(self.current_files)
+        Process(target=run_script_process, args=(path, ["--tab", self.MODULE_KEY])).start()
+        self.log("Analysis GUI opened in a separate process (choose files there with Add...).")
 
     def _on_closing(self):
         if self.is_running:
@@ -1709,7 +1716,7 @@ SHAPE_KEYS = {SHAPE_BIPOLAR_PLUS: "bipolar_plus_first", SHAPE_BIPOLAR_MINUS: "bi
               SHAPE_LADDER: "ladder"}
 
 SWEEP_COLUMNS = ("t_s", "loop", "segment", "vmax_V", "V_set_V", "V_meas_V", "I_A", "R_ohm",
-                 "compliance_flag", "trip_query", "status_bits", "event", "phase")
+                 "compliance_flag", "trip_query", "status_bits", "event_code", "phase")
 
 
 def parse_ladder(text):
@@ -1837,13 +1844,14 @@ class SweepWorker(WorkerBase):
                  ("pacing_s", f"{PACING_S:g}"), ("rst_sleep_s", f"{RST_SLEEP_S:g}"), ("settle_s", f"{SETTLE_S:g}"),
                  ("n_settle", str(N_SETTLE_READINGS)), ("ramp_step_s", f"{RAMP_STEP_S:g}"),
                  ("compliance_flag", "STAT bit3 or bit16"), ("trip_query", ":SENS:CURR:PROT:TRIP?"),
-                 ("event_separator", ";")]
+                 ("event_code", EVENT_CODE_LEGEND)]
         return ("instrument", pairs)
 
     def write_point(self, rd, loop, segment, vmax, v_set, event, phase):
         row = {"t_s": self.t_s(), "loop": loop, "segment": segment, "vmax_V": vmax, "V_set_V": v_set,
                "V_meas_V": rd.v, "I_A": rd.i, "R_ohm": rd.r_ohm, "compliance_flag": rd.compliance_flag,
-               "trip_query": rd.trip_query, "status_bits": rd.stat, "event": event, "phase": phase}
+               "trip_query": rd.trip_query, "status_bits": rd.stat, "event": event,
+               "event_code": event_code(event), "phase": phase}
         self.file.write_row([row[c] for c in SWEEP_COLUMNS])
         self.last_compliance_flag = rd.compliance_flag
         self.post("row", "sweep", row)

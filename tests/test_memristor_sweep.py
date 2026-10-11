@@ -230,6 +230,12 @@ def test_link_refuses_a_compliance_readback_mismatch():
     assert sweep.COMPLIANCE_READBACK_TOLERANCE == 0.05
 
 
+def test_event_codes_cover_every_tracker_event():
+    assert [sweep.event_code(e) for e in ("", None, "trip_first", "trip_unconfirmed", "trip_confirmed",
+                                          "trip_confirmed;turnaround", "ovp", "something_else")] == [0, 0, 1, 2, 3, 4, 5, 9]
+    assert sweep.SWEEP_COLUMNS[-2:] == ("event_code", "phase")
+
+
 def test_point_line_is_compact_and_skips_empty_fields():
     row = {"t_s": 1.23456, "loop": 2, "segment": 3, "vmax_V": 20.0, "V_set_V": 1.2, "V_meas_V": 1.19876,
            "I_A": 3.2e-6, "R_ohm": 374612.5, "compliance_flag": 0, "trip_query": None, "status_bits": 0,
@@ -272,8 +278,9 @@ def test_sweep_on_1_megohm_trips_at_10v_confirms_turns_around_and_measures_the_r
         seg1 = [r for r in rows if r["segment"] == 1]
         v1 = [r["V_set_V"] for r in seg1]
         assert v1 == [float(k) for k in range(0, 15)], v1       # 0..14: trip at 11, confirm 12, 13, 14
-        events = [r["event"] for r in seg1]
-        assert events[11] == "trip_first" and events[14] == "trip_confirmed;turnaround"
+        events = [r["event_code"] for r in seg1]
+        assert events[11] == 1 and events[12:14] == [0, 0] and events[14] == 4   # first, confirming, confirmed+turnaround
+        assert "event" not in rows[0]           # the file holds the integer code only (Origin-friendly)
         assert all(r["compliance_flag"] == r["trip_query"] for r in rows if r["trip_query"] != "")
         assert [r["compliance_flag"] for r in seg1] == [0] * 11 + [1] * 4
         seg2 = [r["V_set_V"] for r in rows if r["segment"] == 2]
@@ -300,7 +307,7 @@ def test_sweep_without_a_trip_runs_to_vmax_with_all_flags_zero():
         sw = [r for r in rows if r["phase"] == "sweep"]
         assert len(sw) == 41 and all(r["compliance_flag"] == 0 for r in sw)
         assert max(r["V_set_V"] for r in sw) == 5.0 and min(r["V_set_V"] for r in sw) == -5.0
-        assert all(r["event"] == "" for r in sw)
+        assert all(r["event_code"] == 0 for r in sw)
 
 
 def test_sweep_negative_half_uses_its_own_compliance():
@@ -323,7 +330,7 @@ def test_sweep_ladder_stops_after_the_entry_with_a_confirmed_trip():
         assert loops == [1, 2]
         assert {r["vmax_V"] for r in rows if r["loop"] == 2} == {15.0}
         l2 = [r for r in rows if r["loop"] == 2]
-        assert any("turnaround" in r["event"] for r in l2) and l2[-1]["segment"] == 4
+        assert any(r["event_code"] == 4 for r in l2) and l2[-1]["segment"] == 4
 
 
 def test_sweep_stop_button_finishes_the_point_and_ramps_down():
@@ -349,7 +356,7 @@ def test_sweep_ovp_bit_stops_the_run():
         assert worker.reason == "ovp_trip"
         header, _, rows = read_file(path)
         assert end_reason(header) == "ovp_trip"
-        assert rows[-1]["event"] == "ovp" and rows[-1]["V_set_V"] == 3.0
+        assert rows[-1]["event_code"] == 5 and rows[-1]["V_set_V"] == 3.0
         assert worker.link.fake.writes[-1] == ":OUTP OFF"
 
 

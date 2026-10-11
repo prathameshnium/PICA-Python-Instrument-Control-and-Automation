@@ -90,7 +90,7 @@ def test_retention_stop_button_and_write_leg_turnaround():
         worker, _, wpath, rpath = run_retention(FakeK2400(1e5), d, stop_after=0.5, t_stop=30, vmax_write=5, step_v=0.5)
         assert worker.reason == "stop_button"
         _, _, wrows = read_file(wpath)
-        assert any("turnaround" in r["event"] for r in wrows)      # 1e5 ohm trips at 1 V
+        assert any(r["event_code"] == 4 for r in wrows)      # 1e5 ohm trips at 1 V, confirmed + turnaround
         assert max(r["V_set_V"] for r in wrows) < 5.0
         assert wrows[-1]["V_set_V"] == 0.0
         rh, _, _ = read_file(rpath)
@@ -116,16 +116,6 @@ def test_average_readings_or_flags_and_averages_values():
     assert v is None and trip is None
 
 
-def test_retention_open_analysis_preloads_the_reads_file_of_the_v11_name():
-    base = dict(sample_name="VCO01")
-    with tempfile.TemporaryDirectory() as d:
-        gui = _gui_shell(retention.RetentionGUI, retention, base, d)
-        ts = retention.timestamp_for_name()
-        gui.current_files = [retention.run_file_path(d, "VCO01", "retention_LRS_write", ts),
-                             retention.run_file_path(d, "VCO01", "retention_LRS_reads", ts)]
-        assert [os.path.basename(f) for f in gui.analysis_files()] == [f"VCO01_{ts}_retention_LRS_reads.csv"]
-        gui.companion_path = "other.csv"
-        assert gui.analysis_files()[-1] == "other.csv"
 
 
 def test_retention_gui_warns_when_intermittent_spacing_is_finer_than_the_soak():

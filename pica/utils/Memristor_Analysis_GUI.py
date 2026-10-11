@@ -6,9 +6,9 @@ Purpose: Read-only analysis of the files written by the three memristor
          protocol "Memristor measurement modules for PICA" v1.1, Section 6.
 
 v1.0 (11 Oct 2026) - first version
-  * Strictly read-only on the raw files: they are opened for reading only,
-    never renamed, moved or rewritten. Results go to <folder>/analysis/ as
-    new files whose header names every raw file and every parameter used.
+  * Strictly read-only: the raw files are opened for reading only, never
+    renamed, moved or rewritten, and the module writes NO file of its own.
+    Results appear in the Results box of each tab (and on the plot).
   * Sweep tab: I-V (linear and log|I|) of sweep files, retention _write
     files or one cycle of an endurance raw file; V set / V reset by rule 1
     (first compliance point, else current jump > F above a voltage floor;
@@ -23,8 +23,8 @@ v1.0 (11 Oct 2026) - first version
     threshold and k-in-a-row rule (defaults 10 and 3); histogram of
     V_set_trip_V / V_reset_trip_V; raw-cycle I-V viewer; a warning when a
     sweep-mode and a pulse-mode summary are overlaid.
-  * Command line: --tab sweep|retention|endurance --folder <path>
-    --file <path> (repeatable), used by the modules' 'Open analysis'.
+  * Files are chosen with the Add... button of each tab; nothing is
+    preloaded. Command line: --tab sweep|retention|endurance only.
 """
 
 import argparse
@@ -33,7 +33,6 @@ import math
 import os
 import sys
 import tkinter as tk
-from datetime import datetime
 from tkinter import ttk, Label, Entry, LabelFrame, filedialog, messagebox, scrolledtext
 
 import numpy as np
@@ -341,30 +340,6 @@ def first_failure_cycle(cycles, windows, threshold, k):
     return None
 
 
-# ===============================================================================
-# Export (new files in <folder>/analysis/, never touching the raw files)
-# ===============================================================================
-
-def write_analysis_file(folder, name, sources, params, columns, rows, notes=()):
-    out_dir = os.path.join(folder, "analysis")
-    os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, name)
-    with open(path, "w", newline="", encoding="utf-8") as fh:
-        fh.write(f"# PICA memristor analysis v{PROGRAM_VERSION} | protocol v{PROTOCOL_VERSION}\n")
-        fh.write(f"# [analysis] time={datetime.now().astimezone().isoformat(timespec='seconds')} | "
-                 + " | ".join(f"{k}={ascii_text(v)}" for k, v in params) + "\n")
-        for src in sources:
-            fh.write(f"# [source] file={ascii_text(src)}\n")
-        for note in notes:
-            fh.write(f"# {ascii_text(note)}\n")
-        w = csv.writer(fh, lineterminator="\n")
-        w.writerow(columns)
-        for row in rows:
-            w.writerow(["" if (v is None or (isinstance(v, float) and math.isnan(v))) else
-                        (f"{v:.8e}" if isinstance(v, float) else ascii_text(v)) for v in row])
-    return path
-
-
 def fmt_v(v):
     return "none" if v is None or (isinstance(v, float) and math.isnan(v)) else f"{v:.4g}"
 
@@ -414,11 +389,10 @@ class _TabBase:
         ttk.Button(row, text="Add...", command=self.add_files_dialog).grid(row=0, column=0, sticky='ew', padx=(0, 4), pady=2)
         ttk.Button(row, text="Remove", command=self.remove_selected).grid(row=0, column=1, sticky='ew', padx=(0, 4), pady=2)
         ttk.Button(row, text="Clear", command=self.clear_files).grid(row=0, column=2, sticky='ew', pady=2)
-        ttk.Button(row, text="Compute", command=self.compute).grid(row=1, column=0, columnspan=2, sticky='ew', padx=(0, 4), pady=2)
-        ttk.Button(row, text="Export", command=self.export).grid(row=1, column=2, sticky='ew', pady=2)
+        ttk.Button(row, text="Compute", command=self.compute).grid(row=1, column=0, columnspan=3, sticky='ew', pady=2)
 
     def _build_params(self, parent):
-        self.param_box = LabelFrame(parent, text="Criteria (typed by you, written into the export header)",
+        self.param_box = LabelFrame(parent, text="Criteria (typed by you, echoed in the Results box)",
                                     bg=self.CLR_BG, fg=self.CLR_FG, font=self.FONT_TITLE)
         self.param_box.pack(fill='x', padx=8, pady=4)
         self.param_box.grid_columnconfigure(2, weight=1)
@@ -476,10 +450,12 @@ class _TabBase:
 
     # -- files --------------------------------------------------------------
     def add_files_dialog(self):
-        paths = filedialog.askopenfilenames(title="Add files", initialdir=self.app.folder or os.getcwd(),
+        paths = filedialog.askopenfilenames(title="Add files", initialdir=self.app.last_dir or os.getcwd(),
                                             filetypes=[("CSV", "*.csv"), ("All", "*.*")])
         for p in paths:
             self.add_file(p)
+        if paths:
+            self.app.last_dir = os.path.dirname(paths[-1])
 
     def add_file(self, path):
         if any(f[0] == path for f in self.files):
@@ -522,9 +498,6 @@ class _TabBase:
         pass
 
     def compute(self):
-        pass
-
-    def export(self):
         pass
 
     def redraw(self):
@@ -602,21 +575,6 @@ class SweepTab(_TabBase):
         self.say(lines, clear=True)
         self.redraw()
 
-    def export(self):
-        if not self.results:
-            self.compute()
-        if not self.results or not self.app.folder:
-            self.say(["Nothing to export (compute first, and choose a folder)."])
-            return
-        rows = [(name, loop, res["v_set"], res["how_set"], res["v_reset"], res["how_reset"])
-                for name, loop, res in self.results]
-        params = [("rule", self.params["rule"].get()), ("F", self.params["factor"].get()),
-                  ("V_floor_V", self.params["floor"].get()), ("set_polarity", self.params["set_sign"].get())]
-        stem = os.path.splitext(os.path.basename(self.files[0][0]))[0] if self.files else "sweep"
-        path = write_analysis_file(self.app.folder, f"{stem}_vsetreset_{datetime.now():%Y%m%d_%H%M%S}.csv",
-                                   [f[0] for f in self.files], params,
-                                   ("file", "loop", "V_set_V", "how_set", "V_reset_V", "how_reset"), rows)
-        self.say([f"Exported: {path}"])
 
 
 class RetentionTab(_TabBase):
@@ -698,20 +656,6 @@ class RetentionTab(_TabBase):
         self.say(lines, clear=True)
         self.redraw()
 
-    def export(self):
-        if not self.results:
-            self.compute()
-        if not self.results or not self.app.folder:
-            self.say(["Nothing to export (compute first, and choose a folder)."])
-            return
-        params = [("ratio_threshold", self.params["ratio"].get()), ("drift_factor", self.params["drift"].get()),
-                  ("t_ref_s", self.params["t_ref"].get()), ("pairing", "HRS interpolated onto LRS instants, linear in log t, common window only")]
-        sample = self.files[0][1].get("sample", {}).get("name", "sample") if self.files else "sample"
-        path = write_analysis_file(self.app.folder, f"{sample}_retention_{datetime.now():%Y%m%d_%H%M%S}.csv",
-                                   [f[0] for f in self.files], params,
-                                   ("file", "state", "criterion", "t_fire_s", "R_ref_ohm", "window_lo_s", "window_hi_s"),
-                                   self.results)
-        self.say([f"Exported: {path}"])
 
 
 class EnduranceTab(_TabBase):
@@ -829,26 +773,14 @@ class EnduranceTab(_TabBase):
         self.say(lines, clear=True)
         self.redraw()
 
-    def export(self):
-        if not self.results:
-            self.compute()
-        if not self.results or not self.app.folder:
-            self.say(["Nothing to export (compute first, and choose a folder)."])
-            return
-        params = [("window_threshold", self.params["threshold"].get()), ("k_in_a_row", self.params["k"].get())]
-        sample = self.files[0][1].get("sample", {}).get("name", "sample") if self.files else "sample"
-        path = write_analysis_file(self.app.folder, f"{sample}_endurance_{datetime.now():%Y%m%d_%H%M%S}.csv",
-                                   [f[0] for f in self.files], params,
-                                   ("file", "mode", "cycles", "first_failure_cycle", "cycles_retried"), self.results)
-        self.say([f"Exported: {path}"])
 
 
 class MemristorAnalysisGUI:
     CLR_BG, CLR_HEADER, CLR_FG, CLR_GOLD = '#B8A392', '#E5DCD3', '#2C2825', '#BA6B5E'
 
-    def __init__(self, root, tab=None, folder=None, files=None):
+    def __init__(self, root, tab=None):
         self.root = root
-        self.folder = folder if isinstance(folder, str) and os.path.isdir(folder) else os.getcwd()
+        self.last_dir = os.getcwd()      # where the Add... dialog opens next
         self.tabs = {}
         try:
             self.root.title("Memristor Analysis (read-only)")
@@ -861,12 +793,8 @@ class MemristorAnalysisGUI:
             pass
         self.create_widgets()
         try:
-            for f in (files or []):
-                if isinstance(f, str) and os.path.isfile(f):
-                    self.route_file(f)
             if isinstance(tab, str) and tab in self.tabs:
                 self.notebook.select(self.tabs[tab].frame)
-                self.tabs[tab].compute()
         except Exception:
             pass
 
@@ -878,46 +806,22 @@ class MemristorAnalysisGUI:
             pass
         header = tk.Frame(self.root, bg=self.CLR_HEADER)
         header.pack(side='top', fill='x')
-        Label(header, text="Memristor Analysis (read-only on raw files)", bg=self.CLR_HEADER, fg=self.CLR_GOLD,
+        Label(header, text="Memristor Analysis (read-only, writes nothing)", bg=self.CLR_HEADER, fg=self.CLR_GOLD,
               font=('Segoe UI', 15, 'bold')).pack(side='left', padx=20, pady=8)
         Label(header, text=f"Version {PROGRAM_VERSION} | protocol v{PROTOCOL_VERSION}", bg=self.CLR_HEADER,
               fg=self.CLR_FG, font=('Segoe UI', 10)).pack(side='right', padx=20)
-        ttk.Button(header, text="Output folder...", command=self.choose_folder).pack(side='right', padx=6, pady=4)
-        self.folder_label = Label(header, text=f"analysis/ under: {self.folder}", bg=self.CLR_HEADER, fg=self.CLR_FG,
-                                  font=('Segoe UI', 9, 'italic'))
-        self.folder_label.pack(side='right', padx=6)
+        Label(header, text="writes no files: results stay in the Results box", bg=self.CLR_HEADER, fg=self.CLR_FG,
+              font=('Segoe UI', 9, 'italic')).pack(side='right', padx=6)
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill='both', expand=True, padx=8, pady=8)
         self.tabs["sweep"] = SweepTab(self, self.notebook, "Sweep")
         self.tabs["retention"] = RetentionTab(self, self.notebook, "Retention")
         self.tabs["endurance"] = EnduranceTab(self, self.notebook, "Endurance")
 
-    def choose_folder(self):
-        path = filedialog.askdirectory(initialdir=self.folder)
-        if path:
-            self.folder = path
-            self.folder_label.config(text=f"analysis/ under: {path}")
-
-    def route_file(self, path):
-        """Put a file on the tab that accepts it."""
-        try:
-            header, columns, _ = parse_pica_csv(path)
-        except Exception:
-            return
-        kind = file_kind(header_blocks(header), columns)
-        for name in ("sweep", "retention", "endurance"):
-            if self.tabs[name].accepts(kind) and not (name == "sweep" and kind == "endurance_raw"
-                                                      and self.tabs["endurance"].accepts(kind)):
-                self.tabs[name].add_file(path)
-                return
-        self.tabs["sweep"].add_file(path)
-
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(description="PICA memristor analysis (read-only)")
     parser.add_argument("--tab", choices=TABS, default=None)
-    parser.add_argument("--folder", default=None)
-    parser.add_argument("--file", action="append", default=[])
     args, _unknown = parser.parse_known_args(argv)
     return args
 
@@ -925,7 +829,7 @@ def parse_args(argv):
 def main(argv=None):
     args = parse_args(sys.argv[1:] if argv is None else argv)
     root = tk.Tk()
-    MemristorAnalysisGUI(root, tab=args.tab, folder=args.folder, files=args.file)
+    MemristorAnalysisGUI(root, tab=args.tab)
     root.mainloop()
 
 

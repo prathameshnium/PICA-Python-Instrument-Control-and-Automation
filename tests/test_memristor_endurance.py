@@ -137,13 +137,6 @@ def test_endurance_pulse_mode_uses_zero_autooff_and_writes_one_row_per_pulse():
         assert all(abs(r["R_LRS_ohm"] - 1e6) < 1 for r in srows)
 
 
-def test_endurance_open_analysis_preloads_the_summary_file_of_the_v11_name():
-    with tempfile.TemporaryDirectory() as d:
-        gui = _gui_shell(endurance.EnduranceGUI, endurance, dict(sample_name="VCO01"), d)
-        ts = endurance.timestamp_for_name()
-        gui.current_files = [endurance.run_file_path(d, "VCO01", "endurance_summary", ts),
-                             endurance.run_file_path(d, "VCO01", "endurance_raw", ts)]
-        assert [os.path.basename(f) for f in gui.analysis_files()] == [f"VCO01_{ts}_endurance_summary.csv"]
 
 
 def test_endurance_gui_locks_pulse_mode_behind_lo_earth_and_measured_width():
