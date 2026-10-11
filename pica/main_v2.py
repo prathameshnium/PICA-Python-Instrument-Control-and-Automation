@@ -825,6 +825,16 @@ CATALOG = [
         ],
     },
     {
+        'category': "Memristor (Resistive Switching)",
+        'type': "Voltage Driven",
+        'instruments': "K2400",
+        'modules': [
+            ("Switching I-V Sweep", "K2400 Memristor Sweep", None),
+            ("Retention (R vs. time)", "K2400 Memristor Retention", None),
+            ("Endurance (SET / RESET cycles)", "K2400 Memristor Endurance", None),
+        ],
+    },
+    {
         'category': "High Resistance (1 Ω – 10 PΩ)",
         'type': "Voltage Driven",
         'instruments': "K6517B · Lakeshore 350 / 340 or Cryocon 34",
@@ -1028,6 +1038,47 @@ CATALOG = [
 # 2400", not "K2400". A newcomer has not yet learned to read the shorthand,
 # and this screen is the one place in PICA that assumes nothing.
 QUICK_CATALOG = [
+    {
+        'category': "Memristor (Resistive Switching)",
+        'desc': "A pellet or thin film that switches between a low and a "
+                "high resistance state under a voltage sweep or pulse. A "
+                "single Keithley 2400 writes the state under a current "
+                "compliance and reads it at a small bias. The measurement "
+                "modules record only; the switching voltages, retention "
+                "times and endurance criteria are computed by the read-only "
+                "analysis tool.",
+        'modules': [
+            {
+                'name': "Keithley 2400 (write and read)",
+                'desc': "Voltage sourced, current measured, 2-wire on the "
+                        "front terminals. Every run re-sends the never-exceed "
+                        "voltage (:SOUR:VOLT:PROT), starts and ends at 0 V, "
+                        "and logs the compliance state of every point. Bus "
+                        "errors are retried for as long as it takes, so "
+                        "overnight runs survive a GPIB hiccup.",
+                'instruments': ["Keithley 2400"],
+                'protocols': [
+                    {'label': "Switching I-V Sweep", 'key': "K2400 Memristor Sweep", 'family': None,
+                     'desc': "Bipolar, unipolar or ladder loops under a "
+                             "current compliance; a confirmed compliance "
+                             "trip turns the sweep around and the rest of "
+                             "the loop is still measured."},
+                    {'label': "Retention (R vs. time)", 'key': "K2400 Memristor Retention", 'family': None,
+                     'desc': "Write one state (SET, RESET or a control "
+                             "write), then log the read resistance against "
+                             "time since the write for hours, under a "
+                             "constant or an intermittent read bias."},
+                    {'label': "Endurance (SET / RESET cycles)", 'key': "K2400 Memristor Endurance", 'family': None,
+                     'desc': "SET, soaked read, RESET, soaked read, N times, "
+                             "in sweep mode or with the 2400 Auto-Off pulse "
+                             "trick; a summary row per cycle and the raw "
+                             "current-voltage legs of chosen cycles. The "
+                             "read-only Memristor Analysis tool (PICA Utils) "
+                             "evaluates the files afterwards."},
+                ],
+            },
+        ],
+    },
     {
         'category': "DC Resistance",
         'desc': "A steady current is passed through the sample and the "
@@ -4250,7 +4301,8 @@ class PICALauncherV2:
         return [
             ("Plotting", [("Plotter Utility", launch_plotter_utility),
                           ("PPMS Plotter Utility", "PPMS Plotter Utility"),
-                          ("P-E Plotter", "PE Plotter")]),
+                          ("P-E Plotter", "PE Plotter"),
+                          ("Memristor Analysis", "Memristor Analysis")]),
             ("PPMS Utilities", [("Sequence Visualizer", "Sequence Visualizer"),
                                 ("PPMS Time Estimator", "PPMS Time Estimator"),
                                 ("MD Ratio Calculator", "MD Ratio Calculator")]),

@@ -149,6 +149,46 @@ _add("K2400 Direct Control",
      "integration (PLC); source delay; reading count",
      "Writes no data file.")
 
+_add("K2400 Memristor Sweep",
+     "Switching I-V sweep of a memristor pellet: the Keithley 2400 sources "
+     "the voltage under a current compliance and measures the current. "
+     "Bipolar, unipolar or ladder loops; a confirmed compliance trip turns "
+     "the sweep around and the rest of the loop is still measured. "
+     "Measurement only, no V set / V reset estimation (see Memristor "
+     "Analysis).",
+     _K2400,
+     "sample name and notes (mandatory); shape; V max + and - (V); step (V); "
+     "dwell (s); I cc + and - (uA); loops; ladder list; n confirm; "
+     "never-exceed voltage; 2400 VISA address",
+     "Bus errors are retried forever (1, 2, 5, 10, 30, 60 s, then every "
+     "60 s) so overnight runs survive a GPIB hiccup.")
+
+_add("K2400 Memristor Retention",
+     "Write one resistive state (SET for LRS, RESET for HRS, or a "
+     "sub-threshold control write) and then log the read resistance against "
+     "time since the write for hours, under a constant or an intermittent "
+     "read bias. Two files per run: the write leg and the read log.",
+     _K2400,
+     "sample name and notes (mandatory); state; V max write (V); I cc write "
+     "(uA); step and dwell; V read (V, 0.1 default, up to 1); t rec, t soak, "
+     "t stop (s); read scheme; log or linear spacing; points per decade or "
+     "delta t; n avg; companion file; never-exceed voltage; 2400 VISA address",
+     "Measurement only: retention criteria live in Memristor Analysis.")
+
+_add("K2400 Memristor Endurance",
+     "SET, soaked read, RESET, soaked read, repeated for N cycles, in sweep "
+     "mode or with the 2400 ZERO + Auto-Off pulse trick. One summary row per "
+     "cycle (R LRS, R HRS, window, trip voltages) and the raw current-voltage "
+     "legs of the cycles in a typed list.",
+     _K2400,
+     "sample name and notes (mandatory); mode; V set and V reset max (V); "
+     "step and dwell; I cc SET and RESET (uA); V read (V); t soak (s); N "
+     "cycles; max time (h); raw cycle list; pulse amplitudes, pulses per leg, "
+     "measured pulse width, pulse delay and NPLC; never-exceed voltage; "
+     "2400 VISA address",
+     "Pulse mode stays locked until the LO terminal is confirmed earthed "
+     "(manual p. 13-10) and the scope-measured pulse width is typed in.")
+
 for _key, _t in (("K2400 R-T", _L350), ("K2400 R-T (L340)", _L340)):
     _add(_key,
          "Resistance against temperature with a single Keithley 2400 sourcing "
@@ -678,6 +718,7 @@ UTILITY_TOOLS = [
     ("Plotter Utility", "Plotter Utility", "Plotting"),
     ("PPMS Plotter Utility", "PPMS Plotter Utility", "Plotting"),
     ("P-E Plotter", "PE Plotter", "Plotting"),
+    ("Memristor Analysis", "Memristor Analysis", "Plotting"),
     ("Sequence Visualizer", "Sequence Visualizer", "PPMS Utilities"),
     ("PPMS Time Estimator", "PPMS Time Estimator", "PPMS Utilities"),
     ("MD Ratio Calculator", "MD Ratio Calculator", "PPMS Utilities"),
@@ -702,6 +743,15 @@ _add("PPMS Plotter Utility",
 _add("PE Plotter",
      "Plot ferroelectric P-E hysteresis loops from exported loop files.",
      "none", "loop files; X and Y columns")
+_add("Memristor Analysis",
+     "Read-only analysis of the memristor module files: V set / V reset by "
+     "rule 1 (first compliance point, else current jump) or rule 2 (largest "
+     "|dI/dV|); retention time by a ratio or drift criterion on the common "
+     "time window; endurance failure by a window threshold and k-in-a-row; "
+     "histogram of trip voltages and a raw-cycle current-voltage viewer. "
+     "Results go to an analysis folder; raw files are never written.",
+     "none", "sweep, retention and endurance files; rule and its factor and "
+     "floor; ratio threshold, drift factor and t ref; window threshold and k")
 _add("Sequence Visualizer",
      "Draw a PPMS MultiVu .seq sequence as temperature and field against "
      "time, with an estimate of when each step happens.",
