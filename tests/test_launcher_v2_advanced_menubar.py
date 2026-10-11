@@ -89,12 +89,11 @@ def test_advanced_window_has_the_same_menus_as_the_main_window():
             adv_sub = _submenu(root, adv_bar, label)
             assert _entry_labels(adv_sub) == _entry_labels(main_sub), label
 
-        # The Tools menu on the Advanced window still opens Advanced Options
-        # (a no-op there) and still carries the diagnostic submenu.
-        tools = _submenu(root, adv_bar, "Tools")
-        labels = _entry_labels(tools)
-        assert labels[0].startswith("Advanced Options")
-        assert "Diagnostic Tools" in labels
+        # The View menu on the Advanced window still opens Advanced Options
+        # (a no-op there), and Tools still carries the diagnostic submenu.
+        view = _entry_labels(_submenu(root, adv_bar, "View"))
+        assert any(lab.startswith("Advanced Options") for lab in view)
+        assert "Diagnostic Tools" in _entry_labels(_submenu(root, adv_bar, "Tools"))
 
         app._close_advanced()
         assert app._adv_win is None

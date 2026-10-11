@@ -514,17 +514,28 @@ def test_ctrl_f_again_keeps_the_text_and_selects_it(app):
     assert entry.selection_present()
 
 
-def test_the_tools_menu_opens_the_search_in_both_windows(app):
+def _cascade(app, win, label):
+    """The `label` cascade of `win`'s menu bar."""
+    bar = app.root.nametowidget(win.cget("menu"))
+    for i in range(bar.index("end") + 1):
+        if bar.type(i) == "cascade" and bar.entrycget(i, "label") == label:
+            return app.root.nametowidget(bar.entrycget(i, "menu"))
+    raise AssertionError(f"no {label} menu")
+
+
+def _menu_labels(menu):
+    return [menu.entrycget(i, "label") for i in range(menu.index("end") + 1)
+            if menu.type(i) == "command"]
+
+
+def test_the_view_menu_opens_the_search_in_both_windows(app):
     def item(win):
-        bar = app.root.nametowidget(win.cget("menu"))
-        for i in range(bar.index("end") + 1):
-            if bar.type(i) == "cascade" and bar.entrycget(i, "label") == "Tools":
-                tools = app.root.nametowidget(bar.entrycget(i, "menu"))
-                for j in range(tools.index("end") + 1):
-                    if tools.type(j) == "command" and \
-                            tools.entrycget(j, "label") == "Search Modules…":
-                        return tools, j
-        raise AssertionError("no Tools > Search Modules… entry")
+        tools = _cascade(app, win, "View")
+        for j in range(tools.index("end") + 1):
+            if tools.type(j) == "command" and \
+                    tools.entrycget(j, "label") == "Search Modules…":
+                return tools, j
+        raise AssertionError("no View > Search Modules… entry")
 
     tools, j = item(app.root)
     assert tools.entrycget(j, "accelerator") == "Ctrl+F"
@@ -858,3 +869,171 @@ def test_the_scanner_is_not_started_for_a_closed_advanced_window(app):
     finally:
         launcher.launch_gpib_scanner = launcher_scanner
     assert started == []
+
+
+# ------------------------------------------------- menus, PICA Utils, Help
+def test_the_view_menu_holds_every_window_and_entry_point(app):
+    view = _menu_labels(_cascade(app, app.root, "View"))
+    for label in ("Main Window", "Advanced Options…", "Search Modules…",
+                  "Console", "PICA CLI (Terminal)", "Legacy Launcher (v1)"):
+        assert label in view, label
+    tools = _menu_labels(_cascade(app, app.root, "Tools"))
+    for moved in ("Advanced Options…", "Search Modules…",
+                  "Pressure Gauge (TPG 361)…"):
+        assert moved not in tools, moved
+    assert "Open Legacy Launcher (v1)" not in _menu_labels(
+        _cascade(app, app.root, "File"))
+
+
+def test_ctrl_u_opens_one_pica_utils_window(app):
+    import tkinter as tk
+
+    def utils_windows():
+        return [w for w in app.root.winfo_children()
+                if isinstance(w, tk.Toplevel) and w.title() == "PICA Utils"]
+    app.root.event_generate("<Control-u>")
+    _pump(app.root, 60)
+    assert len(utils_windows()) == 1
+    app.root.event_generate("<Control-u>")
+    _pump(app.root, 60)
+    assert len(utils_windows()) == 1, "a second Ctrl+U opened another copy"
+    win = utils_windows()[0]
+    # Every tool is a separate bordered tile, not a flat ttk button.
+    tiles = []
+
+    def walk(w):
+        for c in w.winfo_children():
+            if isinstance(c, tk.Button):
+                tiles.append(c)
+            walk(c)
+    walk(win)
+    named = {label for _t, tools in app._utils_groups() for label, _x in tools}
+    assert {t.cget("text") for t in tiles} == named
+    assert all(int(t.cget("highlightthickness")) == 1 for t in tiles)
+    win.event_generate("<Escape>")
+    _pump(app.root, 60)
+    assert utils_windows() == []
+    assert app._utils_win is None
+
+
+def test_pressure_gauge_is_found_by_search_and_opens_its_dialog(app, monkeypatch):
+    opened = []
+    monkeypatch.setattr(app, "open_pressure_gauge_dialog",
+                        lambda: opened.append(True))
+    entry = _ctrl_f(app, app.cat_combo)
+    _type(app, entry, "pressure gauge")
+    _settle_search(app)
+    top = app._search_results[0]
+    assert top['key'] == "Pressure Gauge Setup" and top['setting']
+    app._search_launch()
+    _pump(app.root, 40)
+    assert opened == [True]
+    assert "Pressure Gauge Setup" not in app.launched
+
+
+def test_advanced_options_carries_the_pressure_gauge_button(app):
+    win = _open_advanced(app)
+    assert win is not None
+    from tkinter import ttk
+    found = []
+
+    def walk(w):
+        for c in w.winfo_children():
+            if isinstance(c, ttk.Button) and \
+                    "open_pressure_gauge_dialog" in str(c.cget("command")):
+                found.append(c)
+            walk(c)
+    walk(win)
+    assert found, "no pressure gauge button in Advanced Options"
+
+
+def _new_toplevels(app, before):
+    import tkinter as tk
+    return [w for w in app.root.winfo_children()
+            if isinstance(w, tk.Toplevel) and w not in before]
+
+
+def _text_of(win):
+    import tkinter as tk
+    out = []
+
+    def walk(w):
+        for c in w.winfo_children():
+            if isinstance(c, tk.Text):
+                out.append(c.get("1.0", "end"))
+            walk(c)
+    walk(win)
+    return "\n".join(out)
+
+
+@pytest.mark.parametrize("key", ["manual", "readme", "changelog", "license"])
+def test_help_documents_open_inside_the_launcher(app, key, monkeypatch):
+    import webbrowser
+    from tkinter import ttk
+    opened = []
+    monkeypatch.setattr(webbrowser, "open", lambda url, *a, **k: opened.append(url))
+    monkeypatch.setattr(launcher.webbrowser, "open",
+                        lambda url, *a, **k: opened.append(url))
+    before = set(app.root.winfo_children())
+    app.open_doc(key)
+    _pump(app.root, 60)
+    wins = _new_toplevels(app, before)
+    assert len(wins) == 1, "the document did not open in a window"
+    text = _text_of(wins[0])
+    assert len(text.strip()) > 200
+    # Markdown furniture is rendered, not shown.
+    assert "myst:" not in text and "html_meta" not in text
+    assert ":::{" not in text and "](http" not in text
+    # "Open on GitHub" points at the file, not at /tree/main/blob/...
+    btn = [c for f in wins[0].winfo_children() for c in f.winfo_children()
+           if isinstance(c, ttk.Button) and c.cget("text") == "Open on GitHub"]
+    btn[0].invoke()
+    rel = app._docs()[key][2]
+    assert opened == ["https://github.com/prathameshnium/"
+                      "PICA-Python-Instrument-Control-and-Automation/blob/main/" + rel]
+    wins[0].destroy()
+
+
+def test_about_and_cite_are_copyable(app):
+    from tkinter import ttk
+    before = set(app.root.winfo_children())
+    app.show_about()
+    _pump(app.root, 60)
+    about = _new_toplevels(app, before)[0]
+    text = _text_of(about)
+    assert f"PICA release        {app.RELEASE_VERSION}" in text
+    assert f"v{app.PROGRAM_VERSION}" in text and app.CITE_DOI in text
+
+    def button(win, label):
+        hits = []
+
+        def walk(w):
+            for c in w.winfo_children():
+                if isinstance(c, ttk.Button) and c.cget("text") == label:
+                    hits.append(c)
+                walk(c)
+        walk(win)
+        return hits
+    button(about, "Copy Info")[0].invoke()
+    assert app.root.clipboard_get() == app._about_text()
+
+    before = set(app.root.winfo_children())
+    button(about, "Cite PICA")[0].invoke()
+    _pump(app.root, 60)
+    cite = _new_toplevels(app, before)[0]
+    apa, bibtex = app._cite_texts()
+    copies = button(cite, "Copy")
+    assert len(copies) == 3
+    copies[1].invoke()
+    assert app.root.clipboard_get() == bibtex
+    copies[0].invoke()
+    assert app.root.clipboard_get() == apa
+    cite.destroy()
+    about.destroy()
+
+
+def test_the_cli_opens_the_pica_cli_module(app):
+    argv, cwd = app._cli_command()
+    if argv is not None:
+        assert "pica.cli" in " ".join(argv)
+    assert os.path.isfile(os.path.join(cwd, "pica", "cli.py"))

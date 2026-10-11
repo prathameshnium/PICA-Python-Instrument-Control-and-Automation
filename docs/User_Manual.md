@@ -248,7 +248,7 @@ pica-gui
     A second launcher ships alongside the classic one. It opens on the
     **Quick Select** screen — three dropdowns (category, module, protocol)
     that narrow a measurement down in plain language — and keeps the full card
-    grid in an **Advanced Options** window (`Ctrl+Shift+A`, or the Tools
+    grid in an **Advanced Options** window (`Ctrl+Shift+A`, or the View
     menu). Advanced Options lists every module unfiltered, including those
     Quick Select leaves out (Cryo-con 34 and Lakeshore 340 variants,
     temperature utilities, Novocontrol Alpha-AN, bench multimeter). See
@@ -393,7 +393,7 @@ electrometer only — the two benches it serves — where its protocols sit next
 to the Lakeshore 350 ones. Every other module is Lakeshore 350 here; the
 Cryo-con twins of those scripts still exist and are in Advanced Options.
 
-**Advanced Options (`Ctrl+Shift+A`, or the Tools menu).** The complete card
+**Advanced Options (`Ctrl+Shift+A`, or the View menu).** The complete card
 grid: every module PICA ships, grouped by measurement range and instrument,
 with the folder shortcut on each card. Nothing here is filtered or
 range-limited — this is the expert route, and the one to use for the
@@ -418,7 +418,7 @@ closes; click the row to launch. The text is kept in `pica/module_info.py`,
 one entry per launchable program, so a new module is described by adding one
 entry there.
 
-**Search (`Ctrl+F`, or Tools → Search Modules…).** Press `Ctrl+F` in the main
+**Search (`Ctrl+F`, or View → Search Modules…).** Press `Ctrl+F` in the main
 window or in Advanced Options and a search box opens in the middle of that
 window (from any other PICA window it opens over the main window). Type a few
 letters and the matches appear under the box, best match first, each by its
@@ -443,6 +443,31 @@ is showing it. Quick Select keeps it behind the **Console** button on the
 strip, which opens it in a window of its own; Advanced Options carries one
 inline, above its strip. A console opened after the fact still shows the lines
 written at startup, and every open view updates together.
+
+**View menu.** Every window the launcher can show is in one place: Main
+Window, Advanced Options (`Ctrl+Shift+A`), Search Modules (`Ctrl+F`) and
+Console, followed by the two other ways into PICA, the text-menu **PICA CLI**
+(opened in a terminal window) and the **Legacy Launcher (v1)**.
+
+**PICA Utils (`Ctrl+U`, or Tools → PICA Utils…).** Every standalone utility
+in one window, grouped as Plotting, PPMS Utilities, Communication and
+Calculators. A second `Ctrl+U` brings the open window forward; Esc closes it.
+**Quick Calc** is a worksheet: each line is typeset as it is typed (fractions
+stacked, powers raised, roots under a radical) with its value on the right, as
+an exact fraction where it is one. A line can name a value (`R = 4.7e3`) or a
+function (`f(x) = x^2 + 1`) for the lines below, and `ans` is the line above.
+`^` is a power; `2pi`, `3(x+1)` and `I R` multiply; RAD / DEG sets the
+trigonometry.
+
+**Pressure gauge.** The Pfeiffer TPG 361 address is set from the gauge
+button in the top-right corner of Advanced Options, or by searching for
+`pressure`. It is not in the Tools menu.
+
+**Help menu.** User Manual, README, Change Log and License open in a viewer
+inside the launcher (with **Open on GitHub** as a fallback). **About PICA**
+lists the PICA release, launcher version and environment as selectable text
+with a **Copy Info** button for bug reports; **Cite PICA** gives the citation
+in APA and BibTeX form, and the DOI, each with its own **Copy** button.
 
 **Status strip.** Both windows carry a band along their bottom edge. On Quick
 Select it holds only what a measurement actually needs to know before it

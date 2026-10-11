@@ -34,7 +34,7 @@
                PROBE_RESOURCE_PREFIXES.
 
  FINDING A MODULE:
-               Ctrl+F (or Tools > Search Modules…) opens a search panel in
+               Ctrl+F (or View > Search Modules…) opens a search panel in
                the middle of the window it was pressed in. It is a fuzzy
                search over the module names, the categories,
                the instruments, the plain-language descriptions and the
@@ -57,6 +57,8 @@ import os
 import re
 import sys
 import platform
+import shlex
+import shutil
 import subprocess
 import webbrowser
 import threading
@@ -87,6 +89,7 @@ from pica.main import (
 # the Ctrl+F search ranks. Tk-free, so it is tested on its own.
 from pica.module_info import (
     UTILITY_TOOLS,
+    SETTINGS_TOOLS,
     display_name,
     module_info,
     build_search_index,
@@ -295,9 +298,9 @@ def save_protected_addresses(addresses, path=None):
 # never enumerated by VISA at all.
 #
 # So the gauge is OPT-IN. Nothing here runs until somebody names its address
-# in Tools > Pressure Gauge, and from then on the scan speaks to that one
-# resource and no other -- and never sends it a *IDN?, even if it does show
-# up in list_resources(). Both status strips already carry the PRESSURE
+# in Advanced Options (the gauge icon, or search "pressure"), and from then
+# on the scan speaks to that one resource and no other -- and never sends it
+# a *IDN?, even if it does show up in list_resources(). Both status strips already carry the PRESSURE
 # tile; this is what finally fills it.
 PRESSURE_GAUGE_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "launcher_pressure_gauge.json")
@@ -1006,7 +1009,7 @@ CATALOG = [
 # The main window is the "Quick Select" view: it is what a new PICA user meets
 # first, so it asks three plain questions -- what kind of measurement, which
 # module, which protocol -- instead of showing every script at once. The full
-# CATALOG above stays behind Tools > Advanced Options (Ctrl+Shift+A).
+# CATALOG above stays behind View > Advanced Options (Ctrl+Shift+A).
 #
 # Structure:
 #   category -> modules -> protocols
@@ -1614,6 +1617,14 @@ class PICALauncherV2:
     CHANGELOG_FILE = resource_path("CHANGELOG.md")
     LICENSE_FILE = resource_path("LICENSE")
     REPO_URL = PICALauncherApp.REPO_URL
+    # The PICA release the launcher belongs to (pyproject / CITATION.cff).
+    RELEASE_VERSION = PICALauncherApp.PROGRAM_VERSION
+    # Citation, kept in step with CITATION.cff (a test checks the two agree).
+    CITE_AUTHORS = (("Deshmukh", "Prathamesh"), ("Mukherjee", "Sudip"))
+    CITE_TITLE = ("PICA: Advanced High-Precision Transport Measurement "
+                  "Automation with Python")
+    CITE_DOI = "10.5281/zenodo.18377217"
+    CITE_YEAR = "2026"
 
     def __init__(self, root):
         self.root = root
@@ -1640,6 +1651,7 @@ class PICALauncherV2:
         self._last_scan = None
         self._adv_win = None
         self._status_win = None
+        self._utils_win = None
         # Instruments the current Quick Select choice needs. The strip no
         # longer shows chips, so this is what tints them in the Instrument
         # Status window instead of filtering a list nobody is looking at.
@@ -1661,7 +1673,8 @@ class PICALauncherV2:
         # Ctrl+F search: one index for every window, one panel per window
         # (built on first use), and what is on screen right now.
         self._search_index = build_search_index(
-            CATALOG, QUICK_CATALOG, self.SCRIPT_PATHS, UTILITY_TOOLS)
+            CATALOG, QUICK_CATALOG, self.SCRIPT_PATHS, UTILITY_TOOLS,
+            SETTINGS_TOOLS)
         self._search_panels = {}        # str(window) -> its panel
         self._search_window = None      # the window the open panel is over
         self._search_win = None         # the open panel's frame, if any
@@ -1839,8 +1852,6 @@ class PICALauncherV2:
         file_menu.add_command(label="Reload Instrument Status", command=self.start_scan)
         file_menu.add_command(label="Refresh Module List", command=self._rebuild_browse)
         file_menu.add_separator()
-        file_menu.add_command(label="Open Legacy Launcher (v1)", command=self.open_legacy_launcher)
-        file_menu.add_separator()
         file_menu.add_command(label="Exit", accelerator="Alt+F4", command=self.root.destroy)
         menubar.add_cascade(label="File", menu=file_menu)
 
@@ -1858,22 +1869,16 @@ class PICALauncherV2:
             # Ctrl+F: the search panel, over whichever window it came from.
             self.root.bind_all("<Control-f>", self._search_shortcut)
             self.root.bind_all("<Control-F>", self._search_shortcut)
+            # Ctrl+U: the PICA Utils window (raised if it is already open).
+            self.root.bind_all("<Control-u>", self.open_tools_popup)
+            self.root.bind_all("<Control-U>", self.open_tools_popup)
 
         tools_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
-        # Advanced Options sits at the top of Tools: it is the one entry an
-        # experienced user reaches for, and it has the accelerator to match.
-        tools_menu.add_command(label="Advanced Options…", accelerator="Ctrl+Shift+A",
-                               command=self.open_advanced)
-        tools_menu.add_command(label="Search Modules…", accelerator="Ctrl+F",
-                               command=lambda w=win: self.open_search(w))
-        tools_menu.add_separator()
         tools_menu.add_command(label="GPIB / VISA Scanner", command=self._launch_gpib_scanner)
         tools_menu.add_command(label="GPIB Scanner (32-bit, no VISA)",
                                command=lambda: self.launch_script("GPIB Scanner (32-bit)"))
         tools_menu.add_command(label="SCPI Console", command=lambda: self.launch_script("SCPI Console"))
         tools_menu.add_command(label="Plotter Utility", command=launch_plotter_utility)
-        tools_menu.add_command(label="Pressure Gauge (TPG 361)…",
-                               command=self.open_pressure_gauge_dialog)
         tools_menu.add_separator()
         # Diagnostic Tools: read-only programs that interrogate an
         # instrument and write a log, rather than measuring a sample.
@@ -1887,23 +1892,32 @@ class PICALauncherV2:
         tools_menu.add_cascade(label="Diagnostic Tools",
                                menu=diagnostics_menu)
         tools_menu.add_separator()
-        tools_menu.add_command(label="PICA Utils…", command=self.open_tools_popup)
+        tools_menu.add_command(label="PICA Utils…", accelerator="Ctrl+U",
+                               command=self.open_tools_popup)
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
+        # View: every window the launcher can show, and the other two ways
+        # in to PICA (the terminal CLI and the classic v1 launcher).
         view_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
-        # Advanced Options is deliberately not repeated here: it stays in
-        # the Tools menu and on Ctrl+Shift+A, out of a newcomer's way.
         view_menu.add_command(label="Main Window", command=self._focus_main)
-        view_menu.add_separator()
+        view_menu.add_command(label="Advanced Options…", accelerator="Ctrl+Shift+A",
+                              command=self.open_advanced)
+        view_menu.add_command(label="Search Modules…", accelerator="Ctrl+F",
+                              command=lambda w=win: self.open_search(w))
         view_menu.add_command(label="Console", command=self.open_console)
+        view_menu.add_separator()
+        view_menu.add_command(label="PICA CLI (Terminal)", command=self.open_cli)
+        view_menu.add_command(label="Legacy Launcher (v1)", command=self.open_legacy_launcher)
         menubar.add_cascade(label="View", menu=view_menu)
 
         help_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
-        help_menu.add_command(label="User Manual", command=lambda: self._open_path(self.MANUAL_FILE))
-        help_menu.add_command(label="README", command=lambda: self._open_path(self.README_FILE))
-        help_menu.add_command(label="Change Log", command=lambda: self._open_path(self.CHANGELOG_FILE))
+        help_menu.add_command(label="User Manual", command=lambda: self.open_doc("manual"))
+        help_menu.add_command(label="README", command=lambda: self.open_doc("readme"))
+        help_menu.add_command(label="Change Log", command=lambda: self.open_doc("changelog"))
+        help_menu.add_command(label="License", command=lambda: self.open_doc("license"))
         help_menu.add_separator()
         help_menu.add_command(label="View Project on GitHub", command=lambda: webbrowser.open(self.REPO_URL))
+        help_menu.add_command(label="Cite PICA…", command=self.show_cite)
         help_menu.add_command(label="About PICA", command=self.show_about)
         menubar.add_cascade(label="Help", menu=help_menu)
 
@@ -1926,7 +1940,7 @@ class PICALauncherV2:
     # tile, same StripCap / StripStat / StripDim triple, filled from the same
     # one-shot scan result. Its gauge is serial and opt-in, so unlike every
     # other reading it stays blank until somebody names the port in
-    # Tools > Pressure Gauge -- see PRESSURE_GAUGE_FILE.
+    # Advanced Options > Pressure Gauge -- see PRESSURE_GAUGE_FILE.
     def _all_chip_names(self):
         """Every instrument chip, in reference-table order."""
         return [n for n, _ in KNOWN_INSTRUMENTS] + NEVER_PROBED_INSTRUMENTS
@@ -2357,7 +2371,7 @@ class PICALauncherV2:
 
     # ------------------------------------------------------------ search (Ctrl+F)
     # One fuzzy search over everything the launcher can start, opened with
-    # Ctrl+F (or Tools > Search Modules…). It comes up centred over the window
+    # Ctrl+F (or View > Search Modules…). It comes up centred over the window
     # the key was pressed in -- the main window or Advanced Options -- with
     # its own entry; the matches appear under it, with the highlighted
     # match's card beside them. Enter launches, Escape or a click outside
@@ -2813,11 +2827,19 @@ class PICALauncherV2:
             return "break"
         return self._search_launch()
 
+    def _open_setting(self, key):
+        """Open the dialog behind a 'setting' search record."""
+        {"Pressure Gauge Setup": self.open_pressure_gauge_dialog}[key]()
+
     def _search_launch(self):
         rec = self._search_selected()
         if rec is None:
             return "break"
         self.close_search()
+        if rec.get('setting'):
+            self.log(f"Search: opening '{rec['label']}'.")
+            self._open_setting(rec['key'])
+            return "break"
         self.log(f"Search: launching '{rec['label']}' ({rec['key']}).")
         self.launch_script(rec['key'])
         self._refresh_strips()
@@ -3047,8 +3069,8 @@ class PICALauncherV2:
         ttk.Label(links, text=f"Version {self.PROGRAM_VERSION}",
                   style='Faint.TLabel').pack(anchor='w', pady=(0, 4))
         link_font = font.Font(family='Segoe UI', size=self.FONT_SIZE_BASE - 2, underline=True)
-        for text, action in [("Change Log", lambda: self._open_path(self.CHANGELOG_FILE)),
-                             ("User Manual", lambda: self._open_path(self.MANUAL_FILE)),
+        for text, action in [("Change Log", lambda: self.open_doc("changelog")),
+                             ("User Manual", lambda: self.open_doc("manual")),
                              ("GitHub", lambda: webbrowser.open(self.REPO_URL))]:
             lnk = tk.Label(links, text=text, bg=self.CLR_PANEL, fg=self.CLR_ACCENT,
                            font=link_font, cursor="hand2")
@@ -3747,6 +3769,13 @@ class PICALauncherV2:
                                  command=self._launch_gpib_scanner)
         adv_scanner.pack(side='right', padx=(0, 2))
         self._add_tooltip(adv_scanner, "VISA/GPIB Scanner")
+        # Pressure gauge address: a setting for the expert window, not a
+        # menu entry. Also found by the search ("pressure", "tpg").
+        adv_gauge = ttk.Button(adv_tools, text="⏲", width=3,
+                               style='Icon.TButton',
+                               command=self.open_pressure_gauge_dialog)
+        adv_gauge.pack(side='right', padx=(0, 2))
+        self._add_tooltip(adv_gauge, "Pressure Gauge (Pfeiffer TPG 361) — Address")
 
         title_blk = tk.Frame(head, bg=self.CLR_APP)
         title_blk.pack(side='right', fill='y')
@@ -4267,6 +4296,46 @@ class PICALauncherV2:
         except Exception as e:
             messagebox.showerror("Error", f"Could not open the legacy launcher:\n\n{e}")
 
+    def _cli_command(self):
+        """argv that opens the PICA CLI (pica/cli.py) in a terminal window,
+        and the directory to start it in; None where no terminal is found."""
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cli = [sys.executable, "-m", "pica.cli"]
+        system = platform.system()
+        if system == "Windows":
+            return cli, root_dir
+        if system == "Darwin":
+            script = (f'cd {shlex.quote(root_dir)} && '
+                      + " ".join(shlex.quote(a) for a in cli))
+            return ["osascript", "-e",
+                    f'tell application "Terminal" to do script "{script}"'], root_dir
+        for term, flag in (("x-terminal-emulator", "-e"), ("gnome-terminal", "--"),
+                           ("konsole", "-e"), ("xfce4-terminal", "-x"), ("xterm", "-e")):
+            if shutil.which(term):
+                return [term, flag] + cli, root_dir
+        return None, root_dir
+
+    def open_cli(self):
+        """Open the text-menu PICA CLI in its own terminal window."""
+        if getattr(sys, 'frozen', False):
+            messagebox.showinfo("PICA CLI",
+                                "The CLI runs from a Python install of PICA:\n\n"
+                                "pip install pica-suite\npica-cli")
+            return
+        argv, cwd = self._cli_command()
+        if argv is None:
+            messagebox.showwarning("PICA CLI",
+                                   "No terminal program was found. Run it by hand:\n\n"
+                                   "pica-cli")
+            return
+        try:
+            flags = getattr(subprocess, 'CREATE_NEW_CONSOLE', 0)
+            subprocess.Popen(argv, cwd=cwd, creationflags=flags)
+            self.log("Opened the PICA CLI in a terminal window.")
+        except Exception as e:
+            self.log(f"ERROR: could not open the PICA CLI. {e}")
+            messagebox.showerror("PICA CLI", f"Could not open the CLI:\n\n{e}")
+
     def _launch_gpib_scanner(self):
         if not PYVISA_AVAILABLE:
             messagebox.showerror("Dependency Missing",
@@ -4315,47 +4384,437 @@ class PICALauncherV2:
                              ("List Maker", "List Maker")]),
         ]
 
-    def open_tools_popup(self):
+    def open_tools_popup(self, event=None):
+        # One PICA Utils window at a time: Ctrl+U (or the menu) on an open
+        # one brings it forward instead of stacking a second copy.
+        old = getattr(self, '_utils_win', None)
+        if old is not None and old.winfo_exists():
+            old.deiconify()
+            old.lift()
+            old.focus_force()
+            return
         win = Toplevel(self.root)
+        self._utils_win = win
         win.title("PICA Utils")
         win.configure(bg=self.CLR_APP)
         win.transient(self.root)
         win.resizable(False, False)
+        win.bind("<Escape>", lambda _e: win.destroy())
+        win.bind("<Destroy>", lambda e: setattr(self, '_utils_win', None)
+                 if e.widget is win else None)
 
-        tk.Label(win, text="PICA Utils", bg=self.CLR_APP, fg=self.CLR_ACCENT,
-                 font=self.FONT_CARD).pack(anchor='w', padx=20, pady=(16, 2))
-        tk.Label(win, text="Standalone utilities bundled with PICA", bg=self.CLR_APP,
-                 fg=self.CLR_TEXT_DIM, font=self.FONT_SMALL).pack(anchor='w', padx=20, pady=(0, 12))
+        # Header band in the accent colour, so the window reads as PICA's.
+        head = tk.Frame(win, bg=self.CLR_ACCENT)
+        head.pack(fill='x')
+        tk.Label(head, text="PICA Utils", bg=self.CLR_ACCENT, fg=self.CLR_TEXT_LIGHT,
+                 font=self.FONT_TITLE).pack(anchor='w', padx=20, pady=(14, 0))
+        tk.Label(head, text="Standalone utilities bundled with PICA  ·  Ctrl+U",
+                 bg=self.CLR_ACCENT, fg=self.CLR_ACCENT_SOFT,
+                 font=self.FONT_SMALL).pack(anchor='w', padx=20, pady=(0, 12))
 
         body = tk.Frame(win, bg=self.CLR_APP)
-        body.pack(fill='both', expand=True, padx=20, pady=(0, 16))
+        body.pack(fill='both', expand=True, padx=16, pady=16)
         groups = self._utils_groups()
         for i, (title, tools) in enumerate(groups):
-            grp = tk.LabelFrame(body, text=title, bg=self.CLR_PANEL, fg=self.CLR_TEXT,
-                                font=self.FONT_LABEL, bd=1, relief='solid')
-            # 'nsew' + a weighted row: paired groups stretch to equal height, so
-            # the shorter one no longer leaves a hole under it.
-            grp.grid(row=i // 2, column=i % 2, sticky='nsew', padx=5, pady=5)
+            # A cream card with a thin border and a terracotta rule under
+            # its title, instead of a bare LabelFrame.
+            card = tk.Frame(body, bg=self.CLR_PANEL, highlightthickness=1,
+                            highlightbackground=self.CLR_BORDER)
+            # 'nsew' + a weighted row: paired cards stretch to equal height.
+            card.grid(row=i // 2, column=i % 2, sticky='nsew', padx=6, pady=6)
+            tk.Label(card, text=title.upper(), bg=self.CLR_PANEL, fg=self.CLR_ACCENT,
+                     font=self.FONT_LABEL, anchor='w').pack(fill='x', padx=12, pady=(10, 4))
+            tk.Frame(card, bg=self.CLR_ACCENT, height=2).pack(fill='x', padx=12, pady=(0, 8))
             for label, target in tools:
                 cmd = target if callable(target) else (lambda k=target: self.launch_script(k))
-                ttk.Button(grp, text=label, style='Aux.TButton',
-                           command=cmd).pack(fill='x', padx=8, pady=2)
+                self._util_tile(card, label, cmd).pack(fill='x', padx=12, pady=(0, 6))
+            tk.Frame(card, bg=self.CLR_PANEL, height=4).pack()
         body.columnconfigure((0, 1), weight=1, uniform='t')
         for r in range((len(groups) + 1) // 2):
             body.rowconfigure(r, weight=1)
 
-        ttk.Button(win, text="Close", style='Aux.TButton',
-                   command=win.destroy).pack(fill='x', padx=20, pady=(0, 16))
+        foot = tk.Frame(win, bg=self.CLR_APP)
+        foot.pack(fill='x', padx=22, pady=(0, 16))
+        tk.Label(foot, text="Each tool opens in its own window.", bg=self.CLR_APP,
+                 fg=self.CLR_TEXT_DIM, font=self.FONT_SMALL).pack(side='left')
+        ttk.Button(foot, text="Close", style='Aux.TButton',
+                   command=win.destroy).pack(side='right')
+        win.focus_set()
+
+    def _util_tile(self, parent, text, command):
+        """One launch tile in PICA Utils: a bordered light button that turns
+        maroon under the pointer, so every tool stands apart from its card."""
+        btn = tk.Button(parent, text=text, command=command, font=self.FONT_SMALL,
+                        bg=self.CLR_PANEL2, fg=self.CLR_TEXT, anchor='w',
+                        activebackground=self.CLR_HOVER, activeforeground=self.CLR_TEXT_LIGHT,
+                        relief='flat', bd=0, padx=12, pady=7, cursor='hand2',
+                        highlightthickness=1, highlightbackground=self.CLR_BORDER,
+                        highlightcolor=self.CLR_ACCENT)
+
+        def _hover(on):
+            btn.configure(bg=self.CLR_HOVER if on else self.CLR_PANEL2,
+                          fg=self.CLR_TEXT_LIGHT if on else self.CLR_TEXT)
+        btn.bind("<Enter>", lambda _e: _hover(True))
+        btn.bind("<Leave>", lambda _e: _hover(False))
+        btn.bind("<Return>", lambda _e: command())
+        return btn
+
+    # ------------------------------------------------------------ help docs
+    # key -> (window title, file on disk, path of the same file in the repo).
+    # The repo path is the fallback: an installed copy of PICA may not carry
+    # the docs, and a .md file often has no program to open it on Windows,
+    # so the launcher shows them itself instead of handing them to the OS.
+    def _docs(self):
+        return {
+            "manual": ("User Manual", self.MANUAL_FILE, "docs/User_Manual.md"),
+            "readme": ("README", self.README_FILE, "README.md"),
+            "changelog": ("Change Log", self.CHANGELOG_FILE, "CHANGELOG.md"),
+            "license": ("MIT License", self.LICENSE_FILE, "LICENSE"),
+        }
+
+    def open_doc(self, key):
+        title, path, repo_rel = self._docs()[key]
+        # REPO_URL points at the tree view (".../tree/main"); a file lives
+        # under ".../blob/main/<path>".
+        web_url = f"{self.REPO_URL.split('/tree/')[0]}/blob/main/{repo_rel}"
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            self.log(f"{title}: no local copy at {os.path.abspath(path)}; "
+                     "opening it on GitHub.")
+            if messagebox.askyesno(
+                    title, f"The {title} is not installed with this copy of "
+                    f"PICA.\n\nOpen it on GitHub instead?"):
+                webbrowser.open(web_url)
+            return
+
+        win = Toplevel(self.root)
+        win.title(f"PICA — {title}")
+        win.configure(bg=self.CLR_APP)
+        win.geometry("900x680")
+        win.transient(self.root)
+        win.bind("<Escape>", lambda _e: win.destroy())
+
+        head = tk.Frame(win, bg=self.CLR_ACCENT)
+        head.pack(fill='x')
+        tk.Label(head, text=title, bg=self.CLR_ACCENT, fg=self.CLR_TEXT_LIGHT,
+                 font=self.FONT_TITLE).pack(side='left', padx=20, pady=12)
+
+        foot = tk.Frame(win, bg=self.CLR_APP)
+        foot.pack(side='bottom', fill='x', padx=16, pady=(0, 12))
+        ttk.Button(foot, text="Close", style='Aux.TButton',
+                   command=win.destroy).pack(side='right')
+        ttk.Button(foot, text="Open on GitHub", style='Aux.TButton',
+                   command=lambda: webbrowser.open(web_url)).pack(side='right', padx=6)
+        ttk.Button(foot, text="Open File Location", style='Aux.TButton',
+                   command=lambda: self._open_path(os.path.dirname(os.path.abspath(path)))
+                   ).pack(side='right')
+
+        frame = tk.Frame(win, bg=self.CLR_BORDER)
+        frame.pack(fill='both', expand=True, padx=16, pady=12)
+        txt = tk.Text(frame, wrap='word', bg=self.CLR_PANEL2, fg=self.CLR_TEXT,
+                      font=('Segoe UI', self.FONT_SIZE_BASE - 2), bd=0,
+                      padx=22, pady=16, spacing1=2, spacing3=2,
+                      highlightthickness=0, cursor='arrow')
+        sb = ttk.Scrollbar(frame, orient='vertical', command=txt.yview)
+        txt.configure(yscrollcommand=sb.set)
+        sb.pack(side='right', fill='y', padx=(0, 1), pady=1)
+        txt.pack(side='left', fill='both', expand=True, padx=(1, 0), pady=1)
+        if path.lower().endswith('.md'):
+            self._render_markdown(txt, text)
+        else:
+            txt.insert('1.0', text, 'mono')
+            self._doc_tags(txt)
+        txt.configure(state='disabled')
+        self._make_copyable(txt)
+
+    def _doc_tags(self, txt):
+        base = self.FONT_SIZE_BASE
+        txt.tag_configure('h1', font=('Segoe UI', base + 6, 'bold'),
+                          foreground=self.CLR_ACCENT, spacing1=14, spacing3=6)
+        txt.tag_configure('h2', font=('Segoe UI', base + 3, 'bold'),
+                          foreground=self.CLR_ACCENT, spacing1=12, spacing3=4)
+        txt.tag_configure('h3', font=('Segoe UI', base, 'bold'),
+                          foreground=self.CLR_TEXT, spacing1=8, spacing3=2)
+        txt.tag_configure('bold', font=('Segoe UI', base - 2, 'bold'))
+        txt.tag_configure('italic', font=('Segoe UI', base - 2, 'italic'))
+        txt.tag_configure('code', font=('Consolas', base - 4),
+                          background=self.CLR_ACCENT_SOFT)
+        txt.tag_configure('mono', font=('Consolas', base - 4))
+        txt.tag_configure('block', font=('Consolas', base - 4),
+                          background=self.CLR_PANEL, lmargin1=18, lmargin2=18)
+        txt.tag_configure('bullet', lmargin1=14, lmargin2=32)
+        txt.tag_configure('quote', foreground=self.CLR_TEXT_DIM,
+                          lmargin1=18, lmargin2=18)
+        txt.tag_configure('link', foreground=self.CLR_ACCENT, underline=True)
+        txt.tag_configure('rule', foreground=self.CLR_BORDER)
+
+    _MD_INLINE = re.compile(
+        r'(\*\*[^*]+\*\*|`[^`]+`|!?\[[^\]]*\]\([^)]*\)|(?<![\w*])\*[^*\s][^*]*\*(?![\w*]))')
+
+    def _md_inline(self, txt, line, tags=()):
+        """Insert one line, styling **bold**, `code` and [links](url)."""
+        for part in self._MD_INLINE.split(line):
+            if not part:
+                continue
+            if part.startswith('**') and part.endswith('**'):
+                self._md_inline(txt, part[2:-2], tags + ('bold',))
+            elif len(part) > 2 and part[0] == '*' and part[-1] == '*':
+                self._md_inline(txt, part[1:-1], tags + ('italic',))
+            elif part.startswith('`') and part.endswith('`'):
+                txt.insert('end', part[1:-1], tags + ('code',))
+            elif part.startswith('!['):
+                continue                            # images: not shown here
+            elif re.fullmatch(r'\[[^\]]*\]\([^)]*\)', part):
+                label, url = re.fullmatch(r'\[([^\]]*)\]\(([^)]*)\)', part).groups()
+                tag = f"link{txt.index('end')}"
+                txt.insert('end', label, tags + ('link', tag))
+                if url.startswith('http'):
+                    txt.tag_bind(tag, '<Button-1>', lambda _e, u=url: webbrowser.open(u))
+                    txt.tag_bind(tag, '<Enter>', lambda _e: txt.configure(cursor='hand2'))
+                    txt.tag_bind(tag, '<Leave>', lambda _e: txt.configure(cursor='arrow'))
+            else:
+                txt.insert('end', part, tags)
+
+    def _render_markdown(self, txt, text):
+        """A small Markdown renderer: enough for PICA's own docs."""
+        self._doc_tags(txt)
+        in_code = False
+        in_figure = False
+        lines = text.splitlines()
+        # YAML front matter (the manual's Sphinx/MyST metadata) is not text.
+        if lines and lines[0].strip() == '---':
+            for end, l in enumerate(lines[1:], 1):
+                if l.strip() == '---':
+                    lines = lines[end + 1:]
+                    break
+        for raw in lines:
+            line = raw.rstrip()
+            # MyST admonitions (:::{note} ... :::) become a labelled callout;
+            # figures are dropped along with their :option: lines.
+            m = re.match(r'\s*:{3,}\s*\{([\w-]+)\}', line)
+            if m and not in_code:
+                if m.group(1) == 'figure':
+                    in_figure = True
+                else:
+                    txt.insert('end', m.group(1).capitalize() + '\n', ('quote', 'bold'))
+                continue
+            if re.fullmatch(r'\s*:{3,}\s*', line) and not in_code:
+                in_figure = False
+                continue
+            if in_figure or (re.match(r':[\w-]+:', line) and not in_code):
+                continue
+            if line.lstrip().startswith('```'):
+                in_code = not in_code
+                continue
+            if in_code:
+                txt.insert('end', line + '\n', 'block')
+                continue
+            stripped = line.strip()
+            # Bare HTML (badges, centred logos) means nothing in a text view.
+            if re.fullmatch(r'<[^>]+>.*', stripped) or stripped.startswith('<!--'):
+                text_only = re.sub(r'<[^>]+>', '', stripped).strip()
+                if not text_only:
+                    continue
+                line = stripped = text_only
+            m = re.match(r'(#{1,6})\s+(.*)', stripped)
+            if m:
+                level = min(len(m.group(1)), 3)
+                self._md_inline(txt, m.group(2).strip('# '), (f'h{level}',))
+                txt.insert('end', '\n')
+            elif re.fullmatch(r'(-{3,}|\*{3,}|_{3,})', stripped):
+                txt.insert('end', '─' * 60 + '\n', 'rule')
+            elif re.match(r'\s*[-*+]\s+', line):
+                indent = (len(line) - len(line.lstrip())) // 2
+                body = re.sub(r'^\s*[-*+]\s+', '', line)
+                txt.insert('end', '    ' * indent + '•  ', 'bullet')
+                self._md_inline(txt, body, ('bullet',))
+                txt.insert('end', '\n')
+            elif stripped.startswith('>'):
+                self._md_inline(txt, stripped.lstrip('> '), ('quote',))
+                txt.insert('end', '\n')
+            elif stripped.startswith('|'):
+                if re.fullmatch(r'\|[\s:|-]+\|?', stripped):
+                    continue                        # table header rule
+                cells = [c.strip() for c in stripped.strip('|').split('|')]
+                for n, cell in enumerate(cells):
+                    if n:
+                        txt.insert('end', '   ·   ', 'rule')
+                    self._md_inline(txt, cell, ('bold',) if n == 0 else ())
+                txt.insert('end', '\n')
+            else:
+                self._md_inline(txt, line)
+                txt.insert('end', '\n')
+
+    def _make_copyable(self, txt):
+        """Read-only Text that still selects, copies and selects-all."""
+        def _copy(_e=None):
+            try:
+                sel = txt.get('sel.first', 'sel.last')
+            except tk.TclError:
+                return 'break'
+            self.root.clipboard_clear()
+            self.root.clipboard_append(sel)
+            return 'break'
+
+        def _select_all(_e=None):
+            txt.tag_add('sel', '1.0', 'end-1c')
+            return 'break'
+        txt.bind('<Control-c>', _copy)
+        txt.bind('<Control-a>', _select_all)
+        txt.bind('<Button-1>', lambda _e: txt.focus_set(), add='+')
+        menu = tk.Menu(txt, tearoff=0, font=self.FONT_MENU)
+        menu.add_command(label="Copy", command=_copy)
+        menu.add_command(label="Select All", command=_select_all)
+        txt.bind('<Button-3>', lambda e: menu.tk_popup(e.x_root, e.y_root))
+
+    def _copy_to_clipboard(self, text, what, button=None):
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.log(f"Copied {what} to the clipboard.")
+        if button is not None:
+            label = button.cget('text')
+            button.configure(text="Copied")
+            button.after(1400, lambda: button.winfo_exists()
+                         and button.configure(text=label))
+
+    # ---------------------------------------------------------- about / cite
+    def _about_text(self):
+        def _ver(mod):
+            try:
+                return __import__(mod).__version__
+            except Exception:
+                return "not installed"
+        install = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        frozen = " (packaged build)" if getattr(sys, 'frozen', False) else ""
+        return "\n".join([
+            "PICA — Python Instrument Control & Automation",
+            "",
+            f"PICA release        {self.RELEASE_VERSION}",
+            f"Launcher            v{self.PROGRAM_VERSION}",
+            f"DOI                 https://doi.org/{self.CITE_DOI}",
+            "License             MIT",
+            f"Repository          {self.REPO_URL}",
+            "",
+            "Development         Prathamesh Deshmukh",
+            "Vision & Guidance   Dr. Sudip Mukherjee",
+            "Institute           UGC-DAE Consortium for Scientific Research,",
+            "                    Mumbai Centre, India",
+            "",
+            "Environment",
+            f"Python              {platform.python_version()}{frozen}",
+            f"Tcl/Tk              {tk.TkVersion}",
+            f"OS                  {platform.platform()}",
+            f"NumPy               {_ver('numpy')}",
+            f"Matplotlib          {_ver('matplotlib')}",
+            f"PyVISA              {_ver('pyvisa')}",
+            f"Installed at        {install}",
+        ])
+
+    def _cite_texts(self):
+        names = [f"{fam}, {giv[0]}." for fam, giv in self.CITE_AUTHORS]
+        apa_names = ", ".join(names[:-1]) + ", & " + names[-1] if len(names) > 1 else names[0]
+        apa = (f"{apa_names} ({self.CITE_YEAR}). {self.CITE_TITLE} "
+               f"(Version {self.RELEASE_VERSION}) [Computer software]. Zenodo. "
+               f"https://doi.org/{self.CITE_DOI}")
+        bib_authors = " and ".join(f"{fam}, {giv}" for fam, giv in self.CITE_AUTHORS)
+        bibtex = "\n".join([
+            f"@software{{{self.CITE_AUTHORS[0][0].lower()}{self.CITE_YEAR}pica,",
+            f"  author    = {{{bib_authors}}},",
+            f"  title     = {{{{{self.CITE_TITLE}}}}},",
+            f"  year      = {{{self.CITE_YEAR}}},",
+            f"  version   = {{{self.RELEASE_VERSION}}},",
+            "  publisher = {Zenodo},",
+            f"  doi       = {{{self.CITE_DOI}}},",
+            f"  url       = {{https://doi.org/{self.CITE_DOI}}},",
+            f"  note      = {{Source code: {self.REPO_URL}}}",
+            "}",
+        ])
+        return apa, bibtex
+
+    def _dialog(self, title, subtitle):
+        win = Toplevel(self.root)
+        win.title(title)
+        win.configure(bg=self.CLR_APP)
+        win.transient(self.root)
+        win.resizable(False, False)
+        win.bind("<Escape>", lambda _e: win.destroy())
+        head = tk.Frame(win, bg=self.CLR_ACCENT)
+        head.pack(fill='x')
+        tk.Label(head, text=title, bg=self.CLR_ACCENT, fg=self.CLR_TEXT_LIGHT,
+                 font=self.FONT_TITLE).pack(anchor='w', padx=20, pady=(14, 0))
+        tk.Label(head, text=subtitle, bg=self.CLR_ACCENT, fg=self.CLR_ACCENT_SOFT,
+                 font=self.FONT_SMALL).pack(anchor='w', padx=20, pady=(0, 12))
+        return win
+
+    def _copy_box(self, parent, text, height, width=74, mono=True):
+        # Monospaced blocks (About, BibTeX) keep their lines whole: the box
+        # is sized to the longest line rather than wrapping a URL mid-way.
+        if mono:
+            width = max(width, max(len(ln) for ln in text.splitlines()) + 1)
+        box = tk.Text(parent, height=height, width=width,
+                      wrap='none' if mono else 'word',
+                      bg=self.CLR_PANEL2, fg=self.CLR_TEXT, bd=0, padx=12, pady=10,
+                      font=('Consolas', self.FONT_SIZE_BASE - 4) if mono
+                      else ('Segoe UI', self.FONT_SIZE_BASE - 3),
+                      highlightthickness=1, highlightbackground=self.CLR_BORDER,
+                      highlightcolor=self.CLR_ACCENT)
+        box.insert('1.0', text)
+        box.configure(state='disabled')
+        self._make_copyable(box)
+        return box
 
     def show_about(self):
-        messagebox.showinfo(
-            "About PICA",
-            f"PICA — Python Instrument Control & Automation\n"
-            f"Launcher v{self.PROGRAM_VERSION}\n\n"
-            "UGC-DAE Consortium for Scientific Research, Mumbai Centre\n\n"
-            "Development: Prathamesh Deshmukh\n"
-            "Vision & Guidance: Dr. Sudip Mukherjee\n\n"
-            "Licensed under the MIT License.")
+        win = self._dialog("About PICA",
+                           f"Release {self.RELEASE_VERSION}  ·  Launcher v{self.PROGRAM_VERSION}")
+        info = self._about_text()
+        body = tk.Frame(win, bg=self.CLR_APP)
+        body.pack(fill='both', expand=True, padx=20, pady=16)
+        tk.Label(body, text="Select any text to copy it, or copy it all for a bug report.",
+                 bg=self.CLR_APP, fg=self.CLR_TEXT_DIM,
+                 font=self.FONT_SMALL).pack(anchor='w', pady=(0, 6))
+        self._copy_box(body, info, height=info.count('\n') + 1).pack(fill='both', expand=True)
+
+        foot = tk.Frame(win, bg=self.CLR_APP)
+        foot.pack(fill='x', padx=20, pady=(0, 16))
+        copy_btn = ttk.Button(foot, text="Copy Info", style='Aux.TButton')
+        copy_btn.configure(command=lambda: self._copy_to_clipboard(
+            info, "the About information", copy_btn))
+        copy_btn.pack(side='left')
+        ttk.Button(foot, text="Cite PICA", style='Launch.TButton',
+                   command=self.show_cite).pack(side='left', padx=8)
+        ttk.Button(foot, text="GitHub", style='Aux.TButton',
+                   command=lambda: webbrowser.open(self.REPO_URL)).pack(side='left')
+        ttk.Button(foot, text="Close", style='Aux.TButton',
+                   command=win.destroy).pack(side='right')
+
+    def show_cite(self):
+        win = self._dialog("Cite PICA",
+                           "If PICA helped your work, please cite it as below.")
+        apa, bibtex = self._cite_texts()
+        body = tk.Frame(win, bg=self.CLR_APP)
+        body.pack(fill='both', expand=True, padx=20, pady=12)
+        for heading, text, height, mono in (("Citation (APA)", apa, 3, False),
+                                            ("BibTeX", bibtex, bibtex.count('\n') + 1, True),
+                                            ("DOI", f"https://doi.org/{self.CITE_DOI}", 1, True)):
+            row = tk.Frame(body, bg=self.CLR_APP)
+            row.pack(fill='x', pady=(8, 4))
+            tk.Label(row, text=heading.upper(), bg=self.CLR_APP, fg=self.CLR_HOVER,
+                     font=self.FONT_LABEL).pack(side='left')
+            btn = ttk.Button(row, text="Copy", style='Aux.TButton')
+            btn.configure(command=lambda t=text, h=heading, b=btn:
+                          self._copy_to_clipboard(t, h, b))
+            btn.pack(side='right')
+            self._copy_box(body, text, height, mono=mono).pack(fill='x')
+
+        foot = tk.Frame(win, bg=self.CLR_APP)
+        foot.pack(fill='x', padx=20, pady=(4, 16))
+        ttk.Button(foot, text="Open DOI", style='Aux.TButton',
+                   command=lambda: webbrowser.open(f"https://doi.org/{self.CITE_DOI}")
+                   ).pack(side='left')
+        ttk.Button(foot, text="Close", style='Aux.TButton',
+                   command=win.destroy).pack(side='right')
 
     # ------------------------------------------------------------- helpers
     def _open_path(self, path):

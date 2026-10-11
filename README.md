@@ -384,7 +384,7 @@ pica-gui
     python run_pica_v2.py
     ```
 
-    **Advanced Options** (`Ctrl+Shift+A`, or the Tools menu) is the expert
+    **Advanced Options** (`Ctrl+Shift+A`, or the View menu) is the expert
     route: every module PICA ships on one screen, grouped by measurement range
     and instrument, with nothing filtered. Use it when you already know which
     program you want, and for anything Quick Select does not list: the
@@ -394,7 +394,7 @@ pica-gui
     main window, a folder shortcut on every card to the module's source, and an
     inline console. Rest the pointer on any module row and a card says what
     the program measures, which instruments it opens and what it will ask
-    for. In either window, **`Ctrl+F`** (or Tools → Search Modules…) opens a
+    for. In either window, **`Ctrl+F`** (or View → Search Modules…) opens a
     search in the middle of the window: a fuzzy search over every program PICA
     can start, measurement modules, diagnostics and utilities alike, by
     name, instrument, description or input field — `k2400 rt`, `butterfly`,

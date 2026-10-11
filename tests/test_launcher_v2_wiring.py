@@ -122,6 +122,47 @@ def test_every_tool_in_the_utils_popup_resolves():
             assert os.path.exists(os.path.abspath(paths[target])), label
 
 
+def test_ctrl_u_opens_pica_utils():
+    assert 'bind_all("<Control-u>", self.open_tools_popup)' in V2_SOURCE
+    assert 'bind_all("<Control-U>", self.open_tools_popup)' in V2_SOURCE
+    assert 'label="PICA Utils…", accelerator="Ctrl+U"' in V2_SOURCE
+    # Opened from a key binding, so it must accept the event argument.
+    launcher.PICALauncherV2.open_tools_popup.__code__.co_varnames.index("event")
+
+
+def test_the_citation_matches_citation_cff():
+    cff = open(os.path.join(os.path.dirname(V2_PATH), os.pardir, "CITATION.cff"),
+               encoding="utf-8").read()
+    app = launcher.PICALauncherV2
+    assert f"doi: {app.CITE_DOI}" in cff
+    assert f'title: "{app.CITE_TITLE}"' in cff
+    assert f"version: {app.RELEASE_VERSION}" in cff
+    assert f"date-released: {app.CITE_YEAR}-" in cff
+    for family, given in app.CITE_AUTHORS:
+        assert f'family-names: "{family}"' in cff
+        assert f'given-names: "{given}"' in cff
+
+
+def test_help_docs_are_not_handed_to_the_os():
+    # A .md file often has no program to open it on Windows; the Help menu
+    # shows them in the launcher instead.
+    for name in ("MANUAL_FILE", "README_FILE", "CHANGELOG_FILE", "LICENSE_FILE"):
+        assert f"_open_path(self.{name})" not in V2_SOURCE, name
+    for key in ("manual", "readme", "changelog", "license"):
+        assert f'self.open_doc("{key}")' in V2_SOURCE, key
+
+
+def test_the_pressure_gauge_is_a_searchable_setting_not_a_tools_entry():
+    assert 'label="Pressure Gauge (TPG 361)…"' not in V2_SOURCE
+    from pica import module_info as mi
+    index = mi.build_search_index(launcher.CATALOG, launcher.QUICK_CATALOG,
+                                  launcher.PICALauncherV2.SCRIPT_PATHS,
+                                  mi.UTILITY_TOOLS, mi.SETTINGS_TOOLS)
+    for query in ("pressure", "tpg", "gauge address"):
+        top = mi.search_modules(index, query, limit=5)
+        assert any(r['key'] == "Pressure Gauge Setup" and r['setting'] for r in top), query
+
+
 def test_the_newer_modules_are_all_in_the_catalogue():
     keys = {key for cat in launcher.CATALOG for _l, key, _f in cat["modules"]}
     for expected in ("Cryocon Direct Control", "Cryocon Temp Monitor",

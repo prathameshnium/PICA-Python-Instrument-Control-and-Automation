@@ -731,6 +731,23 @@ UTILITY_TOOLS = [
     ("List Maker", "List Maker", "Calculators"),
 ]
 
+# ---- Settings dialogs ------------------------------------------------------
+# Launcher dialogs that configure PICA rather than run a script. They have no
+# SCRIPT_PATHS key, so they are described here, apart from MODULE_INFO, and
+# the search index marks them 'setting' so the launcher opens the dialog.
+SETTINGS_TOOLS = [
+    # (label, settings key)
+    ("Pfeiffer TPG 361 — Pressure Gauge Address", "Pressure Gauge Setup"),
+]
+SETTINGS_INFO = {
+    "Pressure Gauge Setup": _entry(
+        "Tell PICA where the Pfeiffer TPG 361 is, so the status strip shows "
+        "the chamber pressure. Can also forget the gauge again.",
+        "Pfeiffer TPG 361 SingleGauge · USB (FTDI COM) or Ethernet",
+        "address (COM port, IP address or VISA resource); baud rate",
+        "Opens a settings dialog; no measurement is started."),
+}
+
 _add("Plotter Utility",
      "Plot any PICA data file (or several) with the X and Y columns chosen "
      "from the header. The quick look at a finished run.",
@@ -779,7 +796,10 @@ _add("SCPI Console",
      "the one instrument you pick", "instrument address; timeout (ms); "
      "line terminator; the commands you type")
 _add("Quick Calc",
-     "A small calculator for the lab bench.", "none", "an expression")
+     "A worksheet calculator: each line is typeset as written (fractions, "
+     "powers, roots) with its value, as an exact fraction where it is one. "
+     "Lines can name values and functions for later lines.",
+     "none", "one expression per line, e.g. R = 4.7e3 or f(x) = x^2 + 1")
 _add("Time Utility",
      "Add, subtract and convert durations (h:m:s), for planning runs.",
      "none", "hours, minutes, seconds")
@@ -806,7 +826,7 @@ def module_info(key, quick_catalog=None):
     so the two screens never contradict each other and nothing has to be
     written twice before a new module is at least described.
     """
-    info = MODULE_INFO.get(key)
+    info = MODULE_INFO.get(key) or SETTINGS_INFO.get(key)
     if info is not None:
         return dict(info)
     fallback = {'what': "", 'instruments': "", 'inputs': ""}
@@ -1029,7 +1049,7 @@ def _fuzzy_set(word, vocabulary, cutoff=0.8):
 
 
 def build_search_index(catalog, quick_catalog, script_paths,
-                       utility_tools=None):
+                       utility_tools=None, settings_tools=None):
     """One searchable record per launchable program.
 
     catalog       -- launcher v2 CATALOG (the Advanced Options cards)
@@ -1037,6 +1057,8 @@ def build_search_index(catalog, quick_catalog, script_paths,
                      descriptions, which are searched too)
     script_paths  -- PICALauncherApp.SCRIPT_PATHS (key -> file)
     utility_tools -- UTILITY_TOOLS, or None to leave the utilities out
+    settings_tools -- SETTINGS_TOOLS, or None to leave the settings dialogs
+                     out; their records carry 'setting': True
 
     Each record: key, label, category, family, instruments, experimental,
     snippet, and the pre-computed lower-case fields the scorer reads.
@@ -1055,7 +1077,7 @@ def build_search_index(catalog, quick_catalog, script_paths,
     seen = set()
 
     def add(label, key, category, family, cat_instruments, group,
-            experimental=False):
+            experimental=False, setting=False):
         if key in seen:
             return
         seen.add(key)
@@ -1085,6 +1107,7 @@ def build_search_index(catalog, quick_catalog, script_paths,
             'group': group,
             'instruments': info['instruments'] or cat_instruments,
             'experimental': experimental,
+            'setting': setting,
             'snippet': info['what'],
             'script': script,
             '_name': name,
@@ -1103,6 +1126,8 @@ def build_search_index(catalog, quick_catalog, script_paths,
                 "Modules", bool(cat.get('experimental')))
     for label, key, group in (utility_tools or []):
         add(label, key, "PICA Utils · " + group, None, "", "Utilities")
+    for label, key in (settings_tools or []):
+        add(label, key, "Settings", None, "", "Settings", setting=True)
     return index
 
 
