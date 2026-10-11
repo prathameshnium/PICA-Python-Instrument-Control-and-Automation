@@ -878,12 +878,14 @@ CATALOG = [
         # USB / Ethernet, not GPIB: the TPG 361 never shows up in the launcher's bus
         # scan, so the module asks for the COM port itself.
         'instruments': "Pfeiffer TPG 361 SingleGauge · USB (FTDI COM) or Ethernet",
-        # Icon button beside the folder: the gauge address the status strip's
-        # PRESSURE tile reads. It belongs with the gauge's own card.
-        'setting': ("⏲", "Pressure Gauge Setup",
-                    "Pressure Gauge (Pfeiffer TPG 361) — Address"),
         'modules': [
             ("Pressure vs. Time", "TPG361 Pressure Log", "sensing"),
+        ],
+        # Rows drawn exactly like the module rows, but they open a launcher
+        # settings dialog (module_info.SETTINGS_TOOLS) instead of a script:
+        # here, the gauge address the status strip's PRESSURE tile reads.
+        'settings': [
+            ("Gauge Address Setup", "Pressure Gauge Setup"),
         ],
     },
     {
@@ -2831,13 +2833,9 @@ class PICALauncherV2:
             return "break"
         return self._search_launch()
 
-    def _setting_dialog(self, key):
-        """The method that opens the dialog behind a settings key."""
-        return {"Pressure Gauge Setup": self.open_pressure_gauge_dialog}[key]
-
     def _open_setting(self, key):
-        """Open the dialog behind a 'setting' search record."""
-        self._setting_dialog(key)()
+        """Open the dialog behind a settings key (search record or card row)."""
+        {"Pressure Gauge Setup": self.open_pressure_gauge_dialog}[key]()
 
     def _search_launch(self):
         rec = self._search_selected()
@@ -3226,7 +3224,8 @@ class PICALauncherV2:
         for cat in CATALOG:
             target = min(columns, key=lambda c: c[1])
             self._make_card(target[0], cat, wrap).pack(fill='x', pady=(0, 12))
-            target[1] += self.CARD_HEADER_ROWS + len(cat['modules'])
+            target[1] += (self.CARD_HEADER_ROWS + len(cat['modules'])
+                          + len(cat.get('settings', [])))
 
     def _rebuild_browse(self):
         if not self._browse_alive():
@@ -3249,12 +3248,6 @@ class PICALauncherV2:
         first_key = cat['modules'][0][1]
         ttk.Button(top, text="📁", style='Aux.TButton', width=3,
                    command=lambda k=first_key: self.open_script_folder(k)).pack(side='right')
-        if cat.get('setting'):
-            icon, setting_key, tip = cat['setting']
-            setting_btn = ttk.Button(top, text=icon, style='Aux.TButton', width=3,
-                                     command=self._setting_dialog(setting_key))
-            setting_btn.pack(side='right', padx=(0, 4))
-            self._add_tooltip(setting_btn, tip)
 
         meta = tk.Frame(head, bg=self.CLR_PANEL)
         meta.pack(fill='x', pady=(6, 0))
@@ -3274,7 +3267,11 @@ class PICALauncherV2:
         family_colors = {'sensing': self.CLR_FAMILY_SENSING,
                          'control': self.CLR_FAMILY_CONTROL,
                          'master': self.CLR_FAMILY_MASTER}
-        for label, key, family in cat['modules']:
+        rows = [(label, key, family, self.launch_script)
+                for label, key, family in cat['modules']]
+        rows += [(label, key, None, self._open_setting)
+                 for label, key in cat.get('settings', [])]
+        for label, key, family, action in rows:
             # No pady: consecutive rows butt together so the family strips form
             # one continuous bar instead of a dashed column of 4 px stubs.
             row = tk.Frame(body, bg=self.CLR_PANEL)
@@ -3282,7 +3279,7 @@ class PICALauncherV2:
             strip = tk.Frame(row, bg=family_colors.get(family, self.CLR_PANEL2), width=5)
             strip.pack(side='left', fill='y')
             button = ttk.Button(row, text=label, style='Mod.TButton',
-                                command=lambda k=key: self.launch_script(k))
+                                command=lambda k=key, a=action: a(k))
             button._pica_key = key      # which program this row launches
             button.pack(side='left', fill='x', expand=True)
             # Rest the pointer on the row and the card says what the program
@@ -3783,9 +3780,9 @@ class PICALauncherV2:
                                  command=self._launch_gpib_scanner)
         adv_scanner.pack(side='right', padx=(0, 2))
         self._add_tooltip(adv_scanner, "VISA/GPIB Scanner")
-        # The pressure gauge address lives on the Vacuum Gauge Logging card
-        # (its 'setting' entry in CATALOG), not up here with the rack-wide
-        # tools. Also found by the search ("pressure", "tpg").
+        # The pressure gauge address is a row on the Vacuum Gauge Logging
+        # card (its 'settings' entry in CATALOG), not an icon up here. Also
+        # found by the search ("pressure", "tpg").
 
         title_blk = tk.Frame(head, bg=self.CLR_APP)
         title_blk.pack(side='right', fill='y')

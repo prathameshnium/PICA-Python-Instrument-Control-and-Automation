@@ -150,6 +150,7 @@ def test_no_timer_is_scheduled_on_a_short_lived_widget():
 SCENARIOS = os.path.join(REPO_ROOT, "tests", "launcher_v2_tk_scenarios.py")
 
 
+@pytest.mark.real_windows
 def test_live_tk_scenarios_pass_in_a_fresh_interpreter():
     """Every scenario in tests/launcher_v2_tk_scenarios.py passes.
 

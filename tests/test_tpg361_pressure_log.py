@@ -334,6 +334,160 @@ def test_the_module_is_registered_in_both_launchers():
     assert key in keys
 
 
+# ------------------------------------------------- run lifecycle (no Tk)
+# A bare PressureMonitorGUI with no window: the worker and the queue drain
+# are driven directly, with fakes standing in for the backend and widgets.
+
+import queue as _queue
+import tempfile
+import threading
+import time as _time
+
+
+class _FakeBackend:
+    def __init__(self, replies):
+        self.replies = list(replies)    # (status, value, unit) or an Exception
+        self.closed = 0
+        self.reconnects = 0
+
+    def read_pressure(self):
+        r = self.replies.pop(0) if self.replies else (0, 1e-3, "mbar")
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    def reconnect(self):
+        self.reconnects += 1
+
+    def close(self):
+        self.closed += 1
+
+
+class _Var:
+    def __init__(self):
+        self.value = None
+
+    def set(self, v):
+        self.value = v
+
+
+class _Root:
+    def __init__(self):
+        self.scheduled = []
+        self.cancelled = []
+
+    def after(self, ms, fn):
+        self.scheduled.append(fn)
+        return f"after#{len(self.scheduled)}"
+
+    def after_cancel(self, after_id):
+        self.cancelled.append(after_id)
+
+
+class _Anything:
+    """Swallows any matplotlib / widget call."""
+    def __getattr__(self, _name):
+        return lambda *a, **k: None
+
+
+def _bare_gui(tmpdir):
+    gui = tpg.PressureMonitorGUI.__new__(tpg.PressureMonitorGUI)
+    gui.root = _Root()
+    gui.is_running = True
+    gui.stop_event = threading.Event()
+    gui.data_queue = _queue.Queue()
+    gui._poll_id = None
+    gui.start_time = _time.time()
+    gui.unit = "mbar"
+    gui.data_storage = {'time': [], 'pressure': []}
+    gui.data_filepath = os.path.join(tmpdir, "log.dat")
+    open(gui.data_filepath, "w").close()
+    gui.pressure_label_var = _Var()
+    gui.gauge_status_var = _Var()
+    gui.line_main = gui.ax_main = gui.figure = gui.canvas = _Anything()
+    gui.logged, gui.banners, gui.beeps = [], [], []
+    gui.log = gui.logged.append
+    gui._show_banner = gui.banners.append
+    gui._clear_banner = lambda: None
+    gui._beep = gui.beeps.append
+    gui.RECONNECT_BACKOFFS = (0,)
+    return gui
+
+
+def test_the_worker_closes_its_own_backend_when_stopped():
+    with tempfile.TemporaryDirectory() as d:
+        gui = _bare_gui(d)
+        backend = _FakeBackend([])
+        ev, q = threading.Event(), _queue.Queue()
+        t = threading.Thread(target=gui._measurement_worker,
+                             args=(0.01, backend, ev, q), daemon=True)
+        t.start()
+        _time.sleep(0.05)
+        ev.set()
+        t.join(2)
+        assert not t.is_alive()
+        assert backend.closed == 1
+        assert not q.empty()
+
+
+def test_a_stale_worker_cannot_write_into_the_next_runs_queue():
+    # The worker only ever sees the event and queue it was started with, so
+    # a new run (fresh event, fresh queue) hears nothing from the old one.
+    with tempfile.TemporaryDirectory() as d:
+        gui = _bare_gui(d)
+        old_ev, old_q = threading.Event(), _queue.Queue()
+        old_ev.set()
+        gui._measurement_worker(0.01, _FakeBackend([IOError("x")]), old_ev, old_q)
+        assert gui.data_queue.empty()
+
+
+def test_the_drain_survives_a_bad_item_and_keeps_rescheduling():
+    with tempfile.TemporaryDirectory() as d:
+        gui = _bare_gui(d)
+        gui.data_queue.put(("not", "a", "reading"))     # wrong shape
+        gui.data_queue.put((1.0, 0, 2e-3, "mbar"))
+        gui._process_data_queue()
+        assert gui._poll_id is not None                  # chain alive
+        assert any("ERROR handling" in m for m in gui.logged)
+        rows = open(gui.data_filepath, encoding="utf-8").read().splitlines()
+        assert len(rows) == 1 and "2.0000E-03" in rows[0]
+
+
+def test_stops_final_drain_keeps_rows_and_drops_messages():
+    with tempfile.TemporaryDirectory() as d:
+        gui = _bare_gui(d)
+        gui.is_running = False
+        gui.data_queue.put("LOG:Comm error (late). Recovering...")
+        gui.data_queue.put((3.0, 0, 5e-4, "mbar"))
+        gui._process_data_queue(final=True)
+        assert gui.banners == [] and gui.beeps == []
+        assert gui._poll_id is None
+        assert "5.0000E-04" in open(gui.data_filepath, encoding="utf-8").read()
+
+
+def test_a_unit_change_after_reconnect_is_written_into_the_file():
+    with tempfile.TemporaryDirectory() as d:
+        gui = _bare_gui(d)
+        gui.data_storage['time'].append(0.0)
+        gui.data_storage['pressure'].append(1e-3)
+        gui.data_queue.put((9.0, 0, 7.5e-4, "Torr"))
+        gui._process_data_queue()
+        text = open(gui.data_filepath, encoding="utf-8").read()
+        assert "# Pressure unit changed from mbar to Torr" in text
+        assert gui.unit == "Torr"
+        assert gui.data_storage['pressure'] == [7.5e-4]   # plot restarted
+
+
+def test_the_scans_never_close_the_shared_resource_manager():
+    assert "rm.close()" not in TPG_SOURCE
+    assert "self._rm.close()" not in TPG_SOURCE
+
+
+def test_data_files_are_written_as_utf8():
+    assert "open(self.data_filepath, 'w', newline='', encoding='utf-8')" in TPG_SOURCE
+    assert "open(self.data_filepath, 'a', newline='')" not in TPG_SOURCE
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(list(globals().items())):

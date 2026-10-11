@@ -1,4 +1,5 @@
 # tests/conftest.py
+import os
 import pytest
 from unittest.mock import MagicMock, patch
 import sys
@@ -16,15 +17,51 @@ try:
 except ImportError:          # Python built without Tk: nothing to clean up
     _real_tkinter = None
 
+# ---- No windows on anybody's desktop by default -------------------------
+# Tests that put a real Tk window on screen (in this process or in a child
+# interpreter) flash dozens of PICA windows open and shut on the machine
+# running the suite. They only run when asked for:
+#
+#     PICA_REAL_WINDOWS=1 python -m pytest tests
+#
+# In this process: creating a real Tk root skips the test that asked for it
+# (tkinter.Tcl(), which has no window, is still allowed). Tests that open
+# windows in a child interpreter carry @pytest.mark.real_windows.
+REAL_WINDOWS = os.environ.get("PICA_REAL_WINDOWS") == "1"
+_NO_WINDOWS_REASON = ("opens a real window; set PICA_REAL_WINDOWS=1 to run "
+                      "the window tests")
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "real_windows: opens real windows on screen; runs only "
+                   "with PICA_REAL_WINDOWS=1")
+
+
+def pytest_collection_modifyitems(config, items):
+    if REAL_WINDOWS:
+        return
+    skip = pytest.mark.skip(reason=_NO_WINDOWS_REASON)
+    for item in items:
+        if "real_windows" in item.keywords:
+            item.add_marker(skip)
+
+
 # Count every real Tk interpreter a test creates (subclasses and tkinter.Tcl()
 # both go through Tk.__init__).
 _tk_created = [0]
 if _real_tkinter is not None:
     _orig_tk_init = _real_tkinter.Tk.__init__
 
-    def _counting_tk_init(self, *args, **kwargs):
+    def _counting_tk_init(self, screenName=None, baseName=None,
+                          className='Tk', useTk=True, *args, **kwargs):
+        if useTk and not REAL_WINDOWS:
+            # Skipped is a BaseException, so a test's "except Exception /
+            # TclError -> no usable Tk" fallback cannot swallow it.
+            pytest.skip(_NO_WINDOWS_REASON, allow_module_level=True)
         _tk_created[0] += 1
-        _orig_tk_init(self, *args, **kwargs)
+        _orig_tk_init(self, screenName, baseName, className, useTk,
+                      *args, **kwargs)
 
     _real_tkinter.Tk.__init__ = _counting_tk_init
 

@@ -477,7 +477,12 @@ class TPG361_Backend:
         self.connect()
 
     def close(self):
-        """Close the serial link. Never raises."""
+        """Close the serial link. Never raises.
+
+        Only the session is closed, never the ResourceManager: pyvisa hands
+        every caller the same shared manager, and closing it would also close
+        any other session open in this process.
+        """
         if self.instrument is not None:
             try:
                 self.instrument.close()
@@ -485,13 +490,7 @@ class TPG361_Backend:
                 print(f"Warning: issue during TPG 361 shutdown: {e}")
             finally:
                 self.instrument = None
-        if self._rm is not None:
-            try:
-                self._rm.close()
-            except Exception:
-                pass
-            finally:
-                self._rm = None
+        self._rm = None
 
 
 # -------------------------------------------------------------------------------
@@ -566,6 +565,8 @@ class PressureMonitorGUI:
         self.data_storage = {'time': [], 'pressure': []}
         self.logo_image = None
         self.data_queue = queue.Queue()
+        self.measurement_thread = None
+        self._poll_id = None        # the drain's pending root.after() id
 
         self.setup_styles()
         self.create_widgets()
@@ -993,7 +994,19 @@ class PressureMonitorGUI:
 
     # ------------------------------------------------------------------ run
     def start_measurement(self):
+        if self.is_running:
+            return      # idempotent: a double-click must not start two runs
         try:
+            # A worker from the last run can still be inside a 4 s gauge
+            # timeout after Stop. Two threads on one port would interleave
+            # their MNE/ACK/ENQ exchanges, so wait for it to let go first.
+            old = self.measurement_thread
+            if old is not None and old.is_alive():
+                old.join(timeout=10)
+                if old.is_alive():
+                    raise RuntimeError(
+                        "The previous run is still releasing the gauge. "
+                        "Try Start again in a few seconds.")
             params = {
                 'sample_name': self.entries["Sample Name"].get().strip(),
                 'delay': float(self.entries["Delay"].get()),
@@ -1017,7 +1030,7 @@ class PressureMonitorGUI:
             file_name = f"{params['sample_name']}_{ts}_Pressure_TPG361.dat"
             self.data_filepath = os.path.join(self.file_location_path, file_name)
 
-            with open(self.data_filepath, 'w', newline='') as f:
+            with open(self.data_filepath, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow([f"# Log File: {params['sample_name']}"])
                 writer.writerow([f"# Instrument: Pfeiffer TPG 361 "
@@ -1033,11 +1046,19 @@ class PressureMonitorGUI:
                 os.fsync(f.fileno())
             self.log(f"Output file created: {os.path.basename(self.data_filepath)}")
 
+            # Fresh event and queue per run: a worker still winding down from
+            # the last run keeps its own, so nothing it says afterwards can
+            # reach this run's file or banner.
+            self.stop_event = threading.Event()
+            self.data_queue = queue.Queue()
             self.is_running = True
-            self.stop_event.clear()
             self._clear_banner()
             self.start_button.config(state='disabled')
             self.stop_button.config(state='normal')
+            # The scans share pyvisa's ResourceManager with the run; keep
+            # them out of the way while it is logging.
+            self.scan_button.config(state='disabled')
+            self.lan_button.config(state='disabled')
             for key in self.data_storage:
                 self.data_storage[key].clear()
             self.line_main.set_data([], [])
@@ -1050,11 +1071,16 @@ class PressureMonitorGUI:
             self.log("Starting pressure logging...")
             self.start_time = time.time()
 
+            # The worker owns the backend from here on and closes it itself,
+            # so Stop never closes a session mid-read from the Tk thread.
+            backend, self.backend = self.backend, None
             self.measurement_thread = threading.Thread(
-                target=self._measurement_worker, args=(params['delay'],),
+                target=self._measurement_worker,
+                args=(params['delay'], backend, self.stop_event, self.data_queue),
                 daemon=True)
             self.measurement_thread.start()
-            self.root.after(100, self._process_data_queue)
+            self._cancel_poll()
+            self._poll_id = self.root.after(100, self._process_data_queue)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
@@ -1071,108 +1097,175 @@ class PressureMonitorGUI:
             return
         self.is_running = False
         self.stop_event.set()
+        self._cancel_poll()
+        # Readings already queued belong in the file; status chatter from a
+        # worker that is now winding down does not belong on the banner.
+        self._process_data_queue(final=True)
         self.log("Logging stopped. Data file is complete on disk.")
         self.start_button.config(state='normal')
         self.stop_button.config(state='disabled')
+        self.scan_button.config(state='normal')
+        self.lan_button.config(state='normal')
         self._set_keep_awake(False)
-        if self.backend:
-            self.backend.close()
-            self.backend = None
         self.gauge_status_var.set("Disconnected")
 
-    def _measurement_worker(self, delay_s):
+    def _cancel_poll(self):
+        if self._poll_id is not None:
+            try:
+                self.root.after_cancel(self._poll_id)
+            except Exception:
+                pass
+            self._poll_id = None
+
+    def _measurement_worker(self, delay_s, backend, stop_event, out_queue):
         """Worker thread: read, queue, sleep. Never gives up on a comm error.
 
         A serial cable knocked loose at 02:00 must not end a pump-down log,
         so a read failure backs off and reconnects forever; only Stop ends
-        the loop.
+        the loop. Everything it touches is passed in and owned by this run,
+        and it closes the backend itself on the way out.
         """
         comm_failures = 0
-        while self.is_running and not self.stop_event.is_set():
-            try:
-                status, value, unit = self.backend.read_pressure()
-                elapsed = time.time() - self.start_time
-                self.data_queue.put((elapsed, status, value, unit))
-                comm_failures = 0
-                # stop_event.wait() instead of sleep(): Stop stays instant
-                # even with a 60 s logging delay.
-                if self.stop_event.wait(delay_s):
-                    break
-            except Exception as e:
-                comm_failures += 1
-                self.data_queue.put(f"LOG:Comm error ({e}). Recovering...")
-                if not self._reconnect_with_backoff(comm_failures):
-                    break
+        try:
+            while not stop_event.is_set():
+                try:
+                    status, value, unit = backend.read_pressure()
+                    elapsed = time.time() - self.start_time
+                    out_queue.put((elapsed, status, value, unit))
+                    comm_failures = 0
+                    # stop_event.wait() instead of sleep(): Stop stays instant
+                    # even with a 60 s logging delay.
+                    if stop_event.wait(delay_s):
+                        break
+                except Exception as e:
+                    if stop_event.is_set():
+                        break
+                    comm_failures += 1
+                    out_queue.put(f"LOG:Comm error ({e}). Recovering...")
+                    if not self._reconnect_with_backoff(
+                            comm_failures, backend, stop_event, out_queue):
+                        break
+        finally:
+            backend.close()
 
-    def _reconnect_with_backoff(self, attempt):
+    def _reconnect_with_backoff(self, attempt, backend, stop_event, out_queue):
         """Close and re-open the port, escalating the wait (5 -> 10 -> 30 ->
         60 s cap). Loops until reconnected; returns False only if Stop was
         requested while waiting."""
-        while self.is_running and not self.stop_event.is_set():
+        while not stop_event.is_set():
             delay_s = self.RECONNECT_BACKOFFS[
                 min(attempt - 1, len(self.RECONNECT_BACKOFFS) - 1)]
-            self.data_queue.put(
+            out_queue.put(
                 f"LOG:Reconnect attempt in {delay_s} s (Stop stays responsive)...")
-            if self.stop_event.wait(delay_s):
+            if stop_event.wait(delay_s):
                 return False
             try:
-                self.backend.reconnect()
-                self.data_queue.put("LOG:Reconnected. Resuming logging.")
-                self.data_queue.put("BANNER_CLEAR")
+                backend.reconnect()
+                if stop_event.is_set():
+                    return False
+                out_queue.put("LOG:Reconnected. Resuming logging.")
+                out_queue.put("BANNER_CLEAR")
                 return True
             except Exception as e:
                 attempt += 1
-                self.data_queue.put(f"LOG:Reconnect failed: {e}")
+                out_queue.put(f"LOG:Reconnect failed: {e}")
         return False
 
-    def _process_data_queue(self):
-        """Drain the worker's queue on the main thread and update the GUI."""
+    def _process_data_queue(self, final=False):
+        """Drain the worker's queue on the main thread and update the GUI.
+
+        final=True is Stop's last pass: rows still go to the file, messages
+        are dropped. Each item is handled on its own, and the reschedule is
+        in a finally, so one bad item can never end the chain and leave the
+        worker queueing into a log nobody writes.
+        """
         try:
-            while not self.data_queue.empty():
-                item = self.data_queue.get_nowait()
-
-                if isinstance(item, str):
-                    if item == "BANNER_CLEAR":
-                        self._clear_banner()
-                    elif item.startswith("LOG:"):
-                        message = item[4:]
-                        self.log(message)
-                        if "Comm error" in message:
-                            self._show_banner(
-                                "COMMS LOST — retrying. Logging resumes "
-                                "automatically; the file so far is safe.")
-                            self._beep(2)
+            while True:
+                try:
+                    item = self.data_queue.get_nowait()
+                except queue.Empty:
+                    break
+                if final and isinstance(item, str):
                     continue
+                try:
+                    self._handle_queue_item(item)
+                except Exception as e:
+                    try:
+                        self.log(f"ERROR handling a reading: {e}")
+                    except Exception:
+                        pass
+        finally:
+            self._poll_id = None
+            if self.is_running and not final:
+                self._poll_id = self.root.after(200, self._process_data_queue)
 
-                elapsed, status, value, unit = item
-                self.pressure_label_var.set(format_pressure(value, unit))
-                text = status_text(status)
-                self.gauge_status_var.set(text)
+    def _handle_queue_item(self, item):
+        if isinstance(item, str):
+            if item == "BANNER_CLEAR":
+                self._clear_banner()
+            elif item.startswith("LOG:"):
+                message = item[4:]
+                self.log(message)
+                if "Comm error" in message:
+                    self._show_banner(
+                        "COMMS LOST — retrying. Logging resumes "
+                        "automatically; the file so far is safe.")
+                    self._beep(2)
+            return
 
-                if status == 0:
-                    self.log(f"P = {format_pressure(value, unit)}")
-                else:
-                    # Logged loudly but not fatal: an underrange on a Pirani
-                    # is the normal end of a pump-down, not a failure.
-                    self.log(f"Gauge status {status}: {text}")
+        elapsed, status, value, unit = item
+        if unit != self.unit:
+            self._unit_changed(elapsed, unit)
+        self.pressure_label_var.set(format_pressure(value, unit))
+        text = status_text(status)
+        self.gauge_status_var.set(text)
 
-                self._write_row(elapsed, value, status, text)
+        if status == 0:
+            self.log(f"P = {format_pressure(value, unit)}")
+        else:
+            # Logged loudly but not fatal: an underrange on a Pirani
+            # is the normal end of a pump-down, not a failure.
+            self.log(f"Gauge status {status}: {text}")
 
-                if status == 0:
-                    self.data_storage['time'].append(elapsed)
-                    self.data_storage['pressure'].append(value)
-                    self.line_main.set_data(self.data_storage['time'],
-                                            self.data_storage['pressure'])
-                    self.ax_main.relim()
-                    self.ax_main.autoscale_view()
-                    self.figure.tight_layout(pad=3.0)
-                    self.canvas.draw_idle()
+        self._write_row(elapsed, value, status, text)
 
-        except queue.Empty:
-            pass  # This is normal
+        if status == 0:
+            self.data_storage['time'].append(elapsed)
+            self.data_storage['pressure'].append(value)
+            self.line_main.set_data(self.data_storage['time'],
+                                    self.data_storage['pressure'])
+            self.ax_main.relim()
+            self.ax_main.autoscale_view()
+            self.figure.tight_layout(pad=3.0)
+            self.canvas.draw_idle()
 
-        if self.is_running:
-            self.root.after(200, self._process_data_queue)
+    def _unit_changed(self, elapsed, unit):
+        """The gauge came back from a reconnect in another display unit.
+
+        The column header was written at Start, so the change is recorded
+        in the file as a comment row, and the plot restarts rather than
+        drawing two units on one axis.
+        """
+        old, self.unit = self.unit, unit
+        stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        self._write_comment(f"# Pressure unit changed from {old} to {unit} "
+                            f"at {stamp} (elapsed {elapsed:.2f} s); "
+                            f"values below are in {unit}")
+        self.log(f"WARNING: gauge unit changed from {old} to {unit}.")
+        self._show_banner(f"UNIT CHANGED to {unit} — recorded in the file; "
+                          f"the plot restarted.")
+        for key in self.data_storage:
+            self.data_storage[key].clear()
+        self.ax_main.set_ylabel(f"Pressure ({unit})")
+
+    def _write_comment(self, text):
+        try:
+            with open(self.data_filepath, 'a', newline='', encoding='utf-8') as f:
+                csv.writer(f).writerow([text])
+                f.flush()
+                os.fsync(f.fileno())
+        except Exception as e:
+            self.log(f"ERROR: could not write to the data file: {e}")
 
     def _write_row(self, elapsed, value, status, text):
         """Append one row and fsync it.
@@ -1181,7 +1274,7 @@ class PressureMonitorGUI:
         take the last few minutes of the pump-down with it in an OS buffer.
         """
         try:
-            with open(self.data_filepath, 'a', newline='') as f:
+            with open(self.data_filepath, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                                  f"{elapsed:.2f}", f"{value:.4E}", status, text])
@@ -1205,13 +1298,12 @@ class PressureMonitorGUI:
             self.log("ERROR: PyVISA not installed.")
             return
         try:
+            # Not closed afterwards: the manager is shared process-wide (see
+            # TPG361_Backend.close), and listing opens no session.
             rm = pyvisa.ResourceManager()
             self.log("Scanning for serial (ASRL) resources...")
-            try:
-                resources = [r for r in rm.list_resources()
-                             if r.upper().startswith("ASRL")]
-            finally:
-                rm.close()
+            resources = [r for r in rm.list_resources()
+                         if r.upper().startswith("ASRL")]
             if resources:
                 choices = serial_port_choices(resources)
                 for c in choices:
@@ -1295,11 +1387,9 @@ class PressureMonitorGUI:
     def _ayt_at(self, ip):
         """AYT to one host on port 8000. Returns the identity or None."""
         resource = f"TCPIP0::{ip}::{TPG_TCP_PORT}::SOCKET"
-        rm = None
         inst = None
         try:
-            rm = pyvisa.ResourceManager()
-            inst = rm.open_resource(resource)
+            inst = pyvisa.ResourceManager().open_resource(resource)
             inst.timeout = self.LAN_AYT_TIMEOUT_MS
             inst.write_termination = '\r\n'
             inst.read_termination = '\r\n'
@@ -1312,12 +1402,13 @@ class PressureMonitorGUI:
         except Exception:
             return None
         finally:
-            for h in (inst, rm):
-                try:
-                    if h is not None:
-                        h.close()
-                except Exception:
-                    pass
+            # The session only; the shared manager stays open (a running
+            # log is using it).
+            try:
+                if inst is not None:
+                    inst.close()
+            except Exception:
+                pass
 
     def _find_on_lan_worker(self, sweep):
         try:
@@ -1361,7 +1452,9 @@ class PressureMonitorGUI:
         except Exception as e:
             self._ui(self.log, f"ERROR during LAN search: {e}")
         finally:
-            self._ui(lambda: self.lan_button.config(state='normal'))
+            # Stays disabled if a run started meanwhile; Stop re-enables it.
+            self._ui(lambda: None if self.is_running
+                     else self.lan_button.config(state='normal'))
 
     def _offer_lan_choices(self, choices):
         self.port_cb['values'] = choices

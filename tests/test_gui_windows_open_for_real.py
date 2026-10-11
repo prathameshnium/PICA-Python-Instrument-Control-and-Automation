@@ -59,6 +59,9 @@ import sys
 
 import pytest
 
+# Every test here opens real windows: opt-in only (see conftest.py).
+pytestmark = pytest.mark.real_windows
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 PICA_ROOT = REPO_ROOT / "pica"
 

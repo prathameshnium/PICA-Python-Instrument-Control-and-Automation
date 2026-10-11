@@ -160,6 +160,7 @@ print("OK")
 """
 
 
+@pytest.mark.real_windows
 def test_the_window_builds_and_updates():
     import subprocess
     proc = subprocess.run([sys.executable, "-c", _WINDOW_SCRIPT, REPO_ROOT],

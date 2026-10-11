@@ -462,7 +462,8 @@ def test_tk_advanced_rows_open_a_hover_card(tk_launcher):
                 rows.append(child)
             collect(child)
     collect(app._adv_win)
-    assert len(rows) == len(CATALOG_KEYS)
+    settings_rows = sum(len(c.get("settings", [])) for c in launcher.CATALOG)
+    assert len(rows) == len(CATALOG_KEYS) + settings_rows
 
     app._show_hover(rows[0], "K2400 R-T", "R vs. T (T Control)",
                     "Mid Resistance", "control")

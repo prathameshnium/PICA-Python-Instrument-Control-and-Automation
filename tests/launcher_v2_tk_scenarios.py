@@ -162,6 +162,12 @@ def app():
     assert leftover == [], f"Tk raised during the test: {leftover}"
 
 
+def _catalog_row_count():
+    """Card rows: every module, plus the settings rows some cards carry."""
+    return sum(len(c["modules"]) + len(c.get("settings", []))
+               for c in launcher.CATALOG)
+
+
 def _rows(win):
     from tkinter import ttk
     found = []
@@ -338,7 +344,7 @@ def test_the_card_grid_reflows_after_a_hover_without_error(app):
         app._render_cards()
         _pump(app.root, 20)
     assert win.winfo_exists()
-    assert len(_rows(win)) == sum(len(c["modules"]) for c in launcher.CATALOG)
+    assert len(_rows(win)) == _catalog_row_count()
 
 
 def test_quitting_the_launcher_mid_use_is_clean(app):
@@ -398,7 +404,7 @@ def test_clicking_a_row_closes_the_card_and_launches(app):
 def test_every_row_arms_and_disarms_its_own_card(app):
     win = _open_advanced(app)
     rows = _rows(win)
-    assert len(rows) == sum(len(c["modules"]) for c in launcher.CATALOG)
+    assert len(rows) == _catalog_row_count()
     for row in rows:
         row.event_generate("<Enter>")
         assert app._hover_after is not None, row.cget("text")
@@ -414,6 +420,10 @@ def test_every_row_card_describes_that_row(app):
                    for _label, key, _family in cat["modules"]}
     family_of = {key: family for cat in launcher.CATALOG
                  for _label, key, family in cat["modules"]}
+    for cat in launcher.CATALOG:
+        for _label, key in cat.get("settings", []):
+            category_of[key] = cat["category"]
+            family_of[key] = None
     rows = _rows(win)
     assert {row._pica_key for row in rows} == set(category_of)
     for row in rows:
@@ -423,7 +433,7 @@ def test_every_row_card_describes_that_row(app):
         card = app._hover_win
         assert card is not None
         texts = _labels(card)
-        assert mi.MODULE_INFO[key]["what"] in texts, key
+        assert mi.module_info(key)["what"] in texts, key
         # Headed by the program's full name, which contains the row label.
         full = mi.display_name(key, row.cget("text"), family_of[key])
         assert full in texts, key
@@ -817,7 +827,7 @@ def test_advanced_builds_its_grid_once_while_hidden(app):
     _pump(app.root, 200)
     assert builds == [False], builds        # one build, window still hidden
     assert win.winfo_ismapped()             # and then it is shown
-    assert len(_rows(win)) == sum(len(c["modules"]) for c in launcher.CATALOG)
+    assert len(_rows(win)) == _catalog_row_count()
 
 
 def test_advanced_opened_maximised_is_still_built_once(app):
@@ -931,26 +941,33 @@ def test_pressure_gauge_is_found_by_search_and_opens_its_dialog(app, monkeypatch
     assert "Pressure Gauge Setup" not in app.launched
 
 
-def test_pressure_gauge_button_is_on_the_vacuum_card_only(app):
+def test_pressure_gauge_is_a_named_row_on_the_vacuum_card(app, monkeypatch):
+    opened = []
+    monkeypatch.setattr(app, "open_pressure_gauge_dialog",
+                        lambda: opened.append(True))
     win = _open_advanced(app)
     assert win is not None
-    import tkinter as tk
     from tkinter import ttk
-    found = []
+    # No icon for it anywhere: the only buttons left with a bare symbol are
+    # the header's Plotter and scanner and each card's folder.
+    icons = []
 
     def walk(w):
         for c in w.winfo_children():
-            if isinstance(c, ttk.Button) and \
-                    "open_pressure_gauge_dialog" in str(c.cget("command")):
-                found.append(c)
+            if isinstance(c, ttk.Button) and c.cget("text") == "⏲":
+                icons.append(c)
             walk(c)
     walk(win)
-    # Exactly one, and it sits in the Vacuum Gauge Logging card's title row,
-    # not in the window header beside the Plotter and the scanner.
-    assert len(found) == 1, "expected one pressure gauge button"
-    titles = [c.cget("text") for c in found[0].master.winfo_children()
-              if isinstance(c, tk.Label)]
-    assert titles == ["Vacuum Gauge Logging"]
+    assert icons == []
+    row = next(r for r in _rows(win) if r._pica_key == "Pressure Gauge Setup")
+    assert row.cget("text") == "Gauge Address Setup"
+    vacuum = next(c for c in launcher.CATALOG
+                  if c["category"] == "Vacuum Gauge Logging")
+    assert ("Gauge Address Setup", "Pressure Gauge Setup") in vacuum["settings"]
+    row.invoke()
+    _pump(app.root, 20)
+    assert opened == [True]
+    assert "Pressure Gauge Setup" not in app.launched
 
 
 def _new_toplevels(app, before):
