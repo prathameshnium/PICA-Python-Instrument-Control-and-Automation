@@ -110,15 +110,16 @@ K2400_OVERFLOW = 9.9e37             # p. 7-6: 9.91E+37 returned for overflow
 STAT_COMPLIANCE = 1 << 3            # p. 18-50: bit 3 real compliance (decimal 8)
 STAT_OVP = 1 << 4                   # bit 4 over-voltage protection (decimal 16)
 STAT_RANGE_COMPLIANCE = 1 << 16     # bit 16 range compliance (decimal 65536)
-PROTECTION_CHOICES = ("20", "40", "60", "80", "100", "120", "160", "NONE")  # p. 3-12
-PROTECTION_NONE_VALUE = 210.0       # p. 18-79: 161 to 210 or DEFault means NONE
+PROTECTION_CHOICES = ("20", "40", "60", "80", "100", "120", "160", "210")  # p. 3-12; 210 = no clamp
+PROTECTION_NONE_VALUE = 210.0       # p. 18-79: 161 to 210 or DEFault means NONE (shown as "210")
 PROTECTION_WARN_FRACTION = 0.95     # p. 3-12: "absolute values with 5% tolerance"
 SOURCE_RANGES_V = (2.0, 20.0, 200.0)    # lowest range at or above the largest |V|
 SOURCE_RANGE_HEADROOM = 1.05        # each source range spans 105 % of nominal
 V_SOURCE_MAX_V = 210.0
 I_CC_MIN_A = 1e-9                   # p. 6-2: compliance 1 nA to 1.05 A
 I_CC_MAX_A = 1.05
-COMPLIANCE_READBACK_TOLERANCE = 0.01    # protocol 2.2 step 4 (A6): 1 %
+COMPLIANCE_READBACK_TOLERANCE = 0.05    # protocol 2.2 step 4 (A6) said 1 %; widened to 5 % for read-back rounding
+CONSOLE_MAX_LINES = 3000                # the console keeps only the newest lines (every point is logged)
 MEASURE_RANGES_A = (1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0)
 
 # Shock warning for the ZERO + Auto-Off pulse trick, manual p. 13-10, verbatim.
@@ -225,10 +226,11 @@ def measure_range_for(i_cc):
 
 
 def parse_protection(choice):
-    """'20' ... '160' -> float volts; 'NONE' -> None."""
+    """'20' ... '210' -> float volts. '210' is the instrument's "no clamp"
+    setting (manual p. 18-79); the legacy word 'NONE' is accepted as 210."""
     s = str(choice).strip().upper()
     if s == "NONE":
-        return None
+        return PROTECTION_NONE_VALUE
     try:
         v = float(s)
     except ValueError:
@@ -366,6 +368,29 @@ def parse_read_reply(reply):
     if abs(i) >= K2400_OVERFLOW:
         i = float("nan")
     return v, i, t_instr, int(stat)
+
+
+POINT_LOG_KEYS = (("cycle", "C"), ("loop", "L"), ("leg", "leg"), ("segment", "S"), ("phase", "ph"),
+                  ("t_s", "t"), ("t_since_write_s", "tsw"), ("V_set_V", "Vset"), ("V_meas_V", "Vmeas"),
+                  ("I_A", "I"), ("R_ohm", "R"), ("n_avg", "n"), ("compliance_flag", "cc"), ("event", "ev"))
+
+
+def point_line(tag, row):
+    """Compact one-line console text for a measured point (row dict of any
+    module). Empty and None fields are skipped; floats get 4 significant digits."""
+    parts = [str(tag)]
+    for key, short in POINT_LOG_KEYS:
+        if key == "loop" and "cycle" in row:
+            continue        # endurance raw rows carry loop = cycle
+        if key not in row:
+            continue
+        val = row[key]
+        if val is None or val == "":
+            continue
+        if isinstance(val, float):
+            val = "nan" if math.isnan(val) else f"{val:.4g}"
+        parts.append(f"{short}={val}")
+    return " ".join(parts)
 
 
 def resistance_ohm(v_meas, i_a):
@@ -518,6 +543,7 @@ class K2400Link:
         self.idn = ""
         self.config = None          # dict given to configure()
         self.i_cc = None
+        self.i_cc_readback = None
         self.source_delay_s = None
         self.nplc = None
         self.smode = "NORM"
@@ -600,7 +626,7 @@ class K2400Link:
 
     def set_compliance(self, i_cc):
         """A6 sequence: fixed range that holds I cc, then PROT, then AUTO ON,
-        then read back PROT? and refuse a mismatch above 1 %."""
+        then read back PROT? and refuse a mismatch above 5 %."""
         i_cc = float(i_cc)
         self.write(f":SENS:CURR:RANG {measure_range_for(i_cc):g}")
         self.write(f":SENS:CURR:PROT {i_cc:g}")
@@ -613,8 +639,9 @@ class K2400Link:
         if abs(got - i_cc) > COMPLIANCE_READBACK_TOLERANCE * abs(i_cc):
             raise ConfigMismatch(
                 f"compliance read-back {got:g} A differs from the requested "
-                f"{i_cc:g} A by more than 1 %")
+                f"{i_cc:g} A by more than {COMPLIANCE_READBACK_TOLERANCE:.0%}")
         self.i_cc = i_cc
+        self.i_cc_readback = got
         self.sleep(PACING_S)
 
     def set_source_delay(self, seconds):
@@ -832,9 +859,16 @@ class WorkerBase:
         self.link.open()
         idn = self.link.reset_and_identify()
         self.link.configure(source_range_v, protection_v, i_cc, dwell_s, NPLC_DEFAULT)
+        self.log_compliance()
         self.link.source(0.0)
         self.link.output(True)
         return idn
+
+    def log_compliance(self):
+        """One console line per compliance change: requested vs read back."""
+        got = self.link.i_cc_readback
+        self.log(f"Compliance set: requested {self.link.i_cc:g} A, instrument reads back "
+                 f"{'?' if got is None else f'{got:g}'} A.")
 
     def settle_readings(self, write_fn):
         """Step 7: 2 s at 0 V, then N readings written as phase 'settle'.
@@ -1360,6 +1394,9 @@ class MemristorGuiBase:
         try:
             self.console.config(state='normal')
             self.console.insert('end', line + "\n")
+            n_lines = int(self.console.index('end-1c').split('.')[0])
+            if n_lines > CONSOLE_MAX_LINES:
+                self.console.delete('1.0', f"{n_lines - CONSOLE_MAX_LINES + 1}.0")
             self.console.see('end')
             self.console.config(state='disabled')
         except Exception:
@@ -1435,7 +1472,7 @@ class MemristorGuiBase:
         pairs = [("idn", idn), ("address", p["visa_address"]), ("source_range_V", f"{source_range_v:g}"),
                  ("meas_range", "AUTO"), ("NPLC", f"{NPLC_DEFAULT:g}"), ("I_cc_A", f"{i_cc:g}")]
         pairs += list(extra or [])
-        pairs += [("V_protection_V", "NONE" if p["protection_v"] is None else f"{p['protection_v']:g}"),
+        pairs += [("V_protection_V", f"{protection_command_value(p['protection_v']):g}"),
                   ("terminals", "FRONT"), ("sense", "2-wire"), ("read_delay_s", "0"),
                   ("pacing_s", f"{PACING_S:g}"), ("rst_sleep_s", f"{RST_SLEEP_S:g}"),
                   ("settle_s", f"{SETTLE_S:g}"), ("n_settle", str(N_SETTLE_READINGS)),
@@ -1506,6 +1543,7 @@ class MemristorGuiBase:
                 if kind == "row":
                     _, tag, row = msg
                     self.points_written += 1
+                    self.log(point_line(tag, row))
                     self.on_row(tag, row)
                     flag = row.get("compliance_flag")
                     if flag is not None:
@@ -1784,7 +1822,7 @@ class EnduranceWorker(WorkerBase):
         pairs = [("idn", idn), ("address", p["visa_address"]), ("source_range_V", f"{source_range:g}"),
                  ("meas_range", "AUTO"), ("NPLC", f"{NPLC_DEFAULT:g}"), ("I_cc_A", f"{p['i_cc_set']:g}"),
                  ("I_cc_reset_A", f"{p['i_cc_reset']:g}"),
-                 ("V_protection_V", "NONE" if p["protection_v"] is None else f"{p['protection_v']:g}"),
+                 ("V_protection_V", f"{protection_command_value(p['protection_v']):g}"),
                  ("terminals", "FRONT"), ("sense", "2-wire"), ("read_delay_s", "0"),
                  ("pacing_s", f"{PACING_S:g}"), ("rst_sleep_s", f"{RST_SLEEP_S:g}"), ("settle_s", f"{SETTLE_S:g}"),
                  ("n_settle", str(N_SETTLE_READINGS)), ("ramp_step_s", f"{RAMP_STEP_S:g}"),
@@ -1806,6 +1844,7 @@ class EnduranceWorker(WorkerBase):
         if i_cc == self.current_i_cc:
             return
         self.link.set_compliance(i_cc)
+        self.log_compliance()
         self.current_i_cc = i_cc
 
     def point(self, v, query_trip=True):

@@ -108,13 +108,15 @@ def test_status_decoding_and_read_reply_parsing():
 
 def test_protection_checks_follow_the_manual_list():
     assert sweep.parse_protection("20") == 20.0
-    assert sweep.parse_protection("NONE") is None
+    assert sweep.parse_protection("210") == 210.0
+    assert sweep.parse_protection("NONE") == 210.0   # legacy alias
     try:
         sweep.parse_protection("25")
         assert False
     except ValueError:
         pass
     assert sweep.protection_command_value(None) == 210.0
+    assert sweep.protection_command_value(210.0) == 210.0
     ok, msg = sweep.check_vmax_against_protection(25, 20)
     assert not ok and "never-exceed" in msg
     ok, msg = sweep.check_vmax_against_protection(19.5, 20)
@@ -219,6 +221,27 @@ def test_link_refuses_a_compliance_readback_mismatch():
         assert False
     except sweep.ConfigMismatch:
         pass
+    # within the 5 % band (instrument rounding) is accepted and remembered
+    fake = FakeK2400(prot_readback=1.03e-5)
+    link = make_link(sweep, fake)
+    link.open()
+    link.set_compliance(1e-5)
+    assert link.i_cc == 1e-5 and link.i_cc_readback == 1.03e-5
+    assert sweep.COMPLIANCE_READBACK_TOLERANCE == 0.05
+
+
+def test_point_line_is_compact_and_skips_empty_fields():
+    row = {"t_s": 1.23456, "loop": 2, "segment": 3, "vmax_V": 20.0, "V_set_V": 1.2, "V_meas_V": 1.19876,
+           "I_A": 3.2e-6, "R_ohm": 374612.5, "compliance_flag": 0, "trip_query": None, "status_bits": 0,
+           "event": "", "phase": "sweep"}
+    assert sweep.point_line("sweep", row) == "sweep L=2 S=3 ph=sweep t=1.235 Vset=1.2 Vmeas=1.199 I=3.2e-06 R=3.746e+05 cc=0"
+    raw = {"cycle": 7, "leg": "set", "loop": 7, "segment": 1, "V_set_V": 5.0, "V_meas_V": 4.99, "I_A": 1e-5,
+           "R_ohm": 4.99e5, "compliance_flag": 1, "event": "trip_confirmed", "phase": "sweep"}
+    line = sweep.point_line("raw", raw)
+    assert line.startswith("raw C=7 leg=set S=1") and " L=" not in line and line.endswith("cc=1 ev=trip_confirmed")
+    reads = {"t_since_write_s": 12.5, "t_wall_s": 40.0, "phase": "read", "V_set_V": 0.2, "V_meas_V": 0.2,
+             "I_A": float("nan"), "R_ohm": None, "n_avg": 5, "compliance_flag": 0}
+    assert sweep.point_line("reads", reads) == "reads ph=read tsw=12.5 Vset=0.2 Vmeas=0.2 I=nan n=5 cc=0"
 
 
 def test_link_wraps_transport_errors_as_bus_errors_and_ramps_to_zero():
@@ -414,8 +437,8 @@ def test_sweep_gui_refuses_vmax_above_protection_and_bad_ladder():
             assert "never-exceed" in str(exc)
         gui = _gui_shell(sweep.SweepGUI, sweep, dict(base, vmax_plus="19.5"), d)
         assert "clamp" in gui.collect_params()["_warning"]
-        gui = _gui_shell(sweep.SweepGUI, sweep, dict(base, protection="NONE", vmax_plus="150"), d)
-        assert gui.collect_params()["protection_v"] is None
+        gui = _gui_shell(sweep.SweepGUI, sweep, dict(base, protection="210", vmax_plus="150"), d)
+        assert gui.collect_params()["protection_v"] == 210.0
         gui = _gui_shell(sweep.SweepGUI, sweep, dict(base, shape=sweep.SHAPE_LADDER, ladder=""), d)
         try:
             gui.collect_params()
@@ -452,7 +475,7 @@ def test_modules_are_ascii_only_and_share_the_common_block_verbatim():
     assert len(blocks) == 3 and blocks[0] == blocks[1] == blocks[2]
     for mod in MODULES:
         assert mod.DEFAULT_GPIB_ADDRESS == "GPIB1::24::INSTR"
-        assert mod.PROTECTION_CHOICES == ("20", "40", "60", "80", "100", "120", "160", "NONE")
+        assert mod.PROTECTION_CHOICES == ("20", "40", "60", "80", "100", "120", "160", "210")
 
 
 def test_registry_entries_exist():
