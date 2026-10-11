@@ -931,9 +931,10 @@ def test_pressure_gauge_is_found_by_search_and_opens_its_dialog(app, monkeypatch
     assert "Pressure Gauge Setup" not in app.launched
 
 
-def test_advanced_options_carries_the_pressure_gauge_button(app):
+def test_pressure_gauge_button_is_on_the_vacuum_card_only(app):
     win = _open_advanced(app)
     assert win is not None
+    import tkinter as tk
     from tkinter import ttk
     found = []
 
@@ -944,7 +945,12 @@ def test_advanced_options_carries_the_pressure_gauge_button(app):
                 found.append(c)
             walk(c)
     walk(win)
-    assert found, "no pressure gauge button in Advanced Options"
+    # Exactly one, and it sits in the Vacuum Gauge Logging card's title row,
+    # not in the window header beside the Plotter and the scanner.
+    assert len(found) == 1, "expected one pressure gauge button"
+    titles = [c.cget("text") for c in found[0].master.winfo_children()
+              if isinstance(c, tk.Label)]
+    assert titles == ["Vacuum Gauge Logging"]
 
 
 def _new_toplevels(app, before):

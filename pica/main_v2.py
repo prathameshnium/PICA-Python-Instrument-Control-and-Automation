@@ -878,6 +878,10 @@ CATALOG = [
         # USB / Ethernet, not GPIB: the TPG 361 never shows up in the launcher's bus
         # scan, so the module asks for the COM port itself.
         'instruments': "Pfeiffer TPG 361 SingleGauge · USB (FTDI COM) or Ethernet",
+        # Icon button beside the folder: the gauge address the status strip's
+        # PRESSURE tile reads. It belongs with the gauge's own card.
+        'setting': ("⏲", "Pressure Gauge Setup",
+                    "Pressure Gauge (Pfeiffer TPG 361) — Address"),
         'modules': [
             ("Pressure vs. Time", "TPG361 Pressure Log", "sensing"),
         ],
@@ -2827,9 +2831,13 @@ class PICALauncherV2:
             return "break"
         return self._search_launch()
 
+    def _setting_dialog(self, key):
+        """The method that opens the dialog behind a settings key."""
+        return {"Pressure Gauge Setup": self.open_pressure_gauge_dialog}[key]
+
     def _open_setting(self, key):
         """Open the dialog behind a 'setting' search record."""
-        {"Pressure Gauge Setup": self.open_pressure_gauge_dialog}[key]()
+        self._setting_dialog(key)()
 
     def _search_launch(self):
         rec = self._search_selected()
@@ -3241,6 +3249,12 @@ class PICALauncherV2:
         first_key = cat['modules'][0][1]
         ttk.Button(top, text="📁", style='Aux.TButton', width=3,
                    command=lambda k=first_key: self.open_script_folder(k)).pack(side='right')
+        if cat.get('setting'):
+            icon, setting_key, tip = cat['setting']
+            setting_btn = ttk.Button(top, text=icon, style='Aux.TButton', width=3,
+                                     command=self._setting_dialog(setting_key))
+            setting_btn.pack(side='right', padx=(0, 4))
+            self._add_tooltip(setting_btn, tip)
 
         meta = tk.Frame(head, bg=self.CLR_PANEL)
         meta.pack(fill='x', pady=(6, 0))
@@ -3769,13 +3783,9 @@ class PICALauncherV2:
                                  command=self._launch_gpib_scanner)
         adv_scanner.pack(side='right', padx=(0, 2))
         self._add_tooltip(adv_scanner, "VISA/GPIB Scanner")
-        # Pressure gauge address: a setting for the expert window, not a
-        # menu entry. Also found by the search ("pressure", "tpg").
-        adv_gauge = ttk.Button(adv_tools, text="⏲", width=3,
-                               style='Icon.TButton',
-                               command=self.open_pressure_gauge_dialog)
-        adv_gauge.pack(side='right', padx=(0, 2))
-        self._add_tooltip(adv_gauge, "Pressure Gauge (Pfeiffer TPG 361) — Address")
+        # The pressure gauge address lives on the Vacuum Gauge Logging card
+        # (its 'setting' entry in CATALOG), not up here with the rack-wide
+        # tools. Also found by the search ("pressure", "tpg").
 
         title_blk = tk.Frame(head, bg=self.CLR_APP)
         title_blk.pack(side='right', fill='y')
