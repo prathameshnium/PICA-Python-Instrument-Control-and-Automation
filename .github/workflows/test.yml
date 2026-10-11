@@ -10,6 +10,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Tests that open real Tk windows are skipped by default so a local run never
+# floods a person's desktop (tests/conftest.py). CI runners are throwaway VMs
+# (and the Linux jobs draw into Xvfb), so every job here opts back in.
+env:
+  PICA_REAL_WINDOWS: "1"
+
 jobs:
   test:
     name: Test & Get Coverage
