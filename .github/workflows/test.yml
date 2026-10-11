@@ -64,20 +64,26 @@ jobs:
 
   # Windows is the platform the lab PCs run, so the suite must pass there too.
   # Tk ships with the python.org builds setup-python installs, so no virtual
-  # display is needed. Coverage is reported from the Linux job only.
+  # display is needed. Coverage is reported from the Linux job only. Both the
+  # oldest and the newest Python the package claims are run, so a version-
+  # specific break on the lab platform is caught before it reaches a lab PC.
   test-windows:
-    name: Test (Windows)
+    name: Test (Windows, Python ${{ matrix.python-version }})
     runs-on: windows-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
 
-    - name: Set up Python 3.10
+    - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v7
       with:
-        python-version: "3.10"
+        python-version: ${{ matrix.python-version }}
         cache: "pip"
         cache-dependency-path: |
           pyproject.toml

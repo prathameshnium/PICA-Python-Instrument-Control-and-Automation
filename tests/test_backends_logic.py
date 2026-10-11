@@ -45,7 +45,7 @@ def test_lcr_backend_structure():
         try:
             from pica.keysight.Instrument_Control import CV_KE4980A_Simple_Instrument_Control as LCR_Module
         except ImportError:
-            pytest.skip("Could not import LCR Instrument Control.")
+            pytest.fail("Could not import LCR Instrument Control.")
 
         category, obj = analyze_module_content(LCR_Module)
         
@@ -70,7 +70,7 @@ def test_delta_backend_structure():
         try:
             from pica.keithley.delta_mode.Instrument_Control import Delta_K6221_K2182_Simple_Instrument_Control as Delta_Module
         except ImportError:
-            pytest.skip("Could not import Delta Instrument Control.")
+            pytest.fail("Could not import Delta Instrument Control.")
 
         category, obj = analyze_module_content(Delta_Module)
         
@@ -96,7 +96,7 @@ def test_keithley_data_parser():
     try:
         from pica.utils.parser import parse_keithley_output
     except ImportError:
-        pytest.skip("Could not import the parser module.")
+        pytest.fail("Could not import the parser module.")
 
     # Test case 1: Standard scientific notation
     raw_string_1 = "+1.2345E-06,+2.5000E+00"
@@ -130,7 +130,7 @@ def test_k2400_backend_structure():
         try:
             from pica.keithley.k2400.Instrument_Control import IV_K2400_Loop_Instrument_Control as K2400_Module
         except ImportError:
-            pytest.skip("Could not import Keithley 2400 Instrument Control.")
+            pytest.fail("Could not import Keithley 2400 Instrument Control.")
 
         category, obj = analyze_module_content(K2400_Module)
 

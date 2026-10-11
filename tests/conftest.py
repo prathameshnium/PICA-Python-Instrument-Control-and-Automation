@@ -9,6 +9,41 @@ matplotlib.use('Agg')
 # Import pyplot explicitly: safe_matplotlib's teardown touches matplotlib.pyplot,
 # which only resolves if pyplot has already been imported by something else.
 import matplotlib.pyplot as plt
+import gc
+
+try:
+    import tkinter as _real_tkinter
+except ImportError:          # Python built without Tk: nothing to clean up
+    _real_tkinter = None
+
+# Count every real Tk interpreter a test creates (subclasses and tkinter.Tcl()
+# both go through Tk.__init__).
+_tk_created = [0]
+if _real_tkinter is not None:
+    _orig_tk_init = _real_tkinter.Tk.__init__
+
+    def _counting_tk_init(self, *args, **kwargs):
+        _tk_created[0] += 1
+        _orig_tk_init(self, *args, **kwargs)
+
+    _real_tkinter.Tk.__init__ = _counting_tk_init
+
+
+@pytest.fixture(autouse=True)
+def _free_tk_objects_on_the_main_thread():
+    """Collect a test's leftover Tk objects on the main thread.
+
+    Tcl aborts the whole process ("Fatal Python error: Illegal instruction")
+    if a Tk object is freed from any other thread. A leftover window or
+    variable from one test could otherwise be garbage-collected later inside
+    another test's worker thread, so the run crashed or not depending on test
+    order. Only tests that created a real Tk pay for the collection.
+    """
+    before = _tk_created[0]
+    yield
+    if _tk_created[0] != before:
+        gc.collect()
+
 
 @pytest.fixture
 def safe_matplotlib():
@@ -38,7 +73,15 @@ def mock_tkinter():
     # so that winfo_toplevel() and nametowidget() don't fail on a mock object.
     canvas_instance_mock.tk.call.return_value = ".dummy.widget.path"
     mock_tk_app.Canvas.return_value = canvas_instance_mock
-    
+
+    # A bare MagicMock is not a package, so 'from pyvisa.errors import
+    # VisaIOError' would fail unless an earlier test had already imported the
+    # real submodule. Supply the real errors module so the result does not
+    # depend on test order, and so 'except VisaIOError' gets a real exception.
+    import pyvisa.errors as real_pyvisa_errors
+    mock_pyvisa = MagicMock()
+    mock_pyvisa.errors = real_pyvisa_errors
+
     # Mock libraries that would otherwise create windows or require hardware
     mocked_modules = {
         # '_tkinter' and the matplotlib Tk backends are stubbed so the suite runs
@@ -54,7 +97,8 @@ def mock_tkinter():
         'tkinter.filedialog': MagicMock(),
         'tkinter.simpledialog': MagicMock(),
         'tkinter.font': MagicMock(),
-        'pyvisa': MagicMock(), # Mock pyvisa
+        'pyvisa': mock_pyvisa,
+        'pyvisa.errors': real_pyvisa_errors,
         'pymeasure': mock_pymeasure,
         'pymeasure.instruments': mock_pymeasure.instruments,
         'pymeasure.instruments.keithley': mock_pymeasure.instruments.keithley,

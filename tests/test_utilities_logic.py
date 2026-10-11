@@ -21,7 +21,7 @@ def test_gui_basic_formatter():
         try:
             import pica.utils.GUI_Basic_Format as GUI_Format
         except ImportError:
-            pytest.skip("Could not import GUI_Basic_Format.")
+            pytest.fail("Could not import GUI_Basic_Format.")
             
         # Check if constants exist (simple but effective coverage)
         if hasattr(GUI_Format, 'FONT_STYLE_BOLD'):

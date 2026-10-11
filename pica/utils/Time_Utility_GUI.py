@@ -54,6 +54,22 @@ def format_seconds(seconds, show_hundredths=False):
     return text
 
 
+def format_time_left(seconds):
+    """A countdown's time left, rounded UP to the whole second.
+
+    The display and the log both use this, so they always agree: 299.99 s
+    left reads 00:05:00 (the last second has not gone yet), and the display
+    never shows 00:00:00 before the timer has really finished. Rounding down
+    instead made the log say 00:04:59 while the screen said 00:05:00, and
+    the answer depended on the computer's clock resolution.
+    """
+    seconds = max(0.0, float(seconds))
+    whole = int(seconds)
+    if seconds - whole > 1e-6:
+        whole += 1
+    return format_seconds(whole)
+
+
 def format_log_line(when, source, event, reading="", note=""):
     """One log line: date and time, source, event, reading, note.
 
@@ -79,11 +95,14 @@ class PICATimeUtilityApp:
     CLR_TEXT_DIM = '#6B5F54'
     CLR_TEXT_DARK = '#1A1A1A'
     CLR_TEXT_LIGHT = '#FFFFFF'
-    # Button colours: green to start, red to stop, quiet outline otherwise.
-    CLR_START = '#5B7A3F'
-    CLR_START_HOVER = '#47612F'
-    CLR_STOP = '#B04A38'
-    CLR_STOP_HOVER = '#8B3A2F'
+    # Button colours, from the launcher's palette (pica/main_v2.py):
+    # terracotta to start (its Launch button), deep maroon while running
+    # (Stop / Pause), and the launcher's quiet cream button otherwise.
+    CLR_START = '#BA6B5E'           # terracotta accent
+    CLR_START_HOVER = '#8B3A2F'     # deep maroon hover
+    CLR_STOP = '#8B3A2F'            # deep maroon: running
+    CLR_STOP_HOVER = '#4A3222'      # espresso hover
+    CLR_AUX_HOVER = '#EAD9D2'       # pale terracotta tint
     CLR_BORDER = '#C4B2A0'
 
     FONT_SIZE_BASE = 12
@@ -103,7 +122,7 @@ class PICATimeUtilityApp:
         self.root.configure(bg=self.CLR_BG_DARK)
 
         # --- State Variables ---
-        self.is_12_hour = tk.BooleanVar(value=False)
+        self.is_12_hour = tk.BooleanVar(value=True)    # 12-hour clock by default
 
         # Stopwatch state
         self.sw_running = False
@@ -127,6 +146,7 @@ class PICATimeUtilityApp:
 
         self.log("CLOCK", "Time Utility opened")
         self.log_saved_count = len(self.log_lines)     # nothing worth saving yet
+        self._update_log_status()
 
         # Start background update loops
         self.update_clock()
@@ -150,7 +170,8 @@ class PICATimeUtilityApp:
         style.map('TCheckbutton', background=[('active', self.CLR_FRAME_BG)])
         style.configure('TEntry', fieldbackground=self.CLR_INPUT_BG, foreground=self.CLR_TEXT)
 
-        # Start: filled green. It turns into Stop (filled red) while running.
+        # Start: filled terracotta. It turns into Stop / Pause (deep maroon)
+        # while running.
         style.configure('Start.TButton', font=self.FONT_BUTTON, padding=(12, 6),
                         foreground=self.CLR_TEXT_LIGHT, background=self.CLR_START,
                         borderwidth=0, focusthickness=0, focuscolor=self.CLR_START)
@@ -163,14 +184,15 @@ class PICATimeUtilityApp:
         style.map('Stop.TButton',
                   background=[('active', self.CLR_STOP_HOVER)],
                   foreground=[('active', self.CLR_TEXT_LIGHT)])
-        # Everything else (Reset, Log note, Save, Clear): a quiet outline.
+        # Everything else (Reset, Log note, Add note, Clear): the launcher's
+        # quiet cream button, pale terracotta with accent text on hover.
         style.configure('Aux.TButton', font=self.FONT_BASE, padding=(12, 6),
-                        foreground=self.CLR_TEXT, background=self.CLR_INPUT_BG,
+                        foreground=self.CLR_TEXT_DIM, background=self.CLR_FRAME_BG,
                         bordercolor=self.CLR_BORDER, borderwidth=1,
-                        focusthickness=0, focuscolor=self.CLR_INPUT_BG)
+                        focusthickness=0, focuscolor=self.CLR_FRAME_BG)
         style.map('Aux.TButton',
-                  background=[('active', self.CLR_ACCENT_GOLD)],
-                  foreground=[('active', self.CLR_TEXT_LIGHT)])
+                  background=[('active', self.CLR_AUX_HOVER)],
+                  foreground=[('active', self.CLR_ACCENT_GOLD)])
 
     # ==========================================
     # WIDGETS
@@ -372,6 +394,8 @@ class PICATimeUtilityApp:
             text = "Log is empty"
         elif unsaved:
             text = f"{unsaved} unsaved entr{'y' if unsaved == 1 else 'ies'}"
+        elif self.last_save_path is None:
+            text = "Nothing to save yet"
         else:
             text = "All entries saved"
         try:
@@ -398,7 +422,7 @@ class PICATimeUtilityApp:
         note = self._note(self.entry_tm_note)
         if not note:
             return
-        self.log("TIMER", "Note with", f"{self.format_time(self._tm_left())} left", note)
+        self.log("TIMER", "Note with", f"{format_time_left(self._tm_left())} left", note)
 
     def log_text(self):
         """The whole log as a file would hold it."""
@@ -550,7 +574,7 @@ class PICATimeUtilityApp:
             self.btn_tm_start.config(text="Pause", style='Stop.TButton')
             self._set_timer_entries('disabled')
             if resuming:
-                self.log("TIMER", "Resumed with", f"{self.format_time(self.tm_remaining)} left", note)
+                self.log("TIMER", "Resumed with", f"{format_time_left(self.tm_remaining)} left", note)
             else:
                 self.log("TIMER", "Started for", self.format_time(self.tm_remaining), note)
             self.update_timer()
@@ -558,7 +582,8 @@ class PICATimeUtilityApp:
             self.tm_remaining = max(0.0, self.tm_end_time - time.monotonic())
             self.tm_running = False
             self.btn_tm_start.config(text="Resume", style='Start.TButton')
-            self.log("TIMER", "Paused with", f"{self.format_time(self.tm_remaining)} left", note)
+            self.lbl_timer.config(text=format_time_left(self.tm_remaining))
+            self.log("TIMER", "Paused with", f"{format_time_left(self.tm_remaining)} left", note)
 
     def tm_reset(self):
         was_active = self.tm_running or self.tm_remaining > 0
@@ -573,7 +598,7 @@ class PICATimeUtilityApp:
             entry.delete(0, tk.END)
             entry.insert(0, "0")
         if was_active:
-            self.log("TIMER", "Reset with", f"{self.format_time(left)} left",
+            self.log("TIMER", "Reset with", f"{format_time_left(left)} left",
                      self._note(self.entry_tm_note))
 
     def update_timer(self):
@@ -589,9 +614,8 @@ class PICATimeUtilityApp:
                          self._note(self.entry_tm_note))
                 self.play_beep()
             else:
-                # Round up, so the display reads 00:00:01 until the last
-                # second has really gone, and never shows 00:00:00 early.
-                self.lbl_timer.config(text=self.format_time(int(self.tm_remaining + 0.999)))
+                # Rounded up, like the log: see format_time_left.
+                self.lbl_timer.config(text=format_time_left(self.tm_remaining))
                 self.root.after(100, self.update_timer)
 
     def play_beep(self):

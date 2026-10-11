@@ -65,7 +65,11 @@ class TestDeepSimulation(unittest.TestCase):
                     print(f"   -> [FAIL] CRITICAL TIMEOUT: {e}", flush=True)
                     raise e  # Re-raise to fail the test
                 else:
-                    print(f"   -> [INFO] Script stopped with: {e}", flush=True)
+                    # Anything else is a real crash in the script under test.
+                    # Swallowing it let these tests pass with the module
+                    # broken, so it fails the test instead.
+                    print(f"   -> [FAIL] Script crashed with: {e!r}", flush=True)
+                    raise
 
             finally:
                 if hasattr(signal, 'SIGALRM'):

@@ -102,13 +102,18 @@ def test_a_keystroke_search_stays_fast(query):
     """Every prefix of the query, as typing produces them, ranks quickly.
 
     The bound is generous (a slow CI runner must not flake): the old scorer
-    took ~55 ms here, the current one ~3 ms.
+    took ~55 ms here, the current one ~3 ms. Each prefix is timed three times
+    and the fastest kept, so one scheduler or garbage-collector pause on a
+    busy machine cannot fail it, while a scorer that is slow every time does.
     """
     worst = 0.0
     for i in range(1, len(query) + 1):
-        start = time.perf_counter()
-        mi.search_modules(INDEX, query[:i], limit=V2.SEARCH_LIMIT)
-        worst = max(worst, time.perf_counter() - start)
+        best = float("inf")
+        for _ in range(3):
+            start = time.perf_counter()
+            mi.search_modules(INDEX, query[:i], limit=V2.SEARCH_LIMIT)
+            best = min(best, time.perf_counter() - start)
+        worst = max(worst, best)
     assert worst < 0.030, f"{query!r}: {worst * 1000:.1f} ms per key"
 
 
