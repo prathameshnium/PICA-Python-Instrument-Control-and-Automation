@@ -5,6 +5,13 @@ Purpose: Write one resistive state (SET for LRS, RESET for HRS, or a
          read resistance against time since the write (protocol "Memristor
          measurement modules for PICA" v1.1, Section 4).
 
+v1.3 (12 Oct 2026) - round 2 (K's ruling of 12 Oct)
+  * The data files hold data only: header, column row, data rows to the
+    end of the file. RETRY, RECONNECT, WRITE_END and the END line of each
+    data file go to <sample>_<ts>_retention_<state>_log.txt (ISO time and
+    t_s= on every line, fsynced per line); the [protocol] block of both
+    files names it as log_file=. Sequence, timing and columns are
+    unchanged.
 v1.2 (12 Oct 2026) - Retention window, UI round 1 (K's ruling of 12 Oct)
   * '|V max| write' takes a positive value only; the write sign comes from
     State and Swap, and a live 'This run: 0 -> +5 V -> 0 ...' line under
@@ -440,6 +447,13 @@ def run_file_path(folder, stem, kind, ts):
     return unique_path(os.path.join(folder, f"{stem}_{ts}_{kind}.csv"))
 
 
+def run_log_path(folder, stem, kind, ts):
+    """<folder>/<sample>_<YYYYMMDD_HHMMSS>_<kind>.txt for the run's event log
+    (kind ends in _log); same stem, time stamp and unique_path() rule as the
+    data files of the run."""
+    return unique_path(os.path.join(folder, f"{stem}_{ts}_{kind}.txt"))
+
+
 def unique_path(path):
     """Never overwrite: if the name is taken (a rerun within the same second)
     append _1, _2, ... before the extension."""
@@ -743,9 +757,11 @@ class K2400Link:
 
 
 class RunFile:
-    """One output file: '#' header blocks, a column row, one data row per
-    point flushed and fsynced immediately, '#' comment lines where events
-    happen, and the trailing '# END' line (protocol 2.6). Comma separated."""
+    """One data file: '#' header blocks, a column row, then one data row per
+    point flushed and fsynced immediately, and nothing after the last row,
+    so the file imports cleanly. Events (RETRY, RECONNECT, END ...) go to
+    the run's RunLog, named by log_file in the [protocol] block. Comma
+    separated."""
 
     def __init__(self, path, module_name, blocks, columns, version="1.0"):
         self.path = path
@@ -776,21 +792,44 @@ class RunFile:
         self.points += 1
         self._flush()
 
-    def comment(self, text):
-        if self.closed:
-            return
-        self._fh.write("# " + header_line(text) + "\n")
-        self._flush()
-
-    def end(self, reason, extra=None):
-        if self.closed:
-            return
-        line = f"# END reason={header_value(reason)} | points={self.points} | end_time={iso_now()}"
+    def end_text(self, reason, extra=None):
+        """The END line of this file, for the run log (not written here)."""
+        line = (f"END reason={header_value(reason)} | points={self.points} | end_time={iso_now()} | "
+                f"file={os.path.basename(self.path)}")
         if extra:
             line += " | " + " | ".join(f"{k}={header_value(v)}" for k, v in extra)
-        self._fh.write(line + "\n")
-        self._flush()
-        self.close()
+        return line
+
+    def close(self):
+        if not self.closed:
+            try:
+                self._flush()
+                self._fh.close()
+            finally:
+                self.closed = True
+
+
+class RunLog:
+    """The run's event log <sample>_<ts>_<kind>_log.txt: one line per event
+    (the data files, RETRY, RECONNECT, WRITE_END, END), each starting with
+    the ISO time and t_s=, the run time. Flushed and fsynced on every line,
+    as the data files are, so a crash leaves the RETRY lines on disk."""
+
+    def __init__(self, path, clock):
+        self.path = path
+        self.clock = clock          # callable returning the run time in s
+        self.closed = False
+        self._fh = open(path, "w", newline="", encoding="utf-8")
+
+    def write(self, text):
+        if self.closed:
+            return
+        self._fh.write(f"{iso_now()} | t_s={self.clock():.3f} | {header_line(text)}\n")
+        try:
+            self._fh.flush()
+            os.fsync(self._fh.fileno())
+        except Exception:
+            pass
 
     def close(self):
         if not self.closed:
@@ -813,7 +852,8 @@ class WorkerBase:
         self.q = out_queue
         self.sleep = sleep
         self.t0 = None
-        self.files = []          # RunFile objects that receive RETRY lines
+        self.files = []          # RunFile objects of the run (END lines, closed on exit)
+        self.run_log = None      # RunLog: RETRY, RECONNECT, WRITE_END and END lines
         self.reason = "completed"
         self.outcome = "finished"
         self.last_compliance_flag = 0
@@ -841,23 +881,32 @@ class WorkerBase:
     def check_stop(self):
         return self.stop_event.is_set()
 
-    def comment_all(self, text):
-        for f in self.files:
-            f.comment(text)
+    def open_run_log(self, log_path, files):
+        """Adopt the run's data files and open its event log; the first
+        line names every data file of the run."""
+        self.files = list(files)
+        self.run_log = RunLog(log_path, self.t_s)
+        self.status(file=log_path)
+        self.log_event("FILES " + " | ".join(f"data_file={os.path.basename(f.path)}" for f in self.files))
+
+    def log_event(self, text):
+        """One event line in the run log (dropped before the log exists)."""
+        if self.run_log is not None:
+            self.run_log.write(text)
 
     # -- bus-error retry (protocol 2.8) ----------------------------------
     def with_retry(self, fn, what="command"):
         """Run fn(); on BusError retry after 1, 2, 5, 10, 30, 60 s and then
         every 60 s until it succeeds or Stop is pressed. Each attempt is a
-        '# RETRY' line in every open data file; a recovered gap is exactly one
-        '# RECONNECT' line, written when fn() succeeds. Returns fn()'s result."""
+        RETRY line in the run log; a recovered gap is exactly one RECONNECT
+        line, written when fn() succeeds. Returns fn()'s result."""
         attempt = 0
         gap_start = None
         while True:
             try:
                 result = fn()
                 if attempt:
-                    self.comment_all(f"RECONNECT after {time.perf_counter() - gap_start:.1f} s | {what} succeeded on attempt {attempt + 1}")
+                    self.log_event(f"RECONNECT after {time.perf_counter() - gap_start:.1f} s | {what} succeeded on attempt {attempt + 1}")
                     self.status(state="running")
                 return result
             except BusError as exc:
@@ -866,7 +915,7 @@ class WorkerBase:
                 if gap_start is None:
                     gap_start = time.perf_counter()
                 delay = RETRY_SCHEDULE_S[min(attempt - 1, len(RETRY_SCHEDULE_S) - 1)]
-                self.comment_all(f"RETRY n={attempt} | t_s={self.t_s():.3f} | what={what} | error={header_value(exc)}")
+                self.log_event(f"RETRY n={attempt} | t_s={self.t_s():.3f} | what={what} | error={header_value(exc)}")
                 self.log(f"Bus error ({what}): {exc}. Retry {attempt} in {delay:g} s.")
                 self.status(state=f"reconnecting (attempt {attempt}, next try in {delay:g} s)")
                 if wait_with_stop(delay, self.stop_event, sleep=self.sleep):
@@ -874,7 +923,7 @@ class WorkerBase:
                 try:
                     self.link.reconnect()   # the RECONNECT line is written once fn() succeeds
                 except BusError as exc2:
-                    self.comment_all(f"RETRY n={attempt} | t_s={self.t_s():.3f} | what=reconnect | error={header_value(exc2)}")
+                    self.log_event(f"RETRY n={attempt} | t_s={self.t_s():.3f} | what=reconnect | error={header_value(exc2)}")
                     continue
 
     # -- startup (protocol 2.2) -------------------------------------------
@@ -967,9 +1016,19 @@ class WorkerBase:
         finally:
             shutdown_note = self.shutdown(self.shutdown_step_v())
             extra = [("shutdown", shutdown_note)] if shutdown_note else None
+            for f in self.files:            # END lines first, then close the data files and the log
+                try:
+                    self.log_event(f.end_text(self.reason, extra))
+                except Exception:
+                    pass
             for f in self.files:
                 try:
-                    f.end(self.reason, extra)
+                    f.close()
+                except Exception:
+                    pass
+            if self.run_log is not None:
+                try:
+                    self.run_log.close()
                 except Exception:
                     pass
             self.status(state="done" if self.outcome == "finished" else self.outcome)
@@ -1984,6 +2043,7 @@ class RetentionWorker(WorkerBase):
         state = p["state"]
         write_path = run_file_path(p["folder"], p["stem"], f"retention_{state}_write", ts)
         reads_path = run_file_path(p["folder"], p["stem"], f"retention_{state}_reads", ts)
+        log_path = run_log_path(p["folder"], p["stem"], f"retention_{state}_log", ts)
         proto_pairs = [("module", "retention_write"), ("state", state), ("polarity", "+" if p["polarity"] > 0 else "-"),
                        ("swap_polarity", "1" if p["swap"] else "0"), ("Vmax_write_V", f"{p['vmax_write']:g}"),
                        ("I_cc_write_A", f"{p['i_cc_write']:g}"), ("step_V", f"{p['step_v']:g}"),
@@ -1995,14 +2055,14 @@ class RetentionWorker(WorkerBase):
                        ("log_interval_s", f"{LOG_INTERVAL_S:g}"),
                        ("soak_logging", "phase read in constant bias, phase soak in intermittent"),
                        ("companion_file", os.path.basename(p["companion"]) if p["companion"] else ""),
-                       ("start_time", iso_now())]
+                       ("start_time", iso_now()), ("log_file", os.path.basename(log_path))]
         instr = self.instrument_block(idn, source_range)
         self.write_file = RunFile(write_path, "retention", [p["_sample_block"], instr, ("protocol", proto_pairs)],
                                   WRITE_COLUMNS, self.gui_version)
         reads_pairs = [("module", "retention_reads"), ("write_file", os.path.basename(write_path))] + proto_pairs[1:]
         self.reads_file = RunFile(reads_path, "retention", [p["_sample_block"], instr, ("protocol", reads_pairs)],
                                   READS_COLUMNS, self.gui_version)
-        self.files = [self.write_file, self.reads_file]
+        self.open_run_log(log_path, [self.write_file, self.reads_file])
         self.status(file=write_path)
         self.status(file=reads_path)
 
@@ -2017,8 +2077,7 @@ class RetentionWorker(WorkerBase):
         if self.check_stop():
             return
         self.t_write_end = self.t_s()
-        self.write_file.comment(f"WRITE_END t_s={self.t_write_end:.3f}")
-        self.reads_file.comment(f"WRITE_END t_s={self.t_write_end:.3f}")
+        self.log_event(f"WRITE_END t_s={self.t_write_end:.3f}")
 
         self.with_retry(lambda: self.link.set_source_delay(0.0), "read delay 0")
 
@@ -2231,7 +2290,7 @@ class RetentionWorker(WorkerBase):
 class RetentionGUI(MemristorGuiBase):
     MODULE_TITLE = "Retention"
     MODULE_KEY = "retention"
-    PROGRAM_VERSION = "1.2"
+    PROGRAM_VERSION = "1.3"
 
     def create_module_inputs(self, parent):
         self.companion_path = ""

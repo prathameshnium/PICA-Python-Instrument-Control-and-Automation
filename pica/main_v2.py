@@ -812,6 +812,11 @@ CATALOG = [
             ("R vs. T (T Control, L340)", "K2400 R-T (L340)", "control"),
             ("R vs. T (T Sensing, L340)", "K2400 R-T (T_Sensing, L340)", "sensing"),
             ("R vs. T (T Sensing, Cryocon 34)", "K2400 R-T (T_Sensing, CC34)", "sensing"),
+            # Memristor (resistive switching) modules: same single 2400, but
+            # voltage sourced. Advanced-only; not on the Quick Select screen.
+            ("Memristor Switching I-V Sweep", "K2400 Memristor Sweep", None),
+            ("Memristor Retention (R vs. time)", "K2400 Memristor Retention", None),
+            ("Memristor Endurance (SET / RESET cycles)", "K2400 Memristor Endurance", None),
         ],
     },
     {
@@ -825,16 +830,6 @@ CATALOG = [
             ("R vs. T (T Control, L340)", "K2400_2182 R-T (L340)", "control"),
             ("R vs. T (T Sensing, L340)", "K2400_2182 R-T (T_Sensing, L340)", "sensing"),
             ("R vs. T (T Sensing, Cryocon 34)", "K2400_2182 R-T (T_Sensing, CC34)", "sensing"),
-        ],
-    },
-    {
-        'category': "Memristor (Resistive Switching)",
-        'type': "Voltage Driven",
-        'instruments': "K2400",
-        'modules': [
-            ("Switching I-V Sweep", "K2400 Memristor Sweep", None),
-            ("Retention (R vs. time)", "K2400 Memristor Retention", None),
-            ("Endurance (SET / RESET cycles)", "K2400 Memristor Endurance", None),
         ],
     },
     {
@@ -1042,52 +1037,13 @@ CATALOG = [
 #     not measurements a newcomer starts from. The Alpha-AN broadband scans
 #     are the ones to add here first, once the module has been through a full
 #     campaign; the temperature utilities stay in Advanced by choice.
+#   * The three Keithley 2400 memristor modules (switching sweep, retention,
+#     endurance) are Advanced-only, under Mid Resistance; Ctrl+F finds them.
 #
 # Instrument names are written out in full in every description -- "Keithley
 # 2400", not "K2400". A newcomer has not yet learned to read the shorthand,
 # and this screen is the one place in PICA that assumes nothing.
 QUICK_CATALOG = [
-    {
-        'category': "Memristor (Resistive Switching)",
-        'desc': "A pellet or thin film that switches between a low and a "
-                "high resistance state under a voltage sweep or pulse. A "
-                "single Keithley 2400 writes the state under a current "
-                "compliance and reads it at a small bias. The measurement "
-                "modules record only; the switching voltages, retention "
-                "times and endurance criteria are computed by the read-only "
-                "analysis tool.",
-        'modules': [
-            {
-                'name': "Keithley 2400 (write and read)",
-                'desc': "Voltage sourced, current measured, 2-wire on the "
-                        "front terminals. Every run re-sends the never-exceed "
-                        "voltage (:SOUR:VOLT:PROT), starts and ends at 0 V, "
-                        "and logs the compliance state of every point. Bus "
-                        "errors are retried for as long as it takes, so "
-                        "overnight runs survive a GPIB hiccup.",
-                'instruments': ["Keithley 2400"],
-                'protocols': [
-                    {'label': "Switching I-V Sweep", 'key': "K2400 Memristor Sweep", 'family': None,
-                     'desc': "Bipolar, unipolar or ladder loops under a "
-                             "current compliance; a confirmed compliance "
-                             "trip turns the sweep around and the rest of "
-                             "the loop is still measured."},
-                    {'label': "Retention (R vs. time)", 'key': "K2400 Memristor Retention", 'family': None,
-                     'desc': "Write one state (SET, RESET or a control "
-                             "write), then log the read resistance against "
-                             "time since the write for hours, under a "
-                             "constant or an intermittent read bias."},
-                    {'label': "Endurance (SET / RESET cycles)", 'key': "K2400 Memristor Endurance", 'family': None,
-                     'desc': "SET, soaked read, RESET, soaked read, N times, "
-                             "in sweep mode or with the 2400 Auto-Off pulse "
-                             "trick; a summary row per cycle and the raw "
-                             "current-voltage legs of chosen cycles. The "
-                             "read-only Memristor Analysis tool (PICA Utils) "
-                             "evaluates the files afterwards."},
-                ],
-            },
-        ],
-    },
     {
         'category': "DC Resistance",
         'desc': "A steady current is passed through the sample and the "

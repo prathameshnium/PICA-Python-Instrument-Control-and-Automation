@@ -175,16 +175,46 @@ def read_file(path):
     return header, columns, rows
 
 
-def end_reason(header):
-    for line in header:
-        if line.startswith("# END"):
-            return analysis.header_blocks([line])["end"]["reason"]
+def log_path_of(path):
+    """The run log named by log_file= in the data file's [protocol] block."""
+    header, _, _ = analysis.parse_pica_csv(path)
+    name = analysis.header_blocks(header)["protocol"]["log_file"]
+    return os.path.join(os.path.dirname(path), name)
+
+
+def log_events(path):
+    """Event texts of the data file's run log, without the leading
+    '<iso time> | t_s=<run time> | ' that every log line carries."""
+    out = []
+    with open(log_path_of(path), encoding="utf-8") as fh:
+        for ln in fh:
+            iso, t_s, text = ln.rstrip("\n").split(" | ", 2)
+            assert "T" in iso and t_s.startswith("t_s="), ln
+            out.append(text)
+    return out
+
+
+def end_reason(path):
+    """reason= of the END line the run log holds for this data file."""
+    name = os.path.basename(path)
+    for text in log_events(path):
+        if text.startswith("END ") and f"| file={name}" in text:
+            return analysis.header_blocks(["# " + text])["end"]["reason"]
     return None
 
 
 def comment_lines(path, prefix):
+    """Event lines (RETRY, RECONNECT, WRITE_END ...) of the data file's run log."""
+    return [text for text in log_events(path) if text.startswith(prefix)]
+
+
+def assert_data_only(path):
+    """Header lines, the column row, then data rows to the end of the file:
+    no '#' line after the column row, so the last line is data or columns."""
     with open(path, encoding="utf-8") as fh:
-        return [ln.rstrip("\n") for ln in fh if ln.startswith("# " + prefix)]
+        lines = [ln.rstrip("\n") for ln in fh if ln.strip()]
+    first = next(k for k, ln in enumerate(lines) if not ln.startswith("#"))
+    assert not any(ln.startswith("#") for ln in lines[first:]), path
 
 
 class _Var:
@@ -221,7 +251,7 @@ def run_sweep(fake, folder, stop_after=None, **extra):
     worker = sweep.SweepWorker(p, link, stop, q, sleep=lambda s: None)
     worker.gui_version = "test"
     msgs = run_worker(worker, stop_after, stop, timeout=60)
-    files = [f for f in os.listdir(folder) if "_sweep" in f]
+    files = [f for f in os.listdir(folder) if "_sweep" in f and f.endswith(".csv")]
     assert len(files) == 1
     return worker, msgs, os.path.join(folder, files[0])
 
@@ -251,8 +281,8 @@ def run_retention(fake, folder, stop_after=None, **extra):
 
 def endurance_params(folder, **extra):
     p = base_params(folder, mode=endurance.MODE_SWEEP, v_set=5.0, v_reset=5.0, step_v=1.0, dwell_s=0.0,
-                    i_cc_set=1e-5, i_cc_reset=1e-5, v_read=0.1, t_soak=0.02, n_cycles=5, max_time_s=3600,
-                    raw_cycles_text="1-2, 5", raw_cycles={1, 2, 5}, n_confirm=3, lo_earthed=False,
+                    i_cc_set=1e-5, i_cc_reset=1e-5, v_read=0.1, t_soak=0.02, n_cycles=5,
+                    raw_cycles_text="1, 2, 5", raw_cycles={1, 2, 5}, n_confirm=3, lo_earthed=False,
                     pulse_set_v=5.0, pulse_reset_v=5.0, pulses_per_leg=1, pulse_width_s=None,
                     pulse_delay_s=0.001, pulse_nplc=0.01)
     p.update(extra)

@@ -18,7 +18,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from memristor_test_support import (  # noqa: E402
-    FakeK2400, MODULES, K2400_DIR, UTILS_DIR, analysis, comment_lines, end_reason, make_link, read_file,
+    FakeK2400, MODULES, K2400_DIR, UTILS_DIR, analysis, assert_data_only, comment_lines, end_reason, log_events,
+    make_link, read_file,
     run_module_tests, run_worker, sweep, _gui_shell, sweep_params, run_sweep)
 
 def test_half_leg_and_return_leg_hit_vmax_exactly_and_avoid_duplicates():
@@ -157,16 +158,21 @@ def test_time_estimate_matches_the_protocol_formula():
     assert abs(sweep.sweep_time_estimate_s(100, 0.1) - (100 * per + 10 * 0.1)) < 1e-9
 
 
-def test_runfile_writes_header_blocks_rows_comments_and_end_line():
+def test_runfile_writes_header_blocks_and_rows_only_and_the_log_gets_the_events():
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "x.csv")
         f = sweep.RunFile(path, "sweep", [("sample", [("name", "VCO01"), ("area_cm2", "")]),
                                            ("protocol", [("module", "sweep"), ("notes", "a|b")])], ("a", "b", "c"))
+        log = sweep.RunLog(os.path.join(d, "x_log.txt"), lambda: 1.5)
         f.write_row([1.0, None, "txt"])
-        f.comment("RETRY n=1 | error=boom")
+        log.write("RETRY n=1 | error=boom")
         f.write_row([float("nan"), 2, 3])
-        f.end("completed")
-        f.end("twice")  # ignored
+        log.write(f.end_text("completed", [("shutdown", "ramp: x|y")]))
+        f.close()
+        f.close()               # idempotent
+        f.write_row([4, 5, 6])  # ignored after close
+        log.close()
+        log.write("late")       # ignored after close
         text = open(path, encoding="utf-8").read()
         lines = text.splitlines()
         assert lines[0].startswith("# PICA memristor sweep v")
@@ -175,12 +181,17 @@ def test_runfile_writes_header_blocks_rows_comments_and_end_line():
         assert lines[3] == "# columns: a,b,c"
         assert lines[4] == "a,b,c"
         assert lines[5].startswith("1.00000000e+00,,txt")
-        assert lines[6].startswith("# RETRY n=1")
-        assert lines[7] == ",2,3"
-        assert lines[8].startswith("# END reason=completed | points=2 | end_time=")
-        assert text.count("# END") == 1
+        assert lines[6] == ",2,3" and len(lines) == 7
         header, columns, rows = analysis.parse_pica_csv(path)
         assert columns == ["a", "b", "c"] and rows[0]["b"] == "" and rows[1]["a"] == ""
+        log_lines = open(os.path.join(d, "x_log.txt"), encoding="utf-8").read().splitlines()
+        assert len(log_lines) == 2
+        assert log_lines[0].split(" | ", 2)[1:] == ["t_s=1.500", "RETRY n=1 | error=boom"]
+        iso = log_lines[0].split(" | ")[0]
+        assert iso[4] == "-" and "T" in iso
+        end = log_lines[1].split(" | ", 2)[2]
+        assert end.startswith("END reason=completed | points=2 | end_time=")
+        assert end.endswith("| file=x.csv | shutdown=ramp: x/y")
 
 
 def test_link_startup_order_follows_a6_and_remembers_config():
@@ -272,7 +283,12 @@ def test_sweep_on_1_megohm_trips_at_10v_confirms_turns_around_and_measures_the_r
         assert worker.reason == "completed"
         header, columns, rows = read_file(path)
         assert list(columns) == list(sweep.SWEEP_COLUMNS)
-        assert end_reason(header) == "completed"
+        assert end_reason(path) == "completed"
+        assert_data_only(path)
+        events = log_events(path)
+        assert events[0] == f"FILES data_file={os.path.basename(path)}" and len(events) == 2
+        assert analysis.header_blocks(header)["protocol"]["log_file"] == \
+            os.path.basename(path).replace("_sweep.csv", "_sweep_log.txt")
         settle = [r for r in rows if r["phase"] == "settle"]
         assert len(settle) == 3 and all(r["V_set_V"] == 0.0 for r in settle)
         seg1 = [r for r in rows if r["segment"] == 1]
@@ -343,7 +359,8 @@ def test_sweep_stop_button_finishes_the_point_and_ramps_down():
         worker, msgs, path = run_sweep(SlowFake(1e9), d, stop_after=0.3, vmax_plus=20, vmax_minus=20, step_v=0.1)
         assert worker.reason == "stop_button"
         header, _, rows = read_file(path)
-        assert end_reason(header) == "stop_button"
+        assert end_reason(path) == "stop_button"
+        assert_data_only(path)
         assert 3 < len(rows) < 400
         w = worker.link.fake.writes
         assert w[-1] == ":OUTP OFF" and w[-2] == ":SOUR:VOLT 0"
@@ -355,7 +372,8 @@ def test_sweep_ovp_bit_stops_the_run():
         worker, _, path = run_sweep(FakeK2400(1e9, ovp_at=3.0), d, vmax_plus=5, vmax_minus=5, step_v=1.0)
         assert worker.reason == "ovp_trip"
         header, _, rows = read_file(path)
-        assert end_reason(header) == "ovp_trip"
+        assert end_reason(path) == "ovp_trip"
+        assert_data_only(path)
         assert rows[-1]["event_code"] == 5 and rows[-1]["V_set_V"] == 3.0
         assert worker.link.fake.writes[-1] == ":OUTP OFF"
 
@@ -370,7 +388,7 @@ def test_sweep_config_mismatch_is_an_exception_end_with_output_off():
         run_worker(worker)
         assert worker.reason.startswith("exception:") and "compliance read-back" in worker.reason
         assert fake.writes[-1] == ":OUTP OFF"
-        assert not [f for f in os.listdir(d) if f.endswith(".csv")]   # refused before the file was opened
+        assert not os.listdir(d)   # refused before any file (data or log) was opened
 
 
 def test_sweep_bus_error_is_retried_and_the_point_repeated():
@@ -385,6 +403,10 @@ def test_sweep_bus_error_is_retried_and_the_point_repeated():
         assert len(reconnects) == 1 and "after" in reconnects[0]      # one line per recovered gap
         assert " | t_s=" in retries[0] and " | what=" in retries[0]      # fields separated by ' | ' like every header line
         assert " | " in reconnects[0] and "/" not in reconnects[0].split("after")[1].split("|")[0]
+        assert_data_only(path)
+        events = log_events(path)
+        assert events.index(retries[1]) < events.index(reconnects[0]) < len(events) - 1
+        assert events[-1].startswith("END reason=completed")
         _, _, rows = read_file(path)
         sw = [r["V_set_V"] for r in rows if r["phase"] == "sweep"]
         assert sw == [0.0, 1.0, 2.0, 3.0, 2.0, 1.0, 0.0, -1.0, -2.0, -3.0, -2.0, -1.0, 0.0]
@@ -407,9 +429,9 @@ def test_stop_during_a_retry_gap_ends_with_its_own_reason():
         finally:
             sweep.RETRY_SCHEDULE_S = (0.01, 0.01, 0.02)
         assert worker.reason == "stop_button_during_retry"
-        files = [f for f in os.listdir(d) if "_sweep" in f]
-        header, _, _ = read_file(os.path.join(d, files[0]))
-        assert end_reason(header) == "stop_button_during_retry"
+        files = [f for f in os.listdir(d) if f.endswith("_sweep.csv")]
+        assert end_reason(os.path.join(d, files[0])) == "stop_button_during_retry"
+        assert_data_only(os.path.join(d, files[0]))
         assert len(comment_lines(os.path.join(d, files[0]), "RETRY")) >= 2
         assert any("reconnecting" in str(m[1].get("state", "")) for m in msgs if m[0] == "status")
         assert fail.writes[-1] == ":OUTP OFF"
@@ -499,8 +521,16 @@ def test_registry_entries_exist():
     assert "Memristor Analysis" in {k for _l, k, _g in module_info.UTILITY_TOOLS}
     for key in ("K2400 Memristor Sweep", "K2400 Memristor Retention", "K2400 Memristor Endurance", "Memristor Analysis"):
         assert key in module_info.MODULE_INFO, key
+    # Advanced-only, in the Mid Resistance (K2400) panel; never on Quick Select,
+    # but still found by Ctrl+F search.
+    mid = next(c for c in main_v2.CATALOG if c["category"].startswith("Mid Resistance (100"))
+    memristor_keys = {"K2400 Memristor Sweep", "K2400 Memristor Retention", "K2400 Memristor Endurance"}
+    assert memristor_keys <= {key for _l, key, _f in mid["modules"]}
     quick = {p["key"] for cat in main_v2.QUICK_CATALOG for m in cat["modules"] for p in m["protocols"]}
-    assert "K2400 Memristor Retention" in quick
+    assert not (memristor_keys & quick)
+    index = module_info.build_search_index(main_v2.CATALOG, main_v2.QUICK_CATALOG,
+                                           main.PICALauncherApp.SCRIPT_PATHS)
+    assert memristor_keys <= {r["key"] if isinstance(r, dict) else r.key for r in index}
 
 
 class _FakeWidget:

@@ -5,6 +5,12 @@ Purpose: Read-only analysis of the files written by the three memristor
          Memristor_Retention_K2400_GUI, Memristor_Endurance_K2400_GUI),
          protocol "Memristor measurement modules for PICA" v1.1, Section 6.
 
+v1.1 (12 Oct 2026) - round 2 (K's ruling of 12 Oct)
+  * Endurance raw-cycle viewer: one line per (cycle, leg, segment), SET in
+    the LRS colour and RESET in the HRS colour, return segments dashed,
+    one legend entry per leg (SET, RESET). Pulse rows unchanged.
+  * Files written since module v1.3 hold data only (events are in the
+    _log file); older files with '#' lines after the data still read.
 v1.0 (11 Oct 2026) - first version
   * Strictly read-only: the raw files are opened for reading only, never
     renamed, moved or rewritten, and the module writes NO file of its own.
@@ -40,7 +46,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
 
-PROGRAM_VERSION = "1.0"
+PROGRAM_VERSION = "1.1"
 PROTOCOL_VERSION = "1.1"
 TABS = ("sweep", "retention", "endurance")
 
@@ -161,6 +167,55 @@ def sweep_loops(rows, cycle=None):
         seg = int(num(seg)) if seg not in ("", None) else 0
         loops.setdefault(loop, {}).setdefault(seg, []).append(r)
     return loops
+
+
+def endurance_leg_segments(rows, cycle):
+    """[(leg, segment, rows)] for the phase 'sweep' rows of one endurance
+    raw cycle, keyed by (cycle, leg, segment): the SET and RESET legs both
+    number their segments 1 (outgoing) and 2 (return), so the (loop,
+    segment) key of sweep_loops() would join SET and RESET into one line.
+    A leg repeated after a bus-error retry joins into one line (the RETRY
+    time in the _log file identifies the repeat)."""
+    out = {}
+    for r in rows:
+        if r.get("phase") != "sweep" or int(num(r.get("cycle"))) != int(cycle):
+            continue
+        seg = r.get("segment")
+        seg = int(num(seg)) if seg not in ("", None) else 0
+        out.setdefault((str(r.get("leg", "")), seg), []).append(r)
+    order = {"set": 0, "reset": 1}
+    return [(leg, seg, out[(leg, seg)]) for leg, seg in sorted(out, key=lambda k: (order.get(k[0], 2), k[0], k[1]))]
+
+
+def plot_raw_cycle(ax, rows, cycle):
+    """I-V of one endurance raw cycle: one line per (leg, segment), SET in
+    COLOUR_LRS and RESET in COLOUR_HRS, the return segment dashed, one
+    legend entry per leg, hollow compliance markers in the leg's colour.
+    Pulse rows keep the per-loop handling of sweep_loops()."""
+    labelled = set()
+    for leg, seg, srows in endurance_leg_segments(rows, cycle):
+        colour = COLOUR_LRS if leg == "set" else COLOUR_HRS
+        label = None
+        if leg not in labelled:
+            labelled.add(leg)
+            label = leg.upper() or None
+        ax.plot([num(r.get("V_meas_V")) for r in srows], [num(r.get("I_A")) for r in srows],
+                '.-' if seg != 2 else '.--', ms=3, lw=0.8, color=colour, label=label)
+        hollow = [r for r in srows if num(r.get("compliance_flag")) == 1]
+        if hollow:
+            ax.plot([num(r.get("V_meas_V")) for r in hollow], [num(r.get("I_A")) for r in hollow],
+                    'o', ms=5, mfc='none', color=colour)
+    pulse_rows = [r for r in rows if r.get("phase") == "pulse"]
+    for loop, segs in sweep_loops(pulse_rows, cycle).items():
+        for seg, srows in sorted(segs.items()):
+            leg = srows[0].get("leg", "")
+            colour = COLOUR_LRS if leg == "set" else COLOUR_HRS
+            ax.plot([num(r.get("V_meas_V")) for r in srows], [num(r.get("I_A")) for r in srows],
+                    '.-', ms=3, lw=0.8, color=colour, label=f"{leg} seg {seg}" if seg in (1, 0) else None)
+            hollow = [r for r in srows if num(r.get("compliance_flag")) == 1]
+            if hollow:
+                ax.plot([num(r.get("V_meas_V")) for r in hollow], [num(r.get("I_A")) for r in hollow],
+                        'o', ms=5, mfc='none', color=colour)
 
 
 def segment_is_outgoing(seg_rows):
@@ -754,17 +809,7 @@ class EnduranceTab(_TabBase):
         if raws and cycle_text:
             cycle = int(float(cycle_text))
             for path, blocks, columns, rows in raws:
-                loops = sweep_loops(rows, cycle)
-                for loop, segs in loops.items():
-                    for seg, srows in sorted(segs.items()):
-                        leg = srows[0].get("leg", "")
-                        colour = COLOUR_LRS if leg == "set" else COLOUR_HRS
-                        self.ax_iv.plot([num(r.get("V_meas_V")) for r in srows], [num(r.get("I_A")) for r in srows],
-                                        '.-', ms=3, lw=0.8, color=colour, label=f"{leg} seg {seg}" if seg in (1, 0) else None)
-                        hollow = [r for r in srows if num(r.get("compliance_flag")) == 1]
-                        if hollow:
-                            self.ax_iv.plot([num(r.get("V_meas_V")) for r in hollow], [num(r.get("I_A")) for r in hollow],
-                                            'o', ms=5, mfc='none', color=colour)
+                plot_raw_cycle(self.ax_iv, rows, cycle)
             self.ax_iv.set_title(f"raw cycle {cycle}", fontsize=9)
             handles, labels = self.ax_iv.get_legend_handles_labels()
             if labels:

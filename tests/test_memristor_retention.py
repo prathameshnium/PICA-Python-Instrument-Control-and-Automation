@@ -13,7 +13,7 @@ import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from memristor_test_support import (  # noqa: E402
-    FakeK2400, analysis, comment_lines, end_reason, make_link, read_file, retention, retention_params,
+    FakeK2400, analysis, assert_data_only, comment_lines, end_reason, log_events, make_link, read_file, retention, retention_params,
     run_module_tests, run_retention, run_worker, _gui_shell)
 
 def test_retention_schedules():
@@ -42,7 +42,15 @@ def test_retention_constant_bias_writes_two_files_and_logs_since_the_write():
         wh, wcols, wrows = read_file(wpath)
         rh, rcols, rrows = read_file(rpath)
         assert list(wcols) == list(retention.WRITE_COLUMNS) and list(rcols) == list(retention.READS_COLUMNS)
-        assert end_reason(wh) == "max_time" and end_reason(rh) == "max_time"
+        assert end_reason(wpath) == "max_time" and end_reason(rpath) == "max_time"
+        assert_data_only(wpath)
+        assert_data_only(rpath)
+        events = log_events(rpath)
+        assert analysis.header_blocks(wh)["protocol"]["log_file"].endswith("_retention_LRS_log.txt")
+        assert analysis.header_blocks(wh)["protocol"]["log_file"] == analysis.header_blocks(rh)["protocol"]["log_file"]
+        assert events[0] == f"FILES data_file={os.path.basename(wpath)} | data_file={os.path.basename(rpath)}"
+        assert len(comment_lines(rpath, "WRITE_END t_s=")) == 1
+        assert [e.split(" | ")[0] for e in events if e.startswith("END ")] == ["END reason=max_time"] * 2
         blocks = analysis.header_blocks(rh)
         assert blocks["protocol"]["write_file"] == os.path.basename(wpath)
         assert blocks["protocol"]["state"] == "LRS" and blocks["protocol"]["module"] == "retention_reads"
@@ -95,8 +103,9 @@ def test_retention_stop_button_and_write_leg_turnaround():
         assert any(r["event_code"] == 4 for r in wrows)      # 1e5 ohm trips at 1 V, confirmed + turnaround
         assert max(r["V_set_V"] for r in wrows) < 5.0
         assert wrows[-1]["V_set_V"] == 0.0
-        rh, _, _ = read_file(rpath)
-        assert end_reason(rh) == "stop_button"
+        assert end_reason(rpath) == "stop_button" and end_reason(wpath) == "stop_button"
+        assert_data_only(wpath)
+        assert_data_only(rpath)
 
 
 def test_retention_bus_error_keeps_the_clock_since_the_write():
@@ -104,7 +113,10 @@ def test_retention_bus_error_keeps_the_clock_since_the_write():
         fake = FakeK2400(1e6, fail_reads={20})
         worker, _, wpath, rpath = run_retention(fake, d, t_stop=1.0)
         assert worker.reason == "max_time"
-        assert comment_lines(rpath, "RETRY") and comment_lines(wpath, "RETRY")
+        assert comment_lines(rpath, "RETRY") and comment_lines(rpath, "RECONNECT")
+        assert comment_lines(wpath, "RETRY") == comment_lines(rpath, "RETRY")     # one log per run
+        assert_data_only(wpath)
+        assert_data_only(rpath)
         _, _, rrows = read_file(rpath)
         t = [r["t_since_write_s"] for r in rrows if r["phase"] == "read"]
         assert all(b > a for a, b in zip(t, t[1:]))

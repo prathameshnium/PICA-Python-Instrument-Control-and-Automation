@@ -94,5 +94,43 @@ def test_analysis_file_kinds_from_real_outputs():
             header, columns, _ = analysis.parse_pica_csv(path)
             assert analysis.file_kind(analysis.header_blocks(header), columns) == kind
 
+def test_analysis_still_reads_old_files_with_comment_lines_after_the_data():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "old.csv")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("# PICA memristor sweep v1.2 | protocol v1.1\n# [protocol] module=sweep\n# columns: a,b\na,b\n"
+                     "1,2\n# RETRY n=1 | t_s=0.5 | what=x | error=y\n# RECONNECT after 1.0 s | x succeeded on attempt 2\n"
+                     "3,4\n# END reason=completed | points=2 | end_time=2026-10-11T10:00:00+05:30\n")
+        header, columns, rows = analysis.parse_pica_csv(path)
+        assert columns == ["a", "b"] and [r["a"] for r in rows] == [1.0, 3.0]
+        assert analysis.header_blocks(header)["end"]["reason"] == "completed"
+
+
+def test_analysis_raw_cycle_viewer_draws_one_line_per_leg_segment():
+    """K's screenshot of raw cycle 10: SET and RESET share segment numbers 1
+    and 2, so the (loop, segment) key joined them and drew all in SET colour."""
+    from matplotlib.figure import Figure
+    from matplotlib.colors import to_hex
+    with tempfile.TemporaryDirectory() as d:
+        _, _, _, raw = run_endurance(FakeK2400(2e5), d, n_cycles=1, raw_cycles_text="1", raw_cycles={1},
+                                   i_cc_reset=1e-4)
+        _, _, rows = analysis.parse_pica_csv(raw)
+    segs = analysis.endurance_leg_segments(rows, 1)
+    assert [(leg, seg) for leg, seg, _ in segs] == [("set", 1), ("set", 2), ("reset", 1), ("reset", 2)]
+    assert all(r["leg"] == leg and r["segment"] == seg for leg, seg, srows in segs for r in srows)
+    ax = Figure().add_subplot(111)
+    analysis.plot_raw_cycle(ax, rows, 1)
+    lines = [ln for ln in ax.get_lines() if ln.get_linestyle() != "None"]     # hollow markers have no line
+    assert len(lines) == 4
+    colours = [to_hex(ln.get_color()) for ln in lines]
+    assert colours.count(analysis.COLOUR_LRS.lower()) == 2 and colours.count(analysis.COLOUR_HRS.lower()) == 2
+    assert [ln.get_linestyle() for ln in lines] == ["-", "--", "-", "--"]
+    assert ax.get_legend_handles_labels()[1] == ["SET", "RESET"]
+    hollow = [ln for ln in ax.get_lines() if ln.get_linestyle() == "None"]
+    assert hollow and all(to_hex(ln.get_color()) == analysis.COLOUR_LRS.lower() for ln in hollow)  # 2e5 ohm trips on SET only
+    # sweep and retention files keep the (loop, segment) grouping
+    assert sorted(analysis.sweep_loops(rows, 1)[1]) == [1, 2]
+
+
 if __name__ == "__main__":
     run_module_tests(globals())

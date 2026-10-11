@@ -4,6 +4,19 @@ Purpose: SET, soaked read, RESET, soaked read, repeated for N cycles on a
          Keithley 2400 (protocol "Memristor measurement modules for PICA"
          v1.1, Section 5).
 
+v1.3 (12 Oct 2026) - round 2 (K's ruling of 12 Oct)
+  * Data files hold data only: header, column row, data rows to the end of
+    the file. RETRY, RECONNECT and END lines go to
+    <sample>_<ts>_endurance_log.txt (ISO time and t_s= on every line,
+    fsynced per line); the [protocol] block names it as log_file=.
+  * Max time (h) removed (entry, max_time_s header key, max_time reason).
+    Stop rules: N cycles (max_cycles), Stop button, Stop during a retry
+    wait, OVP trip, exception.
+  * Stop interrupts the soak; the cycle in progress gets no summary row,
+    and its legs are in the raw file only if that cycle is on the raw list.
+  * Raw cycles: comma-separated cycle numbers only (default
+    1,2,3,4,5,6,7,8,9,10, same cycles as the old 1-10); a range like 1-10
+    is refused. The header carries the typed list without spaces.
 v1.2 (12 Oct 2026) - UI round 1 (K's ruling of 12 Oct, applied as in Retention)
   * V read: the 1 V cap is gone. Start is refused only above the
     never-exceed value or 210 V; above 1 V, or at half of the smaller
@@ -34,10 +47,10 @@ v1.0 (11 Oct 2026) - first version
   * Separate I cc for SET and RESET; pulse delay and pulse NPLC apply to
     the pulse :READ? only; NPLC returns to 1 for the soaked read.
   * Summary file (one row per cycle) and raw file (I-V legs of the cycles
-    in the typed raw list, e.g. '1-10, 20, 30, 50, 100').
-  * Stop rules: N cycles (max_cycles), max wall-clock time checked at the
-    start of each cycle (max_time), Stop button (finishes the read in
-    progress), exception.
+    in the typed raw list, e.g. '1,2,5,10,20,50,100').
+  * Stop rules: N cycles (max_cycles), Stop button (interrupts the soak;
+    the cycle in progress gets no summary row), Stop during a retry wait,
+    OVP trip, exception.
   * Bus errors: the leg or soaked read is repeated from 0 V on the 1, 2, 5,
     10, 30, 60 s schedule; the cycle is marked retried=1.
   * Measurement only: failure criteria live in the analysis GUI.
@@ -436,6 +449,13 @@ def run_file_path(folder, stem, kind, ts):
     return unique_path(os.path.join(folder, f"{stem}_{ts}_{kind}.csv"))
 
 
+def run_log_path(folder, stem, kind, ts):
+    """<folder>/<sample>_<YYYYMMDD_HHMMSS>_<kind>.txt for the run's event log
+    (kind ends in _log); same stem, time stamp and unique_path() rule as the
+    data files of the run."""
+    return unique_path(os.path.join(folder, f"{stem}_{ts}_{kind}.txt"))
+
+
 def unique_path(path):
     """Never overwrite: if the name is taken (a rerun within the same second)
     append _1, _2, ... before the extension."""
@@ -739,9 +759,11 @@ class K2400Link:
 
 
 class RunFile:
-    """One output file: '#' header blocks, a column row, one data row per
-    point flushed and fsynced immediately, '#' comment lines where events
-    happen, and the trailing '# END' line (protocol 2.6). Comma separated."""
+    """One data file: '#' header blocks, a column row, then one data row per
+    point flushed and fsynced immediately, and nothing after the last row,
+    so the file imports cleanly. Events (RETRY, RECONNECT, END ...) go to
+    the run's RunLog, named by log_file in the [protocol] block. Comma
+    separated."""
 
     def __init__(self, path, module_name, blocks, columns, version="1.0"):
         self.path = path
@@ -772,21 +794,44 @@ class RunFile:
         self.points += 1
         self._flush()
 
-    def comment(self, text):
-        if self.closed:
-            return
-        self._fh.write("# " + header_line(text) + "\n")
-        self._flush()
-
-    def end(self, reason, extra=None):
-        if self.closed:
-            return
-        line = f"# END reason={header_value(reason)} | points={self.points} | end_time={iso_now()}"
+    def end_text(self, reason, extra=None):
+        """The END line of this file, for the run log (not written here)."""
+        line = (f"END reason={header_value(reason)} | points={self.points} | end_time={iso_now()} | "
+                f"file={os.path.basename(self.path)}")
         if extra:
             line += " | " + " | ".join(f"{k}={header_value(v)}" for k, v in extra)
-        self._fh.write(line + "\n")
-        self._flush()
-        self.close()
+        return line
+
+    def close(self):
+        if not self.closed:
+            try:
+                self._flush()
+                self._fh.close()
+            finally:
+                self.closed = True
+
+
+class RunLog:
+    """The run's event log <sample>_<ts>_<kind>_log.txt: one line per event
+    (the data files, RETRY, RECONNECT, WRITE_END, END), each starting with
+    the ISO time and t_s=, the run time. Flushed and fsynced on every line,
+    as the data files are, so a crash leaves the RETRY lines on disk."""
+
+    def __init__(self, path, clock):
+        self.path = path
+        self.clock = clock          # callable returning the run time in s
+        self.closed = False
+        self._fh = open(path, "w", newline="", encoding="utf-8")
+
+    def write(self, text):
+        if self.closed:
+            return
+        self._fh.write(f"{iso_now()} | t_s={self.clock():.3f} | {header_line(text)}\n")
+        try:
+            self._fh.flush()
+            os.fsync(self._fh.fileno())
+        except Exception:
+            pass
 
     def close(self):
         if not self.closed:
@@ -809,7 +854,8 @@ class WorkerBase:
         self.q = out_queue
         self.sleep = sleep
         self.t0 = None
-        self.files = []          # RunFile objects that receive RETRY lines
+        self.files = []          # RunFile objects of the run (END lines, closed on exit)
+        self.run_log = None      # RunLog: RETRY, RECONNECT, WRITE_END and END lines
         self.reason = "completed"
         self.outcome = "finished"
         self.last_compliance_flag = 0
@@ -837,23 +883,32 @@ class WorkerBase:
     def check_stop(self):
         return self.stop_event.is_set()
 
-    def comment_all(self, text):
-        for f in self.files:
-            f.comment(text)
+    def open_run_log(self, log_path, files):
+        """Adopt the run's data files and open its event log; the first
+        line names every data file of the run."""
+        self.files = list(files)
+        self.run_log = RunLog(log_path, self.t_s)
+        self.status(file=log_path)
+        self.log_event("FILES " + " | ".join(f"data_file={os.path.basename(f.path)}" for f in self.files))
+
+    def log_event(self, text):
+        """One event line in the run log (dropped before the log exists)."""
+        if self.run_log is not None:
+            self.run_log.write(text)
 
     # -- bus-error retry (protocol 2.8) ----------------------------------
     def with_retry(self, fn, what="command"):
         """Run fn(); on BusError retry after 1, 2, 5, 10, 30, 60 s and then
         every 60 s until it succeeds or Stop is pressed. Each attempt is a
-        '# RETRY' line in every open data file; a recovered gap is exactly one
-        '# RECONNECT' line, written when fn() succeeds. Returns fn()'s result."""
+        RETRY line in the run log; a recovered gap is exactly one RECONNECT
+        line, written when fn() succeeds. Returns fn()'s result."""
         attempt = 0
         gap_start = None
         while True:
             try:
                 result = fn()
                 if attempt:
-                    self.comment_all(f"RECONNECT after {time.perf_counter() - gap_start:.1f} s | {what} succeeded on attempt {attempt + 1}")
+                    self.log_event(f"RECONNECT after {time.perf_counter() - gap_start:.1f} s | {what} succeeded on attempt {attempt + 1}")
                     self.status(state="running")
                 return result
             except BusError as exc:
@@ -862,7 +917,7 @@ class WorkerBase:
                 if gap_start is None:
                     gap_start = time.perf_counter()
                 delay = RETRY_SCHEDULE_S[min(attempt - 1, len(RETRY_SCHEDULE_S) - 1)]
-                self.comment_all(f"RETRY n={attempt} | t_s={self.t_s():.3f} | what={what} | error={header_value(exc)}")
+                self.log_event(f"RETRY n={attempt} | t_s={self.t_s():.3f} | what={what} | error={header_value(exc)}")
                 self.log(f"Bus error ({what}): {exc}. Retry {attempt} in {delay:g} s.")
                 self.status(state=f"reconnecting (attempt {attempt}, next try in {delay:g} s)")
                 if wait_with_stop(delay, self.stop_event, sleep=self.sleep):
@@ -870,7 +925,7 @@ class WorkerBase:
                 try:
                     self.link.reconnect()   # the RECONNECT line is written once fn() succeeds
                 except BusError as exc2:
-                    self.comment_all(f"RETRY n={attempt} | t_s={self.t_s():.3f} | what=reconnect | error={header_value(exc2)}")
+                    self.log_event(f"RETRY n={attempt} | t_s={self.t_s():.3f} | what=reconnect | error={header_value(exc2)}")
                     continue
 
     # -- startup (protocol 2.2) -------------------------------------------
@@ -963,9 +1018,19 @@ class WorkerBase:
         finally:
             shutdown_note = self.shutdown(self.shutdown_step_v())
             extra = [("shutdown", shutdown_note)] if shutdown_note else None
+            for f in self.files:            # END lines first, then close the data files and the log
+                try:
+                    self.log_event(f.end_text(self.reason, extra))
+                except Exception:
+                    pass
             for f in self.files:
                 try:
-                    f.end(self.reason, extra)
+                    f.close()
+                except Exception:
+                    pass
+            if self.run_log is not None:
+                try:
+                    self.run_log.close()
                 except Exception:
                     pass
             self.status(state="done" if self.outcome == "finished" else self.outcome)
@@ -1758,34 +1823,37 @@ RAW_COLUMNS = ("cycle", "leg", "t_s", "loop", "segment", "vmax_V", "V_set_V", "V
                "compliance_flag", "trip_query", "status_bits", "event_code", "phase")
 
 
+RAW_CYCLES_DEFAULT = "1,2,3,4,5,6,7,8,9,10"
+RAW_CYCLES_RANGE_ERROR = ("Raw cycles: type cycle numbers separated by commas, e.g. 1,2,5,10 "
+                          "(ranges like 1-10 are not accepted).")
+
+
 def parse_cycle_list(text, n_cycles=None):
-    """'1-10, 20, 30, 50, 100' -> sorted set of cycle numbers. Ranges are
-    inclusive. Entries above n_cycles (when given) are kept but harmless."""
+    """'1,5,10' -> set of cycle numbers (K's ruling of 12 Oct 2026: a plain
+    comma-separated list, spaces allowed, no ranges). Empty means no raw
+    cycles. Entries above n_cycles (when given) are kept but harmless."""
     if text is None or not str(text).strip():
         return set()
     out = set()
-    for tok in str(text).replace(";", ",").split(","):
+    for tok in str(text).split(","):
         tok = tok.strip()
         if not tok:
             continue
         if "-" in tok:
-            a, b = tok.split("-", 1)
-            try:
-                lo, hi = int(a), int(b)
-            except ValueError:
-                raise ValueError(f"Raw cycles: '{tok}' is not a range like 1-10.")
-            if lo < 1 or hi < lo:
-                raise ValueError(f"Raw cycles: range '{tok}' must run upward from 1 or more.")
-            out.update(range(lo, hi + 1))
-        else:
-            try:
-                v = int(tok)
-            except ValueError:
-                raise ValueError(f"Raw cycles: '{tok}' is not a cycle number.")
-            if v < 1:
-                raise ValueError("Raw cycles: cycle numbers start at 1.")
-            out.add(v)
+            raise ValueError(RAW_CYCLES_RANGE_ERROR)
+        try:
+            v = int(tok)
+        except ValueError:
+            raise ValueError(f"Raw cycles: '{tok}' is not a cycle number.")
+        if v < 1:
+            raise ValueError("Raw cycles: cycle numbers start at 1.")
+        out.add(v)
     return out
+
+
+def raw_cycles_header(text):
+    """raw_cycles= header value: the typed list with spaces removed."""
+    return "".join(str(text or "").split())
 
 
 def read_bias_warnings(v_read, write_amplitudes):
@@ -1835,13 +1903,14 @@ class EnduranceWorker(WorkerBase):
         ts = timestamp_for_name()
         summary_path = run_file_path(p["folder"], p["stem"], "endurance_summary", ts)
         raw_path = run_file_path(p["folder"], p["stem"], "endurance_raw", ts)
+        log_path = run_log_path(p["folder"], p["stem"], "endurance_log", ts)
         proto_pairs = [("module", "endurance"), ("mode", p["mode"]), ("Vset_max_V", f"{p['v_set']:g}"),
                        ("Vreset_max_V", f"{p['v_reset']:g}"), ("step_V", f"{p['step_v']:g}"), ("dwell_s", f"{p['dwell_s']:g}"),
                        ("I_cc_set_A", f"{p['i_cc_set']:g}"), ("I_cc_reset_A", f"{p['i_cc_reset']:g}"),
                        ("V_read_V", f"{p['v_read']:g}"), ("t_soak_s", f"{p['t_soak']:g}"), ("n_avg", str(N_AVG_READ)),
-                       ("N_cycles", str(p["n_cycles"])), ("max_time_s", f"{p['max_time_s']:g}"),
+                       ("N_cycles", str(p["n_cycles"])),
                        ("recovery_between_legs_s", f"{RECOVERY_BETWEEN_LEGS_S:g}"), ("n_confirm", str(p["n_confirm"])),
-                       ("raw_cycles", p["raw_cycles_text"]),
+                       ("raw_cycles", raw_cycles_header(p["raw_cycles_text"])),
                        ("pulse_set_V", f"{p['pulse_set_v']:g}" if p["mode"] == MODE_PULSE else ""),
                        ("pulse_reset_V", f"{-p['pulse_reset_v']:g}" if p["mode"] == MODE_PULSE else ""),
                        ("pulses_per_leg", str(p["pulses_per_leg"]) if p["mode"] == MODE_PULSE else ""),
@@ -1849,14 +1918,14 @@ class EnduranceWorker(WorkerBase):
                        ("pulse_delay_s", f"{p['pulse_delay_s']:g}" if p["mode"] == MODE_PULSE else ""),
                        ("pulse_NPLC", f"{p['pulse_nplc']:g}" if p["mode"] == MODE_PULSE else ""),
                        ("LO_earthed", "yes" if p["lo_earthed"] else ""),
-                       ("start_time", iso_now())]
+                       ("start_time", iso_now()), ("log_file", os.path.basename(log_path))]
         instr = self.instrument_block(idn, source_range)
         self.summary_file = RunFile(summary_path, "endurance", [p["_sample_block"], instr, ("protocol", proto_pairs)],
                                     SUMMARY_COLUMNS, self.gui_version)
         raw_pairs = [("module", "endurance_raw"), ("summary_file", os.path.basename(summary_path))] + proto_pairs[1:]
         self.raw_file = RunFile(raw_path, "endurance", [p["_sample_block"], instr, ("protocol", raw_pairs)],
                                 RAW_COLUMNS, self.gui_version)
-        self.files = [self.summary_file, self.raw_file]
+        self.open_run_log(log_path, [self.summary_file, self.raw_file])
         self.status(file=summary_path)
         self.status(file=raw_path)
 
@@ -1870,10 +1939,6 @@ class EnduranceWorker(WorkerBase):
                                           p["pulses_per_leg"], p["pulse_delay_s"], p["pulse_nplc"])
         for cycle in range(1, p["n_cycles"] + 1):
             if self.check_stop():
-                return
-            if self.t_s() >= p["max_time_s"]:
-                self.reason = "max_time"
-                self.log(f"Max wall-clock time reached before cycle {cycle}.")
                 return
             self.run_cycle(cycle)
             if self.check_stop():
@@ -2060,7 +2125,7 @@ def average_endurance_readings(readings):
 class EnduranceGUI(MemristorGuiBase):
     MODULE_TITLE = "Endurance"
     MODULE_KEY = "endurance"
-    PROGRAM_VERSION = "1.2"
+    PROGRAM_VERSION = "1.3"
 
     def create_module_inputs(self, parent):
         frame = self.make_frame(parent, 'Cycle')
@@ -2075,8 +2140,8 @@ class EnduranceGUI(MemristorGuiBase):
         self.add_entry(frame, r, "V read (V)", "v_read", "0.1", "bias used for every read; 0.1 V typical"); r += 1
         self.add_entry(frame, r, "t soak (s)", "t_soak", "60", "before each read"); r += 1
         self.add_entry(frame, r, "N cycles", "n_cycles", "100"); r += 1
-        self.add_entry(frame, r, "Max time (h)", "max_hours", "12", "checked at each cycle start"); r += 1
-        self.add_entry(frame, r, "Raw cycles", "raw_cycles", "1-10", "e.g. 1-10, 20, 30, 50, 100", width=22); r += 1
+        self.add_entry(frame, r, "Raw cycles", "raw_cycles", RAW_CYCLES_DEFAULT,
+                       "cycle numbers, comma separated, e.g. 1,2,5,10,20,50,100", width=22); r += 1
         self.add_entry(frame, r, "n confirm", "n_confirm", "3", "points confirming a trip"); r += 1
 
         self.pulse_frame = self.make_frame(parent, 'Pulse mode (2400 Auto-Off trick)')
@@ -2224,7 +2289,6 @@ class EnduranceGUI(MemristorGuiBase):
         p["v_read"] = self.get_float("v_read", "V read", 1e-6)
         p["t_soak"] = self.get_float("t_soak", "t soak", 0)
         p["n_cycles"] = self.get_int("n_cycles", "N cycles", 1)
-        p["max_time_s"] = self.get_float("max_hours", "Max time", 1e-3) * 3600.0
         p["raw_cycles_text"] = self.get_str("raw_cycles")
         p["raw_cycles"] = parse_cycle_list(p["raw_cycles_text"])
         p["n_confirm"] = self.get_int("n_confirm", "n confirm", 0)
@@ -2277,7 +2341,7 @@ class EnduranceGUI(MemristorGuiBase):
     def describe_params(self, p):
         return (f"{p['sample_name']} | {p['mode']} | Vset +{p['v_set']:g} V Vreset -{p['v_reset']:g} V | step {p['step_v']:g} V "
                 f"dwell {p['dwell_s']:g} s | Icc {p['i_cc_set']:g}/{p['i_cc_reset']:g} A | V read {p['v_read']:g} V | "
-                f"t soak {p['t_soak']:g} s | N {p['n_cycles']} | max {p['max_time_s'] / 3600:g} h | raw {p['raw_cycles_text']}")
+                f"t soak {p['t_soak']:g} s | N {p['n_cycles']} | raw {p['raw_cycles_text']}")
 
 
 
