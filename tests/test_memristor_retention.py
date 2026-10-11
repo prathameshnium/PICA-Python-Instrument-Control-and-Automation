@@ -6,13 +6,15 @@ and GUI validation.
 """
 
 import os
+import queue
 import sys
 import tempfile
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from memristor_test_support import (  # noqa: E402
-    FakeK2400, analysis, comment_lines, end_reason, read_file, retention, run_module_tests, _gui_shell,
-    run_retention)
+    FakeK2400, analysis, comment_lines, end_reason, make_link, read_file, retention, retention_params,
+    run_module_tests, run_retention, run_worker, _gui_shell)
 
 def test_retention_schedules():
     s = retention.log_schedule(3, 0.5, 100)
@@ -130,6 +132,169 @@ def test_retention_gui_warns_when_intermittent_spacing_is_finer_than_the_soak():
         gui = _gui_shell(retention.RetentionGUI, retention, dict(base, swap=True, scheme=retention.SCHEME_CONSTANT), d)
         p = gui.collect_params()
         assert p["polarity"] == 1 and p["_warning"] == ""
+
+
+# -- UI round 1 (K's ruling of 12 Oct 2026) ------------------------------
+
+GUI_BASE = dict(sample_name="VCO01", visa_address="GPIB1::24::INSTR", protection="20", state="LRS", swap=False,
+                vmax_write="5", i_cc_write_uA="10", step_v="0.1", dwell_s="0.1", n_confirm="3", v_read="0.1",
+                t_rec="60", t_soak="60", t_stop="10000", scheme=retention.SCHEME_CONSTANT,
+                spacing=retention.SPACING_LOG, points_per_decade="10", dt="10", n_avg="3")
+
+
+def _collect(folder, **values):
+    return _gui_shell(retention.RetentionGUI, retention, dict(GUI_BASE, **values), folder).collect_params()
+
+
+def test_write_polarity_table():
+    expected = {("LRS", False): 1, ("LRS", True): -1, ("HRS", False): -1, ("HRS", True): 1,
+                ("control", False): 1, ("control", True): -1}
+    for (state, swap), sign in expected.items():
+        assert retention.write_polarity(state, swap) == sign, (state, swap)
+
+
+def test_negative_vmax_write_is_refused_with_the_swap_pointer():
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            _collect(d, vmax_write="-5")
+            assert False, "negative V max accepted"
+        except ValueError as exc:
+            assert str(exc) == "Type V max as a positive number; tick Swap polarity for a negative leg."
+        try:
+            _collect(d, vmax_write="0")
+            assert False, "zero V max accepted"
+        except ValueError as exc:
+            assert "at least 1e-06" in str(exc)
+
+
+def test_v_read_above_1_v_warns_and_above_never_exceed_refuses():
+    assert not hasattr(retention, "V_READ_MAX_V")
+    with tempfile.TemporaryDirectory() as d:
+        p = _collect(d, v_read="1.5", protection="20")
+        assert p["v_read"] == 1.5
+        assert "V read above 1 V: the read bias stresses the state for the whole run." in p["_warning"]
+        assert "at least half" not in p["_warning"]
+        p = _collect(d, v_read="2.5", protection="20")
+        assert ("V read is at least half of V max write: the read itself may switch the pellet."
+                in p["_warning"])
+        try:
+            _collect(d, v_read="25", protection="20")
+            assert False, "V read above never-exceed accepted"
+        except ValueError as exc:
+            assert "V read 25 V is above the never-exceed value 20 V" in str(exc)
+        try:
+            _collect(d, v_read="0", protection="20")
+            assert False, "V read 0 accepted"
+        except ValueError:
+            pass
+    # the source range still covers V read when it is above V max write
+    assert retention.source_range_for(max(5.0, 25.0)) == 200.0
+
+
+def test_live_write_line_text():
+    tail = "; stops early at confirmed compliance. Reads at +0.1 V."
+    assert retention.write_line_text("LRS", False, 5, 10, 0.1) == \
+        "This run: 0 -> +5 V -> 0 at I cc 10 uA (SET, LRS)" + tail
+    assert retention.write_line_text("HRS", False, 5, 10, 0.1) == \
+        "This run: 0 -> -5 V -> 0 at I cc 10 uA (RESET, HRS)" + tail
+    assert retention.write_line_text("control", False, 0.5, 1, 0.1) == \
+        "This run: 0 -> +0.5 V -> 0 at I cc 1 uA (no switching intended, control)" + tail
+    assert retention.write_line_text("LRS", True, 5, 10, 0.1) == \
+        "This run: 0 -> -5 V -> 0 at I cc 10 uA (SET, LRS) (swapped)" + tail
+    assert retention.write_line_text("HRS", True, 5, 10, 0.1) == \
+        "This run: 0 -> +5 V -> 0 at I cc 10 uA (RESET, HRS) (swapped)" + tail
+
+
+class _FakeWidget:
+    def __init__(self):
+        self.state = "normal"
+
+    def configure(self, **kw):
+        self.state = kw.get("state", self.state)
+
+
+def test_spacing_greys_delta_t_or_points_per_decade_and_keeps_the_values():
+    with tempfile.TemporaryDirectory() as d:
+        gui = _gui_shell(retention.RetentionGUI, retention, dict(GUI_BASE), d)
+        gui.widgets = {"points_per_decade": _FakeWidget(), "dt": _FakeWidget()}
+        gui.refresh_estimate()
+        assert gui.widgets["dt"].state == "disabled" and gui.widgets["points_per_decade"].state == "normal"
+        gui.vars["spacing"].v = retention.SPACING_LINEAR
+        gui.refresh_estimate()
+        assert gui.widgets["dt"].state == "normal" and gui.widgets["points_per_decade"].state == "disabled"
+        assert gui.vars["points_per_decade"].get() == "10" and gui.vars["dt"].get() == "10"
+        gui.vars["spacing"].v = retention.SPACING_LOG
+        gui.refresh_estimate()
+        assert gui.widgets["dt"].state == "disabled" and gui.widgets["points_per_decade"].state == "normal"
+
+
+def test_planned_reads_defaults_match_the_estimate_example():
+    p = dict(t_rec=60, t_soak=60, t_stop=10000, scheme=retention.SCHEME_CONSTANT, spacing=retention.SPACING_LOG,
+             points_per_decade=10, dt=10)
+    old = retention.LOG_INTERVAL_S
+    retention.LOG_INTERVAL_S = 1.0
+    try:
+        plan = retention.planned_reads(p)
+        assert plan["scheduled"] == 20 and round(plan["first_s"]) == 126 and plan["last_s"] == 10000
+        assert plan["soak_rows"] == 60 and plan["recover_rows"] == 60
+        assert retention.planned_reads_text(plan, 3, p["scheme"]) == (
+            "reads: 20 scheduled (x3 averaged), first 126 s, last 10000 s, + 60 soak and 60 recover rows")
+        p["scheme"] = retention.SCHEME_INTERMITTENT
+        plan = retention.planned_reads(p)
+        text = retention.planned_reads_text(plan, 3, p["scheme"])
+        assert plan["skipped"] > 0
+        assert text.endswith(f"{plan['skipped']} of {plan['grid']} grid instants skipped (closer than t soak)")
+    finally:
+        retention.LOG_INTERVAL_S = old
+
+
+class _VirtualClock:
+    """Stands in for the module's time: perf_counter is virtual and sleep
+    advances it, so the run is deterministic and independent of the PC's
+    file-sync speed. Each clock read costs 1 us (as real time moves on);
+    without it a wait could spin on a remainder below the clock's
+    resolution."""
+
+    def __init__(self):
+        self.t = 1000.0
+
+    def perf_counter(self):
+        self.t += 1e-6
+        return self.t
+
+    def sleep(self, s):
+        self.t += max(float(s), 1e-9)
+
+
+def test_planned_reads_count_matches_a_fake_run():
+    """5.4: for both schemes and both spacings the scheduled-read count of
+    planned_reads() equals the read rows with n_avg == n avg of a fake run."""
+    times = dict(t_rec=0.1, t_soak=0.2, t_stop=1.5, points_per_decade=10, dt=0.4, n_avg=3)
+    real_time = retention.time
+    try:
+        for scheme in retention.SCHEMES:
+            for spacing in retention.SPACINGS:
+                clock = _VirtualClock()
+                retention.time = clock
+                with tempfile.TemporaryDirectory() as d:
+                    p = retention_params(d, scheme=scheme, spacing=spacing, **times)
+                    stop = threading.Event()
+                    worker = retention.RetentionWorker(p, make_link(retention, FakeK2400(1e6)), stop,
+                                                       queue.Queue(), sleep=clock.sleep)
+                    worker.gui_version = "test"
+                    run_worker(worker, None, stop)
+                    assert worker.reason == "max_time", (scheme, spacing, worker.reason)
+                    rpath = [os.path.join(d, f) for f in os.listdir(d) if "_reads" in f][0]
+                    _, _, rrows = read_file(rpath)
+                    measured = [r for r in rrows if r["phase"] == "read" and r["n_avg"] == 3]
+                    plan = retention.planned_reads(p)
+                    assert plan["scheduled"] == len(measured), (scheme, spacing, plan, len(measured))
+                    assert plan["scheduled"] >= 3, (scheme, spacing, plan)
+                    assert abs(measured[0]["t_since_write_s"] - plan["first_s"]) < 1e-3
+                    assert abs(measured[-1]["t_since_write_s"] - plan["last_s"]) < 1e-3
+    finally:
+        retention.time = real_time
+
 
 if __name__ == "__main__":
     run_module_tests(globals())

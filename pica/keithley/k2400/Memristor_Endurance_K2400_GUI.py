@@ -4,6 +4,14 @@ Purpose: SET, soaked read, RESET, soaked read, repeated for N cycles on a
          Keithley 2400 (protocol "Memristor measurement modules for PICA"
          v1.1, Section 5).
 
+v1.2 (12 Oct 2026) - UI round 1 (K's ruling of 12 Oct, applied as in Retention)
+  * V read: the 1 V cap is gone. Start is refused only above the
+    never-exceed value or 210 V; above 1 V, or at half of the smaller
+    write voltage or more, a yellow warning is shown and Start stays enabled.
+  * Pulse mode greys the sweep-leg fields it ignores (V set max, V reset
+    max, Dwell, n confirm); they come back with their values in sweep mode.
+  * Long hints wrap under their label. Sequence, timing, columns and
+    header keys are unchanged.
 v1.1 (11 Oct 2026) - PICA GUI conventions
   * Information frame with the institute logo; plotter and GPIB-scanner
     buttons in the header; Browse... button for the output folder.
@@ -247,20 +255,21 @@ def protection_command_value(protection_v):
     return PROTECTION_NONE_VALUE if protection_v is None else float(protection_v)
 
 
-def check_vmax_against_protection(vmax_abs, protection_v):
+def check_vmax_against_protection(vmax_abs, protection_v, label="V max"):
     """Returns (ok, message). ok False -> refuse Start. ok True with a
-    message -> yellow warning (above 95 % of the protection value)."""
+    message -> yellow warning (above 95 % of the protection value). label
+    names the voltage in the message (V max, V read ...)."""
     v = abs(float(vmax_abs))
     if v > V_SOURCE_MAX_V:
-        return False, f"{v:g} V is above the instrument's 210 V limit."
+        return False, f"{label} {v:g} V is above the instrument's 210 V limit."
     if protection_v is None:
         return True, ""
     if v > protection_v:
-        return False, (f"V max {v:g} V is above the never-exceed value "
-                       f"{protection_v:g} V. Lower V max or raise the "
+        return False, (f"{label} {v:g} V is above the never-exceed value "
+                       f"{protection_v:g} V. Lower {label} or raise the "
                        f"never-exceed value.")
     if v > PROTECTION_WARN_FRACTION * protection_v:
-        return True, (f"V max {v:g} V is within 5 % of the {protection_v:g} V "
+        return True, (f"{label} {v:g} V is within 5 % of the {protection_v:g} V "
                       f"protection; the instrument may clamp from "
                       f"{PROTECTION_WARN_FRACTION * protection_v:g} V.")
     return True, ""
@@ -1060,6 +1069,7 @@ class MemristorGuiBase:
         self.estimate_total_s = None
         self.progress_fraction = 0.0
         self.vars = {}
+        self.widgets = {}       # input widgets by key, for greying ignored fields
         self.setup_styles()
         self.create_widgets()
         try:
@@ -1194,9 +1204,17 @@ class MemristorGuiBase:
         optional italic hint to its right."""
         holder = tk.Frame(frame, bg=self.CLR_BG_DARK)
         holder.grid(row=row, column=col, columnspan=colspan, padx=padx, pady=(5, 0), sticky='w')
-        Label(holder, text=text).pack(side='left')
+        chip = Label(holder, text=text)
+        chip.grid(row=0, column=0, sticky='w')
         if hint:
-            ttk.Label(holder, text=hint, style='Hint.TLabel').pack(side='left', padx=(8, 0))
+            # A hint too wide for its column wraps under the label (never cut).
+            col_w = (self.LEFT_PANEL_WIDTH - 70) // (1 if colspan > 1 else 2)
+            note = ttk.Label(holder, text=hint, style='Hint.TLabel')
+            if chip.winfo_reqwidth() + 8 + note.winfo_reqwidth() <= col_w:
+                note.grid(row=0, column=1, padx=(8, 0), sticky='w')
+            else:
+                note.configure(wraplength=col_w, justify='left')
+                note.grid(row=1, column=0, columnspan=2, sticky='w')
         return holder
 
     def add_entry(self, parent, row, label, key, default, hint=None, width=14):
@@ -1207,6 +1225,7 @@ class MemristorGuiBase:
         entry.grid(row=r + 1, column=c, columnspan=span, padx=padx, pady=(0, 5), sticky='ew')
         var.trace_add("write", lambda *a: self.refresh_estimate())
         self.vars[key] = var
+        self.widgets[key] = entry
         return var
 
     def add_combo(self, parent, row, label, key, values, default, hint=None, width=20, command=None):
@@ -1219,6 +1238,7 @@ class MemristorGuiBase:
         if command is not None:
             combo.bind("<<ComboboxSelected>>", lambda e: command())
         self.vars[key] = var
+        self.widgets[key] = combo
         return var
 
     def add_check(self, parent, row, label, key, default=False, hint=None, command=None):
@@ -1227,10 +1247,32 @@ class MemristorGuiBase:
         cb = ttk.Checkbutton(parent, text=label, variable=var, command=command)
         cb.grid(row=r, column=c, columnspan=span, padx=padx, pady=(6, 2), sticky='w')
         if hint:
-            ttk.Label(parent, text=hint, style='Hint.TLabel').grid(row=r + 1, column=c, columnspan=span,
-                                                                   padx=(padx[0] + 24, padx[1]), pady=(0, 4), sticky='w')
+            ttk.Label(parent, text=hint, style='Hint.TLabel', wraplength=self.LEFT_PANEL_WIDTH - 100,
+                      justify='left').grid(row=r + 1, column=c, columnspan=span,
+                                           padx=(padx[0] + 24, padx[1]), pady=(0, 4), sticky='w')
         self.vars[key] = var
+        self.widgets[key] = cb
         return var
+
+    def set_field_enabled(self, key, enabled):
+        """Grey (disable) a field the current settings ignore. The value is
+        kept, so the field comes back with its last value."""
+        widget = getattr(self, "widgets", {}).get(key)
+        if widget is None:
+            return
+        if enabled:
+            state = 'readonly' if isinstance(widget, ttk.Combobox) else 'normal'
+        else:
+            state = 'disabled'
+        try:
+            widget.configure(state=state)
+        except Exception:
+            pass
+
+    def apply_field_states(self, managed, disabled):
+        """Enable every key in managed except those in disabled."""
+        for key in managed:
+            self.set_field_enabled(key, key not in disabled)
 
     def add_wide_label(self, parent, text, fg=None, bg=None):
         """Full-width wrapped text (warnings, notices)."""
@@ -1704,7 +1746,9 @@ MODE_SWEEP = "sweep"
 MODE_PULSE = "pulse"
 MODES = (MODE_SWEEP, MODE_PULSE)
 N_AVG_READ = 3                      # readings per soaked read (protocol 2.4)
-V_READ_MAX_V = 1.0
+V_READ_WARN_V = 1.0                 # above this the read bias stresses the state (warning only)
+V_READ_SWITCH_FRACTION = 0.5        # V read at or above this x the smaller write voltage may switch (warning only)
+PULSE_IGNORED_FIELDS = ("v_set", "v_reset", "dwell_s", "n_confirm")   # sweep-leg fields, greyed in pulse mode
 PULSE_DELAY_DEFAULT_S = 0.001
 PULSE_NPLC_DEFAULT = 0.01
 
@@ -1742,6 +1786,22 @@ def parse_cycle_list(text, n_cycles=None):
                 raise ValueError("Raw cycles: cycle numbers start at 1.")
             out.add(v)
     return out
+
+
+def read_bias_warnings(v_read, write_amplitudes):
+    """Warnings (Start stays enabled) for a read bias that may disturb the state."""
+    out = []
+    if v_read > V_READ_WARN_V:
+        out.append("V read above 1 V: the read bias stresses the state for the whole run.")
+    smallest = min(abs(v) for v in write_amplitudes)
+    if smallest > 0 and v_read >= V_READ_SWITCH_FRACTION * smallest:
+        out.append("V read is at least half of the smaller write voltage: the read itself may switch the pellet.")
+    return out
+
+
+def disabled_cycle_fields(mode):
+    """Cycle fields the current mode ignores (shown greyed)."""
+    return set(PULSE_IGNORED_FIELDS) if mode == MODE_PULSE else set()
 
 
 def cycle_time_estimate_s(n_points_per_leg, dwell_s, t_soak_s, n_avg=N_AVG_READ, mode=MODE_SWEEP,
@@ -2000,7 +2060,7 @@ def average_endurance_readings(readings):
 class EnduranceGUI(MemristorGuiBase):
     MODULE_TITLE = "Endurance"
     MODULE_KEY = "endurance"
-    PROGRAM_VERSION = "1.1"
+    PROGRAM_VERSION = "1.2"
 
     def create_module_inputs(self, parent):
         frame = self.make_frame(parent, 'Cycle')
@@ -2012,7 +2072,7 @@ class EnduranceGUI(MemristorGuiBase):
         self.add_entry(frame, r, "Dwell (s)", "dwell_s", "0.1", "sweep legs"); r += 1
         self.add_entry(frame, r, "I cc SET (uA)", "i_cc_set_uA", "10"); r += 1
         self.add_entry(frame, r, "I cc RESET (uA)", "i_cc_reset_uA", "10"); r += 1
-        self.add_entry(frame, r, "V read (V)", "v_read", "0.1", "0.1 V default, raisable to 1 V"); r += 1
+        self.add_entry(frame, r, "V read (V)", "v_read", "0.1", "bias used for every read; 0.1 V typical"); r += 1
         self.add_entry(frame, r, "t soak (s)", "t_soak", "60", "before each read"); r += 1
         self.add_entry(frame, r, "N cycles", "n_cycles", "100"); r += 1
         self.add_entry(frame, r, "Max time (h)", "max_hours", "12", "checked at each cycle start"); r += 1
@@ -2048,6 +2108,7 @@ class EnduranceGUI(MemristorGuiBase):
             _walk(self.pulse_frame)
         except Exception:
             pass
+        self.apply_field_states(PULSE_IGNORED_FIELDS, disabled_cycle_fields(self.get_str("mode")))
         self.refresh_estimate()
 
     def build_figure(self, fig):
@@ -2160,7 +2221,7 @@ class EnduranceGUI(MemristorGuiBase):
         p["dwell_s"] = self.get_float("dwell_s", "Dwell", 0)
         p["i_cc_set"] = validate_i_cc(self.get_float("i_cc_set_uA", "I cc SET", 0) / 1e6, "I cc SET")
         p["i_cc_reset"] = validate_i_cc(self.get_float("i_cc_reset_uA", "I cc RESET", 0) / 1e6, "I cc RESET")
-        p["v_read"] = self.get_float("v_read", "V read", 1e-6, V_READ_MAX_V)
+        p["v_read"] = self.get_float("v_read", "V read", 1e-6)
         p["t_soak"] = self.get_float("t_soak", "t soak", 0)
         p["n_cycles"] = self.get_int("n_cycles", "N cycles", 1)
         p["max_time_s"] = self.get_float("max_hours", "Max time", 1e-3) * 3600.0
@@ -2191,6 +2252,13 @@ class EnduranceGUI(MemristorGuiBase):
                 raise ValueError(msg)
             if msg:
                 warnings.append(msg)
+        ok, msg = check_vmax_against_protection(p["v_read"], p["protection_v"], "V read")
+        if not ok:
+            raise ValueError(msg)
+        if msg:
+            warnings.append(msg)
+        writes = amplitudes[2:] if p["mode"] == MODE_PULSE else amplitudes
+        warnings += read_bias_warnings(p["v_read"], writes)
         p["_warning"] = " ".join(warnings)
         p["_sample_block"] = self.sample_block(p)
         try:

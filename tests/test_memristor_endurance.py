@@ -160,12 +160,40 @@ def test_endurance_gui_locks_pulse_mode_behind_lo_earth_and_measured_width():
         gui = _gui_shell(endurance.EnduranceGUI, endurance, dict(base, lo_earthed=True, pulse_width_s="0.0025"), d)
         p = gui.collect_params()
         assert p["pulse_width_s"] == 0.0025 and p["raw_cycles"] == set(range(1, 11)) and p["max_time_s"] == 12 * 3600
+        # V read: no 1 V cap any more (K, 12 Oct 2026); warn above 1 V, refuse above never-exceed
         gui = _gui_shell(endurance.EnduranceGUI, endurance, dict(base, mode=endurance.MODE_SWEEP, v_read="1.5"), d)
+        p = gui.collect_params()
+        assert p["v_read"] == 1.5 and "V read above 1 V" in p["_warning"] and "at least half" not in p["_warning"]
+        gui = _gui_shell(endurance.EnduranceGUI, endurance, dict(base, mode=endurance.MODE_SWEEP, v_read="2.5"), d)
+        assert "at least half of the smaller write voltage" in gui.collect_params()["_warning"]
+        gui = _gui_shell(endurance.EnduranceGUI, endurance, dict(base, mode=endurance.MODE_SWEEP, v_read="25"), d)
         try:
             gui.collect_params()
             assert False
         except ValueError as exc:
-            assert "V read" in str(exc)
+            assert "V read 25 V is above the never-exceed value 20 V" in str(exc)
+
+
+class _FakeWidget:
+    def __init__(self):
+        self.state = "normal"
+
+    def configure(self, **kw):
+        self.state = kw.get("state", self.state)
+
+
+def test_endurance_pulse_mode_greys_the_sweep_leg_fields():
+    assert endurance.disabled_cycle_fields(endurance.MODE_SWEEP) == set()
+    assert endurance.disabled_cycle_fields(endurance.MODE_PULSE) == {"v_set", "v_reset", "dwell_s", "n_confirm"}
+    with tempfile.TemporaryDirectory() as d:
+        gui = _gui_shell(endurance.EnduranceGUI, endurance, dict(mode=endurance.MODE_PULSE), d)
+        gui.widgets = {k: _FakeWidget() for k in endurance.PULSE_IGNORED_FIELDS + ("step_v",)}
+        gui._on_mode()
+        assert all(gui.widgets[k].state == "disabled" for k in endurance.PULSE_IGNORED_FIELDS)
+        assert gui.widgets["step_v"].state == "normal"      # step still sets the shutdown ramp
+        gui.vars["mode"].v = endurance.MODE_SWEEP
+        gui._on_mode()
+        assert all(w.state == "normal" for w in gui.widgets.values())
 
 if __name__ == "__main__":
     run_module_tests(globals())

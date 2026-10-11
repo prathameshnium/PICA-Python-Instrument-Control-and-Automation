@@ -4,6 +4,13 @@ Purpose: Switching I-V sweep of a memristor pellet with current compliance
          on a Keithley 2400 (protocol "Memristor measurement modules for
          PICA" v1.1, Section 3).
 
+v1.2 (12 Oct 2026) - UI round 1 (K's ruling of 12 Oct)
+  * Fields the shape ignores are greyed and come back with their values:
+    unipolar + greys V max - and I cc -, unipolar - greys V max + and
+    I cc +, ladder greys V max +, V max - and Loops, and every shape but
+    ladder greys the Ladder list.
+  * Long hints wrap under their label. Sequence, timing, columns and
+    header keys are unchanged.
 v1.1 (11 Oct 2026) - PICA GUI conventions
   * Information frame with the institute logo; plotter and GPIB-scanner
     buttons in the header; Browse... button for the output folder.
@@ -251,20 +258,21 @@ def protection_command_value(protection_v):
     return PROTECTION_NONE_VALUE if protection_v is None else float(protection_v)
 
 
-def check_vmax_against_protection(vmax_abs, protection_v):
+def check_vmax_against_protection(vmax_abs, protection_v, label="V max"):
     """Returns (ok, message). ok False -> refuse Start. ok True with a
-    message -> yellow warning (above 95 % of the protection value)."""
+    message -> yellow warning (above 95 % of the protection value). label
+    names the voltage in the message (V max, V read ...)."""
     v = abs(float(vmax_abs))
     if v > V_SOURCE_MAX_V:
-        return False, f"{v:g} V is above the instrument's 210 V limit."
+        return False, f"{label} {v:g} V is above the instrument's 210 V limit."
     if protection_v is None:
         return True, ""
     if v > protection_v:
-        return False, (f"V max {v:g} V is above the never-exceed value "
-                       f"{protection_v:g} V. Lower V max or raise the "
+        return False, (f"{label} {v:g} V is above the never-exceed value "
+                       f"{protection_v:g} V. Lower {label} or raise the "
                        f"never-exceed value.")
     if v > PROTECTION_WARN_FRACTION * protection_v:
-        return True, (f"V max {v:g} V is within 5 % of the {protection_v:g} V "
+        return True, (f"{label} {v:g} V is within 5 % of the {protection_v:g} V "
                       f"protection; the instrument may clamp from "
                       f"{PROTECTION_WARN_FRACTION * protection_v:g} V.")
     return True, ""
@@ -1064,6 +1072,7 @@ class MemristorGuiBase:
         self.estimate_total_s = None
         self.progress_fraction = 0.0
         self.vars = {}
+        self.widgets = {}       # input widgets by key, for greying ignored fields
         self.setup_styles()
         self.create_widgets()
         try:
@@ -1198,9 +1207,17 @@ class MemristorGuiBase:
         optional italic hint to its right."""
         holder = tk.Frame(frame, bg=self.CLR_BG_DARK)
         holder.grid(row=row, column=col, columnspan=colspan, padx=padx, pady=(5, 0), sticky='w')
-        Label(holder, text=text).pack(side='left')
+        chip = Label(holder, text=text)
+        chip.grid(row=0, column=0, sticky='w')
         if hint:
-            ttk.Label(holder, text=hint, style='Hint.TLabel').pack(side='left', padx=(8, 0))
+            # A hint too wide for its column wraps under the label (never cut).
+            col_w = (self.LEFT_PANEL_WIDTH - 70) // (1 if colspan > 1 else 2)
+            note = ttk.Label(holder, text=hint, style='Hint.TLabel')
+            if chip.winfo_reqwidth() + 8 + note.winfo_reqwidth() <= col_w:
+                note.grid(row=0, column=1, padx=(8, 0), sticky='w')
+            else:
+                note.configure(wraplength=col_w, justify='left')
+                note.grid(row=1, column=0, columnspan=2, sticky='w')
         return holder
 
     def add_entry(self, parent, row, label, key, default, hint=None, width=14):
@@ -1211,6 +1228,7 @@ class MemristorGuiBase:
         entry.grid(row=r + 1, column=c, columnspan=span, padx=padx, pady=(0, 5), sticky='ew')
         var.trace_add("write", lambda *a: self.refresh_estimate())
         self.vars[key] = var
+        self.widgets[key] = entry
         return var
 
     def add_combo(self, parent, row, label, key, values, default, hint=None, width=20, command=None):
@@ -1223,6 +1241,7 @@ class MemristorGuiBase:
         if command is not None:
             combo.bind("<<ComboboxSelected>>", lambda e: command())
         self.vars[key] = var
+        self.widgets[key] = combo
         return var
 
     def add_check(self, parent, row, label, key, default=False, hint=None, command=None):
@@ -1231,10 +1250,32 @@ class MemristorGuiBase:
         cb = ttk.Checkbutton(parent, text=label, variable=var, command=command)
         cb.grid(row=r, column=c, columnspan=span, padx=padx, pady=(6, 2), sticky='w')
         if hint:
-            ttk.Label(parent, text=hint, style='Hint.TLabel').grid(row=r + 1, column=c, columnspan=span,
-                                                                   padx=(padx[0] + 24, padx[1]), pady=(0, 4), sticky='w')
+            ttk.Label(parent, text=hint, style='Hint.TLabel', wraplength=self.LEFT_PANEL_WIDTH - 100,
+                      justify='left').grid(row=r + 1, column=c, columnspan=span,
+                                           padx=(padx[0] + 24, padx[1]), pady=(0, 4), sticky='w')
         self.vars[key] = var
+        self.widgets[key] = cb
         return var
+
+    def set_field_enabled(self, key, enabled):
+        """Grey (disable) a field the current settings ignore. The value is
+        kept, so the field comes back with its last value."""
+        widget = getattr(self, "widgets", {}).get(key)
+        if widget is None:
+            return
+        if enabled:
+            state = 'readonly' if isinstance(widget, ttk.Combobox) else 'normal'
+        else:
+            state = 'disabled'
+        try:
+            widget.configure(state=state)
+        except Exception:
+            pass
+
+    def apply_field_states(self, managed, disabled):
+        """Enable every key in managed except those in disabled."""
+        for key in managed:
+            self.set_field_enabled(key, key not in disabled)
 
     def add_wide_label(self, parent, text, fg=None, bg=None):
         """Full-width wrapped text (warnings, notices)."""
@@ -1715,6 +1756,20 @@ SHAPE_KEYS = {SHAPE_BIPOLAR_PLUS: "bipolar_plus_first", SHAPE_BIPOLAR_MINUS: "bi
               SHAPE_UNIPOLAR_PLUS: "unipolar_plus", SHAPE_UNIPOLAR_MINUS: "unipolar_minus",
               SHAPE_LADDER: "ladder"}
 
+SHAPE_FIELDS = ("vmax_plus", "vmax_minus", "i_cc_plus_uA", "i_cc_minus_uA", "loops", "ladder")
+
+
+def disabled_shape_fields(shape):
+    """Sweep fields the current shape ignores (shown greyed)."""
+    if shape == SHAPE_UNIPOLAR_PLUS:
+        return {"vmax_minus", "i_cc_minus_uA", "ladder"}
+    if shape == SHAPE_UNIPOLAR_MINUS:
+        return {"vmax_plus", "i_cc_plus_uA", "ladder"}
+    if shape == SHAPE_LADDER:
+        return {"vmax_plus", "vmax_minus", "loops"}
+    return {"ladder"}
+
+
 SWEEP_COLUMNS = ("t_s", "loop", "segment", "vmax_V", "V_set_V", "V_meas_V", "I_A", "R_ohm",
                  "compliance_flag", "trip_query", "status_bits", "event_code", "phase")
 
@@ -1919,7 +1974,7 @@ class SweepWorker(WorkerBase):
 class SweepGUI(MemristorGuiBase):
     MODULE_TITLE = "Sweep"
     MODULE_KEY = "sweep"
-    PROGRAM_VERSION = "1.1"
+    PROGRAM_VERSION = "1.2"
 
     def create_module_inputs(self, parent):
         frame = self.make_frame(parent, 'Sweep')
@@ -1935,8 +1990,10 @@ class SweepGUI(MemristorGuiBase):
         self.add_entry(frame, r, "Ladder list (V)", "ladder", "", "e.g. 5, 10, 20 (ladder shape only)", width=22); r += 1
         self.add_entry(frame, r, "n confirm", "n_confirm", "3", "points confirming a trip"); r += 1
         self.warn_label = self.add_wide_label(frame, "", fg='#7A3B00')
+        self._on_shape()
 
     def _on_shape(self):
+        self.apply_field_states(SHAPE_FIELDS, disabled_shape_fields(self.get_str("shape")))
         self.refresh_estimate()
 
     def build_figure(self, fig):

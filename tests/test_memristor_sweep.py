@@ -502,5 +502,28 @@ def test_registry_entries_exist():
     quick = {p["key"] for cat in main_v2.QUICK_CATALOG for m in cat["modules"] for p in m["protocols"]}
     assert "K2400 Memristor Retention" in quick
 
+
+class _FakeWidget:
+    def __init__(self):
+        self.state = "normal"
+
+    def configure(self, **kw):
+        self.state = kw.get("state", self.state)
+
+
+def test_sweep_greys_the_fields_the_shape_ignores():
+    expected = {sweep.SHAPE_BIPOLAR_PLUS: {"ladder"}, sweep.SHAPE_BIPOLAR_MINUS: {"ladder"},
+                sweep.SHAPE_UNIPOLAR_PLUS: {"vmax_minus", "i_cc_minus_uA", "ladder"},
+                sweep.SHAPE_UNIPOLAR_MINUS: {"vmax_plus", "i_cc_plus_uA", "ladder"},
+                sweep.SHAPE_LADDER: {"vmax_plus", "vmax_minus", "loops"}}
+    with tempfile.TemporaryDirectory() as d:
+        gui = _gui_shell(sweep.SweepGUI, sweep, dict(shape=sweep.SHAPE_BIPOLAR_PLUS), d)
+        gui.widgets = {k: _FakeWidget() for k in sweep.SHAPE_FIELDS}
+        for shape, greyed in expected.items():
+            assert sweep.disabled_shape_fields(shape) == greyed
+            gui.vars["shape"].v = shape
+            gui._on_shape()
+            assert {k for k, w in gui.widgets.items() if w.state == "disabled"} == greyed, shape
+
 if __name__ == "__main__":
     run_module_tests(globals())

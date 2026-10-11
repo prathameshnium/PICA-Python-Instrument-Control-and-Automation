@@ -5,6 +5,19 @@ Purpose: Write one resistive state (SET for LRS, RESET for HRS, or a
          read resistance against time since the write (protocol "Memristor
          measurement modules for PICA" v1.1, Section 4).
 
+v1.2 (12 Oct 2026) - Retention window, UI round 1 (K's ruling of 12 Oct)
+  * '|V max| write' takes a positive value only; the write sign comes from
+    State and Swap, and a live 'This run: 0 -> +5 V -> 0 ...' line under
+    I cc write shows the leg, the sign and the read bias.
+  * V read: the 1 V cap is gone. Start is refused only above the
+    never-exceed value or 210 V; above 1 V, or at half of V max write or
+    more, a yellow warning is shown and Start stays enabled.
+  * Hints say what each time is; long hints wrap under their label.
+  * Points per decade / Delta t are greyed while the spacing ignores them.
+  * The estimate line shows the planned reads (planned_reads(), same rules
+    as the worker) and, for intermittent reads, how many grid instants are
+    skipped. Measurement sequence, timing, CSV columns and header keys are
+    unchanged.
 v1.1 (11 Oct 2026) - PICA GUI conventions
   * Information frame with the institute logo; plotter and GPIB-scanner
     buttons in the header; Browse... button for the output folder.
@@ -246,20 +259,21 @@ def protection_command_value(protection_v):
     return PROTECTION_NONE_VALUE if protection_v is None else float(protection_v)
 
 
-def check_vmax_against_protection(vmax_abs, protection_v):
+def check_vmax_against_protection(vmax_abs, protection_v, label="V max"):
     """Returns (ok, message). ok False -> refuse Start. ok True with a
-    message -> yellow warning (above 95 % of the protection value)."""
+    message -> yellow warning (above 95 % of the protection value). label
+    names the voltage in the message (V max, V read ...)."""
     v = abs(float(vmax_abs))
     if v > V_SOURCE_MAX_V:
-        return False, f"{v:g} V is above the instrument's 210 V limit."
+        return False, f"{label} {v:g} V is above the instrument's 210 V limit."
     if protection_v is None:
         return True, ""
     if v > protection_v:
-        return False, (f"V max {v:g} V is above the never-exceed value "
-                       f"{protection_v:g} V. Lower V max or raise the "
+        return False, (f"{label} {v:g} V is above the never-exceed value "
+                       f"{protection_v:g} V. Lower {label} or raise the "
                        f"never-exceed value.")
     if v > PROTECTION_WARN_FRACTION * protection_v:
-        return True, (f"V max {v:g} V is within 5 % of the {protection_v:g} V "
+        return True, (f"{label} {v:g} V is within 5 % of the {protection_v:g} V "
                       f"protection; the instrument may clamp from "
                       f"{PROTECTION_WARN_FRACTION * protection_v:g} V.")
     return True, ""
@@ -1059,6 +1073,7 @@ class MemristorGuiBase:
         self.estimate_total_s = None
         self.progress_fraction = 0.0
         self.vars = {}
+        self.widgets = {}       # input widgets by key, for greying ignored fields
         self.setup_styles()
         self.create_widgets()
         try:
@@ -1193,9 +1208,17 @@ class MemristorGuiBase:
         optional italic hint to its right."""
         holder = tk.Frame(frame, bg=self.CLR_BG_DARK)
         holder.grid(row=row, column=col, columnspan=colspan, padx=padx, pady=(5, 0), sticky='w')
-        Label(holder, text=text).pack(side='left')
+        chip = Label(holder, text=text)
+        chip.grid(row=0, column=0, sticky='w')
         if hint:
-            ttk.Label(holder, text=hint, style='Hint.TLabel').pack(side='left', padx=(8, 0))
+            # A hint too wide for its column wraps under the label (never cut).
+            col_w = (self.LEFT_PANEL_WIDTH - 70) // (1 if colspan > 1 else 2)
+            note = ttk.Label(holder, text=hint, style='Hint.TLabel')
+            if chip.winfo_reqwidth() + 8 + note.winfo_reqwidth() <= col_w:
+                note.grid(row=0, column=1, padx=(8, 0), sticky='w')
+            else:
+                note.configure(wraplength=col_w, justify='left')
+                note.grid(row=1, column=0, columnspan=2, sticky='w')
         return holder
 
     def add_entry(self, parent, row, label, key, default, hint=None, width=14):
@@ -1206,6 +1229,7 @@ class MemristorGuiBase:
         entry.grid(row=r + 1, column=c, columnspan=span, padx=padx, pady=(0, 5), sticky='ew')
         var.trace_add("write", lambda *a: self.refresh_estimate())
         self.vars[key] = var
+        self.widgets[key] = entry
         return var
 
     def add_combo(self, parent, row, label, key, values, default, hint=None, width=20, command=None):
@@ -1218,6 +1242,7 @@ class MemristorGuiBase:
         if command is not None:
             combo.bind("<<ComboboxSelected>>", lambda e: command())
         self.vars[key] = var
+        self.widgets[key] = combo
         return var
 
     def add_check(self, parent, row, label, key, default=False, hint=None, command=None):
@@ -1226,10 +1251,32 @@ class MemristorGuiBase:
         cb = ttk.Checkbutton(parent, text=label, variable=var, command=command)
         cb.grid(row=r, column=c, columnspan=span, padx=padx, pady=(6, 2), sticky='w')
         if hint:
-            ttk.Label(parent, text=hint, style='Hint.TLabel').grid(row=r + 1, column=c, columnspan=span,
-                                                                   padx=(padx[0] + 24, padx[1]), pady=(0, 4), sticky='w')
+            ttk.Label(parent, text=hint, style='Hint.TLabel', wraplength=self.LEFT_PANEL_WIDTH - 100,
+                      justify='left').grid(row=r + 1, column=c, columnspan=span,
+                                           padx=(padx[0] + 24, padx[1]), pady=(0, 4), sticky='w')
         self.vars[key] = var
+        self.widgets[key] = cb
         return var
+
+    def set_field_enabled(self, key, enabled):
+        """Grey (disable) a field the current settings ignore. The value is
+        kept, so the field comes back with its last value."""
+        widget = getattr(self, "widgets", {}).get(key)
+        if widget is None:
+            return
+        if enabled:
+            state = 'readonly' if isinstance(widget, ttk.Combobox) else 'normal'
+        else:
+            state = 'disabled'
+        try:
+            widget.configure(state=state)
+        except Exception:
+            pass
+
+    def apply_field_states(self, managed, disabled):
+        """Enable every key in managed except those in disabled."""
+        for key in managed:
+            self.set_field_enabled(key, key not in disabled)
 
     def add_wide_label(self, parent, text, fg=None, bg=None):
         """Full-width wrapped text (warnings, notices)."""
@@ -1706,7 +1753,9 @@ SCHEMES = (SCHEME_CONSTANT, SCHEME_INTERMITTENT)
 SPACING_LOG = "log"
 SPACING_LINEAR = "linear"
 SPACINGS = (SPACING_LOG, SPACING_LINEAR)
-V_READ_MAX_V = 1.0
+V_READ_WARN_V = 1.0                 # above this the read bias stresses the state (warning only)
+V_READ_SWITCH_FRACTION = 0.5        # V read at or above this x |V max write| may switch (warning only)
+VMAX_NEGATIVE_ERROR = "Type V max as a positive number; tick Swap polarity for a negative leg."
 
 WRITE_COLUMNS = ("t_s", "loop", "segment", "vmax_V", "V_set_V", "V_meas_V", "I_A", "R_ohm",
                  "compliance_flag", "trip_query", "status_bits", "event_code", "phase")
@@ -1752,6 +1801,116 @@ def linear_schedule(dt, t_from, t_to):
         out.append(k * dt)
         k += 1
     return out
+
+
+def write_line_text(state, swap, vmax_abs, i_cc_uA, v_read):
+    """The live 'This run: ...' line of the Write frame. The write sign
+    comes from State and Swap only; V read is applied as typed."""
+    sign = write_polarity(state, swap)
+    kind = {"LRS": "SET", "HRS": "RESET"}.get(state, "no switching intended")
+    swapped = " (swapped)" if swap else ""
+    return (f"This run: 0 -> {sign * abs(float(vmax_abs)):+g} V -> 0 at I cc {float(i_cc_uA):g} uA "
+            f"({kind}, {state}){swapped}; stops early at confirmed compliance. Reads at {float(v_read):+g} V.")
+
+
+def read_bias_warnings(v_read, vmax_write):
+    """Warnings (Start stays enabled) for a read bias that may disturb the state."""
+    out = []
+    if v_read > V_READ_WARN_V:
+        out.append("V read above 1 V: the read bias stresses the state for the whole run.")
+    if vmax_write > 0 and v_read >= V_READ_SWITCH_FRACTION * vmax_write:
+        out.append("V read is at least half of V max write: the read itself may switch the pellet.")
+    return out
+
+
+def disabled_read_fields(spacing):
+    """Read log fields the current spacing ignores (shown greyed)."""
+    return {"dt"} if spacing == SPACING_LOG else {"points_per_decade"}
+
+
+def retention_checks(p):
+    """Voltage and schedule checks shared by Start and the live warning line.
+    Raises ValueError to refuse Start; returns the warnings (Start stays
+    enabled). Needs vmax_write, v_read, protection_v, scheme, spacing, dt,
+    t_soak."""
+    ok, msg = check_vmax_against_protection(p["vmax_write"], p["protection_v"])
+    if not ok:
+        raise ValueError(msg)
+    warnings = [msg] if msg else []
+    ok, msg = check_vmax_against_protection(p["v_read"], p["protection_v"], "V read")
+    if not ok:
+        raise ValueError(msg)
+    if msg:
+        warnings.append(msg)
+    warnings += read_bias_warnings(p["v_read"], p["vmax_write"])
+    if p["scheme"] == SCHEME_INTERMITTENT:
+        if p["spacing"] == SPACING_LINEAR and p["dt"] < p["t_soak"]:
+            warnings.append(f"Intermittent reads need t soak ({p['t_soak']:g} s) between instants; "
+                            f"Delta t {p['dt']:g} s is finer, so instants will be skipped.")
+        if p["spacing"] == SPACING_LOG and p["t_soak"] > 0:
+            warnings.append("Intermittent reads: early log instants closer than t soak will be skipped.")
+    return warnings
+
+
+def _log_rows(duration_s):
+    """Approximate rows logged every LOG_INTERVAL_S over duration_s."""
+    if duration_s <= 0:
+        return 0
+    return int(math.ceil(duration_s / LOG_INTERVAL_S - 1e-9))
+
+
+def planned_reads(p):
+    """What the worker will log, before Start. Same rules as RetentionWorker:
+    the grid starts at t_rec (bias on); constant bias drops instants at or
+    before t_rec + t_soak (the 1 s soak rows cover them); intermittent keeps
+    the first instant after the soak and drops any later instant whose soak
+    would start before the previous read ended. Returns scheduled, soak_rows,
+    recover_rows, first_s, last_s (None when no read), grid (instants on the
+    grid after the bias comes on) and skipped (grid instants not read)."""
+    t_rec, t_soak, t_stop = float(p["t_rec"]), float(p["t_soak"]), float(p["t_stop"])
+    if p["spacing"] == SPACING_LOG:
+        grid = log_schedule(p["points_per_decade"], t_rec, t_stop)
+    else:
+        grid = linear_schedule(p["dt"], t_rec, t_stop)
+    t_soak_end = t_rec + t_soak
+    after_soak = [t for t in grid if t > t_soak_end]
+    recover_rows = _log_rows(min(t_rec, t_stop))
+    if p["scheme"] == SCHEME_CONSTANT:
+        reads = after_soak
+        soak_rows = _log_rows(min(t_soak, t_stop - t_rec))
+    elif not after_soak:
+        reads = []
+        soak_rows = _log_rows(min(t_soak, t_stop - t_rec))
+        recover_rows += _log_rows(t_stop - t_soak_end)
+    else:
+        reads = [after_soak[0]]
+        soak_rows = _log_rows(after_soak[0] - t_rec)
+        for t in after_soak[1:]:
+            if t - t_soak <= reads[-1]:
+                continue
+            recover_rows += _log_rows(t - t_soak - reads[-1])
+            soak_rows += _log_rows(t_soak)
+            reads.append(t)
+        recover_rows += _log_rows(t_stop - reads[-1])
+    return {"scheduled": len(reads), "soak_rows": soak_rows, "recover_rows": recover_rows,
+            "first_s": reads[0] if reads else None, "last_s": reads[-1] if reads else None,
+            "grid": len(grid), "skipped": len(grid) - len(reads)}
+
+
+def _fmt_s(seconds):
+    return f"{seconds:.0f}" if seconds >= 10 else f"{seconds:.3g}"
+
+
+def planned_reads_text(plan, n_avg, scheme):
+    """'reads: 20 scheduled (x3 averaged), first 126 s, ...' plus, for the
+    intermittent scheme, a second line when grid instants are skipped."""
+    text = f"reads: {plan['scheduled']} scheduled (x{n_avg} averaged)"
+    if plan["scheduled"]:
+        text += f", first {_fmt_s(plan['first_s'])} s, last {_fmt_s(plan['last_s'])} s"
+    text += f", + {plan['soak_rows']} soak and {plan['recover_rows']} recover rows"
+    if scheme == SCHEME_INTERMITTENT and plan["skipped"]:
+        text += f"\n{plan['skipped']} of {plan['grid']} grid instants skipped (closer than t soak)"
+    return text
 
 
 def next_instant(schedule, t_now):
@@ -2072,35 +2231,96 @@ class RetentionWorker(WorkerBase):
 class RetentionGUI(MemristorGuiBase):
     MODULE_TITLE = "Retention"
     MODULE_KEY = "retention"
-    PROGRAM_VERSION = "1.1"
+    PROGRAM_VERSION = "1.2"
 
     def create_module_inputs(self, parent):
         self.companion_path = ""
         self.companion_rows = []
         frame = self.make_frame(parent, 'Write')
         r = 0
-        self.add_combo(frame, r, "State", "state", STATES, "LRS", "LRS = SET (+), HRS = RESET (-)", width=10); r += 1
-        self.add_check(frame, r, "Swap polarity", "swap", False, "pellet that SETs negative"); r += 1
-        self.add_entry(frame, r, "V max write (V)", "vmax_write", "5", "at or below never-exceed"); r += 1
+        self.add_combo(frame, r, "State", "state", STATES, "LRS",
+                       "LRS = SET leg, HRS = RESET leg, control = sub-switching leg", width=10); r += 1
+        self.add_check(frame, r, "Swap polarity", "swap", False,
+                       "flips the write sign: use for a pellet that SETs negative, or for the HRS run "
+                       "of a unipolar pellet", command=self.refresh_estimate); r += 1
+        self.add_entry(frame, r, "|V max| write (V)", "vmax_write", "5",
+                       "type a positive value; the sign comes from State and Swap"); r += 1
         self.add_entry(frame, r, "I cc write (uA)", "i_cc_write_uA", "10"); r += 1
+        self.write_line_label = self.add_wide_label(frame, "", fg='#7A3B00')
         self.add_entry(frame, r, "Step (V)", "step_v", "0.1"); r += 1
-        self.add_entry(frame, r, "Dwell (s)", "dwell_s", "0.1", "write leg only"); r += 1
-        self.add_entry(frame, r, "n confirm", "n_confirm", "3", "points confirming a trip"); r += 1
+        self.add_entry(frame, r, "Dwell (s)", "dwell_s", "0.1", "time at each write voltage step, before its reading"); r += 1
+        self.add_entry(frame, r, "n confirm", "n_confirm", "3", "consecutive compliance points before turning around"); r += 1
 
         frame2 = self.make_frame(parent, 'Read log')
         r = 0
-        self.add_entry(frame2, r, "V read (V)", "v_read", "0.1", "0.1 V default, raisable to 1 V"); r += 1
-        self.add_entry(frame2, r, "t rec (s)", "t_rec", "60", "0 V sourced before the bias"); r += 1
-        self.add_entry(frame2, r, "t soak (s)", "t_soak", "60", "bias on before a logged read"); r += 1
-        self.add_entry(frame2, r, "t stop (s)", "t_stop", "10000", "since the write end"); r += 1
+        self.add_entry(frame2, r, "V read (V)", "v_read", "0.1", "bias used for every read; 0.1 V typical"); r += 1
+        self.add_entry(frame2, r, "t rec (s)", "t_rec", "60", "time at 0 V right after the write, logged every 1 s"); r += 1
+        self.add_entry(frame2, r, "t soak (s)", "t_soak", "60",
+                       "time at V read before the first scheduled read, logged every 1 s"); r += 1
+        self.add_entry(frame2, r, "t stop (s)", "t_stop", "10000", "total time measured after the write ends"); r += 1
         self.add_combo(frame2, r, "Read scheme", "scheme", SCHEMES, SCHEME_CONSTANT, width=14); r += 1
         self.add_combo(frame2, r, "Spacing", "spacing", SPACINGS, SPACING_LOG, width=8); r += 1
-        self.add_entry(frame2, r, "Points per decade", "points_per_decade", "10", "log spacing"); r += 1
-        self.add_entry(frame2, r, "Delta t (s)", "dt", "10", "linear spacing"); r += 1
-        self.add_entry(frame2, r, "n avg", "n_avg", "3", "readings per logged instant"); r += 1
+        self.add_entry(frame2, r, "Points per decade", "points_per_decade", "10", "reads per decade of time (log spacing)"); r += 1
+        self.add_entry(frame2, r, "Delta t (s)", "dt", "10", "seconds between reads (linear spacing)"); r += 1
+        self.add_entry(frame2, r, "n avg", "n_avg", "3",
+                       "readings averaged into each scheduled read (back to back, ~0.1 s)"); r += 1
         self.companion_label = self.add_file_row(frame2, "Companion file (other state's reads)...",
                                                  self._pick_companion, "none")
         self.warn_label = self.add_wide_label(frame2, "", fg='#7A3B00')
+        self.refresh_estimate()
+
+    # -- live feedback: write line, greyed fields, warnings, planned reads ----
+    def refresh_estimate(self):
+        super().refresh_estimate()
+        self.apply_field_states(("points_per_decade", "dt"), disabled_read_fields(self.get_str("spacing")))
+        self._refresh_write_line()
+        self._refresh_live_warnings()
+        self._refresh_planned_reads()
+
+    def _refresh_write_line(self):
+        try:
+            text = write_line_text(self.get_str("state"), bool(self.vars["swap"].get()),
+                                   self.get_vmax_write(),
+                                   self.get_float("i_cc_write_uA", "I cc write"),
+                                   self.get_float("v_read", "V read"))
+        except Exception as exc:
+            text = f"This run: -- ({ascii_text(exc)})"
+        try:
+            self.write_line_label.config(text=text)
+        except Exception:
+            pass
+
+    def _refresh_live_warnings(self):
+        try:
+            p = {"vmax_write": self.get_vmax_write(),
+                 "v_read": self.get_float("v_read", "V read"),
+                 "protection_v": parse_protection(self.get_str("protection")),
+                 "scheme": self.get_str("scheme"), "spacing": self.get_str("spacing"),
+                 "dt": self.get_float("dt", "Delta t"), "t_soak": self.get_float("t_soak", "t soak")}
+            try:
+                text = " ".join(retention_checks(p))
+            except ValueError as exc:
+                text = f"Start will be refused: {exc}"
+        except Exception:
+            return      # a field is mid-edit; Start reports it
+        try:
+            self.warn_label.config(text=text)
+        except Exception:
+            pass
+
+    def _refresh_planned_reads(self):
+        try:
+            p = {"t_rec": self.get_float("t_rec", "t rec", 0), "t_soak": self.get_float("t_soak", "t soak", 0),
+                 "t_stop": self.get_float("t_stop", "t stop", 1e-3), "scheme": self.get_str("scheme"),
+                 "spacing": self.get_str("spacing"),
+                 "points_per_decade": self.get_int("points_per_decade", "Points per decade", 1),
+                 "dt": self.get_float("dt", "Delta t", 1e-3)}
+            n_avg = self.get_int("n_avg", "n avg", 1)
+            text = planned_reads_text(planned_reads(p), n_avg, p["scheme"])
+            base = self.estimate_label.cget("text").split(" | reads:")[0]
+            self.estimate_label.config(text=f"{base} | {text}", justify='left')
+        except Exception:
+            pass
 
     def _pick_companion(self):
         path = filedialog.askopenfilename(title="Other state's _reads file",
@@ -2189,23 +2409,35 @@ class RetentionGUI(MemristorGuiBase):
 
     def estimate_run_time_s(self):
         step = self.get_float("step_v", "Step", 1e-6)
-        vmax = self.get_float("vmax_write", "V max write", 1e-6)
+        vmax = self.get_vmax_write()
         dwell = self.get_float("dwell_s", "Dwell", 0)
         n_write = len(half_leg(vmax, step)) + len(return_leg(vmax, step))
         t_stop = self.get_float("t_stop", "t stop", 0)
         return RST_SLEEP_S + SETTLE_S + sweep_time_estimate_s(n_write, dwell) + t_stop
+
+    def get_vmax_write(self):
+        """|V max| write: a positive number; a negative leg comes only from
+        State plus Swap, so a typed minus sign is refused with a pointer."""
+        text = self.get_str("vmax_write")
+        try:
+            negative = float(text) < 0
+        except ValueError:
+            negative = False
+        if negative:
+            raise ValueError(VMAX_NEGATIVE_ERROR)
+        return self.get_float("vmax_write", "V max write", 1e-6)
 
     def collect_params(self):
         p = self.collect_common_params()
         p["state"] = self.get_str("state")
         p["swap"] = bool(self.vars["swap"].get())
         p["polarity"] = write_polarity(p["state"], p["swap"])
-        p["vmax_write"] = self.get_float("vmax_write", "V max write", 1e-6)
+        p["vmax_write"] = self.get_vmax_write()
         p["i_cc_write"] = validate_i_cc(self.get_float("i_cc_write_uA", "I cc write", 0) / 1e6, "I cc write")
         p["step_v"] = self.get_float("step_v", "Step", 1e-6)
         p["dwell_s"] = self.get_float("dwell_s", "Dwell", 0)
         p["n_confirm"] = self.get_int("n_confirm", "n confirm", 0)
-        p["v_read"] = self.get_float("v_read", "V read", 1e-6, V_READ_MAX_V)
+        p["v_read"] = self.get_float("v_read", "V read", 1e-6)
         p["t_rec"] = self.get_float("t_rec", "t rec", 0)
         p["t_soak"] = self.get_float("t_soak", "t soak", 0)
         p["t_stop"] = self.get_float("t_stop", "t stop", 1e-3)
@@ -2217,16 +2449,7 @@ class RetentionGUI(MemristorGuiBase):
         p["companion"] = self.companion_path
         if p["step_v"] > p["vmax_write"]:
             raise ValueError("Step is larger than V max write.")
-        ok, msg = check_vmax_against_protection(p["vmax_write"], p["protection_v"])
-        if not ok:
-            raise ValueError(msg)
-        warnings = [msg] if msg else []
-        if p["scheme"] == SCHEME_INTERMITTENT:
-            if p["spacing"] == SPACING_LINEAR and p["dt"] < p["t_soak"]:
-                warnings.append(f"Intermittent reads need t soak ({p['t_soak']:g} s) between instants; "
-                                f"Delta t {p['dt']:g} s is finer, so instants will be skipped.")
-            if p["spacing"] == SPACING_LOG and p["t_soak"] > 0:
-                warnings.append("Intermittent reads: early log instants closer than t soak will be skipped.")
+        warnings = retention_checks(p)
         p["_warning"] = " ".join(warnings)
         p["_sample_block"] = self.sample_block(p)
         try:
