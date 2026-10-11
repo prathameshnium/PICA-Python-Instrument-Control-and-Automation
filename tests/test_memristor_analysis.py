@@ -132,5 +132,58 @@ def test_analysis_raw_cycle_viewer_draws_one_line_per_leg_segment():
     assert sorted(analysis.sweep_loops(rows, 1)[1]) == [1, 2]
 
 
+def _raw_cycle_rows(cycle=1):
+    """Hand-made endurance raw cycle: SET trips (compliance) at +3 V, RESET
+    has its current drop at -3 V. Both legs number their segments 1 and 2
+    exactly as the module writes them."""
+    rows = []
+
+    def add(leg, seg, v, i, cc):
+        rows.append({"phase": "sweep", "cycle": cycle, "loop": cycle, "leg": leg, "segment": seg,
+                     "V_set_V": v, "V_meas_V": v, "I_A": i, "compliance_flag": cc})
+    for v, i, cc in ((0, 0, 0), (1, 1e-6, 0), (2, 2e-6, 0), (3, 1e-5, 1), (4, 1e-5, 1)):
+        add("set", 1, float(v), i, cc)
+    for v, i in ((3, 1e-5), (2, 6e-6), (1, 3e-6), (0, 0)):
+        add("set", 2, float(v), i, 0)
+    for v, i in ((0, 0), (-1, -3e-6), (-2, -6e-6), (-3, -1e-6), (-4, -1.2e-6)):
+        add("reset", 1, float(v), i, 0)
+    for v, i in ((-3, -9e-7), (-2, -6e-7), (-1, -3e-7), (0, 0)):
+        add("reset", 2, float(v), i, 0)
+    return rows
+
+
+def test_analysis_sweep_tab_keeps_set_and_reset_legs_apart_for_an_endurance_cycle():
+    """Review finding: the Sweep tab fed sweep_loops() with an endurance raw
+    cycle, whose SET and RESET legs both use segments 1 and 2, so the two
+    outgoing legs were joined into one segment of mixed sign (V set none,
+    V reset -0 V on a cycle that tripped on both legs)."""
+    rows = _raw_cycle_rows(7)
+    groups = analysis.switching_groups(rows, "endurance_raw", 7)
+    assert [label for label, _ in groups] == ["cycle 7"]
+    segs = groups[0][1]
+    assert sorted(segs) == [1, 2, 3, 4]
+    assert [r["leg"] for r in segs[1]] == ["set"] * 5 and [r["leg"] for r in segs[3]] == ["reset"] * 5
+    res = analysis.estimate_switching(segs, rule=1, factor=10.0, floor_v=1.0, set_sign=1)
+    assert res["v_set"] == 3.0 and res["how_set"] == "first compliance point" and res["set_segment"] == 1
+    assert res["v_reset"] == -3.0 and res["how_reset"] == "largest drop in |I|" and res["reset_segment"] == 3
+    # the old grouping really did merge the legs
+    merged = analysis.sweep_loops(rows, 7)[7]
+    assert sorted(merged) == [1, 2] and len(merged[1]) == 10
+    assert analysis.switching_groups(rows, "endurance_raw", 8) == []
+    # sweep / retention-write files keep one group per loop keyed by segment
+    srows = [dict(r, phase="sweep", loop=2) for r in rows if r["leg"] == "set"]
+    (label, segs2), = analysis.switching_groups(srows, "sweep")
+    assert label == "loop 2" and sorted(segs2) == [1, 2]
+    # and a real raw file from the module goes through the same path
+    with tempfile.TemporaryDirectory() as d:
+        _, _, _, raw = run_endurance(FakeK2400(2e5), d, n_cycles=1, raw_cycles_text="1", raw_cycles={1})
+        _, _, frows = analysis.parse_pica_csv(raw)
+    (label, fsegs), = analysis.switching_groups(frows, "endurance_raw", 1)
+    res = analysis.estimate_switching(fsegs, 1, 10.0, 1.0, 1)
+    assert label == "cycle 1" and res["v_set"] == 3.0 and res["set_segment"] == 1
+    assert res["reset_segment"] == 3 and all(r["leg"] == "reset" for r in fsegs[3])
+    assert res["v_reset"] is None     # a linear resistor has no current drop: 'none', not -0 V
+
+
 if __name__ == "__main__":
     run_module_tests(globals())

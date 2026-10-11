@@ -5,6 +5,11 @@ Purpose: Read-only analysis of the files written by the three memristor
          Memristor_Retention_K2400_GUI, Memristor_Endurance_K2400_GUI),
          protocol "Memristor measurement modules for PICA" v1.1, Section 6.
 
+v1.2 (12 Oct 2026) - review fix
+  * Sweep tab on an endurance raw cycle: the SET and RESET legs are kept
+    apart (both number their segments 1 and 2, so the (loop, segment) key
+    merged them and gave V set none / V reset -0 V on a cycle that tripped
+    on both legs). Result lines read 'cycle N' for raw files.
 v1.1 (12 Oct 2026) - round 2 (K's ruling of 12 Oct)
   * Endurance raw-cycle viewer: one line per (cycle, leg, segment), SET in
     the LRS colour and RESET in the HRS colour, return segments dashed,
@@ -46,7 +51,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
 
-PROGRAM_VERSION = "1.1"
+PROGRAM_VERSION = "1.2"
 PROTOCOL_VERSION = "1.1"
 TABS = ("sweep", "retention", "endurance")
 
@@ -185,6 +190,22 @@ def endurance_leg_segments(rows, cycle):
         out.setdefault((str(r.get("leg", "")), seg), []).append(r)
     order = {"set": 0, "reset": 1}
     return [(leg, seg, out[(leg, seg)]) for leg, seg in sorted(out, key=lambda k: (order.get(k[0], 2), k[0], k[1]))]
+
+
+def switching_groups(rows, kind, cycle=None):
+    """[(label, {segment_key: rows})] to feed estimate_switching(). Sweep
+    and retention-write files: one group per loop keyed by segment. An
+    endurance raw file: one group for the given cycle whose keys number
+    the (leg, segment) pairs 1..4 in SET-then-RESET order, so the SET and
+    RESET legs (both segments 1 and 2 in the file) stay separate; the
+    (loop, segment) key of sweep_loops() merged them and gave V set none
+    and V reset -0 V on a cycle that tripped on both legs."""
+    if kind == "endurance_raw":
+        legs = endurance_leg_segments(rows, cycle)
+        if not legs:
+            return []
+        return [(f"cycle {cycle}", {k: srows for k, (_leg, _seg, srows) in enumerate(legs, start=1)})]
+    return [(f"loop {loop}", segs) for loop, segs in sorted(sweep_loops(rows).items())]
 
 
 def plot_raw_cycle(ax, rows, cycle):
@@ -591,16 +612,15 @@ class SweepTab(_TabBase):
         self.ax_log.clear()
         for path, blocks, columns, rows in self.files:
             kind = file_kind(blocks, columns)
-            loops = sweep_loops(rows, cycle if kind == "endurance_raw" else None)
+            groups = switching_groups(rows, kind, cycle)
             name = os.path.basename(path)
-            if not loops:
+            if not groups:
                 lines.append(f"{name}: no sweep rows" + (f" for cycle {cycle}" if kind == "endurance_raw" else ""))
                 continue
-            for loop in sorted(loops):
-                segs = loops[loop]
+            for label, segs in groups:
                 res = estimate_switching(segs, rule, factor, floor_v, set_sign)
-                self.results.append((name, loop, res))
-                lines.append(f"{name} loop {loop}: V set = {fmt_v(res['v_set'])} V ({res['how_set']}), "
+                self.results.append((name, label, res))
+                lines.append(f"{name} {label}: V set = {fmt_v(res['v_set'])} V ({res['how_set']}), "
                              f"V reset = {fmt_v(res['v_reset'])} V ({res['how_reset']})")
                 for seg in sorted(segs):
                     srows = segs[seg]

@@ -57,6 +57,7 @@ def test_endurance_five_cycles_on_1_megohm_matches_acceptance_test_5():
             assert abs(r["window"] - 1.0) < 1e-9
             assert r["V_set_trip_V"] == "" and r["V_reset_trip_V"] == ""
             assert r["n_compliance_set"] == 0 and r["retried"] == 0
+            assert r["read_cc_LRS"] == 0 and r["read_cc_HRS"] == 0
         assert [r["raw_saved"] for r in srows] == [1, 1, 0, 0, 1]
         raw_cycles = sorted({int(r["cycle"]) for r in rrows if r["phase"] == "sweep"})
         assert raw_cycles == [1, 2, 5]
@@ -91,6 +92,128 @@ def test_endurance_records_trips_and_compliance_counts_per_leg():
             assert r["V_reset_trip_V"] == "" and r["n_compliance_reset"] == 0
         w = worker.link.fake.writes
         assert ":SENS:CURR:PROT 0.0001" in w and ":SENS:CURR:PROT 1e-05" in w
+
+
+def test_endurance_saves_the_compliance_flag_of_a_clamped_read():
+    """Review finding: soaked_read() computed the compliance flag of the
+    read and dropped it. 5 kohm at 0.1 V wants 20 uA, above the 10 uA I cc,
+    so every read is clamped: read_cc_LRS / read_cc_HRS = 1, a WARNING
+    line in the console, and the R values come from the clamped point."""
+    with tempfile.TemporaryDirectory() as d:
+        worker, msgs, spath, _ = run_endurance(FakeK2400(5e3), d, n_cycles=2)
+        assert worker.reason == "max_cycles"
+        _, cols, srows = read_file(spath)
+        assert "read_cc_LRS" in cols and "read_cc_HRS" in cols
+        assert cols.index("read_cc_LRS") < cols.index("raw_saved")
+        assert [(r["read_cc_LRS"], r["read_cc_HRS"]) for r in srows] == [(1, 1), (1, 1)]
+        assert all(abs(r["R_LRS_ohm"] - 5e3) < 1 for r in srows)
+        logs = [m[1] for m in msgs if m[0] == "log" and "WARNING" in m[1]]
+        assert any("read after SET hit I cc" in ln and "read_cc=1" in ln for ln in logs)
+        assert any("read after RESET hit I cc" in ln for ln in logs)
+        # a 1 Mohm read draws 0.1 uA: no flag, no warning
+    with tempfile.TemporaryDirectory() as d:
+        _, msgs, spath, _ = run_endurance(FakeK2400(1e6), d, n_cycles=1)
+        _, _, srows = read_file(spath)
+        assert [(r["read_cc_LRS"], r["read_cc_HRS"]) for r in srows] == [(0, 0)]
+        assert not [m for m in msgs if m[0] == "log" and "hit I cc" in m[1]]
+
+
+def test_endurance_reconnect_after_a_power_cycle_ramps_up_from_zero():
+    """Review finding: reconnect() turned the output straight on at the
+    remembered voltage. A fake whose bus fault is a power cycle (output off,
+    source 0 V) must see :SOUR:VOLT 0, :OUTP ON and then a ramp in steps no
+    larger than Step V up to the remembered value."""
+    class PowerCycled(FakeK2400):
+        def query(self, cmd):
+            if cmd.strip().upper() == ":READ?" and self.reads in self.fail_reads:
+                self.reads += 1
+                self.v, self.output_on = 0.0, False      # the 2400 came back from a power cycle
+                raise IOError("VI_ERROR_TMO: timeout")
+            return FakeK2400.query(self, cmd)
+    with tempfile.TemporaryDirectory() as d:
+        fake = PowerCycled(1e6, fail_reads={8})
+        worker, _, spath, _ = run_endurance(fake, d, n_cycles=1, step_v=0.5)
+        assert worker.reason == "max_cycles"
+        _, _, srows = read_file(spath)
+        assert [r["retried"] for r in srows] == [1]
+    w = fake.writes
+    on = [k for k, c in enumerate(w) if c == ":OUTP ON"]
+    assert len(on) == 2                                   # startup and the reconnect
+    k = on[1]
+    assert w[k - 1] == ":SOUR:VOLT 0"                      # on at 0 V ...
+    volts = []
+    for c in w[k + 1:]:
+        if not c.startswith(":SOUR:VOLT "):
+            break
+        volts.append(float(c.split()[1]))
+    assert volts and volts[0] > 0 and all(b - a > 0 for a, b in zip(volts, volts[1:]))
+    assert all(abs(b - a) <= 0.5 + 1e-9 for a, b in zip([0.0] + volts, volts))   # ... then Step V steps up
+    assert fake.writes.count("*RST") == 1
+
+
+def test_endurance_closing_the_window_waits_for_the_ramp_down():
+    """Review finding: _on_closing() joined the worker for 20 s and then
+    destroyed the window; the worker is a daemon thread, so a longer
+    ramp-down died with the process and the output could stay on. The
+    window must stay until the worker thread has ended."""
+    import threading
+    gui = object.__new__(endurance.EnduranceGUI)
+    done = threading.Event()
+    gui.is_running = True
+    gui.stop_event = threading.Event()
+    gui.worker_thread = threading.Thread(target=done.wait, daemon=True)
+    gui.worker_thread.start()
+    gui.data_queue = __import__("queue").Queue()
+    gui.data_queue.put(("log", "ramping"))
+    logged = []
+    gui.log = logged.append
+    gui._pump_after_id = "pump1"
+    gui._close_after_id = None
+    banners = []
+    gui._set_banner = banners.append
+
+    class _Btn:
+        def config(self, **kw):
+            self.state = kw.get("state")
+    gui.stop_button = _Btn()
+
+    class _Root:
+        def __init__(self):
+            self.scheduled, self.cancelled, self.destroyed = [], [], False
+
+        def after(self, ms, fn):
+            self.scheduled.append(fn)
+            return f"id{len(self.scheduled)}"
+
+        def after_cancel(self, ident):
+            self.cancelled.append(ident)
+
+        def destroy(self):
+            self.destroyed = True
+    gui.root = _Root()
+    old_ask = endurance.messagebox.askyesno
+    endurance.messagebox.askyesno = lambda *a, **k: True
+    try:
+        gui._on_closing()
+        assert gui.stop_event.is_set() and not gui.root.destroyed
+        assert gui.root.cancelled == ["pump1"] and gui.stop_button.state == "disabled"
+        assert banners and "ramping to 0 V" in banners[0]
+        for _ in range(5):                              # the worker is still busy: keep polling, never destroy
+            gui.root.scheduled.pop(0)()
+            assert not gui.root.destroyed
+        assert logged == ["ramping"]                    # worker log lines still reach the console
+        done.set()
+        gui.worker_thread.join(5)
+        gui.root.scheduled.pop(0)()
+        assert gui.root.destroyed and not gui.root.scheduled
+        # not running: closes at once
+        gui2 = object.__new__(endurance.EnduranceGUI)
+        gui2.is_running = False
+        gui2.root = _Root()
+        gui2._on_closing()
+        assert gui2.root.destroyed
+    finally:
+        endurance.messagebox.askyesno = old_ask
 
 
 def test_endurance_stop_button_during_a_cycle_writes_no_half_row():

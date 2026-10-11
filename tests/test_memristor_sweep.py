@@ -276,6 +276,27 @@ def test_link_wraps_transport_errors_as_bus_errors_and_ramps_to_zero():
     assert volts[-1] == 0.0 and all(a > b for a, b in zip(volts[1:], volts[2:]) if a != 0.0)
 
 
+def test_link_ramp_to_steps_no_larger_than_step_and_lands_exactly():
+    for mod in MODULES:
+        fake = FakeK2400()
+        link = make_link(mod, fake)
+        link.open()
+        link.source(0.0)
+        fake.writes.clear()
+        link.ramp_to(1.25, 0.5)
+        volts = [float(c.split()[1]) for c in fake.writes if c.startswith(":SOUR:VOLT ")]
+        assert volts[-1] == 1.25 and len(volts) == 3
+        assert all(0 < b - a <= 0.5 + 1e-9 for a, b in zip([0.0] + volts, volts))
+        fake.writes.clear()
+        link.ramp_to(-0.75, 0.5)                              # downwards and through zero
+        volts = [float(c.split()[1]) for c in fake.writes if c.startswith(":SOUR:VOLT ")]
+        assert volts[-1] == -0.75 and all(0 < a - b <= 0.5 + 1e-9 for a, b in zip([1.25] + volts, volts))
+        fake.writes.clear()
+        link.ramp_to(-0.75, 0.5)                              # already there: one write, no sleep loop
+        assert fake.writes == [":SOUR:VOLT -0.75"]
+        assert link.ramp_step_v == 0.1                        # default until the worker's startup sets it
+
+
 def test_sweep_on_1_megohm_trips_at_10v_confirms_turns_around_and_measures_the_rest():
     """Acceptance test 3 of the protocol, on the fake."""
     with tempfile.TemporaryDirectory() as d:

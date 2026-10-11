@@ -4,6 +4,20 @@ Purpose: SET, soaked read, RESET, soaked read, repeated for N cycles on a
          Keithley 2400 (protocol "Memristor measurement modules for PICA"
          v1.1, Section 5).
 
+v1.4 (12 Oct 2026) - review fixes
+  * Summary columns read_cc_LRS and read_cc_HRS: 1 when the soaked read
+    after SET / RESET hit I cc (the flag was computed and dropped before).
+    A clamped read is logged as a WARNING line and drawn as a hollow
+    marker on the R plot.
+  * Reconnect after a power cycle (output found off) turns the output on
+    at 0 V and ramps to the remembered voltage in Step V steps instead of
+    switching it straight on at the old voltage (common block).
+  * Closing the window during a run no longer gives the ramp-down 20 s and
+    then destroys the window (killing the daemon worker mid-ramp): the
+    window stays, greyed, until the worker has reached 0 V and output OFF
+    (common block).
+  * The analysis Sweep tab treats an endurance raw cycle leg by leg (SET
+    and RESET both number their segments 1 and 2; they were merged).
 v1.3 (12 Oct 2026) - round 2 (K's ruling of 12 Oct)
   * Data files hold data only: header, column row, data rows to the end of
     the file. RETRY, RECONNECT and END lines go to
@@ -589,6 +603,7 @@ class K2400Link:
         self.smode = "NORM"
         self.clear_auto = False
         self.last_source_v = 0.0
+        self.ramp_step_v = 0.1      # set by the worker from shutdown_step_v(); used by reconnect()
 
     # -- transport ------------------------------------------------------
     def open(self):
@@ -732,9 +747,26 @@ class K2400Link:
                 self.sleep(RAMP_STEP_S)
         self.source(0.0)
 
+    def ramp_to(self, target_v, step_v):
+        """From the present source value to target_v in steps no larger
+        than step_v, RAMP_STEP_S per step (the reverse of ramp_to_zero)."""
+        start = float(self.last_source_v)
+        target = float(target_v)
+        step = abs(float(step_v)) if step_v else 0.1
+        span = target - start
+        if span != 0.0:
+            n = max(1, int(math.ceil(abs(span) / step - 1e-9)))
+            for k in range(1, n):
+                self.source(start + span * k / n)
+                self.sleep(RAMP_STEP_S)
+        self.source(target)
+
     def reconnect(self):
         """Protocol 2.8: *IDN? must answer, then steps 2 to 5 are re-asserted
-        and the output is turned on at the remembered source value."""
+        and the output is turned on again. A 2400 that was power-cycled
+        during the gap comes back with the output off: it is turned on at
+        0 V and ramped to the remembered source value in ramp_step_v steps
+        (never switched straight on at the old voltage)."""
         self.close()
         self.open()
         idn = self.query("*IDN?")
@@ -754,8 +786,10 @@ class K2400Link:
             if clear_auto:
                 self.set_clear_auto(True)
         if not self.output_is_on() and not self.clear_auto:
-            self.source(self.last_source_v)
+            target = self.last_source_v
+            self.source(0.0)
             self.output(True)
+            self.ramp_to(target, self.ramp_step_v)
 
 
 class RunFile:
@@ -932,6 +966,7 @@ class WorkerBase:
     def startup(self, source_range_v, protection_v, i_cc, dwell_s):
         self.status(state="configuring")
         self.link.open()
+        self.link.ramp_step_v = self.shutdown_step_v()
         idn = self.link.reset_and_identify()
         self.link.configure(source_range_v, protection_v, i_cc, dwell_s, NPLC_DEFAULT)
         self.log_compliance()
@@ -1122,6 +1157,7 @@ class MemristorGuiBase:
         self.data_queue = queue.Queue()
         self.worker_thread = None
         self._pump_after_id = None
+        self._close_after_id = None
         self._last_draw = 0.0
         self._draw_pending = False
         self.file_location_path = os.getcwd()
@@ -1783,18 +1819,49 @@ class MemristorGuiBase:
         self.log("Analysis GUI opened in a separate process (choose files there with Add...).")
 
     def _on_closing(self):
+        """Close the window. During a run the worker is asked to stop and the
+        window stays (greyed, with a banner) until the worker has ramped to
+        0 V and turned the output off: the worker thread is a daemon, so
+        destroying the window early would kill the ramp-down mid-way and
+        could leave the output on."""
         if self.is_running:
             if not messagebox.askyesno("Exit", "Measurement is running. Stop and exit?"):
                 return
             self.stop_event.set()
             t = self.worker_thread
             if t is not None and t.is_alive():
-                t.join(timeout=20)
+                try:
+                    if self._pump_after_id is not None:
+                        self.root.after_cancel(self._pump_after_id)
+                        self._pump_after_id = None
+                except Exception:
+                    pass
+                try:
+                    self._set_banner("Stopping: ramping to 0 V and switching the output off. The window closes when done.")
+                    self.stop_button.config(state='disabled')
+                except Exception:
+                    pass
+                self._close_when_worker_done()
+                return
+        self.root.destroy()
+
+    def _close_when_worker_done(self):
+        """Poll (no join: Tk must keep drawing) until the worker thread has
+        ended, then destroy the window. Never gives up: the ramp-down has a
+        fixed number of steps and every bus write has a timeout, so it ends."""
+        t = self.worker_thread
+        if t is not None and t.is_alive():
             try:
-                if self._pump_after_id is not None:
-                    self.root.after_cancel(self._pump_after_id)
+                while True:
+                    msg = self.data_queue.get_nowait()
+                    if msg[0] == "log":
+                        self.log(msg[1])
+            except queue.Empty:
+                pass
             except Exception:
                 pass
+            self._close_after_id = self.root.after(200, self._close_when_worker_done)
+            return
         self.root.destroy()
 
 
@@ -1818,7 +1885,7 @@ PULSE_DELAY_DEFAULT_S = 0.001
 PULSE_NPLC_DEFAULT = 0.01
 
 SUMMARY_COLUMNS = ("cycle", "t_s", "R_LRS_ohm", "R_HRS_ohm", "window", "V_set_trip_V", "V_reset_trip_V",
-                   "n_compliance_set", "n_compliance_reset", "raw_saved", "retried")
+                   "n_compliance_set", "n_compliance_reset", "read_cc_LRS", "read_cc_HRS", "raw_saved", "retried")
 RAW_COLUMNS = ("cycle", "leg", "t_s", "loop", "segment", "vmax_V", "V_set_V", "V_meas_V", "I_A", "R_ohm",
                "compliance_flag", "trip_query", "status_bits", "event_code", "phase")
 
@@ -2055,9 +2122,11 @@ class EnduranceWorker(WorkerBase):
         return v_trip, n_comp
 
     def soaked_read(self):
-        """V read for t soak, then N_AVG_READ readings; returns their mean
-        R (None if I is zero) or None on Stop. The whole read is one retry
-        unit."""
+        """V read for t soak, then N_AVG_READ readings; returns (mean R,
+        compliance flag) with R None if I is zero, or None on Stop. The
+        flag is 1 when any of the readings was clamped by I cc: the read
+        then happened at a lower bias than V read and R is not a V read
+        value. The whole read is one retry unit."""
         p = self.p
         self.link.set_source_delay(0.0)
         self.link.source(p["v_read"])
@@ -2071,7 +2140,7 @@ class EnduranceWorker(WorkerBase):
             readings.append(rd)
         v, i, flag, trip, stat, n = average_endurance_readings(readings)
         self.last_compliance_flag = flag
-        return resistance_ohm(v, i)
+        return resistance_ohm(v, i), flag
 
     def run_cycle(self, cycle):
         p = self.p
@@ -2091,18 +2160,24 @@ class EnduranceWorker(WorkerBase):
             if wait_with_stop(RECOVERY_BETWEEN_LEGS_S, self.stop_event, sleep=self.sleep):
                 return
             retries_before = self.retry_total
-            r = self.with_retry(self.soaked_read, f"read after {leg} cycle {cycle}")
+            read = self.with_retry(self.soaked_read, f"read after {leg} cycle {cycle}")
             if self.retry_total != retries_before:
                 retried = 1
-            if r is None and self.check_stop():
+            if read is None and self.check_stop():
                 return
-            results[leg] = (res, r)
+            r, read_cc = read if read is not None else (None, 0)
+            if read_cc:
+                self.log(f"WARNING cycle {cycle}: the read after {leg.upper()} hit I cc "
+                         f"({i_cc:g} A); R_{'LRS' if leg == 'set' else 'HRS'} was read below V read "
+                         f"and is marked read_cc=1 in the summary.")
+            results[leg] = (res, r, read_cc)
             self.with_retry(lambda: self.link.source(0.0), "source 0 V")
-        (set_res, r_lrs), (reset_res, r_hrs) = results["set"], results["reset"]
+        (set_res, r_lrs, cc_lrs), (reset_res, r_hrs, cc_hrs) = results["set"], results["reset"]
         window = (r_hrs / r_lrs) if (r_hrs is not None and r_lrs not in (None, 0)) else None
         row = {"cycle": cycle, "t_s": self.t_s(), "R_LRS_ohm": r_lrs, "R_HRS_ohm": r_hrs, "window": window,
                "V_set_trip_V": set_res[0], "V_reset_trip_V": reset_res[0], "n_compliance_set": set_res[1],
-               "n_compliance_reset": reset_res[1], "raw_saved": 1 if cycle in p["raw_cycles"] else 0, "retried": retried}
+               "n_compliance_reset": reset_res[1], "read_cc_LRS": cc_lrs, "read_cc_HRS": cc_hrs,
+               "raw_saved": 1 if cycle in p["raw_cycles"] else 0, "retried": retried}
         self.summary_file.write_row([row[c] for c in SUMMARY_COLUMNS])
         self.post("row", "summary", row)
 
@@ -2125,7 +2200,7 @@ def average_endurance_readings(readings):
 class EnduranceGUI(MemristorGuiBase):
     MODULE_TITLE = "Endurance"
     MODULE_KEY = "endurance"
-    PROGRAM_VERSION = "1.3"
+    PROGRAM_VERSION = "1.4"
 
     def create_module_inputs(self, parent):
         frame = self.make_frame(parent, 'Cycle')
@@ -2236,6 +2311,11 @@ class EnduranceGUI(MemristorGuiBase):
             win = [r["window"] if r["window"] not in (None, "") else float('nan') for r in self.summary_rows]
             self.ax_r.plot(cyc, [abs(x) for x in lrs], 'o-', ms=3, lw=0.8, color=COLOUR_LRS, label="R LRS")
             self.ax_r.plot(cyc, [abs(x) for x in hrs], 's-', ms=3, lw=0.8, color=COLOUR_HRS, label="R HRS")
+            for key, flag_key, colour in (("R_LRS_ohm", "read_cc_LRS", COLOUR_LRS), ("R_HRS_ohm", "read_cc_HRS", COLOUR_HRS)):
+                clamped = [r for r in self.summary_rows if r.get(flag_key) and r[key] not in (None, "")]
+                if clamped:
+                    self.ax_r.plot([r["cycle"] for r in clamped], [abs(r[key]) for r in clamped], 'o', ms=7,
+                                   mfc='none', color=colour, label="read hit I cc" if key == "R_LRS_ohm" else None)
             self.ax_r.legend(fontsize=8, loc='best')
             self.ax_w.plot(cyc, [abs(x) for x in win], 'o-', ms=3, lw=0.8, color=SEGMENT_COLOURS[2])
         if p.get("mode") == MODE_PULSE:

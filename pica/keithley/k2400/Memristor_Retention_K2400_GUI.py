@@ -587,6 +587,7 @@ class K2400Link:
         self.smode = "NORM"
         self.clear_auto = False
         self.last_source_v = 0.0
+        self.ramp_step_v = 0.1      # set by the worker from shutdown_step_v(); used by reconnect()
 
     # -- transport ------------------------------------------------------
     def open(self):
@@ -730,9 +731,26 @@ class K2400Link:
                 self.sleep(RAMP_STEP_S)
         self.source(0.0)
 
+    def ramp_to(self, target_v, step_v):
+        """From the present source value to target_v in steps no larger
+        than step_v, RAMP_STEP_S per step (the reverse of ramp_to_zero)."""
+        start = float(self.last_source_v)
+        target = float(target_v)
+        step = abs(float(step_v)) if step_v else 0.1
+        span = target - start
+        if span != 0.0:
+            n = max(1, int(math.ceil(abs(span) / step - 1e-9)))
+            for k in range(1, n):
+                self.source(start + span * k / n)
+                self.sleep(RAMP_STEP_S)
+        self.source(target)
+
     def reconnect(self):
         """Protocol 2.8: *IDN? must answer, then steps 2 to 5 are re-asserted
-        and the output is turned on at the remembered source value."""
+        and the output is turned on again. A 2400 that was power-cycled
+        during the gap comes back with the output off: it is turned on at
+        0 V and ramped to the remembered source value in ramp_step_v steps
+        (never switched straight on at the old voltage)."""
         self.close()
         self.open()
         idn = self.query("*IDN?")
@@ -752,8 +770,10 @@ class K2400Link:
             if clear_auto:
                 self.set_clear_auto(True)
         if not self.output_is_on() and not self.clear_auto:
-            self.source(self.last_source_v)
+            target = self.last_source_v
+            self.source(0.0)
             self.output(True)
+            self.ramp_to(target, self.ramp_step_v)
 
 
 class RunFile:
@@ -930,6 +950,7 @@ class WorkerBase:
     def startup(self, source_range_v, protection_v, i_cc, dwell_s):
         self.status(state="configuring")
         self.link.open()
+        self.link.ramp_step_v = self.shutdown_step_v()
         idn = self.link.reset_and_identify()
         self.link.configure(source_range_v, protection_v, i_cc, dwell_s, NPLC_DEFAULT)
         self.log_compliance()
@@ -1120,6 +1141,7 @@ class MemristorGuiBase:
         self.data_queue = queue.Queue()
         self.worker_thread = None
         self._pump_after_id = None
+        self._close_after_id = None
         self._last_draw = 0.0
         self._draw_pending = False
         self.file_location_path = os.getcwd()
@@ -1781,18 +1803,49 @@ class MemristorGuiBase:
         self.log("Analysis GUI opened in a separate process (choose files there with Add...).")
 
     def _on_closing(self):
+        """Close the window. During a run the worker is asked to stop and the
+        window stays (greyed, with a banner) until the worker has ramped to
+        0 V and turned the output off: the worker thread is a daemon, so
+        destroying the window early would kill the ramp-down mid-way and
+        could leave the output on."""
         if self.is_running:
             if not messagebox.askyesno("Exit", "Measurement is running. Stop and exit?"):
                 return
             self.stop_event.set()
             t = self.worker_thread
             if t is not None and t.is_alive():
-                t.join(timeout=20)
+                try:
+                    if self._pump_after_id is not None:
+                        self.root.after_cancel(self._pump_after_id)
+                        self._pump_after_id = None
+                except Exception:
+                    pass
+                try:
+                    self._set_banner("Stopping: ramping to 0 V and switching the output off. The window closes when done.")
+                    self.stop_button.config(state='disabled')
+                except Exception:
+                    pass
+                self._close_when_worker_done()
+                return
+        self.root.destroy()
+
+    def _close_when_worker_done(self):
+        """Poll (no join: Tk must keep drawing) until the worker thread has
+        ended, then destroy the window. Never gives up: the ramp-down has a
+        fixed number of steps and every bus write has a timeout, so it ends."""
+        t = self.worker_thread
+        if t is not None and t.is_alive():
             try:
-                if self._pump_after_id is not None:
-                    self.root.after_cancel(self._pump_after_id)
+                while True:
+                    msg = self.data_queue.get_nowait()
+                    if msg[0] == "log":
+                        self.log(msg[1])
+            except queue.Empty:
+                pass
             except Exception:
                 pass
+            self._close_after_id = self.root.after(200, self._close_when_worker_done)
+            return
         self.root.destroy()
 
 
