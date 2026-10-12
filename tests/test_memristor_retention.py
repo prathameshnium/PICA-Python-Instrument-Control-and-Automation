@@ -97,12 +97,16 @@ def test_retention_intermittent_linear_sources_zero_between_instants():
 
 def test_retention_stop_button_and_write_leg_turnaround():
     with tempfile.TemporaryDirectory() as d:
-        worker, _, wpath, rpath = run_retention(FakeK2400(1e5), d, stop_after=0.5, t_stop=30, vmax_write=5, step_v=0.5)
+        # Stop is pressed after a fixed number of readings (not a timer), so
+        # it lands in the same place on a slow CI runner as on the lab PC.
+        worker, _, wpath, rpath = run_retention(FakeK2400(1e5), d, stop_at_read=40, t_stop=30, vmax_write=5, step_v=0.5)
         assert worker.reason == "stop_button"
         _, _, wrows = read_file(wpath)
         assert any(r["event_code"] == 4 for r in wrows)      # 1e5 ohm trips at 1 V, confirmed + turnaround
         assert max(r["V_set_V"] for r in wrows) < 5.0
-        assert wrows[-1]["V_set_V"] == 0.0
+        assert wrows[-1]["V_set_V"] == 0.0                   # return leg always finishes at 0 V
+        _, _, rrows = read_file(rpath)
+        assert any(r["phase"] == "recover" for r in rrows)   # Stop landed after the write
         assert end_reason(rpath) == "stop_button" and end_reason(wpath) == "stop_button"
         assert_data_only(wpath)
         assert_data_only(rpath)

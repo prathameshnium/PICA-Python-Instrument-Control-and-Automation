@@ -12,6 +12,9 @@ v1.3 (12 Oct 2026) - round 2 (K's ruling of 12 Oct)
     t_s= on every line, fsynced per line); the [protocol] block of both
     files names it as log_file=. Sequence, timing and columns are
     unchanged.
+  * Stop during the write leg no longer cuts the return ramp short: the
+    few return-leg points to 0 V are always measured and logged, so the
+    write file ends at 0 V (the shutdown ramp ran to 0 V anyway).
 v1.2 (12 Oct 2026) - Retention window, UI round 1 (K's ruling of 12 Oct)
   * '|V max| write' takes a positive value only; the write sign comes from
     State and Swap, and a live 'This run: 0 -> +5 V -> 0 ...' line under
@@ -2275,10 +2278,12 @@ class RetentionWorker(WorkerBase):
                 turned_from = v
                 self.log(f"Write leg: compliance confirmed at {v:g} V, turning around.")
                 break
+        # The return leg is the ramp back to 0 V. It is short and it is what
+        # the shutdown would do anyway, so Stop does not cut it short: the
+        # write file always ends at 0 V. (A bus error during a retry still
+        # raises StopRequested if Stop is pressed meanwhile.)
         ret_points = return_leg(turned_from if turned_from is not None else vmax, p["step_v"])
         for v in ret_points:
-            if self.check_stop():
-                return
             rd = self.measure(v)
             self.write_write_row(rd, 2, v, "")
 

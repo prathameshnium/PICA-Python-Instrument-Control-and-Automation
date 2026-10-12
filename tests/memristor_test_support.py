@@ -81,6 +81,7 @@ class FakeK2400:
         self.prot_readback = prot_readback
         self.clear_auto = False
         self.closed = False
+        self.on_read = None          # callable(idx) run before every :READ? (deterministic Stop)
         self.t0 = time.perf_counter()
 
     def write(self, cmd):
@@ -118,6 +119,8 @@ class FakeK2400:
         if c == ":READ?":
             idx = self.reads
             self.reads += 1
+            if self.on_read is not None:
+                self.on_read(idx)
             if self.fail_forever or idx in self.fail_reads:
                 raise IOError("VI_ERROR_TMO: timeout")
             v, i, stat = self._reading()
@@ -265,10 +268,14 @@ def retention_params(folder, **extra):
     return p
 
 
-def run_retention(fake, folder, stop_after=None, **extra):
+def run_retention(fake, folder, stop_after=None, stop_at_read=None, **extra):
+    """stop_at_read: press Stop right before the N-th :READ? of the fake,
+    a deterministic alternative to the wall-clock stop_after."""
     p = retention_params(folder, **extra)
     stop = threading.Event()
     link = make_link(retention, fake)
+    if stop_at_read is not None:
+        fake.on_read = lambda idx: stop.set() if idx >= stop_at_read else None
     worker = retention.RetentionWorker(p, link, stop, queue.Queue(), sleep=lambda s: None)
     worker.gui_version = "test"
     msgs = run_worker(worker, stop_after, stop, timeout=60)
