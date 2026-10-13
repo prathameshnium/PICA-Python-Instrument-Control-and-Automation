@@ -167,6 +167,19 @@ def test_twin_uses_340_forms_only(l350, l340, kind):
         assert "CLIMIT?" in src, "control twin never reads the loop limits"
 
 
+def _in_git_work_tree():
+    """True when REPO_ROOT is a git checkout and git is on PATH. An sdist or a
+    ZIP download has no .git, so the diff check below has nothing to compare."""
+    try:
+        out = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"],
+                             cwd=REPO_ROOT, capture_output=True, text=True)
+    except OSError:
+        return False
+    return out.returncode == 0 and out.stdout.strip() == "true"
+
+
+@pytest.mark.skipif(not _in_git_work_tree(),
+                    reason="needs a git checkout (sdist / ZIP has no history)")
 @pytest.mark.parametrize("l350,l340,kind", PAIRS, ids=[p[0] for p in PAIRS])
 def test_original_350_file_is_untouched(l350, l340, kind):
     out = subprocess.run(
