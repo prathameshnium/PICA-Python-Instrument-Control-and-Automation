@@ -20,7 +20,7 @@ def test_analysis_rule1_finds_the_trip_and_rule2_the_steepest_point_and_never_to
         header, columns, rows = analysis.parse_pica_csv(path)
         blocks = analysis.header_blocks(header)
         assert analysis.file_kind(blocks, columns) == "sweep"
-        assert blocks["sample"]["name"] == "VCO01" and blocks["instrument"]["I_cc_A"] == "1e-05"
+        assert blocks["sample"]["name"] == "Demo01" and blocks["instrument"]["I_cc_A"] == "1e-05"
         loops = analysis.sweep_loops(rows)
         assert sorted(loops) == [1] and sorted(loops[1]) == [1, 2, 3, 4]
         res = analysis.estimate_switching(loops[1], rule=1, factor=10, floor_v=1.0, set_sign=1)

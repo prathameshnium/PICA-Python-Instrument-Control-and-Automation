@@ -105,28 +105,28 @@ def test_oe_to_tesla_and_display():
 def test_sanitize_sample_name():
     assert m.sanitize_sample_name("Co 07 / batch#2") == "Co_07_batch_2"
     assert m.sanitize_sample_name("   ") == "Sample"
-    assert m.sanitize_sample_name("BaTiO₃").isascii()
+    assert m.sanitize_sample_name("Sample₃").isascii()
 
 
 # ------------------------------------------------------------------ filename
 
 def test_filename_first_run_positive_field():
-    assert (m.build_filename("Co07", 300, 500, "20260910_101010")
-            == "Co07_T300K_H500Oe_20260910_101010.txt")
+    assert (m.build_filename("Demo07", 300, 500, "20260910_101010")
+            == "Demo07_T300K_H500Oe_20260910_101010.txt")
 
 
 def test_filename_negative_and_decimal_fields():
-    assert (m.build_filename("Co07", 77.5, -500, "20260910_101010")
-            == "Co07_T77.5K_H-500Oe_20260910_101010.txt")
-    assert (m.build_filename("Co07", 300, 11.5, "s")
-            == "Co07_T300K_H11.5Oe_s.txt")
-    assert (m.build_filename("Co07", 300, -2.25, "s")
-            == "Co07_T300K_H-2.25Oe_s.txt")
+    assert (m.build_filename("Demo07", 77.5, -500, "20260910_101010")
+            == "Demo07_T77.5K_H-500Oe_20260910_101010.txt")
+    assert (m.build_filename("Demo07", 300, 11.5, "s")
+            == "Demo07_T300K_H11.5Oe_s.txt")
+    assert (m.build_filename("Demo07", 300, -2.25, "s")
+            == "Demo07_T300K_H-2.25Oe_s.txt")
 
 
 def test_filename_run_index_appended_for_repeats():
-    assert m.build_filename("Co07", 300, 0, "s", run_index=1) == "Co07_T300K_H0Oe_s.txt"
-    assert m.build_filename("Co07", 300, 0, "s", run_index=2) == "Co07_T300K_H0Oe_run2_s.txt"
+    assert m.build_filename("Demo07", 300, 0, "s", run_index=1) == "Demo07_T300K_H0Oe_s.txt"
+    assert m.build_filename("Demo07", 300, 0, "s", run_index=2) == "Demo07_T300K_H0Oe_run2_s.txt"
 
 
 def test_filename_is_ascii_even_for_unicode_sample():
@@ -148,14 +148,14 @@ def test_unique_path_never_overwrites():
 # -------------------------------------------------------------------- header
 
 def _info(**over):
-    base = dict(sample="Co07", t_nominal=300, field_oe=-500, run_index=1,
+    base = dict(sample="Demo07", t_nominal=300, field_oe=-500, run_index=1,
                 controller="Lake Shore 350", controller_idn="LSCI,MODEL350,1,1.0",
                 controller_channel="A", lcr_idn="Keysight,E4980A,MY1,A.02",
                 t_start=300.0123, t_end=300.0456, t_min=300.01, t_max=300.05,
                 ac_bias=1.0, dc_bias=0.0, aper="MED", alc=True, corr=True,
                 cable_len="1", delay=0.2, n_points=377, f_min="40", f_max="2e+06",
                 started="2026-09-10 10:10:10", finished="2026-09-10 10:15:00",
-                filename="Co07_T300K_H-500Oe_20260910_101010.csv", status="complete")
+                filename="Demo07_T300K_H-500Oe_20260910_101010.csv", status="complete")
     base.update(over)
     return base
 
@@ -165,13 +165,13 @@ def test_header_has_all_required_facts_and_column_line_last():
     text = "\n".join(lines[:-1])
     assert all(l.startswith("#") for l in lines[:-1])
     assert lines[-1] == m.DATA_HEADER
-    for needle in ("Sample: Co07", "T_nominal(K): 300", "H_set(Oe): -500",
+    for needle in ("Sample: Demo07", "T_nominal(K): 300", "H_set(Oe): -500",
                    "-0.05 T", "Lake Shore 350", "LSCI,MODEL350",
                    "T_measured_start(K): 300.0123", "T_measured_end(K): 300.0456",
                    "E4980A", "AC level(Vrms): 1.0", "Aperture: MED",
                    "Frequency points: 377", "Started: 2026-09-10 10:10:10",
                    "Finished: 2026-09-10 10:15:00", "Status: complete",
-                   "Co07_T300K_H-500Oe_20260910_101010.csv"):
+                   "Demo07_T300K_H-500Oe_20260910_101010.csv"):
         assert needle in text, needle
 
 

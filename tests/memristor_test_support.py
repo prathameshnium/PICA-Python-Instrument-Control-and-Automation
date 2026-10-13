@@ -149,8 +149,8 @@ def make_link(mod, fake):
 
 
 def base_params(folder, **extra):
-    p = dict(sample_name="VCO01", visa_address="FAKE::INSTR", protection_v=20.0, folder=folder, stem="VCO01")
-    p["_sample_block"] = ("sample", [("name", "VCO01")])
+    p = dict(sample_name="Demo01", visa_address="FAKE::INSTR", protection_v=20.0, folder=folder, stem="Demo01")
+    p["_sample_block"] = ("sample", [("name", "Demo01")])
     p.update(extra)
     return p
 

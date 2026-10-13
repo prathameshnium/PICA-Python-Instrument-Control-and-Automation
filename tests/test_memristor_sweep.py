@@ -146,7 +146,7 @@ def test_formatting_never_fabricates_values_and_stays_ascii():
     assert sweep.fmt_cell("a|b\nc") == "a/b c"
     assert sweep.header_value("x \u2192 y \u00b5A") == "x -> y uA"
     assert sweep.ascii_text("\u03a9") == "Ohm"
-    assert sweep.safe_stem("VCO 01/a") == "VCO_01_a"
+    assert sweep.safe_stem("Demo 01/a") == "Demo_01_a"
     assert sweep.format_duration(3725) == "1 h 02 min"
     assert sweep.format_duration(65) == "1 min 05 s"
     assert sweep.format_duration(float("nan")) == "--"
@@ -161,7 +161,7 @@ def test_time_estimate_matches_the_protocol_formula():
 def test_runfile_writes_header_blocks_and_rows_only_and_the_log_gets_the_events():
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "x.csv")
-        f = sweep.RunFile(path, "sweep", [("sample", [("name", "VCO01"), ("area_cm2", "")]),
+        f = sweep.RunFile(path, "sweep", [("sample", [("name", "Demo01"), ("area_cm2", "")]),
                                            ("protocol", [("module", "sweep"), ("notes", "a|b")])], ("a", "b", "c"))
         log = sweep.RunLog(os.path.join(d, "x_log.txt"), lambda: 1.5)
         f.write_row([1.0, None, "txt"])
@@ -176,7 +176,7 @@ def test_runfile_writes_header_blocks_and_rows_only_and_the_log_gets_the_events(
         text = open(path, encoding="utf-8").read()
         lines = text.splitlines()
         assert lines[0].startswith("# PICA memristor sweep v")
-        assert "# [sample] name=VCO01 | area_cm2=" in lines[1]
+        assert "# [sample] name=Demo01 | area_cm2=" in lines[1]
         assert "notes=a/b" in lines[2]
         assert lines[3] == "# columns: a,b,c"
         assert lines[4] == "a,b,c"
@@ -461,18 +461,18 @@ def test_stop_during_a_retry_gap_ends_with_its_own_reason():
 def test_sweep_file_name_is_sample_timestamp_kind_and_a_rerun_never_overwrites():
     with tempfile.TemporaryDirectory() as d:
         ts = sweep.timestamp_for_name()
-        first = sweep.run_file_path(d, "VCO01", "sweep", ts)
-        assert os.path.basename(first) == f"VCO01_{ts}_sweep.csv"
-        assert re.fullmatch(r"VCO01_\d{8}_\d{6}_sweep\.csv", os.path.basename(first))
+        first = sweep.run_file_path(d, "Demo01", "sweep", ts)
+        assert os.path.basename(first) == f"Demo01_{ts}_sweep.csv"
+        assert re.fullmatch(r"Demo01_\d{8}_\d{6}_sweep\.csv", os.path.basename(first))
         open(first, "w").close()
-        second = sweep.run_file_path(d, "VCO01", "sweep", ts)
-        assert os.path.basename(second) == f"VCO01_{ts}_sweep_1.csv"
+        second = sweep.run_file_path(d, "Demo01", "sweep", ts)
+        assert os.path.basename(second) == f"Demo01_{ts}_sweep_1.csv"
         open(second, "w").close()
-        assert os.path.basename(sweep.run_file_path(d, "VCO01", "sweep", ts)) == f"VCO01_{ts}_sweep_2.csv"
+        assert os.path.basename(sweep.run_file_path(d, "Demo01", "sweep", ts)) == f"Demo01_{ts}_sweep_2.csv"
 
 
 def test_sweep_gui_refuses_vmax_above_protection_and_bad_ladder():
-    base = dict(sample_name="VCO01", visa_address="GPIB1::24::INSTR", protection="20", shape=sweep.SHAPE_BIPOLAR_PLUS, vmax_plus="5",
+    base = dict(sample_name="Demo01", visa_address="GPIB1::24::INSTR", protection="20", shape=sweep.SHAPE_BIPOLAR_PLUS, vmax_plus="5",
                 vmax_minus="5", step_v="0.1", dwell_s="0.1", i_cc_plus_uA="10", i_cc_minus_uA="10", loops="1",
                 ladder="", n_confirm="3", pause_s="0")
     with tempfile.TemporaryDirectory() as d:
@@ -651,7 +651,7 @@ def test_sweep_stop_during_a_pause_ends_at_once_with_stop_button():
 
 
 def test_sweep_time_estimate_adds_the_pauses_and_the_gui_validates_them():
-    base = dict(sample_name="VCO01", visa_address="GPIB1::24::INSTR", protection="20", shape=sweep.SHAPE_LADDER,
+    base = dict(sample_name="Demo01", visa_address="GPIB1::24::INSTR", protection="20", shape=sweep.SHAPE_LADDER,
                 vmax_plus="5", vmax_minus="5", step_v="0.5", dwell_s="0.1", i_cc_plus_uA="10", i_cc_minus_uA="10",
                 loops="3", ladder="2, 4, 6", n_confirm="3", pause_s="0")
     with tempfile.TemporaryDirectory() as d:
