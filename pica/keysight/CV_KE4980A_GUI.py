@@ -24,7 +24,8 @@
 
  LOOP SHAPES (cycle mode): positive first, negative first, unipolar +/-,
    and ladder (one bipolar cycle per listed amplitude, as in the memristor
-   sweep module; Cycle = ladder entry number, ladder_list_V in the header).
+   sweep module; Cycle = ladder entry number, ladder_list_V in the header;
+   optional pause at 0 V between entries, ladder_pause_s, default 0).
 
  SAFETY: DC bias hard-capped at +/-20 V (V_ABS_MAX, never raised), bias
    ramped in 0.5 V steps, forced to 0 V and switched off on Stop, error,
@@ -117,16 +118,16 @@ SHAPE_SIGNS = {
 # Window fields the mode/shape ignores (greyed in the window, written as
 # n/a in the header, never validated), as disabled_shape_fields() in the
 # memristor sweep module. Keys are the entry names.
-SWEEP_FIELDS = ("v_start", "v_stop", "n_cycles", "shape", "ladder")
+SWEEP_FIELDS = ("v_start", "v_stop", "n_cycles", "shape", "ladder", "ladder_pause")
 
 
 def disabled_fields(cycle_mode, shape):
     """Entry keys the current mode and shape ignore."""
     if not cycle_mode:
-        return {"n_cycles", "shape", "ladder"}
+        return {"n_cycles", "shape", "ladder", "ladder_pause"}
     if shape == SHAPE_LADDER:
         return {"v_start", "v_stop", "n_cycles"}
-    return {"v_start", "ladder"}
+    return {"v_start", "ladder", "ladder_pause"}
 
 
 DERIVED_HEADER = (
@@ -372,9 +373,11 @@ def waveform_text(p, freq):
     ac = f"AC {p['ac_bias']:g} Vrms sine at {freq:g} Hz"
     if p["cycle_mode"] and p["shape"] == SHAPE_LADDER:
         amps = ", ".join(f"{v:g}" for v in p["ladder"])
+        pause = (f", pause {p['ladder_pause']:g} s at 0 V between values"
+                 if p.get("ladder_pause", 0) > 0 else "")
         return (
             f"DC staircase ladder 0 -> +V -> 0 -> -V -> 0 with V = {amps} V in turn "
-            f"(one cycle per value), step {p['v_step']:g} V, {hold}; {ac}"
+            f"(one cycle per value{pause}), step {p['v_step']:g} V, {hold}; {ac}"
         )
     if p["cycle_mode"]:
         path = p["shape"].split(": ", 1)[1].replace("V", f"{abs(p['v_max']):g}")
@@ -514,11 +517,17 @@ def validate_params(p):
     p["v_max"] = abs(p["v_stop"]) if p["cycle_mode"] else 0.0
     ladder_text = p.get("ladder", "")
     p["ladder"] = []
+    pause_raw = p.get("ladder_pause", 0)
+    p["ladder_pause"] = 0.0
     if p["cycle_mode"]:
         if p["shape"] == SHAPE_LADDER:
             p["ladder"] = parse_ladder(ladder_text)
             p["v_max"] = max(p["ladder"])
             p["n_cycles"] = len(p["ladder"])
+            pause = 0.0 if pause_raw is None or str(pause_raw).strip() == "" else float(pause_raw)
+            if pause < 0:
+                raise ValueError("Pause between ladder entries must be >= 0 s.")
+            p["ladder_pause"] = pause
         else:
             n_raw = p.get("n_cycles", "")
             if n_raw is None or str(n_raw).strip() == "" or int(float(n_raw)) < 1:
@@ -897,6 +906,7 @@ class CVWorker:
             f"v_max_v={v_max_txt} | "
             f"v_step_v={p['v_step']:g} | n_cycles={p['n_cycles']} | "
             f"ladder_list_V={na('ladder', ' '.join(f'{v:g}' for v in p['ladder']))} | "
+            f"ladder_pause_s={na('ladder_pause', p.get('ladder_pause', 0.0))} | "
             f"points_per_file={len(p['waveform'])} | "
             f"delay_s={p['delay']:g} | ramp_step_v={RAMP_STEP_V:g} | ramp_dwell_s={RAMP_DWELL_S:g} | "
             f"v_abs_max_v={V_ABS_MAX:g} | pre_ramp=0 V -> first point, ramped, not recorded",
@@ -986,8 +996,20 @@ class CVWorker:
                 self.with_retry(lambda: self.link.ramp_bias(0.0), "discharge")
                 self._open_data_file(k, f, snap)
                 self.log_event(f"PRE_RAMP from=0 V | to={p['waveform'][0][2]:g} V | freq_hz={f:g}")
+                last_cycle = None
                 for cycle, seg, v in p["waveform"]:
                     self.check_stop()
+                    if (p.get("ladder_pause", 0) > 0 and last_cycle is not None
+                            and cycle != last_cycle):
+                        # ladder: the previous cycle ended at 0 V; rest there
+                        # before the next amplitude starts
+                        self.log(f"Ladder pause {p['ladder_pause']:g} s at 0 V before "
+                                 f"entry {cycle} ({p['ladder'][cycle - 1]:g} V).")
+                        self.log_event(f"LADDER_PAUSE s={p['ladder_pause']:g} | next_entry={cycle} | "
+                                       f"next_v={p['ladder'][cycle - 1]:g}")
+                        if wait_with_stop(p["ladder_pause"], self.stop_event, sleep=self.sleep):
+                            raise StopRequested()
+                    last_cycle = cycle
                     self.with_retry(lambda v=v: self.link.ramp_bias(v), "set bias")
                     if wait_with_stop(p["delay"], self.stop_event, sleep=self.sleep):
                         raise StopRequested()
@@ -1546,7 +1568,10 @@ class LCR_Freq_GUI:
         # Row 21-22: Ladder list (ladder shape only)
         self._add_entry(
             frame, "Ladder list (V, ladder shape only; e.g. 0.5, 1, 2)", "ladder", 21, 0,
-            colspan=2, default="",
+            default="",
+        )
+        self._add_entry(
+            frame, "Pause between ladder entries (s)", "ladder_pause", 21, 1, default="0",
         )
 
         # Row 23: neutral note on the bias source (no sample-specific limit)
@@ -1614,7 +1639,7 @@ class LCR_Freq_GUI:
         )
 
         # Apply keystroke validation to numeric entries
-        for key in ("v_start", "v_stop", "v_step", "ac_bias", "delay"):
+        for key in ("v_start", "v_stop", "v_step", "ac_bias", "delay", "ladder_pause"):
             self.entries[key].config(
                 validate="key", validatecommand=self._vfloat_cmd
             )
@@ -1792,6 +1817,7 @@ class LCR_Freq_GUI:
             "cycle_mode": cycle_mode,
             "shape": self.shape_combobox.get(),
             "ladder": self.entries["ladder"].get(),
+            "ladder_pause": self.entries["ladder_pause"].get(),
             "freq_list": self.entries["freq_list"].get(),
             "delay": float(self.entries["delay"].get()),
             "aper": self.aper_combobox.get(),
@@ -1826,6 +1852,7 @@ class LCR_Freq_GUI:
             self.log(
                 f"Ladder: {len(params['ladder'])} cycle(s) at "
                 f"{', '.join(f'{v:g}' for v in params['ladder'])} V, "
+                f"pause {params['ladder_pause']:g} s between entries, "
                 f"{len(params['waveform'])} points/frequency."
             )
         elif params["cycle_mode"]:

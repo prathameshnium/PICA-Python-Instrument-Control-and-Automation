@@ -19,7 +19,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cv_ke4980a_test_support import (  # noqa: E402
     FakeE4980A, MODULES, gui, script, run_cv, read_data_file, column, log_lines,
-    plotter_reads, run_module_tests)
+    plotter_reads, run_module_tests, base_params)
 
 
 def _tmp():
@@ -97,11 +97,11 @@ def test_parse_ladder_accepts_separators_and_rejects_bad_or_over_cap_entries():
 # -- fields a mode/shape ignores (greyed, n/a in the header) ---------------------
 
 def test_disabled_fields_matrix_matches_the_memristor_convention():
-    assert gui.disabled_fields(False, "") == {"n_cycles", "shape", "ladder"}
+    assert gui.disabled_fields(False, "") == {"n_cycles", "shape", "ladder", "ladder_pause"}
     for shape in (gui.SHAPE_POS_FIRST, gui.SHAPE_NEG_FIRST, gui.SHAPE_UNI_POS, gui.SHAPE_UNI_NEG):
-        assert gui.disabled_fields(True, shape) == {"v_start", "ladder"}, shape
+        assert gui.disabled_fields(True, shape) == {"v_start", "ladder", "ladder_pause"}, shape
     assert gui.disabled_fields(True, gui.SHAPE_LADDER) == {"v_start", "v_stop", "n_cycles"}
-    assert set(gui.SWEEP_FIELDS) == {"v_start", "v_stop", "n_cycles", "shape", "ladder"}
+    assert set(gui.SWEEP_FIELDS) == {"v_start", "v_stop", "n_cycles", "shape", "ladder", "ladder_pause"}
 
 
 class _Widget:
@@ -126,7 +126,7 @@ class _Var:
 def _window_stub(cycle_mode, shape):
     """The window's toggle without Tk: entries and combobox as stubs."""
     w = object.__new__(gui.LCR_Freq_GUI)
-    w.entries = {k: _Widget() for k in ("v_start", "v_stop", "n_cycles", "ladder", "sample_name")}
+    w.entries = {k: _Widget() for k in ("v_start", "v_stop", "n_cycles", "ladder", "ladder_pause", "sample_name")}
     w.shape_combobox = _Widget()
     w.shape_combobox.value = shape
     w.var_cycle = _Var(cycle_mode)
@@ -137,15 +137,18 @@ def _window_stub(cycle_mode, shape):
 def test_window_greys_exactly_the_disjoint_entries_and_restores_them():
     w = _window_stub(False, gui.SHAPE_POS_FIRST)
     assert {k: v.state for k, v in w.entries.items() if k != "sample_name"} == {
-        "v_start": "normal", "v_stop": "normal", "n_cycles": "disabled", "ladder": "disabled"}
+        "v_start": "normal", "v_stop": "normal", "n_cycles": "disabled", "ladder": "disabled",
+        "ladder_pause": "disabled"}
     assert w.shape_combobox.state == "disabled"
     w = _window_stub(True, gui.SHAPE_UNI_NEG)
     assert {k: v.state for k, v in w.entries.items() if k != "sample_name"} == {
-        "v_start": "disabled", "v_stop": "normal", "n_cycles": "normal", "ladder": "disabled"}
+        "v_start": "disabled", "v_stop": "normal", "n_cycles": "normal", "ladder": "disabled",
+        "ladder_pause": "disabled"}
     assert w.shape_combobox.state == "readonly"
     w = _window_stub(True, gui.SHAPE_LADDER)
     assert {k: v.state for k, v in w.entries.items() if k != "sample_name"} == {
-        "v_start": "disabled", "v_stop": "disabled", "n_cycles": "disabled", "ladder": "normal"}
+        "v_start": "disabled", "v_stop": "disabled", "n_cycles": "disabled", "ladder": "normal",
+        "ladder_pause": "normal"}
     # switching back re-enables without touching values (greyed fields keep their text)
     w.entries["v_stop"].value = "2.0"
     w.var_cycle = _Var(False)
@@ -159,11 +162,11 @@ def test_blank_or_stale_greyed_entries_never_block_start():
     # linear: cycles / shape / ladder blank or nonsense
     p = gui.validate_params({**base, "cycle_mode": False, "shape": "", "v_start": "-1", "v_stop": "1",
                              "n_cycles": "", "ladder": "abc"})
-    assert p["n_cycles"] == 1 and p["ladder"] == [] and p["ignored"] == ["ladder", "n_cycles", "shape"]
+    assert p["n_cycles"] == 1 and p["ladder"] == [] and p["ignored"] == ["ladder", "ladder_pause", "n_cycles", "shape"]
     # cycle: v_start blank, ladder nonsense
     p = gui.validate_params({**base, "cycle_mode": True, "shape": gui.SHAPE_POS_FIRST, "v_start": "",
                              "v_stop": "1", "n_cycles": "2", "ladder": "abc"})
-    assert p["n_cycles"] == 2 and p["v_max"] == 1.0 and p["ignored"] == ["ladder", "v_start"]
+    assert p["n_cycles"] == 2 and p["v_max"] == 1.0 and p["ignored"] == ["ladder", "ladder_pause", "v_start"]
     # ladder: v_start, v_stop, n_cycles blank or out of range are ignored, not clamped, not refused
     p = gui.validate_params({**base, "cycle_mode": True, "shape": gui.SHAPE_LADDER, "v_start": "",
                              "v_stop": "99", "n_cycles": "", "ladder": "0.5, 1"})
@@ -298,7 +301,44 @@ def test_ladder_run_labels_cycles_by_entry_and_records_the_list_in_the_header():
     sweep = next(h for h in header if h.startswith("[sweep]"))
     assert "shape=ladder:" in sweep and "ladder_list_V=0.5 1" in sweep and "n_cycles=2" in sweep and "v_max_v=1" in sweep
     assert any(h.startswith("waveform: DC staircase ladder") for h in header)
+    assert "ladder_pause_s=0" in sweep
     assert fake.v == 0.0 and not fake.bias_on
+
+
+def test_ladder_pause_rests_at_zero_volts_between_entries_only():
+    folder = _tmp()
+    fake = FakeE4980A()
+    pause = 0.05
+    worker, msgs, files, log_path = run_cv(fake, folder, shape=gui.SHAPE_LADDER, ladder="0.5, 1, 2",
+                                           v_step=0.5, ladder_pause=pause, worker_sleep=time.sleep)
+    assert worker.end_reason == "complete"
+    header, columns, rows, _ = read_data_file(files[0])
+    t = column(rows, columns, "t_s")
+    cyc = column(rows, columns, "Cycle", int)
+    vs = column(rows, columns, "Voltage(V)")
+    gaps = [(t[i] - t[i - 1], cyc[i] != cyc[i - 1], vs[i - 1]) for i in range(1, len(t))]
+    for gap, boundary, v_before in gaps:
+        if boundary:
+            assert gap >= pause and v_before == 0.0, (gap, v_before)   # pause taken at 0 V
+        else:
+            assert gap < pause, gap                                     # no pause inside a cycle
+    assert sum(1 for g in gaps if g[1]) == 2                           # 3 entries -> 2 pauses
+    sweep = next(h for h in header if h.startswith("[sweep]"))
+    assert f"ladder_pause_s={pause:g}" in sweep
+    assert any(f"pause {pause:g} s at 0 V between values" in h for h in header if h.startswith("waveform:"))
+    events = log_lines(log_path)
+    assert [e for e in events if e.startswith("LADDER_PAUSE")] == [
+        f"LADDER_PAUSE s={pause:g} / next_entry=2 / next_v=1",
+        f"LADDER_PAUSE s={pause:g} / next_entry=3 / next_v=2"]   # log_event writes ' / '"
+    # other shapes ignore the field (n/a in the header, no pause, no event)
+    worker, msgs, files, log_path = run_cv(FakeE4980A(), _tmp(), n_cycles=2, ladder_pause="7")
+    sweep = next(h for h in read_data_file(files[0])[0] if h.startswith("[sweep]"))
+    assert "ladder_pause_s=n/a" in sweep and not any(e.startswith("LADDER_PAUSE") for e in log_lines(log_path))
+    try:
+        gui.validate_params(base_params(folder, shape=gui.SHAPE_LADDER, ladder="1", ladder_pause=-1))
+        assert False
+    except ValueError:
+        pass
 
 
 def test_time_column_respects_the_delay_budget_and_is_monotonic():

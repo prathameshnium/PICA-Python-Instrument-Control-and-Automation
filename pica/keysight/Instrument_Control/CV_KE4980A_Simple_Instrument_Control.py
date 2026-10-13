@@ -40,6 +40,7 @@ SAVE_FOLDER = os.path.join(os.path.expanduser("~"), "Desktop", "CV_data")
 CYCLE_MODE = True            # True: loops of the chosen SHAPE; False: one way v_start -> v_stop
 SHAPE = "positive first"     # "positive first" | "negative first" | "unipolar positive" | "unipolar negative" | "ladder"
 LADDER_LIST_V = [0.5, 1.0, 2.0]  # ladder shape only: one bipolar cycle per amplitude, in this order
+LADDER_PAUSE_S = 0.0         # ladder shape only: rest at 0 V this long between entries (0 = none)
 # Fields a mode/shape ignores (same rule as the window, disabled_fields()):
 #   linear mode  -> N_CYCLES, SHAPE, LADDER_LIST_V ignored
 #   cycle shapes -> V_START ignored; ladder shape also ignores V_STOP, N_CYCLES
@@ -95,16 +96,16 @@ SHAPE_SIGNS = {
     SHAPE_LADDER: (1, -1),
 }
 
-SWEEP_FIELDS = ("v_start", "v_stop", "n_cycles", "shape", "ladder")
+SWEEP_FIELDS = ("v_start", "v_stop", "n_cycles", "shape", "ladder", "ladder_pause")
 
 
 def disabled_fields(cycle_mode, shape):
     """Entry keys the current mode and shape ignore."""
     if not cycle_mode:
-        return {"n_cycles", "shape", "ladder"}
+        return {"n_cycles", "shape", "ladder", "ladder_pause"}
     if shape == SHAPE_LADDER:
         return {"v_start", "v_stop", "n_cycles"}
-    return {"v_start", "ladder"}
+    return {"v_start", "ladder", "ladder_pause"}
 
 
 DERIVED_HEADER = (
@@ -277,9 +278,11 @@ def waveform_text(p, freq):
     ac = f"AC {p['ac_bias']:g} Vrms sine at {freq:g} Hz"
     if p["cycle_mode"] and p["shape"] == SHAPE_LADDER:
         amps = ", ".join(f"{v:g}" for v in p["ladder"])
+        pause = (f", pause {p['ladder_pause']:g} s at 0 V between values"
+                 if p.get("ladder_pause", 0) > 0 else "")
         return (
             f"DC staircase ladder 0 -> +V -> 0 -> -V -> 0 with V = {amps} V in turn "
-            f"(one cycle per value), step {p['v_step']:g} V, {hold}; {ac}"
+            f"(one cycle per value{pause}), step {p['v_step']:g} V, {hold}; {ac}"
         )
     if p["cycle_mode"]:
         path = p["shape"].split(": ", 1)[1].replace("V", f"{abs(p['v_max']):g}")
@@ -419,11 +422,17 @@ def validate_params(p):
     p["v_max"] = abs(p["v_stop"]) if p["cycle_mode"] else 0.0
     ladder_text = p.get("ladder", "")
     p["ladder"] = []
+    pause_raw = p.get("ladder_pause", 0)
+    p["ladder_pause"] = 0.0
     if p["cycle_mode"]:
         if p["shape"] == SHAPE_LADDER:
             p["ladder"] = parse_ladder(ladder_text)
             p["v_max"] = max(p["ladder"])
             p["n_cycles"] = len(p["ladder"])
+            pause = 0.0 if pause_raw is None or str(pause_raw).strip() == "" else float(pause_raw)
+            if pause < 0:
+                raise ValueError("Pause between ladder entries must be >= 0 s.")
+            p["ladder_pause"] = pause
         else:
             n_raw = p.get("n_cycles", "")
             if n_raw is None or str(n_raw).strip() == "" or int(float(n_raw)) < 1:
@@ -803,6 +812,7 @@ class CVWorker:
             f"v_max_v={v_max_txt} | "
             f"v_step_v={p['v_step']:g} | n_cycles={p['n_cycles']} | "
             f"ladder_list_V={na('ladder', ' '.join(f'{v:g}' for v in p['ladder']))} | "
+            f"ladder_pause_s={na('ladder_pause', p.get('ladder_pause', 0.0))} | "
             f"points_per_file={len(p['waveform'])} | "
             f"delay_s={p['delay']:g} | ramp_step_v={RAMP_STEP_V:g} | ramp_dwell_s={RAMP_DWELL_S:g} | "
             f"v_abs_max_v={V_ABS_MAX:g} | pre_ramp=0 V -> first point, ramped, not recorded",
@@ -892,8 +902,20 @@ class CVWorker:
                 self.with_retry(lambda: self.link.ramp_bias(0.0), "discharge")
                 self._open_data_file(k, f, snap)
                 self.log_event(f"PRE_RAMP from=0 V | to={p['waveform'][0][2]:g} V | freq_hz={f:g}")
+                last_cycle = None
                 for cycle, seg, v in p["waveform"]:
                     self.check_stop()
+                    if (p.get("ladder_pause", 0) > 0 and last_cycle is not None
+                            and cycle != last_cycle):
+                        # ladder: the previous cycle ended at 0 V; rest there
+                        # before the next amplitude starts
+                        self.log(f"Ladder pause {p['ladder_pause']:g} s at 0 V before "
+                                 f"entry {cycle} ({p['ladder'][cycle - 1]:g} V).")
+                        self.log_event(f"LADDER_PAUSE s={p['ladder_pause']:g} | next_entry={cycle} | "
+                                       f"next_v={p['ladder'][cycle - 1]:g}")
+                        if wait_with_stop(p["ladder_pause"], self.stop_event, sleep=self.sleep):
+                            raise StopRequested()
+                    last_cycle = cycle
                     self.with_retry(lambda v=v: self.link.ramp_bias(v), "set bias")
                     if wait_with_stop(p["delay"], self.stop_event, sleep=self.sleep):
                         raise StopRequested()
@@ -963,6 +985,7 @@ def params_from_user_input():
         "cycle_mode": CYCLE_MODE,
         "shape": SHAPE_BY_WORD.get(SHAPE, SHAPE),
         "ladder": ", ".join(str(v) for v in LADDER_LIST_V),
+        "ladder_pause": LADDER_PAUSE_S,
         "freq_list": ",".join(str(f) for f in FREQUENCIES_HZ),
         "delay": DELAY_S,
         "aper": APERTURE,
