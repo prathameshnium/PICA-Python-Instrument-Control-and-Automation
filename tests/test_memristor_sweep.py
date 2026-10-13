@@ -474,7 +474,7 @@ def test_sweep_file_name_is_sample_timestamp_kind_and_a_rerun_never_overwrites()
 def test_sweep_gui_refuses_vmax_above_protection_and_bad_ladder():
     base = dict(sample_name="VCO01", visa_address="GPIB1::24::INSTR", protection="20", shape=sweep.SHAPE_BIPOLAR_PLUS, vmax_plus="5",
                 vmax_minus="5", step_v="0.1", dwell_s="0.1", i_cc_plus_uA="10", i_cc_minus_uA="10", loops="1",
-                ladder="", n_confirm="3")
+                ladder="", n_confirm="3", pause_s="0")
     with tempfile.TemporaryDirectory() as d:
         gui = _gui_shell(sweep.SweepGUI, sweep, base, d)
         p = gui.collect_params()
@@ -575,6 +575,98 @@ def test_sweep_greys_the_fields_the_shape_ignores():
             gui.vars["shape"].v = shape
             gui._on_shape()
             assert {k for k, w in gui.widgets.items() if w.state == "disabled"} == greyed, shape
+
+# -- addendum A1 (13 Oct 2026): bare 0 V pause between full loops ---------
+
+def _phases(rows):
+    return {r["phase"] for r in rows}
+
+
+def test_sweep_ladder_pause_is_a_bare_0v_delay_and_skips_the_last_entry():
+    """Acceptance test 12 (bare pause): 1 MOhm, ladder 2, 4, 6."""
+    with tempfile.TemporaryDirectory() as d:
+        t0 = time.perf_counter()
+        worker, msgs, path = run_sweep(FakeK2400(1e6), d, shape=sweep.SHAPE_LADDER, ladder=[2.0, 4.0, 6.0],
+                                       step_v=0.5, pause_s=0.3, protection_v=None)
+        elapsed = time.perf_counter() - t0
+        assert worker.reason == "completed"
+        header, columns, rows = read_file(path)
+        assert analysis.header_blocks(header)["protocol"]["pause_between_loops_s"] == "0.3"
+        assert columns == list(sweep.SWEEP_COLUMNS)
+        assert _phases(rows) == {"settle", "sweep"}                       # nothing logged during the pause
+        assert sorted({int(r["loop"]) for r in rows if r["phase"] == "sweep"}) == [1, 2, 3]
+        assert 0.6 <= elapsed < 5.0, elapsed                               # two pauses, none after entry 3
+        w = worker.link.fake.writes
+        assert w.count(":OUTP OFF") == 1 and w[-1] == ":OUTP OFF"        # output stayed on
+        assert any(m[0] == "status" and str(m[1].get("state", "")).startswith("pausing (") for m in msgs)
+        assert_data_only(path)
+
+
+def test_sweep_bipolar_pauses_between_full_loops_too():
+    with tempfile.TemporaryDirectory() as d:
+        t0 = time.perf_counter()
+        worker, _, path = run_sweep(FakeK2400(1e6), d, loops=3, vmax_plus=2, vmax_minus=2, pause_s=0.3)
+        elapsed = time.perf_counter() - t0
+        header, _, rows = read_file(path)
+        assert analysis.header_blocks(header)["protocol"]["pause_between_loops_s"] == "0.3"
+        assert sorted({int(r["loop"]) for r in rows if r["phase"] == "sweep"}) == [1, 2, 3]
+        assert _phases(rows) == {"settle", "sweep"}
+        assert 0.6 <= elapsed < 5.0, elapsed
+
+
+def test_sweep_pause_zero_reproduces_the_old_file():
+    with tempfile.TemporaryDirectory() as d:
+        t0 = time.perf_counter()
+        _, _, path = run_sweep(FakeK2400(1e6), d, shape=sweep.SHAPE_LADDER, ladder=[2.0, 4.0], step_v=0.5,
+                               pause_s=0.0, protection_v=None)
+        assert time.perf_counter() - t0 < 4.0
+        header, _, rows = read_file(path)
+        assert analysis.header_blocks(header)["protocol"]["pause_between_loops_s"] == "0"
+        assert _phases(rows) == {"settle", "sweep"}
+
+
+def test_sweep_ladder_no_pause_after_the_entry_that_stops_on_a_confirmed_trip():
+    with tempfile.TemporaryDirectory() as d:
+        t0 = time.perf_counter()
+        _, _, path = run_sweep(FakeK2400(1e6), d, shape=sweep.SHAPE_LADDER, ladder=[5.0, 15.0, 30.0],
+                               pause_s=0.3, protection_v=None)
+        elapsed = time.perf_counter() - t0
+        _, _, rows = read_file(path)
+        assert sorted({int(r["loop"]) for r in rows if r["phase"] == "sweep"}) == [1, 2]
+        assert 0.3 <= elapsed < 2.6, elapsed                               # one pause only
+
+
+def test_sweep_stop_during_a_pause_ends_at_once_with_stop_button():
+    with tempfile.TemporaryDirectory() as d:
+        t0 = time.perf_counter()
+        worker, msgs, path = run_sweep(FakeK2400(1e6), d, stop_after=0.4, shape=sweep.SHAPE_LADDER,
+                                       ladder=[2.0, 4.0], step_v=1.0, pause_s=30.0, protection_v=None)
+        assert time.perf_counter() - t0 < 5.0
+        assert worker.reason == "stop_button" and end_reason(path) == "stop_button"
+        _, _, rows = read_file(path)
+        assert not [r for r in rows if r["phase"] == "sweep" and r["loop"] == 2]
+        w = worker.link.fake.writes
+        assert w[-1] == ":OUTP OFF" and w[-2] == ":SOUR:VOLT 0"
+        assert any(m[0] == "done" and m[1] == "stopped" for m in msgs)
+
+
+def test_sweep_time_estimate_adds_the_pauses_and_the_gui_validates_them():
+    base = dict(sample_name="VCO01", visa_address="GPIB1::24::INSTR", protection="20", shape=sweep.SHAPE_LADDER,
+                vmax_plus="5", vmax_minus="5", step_v="0.5", dwell_s="0.1", i_cc_plus_uA="10", i_cc_minus_uA="10",
+                loops="3", ladder="2, 4, 6", n_confirm="3", pause_s="0")
+    with tempfile.TemporaryDirectory() as d:
+        for shape in (sweep.SHAPE_LADDER, sweep.SHAPE_BIPOLAR_PLUS):
+            gui0 = _gui_shell(sweep.SweepGUI, sweep, dict(base, shape=shape), d)
+            gui10 = _gui_shell(sweep.SweepGUI, sweep, dict(base, shape=shape, pause_s="10"), d)
+            assert abs(gui10.estimate_run_time_s() - gui0.estimate_run_time_s() - 2 * 10.0) < 1e-9, shape
+            assert gui10.collect_params()["pause_s"] == 10.0
+        for bad in ("-1", "abc", ""):
+            try:
+                _gui_shell(sweep.SweepGUI, sweep, dict(base, pause_s=bad), d).collect_params()
+                assert False, bad
+            except ValueError as exc:
+                assert "Pause" in str(exc)
+
 
 if __name__ == "__main__":
     run_module_tests(globals())

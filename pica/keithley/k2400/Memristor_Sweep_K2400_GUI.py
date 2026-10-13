@@ -2,8 +2,19 @@
 Module: Memristor_Sweep_K2400_GUI.py
 Purpose: Switching I-V sweep of a memristor pellet with current compliance
          on a Keithley 2400 (protocol "Memristor measurement modules for
-         PICA" v1.1, Section 3).
+         PICA" v1.1, Section 3, and addendum A1 of 13 Oct 2026).
 
+v1.4 (13 Oct 2026) - addendum A1: pause between full loops (K's ruling)
+  * New input "Pause between loops (s)", every shape (ladder: between
+    entries), default 0 s which reproduces v1.3 exactly. After a loop's
+    closing 0 V point the source stays at 0 V with the output on for the
+    pause; bare delay, nothing is read or written (K: "bare 0 V time
+    delay between the full loops"). No pause after the last loop or after
+    a ladder entry that stopped the ladder on a confirmed trip. [protocol]
+    gains pause_between_loops_s=; the estimate adds (loops - 1) x pause;
+    the status bar shows "pausing (n s left)"; Stop during a pause ends it
+    at once; the pause clock runs on PC time across a bus gap. Columns
+    unchanged.
 v1.3 (12 Oct 2026) - round 2 (K's ruling of 12 Oct)
   * The data file holds data only: header, column row, data rows to the
     end of the file. RETRY, RECONNECT and END lines go to
@@ -1967,6 +1978,7 @@ class SweepWorker(WorkerBase):
         idn = self.startup(source_range, p["protection_v"], p["i_cc_plus"], p["dwell_s"])
         self.current_sign = 1
         self.link.i_cc = p["i_cc_plus"]
+        pause_s = max(0.0, float(p.get("pause_s", 0.0)))   # addendum A1: between full loops, every shape
 
         ts = timestamp_for_name()
         path = run_file_path(p["folder"], p["stem"], "sweep", ts)
@@ -1978,6 +1990,7 @@ class SweepWorker(WorkerBase):
                                 ("step_V", f"{p['step_v']:g}"), ("dwell_s", f"{p['dwell_s']:g}"),
                                 ("loops", str(p["loops"])),
                                 ("ladder_list_V", " ".join(f"{v:g}" for v in p["ladder"]) if p["ladder"] else ""),
+                                ("pause_between_loops_s", f"{pause_s:g}"),
                                 ("n_confirm", str(p["n_confirm"])), ("start_time", iso_now()),
                                 ("log_file", os.path.basename(log_path))])]
         self.file = RunFile(path, "sweep", blocks, SWEEP_COLUMNS, self.gui_version)
@@ -1993,13 +2006,18 @@ class SweepWorker(WorkerBase):
             return
 
         self.status(state="running")
-        for loop_no, vp, vm in plan:
+        for k, (loop_no, vp, vm) in enumerate(plan):
             confirmed_in_loop = self.run_loop(loop_no, p["shape"], vp, vm)
             if self.check_stop():
                 return
             if p["shape"] == SHAPE_LADDER and confirmed_in_loop:
                 self.log(f"Ladder: confirmed trip in entry {loop_no} ({vp:g} V); later entries skipped.")
                 break
+            if pause_s > 0 and k < len(plan) - 1:          # A1.2: no pause after the last loop
+                self.pause_between_loops(loop_no, pause_s)
+                if self.check_stop():
+                    return
+                self.status(state="running")
         self.reason = "completed"
 
     # -- helpers ---------------------------------------------------------
@@ -2046,6 +2064,22 @@ class SweepWorker(WorkerBase):
             raise OvpTrip(f"status bit 4 set at {v:g} V")
         return rd
 
+    def pause_between_loops(self, loop_no, pause_s):
+        """Addendum A1 (K: bare 0 V delay between full loops): the source
+        stays at 0 V with the output on for pause_s after loop loop_no;
+        nothing is read or written. The clock runs on PC time, so a bus
+        gap eats into it."""
+        self.with_retry(lambda: self.link.source(0.0), "source 0 V for the pause")
+        end = time.perf_counter() + float(pause_s)
+        self.log(f"Loop {loop_no} done; pausing {pause_s:g} s at 0 V before the next loop.")
+        while True:
+            remaining = end - time.perf_counter()
+            if remaining <= 0:
+                return
+            self.status(state=f"pausing ({max(0, int(math.ceil(remaining)))} s left)")
+            if wait_with_stop(min(1.0, remaining), self.stop_event, sleep=self.sleep):
+                return
+
     def run_loop(self, loop_no, shape, vp, vm):
         """Returns True if a compliance trip was confirmed in this loop."""
         segments = build_loop(shape, vp, vm, self.p["step_v"])
@@ -2088,7 +2122,7 @@ class SweepWorker(WorkerBase):
 class SweepGUI(MemristorGuiBase):
     MODULE_TITLE = "Sweep"
     MODULE_KEY = "sweep"
-    PROGRAM_VERSION = "1.3"
+    PROGRAM_VERSION = "1.4"
 
     def create_module_inputs(self, parent):
         frame = self.make_frame(parent, 'Sweep')
@@ -2102,6 +2136,8 @@ class SweepGUI(MemristorGuiBase):
         self.add_entry(frame, r, "I cc - (uA)", "i_cc_minus_uA", "10", "compliance, negative half"); r += 1
         self.add_entry(frame, r, "Loops", "loops", "1", "full loops"); r += 1
         self.add_entry(frame, r, "Ladder list (V)", "ladder", "", "e.g. 5, 10, 20 (ladder shape only)", width=22); r += 1
+        self.add_entry(frame, r, "Pause between loops (s)", "pause_s", "0",
+                       "bare delay at 0 V, output on, between full loops (ladder: between entries)"); r += 1
         self.add_entry(frame, r, "n confirm", "n_confirm", "3", "points confirming a trip"); r += 1
         self.warn_label = self.add_wide_label(frame, "", fg='#7A3B00')
         self._on_shape()
@@ -2186,17 +2222,23 @@ class SweepGUI(MemristorGuiBase):
         ladder = parse_ladder(self.get_str("ladder")) if shape == SHAPE_LADDER else []
         return shape, step, vmax_plus, vmax_minus, loops, ladder
 
+    def _pause_from_inputs(self, shape):
+        """Addendum A1: bare 0 V pause between full loops, every shape."""
+        return self.get_float("pause_s", "Pause between loops", 0)
+
     def estimate_run_time_s(self):
         shape, step, vp, vm, loops, ladder = self._plan_from_inputs()
         dwell = self.get_float("dwell_s", "Dwell", 0)
+        pause_s = self._pause_from_inputs(shape)
         plan = run_plan(shape, vp, vm, step, loops, ladder)
         n = sum(loop_point_count(shape, a, b, step) for _, a, b in plan)
-        return sweep_time_estimate_s(n, dwell) + SETTLE_S + RST_SLEEP_S
+        return sweep_time_estimate_s(n, dwell) + SETTLE_S + RST_SLEEP_S + max(0, len(plan) - 1) * pause_s
 
     def collect_params(self):
         p = self.collect_common_params()
         shape, step, vp, vm, loops, ladder = self._plan_from_inputs()
         p.update(shape=shape, step_v=step, vmax_plus=vp, vmax_minus=vm, loops=loops, ladder=ladder)
+        p["pause_s"] = self._pause_from_inputs(shape)
         p["dwell_s"] = self.get_float("dwell_s", "Dwell", 0)
         p["i_cc_plus"] = validate_i_cc(self.get_float("i_cc_plus_uA", "I cc +", 0) / 1e6, "I cc +")
         p["i_cc_minus"] = validate_i_cc(self.get_float("i_cc_minus_uA", "I cc -", 0) / 1e6, "I cc -")
@@ -2231,7 +2273,7 @@ class SweepGUI(MemristorGuiBase):
     def describe_params(self, p):
         return (f"{p['sample_name']} | {SHAPE_KEYS[p['shape']]} | Vmax +{p['vmax_plus']:g}/-{p['vmax_minus']:g} V | "
                 f"step {p['step_v']:g} V | dwell {p['dwell_s']:g} s | Icc {p['i_cc_plus']:g}/{p['i_cc_minus']:g} A | "
-                f"loops {p['loops']} | ladder {p['ladder']} | n_confirm {p['n_confirm']} | "
+                f"loops {p['loops']} | ladder {p['ladder']} | pause {p.get('pause_s', 0):g} s | n_confirm {p['n_confirm']} | "
                 f"protection {protection_command_value(p['protection_v']):g} V")
 
 
