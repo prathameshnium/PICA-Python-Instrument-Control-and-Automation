@@ -38,11 +38,15 @@ SAMPLE_NAME = "Sample_A"
 VISA_ADDRESS = "GPIB0::17::INSTR"
 SAVE_FOLDER = os.path.join(os.path.expanduser("~"), "Desktop", "CV_data")
 CYCLE_MODE = True            # True: loops of the chosen SHAPE; False: one way v_start -> v_stop
-SHAPE = "positive first"     # "positive first" | "negative first" | "unipolar positive" | "unipolar negative"
+SHAPE = "positive first"     # "positive first" | "negative first" | "unipolar positive" | "unipolar negative" | "ladder"
+LADDER_LIST_V = [0.5, 1.0, 2.0]  # ladder shape only: one bipolar cycle per amplitude, in this order
+# Fields a mode/shape ignores (same rule as the window, disabled_fields()):
+#   linear mode  -> N_CYCLES, SHAPE, LADDER_LIST_V ignored
+#   cycle shapes -> V_START ignored; ladder shape also ignores V_STOP, N_CYCLES
 V_START = -2.0               # linear mode only (V)
 V_STOP = 2.0                 # linear mode end (V); cycle mode amplitude = |V_STOP|
 V_STEP = 0.05                # V
-N_CYCLES = 1                 # cycle mode only
+N_CYCLES = 1                 # cycle mode, non-ladder shapes only
 FREQUENCIES_HZ = [1000.0]    # measured in this order
 AC_LEVEL_VRMS = 1.0
 DELAY_S = 0.2                # hold per point before the trigger
@@ -81,13 +85,27 @@ SHAPE_POS_FIRST = "positive first: 0 -> +V -> 0 -> -V -> 0"
 SHAPE_NEG_FIRST = "negative first: 0 -> -V -> 0 -> +V -> 0"
 SHAPE_UNI_POS = "unipolar positive: 0 -> +V -> 0"
 SHAPE_UNI_NEG = "unipolar negative: 0 -> -V -> 0"
-SHAPES = (SHAPE_POS_FIRST, SHAPE_NEG_FIRST, SHAPE_UNI_POS, SHAPE_UNI_NEG)
+SHAPE_LADDER = "ladder: 0 -> +V1 -> 0 -> -V1 -> 0, then V2, V3 ... (one cycle per listed V)"
+SHAPES = (SHAPE_POS_FIRST, SHAPE_NEG_FIRST, SHAPE_UNI_POS, SHAPE_UNI_NEG, SHAPE_LADDER)
 SHAPE_SIGNS = {
     SHAPE_POS_FIRST: (1, -1),
     SHAPE_NEG_FIRST: (-1, 1),
     SHAPE_UNI_POS: (1,),
     SHAPE_UNI_NEG: (-1,),
+    SHAPE_LADDER: (1, -1),
 }
+
+SWEEP_FIELDS = ("v_start", "v_stop", "n_cycles", "shape", "ladder")
+
+
+def disabled_fields(cycle_mode, shape):
+    """Entry keys the current mode and shape ignore."""
+    if not cycle_mode:
+        return {"n_cycles", "shape", "ladder"}
+    if shape == SHAPE_LADDER:
+        return {"v_start", "v_stop", "n_cycles"}
+    return {"v_start", "ladder"}
+
 
 DERIVED_HEADER = (
     "Q\tD\tG(1/Rp)\tB\tCp\tLp\tCs\tLs\tlZl\ttheta\tchi\t"
@@ -192,15 +210,23 @@ def build_cycle(shape, v_max, v_step):
     return out
 
 
-def build_waveform(cycle_mode, shape, v_max, v_start, v_stop, v_step, n_cycles):
+def build_waveform(cycle_mode, shape, v_max, v_start, v_stop, v_step, n_cycles, ladder=None):
     """The full bias sequence of one file as (cycle, segment, v) tuples.
 
     Cycle mode: a measured 0 V point first (cycle 1, segment 1), then
-    n_cycles of the chosen shape, each ending at 0 V. Linear mode: one
-    staircase v_start -> v_stop, cycle 1, segment 1."""
+    n_cycles of the chosen shape, each ending at 0 V. Ladder shape: one
+    bipolar cycle per listed amplitude, Cycle = ladder entry number.
+    Linear mode: one staircase v_start -> v_stop, cycle 1, segment 1."""
     v_step = abs(float(v_step))
     if v_step <= 0:
         raise ValueError("Voltage step must be > 0.")
+    if cycle_mode and shape == SHAPE_LADDER:
+        if not ladder:
+            raise ValueError("Ladder shape needs a ladder list, e.g. 0.5, 1, 2.")
+        pts = [(1, 1, 0.0)]
+        for k, amp in enumerate(ladder):
+            pts.extend((k + 1, seg, v) for seg, v in build_cycle(SHAPE_LADDER, abs(amp), v_step))
+        return pts
     if cycle_mode:
         if n_cycles < 1:
             raise ValueError("Number of cycles must be >= 1.")
@@ -249,6 +275,12 @@ def waveform_text(p, freq):
         f"(ramp {RAMP_STEP_V:g} V / {RAMP_DWELL_S:g} s)"
     )
     ac = f"AC {p['ac_bias']:g} Vrms sine at {freq:g} Hz"
+    if p["cycle_mode"] and p["shape"] == SHAPE_LADDER:
+        amps = ", ".join(f"{v:g}" for v in p["ladder"])
+        return (
+            f"DC staircase ladder 0 -> +V -> 0 -> -V -> 0 with V = {amps} V in turn "
+            f"(one cycle per value), step {p['v_step']:g} V, {hold}; {ac}"
+        )
     if p["cycle_mode"]:
         path = p["shape"].split(": ", 1)[1].replace("V", f"{abs(p['v_max']):g}")
         return (
@@ -278,6 +310,28 @@ def parse_freq_list(text):
     if not out:
         raise ValueError("At least one frequency is required.")
     return out
+
+
+def parse_ladder(text):
+    """'5, 10, 20' -> [5.0, 10.0, 20.0] (as the memristor sweep module):
+    commas, semicolons, spaces or new lines separate the entries; every
+    entry must be a positive voltage within V_ABS_MAX."""
+    tokens = str(text or "").replace(",", " ").replace(";", " ").split()
+    if not tokens:
+        raise ValueError("Ladder list is empty. Example: 0.5, 1, 2")
+    values = []
+    for tok in tokens:
+        try:
+            v = float(tok)
+        except ValueError:
+            raise ValueError(f"Ladder list: '{tok}' is not a number.")
+        if not math.isfinite(v) or v <= 0:
+            raise ValueError(f"Ladder list: '{tok}' must be a positive voltage.")
+        if v > V_ABS_MAX:
+            raise ValueError(
+                f"Ladder list: {v:g} V exceeds the hardcoded {V_ABS_MAX:g} V safety cutoff.")
+        values.append(v)
+    return values
 
 
 def derived_columns(f, R, X):
@@ -345,22 +399,43 @@ def validate_params(p):
         raise ValueError("Delay per step must be >= 0 s.")
     if not (0 < float(p["ac_bias"]) <= V_AC_MAX):
         raise ValueError(f"AC level must be in (0, {V_AC_MAX}] Vrms.")
-    p["clamped"] = any(abs(float(p[k])) > V_ABS_MAX for k in ("v_start", "v_stop"))
-    p["v_start"] = max(-V_ABS_MAX, min(V_ABS_MAX, float(p["v_start"])))
-    p["v_stop"] = max(-V_ABS_MAX, min(V_ABS_MAX, float(p["v_stop"])))
+    if p["cycle_mode"] and p.get("shape") not in SHAPES:
+        raise ValueError("Choose a loop shape for cycle mode.")
+    ignored = disabled_fields(p["cycle_mode"], p.get("shape"))
+    p["ignored"] = sorted(ignored)
+
+    def volts(key):
+        """A voltage entry; an ignored entry may be blank and counts as 0."""
+        raw = p.get(key, "")
+        if key in ignored and (raw is None or str(raw).strip() == ""):
+            return 0.0
+        return float(raw)
+
+    v_start, v_stop = volts("v_start"), volts("v_stop")
+    p["clamped"] = any(abs(v) > V_ABS_MAX for k, v in (("v_start", v_start), ("v_stop", v_stop))
+                       if k not in ignored)
+    p["v_start"] = max(-V_ABS_MAX, min(V_ABS_MAX, v_start))
+    p["v_stop"] = max(-V_ABS_MAX, min(V_ABS_MAX, v_stop))
     p["v_max"] = abs(p["v_stop"]) if p["cycle_mode"] else 0.0
+    ladder_text = p.get("ladder", "")
+    p["ladder"] = []
     if p["cycle_mode"]:
-        if p.get("shape") not in SHAPES:
-            raise ValueError("Choose a loop shape for cycle mode.")
-        if int(p["n_cycles"]) < 1:
-            raise ValueError("Number of cycles must be >= 1.")
+        if p["shape"] == SHAPE_LADDER:
+            p["ladder"] = parse_ladder(ladder_text)
+            p["v_max"] = max(p["ladder"])
+            p["n_cycles"] = len(p["ladder"])
+        else:
+            n_raw = p.get("n_cycles", "")
+            if n_raw is None or str(n_raw).strip() == "" or int(float(n_raw)) < 1:
+                raise ValueError("Number of cycles must be >= 1.")
+            p["n_cycles"] = int(float(n_raw))
     else:
         p["n_cycles"] = 1
         p["shape"] = ""
     p["freqs"] = parse_freq_list(p["freq_list"])
     p["waveform"] = build_waveform(
         p["cycle_mode"], p["shape"], p["v_max"], p["v_start"], p["v_stop"],
-        p["v_step"], int(p["n_cycles"]),
+        p["v_step"], int(p["n_cycles"]), p["ladder"],
     )
     return p
 
@@ -698,14 +773,26 @@ class CVWorker:
         freqs = p["freqs"]
         earlier = ",".join(f"{f:g}" for f in freqs[:k]) or "none"
         mode = "cycle" if p["cycle_mode"] else "linear"
+        ignored = set(p.get("ignored", ()))
+
+        def na(key, value):
+            """n/a for a field the mode/shape ignores, else the value."""
+            if key in ignored:
+                return "n/a"
+            return f"{value:g}" if isinstance(value, float) else str(value)
+
+        v_max_txt = f"{p['v_max']:g}" if p["cycle_mode"] else "n/a"
         lines = [
             f"# PICA {MODULE_NAME} v{VERSION} | file {k + 1} of {len(freqs)}",
             f"# [instrument] idn={header_value(self.link.idn)} | opt={header_value(self.link.opt)} | "
             f"visa={header_value(p['lcr_visa'])}",
             f"# [sample] name={header_value(p['sample_name'])}",
             f"# [sweep] mode={mode} | shape={header_value(p['shape'] or 'one-way')} | "
-            f"v_start_v={p['v_start']:g} | v_stop_v={p['v_stop']:g} | v_max_v={p['v_max']:g} | "
-            f"v_step_v={p['v_step']:g} | n_cycles={p['n_cycles']} | points_per_file={len(p['waveform'])} | "
+            f"v_start_v={na('v_start', p['v_start'])} | v_stop_v={na('v_stop', p['v_stop'])} | "
+            f"v_max_v={v_max_txt} | "
+            f"v_step_v={p['v_step']:g} | n_cycles={p['n_cycles']} | "
+            f"ladder_list_V={na('ladder', ' '.join(f'{v:g}' for v in p['ladder']))} | "
+            f"points_per_file={len(p['waveform'])} | "
             f"delay_s={p['delay']:g} | ramp_step_v={RAMP_STEP_V:g} | ramp_dwell_s={RAMP_DWELL_S:g} | "
             f"v_abs_max_v={V_ABS_MAX:g} | pre_ramp=0 V -> first point, ramped, not recorded",
             f"# [frequency] this_hz={freq:g} | order_hz={','.join(f'{f:g}' for f in freqs)} | earlier_hz={earlier}",
@@ -849,6 +936,7 @@ SHAPE_BY_WORD = {
     "negative first": SHAPE_NEG_FIRST,
     "unipolar positive": SHAPE_UNI_POS,
     "unipolar negative": SHAPE_UNI_NEG,
+    "ladder": SHAPE_LADDER,
 }
 
 
@@ -863,6 +951,7 @@ def params_from_user_input():
         "n_cycles": N_CYCLES,
         "cycle_mode": CYCLE_MODE,
         "shape": SHAPE_BY_WORD.get(SHAPE, SHAPE),
+        "ladder": ", ".join(str(v) for v in LADDER_LIST_V),
         "freq_list": ",".join(str(f) for f in FREQUENCIES_HZ),
         "delay": DELAY_S,
         "aper": APERTURE,

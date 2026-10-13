@@ -30,7 +30,7 @@ def _tmp():
 
 def test_cycle_shapes_start_at_zero_end_at_zero_without_duplicates():
     for shape in gui.SHAPES:
-        pts = gui.build_waveform(True, shape, 1.0, 0, 0, 0.25, 2)
+        pts = gui.build_waveform(True, shape, 1.0, 0, 0, 0.25, 2, ladder=[1.0, 1.0])
         vs = [v for _, _, v in pts]
         assert vs[0] == 0.0 and vs[-1] == 0.0
         for a, b in zip(vs, vs[1:]):
@@ -73,6 +73,126 @@ def test_waveform_text_and_segment_text_read_as_sentences():
     assert gui.segment_text(True, gui.SHAPE_POS_FIRST) == "1 = 0 -> +V, 2 = +V -> 0, 3 = 0 -> -V, 4 = -V -> 0"
 
 
+def test_ladder_shape_runs_one_bipolar_cycle_per_listed_amplitude():
+    pts = gui.build_waveform(True, gui.SHAPE_LADDER, 0, 0, 0, 0.5, 0, ladder=[0.5, 1.0])
+    assert pts[0] == (1, 1, 0.0)
+    assert [(s, v) for c, s, v in pts if c == 1][1:] == [(1, 0.5), (2, 0.0), (3, -0.5), (4, 0.0)]
+    assert [(s, v) for c, s, v in pts if c == 2] == [(1, 0.5), (1, 1.0), (2, 0.5), (2, 0.0),
+                                                     (3, -0.5), (3, -1.0), (4, -0.5), (4, 0.0)]
+    assert pts[-1][2] == 0.0
+    for a, b in zip(pts, pts[1:]):
+        assert a[2] != b[2]
+
+
+def test_parse_ladder_accepts_separators_and_rejects_bad_or_over_cap_entries():
+    assert gui.parse_ladder("0.5, 1; 2" + chr(10) + "5") == [0.5, 1.0, 2.0, 5.0]
+    for bad in ("", "a", "0", "-1", "25"):
+        try:
+            gui.parse_ladder(bad)
+            assert False, bad
+        except ValueError:
+            pass
+
+
+# -- fields a mode/shape ignores (greyed, n/a in the header) ---------------------
+
+def test_disabled_fields_matrix_matches_the_memristor_convention():
+    assert gui.disabled_fields(False, "") == {"n_cycles", "shape", "ladder"}
+    for shape in (gui.SHAPE_POS_FIRST, gui.SHAPE_NEG_FIRST, gui.SHAPE_UNI_POS, gui.SHAPE_UNI_NEG):
+        assert gui.disabled_fields(True, shape) == {"v_start", "ladder"}, shape
+    assert gui.disabled_fields(True, gui.SHAPE_LADDER) == {"v_start", "v_stop", "n_cycles"}
+    assert set(gui.SWEEP_FIELDS) == {"v_start", "v_stop", "n_cycles", "shape", "ladder"}
+
+
+class _Widget:
+    def __init__(self):
+        self.state = "normal"
+
+    def config(self, state):
+        self.state = state
+
+    def get(self):
+        return getattr(self, "value", "")
+
+
+class _Var:
+    def __init__(self, v):
+        self.v = v
+
+    def get(self):
+        return self.v
+
+
+def _window_stub(cycle_mode, shape):
+    """The window's toggle without Tk: entries and combobox as stubs."""
+    w = object.__new__(gui.LCR_Freq_GUI)
+    w.entries = {k: _Widget() for k in ("v_start", "v_stop", "n_cycles", "ladder", "sample_name")}
+    w.shape_combobox = _Widget()
+    w.shape_combobox.value = shape
+    w.var_cycle = _Var(cycle_mode)
+    w._on_cycle_mode_toggle()
+    return w
+
+
+def test_window_greys_exactly_the_disjoint_entries_and_restores_them():
+    w = _window_stub(False, gui.SHAPE_POS_FIRST)
+    assert {k: v.state for k, v in w.entries.items() if k != "sample_name"} == {
+        "v_start": "normal", "v_stop": "normal", "n_cycles": "disabled", "ladder": "disabled"}
+    assert w.shape_combobox.state == "disabled"
+    w = _window_stub(True, gui.SHAPE_UNI_NEG)
+    assert {k: v.state for k, v in w.entries.items() if k != "sample_name"} == {
+        "v_start": "disabled", "v_stop": "normal", "n_cycles": "normal", "ladder": "disabled"}
+    assert w.shape_combobox.state == "readonly"
+    w = _window_stub(True, gui.SHAPE_LADDER)
+    assert {k: v.state for k, v in w.entries.items() if k != "sample_name"} == {
+        "v_start": "disabled", "v_stop": "disabled", "n_cycles": "disabled", "ladder": "normal"}
+    # switching back re-enables without touching values (greyed fields keep their text)
+    w.entries["v_stop"].value = "2.0"
+    w.var_cycle = _Var(False)
+    w._on_cycle_mode_toggle()
+    assert w.entries["v_stop"].state == "normal" and w.entries["v_stop"].get() == "2.0"
+
+
+def test_blank_or_stale_greyed_entries_never_block_start():
+    base = dict(sample_name="Sample_A", ac_bias=1.0, v_step=0.5, freq_list="1000", delay=0, aper="MED",
+                alc_enabled=True, corr_enabled=True, cable_len="1", lcr_visa="x", folder=".")
+    # linear: cycles / shape / ladder blank or nonsense
+    p = gui.validate_params({**base, "cycle_mode": False, "shape": "", "v_start": "-1", "v_stop": "1",
+                             "n_cycles": "", "ladder": "abc"})
+    assert p["n_cycles"] == 1 and p["ladder"] == [] and p["ignored"] == ["ladder", "n_cycles", "shape"]
+    # cycle: v_start blank, ladder nonsense
+    p = gui.validate_params({**base, "cycle_mode": True, "shape": gui.SHAPE_POS_FIRST, "v_start": "",
+                             "v_stop": "1", "n_cycles": "2", "ladder": "abc"})
+    assert p["n_cycles"] == 2 and p["v_max"] == 1.0 and p["ignored"] == ["ladder", "v_start"]
+    # ladder: v_start, v_stop, n_cycles blank or out of range are ignored, not clamped, not refused
+    p = gui.validate_params({**base, "cycle_mode": True, "shape": gui.SHAPE_LADDER, "v_start": "",
+                             "v_stop": "99", "n_cycles": "", "ladder": "0.5, 1"})
+    assert p["ladder"] == [0.5, 1.0] and p["n_cycles"] == 2 and p["v_max"] == 1.0 and not p["clamped"]
+    assert p["ignored"] == ["n_cycles", "v_start", "v_stop"]
+    # an active field that is blank still refuses
+    for mode, shape, bad in ((False, "", {"v_start": ""}), (True, gui.SHAPE_POS_FIRST, {"v_stop": ""}),
+                             (True, gui.SHAPE_POS_FIRST, {"n_cycles": ""})):
+        try:
+            gui.validate_params({**base, "cycle_mode": mode, "shape": shape, "v_start": "-1", "v_stop": "1",
+                                 "n_cycles": "1", "ladder": "", **bad})
+            assert False, bad
+        except ValueError:
+            pass
+
+
+def test_header_writes_na_for_the_fields_the_mode_ignores():
+    folder = _tmp()
+    worker, msgs, files, _ = run_cv(FakeE4980A(), folder, cycle_mode=False, v_start=-1.0, v_stop=1.0)
+    sweep = next(h for h in read_data_file(files[0])[0] if h.startswith("[sweep]"))
+    assert "v_start_v=-1 | v_stop_v=1 | v_max_v=n/a" in sweep and "ladder_list_V=n/a" in sweep
+    worker, msgs, files, _ = run_cv(FakeE4980A(), _tmp(), shape=gui.SHAPE_UNI_POS, v_stop=1.0)
+    sweep = next(h for h in read_data_file(files[0])[0] if h.startswith("[sweep]"))
+    assert "v_start_v=n/a | v_stop_v=1 | v_max_v=1" in sweep and "ladder_list_V=n/a" in sweep
+    worker, msgs, files, _ = run_cv(FakeE4980A(), _tmp(), shape=gui.SHAPE_LADDER, ladder="0.5, 1")
+    sweep = next(h for h in read_data_file(files[0])[0] if h.startswith("[sweep]"))
+    assert "v_start_v=n/a | v_stop_v=n/a | v_max_v=1" in sweep and "ladder_list_V=0.5 1" in sweep
+
+
 # -- validation -----------------------------------------------------------------
 
 def test_validate_params_rejects_negative_delay_zero_step_bad_ac_and_clamps_to_20_v():
@@ -90,6 +210,24 @@ def test_validate_params_rejects_negative_delay_zero_step_bad_ac_and_clamps_to_2
     assert p["clamped"] and p["v_start"] == -20.0 and p["v_stop"] == 20.0
     assert max(abs(v) for _, _, v in p["waveform"]) <= gui.V_ABS_MAX
     assert gui.V_ABS_MAX == 20.0 and script.V_ABS_MAX == 20.0
+
+
+def test_validate_params_ladder_sets_v_max_and_cycles_from_the_list_and_needs_a_list():
+    base = dict(sample_name="Sample_A", ac_bias=1.0, v_start=-1, v_stop=9, v_step=0.5, n_cycles=7,
+                cycle_mode=True, shape=gui.SHAPE_LADDER, freq_list="1000", delay=0, aper="MED",
+                alc_enabled=True, corr_enabled=True, cable_len="1", lcr_visa="x", folder=".")
+    p = gui.validate_params({**base, "ladder": "1, 2, 0.5"})
+    assert p["ladder"] == [1.0, 2.0, 0.5] and p["v_max"] == 2.0 and p["n_cycles"] == 3
+    assert max(abs(v) for _, _, v in p["waveform"]) == 2.0
+    assert {c for c, _, _ in p["waveform"]} == {1, 2, 3}
+    assert gui.waveform_text(p, 1000.0).startswith(
+        "DC staircase ladder 0 -> +V -> 0 -> -V -> 0 with V = 1, 2, 0.5 V in turn (one cycle per value), step 0.5 V")
+    for bad in ("", "0, 1", "21"):
+        try:
+            gui.validate_params({**base, "ladder": bad})
+            assert False, bad
+        except ValueError:
+            pass
 
 
 def test_frequency_list_keeps_typed_order_and_drops_duplicates():
@@ -145,6 +283,22 @@ def test_complete_run_writes_labelled_rows_monitors_raw_values_and_end_line():
     # bias forced to 0 V and off, link closed
     assert fake.v == 0.0 and not fake.bias_on and fake.closed
     assert fake.writes[-1] == ":BIAS:STAT OFF"
+
+
+def test_ladder_run_labels_cycles_by_entry_and_records_the_list_in_the_header():
+    folder = _tmp()
+    fake = FakeE4980A()
+    worker, msgs, files, _ = run_cv(fake, folder, shape=gui.SHAPE_LADDER, ladder="0.5, 1", v_step=0.5)
+    assert worker.end_reason == "complete"
+    header, columns, rows, trailer = read_data_file(files[0])
+    vs = column(rows, columns, "Voltage(V)")
+    cyc = column(rows, columns, "Cycle", int)
+    assert max(abs(v) for v, c in zip(vs, cyc) if c == 1) == 0.5
+    assert max(abs(v) for v, c in zip(vs, cyc) if c == 2) == 1.0
+    sweep = next(h for h in header if h.startswith("[sweep]"))
+    assert "shape=ladder:" in sweep and "ladder_list_V=0.5 1" in sweep and "n_cycles=2" in sweep and "v_max_v=1" in sweep
+    assert any(h.startswith("waveform: DC staircase ladder") for h in header)
+    assert fake.v == 0.0 and not fake.bias_on
 
 
 def test_time_column_respects_the_delay_budget_and_is_monotonic():
@@ -323,8 +477,8 @@ def test_files_are_ascii_and_plotter_compatible():
 def test_script_twin_shares_byte_identical_link_worker_and_pure_functions():
     names = ["ascii_text", "header_value", "fmt_cell", "iso_now", "timestamp_for_name", "wait_with_stop",
              "_ramp", "half_leg", "return_leg", "build_cycle", "build_waveform", "segment_text",
-             "ramp_time_s", "waveform_text", "parse_freq_list", "nan_derived", "validate_params",
-             "E4980ALink", "CVWorker"]
+             "ramp_time_s", "waveform_text", "parse_freq_list", "parse_ladder", "derived_columns",
+             "nan_derived", "validate_params", "disabled_fields", "E4980ALink", "CVWorker"]
     def shape(obj):
         """The code without docstrings and comments (ast dump)."""
         tree = ast.parse(inspect.getsource(obj).strip())
