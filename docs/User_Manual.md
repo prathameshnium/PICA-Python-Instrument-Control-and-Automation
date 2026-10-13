@@ -155,7 +155,7 @@ PICA is structured as a standard Python package. The steps below are for Windows
 #### Installing on Linux
 
 :::{warning}
-**Talking to real instruments from Linux has not been verified yet.** Installation, the full test suite and every GUI window have been checked on Linux, but no measurement has yet been run against real hardware from a Linux machine. Lab use so far has been on Windows. If something does not work, please [open a Linux issue](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues/new?template=linux_report.md) with your distribution, your VISA backend and the instrument model.
+**Talking to real instruments from Linux has not been verified yet.** Installation, the full test suite and the GUI windows have been checked on Linux, but no measurement has yet been run against real hardware from a Linux machine. Lab use so far has been on Windows. If something does not work, please [open a Linux issue](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues/new?template=linux_report.md) with your distribution, your VISA backend and the instrument model.
 :::
 
 **What has been checked:**
@@ -164,7 +164,7 @@ PICA is structured as a standard Python package. The steps below are for Windows
 |---|---|---|
 | `pip install` | Yes | Yes |
 | Test suite (mocked instruments) | Yes | Yes |
-| All 100 programs in the launcher, plus both launchers, open | Yes, real Tk windows under xvfb (`tests/test_gui_windows_open_for_real.py`) | Yes |
+| Programs in the launcher, plus both launchers, open | Yes, real Tk windows under xvfb (`tests/test_gui_windows_open_for_real.py`); all except the 32-bit Alpha-AN scan, see below | Yes, same exception |
 | Measurement against real instruments | No, not yet verified | No, not yet verified |
 
 **1. Install the system packages.** Tkinter and the emoji font are usually not part of a minimal install. Without the font, the icons on buttons show as empty boxes.
@@ -223,9 +223,9 @@ pica-gui
   ```bash
   systemd-inhibit --what=idle:sleep --why="PICA measurement" pica-gui
   ```
-- **Alert sounds.** The end-of-run and alarm beeps use the system bell on Linux, which may be muted. The on-screen banners and logs still appear.
+- **Alert sounds.** Most modules fall back to the system bell on Linux for the end-of-run and alarm beeps, and it may be muted. The three Keithley 2400 memristor modules beep only on Windows and are silent on Linux. The on-screen banners and logs still appear.
 - **Different fonts.** Linux draws the windows with its default fonts, usually DejaVu. The layout is the same, but the text is slightly wider.
-- **Windows-only modules.** The **32-bit** Novocontrol Alpha-AN frequency scan and the **32-bit GPIB scanner** call Windows' `gpib-32.dll` directly, so they will not work on Linux. They still open, but report that the driver is Windows-only. The regular Alpha-AN module goes through VISA and is not affected.
+- **Windows-only modules.** The **32-bit** Novocontrol Alpha-AN frequency scan and the **32-bit GPIB scanner** call Windows' `gpib-32.dll` directly, so they will not work on Linux. The 32-bit Alpha-AN scan does not open its window: it shows a "No GPIB driver" error and exits. The 32-bit GPIB scanner opens but reports that the driver is Windows-only. The regular Alpha-AN module goes through VISA and is not affected.
 
 
 ### 3.3 Running the Software
@@ -392,6 +392,11 @@ The **Cryo-con 34** appears in Quick Select under the LCR meter and the
 electrometer only — the two benches it serves — where its protocols sit next
 to the Lakeshore 350 ones. Every other module is Lakeshore 350 here; the
 Cryo-con twins of those scripts still exist and are in Advanced Options.
+
+> **Two shortcuts find any program.** **`Ctrl+Shift+A`** opens **Advanced
+> Options**: every module PICA ships, nothing filtered. **`Ctrl+F`** opens
+> **Search**: a fuzzy search over every program PICA can start, by name,
+> instrument or input field. Both are described below.
 
 **Advanced Options (`Ctrl+Shift+A`, or the View menu).** The complete card
 grid: every module PICA ships, grouped by measurement range and instrument,

@@ -116,7 +116,12 @@ ALL_GUI_MODULES = [
 ]
 
 APP_NAME = "PICA Command Line Interface"
-VERSION = "1.0.7"
+# The release number lives in pica/__init__.py only. A stale pica_suite in
+# site-packages has no __version__, so fall back rather than refuse to start.
+try:
+    from pica import __version__ as VERSION
+except ImportError:
+    VERSION = "unknown"
 AUTHORS = "Prathamesh Deshmukh, Sudip Mukherjee"
 AFFILIATION = "UGC-DAE Consortium for Scientific Research, Mumbai Centre"
 LICENSE = "MIT License"

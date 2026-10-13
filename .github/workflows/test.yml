@@ -70,8 +70,8 @@ jobs:
 
   # Windows is the platform the lab PCs run, so the suite must pass there too.
   # Tk ships with the python.org builds setup-python installs, so no virtual
-  # display is needed. Coverage is reported from the Linux job only. Both the
-  # oldest and the newest Python the package claims are run, so a version-
+  # display is needed. Coverage is reported from the Linux job only. Every
+  # Python the package claims (pyproject classifiers) is run, so a version-
   # specific break on the lab platform is caught before it reaches a lab PC.
   test-windows:
     name: Test (Windows, Python ${{ matrix.python-version }})
@@ -80,7 +80,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
     - name: Checkout repository
@@ -110,8 +110,8 @@ jobs:
   # runs every launcher program in a fresh interpreter with a REAL tkinter under
   # Xvfb. The full suite above already includes that file; this job isolates it
   # so a GUI regression on Linux is named in the checks list, and it refuses to
-  # pass if the test skipped instead of running. Python 3.12 is used here so
-  # the newest version the package claims is also exercised.
+  # pass if the test skipped instead of running. Python 3.13 is used here so
+  # the newest version the package claims is also exercised on Linux.
   gui-smoke-linux:
     name: GUI smoke test (Linux, Xvfb)
     runs-on: ubuntu-24.04
@@ -121,10 +121,10 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v7
 
-    - name: Set up Python 3.12
+    - name: Set up Python 3.13
       uses: actions/setup-python@v7
       with:
-        python-version: "3.12"
+        python-version: "3.13"
         cache: "pip"
         cache-dependency-path: |
           pyproject.toml
@@ -160,4 +160,44 @@ jobs:
         print(f"{tests} tests, {skipped} skipped")
         if tests == 0 or skipped:
             raise SystemExit("GUI smoke test did not actually open the windows")
+        PY
+
+  # Builds the sdist and wheel exactly as a release would, checks the PyPI
+  # metadata with twine, installs the wheel into a clean venv and confirms the
+  # installed version matches CITATION.cff. Catches a broken pyproject or a
+  # README that PyPI would reject before a release does.
+  package:
+    name: Build & check package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.13"
+
+    - name: Build sdist and wheel
+      run: |
+        python -m pip install --upgrade pip build twine
+        python -m build
+
+    - name: Check metadata with twine
+      run: twine check --strict dist/*
+
+    - name: Install the wheel in a clean venv and check the version
+      run: |
+        python -m venv /tmp/wheel-env
+        /tmp/wheel-env/bin/pip install dist/*.whl
+        cd /tmp
+        /tmp/wheel-env/bin/python - <<'PY'
+        import re, pica
+        cff = open("${{ github.workspace }}/CITATION.cff", encoding="utf-8").read()
+        cited = re.search(r"^version:\s*(\S+)", cff, re.M).group(1)
+        print(f"installed pica {pica.__version__}, CITATION.cff {cited}")
+        if pica.__version__ != cited:
+            raise SystemExit("wheel version does not match CITATION.cff")
         PY

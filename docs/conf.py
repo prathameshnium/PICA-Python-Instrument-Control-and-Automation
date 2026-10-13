@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath('..'))
 project = 'PICA'
 copyright = '2026, Prathamesh Deshmukh'
 author = 'Prathamesh Deshmukh'
-release = '1.0.7'
+from pica import __version__ as release  # noqa: F401  (read by Sphinx)
 
 # -- General configuration ---------------------------------------------------
 extensions = [

@@ -34,6 +34,13 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+# The release number lives in pica/__init__.py only. A stale pica_suite in
+# site-packages has no __version__, so fall back rather than refuse to start.
+try:
+    from pica import __version__ as PICA_VERSION
+except ImportError:
+    PICA_VERSION = "unknown"
+
 # IMPORT THE UTILS MODULE TO FIND ITS PATH AUTOMATICALLY
 try:
     import pica.utils.GPIB_Instrument_Scanner_GUI as gpib_scanner_module
@@ -139,7 +146,7 @@ def resource_path(relative_path):
 
 class PICALauncherApp:
 
-    PROGRAM_VERSION = "1.0.7"
+    PROGRAM_VERSION = PICA_VERSION
     CLR_BG_DARK = '#B8A392'
     CLR_FRAME_BG = '#E5DCD3'
     CLR_ACCENT_GOLD = '#BA6B5E'

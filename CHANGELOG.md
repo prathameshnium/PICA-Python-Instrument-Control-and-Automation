@@ -1,20 +1,37 @@
-go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases) and [tags](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/tags), for the finalised released versions
-## Instrument & Software Update Log
----
-### [1.0.7] - 2026-10-14
+# Changelog
+
+All notable changes to PICA are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Each release is also on the [releases page](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases).
+
+## [Unreleased]
+
+## [1.0.7] - 2026-10-14
+
+### Added
 
 - **Linux support**: Full Linux install guide in the README and the user manual (venv, tkinter, `pyvisa-py`, USB-TMC / serial / GPIB setup, known differences), with a clear warning that running against real instruments on Linux is not yet verified. New "Linux report" issue template; the Windows bug-report template points Linux users to it. The old "Windows only" warning is retired; the platform list states what is verified on each OS.
 - **Memristor modules (Keithley 2400)**: Switching I-V sweep (bipolar, unipolar and ladder shapes with current compliance, optional pause between loops), retention (write then timed reads) and endurance (pulse cycling) programs in `pica/keithley/k2400/`, plus a read-only **Memristor Analysis** utility (V set / V reset, retention ratio, endurance window). Events go to a separate `_log.txt`; data files hold data only.
-- **C-V module v2 (Keysight E4980A)**: Rewritten sweep builder with bipolar, unipolar and ladder shapes, optional pause at 0 V between ladder entries, bus-error retry (1, 2, 5, 10, 30, 60 s then every minute), a separate event log, and fields the chosen shape ignores greyed out.
-- **K6221 / 2182 I-V**: Custom list sweeps (paste from the List Maker), µA units, zero-crossing fixes and a plotter-safe header.
-- **Pfeiffer TPG 361 logger**: Idempotent Start, worker owns the serial link, no cross-talk between a stopping run and the next one.
-- **Launcher v2**: Module search (`Ctrl+F`, fuzzy, over every program), hover cards in Advanced Options (`pica/module_info.py`), View menu, PICA Utils restyled (`Ctrl+U`), Help menu opens the manual, README, change log and license in an in-app viewer with **About** / **Cite PICA** copy buttons, pressure-gauge address moved to Advanced Options, Advanced Options opens about twice as fast, focus-ring colour error fixed.
-- **Utilities**: Quick Calc typesets each line as it is typed (fractions, powers, radicals; parsed, never executed); Time Utility gains notes and a saved event log on a monotonic clock.
-- **Packaging**: PyPI classifiers for Windows, Linux, Python 3.10-3.12 and Science/Research; the wheel no longer installs README, LICENSE and docs loose into site-packages; `setup.cfg` removed. CITATION and README now cite the Zenodo concept DOI.
-- **CI**: Windows jobs on Python 3.10 and 3.12; a dedicated "GUI smoke test (Linux, Xvfb)" job opens every launcher program with a real Tk on Python 3.12 and fails if windows were skipped.
-- **Docs**: platform tables use plain words instead of check marks; remaining emoji removed.
+- **Pull request template**: checklist for tests, sibling-copy updates, ASCII-safe headers and no real sample data.
 
-### [1.0.6] - 2026-10-06
+### Changed
+
+- **C-V module v2 (Keysight E4980A)**: Rewritten sweep builder with bipolar, unipolar and ladder shapes, optional pause at 0 V between ladder entries, bus-error retry (1, 2, 5, 10, 30, 60 s then every minute), a separate event log, and fields the chosen shape ignores greyed out.
+- **K6221 / 2182 I-V**: Custom list sweeps (paste from the List Maker) and µA units.
+- **Launcher v2**: Module search (`Ctrl+F`, fuzzy, over every program), hover cards in Advanced Options (`pica/module_info.py`), View menu, PICA Utils restyled (`Ctrl+U`), Help menu opens the manual, README, change log and license in an in-app viewer with **About** / **Cite PICA** copy buttons, pressure-gauge address moved to Advanced Options, Advanced Options opens about twice as fast.
+- **Utilities**: Quick Calc typesets each line as it is typed (fractions, powers, radicals; parsed, never executed); Time Utility gains notes and a saved event log on a monotonic clock.
+- **Packaging**: PyPI classifiers for Windows, Linux, Python 3.10-3.13 and Science/Research; the wheel no longer installs README, LICENSE and docs loose into site-packages; `setup.cfg` removed. CITATION and README now cite the Zenodo concept DOI. The release number now lives only in `pica/__init__.py` (`pica.__version__`), which pyproject, the launchers, the CLI and the docs read. License metadata uses PEP 639 (`license = "MIT"`, `license-files`).
+- **CI**: Windows jobs on every claimed Python (3.10, 3.11, 3.12, 3.13); a dedicated "GUI smoke test (Linux, Xvfb)" job opens every launcher program with a real Tk on Python 3.13 and fails if windows were skipped; a new job builds the sdist and wheel, runs `twine check --strict` and checks the installed version against CITATION.cff.
+- **Docs**: platform tables use plain words instead of check marks; remaining emoji removed. Linux notes corrected: the 32-bit Alpha-AN scan shows a "No GPIB driver" error instead of opening, and the memristor modules are silent on Linux. The README's Advanced Options and Search section is shorter.
+
+### Fixed
+
+- **K6221 / 2182 I-V**: Zero-crossing fixes and a plotter-safe header.
+- **Pfeiffer TPG 361 logger**: Idempotent Start, worker owns the serial link, no cross-talk between a stopping run and the next one.
+- **Launcher v2**: Focus-ring colour error.
+- **CITATION.cff**: Second author's ORCID written as a full `https://orcid.org/` URL, as the CFF schema requires.
+
+## [1.0.6] - 2026-10-06
+
+### Added
 
 - **Novocontrol Alpha-A Support (experimental)**: New broadband dielectric spectroscopy frequency-scan module (GUI + `Instrument_Control` CLI template) with WinDETA-compatible exports and a dedicated GPIB runbook (`docs/Novocontrol_GPIB_Runbook.md`).
 - **AC Measurement Modules (experimental)**: Ten new four-probe AC modules built around the Keithley 6221 as the AC current source, in two matched sets of five — I-V (current-amplitude sweep at fixed frequency), frequency scan, R-T under Lakeshore 350 control, and passive R-T against the Lakeshore 350 and the Cryo-con 34.
@@ -25,7 +42,6 @@ go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-C
 - **Lakeshore 340 Support (experimental)**: L340 ports of temperature sensing, direct control, range control and step control (standard and advanced), plus L340 variants of the Delta, K2400, K2400 + 2182 and K6517B R-T programs, the pyroelectric module, and the E4980A temperature-scan, step-frequency-scan and PPMS dielectric programs. New sensor-curve loader for the 340/350 and a curve viewer for each.
 - **PPMS Dielectric Master (Tscan + Fscan)**: Unattended multi-day protocol combining passive warming temperature scans and temperature-stepped frequency scans on the E4980A, with the thermometer read-only and per-run cooldowns. The PPMS-synchronised frequency scan now logs the measured temperature per row, resynchronises after a desync, and filters thermometer glitches. New **Field Step Frequency Scan** for fields and temperatures set by hand on the PPMS.
 - **E4980A Open/Short Correction**: Guided correction that backs up what the meter holds, redoes OPEN / SHORT one screen at a time, verifies the residuals and logs every command.
-- **I-V Modules (K2400, K2400 + 2182, K6517B)**: Rewritten sweep logic with "0 to Max", "Loop" and "Custom List" sweeps (paste a list straight from the List Maker); every sweep hits Max exactly and never overshoots. **Fix:** the K2400 I-V module now tells the 2400 to measure volts — after `*RST` it measured current only, so the voltage column read `+9.91E+37`.
 - **Keithley 2400 Direct Control**: Bench workbench that holds one operating point with a live reading (source, compliance, ranges, NPLC, sensing, terminals, filter).
 - **New Instruments**: Keithley 197A monitor, SR830 comms console, Pfeiffer TPG 361 pressure logger (USB / Ethernet, no GPIB), and Tektronix AFG 3022B function generator control.
 - **Diagnostic Tools (read-only)**: Comms interfaces, Python environment and system info panels in the Tools menu; GPIB Lifeline console that talks to the NI-488.2 DLL directly when PyVISA cannot; 32-bit GPIB scanner (GUI + CLI) and a 32-bit Alpha-A frequency-scan build.
@@ -33,51 +49,77 @@ go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-C
 - **PICA Utils Portable**: The instrument-free utilities (plotters, PPMS planning tools, calculators) frozen into one standalone Windows `.exe`; CI builds it and attaches it to each release.
 - **SCPI Console**: Interactive console for raw SCPI commands to any VISA instrument.
 - **List Maker** (`pica/utils/List_Maker_GUI.py`, Calculators group): builds a comma-separated list for pasting into any scan program. Linear, log or 1/x spacing (even in 1/x, output in x), by point count or step size, optional whole-numbers mode (round half away from zero, consecutive repeats dropped before the pattern is applied). A pattern then goes on top: loop (up then back down), sawtooth, square, sine, or a hysteresis loop with 4 quadrants (+max to -max and back) or 5 (virgin curve first), each with a cycle count; turning points are repeated by default. Live plot with a log-y toggle, decimals / scientific / separator controls, copy and save-as-text. A second tab reads a pasted list back and reports its count, range, spacing type and step.
+- **Launcher v2 (`python run_pica_v2.py`)**: Opens on a Quick Select screen — category / module / protocol, each with its own description — with the full module grid moved to an Advanced Options window (`Ctrl+Shift+A`). Status strip moved to the bottom of both windows; on Quick Select it carries the temperature, a pressure placeholder and an Instrument Status button. That window holds the per-instrument lights (with a dot key), the raw VISA/GPIB scan table, and a shortcut to the standalone scanner — which now starts half a second after the launcher's own scan instead of alongside it. An instrument that answers but is not in the known list appears as its own chip, named from its `*IDN?` reply and marked new. The console is now a log the launcher owns rather than a panel in the rail: Quick Select opens it from a Console button on the strip, Advanced Options carries one inline, and a view opened later still shows what happened at startup. Quick Select narrows the instruments it shows at each level — category, module, then protocol — each with its live status dot, shown on the status strip at reading size. Quick Select now gathers all frequency scans into one "Frequency Scan vs. Temperature" module, so the T-Control step scan is findable. The standalone VISA/GPIB scanner is no longer auto-opened at startup; it opens with Advanced Options instead. The Instrument Status window opens at startup once the first scan lands, and its scan table now accounts for every VISA resource — identified, silent, or skipped with the reason it was skipped. Launching a protocol repaints the status panel in every open window (no rescan while a module is starting). Advanced Options now opens maximised, reflows to four card columns on a wide screen, carries its family legend in the header, and uses the compact strip with the Instrument Status button. Cryo-con 34 protocols are offered in Quick Select under the LCR meter and the electrometer only, beside the Lakeshore 350 ones. Advanced Options carries the same File / Tools / View / Help menu bar as the main window, so it is a complete launcher on its own. The resistance ranges in the Quick Select module names are marked approximate with a "~".
+- **PPMS Helper Utilities**: Plotter (transport & AC susceptibility channels), sequence visualizer, and time estimator.
+
+### Changed
+
+- **I-V Modules (K2400, K2400 + 2182, K6517B)**: Rewritten sweep logic with "0 to Max", "Loop" and "Custom List" sweeps (paste a list straight from the List Maker); every sweep hits Max exactly and never overshoots.
 - **Plotting Engine**: Removed blitting (fixes high-DPI scaling issues), movable legends, scroll fixes, AM/PM timestamps.
 - **Launcher**: Tools categorised for easier navigation.
-- **Launcher v2 (`python run_pica_v2.py`)**: Opens on a Quick Select screen — category / module / protocol, each with its own description — with the full module grid moved to an Advanced Options window (`Ctrl+Shift+A`). Status strip moved to the bottom of both windows; on Quick Select it carries the temperature, a pressure placeholder and an Instrument Status button. That window holds the per-instrument lights (with a dot key), the raw VISA/GPIB scan table, and a shortcut to the standalone scanner — which now starts half a second after the launcher's own scan instead of alongside it. An instrument that answers but is not in the known list appears as its own chip, named from its `*IDN?` reply and marked new. The console is now a log the launcher owns rather than a panel in the rail: Quick Select opens it from a Console button on the strip, Advanced Options carries one inline, and a view opened later still shows what happened at startup. Quick Select narrows the instruments it shows at each level — category, module, then protocol — each with its live status dot, shown on the status strip at reading size. Quick Select now gathers all frequency scans into one "Frequency Scan vs. Temperature" module, so the T-Control step scan is findable. The standalone VISA/GPIB scanner is no longer auto-opened at startup; it opens with Advanced Options instead. The Instrument Status window opens at startup once the first scan lands, and its scan table now accounts for every VISA resource — identified, silent, or skipped with the reason it was skipped. Launching a protocol repaints the status panel in every open window (no rescan while a module is starting). Advanced Options now opens maximised, reflows to four card columns on a wide screen, carries its family legend in the header, and uses the compact strip with the Instrument Status button. Cryo-con 34 protocols are offered in Quick Select under the LCR meter and the electrometer only, beside the Lakeshore 350 ones. Advanced Options carries the same File / Tools / View / Help menu bar as the main window, so it is a complete launcher on its own. The resistance ranges in the Quick Select module names are marked approximate with a "~".
-- **Launcher (fix)**: the pyroelectric current module was listed as having no temperature role in both launchers' catalogues; it drives the Lakeshore 350 (`SETP` + `RAMP`), so it is now marked T Control and its card names the Lakeshore alongside the K6517B.
-- **PPMS Helper Utilities**: Plotter (transport & AC susceptibility channels), sequence visualizer, and time estimator.
 - **Testing**: Frequency-scan outputs validated against reference WinDETA exports; new plot-refresh and UI regression tests.
 
----
+### Fixed
 
-### [1.0.5] - 2026-06-24
+- **I-V Modules (K2400)**: The K2400 I-V module now tells the 2400 to measure volts — after `*RST` it measured current only, so the voltage column read `+9.91E+37`.
+- **Launcher**: the pyroelectric current module was listed as having no temperature role in both launchers' catalogues; it drives the Lakeshore 350 (`SETP` + `RAMP`), so it is now marked T Control and its card names the Lakeshore alongside the K6517B.
+
+## [1.0.5] - 2026-06-24
+
+### Added
 
 - **Dielectric Spectroscopy (Keysight E4980A)**: New frequency scan, temperature scan (Lakeshore 350 control), passive temperature scan and step frequency scan programs; the C-V module was reworked.
 - **Lakeshore 350**: New direct-control program (setpoint, ramp, heater range, PID and zones) and a step controller that stabilises at each setpoint and then hands off to an external measurement.
-- **Keithley 6517B**: New high-voltage poling program; pyroelectric module updated. Plotting in the 6517B modules simplified (blitting removed) to fix redraw errors.
-- **T-Control Modules**: Heater range 5 and a 5 K stabilisation window in the Delta, K2400, K2400 + 2182, K6517B and pyroelectric T-Control programs.
 - **Utilities**: P-E loop plotter, Quick Calc, Time Utility and Unit Converter; the Plotter Utility now reads dielectric data files.
 - **Launcher**: Impedance-spectroscopy and utilities sections, step-control entry, zoomable layout and a live temperature poll in the dashboard.
+
+### Changed
+
+- **Keithley 6517B**: New high-voltage poling program; pyroelectric module updated. Plotting in the 6517B modules simplified (blitting removed) to fix redraw errors.
+- **T-Control Modules**: Heater range 5 and a 5 K stabilisation window in the Delta, K2400, K2400 + 2182, K6517B and pyroelectric T-Control programs.
 - **Documentation**: User Manual aligned with Read the Docs; `pip install pica-suite` instructions added.
 
----
+## [1.0.4] - 2026-03-15
 
-### [1.0.4] - 2026-03-15
+### Added
 
 - **Documentation Infrastructure**: Read the Docs integration added alongside the GitHub Pages site.
 - **Preprint & Publications**: Preprint page launched with downloadable PDF via an automated LaTeX build workflow (GitHub Actions); Academia.edu link added.
+
+### Changed
+
 - **CI/CD**: Workflows updated (Node.js 24 enforced, lint/docs workflow fixes, automated preprint build).
 - **Maintenance**: Requirements/dependency updates and README badge refresh.
 
----
+## [1.0.3] - 2026-01-26
 
-### [1.0.3] - 2026-01-26
+### Added
 
-- **GUI Theme**: Refreshed with the **Latte** theme — a lighter, warmer color palette for improved readability and reduced eye strain during long measurement sessions.
 - **Distribution**: Published the official package to PyPI as `pica-suite`.
 - **Documentation**: Full online documentation site launched via GitHub Pages.
+
+### Changed
+
+- **GUI Theme**: Refreshed with the **Latte** theme — a lighter, warmer color palette for improved readability and reduced eye strain during long measurement sessions.
+
+### Fixed
+
 - **Maintenance**: General bug fixes and performance improvements in measurement modules and real-time plotting logic.
 
----
+## [1.0.0] - 2025-12-15
 
-### [1.0.0] - 2025-12-15 (Initial Public Release)
+Initial public release.
+
+### Changed
 
 - **Versioning**: Version numbering has been reset from legacy development builds (v17.0) to v1.0.0 to standardize the package for public distribution and citation.
 - **JOSS Submission**: Cleaned up documentation, performed fresh install tests, and completed other proofreading in preparation for submission to the Journal of Open Source Software (JOSS).
 
 ---
+
+## Pre-1.0 development history
+
+Lab builds before the public release, under the old version numbering.
 
 ### [17.0] - 2025-12-02 
 
@@ -260,3 +302,11 @@ go through [releases](https://github.com/prathameshnium/PICA-Python-Instrument-C
 
 -   **Collaboration Note:** The project's realization was significantly aided by colleagues (from UGC-DAE CSR,Mumbai) who assisted in rectifying technical issues and developing the necessary cryogenic probes and hardware fixtures required for measurements.
 -   **June 2022:** **Project Ideation.** Dr. Sudip Mukherjee (Principal Investigator) proposed the initiative for laboratory automation from manual methods to Python-based control. He provided critical roadmap materials, including reference videos, instrument handling protocols, and conceptual designs for the GUI layouts and hardware integration.
+
+[Unreleased]: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare/v1.0.7...HEAD
+[1.0.7]: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare/v1.0.6...v1.0.7
+[1.0.6]: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare/v1.0.5...v1.0.6
+[1.0.5]: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare/v1.0.4...v1.0.5
+[1.0.4]: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare/v1.0.3...v1.0.4
+[1.0.3]: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare/v1.0.1...v1.0.3
+[1.0.0]: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases

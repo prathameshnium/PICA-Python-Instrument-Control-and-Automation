@@ -7,7 +7,7 @@ authors:
     affiliation: "UGC-DAE Consortium for Scientific Research, Mumbai Centre, India; Savitribai Phule Pune University, Pune, India"
   - family-names: "Mukherjee"
     given-names: "Sudip"
-    orcid: "0000-0003-4734-9157"
+    orcid: "https://orcid.org/0000-0003-4734-9157"
     affiliation: "UGC-DAE Consortium for Scientific Research, Mumbai Centre, India; Savitribai Phule Pune University, Pune, India"
     email: "sudipm@csr.res.in"
 title: "PICA: Advanced High-Precision Transport Measurement Automation with Python"

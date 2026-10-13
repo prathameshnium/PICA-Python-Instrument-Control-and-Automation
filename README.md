@@ -105,7 +105,7 @@ Highlights — *new temperature controllers, AC resistivity & dielectric automat
 * **AC resistivity (experimental):** Keithley 6221 AC source with an SR830 lock-in or a Keithley 197A DMM — I-V, frequency scan and R-T modules.
 * **Dielectric:** PPMS Dielectric Master (unattended Tscan + Fscan), Field Step Frequency Scan, E4980A open/short correction, and Novocontrol Alpha-A broadband spectroscopy (experimental).
 * **I-V fixes:** reworked sweeps with custom lists for the K2400, K2400 + 2182 and K6517B; the K2400 I-V module now reads voltage correctly.
-* **Launcher v2, diagnostics & utilities:** Quick Select launcher, read-only diagnostic tools, SCPI console, List Maker, MD ratio calculator, PPMS helpers, and a portable utilities `.exe`.
+* **Launcher v2, diagnostics & utilities:** Quick Select launcher, read-only diagnostic tools, SCPI console, List Maker, MD ratio calculator, and PPMS helpers.
 
 For the full changelog, see [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -287,7 +287,7 @@ pip install --upgrade pica-suite
 ### Option 3: Installing on Linux
 
 > [!WARNING]
-> **Talking to real instruments from Linux has not been verified yet.** Installation, the full test suite and every GUI window have been checked on Linux, but no measurement has yet been run against real hardware from a Linux machine. Lab use so far has been on Windows. If something does not work, please [open a Linux issue](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues/new?template=linux_report.md) with your distribution, your VISA backend and the instrument model.
+> **Talking to real instruments from Linux has not been verified yet.** Installation, the full test suite and the GUI windows have been checked on Linux, but no measurement has yet been run against real hardware from a Linux machine. Lab use so far has been on Windows. If something does not work, please [open a Linux issue](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues/new?template=linux_report.md) with your distribution, your VISA backend and the instrument model.
 
 **What has been checked:**
 
@@ -295,7 +295,7 @@ pip install --upgrade pica-suite
 |---|---|---|
 | `pip install` | Yes | Yes |
 | Test suite (mocked instruments) | Yes | Yes |
-| All 100 programs in the launcher, plus both launchers, open | Yes, real Tk windows under xvfb (`tests/test_gui_windows_open_for_real.py`) | Yes |
+| Programs in the launcher, plus both launchers, open | Yes, real Tk windows under xvfb (`tests/test_gui_windows_open_for_real.py`); all except the 32-bit Alpha-AN scan, see below | Yes, same exception |
 | Measurement against real instruments | No, not yet verified | No, not yet verified |
 
 **1. Install the system packages.** Tkinter and the emoji font are usually not part of a minimal install. Without the font, the icons on buttons show as empty boxes.
@@ -354,9 +354,9 @@ pica-gui
   ```bash
   systemd-inhibit --what=idle:sleep --why="PICA measurement" pica-gui
   ```
-- **Alert sounds.** The end-of-run and alarm beeps use the system bell on Linux, which may be muted. The on-screen banners and logs still appear.
+- **Alert sounds.** Most modules fall back to the system bell on Linux for the end-of-run and alarm beeps, and it may be muted. The three Keithley 2400 memristor modules beep only on Windows and are silent on Linux. The on-screen banners and logs still appear.
 - **Different fonts.** Linux draws the windows with its default fonts, usually DejaVu. The layout is the same, but the text is slightly wider.
-- **Windows-only modules.** The **32-bit** Novocontrol Alpha-AN frequency scan and the **32-bit GPIB scanner** call Windows' `gpib-32.dll` directly, so they will not work on Linux. They still open, but report that the driver is Windows-only. The regular Alpha-AN module goes through VISA and is not affected.
+- **Windows-only modules.** The **32-bit** Novocontrol Alpha-AN frequency scan and the **32-bit GPIB scanner** call Windows' `gpib-32.dll` directly, so they will not work on Linux. The 32-bit Alpha-AN scan does not open its window: it shows a "No GPIB driver" error and exits. The 32-bit GPIB scanner opens but reports that the driver is Windows-only. The regular Alpha-AN module goes through VISA and is not affected.
 
 ---
 
@@ -384,23 +384,27 @@ pica-gui
     python run_pica_v2.py
     ```
 
-    **Advanced Options** (`Ctrl+Shift+A`, or the View menu) is the expert
-    route: every module PICA ships on one screen, grouped by measurement range
-    and instrument, with nothing filtered. Use it when you already know which
-    program you want, and for anything Quick Select does not list: the
-    Cryo-con 34 and Lakeshore 340 twins of most programs, the standalone
-    temperature utilities, the Novocontrol Alpha-AN and the bench multimeter.
-    It opens maximised, has the same File / Tools / View / Help menus as the
-    main window, a folder shortcut on every card to the module's source, and an
-    inline console. Rest the pointer on any module row and a card says what
-    the program measures, which instruments it opens and what it will ask
-    for. In either window, **`Ctrl+F`** (or View → Search Modules…) opens a
-    search in the middle of the window: a fuzzy search over every program PICA
-    can start, measurement modules, diagnostics and utilities alike, by
-    name, instrument, description or input field — `k2400 rt`, `butterfly`,
-    `cc34`, even a misspelt `resistence`. Each result is listed by its full
-    name, instruments first (*Keithley 2400 — I-V Sweep*), and Enter
-    launches the highlighted one.
+    **Find any program fast: Advanced Options and Search**
+
+    | Shortcut | Opens |
+    |---|---|
+    | **`Ctrl+Shift+A`** (or View menu) | **Advanced Options**: every module PICA ships on one screen, nothing filtered |
+    | **`Ctrl+F`** (or View > Search Modules) | **Search**: fuzzy search over every program PICA can start |
+
+    **Advanced Options** is the expert route. Use it when you already know
+    which program you want, or need one that Quick Select does not list:
+
+    - the Cryo-con 34 and Lakeshore 340 twins of most programs
+    - the standalone temperature utilities
+    - the Novocontrol Alpha-AN and the bench multimeter
+
+    Rest the pointer on a module row and a card shows what it measures, which
+    instruments it opens and what it will ask for.
+
+    **Search** works from either window and matches names, instruments,
+    descriptions and input fields: try `k2400 rt`, `cc34`, `butterfly`, or
+    even a misspelt `resistence`. Results list instruments first
+    (*Keithley 2400 — I-V Sweep*); press `Enter` to launch.
 
 3.  **Command Line Interface (CLI)**
     For headless operation (e.g., Raspberry Pi).
@@ -449,7 +453,7 @@ Upon launching PICA (`pica-gui`), select your desired measurement module from th
 
 ## Running Tests Locally
 
-**Test coverage:** the suite has 2,100+ tests, all run against mocked VISA instruments, so no hardware is needed. They cover **36% of the statements in `pica/`** (measured 2026-10-06 with `--cov=pica`, v1.0.6). Live numbers are on [Codecov](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation).
+**Test coverage:** the suite has 3,200+ tests, all run against mocked VISA instruments, so no hardware is needed. They cover **33% of the statements in `pica/`** (measured 2026-10-14 with `--cov=pica`, v1.0.7). Live numbers are on [Codecov](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation).
 
 To run the test suite locally, first install the development dependencies:
 ```bash

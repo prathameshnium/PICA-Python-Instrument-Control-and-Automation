@@ -103,7 +103,7 @@ def test_oe_to_tesla_and_display():
 
 
 def test_sanitize_sample_name():
-    assert m.sanitize_sample_name("Co 07 / batch#2") == "Co_07_batch_2"
+    assert m.sanitize_sample_name("Ab 12 / batch#2") == "Ab_12_batch_2"
     assert m.sanitize_sample_name("   ") == "Sample"
     assert m.sanitize_sample_name("Sample₃").isascii()
 
