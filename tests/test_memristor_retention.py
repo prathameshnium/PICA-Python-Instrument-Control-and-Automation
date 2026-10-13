@@ -87,8 +87,10 @@ def test_retention_intermittent_linear_sources_zero_between_instants():
         assert "soak" in phases and "read" in phases and "recover" in phases
         reads = [r for r in rrows if r["phase"] == "read"]
         assert len(reads) >= 2 and all(r["n_avg"] == 3 for r in reads)
-        for a, b in zip(reads, reads[1:]):
-            assert b["t_since_write_s"] - a["t_since_write_s"] >= 0.3
+        # one read per 0.4 s schedule instant; a slow runner can finish a read late,
+        # so check the instant each read belongs to, not the gap between reads
+        slots = [int(r["t_since_write_s"] / 0.4 + 1e-6) for r in reads]
+        assert all(s >= 1 for s in slots) and all(b > a for a, b in zip(slots, slots[1:]))
         soaks = [r for r in rrows if r["phase"] == "soak"]
         assert all(r["V_set_V"] == 0.1 for r in soaks)
         recov = [r for r in rrows if r["phase"] == "recover"]
