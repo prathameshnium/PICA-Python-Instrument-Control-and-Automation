@@ -725,6 +725,10 @@ This utility provides a dedicated interface for **In-situ and ex-situ electrical
 Capacitance-Voltage (C-V) characterization of a device or a sample using a Keysight E4980A LCR meter.
 :::
 
+:::{note}
+**C-V module v2.0** (October 2026). Every C-V file is self-describing: the `#` header records the instrument identity and options, the sweep (mode, loop shape, step, cycles, hold and ramp settings, the hard 20 V cap), the frequency order with "file k of N", the LCR settings read back from the instrument, and one `waveform:` line in words. Each row carries `t_s`, a `Timestamp`, `Cycle`, `Segment`, the four monitors (`Vdc_mon`, `Idc_mon`, `Vac_mon`, `Iac_mon`), the raw `R_raw`, `X_raw` and `Status`, after the legacy columns. The 18 derived columns are NaN when the status is -1 or 1. The file ends with `# END reason=...`. Frequencies are measured in the order typed. Bus errors are retried forever (1, 2, 5, 10, 30, 60 s, then every 60 s) with RETRY and RECONNECT lines in `<sample>_<ts>_CV_log.txt`; nothing modal appears during or after a run. The DC bias is a voltage source with no current compliance; `Idc_mon(A)` is the DC current through the sample. The plain script `CV_KE4980A_Simple_Instrument_Control.py` runs the same path without a window.
+:::
+
 ### 6.8 Broadband Dielectric Spectroscopy
 
 **Target Hardware:** Novocontrol Alpha-AN Impedance Analyzer with a ZG4 sample interface, over direct GPIB.

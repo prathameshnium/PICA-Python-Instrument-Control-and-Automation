@@ -1,10 +1,34 @@
 '''
  PROGRAM:      Keysight E4980A CV Scan (R-X) GUI
- PURPOSE:      Provide a robust interface for automating Capacitance-Voltage
-               (CV) sweeps with nested frequency loops, ALC, Aperture control,
-               Open/Short corrections, Cable Length correction, and Full
-               Impedance calculations derived from measured R-X.
+ VERSION:      2.0 (13 Oct 2026)
+ PURPOSE:      Capacitance-Voltage (CV) sweeps on any sample: a DC bias
+               staircase with the AC test signal on top, one data file per
+               frequency, every row time-stamped and labelled with its cycle
+               and segment, the four instrument monitors (Vdc, Idc, Vac, Iac)
+               and the raw R, X and status beside the 18 derived values.
                Requires Option 001 (continuous DC bias) on the E4980A.
+
+ FILE FORMAT (tab separated, plotter compatible):
+   '#' header blocks ([instrument], [sample], [sweep], [frequency], [lcr],
+   [timing]), one 'waveform:' line in words, the column row, one data row
+   per point (flushed and fsynced), then '# END reason=... | points=...'.
+   Columns: Voltage(V), Frequency and the 18 derived columns as before,
+   then t_s, Timestamp, Cycle, Segment, Vdc_mon(V), Idc_mon(A), Vac_mon(V),
+   Iac_mon(A), R_raw, X_raw, Status. Derived columns are NaN when the
+   status is -1 or 1 (the instrument returns 9.9E37 then, manual p. 265).
+   RETRY, RECONNECT and END events also go to <sample>_<ts>_CV_log.txt.
+
+ BUS-ERROR RETRY: any VISA error is retried after 1, 2, 5, 10, 30, 60 s and
+   then every 60 s forever (reconnect = close, reopen, re-configure, bias
+   back on at 0 V and ramped to the current point). Stop ends the wait.
+
+ SAFETY: DC bias hard-capped at +/-20 V (V_ABS_MAX, never raised), bias
+   ramped in 0.5 V steps, forced to 0 V and switched off on Stop, error,
+   crash or exit. The bias is a voltage source with no current compliance
+   (manual p. 326); Idc_mon(A) records the DC current through the sample.
+
+ Pure functions and the link/worker classes carry no Tk so the run path is
+ testable with a fake instrument (tests/test_cv_ke4980a.py).
 '''
 
 import tkinter as tk
@@ -21,6 +45,8 @@ from tkinter import (
 import os
 import time
 import math
+import queue
+import threading
 import traceback
 from datetime import datetime
 import numpy as np
@@ -29,17 +55,69 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
 from multiprocessing import Process
 import runpy
-import threading
-import queue
 import atexit
 
+VERSION = "2.0"
+MODULE_NAME = "CV_KE4980A_GUI"
 
 # --- Absolute hardware safety limits (E4980A) ---
 V_ABS_MAX = 20.0        # Hardcoded DC bias ceiling. NEVER raise this.
-                        # (Opt 001 hardware allows ±40 V; we cap at ±20 V.)
+                        # (Opt 001 hardware allows +/-40 V; we cap at +/-20 V.
+                        # Manual p. 65: Vosc*sqrt(2)*1.15 + Vdc*1.002 < 42 V,
+                        # which 20 V + 2 Vrms satisfies with margin.)
 V_AC_MAX = 2.0          # AC test signal ceiling (Vrms), standard unit spec.
 V_STD_BIAS_MAX = 2.0    # Max bias without Option 001.
 FREQ_MIN, FREQ_MAX = 20.0, 2e6
+
+# --- Bias ramp (the only soft start the instrument gets) ---
+RAMP_STEP_V = 0.5       # volts per write while ramping the DC bias
+RAMP_DWELL_S = 0.1      # seconds between ramp writes
+RAMP_SKIP_V = 0.01      # |target - current| below this: no write at all
+
+# --- Timing ---
+VISA_TIMEOUT_S = 60.0   # low-freq + LONG + autorange can be slow
+RST_SLEEP_S = 1.0       # graceful reset
+SETTLE_S = 0.2          # after groups of setting writes
+AC_SETTLE_S = 0.5       # after the AC level write
+BIAS_ON_SETTLE_S = 0.5  # after :BIAS:STAT ON
+
+# Bus-error retry (memristor protocol 2.8): 1, 2, 5, 10, 30, 60 s then every 60 s forever.
+RETRY_SCHEDULE_S = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0)
+
+# E4980A facts (User's Guide, printed page numbers).
+E4980_OVERLOAD = 9.9e37             # p. 265: data are 9.9E37 when status is -1 or 1
+STATUS_TEXT = {                     # p. 265
+    -1: "no data",
+    0: "normal",
+    1: "overload",
+    3: "signal source overloaded",
+    4: "ALC unable to regulate",
+}
+NAN_STATUSES = (-1, 1)              # p. 265: only these carry no real data
+
+# Loop shapes (cycle mode). Segment numbers are the leg order within a cycle.
+SHAPE_POS_FIRST = "positive first: 0 -> +V -> 0 -> -V -> 0"
+SHAPE_NEG_FIRST = "negative first: 0 -> -V -> 0 -> +V -> 0"
+SHAPE_UNI_POS = "unipolar positive: 0 -> +V -> 0"
+SHAPE_UNI_NEG = "unipolar negative: 0 -> -V -> 0"
+SHAPES = (SHAPE_POS_FIRST, SHAPE_NEG_FIRST, SHAPE_UNI_POS, SHAPE_UNI_NEG)
+SHAPE_SIGNS = {
+    SHAPE_POS_FIRST: (1, -1),
+    SHAPE_NEG_FIRST: (-1, 1),
+    SHAPE_UNI_POS: (1,),
+    SHAPE_UNI_NEG: (-1,),
+}
+
+DERIVED_HEADER = (
+    "Q\tD\tG(1/Rp)\tB\tCp\tLp\tCs\tLs\tlZl\ttheta\tchi\t"
+    "R(Rs)\ttheta(deg.)\tRp\t1/lZl\tOmega\tCp''\tCs''"
+)
+EXTRA_HEADER = (
+    "t_s\tTimestamp\tCycle\tSegment\tVdc_mon(V)\tIdc_mon(A)\t"
+    "Vac_mon(V)\tIac_mon(A)\tR_raw\tX_raw\tStatus"
+)
+COLUMN_ROW = "Voltage(V)\tFrequency\t" + DERIVED_HEADER + "\t" + EXTRA_HEADER
+N_DERIVED = 18
 
 
 def run_script_process(script_path):
@@ -116,205 +194,741 @@ except ImportError:
 
 
 # ===============================================================================
-# BACKEND CLASS - Instrument Control Logic
+# PURE FUNCTIONS - waveform, formulas, formatting (no Tk, no instrument)
 # ===============================================================================
 
-class LCR_Backend:
-    """Handles all SCPI communication with the Keysight E4980A."""
+class BusError(Exception):
+    """Any VISA failure; the worker applies the retry rule to it."""
 
-    def __init__(self):
-        self.instrument = None
-        self.params = {}
-        self.has_opt001 = False
+
+class StopRequested(Exception):
+    """Raised inside the worker when Stop is pressed."""
+
+
+def ascii_text(text):
+    """ASCII-safe text for file headers (lab PCs read files as cp1252)."""
+    return str(text).encode("ascii", "replace").decode("ascii")
+
+
+def header_value(value):
+    """One header value: ASCII, no newlines, no ' | ' separators inside."""
+    return ascii_text(value).replace("\n", " ").replace("\r", " ").replace(" | ", " / ")
+
+
+def fmt_cell(value):
+    """One data cell: 6-digit exponent form; NaN spelled out for genfromtxt."""
+    if isinstance(value, str):
+        return value
+    try:
+        if value is None or (isinstance(value, float) and math.isnan(value)):
+            return "NaN"
+        if isinstance(value, (bool, np.bool_)):
+            return str(int(value))
+        if isinstance(value, (int, np.integer)):
+            return str(int(value))
+        return f"{float(value):.6E}"
+    except (TypeError, ValueError):
+        return "NaN"
+
+
+def iso_now(now=None):
+    """ISO time without spaces, so the Timestamp column is one token."""
+    return (now or datetime.now()).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+
+
+def timestamp_for_name(now=None):
+    return (now or datetime.now()).strftime("%Y%m%d_%H%M%S")
+
+
+def wait_with_stop(seconds, stop_event, slice_s=0.05, sleep=time.sleep):
+    """Sleep `seconds` in slices; True when stop_event was set meanwhile."""
+    end = time.perf_counter() + max(0.0, seconds)
+    while True:
+        if stop_event is not None and stop_event.is_set():
+            return True
+        remaining = end - time.perf_counter()
+        if remaining <= 0:
+            return False
+        sleep(min(slice_s, remaining))
+
+
+def _ramp(a, b, step):
+    """Staircase from a to b inclusive (b hit exactly, no duplicate of b)."""
+    d = 1 if b >= a else -1
+    pts = list(np.arange(a, b, d * step))
+    if pts and abs(pts[-1] - b) < 1e-9:
+        pts.pop()
+    pts.append(b)
+    return [float(round(v, 9)) for v in pts]
+
+
+def half_leg(vmax, step):
+    """0 (exclusive) to vmax (inclusive)."""
+    return _ramp(0.0, vmax, step)[1:]
+
+
+def return_leg(top, step):
+    """top (exclusive) back to 0 (inclusive)."""
+    return _ramp(top, 0.0, step)[1:]
+
+
+def build_cycle(shape, v_max, v_step):
+    """One cycle as a list of (segment, v); starts after 0, ends at 0."""
+    out = []
+    seg = 0
+    for sign in SHAPE_SIGNS[shape]:
+        seg += 1
+        out.extend((seg, v) for v in half_leg(sign * abs(v_max), v_step))
+        seg += 1
+        out.extend((seg, v) for v in return_leg(sign * abs(v_max), v_step))
+    return out
+
+
+def build_waveform(cycle_mode, shape, v_max, v_start, v_stop, v_step, n_cycles):
+    """The full bias sequence of one file as (cycle, segment, v) tuples.
+
+    Cycle mode: a measured 0 V point first (cycle 1, segment 1), then
+    n_cycles of the chosen shape, each ending at 0 V. Linear mode: one
+    staircase v_start -> v_stop, cycle 1, segment 1."""
+    v_step = abs(float(v_step))
+    if v_step <= 0:
+        raise ValueError("Voltage step must be > 0.")
+    if cycle_mode:
+        if n_cycles < 1:
+            raise ValueError("Number of cycles must be >= 1.")
+        if abs(v_max) <= 0:
+            raise ValueError(
+                "Cycle mode requires a non-zero Stop Voltage "
+                "(V Stop sets the cycle amplitude)."
+            )
+        pts = [(1, 1, 0.0)]
+        one = build_cycle(shape, abs(v_max), v_step)
+        for c in range(1, n_cycles + 1):
+            pts.extend((c, seg, v) for seg, v in one)
+        return pts
+    return [(1, 1, v) for v in _ramp(float(v_start), float(v_stop), v_step)]
+
+
+def segment_text(cycle_mode, shape):
+    """What the Segment column means in this file."""
+    if not cycle_mode:
+        return "1 = one-way staircase v_start -> v_stop"
+    legs = []
+    seg = 0
+    for sign in SHAPE_SIGNS[shape]:
+        s = "+" if sign > 0 else "-"
+        seg += 1
+        legs.append(f"{seg} = 0 -> {s}V")
+        seg += 1
+        legs.append(f"{seg} = {s}V -> 0")
+    return ", ".join(legs)
+
+
+def ramp_time_s(delta_v, step=RAMP_STEP_V, dwell=RAMP_DWELL_S):
+    """Seconds the bias ramp spends for a change of delta_v (writes x dwell)."""
+    delta_v = abs(delta_v)
+    if delta_v < RAMP_SKIP_V:
+        return 0.0
+    n_writes = len(np.arange(0.0, delta_v, step)) + 1
+    return n_writes * dwell
+
+
+def waveform_text(p, freq):
+    """The waveform of one file in words (header 'waveform:' line)."""
+    ramp = ramp_time_s(p["v_step"])
+    hold = (
+        f"hold {p['delay']:g} s + ramp {ramp:g} s per point "
+        f"(ramp {RAMP_STEP_V:g} V / {RAMP_DWELL_S:g} s)"
+    )
+    ac = f"AC {p['ac_bias']:g} Vrms sine at {freq:g} Hz"
+    if p["cycle_mode"]:
+        path = p["shape"].split(": ", 1)[1].replace("V", f"{abs(p['v_max']):g}")
+        return (
+            f"DC staircase {path} V, step {p['v_step']:g} V, {hold}, "
+            f"x{p['n_cycles']} cycle(s); {ac}"
+        )
+    return (
+        f"DC staircase {p['v_start']:g} -> {p['v_stop']:g} V one way, "
+        f"step {p['v_step']:g} V, {hold}; {ac}"
+    )
+
+
+def parse_freq_list(text):
+    """Frequencies in the order typed, duplicates dropped, range checked."""
+    out = []
+    for tok in str(text).split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        f = float(tok)
+        if not (FREQ_MIN <= f <= FREQ_MAX):
+            raise ValueError(
+                f"Frequency {f} Hz outside {FREQ_MIN}-{FREQ_MAX} Hz."
+            )
+        if f not in out:
+            out.append(f)
+    if not out:
+        raise ValueError("At least one frequency is required.")
+    return out
+
+
+def derived_columns(f, R, X):
+    """The 18 derived values from measured R (series) and X (reactance).
+    Formulas unchanged from v1 (legacy LabVIEW convention)."""
+    omega = 2 * np.pi * f
+    omega_safe = omega if omega != 0 else 1e-20
+
+    Z_mag = np.sqrt(R ** 2 + X ** 2)
+    Z_mag_safe = Z_mag if Z_mag != 0 else 1e-20
+    Z_mag_sq = Z_mag_safe ** 2
+
+    G = R / Z_mag_sq
+    B = -X / Z_mag_sq
+
+    G_safe = G if G != 0 else 1e-20
+    B_safe = B if B != 0 else 1e-20
+    X_safe = X if X != 0 else 1e-20
+
+    Rp = 1.0 / G_safe
+    Cp = B / omega_safe
+    Cs = -1.0 / (omega_safe * X_safe)
+    Ls = X / omega_safe
+    Lp = -1.0 / (omega_safe * B_safe)
+
+    Ls = abs(Ls)
+    Lp = abs(Lp)
+
+    D = G_safe / B_safe
+    D_safe = D if D != 0 else 1e-20
+    Q = 1.0 / D_safe
+
+    theta_rad = math.atan2(X, R)
+    theta_deg = math.degrees(theta_rad)
+
+    chi = X
+    Rs = R
+
+    Y_mag = 1.0 / Z_mag_safe
+
+    Cp_double_prime = G / omega_safe
+    Cs_double_prime = D * Cs  # series-model loss (legacy LabVIEW convention)
+
+    return [
+        float(x) for x in (
+            Q, D, G, B, Cp, Lp, Cs, Ls, Z_mag, theta_rad, chi, Rs,
+            theta_deg, Rp, Y_mag, omega, Cp_double_prime, Cs_double_prime,
+        )
+    ]
+
+
+def nan_derived():
+    return [float("nan")] * N_DERIVED
+
+
+def validate_params(p):
+    """Raise ValueError on anything the window should refuse at Start.
+    Returns the params with v_max set and voltages clamped to V_ABS_MAX."""
+    p = dict(p)
+    v_step = abs(float(p["v_step"]))
+    if v_step <= 0:
+        raise ValueError("Voltage step must be > 0.")
+    p["v_step"] = v_step
+    if float(p["delay"]) < 0:
+        raise ValueError("Delay per step must be >= 0 s.")
+    if not (0 < float(p["ac_bias"]) <= V_AC_MAX):
+        raise ValueError(f"AC level must be in (0, {V_AC_MAX}] Vrms.")
+    p["clamped"] = any(abs(float(p[k])) > V_ABS_MAX for k in ("v_start", "v_stop"))
+    p["v_start"] = max(-V_ABS_MAX, min(V_ABS_MAX, float(p["v_start"])))
+    p["v_stop"] = max(-V_ABS_MAX, min(V_ABS_MAX, float(p["v_stop"])))
+    p["v_max"] = abs(p["v_stop"]) if p["cycle_mode"] else 0.0
+    if p["cycle_mode"]:
+        if p.get("shape") not in SHAPES:
+            raise ValueError("Choose a loop shape for cycle mode.")
+        if int(p["n_cycles"]) < 1:
+            raise ValueError("Number of cycles must be >= 1.")
+    else:
+        p["n_cycles"] = 1
+        p["shape"] = ""
+    p["freqs"] = parse_freq_list(p["freq_list"])
+    p["waveform"] = build_waveform(
+        p["cycle_mode"], p["shape"], p["v_max"], p["v_start"], p["v_stop"],
+        p["v_step"], int(p["n_cycles"]),
+    )
+    return p
+
+
+# ===============================================================================
+# LINK - raw SCPI over PyVISA (every failure becomes BusError)
+# ===============================================================================
+
+class E4980ALink:
+    """Transport plus the E4980A configuration sequence. The last
+    configuration is remembered so reconnect() can re-assert it; after a
+    reconnect the bias is on at 0 V and the worker ramps it to the point."""
+
+    def __init__(self, address, timeout_s=VISA_TIMEOUT_S, sleep=time.sleep):
+        self.address = address
+        self.timeout_s = float(timeout_s)
+        self.sleep = sleep
         self.rm = None
-        if pyvisa:
-            try:
-                self.rm = pyvisa.ResourceManager()
-            except Exception as e:
-                print(f"VISA init failed: {e}")
+        self.inst = None
+        self.idn = ""
+        self.opt = ""
+        self.has_opt001 = False
+        self.config = None
 
-    def _check_errors(self, context=""):
-        """Drain SCPI error queue; raise on any error."""
+    # -- transport ------------------------------------------------------
+    def open(self):
+        if pyvisa is None:
+            raise BusError("PyVISA is not installed.")
+        try:
+            if self.rm is None:
+                self.rm = pyvisa.ResourceManager()
+            inst = self.rm.open_resource(self.address)
+            inst.timeout = int(self.timeout_s * 1000)
+            inst.read_termination = "\n"
+            inst.write_termination = "\n"
+            self.inst = inst
+        except Exception as exc:
+            self.inst = None
+            raise BusError(f"open {self.address}: {exc}")
+
+    def close(self):
+        try:
+            if self.inst is not None:
+                self.inst.close()
+        except Exception:
+            pass
+        self.inst = None
+
+    def write(self, cmd):
+        if self.inst is None:
+            raise BusError("not connected")
+        try:
+            self.inst.write(cmd)
+        except Exception as exc:
+            raise BusError(f"write {cmd!r}: {exc}")
+
+    def query(self, cmd):
+        if self.inst is None:
+            raise BusError("not connected")
+        try:
+            return str(self.inst.query(cmd)).strip()
+        except Exception as exc:
+            raise BusError(f"query {cmd!r}: {exc}")
+
+    def query_floats(self, cmd):
+        reply = self.query(cmd)
+        try:
+            return [float(tok) for tok in reply.split(",") if tok.strip()]
+        except ValueError:
+            raise BusError(f"unparseable reply to {cmd!r}: {reply!r}")
+
+    # -- startup ----------------------------------------------------------
+    def identify(self):
+        self.idn = self.query("*IDN?")
+        if "E4980" not in self.idn:
+            raise RuntimeError(f"Not an E4980A: {self.idn}")  # not a bus fault: no retry
+        self.opt = self.query("*OPT?")
+        self.has_opt001 = "001" in self.opt
+        return self.idn
+
+    def check_errors(self, context):
         errors = []
-        for _ in range(20):
-            err = self.instrument.query(":SYST:ERR?").strip()
+        for _ in range(10):
+            err = self.query(":SYST:ERR?")
             if err.startswith("0,") or err.startswith("+0,"):
                 break
             errors.append(err)
         if errors:
-            raise RuntimeError(f"SCPI errors after {context}: {errors}")
+            raise RuntimeError(f"SCPI errors after {context}: {errors}")  # setting fault: no retry
 
-    def safe_ramp_dc_bias(self, target_v, step=0.5, dwell=0.1):
-        """Safely ramps the DC bias to the target voltage."""
-        current_v = float(self.instrument.query(":BIAS:VOLT?"))
-        if abs(target_v - current_v) < 0.01:
+    def configure(self, p):
+        """The CV configuration (R-X function, BUS trigger, all four
+        monitors on, bias on at 0 V). Remembered for reconnect()."""
+        self.config = dict(p)
+        if not self.has_opt001:
+            raise RuntimeError(  # not a bus fault: no retry
+                "CV sweeps require Option 001 (continuous DC bias). "
+                "Standard unit only supports discrete 0/1.5/2 V bias."
+            )
+        self.write("*RST; *CLS")
+        self.sleep(RST_SLEEP_S)
+        self.write(":DISP:ENAB ON")
+        self.sleep(SETTLE_S)
+
+        self.write(":FUNC:IMP RX")
+        self.write(f":APER {p['aper']}")
+        self.write(":FUNC:IMP:RANG:AUTO ON")
+        self.sleep(SETTLE_S)
+
+        self.write(":FORM ASC")
+
+        # All four monitors on so the measured waveform goes into the file
+        # (VDC and IDC need Option 001, manual p. 75; read with
+        # :FETC:SMON:xxx?, p. 347).
+        self.write(":FUNC:SMON:VAC ON")
+        self.write(":FUNC:SMON:IAC ON")
+        self.write(":FUNC:SMON:VDC ON")
+        self.write(":FUNC:SMON:IDC ON")
+        self.sleep(SETTLE_S)
+
+        self.write(":AMPL:ALC ON" if p["alc_enabled"] else ":AMPL:ALC OFF")
+        self.sleep(SETTLE_S)
+
+        self.write(f":CORR:LENG {p['cable_len']}")
+        if p["corr_enabled"]:
+            self.write(":CORR:OPEN:STAT ON")
+            self.write(":CORR:SHOR:STAT ON")
+        else:
+            self.write(":CORR:OPEN:STAT OFF")
+            self.write(":CORR:SHOR:STAT OFF")
+        self.sleep(SETTLE_S)
+
+        self.write(f":VOLT {p['ac_bias']}")
+        self.sleep(AC_SETTLE_S)
+
+        # BUS trigger: :TRIG:IMM moves Idle -> Measurement (manual p. 249-250)
+        self.write(":TRIG:SOUR BUS")
+        self.write(":INIT:CONT ON")
+        self.sleep(SETTLE_S)
+
+        # CV mode: start at 0 V with bias output enabled; sweep sets values.
+        self.write(":BIAS:VOLT 0")
+        self.write(":BIAS:STAT ON")
+        self.sleep(BIAS_ON_SETTLE_S)
+
+        self.check_errors("configuration")
+
+    def snapshot(self):
+        """Instrument-side settings for the file header (query only)."""
+        snap = {}
+        for key, cmd in (
+            ("aperture", ":APER?"),
+            ("ac_level_vrms", ":VOLT?"),
+            ("alc", ":AMPL:ALC?"),
+            ("open_corr", ":CORR:OPEN:STAT?"),
+            ("short_corr", ":CORR:SHOR:STAT?"),
+            ("cable_m", ":CORR:LENG?"),
+            ("bias_range_auto", ":BIAS:RANG:AUTO?"),
+            ("impedance_range_auto", ":FUNC:IMP:RANG:AUTO?"),
+            ("bias_state", ":BIAS:STAT?"),
+        ):
+            try:
+                snap[key] = self.query(cmd)
+            except BusError:
+                snap[key] = "unknown"
+        return snap
+
+    def reconnect(self):
+        """Close, reopen, identify and re-configure (bias on at 0 V)."""
+        self.close()
+        self.open()
+        self.identify()
+        if self.config is not None:
+            self.configure(self.config)
+
+    # -- bias -------------------------------------------------------------
+    def bias_voltage(self):
+        return float(self.query(":BIAS:VOLT?"))
+
+    def ramp_bias(self, target_v, step=RAMP_STEP_V, dwell=RAMP_DWELL_S):
+        """Ramp the DC bias to target_v. Final hardware-protection clamp."""
+        if abs(target_v) > V_ABS_MAX:  # defense in depth, should never trigger
+            raise ValueError(
+                f"Bias {target_v} V blocked by hardcoded {V_ABS_MAX} V cutoff."
+            )
+        current_v = self.bias_voltage()
+        if abs(target_v - current_v) < RAMP_SKIP_V:
             return
-
         if step <= 0:
-            self.instrument.write(f":BIAS:VOLT {target_v:.3f}")
+            self.write(f":BIAS:VOLT {target_v:.3f}")
             return
-
         direction = 1 if target_v > current_v else -1
-        ramp_points = np.arange(current_v, target_v, direction * step)
-        ramp_points = np.append(ramp_points, target_v)
-
-        for v in ramp_points:
-            self.instrument.write(f":BIAS:VOLT {v:.3f}")
-            time.sleep(dwell)
+        pts = list(np.arange(current_v, target_v, direction * step)) + [target_v]
+        for v in pts:
+            self.write(f":BIAS:VOLT {v:.3f}")
+            self.sleep(dwell)
 
     def force_zero_bias(self):
-        """Emergency safety: aggressively drive bias to 0V.
-        Swallows exceptions so it can be used in error handlers safely."""
-        if not self.instrument:
+        """Emergency: drive the bias to 0 V and switch it off. Swallows
+        every error so it can be used in any error handler."""
+        if self.inst is None:
             return
         try:
             try:
-                # Try a fast ramp first
-                self.safe_ramp_dc_bias(0.0, step=1.0, dwell=0.05)
+                self.ramp_bias(0.0, step=1.0, dwell=0.05)
             except Exception:
-                # If ramp fails (e.g. VISA timeout), force a hard write
-                self.instrument.write(":BIAS:VOLT 0")
-                time.sleep(0.2)
-        except Exception as e:
-            print(f"  CRITICAL SAFETY WARNING: Failed to force bias to 0V! {e}")
+                self.inst.write(":BIAS:VOLT 0")
+                self.sleep(0.2)
+            self.inst.write(":BIAS:STAT OFF")
+        except Exception as exc:
+            print(f"  CRITICAL SAFETY WARNING: Failed to force bias to 0V! {exc}")
 
-    def set_bias_voltage(self, v):
-        """Ramp DC bias to v. Final hardware-protection clamp lives here."""
-        if abs(v) > V_ABS_MAX:  # defense in depth — should never trigger
-            raise ValueError(
-                f"Bias {v} V blocked by hardcoded {V_ABS_MAX} V cutoff."
-            )
-        self.safe_ramp_dc_bias(v)
-
+    # -- measurement ------------------------------------------------------
     def set_frequency(self, freq):
-        self.instrument.write(f":FREQ {freq}")
+        self.write(f":FREQ {freq}")
 
-    def measure_point(self, delay):
-        """Trigger and fetch one R, X, status at current freq/bias."""
-        time.sleep(delay)
-        self.instrument.write(":TRIG:IMM")
-        self.instrument.query("*OPC?")  # Wait for operation complete
-        vals = self.instrument.query_ascii_values(":FETC?")
-        R, X = vals[0], vals[1]
+    def trigger_and_fetch(self):
+        """One bus-triggered measurement: R, X, status."""
+        self.write(":TRIG:IMM")
+        self.query("*OPC?")
+        vals = self.query_floats(":FETC?")
+        if len(vals) < 2:
+            raise BusError(f"short :FETC? reply: {vals}")
         status = int(vals[2]) if len(vals) > 2 else 0
-        return R, X, status
+        return vals[0], vals[1], status
 
-    def initialize_instrument(self, p):
-        """Configures the instrument for a CV sweep using R-X function."""
-        print("\n--- [Backend] Initializing Keysight E4980A ---")
-        self.params = p
-        if not self.rm:
-            raise ConnectionError("VISA Resource Manager unavailable.")
+    def fetch_monitors(self):
+        """Vdc, Idc, Vac, Iac of the latest measurement (manual p. 347)."""
+        out = []
+        for cmd in (":FETC:SMON:VDC?", ":FETC:SMON:IDC?",
+                    ":FETC:SMON:VAC?", ":FETC:SMON:IAC?"):
+            vals = self.query_floats(cmd)
+            out.append(vals[0] if vals else float("nan"))
+        return tuple(out)
 
-        inst = self.rm.open_resource(p["lcr_visa"])
-        inst.timeout = 60000  # 60 s; low-freq + LONG + autorange can be slow
-        inst.read_termination = "\n"
-        inst.write_termination = "\n"
-        self.instrument = inst
 
-        try:
-            idn = inst.query("*IDN?").strip()
-            if "E4980" not in idn:
-                inst.close()
-                raise ConnectionError(f"Not an E4980A: {idn}")
+# ===============================================================================
+# WORKER - the run path (thread), file writing, retry, END lines
+# ===============================================================================
 
-            self.has_opt001 = "001" in inst.query("*OPT?")
+class CVWorker:
+    """Runs the whole CV measurement: frequencies in the order typed, one
+    data file each, every row flushed and fsynced. Messages to the GUI go
+    through q as tuples: ("log", text), ("status", text),
+    ("new_file", path, freq), ("point", freq, v, cycle, segment, status,
+    derived), ("done", reason), ("error", text)."""
 
-            # --- Hardcoded safety ceilings (do not modify) ---
-            if not self.has_opt001:
-                raise RuntimeError(
-                    "CV sweeps require Option 001 (continuous DC bias). "
-                    "Standard unit only supports discrete 0/1.5/2 V bias."
-                )
-            # Validate Vmax when in cycle mode; otherwise validate v_start/v_stop
-            if p.get("cycle_mode", False):
-                if abs(p.get("v_max", 0.0)) > V_ABS_MAX:
-                    raise ValueError(
-                        f"|v_max| = {abs(p['v_max'])} V exceeds hardcoded "
-                        f"{V_ABS_MAX} V safety cutoff."
-                    )
-            else:
-                for key in ("v_start", "v_stop"):
-                    if abs(p[key]) > V_ABS_MAX:
-                        raise ValueError(
-                            f"|{key}| = {abs(p[key])} V exceeds hardcoded "
-                            f"{V_ABS_MAX} V safety cutoff."
-                        )
-            if not (0 < p["ac_bias"] <= V_AC_MAX):
-                raise ValueError(
-                    f"AC level must be in (0, {V_AC_MAX}] Vrms."
-                )
+    def __init__(self, params, link, stop_event, q, sleep=time.sleep):
+        self.p = params
+        self.link = link
+        self.stop_event = stop_event
+        self.q = q
+        self.sleep = sleep
+        self.t0 = None
+        self.start_iso = ""
+        self.run_stamp = ""
+        self.log_path = ""
+        self.data_path = ""
+        self.points_in_file = 0
+        self.points_total = 0
+        self.retry_total = 0
+        self.files = []
+        self.end_reason = ""
+        self.in_retry = False
 
-            # Instrument configuration
-            inst.write("*RST; *CLS")
-            time.sleep(1.0)  # Graceful reset
-            inst.write(":DISP:ENAB ON")
-            time.sleep(0.2)
+    # -- helpers ------------------------------------------------------------
+    def t_s(self):
+        return 0.0 if self.t0 is None else time.perf_counter() - self.t0
 
-            inst.write(":FUNC:IMP RX")
-            inst.write(f":APER {p['aper']}")
-            inst.write(":FUNC:IMP:RANG:AUTO ON")
-            time.sleep(0.2)
+    def log(self, text):
+        self.q.put(("log", text))
 
-            inst.write(":FORM ASC")
+    def status(self, text):
+        self.q.put(("status", text))
 
-            inst.write(":FUNC:SMON:VAC ON")
-            inst.write(":FUNC:SMON:IAC ON")
-            inst.write(":FUNC:SMON:VDC OFF")
-            inst.write(":FUNC:SMON:IDC OFF")
-            time.sleep(0.2)
-
-            if p["alc_enabled"]:
-                inst.write(":AMPL:ALC ON")
-            else:
-                inst.write(":AMPL:ALC OFF")
-            time.sleep(0.2)
-
-            inst.write(f":CORR:LENG {p['cable_len']}")
-            if p["corr_enabled"]:
-                inst.write(":CORR:OPEN:STAT ON")
-                inst.write(":CORR:SHOR:STAT ON")
-            else:
-                inst.write(":CORR:OPEN:STAT OFF")
-                inst.write(":CORR:SHOR:STAT OFF")
-            time.sleep(0.2)
-
-            inst.write(f":VOLT {p['ac_bias']}")
-            time.sleep(0.5)  # Let AC level settle
-
-            inst.write(":TRIG:SOUR BUS")
-            inst.write(":INIT:CONT ON")
-            time.sleep(0.2)
-
-            # CV mode: start at 0 V with bias output enabled; sweep sets values.
-            inst.write(":BIAS:VOLT 0")
-            inst.write(":BIAS:STAT ON")
-            time.sleep(0.5)
-
-            self._check_errors("configuration")
-            print(f"  Connected & configured (RX/CV mode): {idn}")
-        except Exception:
-            # If init fails after bias is turned on, force 0V before raising
-            self.force_zero_bias()
-            raise
-
-    def close_instrument(self):
-        print("--- [Backend] Closing instrument connection. ---")
-        if not self.instrument:
+    def _append(self, path, text):
+        """open/append/close + flush + fsync so a crash loses nothing."""
+        if not path:
             return
-        try:
-            self.force_zero_bias()  # Safety: always ramp to 0V
-            self.instrument.write(":BIAS:STAT OFF")
-            self.instrument.write(":DISP:PAGE MEAS")
-            time.sleep(0.2)
-        except Exception as e:
-            print(f"  Warning during shutdown: {e}")
-        finally:
+        with open(path, "a", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+            fh.flush()
             try:
-                self.instrument.close()
-                print("  E4980A connection closed.")
-            finally:
-                self.instrument = None
+                os.fsync(fh.fileno())
+            except OSError:
+                pass
+
+    def log_event(self, text):
+        """One line in the run log: ISO time | t_s | event."""
+        self._append(self.log_path, f"{iso_now()} | t_s={self.t_s():.3f} | {header_value(text)}\n")
+
+    def check_stop(self):
+        if self.stop_event.is_set():
+            raise StopRequested()
+
+    def with_retry(self, fn, what="command"):
+        """Run fn(); on BusError retry after 1, 2, 5, 10, 30, 60 s and then
+        every 60 s until it succeeds or Stop is pressed. Each attempt is a
+        RETRY line; a recovered gap is exactly one RECONNECT line."""
+        attempt = 0
+        gap_start = None
+        while True:
+            try:
+                result = fn()
+                if attempt:
+                    self.log_event(
+                        f"RECONNECT after {time.perf_counter() - gap_start:.1f} s | "
+                        f"{what} succeeded on attempt {attempt + 1}"
+                    )
+                    self.log(f"Reconnected; {what} succeeded.")
+                    self.in_retry = False
+                return result
+            except BusError as exc:
+                attempt += 1
+                self.retry_total += 1
+                self.in_retry = True
+                if gap_start is None:
+                    gap_start = time.perf_counter()
+                delay = RETRY_SCHEDULE_S[min(attempt - 1, len(RETRY_SCHEDULE_S) - 1)]
+                self.log_event(f"RETRY n={attempt} | what={what} | error={header_value(exc)}")
+                self.log(f"Bus error ({what}): {exc}. Retry {attempt} in {delay:g} s.")
+                self.status(f"RECONNECTING (attempt {attempt}, next try in {delay:g} s)")
+                if wait_with_stop(delay, self.stop_event, sleep=self.sleep):
+                    raise StopRequested()
+                try:
+                    self.link.reconnect()
+                except BusError as exc2:
+                    self.log_event(f"RETRY n={attempt} | what=reconnect | error={header_value(exc2)}")
+                    continue
+
+    # -- files --------------------------------------------------------------
+    def _header_lines(self, k, freq, snap):
+        p = self.p
+        freqs = p["freqs"]
+        earlier = ",".join(f"{f:g}" for f in freqs[:k]) or "none"
+        mode = "cycle" if p["cycle_mode"] else "linear"
+        lines = [
+            f"# PICA {MODULE_NAME} v{VERSION} | file {k + 1} of {len(freqs)}",
+            f"# [instrument] idn={header_value(self.link.idn)} | opt={header_value(self.link.opt)} | "
+            f"visa={header_value(p['lcr_visa'])}",
+            f"# [sample] name={header_value(p['sample_name'])}",
+            f"# [sweep] mode={mode} | shape={header_value(p['shape'] or 'one-way')} | "
+            f"v_start_v={p['v_start']:g} | v_stop_v={p['v_stop']:g} | v_max_v={p['v_max']:g} | "
+            f"v_step_v={p['v_step']:g} | n_cycles={p['n_cycles']} | points_per_file={len(p['waveform'])} | "
+            f"delay_s={p['delay']:g} | ramp_step_v={RAMP_STEP_V:g} | ramp_dwell_s={RAMP_DWELL_S:g} | "
+            f"v_abs_max_v={V_ABS_MAX:g} | pre_ramp=0 V -> first point, ramped, not recorded",
+            f"# [frequency] this_hz={freq:g} | order_hz={','.join(f'{f:g}' for f in freqs)} | earlier_hz={earlier}",
+            f"# [lcr] ac_level_vrms_set={p['ac_bias']:g} | ac_level_vrms_read={header_value(snap.get('ac_level_vrms'))} | "
+            f"aperture={header_value(snap.get('aperture'))} | alc={header_value(snap.get('alc'))} | "
+            f"open_corr={header_value(snap.get('open_corr'))} | short_corr={header_value(snap.get('short_corr'))} | "
+            f"cable_m={header_value(snap.get('cable_m'))} | bias_range_auto={header_value(snap.get('bias_range_auto'))} | "
+            f"impedance_range_auto={header_value(snap.get('impedance_range_auto'))} | "
+            f"dci_isolation=instrument default (not set by this program) | monitors=VDC,IDC,VAC,IAC | "
+            f"trigger=BUS | function=RX",
+            f"# [timing] run_start={self.start_iso} | file_start={iso_now()} | t_s=seconds since run_start",
+            f"# waveform: {header_value(waveform_text(p, freq))}",
+            f"# segments: {segment_text(p['cycle_mode'], p['shape'])}; Cycle counts from 1",
+            "# note: the E4980A DC bias is a voltage source with no current compliance (manual p. 326); "
+            "Idc_mon(A) is the DC current through the sample at each bias",
+            "# status: 0 normal | 1 overload | 3 signal source overloaded | 4 ALC unable to regulate | "
+            "-1 no data; the 18 derived columns are NaN when status is -1 or 1 (data = 9.9E37)",
+            f"# log_file={os.path.basename(self.log_path)}",
+        ]
+        return lines
+
+    def _open_data_file(self, k, freq, snap):
+        p = self.p
+        fname = f"{p['sample_name']}_{self.run_stamp}_CV_{freq:.0f}Hz.txt"
+        path = os.path.join(p["folder"], fname)
+        n = 2
+        while os.path.exists(path):
+            path = os.path.join(p["folder"], fname.replace(".txt", f"_{n}.txt"))
+            n += 1
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write("\n".join(self._header_lines(k, freq, snap)) + "\n")
+            fh.write(COLUMN_ROW + "\n")
+            fh.flush()
+            try:
+                os.fsync(fh.fileno())
+            except OSError:
+                pass
+        self.data_path = path
+        self.points_in_file = 0
+        self.files.append(path)
+        self.log_event(f"FILE data_file={os.path.basename(path)} | freq_hz={freq:g}")
+        self.q.put(("new_file", path, freq))
+        self.log(f"New file: {os.path.basename(path)}")
+
+    def _end_data_file(self, reason):
+        if not self.data_path:
+            return
+        line = (f"END reason={header_value(reason)} | points={self.points_in_file} | "
+                f"end_time={iso_now()} | file={os.path.basename(self.data_path)}")
+        self._append(self.data_path, "# " + line + "\n")
+        self.log_event(line)
+        self.data_path = ""
+
+    def _write_row(self, v, f, derived, t_s, stamp, cycle, seg, mons, R, X, status):
+        vdc, idc, vac, iac = mons
+        cells = [v, f] + list(derived) + [t_s, stamp, cycle, seg, vdc, idc, vac, iac, R, X, status]
+        self._append(self.data_path, "\t".join(fmt_cell(c) for c in cells) + "\n")
+        self.points_in_file += 1
+        self.points_total += 1
+
+    # -- run ------------------------------------------------------------------
+    def run(self):
+        p = self.p
+        reason = "complete"
+        self.t0 = time.perf_counter()
+        self.start_iso = iso_now()
+        self.run_stamp = timestamp_for_name()
+        self.log_path = os.path.join(
+            p["folder"], f"{p['sample_name']}_{self.run_stamp}_CV_log.txt")
+        try:
+            self._append(self.log_path, "")
+            self.log_event(f"START module={MODULE_NAME} v{VERSION} | sample={p['sample_name']} | "
+                           f"freqs_hz={','.join(f'{f:g}' for f in p['freqs'])} | "
+                           f"points_per_file={len(p['waveform'])}")
+            self.status("CONNECTING")
+            self.with_retry(self.link.open, "open")
+            self.with_retry(self.link.identify, "identify")
+            self.log(f"Connected: {self.link.idn} | options: {self.link.opt}")
+            self.with_retry(lambda: self.link.configure(p), "configure")
+            snap = self.with_retry(self.link.snapshot, "snapshot")
+            self.log("E4980A configured (RX, BUS trigger, monitors on, bias on at 0 V).")
+
+            for k, f in enumerate(p["freqs"]):
+                self.check_stop()
+                self.with_retry(lambda f=f: self.link.set_frequency(f), "set frequency")
+                self.with_retry(lambda: self.link.ramp_bias(0.0), "discharge")
+                self._open_data_file(k, f, snap)
+                self.log_event(f"PRE_RAMP from=0 V | to={p['waveform'][0][2]:g} V | freq_hz={f:g}")
+                for cycle, seg, v in p["waveform"]:
+                    self.check_stop()
+                    self.with_retry(lambda v=v: self.link.ramp_bias(v), "set bias")
+                    if wait_with_stop(p["delay"], self.stop_event, sleep=self.sleep):
+                        raise StopRequested()
+                    R, X, status = self.with_retry(self.link.trigger_and_fetch, "measure")
+                    mons = self.with_retry(self.link.fetch_monitors, "monitors")
+                    t_s = self.t_s()
+                    stamp = iso_now()
+                    if status in NAN_STATUSES:
+                        derived = nan_derived()
+                        self.log(f"WARNING: V={v:+.3f} V status {status} "
+                                 f"({STATUS_TEXT.get(status, '?')}); derived values NaN.")
+                    else:
+                        if status != 0:
+                            self.log(f"WARNING: V={v:+.3f} V status {status} "
+                                     f"({STATUS_TEXT.get(status, '?')}).")
+                        try:
+                            derived = derived_columns(f, R, X)
+                        except Exception as calc_err:
+                            self.log(f"Calc error at V={v} V: {calc_err}. Derived values NaN.")
+                            derived = nan_derived()
+                    self._write_row(v, f, derived, t_s, stamp, cycle, seg, mons, R, X, status)
+                    self.q.put(("point", f, v, cycle, seg, status, derived))
+                self._end_data_file("complete")
+            self.status("DONE")
+        except StopRequested:
+            reason = "stop_button_during_retry" if self.in_retry else "stop_button"
+            self.log("Stop acknowledged by the worker.")
+        except Exception as exc:
+            reason = f"error: {exc}"
+            self.q.put(("error", f"{exc}\n{traceback.format_exc()}"))
+        finally:
+            self._end_data_file(reason)
+            self.status("DISCHARGING")
+            try:
+                self.link.force_zero_bias()
+            except Exception:
+                pass
+            self.link.close()
+            self.log_event(f"END reason={header_value(reason)} | points={self.points_total} | "
+                           f"retries={self.retry_total} | files={len(self.files)} | end_time={iso_now()}")
+            self.end_reason = reason
+            self.q.put(("done", reason))
 
 
 # ===============================================================================
@@ -353,15 +967,11 @@ class LCR_Freq_GUI:
     FONT_TITLE = ("Segoe UI", FONT_SIZE_BASE + 2, "bold")
     FONT_CONSOLE = ("Consolas", 10)
 
-    # Required output format string
-    DATA_HEADER = (
-        "Frequency\tQ\tD\tG(1/Rp)\tB\tCp\tLp\tCs\tLs\tlZl\ttheta\tchi\t"
-        "R(Rs)\ttheta(deg.)\tRp\t1/lZl\tOmega\tCp''\tCs''"
-    )
+    DATA_HEADER = "Frequency\t" + DERIVED_HEADER  # kept for older readers
 
     def __init__(self, root):
         self.root = root
-        self.root.title("Keysight E4980A CV Scan (R-X)")
+        self.root.title(f"Keysight E4980A CV Scan (R-X) v{VERSION}")
         self.root.geometry("1600x950")
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1300, 850)
@@ -369,7 +979,8 @@ class LCR_Freq_GUI:
         self.is_running = False
         self._stopping = False          # re-entrancy guard for stop_sweep
         self._close_after_stop = False  # destroy window once worker exits
-        self.backend = LCR_Backend()
+        self.link = None
+        self.worker = None
         self.file_location_path = ""
         self.data_filepath = ""
 
@@ -378,8 +989,8 @@ class LCR_Freq_GUI:
         self.stop_event = threading.Event()
         self.worker_thread = None
 
-        # Forced Cleanup: register backend close on crash/exit
-        atexit.register(self.backend.close_instrument)
+        # Forced Cleanup: zero the bias on crash/exit if a link is still open
+        atexit.register(self._atexit_cleanup)
 
         self.data_storage = {
             "volt": [],
@@ -399,7 +1010,7 @@ class LCR_Freq_GUI:
         self._decade_ylims = {}
 
         # Built at start_sweep from validated user input:
-        self.voltage_points = np.array([])
+        self.voltage_points = []
         self.freq_list = []
 
         # Sash-placement retry counter (Fix #1 + #2)
@@ -408,6 +1019,12 @@ class LCR_Freq_GUI:
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+
+    def _atexit_cleanup(self):
+        link = self.link
+        if link is not None and link.inst is not None:
+            link.force_zero_bias()
+            link.close()
 
     def setup_styles(self):
         style = ttk.Style(self.root)
@@ -506,13 +1123,13 @@ class LCR_Freq_GUI:
         # --- Utility Launch Buttons ---
         ttk.Button(
             header_frame,
-            text="📈",
+            text="\U0001F4C8",
             command=launch_plotter_utility,
             width=3,
         ).pack(side="right", padx=10, pady=5)
         ttk.Button(
             header_frame,
-            text="📟",
+            text="\U0001F4DF",
             command=launch_gpib_scanner,
             width=3,
         ).pack(side="right", padx=(0, 5), pady=5)
@@ -710,13 +1327,13 @@ class LCR_Freq_GUI:
             frame, "V Step (V)", "v_step", 5, 0, default="0.05"
         )
         self._add_entry(
-            frame, "AC Bias Voltage (V)", "ac_bias", 5, 1, default="1.0"
+            frame, "AC Level (Vrms)", "ac_bias", 5, 1, default="1.0"
         )
 
-        # Row 7-8: Frequencies (comma-separated list)
+        # Row 7-8: Frequencies (comma-separated list, measured in this order)
         self._add_entry(
             frame,
-            "Frequencies (Hz, comma-sep)",
+            "Frequencies (Hz, comma-sep, measured in this order)",
             "freq_list",
             7,
             0,
@@ -803,7 +1420,7 @@ class LCR_Freq_GUI:
         self.var_cycle = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             frame,
-            text="Cycle mode (0 → +V_stop → −V_stop → 0)",
+            text="Cycle mode (amplitude = |V Stop|)",
             variable=self.var_cycle,
             command=self._on_cycle_mode_toggle,
         ).grid(row=17, column=0, padx=padx, pady=2, sticky="w")
@@ -812,7 +1429,34 @@ class LCR_Freq_GUI:
             frame, "No. of Cycles", "n_cycles", 17, 1, default="1"
         )
 
-        # Row 19: Start + Stop buttons
+        # Row 19-20: Loop shape (cycle mode only)
+        Label(
+            frame, text="Loop shape (cycle mode):", font=self.FONT_BASE
+        ).grid(row=19, column=0, columnspan=2, padx=padx, pady=(2, 0), sticky="w")
+        self.shape_combobox = ttk.Combobox(
+            frame, font=self.FONT_BASE, state="readonly", values=list(SHAPES)
+        )
+        self.shape_combobox.set(SHAPE_POS_FIRST)
+        self.shape_combobox.grid(
+            row=20, column=0, columnspan=2, padx=padx, pady=(0, 10), sticky="ew"
+        )
+
+        # Row 21: neutral note on the bias source (no sample-specific limit)
+        tk.Label(
+            frame,
+            text=(
+                "Note: the E4980A DC bias is a voltage source with no "
+                "current compliance. The DC current through the sample is "
+                "recorded per row as Idc_mon(A)."
+            ),
+            bg=self.CLR_HEADER,
+            fg=self.CLR_FG_LIGHT,
+            font=("Segoe UI", 9),
+            wraplength=440,
+            justify="left",
+        ).grid(row=21, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
+
+        # Row 22: Start + Stop buttons
         self.start_button = ttk.Button(
             frame,
             text="Start Sweep",
@@ -820,7 +1464,7 @@ class LCR_Freq_GUI:
             style="Start.TButton",
         )
         self.start_button.grid(
-            row=19, column=0, padx=(padx, 5), pady=15, sticky="ew"
+            row=22, column=0, padx=(padx, 5), pady=15, sticky="ew"
         )
 
         self.stop_button = ttk.Button(
@@ -831,10 +1475,10 @@ class LCR_Freq_GUI:
             state="disabled",
         )
         self.stop_button.grid(
-            row=19, column=1, padx=(5, padx), pady=15, sticky="ew"
+            row=22, column=1, padx=(5, padx), pady=15, sticky="ew"
         )
 
-        # Row 20: Current measurement label
+        # Row 23: Current measurement label
         self.lbl_current_freq = ttk.Label(
             frame,
             text="Measuring: -- Hz",
@@ -842,10 +1486,10 @@ class LCR_Freq_GUI:
             foreground=self.CLR_ACCENT_RED,
         )
         self.lbl_current_freq.grid(
-            row=20, column=0, columnspan=2, pady=5
+            row=23, column=0, columnspan=2, pady=5
         )
 
-        # Row 21: Progress bar
+        # Row 24: Progress bar
         self.progress_bar = ttk.Progressbar(
             frame,
             orient="horizontal",
@@ -853,7 +1497,7 @@ class LCR_Freq_GUI:
             style="green.Horizontal.TProgressbar",
         )
         self.progress_bar.grid(
-            row=21,
+            row=24,
             column=0,
             columnspan=2,
             padx=padx,
@@ -862,7 +1506,7 @@ class LCR_Freq_GUI:
         )
 
         # Apply keystroke validation to numeric entries
-        for key in ("v_start", "v_stop", "v_step", "ac_bias"):
+        for key in ("v_start", "v_stop", "v_step", "ac_bias", "delay"):
             self.entries[key].config(
                 validate="key", validatecommand=self._vfloat_cmd
             )
@@ -870,16 +1514,19 @@ class LCR_Freq_GUI:
             validate="key", validatecommand=self._vint_cmd
         )
 
-        # Sync V Start enabled state with the cycle-mode checkbox
+        # Sync V Start / cycle widgets with the cycle-mode checkbox
         self._on_cycle_mode_toggle()
 
         return frame
 
     def _on_cycle_mode_toggle(self):
-        """Cycle mode derives its amplitude from V Stop, so V Start
-        is not used — grey it out to make that explicit."""
-        state = "disabled" if self.var_cycle.get() else "normal"
-        self.entries["v_start"].config(state=state)
+        """Cycle mode derives its amplitude from V Stop, so V Start is not
+        used; No. of Cycles and the loop shape apply only in cycle mode.
+        Grey out whichever does not apply so nothing is silently ignored."""
+        cycle = self.var_cycle.get()
+        self.entries["v_start"].config(state="disabled" if cycle else "normal")
+        self.entries["n_cycles"].config(state="normal" if cycle else "disabled")
+        self.shape_combobox.config(state="readonly" if cycle else "disabled")
 
     def create_console_frame(self, parent):
         frame = LabelFrame(
@@ -902,7 +1549,7 @@ class LCR_Freq_GUI:
         )
         self.console_widget.pack(pady=5, padx=5, fill="both", expand=True)
         self.log(
-            "CV Scan Initialized. Requires Option 001 for continuous bias."
+            f"CV Scan v{VERSION} initialized. Requires Option 001 for continuous bias."
         )
         return frame
 
@@ -952,16 +1599,14 @@ class LCR_Freq_GUI:
     def _apply_y_scale(self, ax, values, key):
         """Adaptive Y-scale driven by self.y_scale_var ('auto'|'log'|'linear').
 
-        log:    LabVIEW-style decade autoscale — snap y-limits to
+        log:    LabVIEW-style decade autoscale, snap y-limits to
                 [10^floor(log10(min_pos)), 10^ceil(log10(max_pos))],
                 expand only (cached in self._decade_ylims[key]) so the
                 scale never jitters per point.
         linear: plain relim/autoscale_view.
         auto:   log when the positive data spans >= 1 decade, else
                 linear, so narrow-span data is not squashed onto a
-                single decade band. Data only accumulates during a
-                sweep, so the span is monotone and auto cannot flicker
-                back from log to linear mid-sweep.
+                single decade band.
         Falls back to linear whenever there is no positive finite data.
         Returns True when a log scale was applied."""
         mode = self.y_scale_var.get()
@@ -1017,257 +1662,123 @@ class LCR_Freq_GUI:
         self.entries[dict_key] = entry
 
     def calculate_impedance_parameters(self, f, R, X):
-        """Calculates all 18 parameters from measured R (series resistance)
-        and X (reactance)."""
-        omega = 2 * np.pi * f
-        omega_safe = omega if omega != 0 else 1e-20
+        """Kept for older callers; the formulas live in derived_columns()."""
+        return derived_columns(f, R, X)
 
-        Z_mag = np.sqrt(R ** 2 + X ** 2)
-        Z_mag_safe = Z_mag if Z_mag != 0 else 1e-20
-        Z_mag_sq = Z_mag_safe ** 2
-
-        G = R / Z_mag_sq
-        B = -X / Z_mag_sq
-
-        G_safe = G if G != 0 else 1e-20
-        B_safe = B if B != 0 else 1e-20
-        X_safe = X if X != 0 else 1e-20
-
-        Rp = 1.0 / G_safe
-        Cp = B / omega_safe
-        Cs = -1.0 / (omega_safe * X_safe)
-        Ls = X / omega_safe
-        Lp = -1.0 / (omega_safe * B_safe)
-
-        Ls = abs(Ls)
-        Lp = abs(Lp)
-
-        D = G_safe / B_safe
-        D_safe = D if D != 0 else 1e-20
-        Q = 1.0 / D_safe
-
-        theta_rad = math.atan2(X, R)
-        theta_deg = math.degrees(theta_rad)
-
-        chi = X
-        Rs = R
-
-        Y_mag = 1.0 / Z_mag_safe
-
-        Cp_double_prime = G / omega_safe
-        Cs_double_prime = D * Cs  # series-model loss (legacy LabVIEW convention)
-
-        return [
-            Q, D, G, B, Cp, Lp, Cs, Ls, Z_mag, theta_rad, chi, Rs,
-            theta_deg, Rp, Y_mag, omega, Cp_double_prime, Cs_double_prime,
-        ]
+    # -- Start / Stop -----------------------------------------------------------
+    def _collect_params(self):
+        """Raw window values -> validated params dict (raises ValueError)."""
+        if not PYVISA_AVAILABLE:
+            raise ValueError("PyVISA is not installed.")
+        visa_addr = self.lcr_combobox.get().split("  ->  ")[0]
+        cycle_mode = self.var_cycle.get()
+        n_cycles_raw = self.entries["n_cycles"].get().strip() if cycle_mode else "1"
+        if not n_cycles_raw.isdigit() or int(n_cycles_raw) < 1:
+            raise ValueError("Number of cycles must be a positive integer.")
+        raw = {
+            "sample_name": self.entries["sample_name"].get().strip(),
+            "ac_bias": float(self.entries["ac_bias"].get()),
+            "v_start": float(self.entries["v_start"].get()),
+            "v_stop": float(self.entries["v_stop"].get()),
+            "v_step": float(self.entries["v_step"].get()),
+            "n_cycles": int(n_cycles_raw),
+            "cycle_mode": cycle_mode,
+            "shape": self.shape_combobox.get(),
+            "freq_list": self.entries["freq_list"].get(),
+            "delay": float(self.entries["delay"].get()),
+            "aper": self.aper_combobox.get(),
+            "alc_enabled": self.var_alc.get(),
+            "corr_enabled": self.var_corr.get(),
+            "cable_len": self.cable_len_combobox.get(),
+            "lcr_visa": visa_addr,
+            "folder": self.file_location_path,
+        }
+        if not all([raw["sample_name"], raw["lcr_visa"], raw["folder"]]):
+            raise ValueError(
+                "Sample Name, VISA address, and Save Location are required."
+            )
+        return validate_params(raw)
 
     def start_sweep(self):
+        if self.is_running or self._stopping:
+            return
         try:
-            visa_val = self.lcr_combobox.get()
-            if "  ->  " in visa_val:
-                visa_addr = visa_val.split("  ->  ")[0].strip()
-            else:
-                visa_addr = visa_val.strip()
-
-            cycle_mode = self.var_cycle.get()
-
-            n_cycles_raw = self.entries["n_cycles"].get().strip()
-            if not n_cycles_raw.isdigit() or int(n_cycles_raw) < 1:
-                raise ValueError(
-                    "No. of Cycles must be a positive integer."
-                )
-
-            params = {
-                "sample_name": self.entries["sample_name"].get(),
-                "ac_bias": float(self.entries["ac_bias"].get()),
-                "v_start": float(self.entries["v_start"].get()),
-                "v_stop": float(self.entries["v_stop"].get()),
-                "v_step": float(self.entries["v_step"].get()),
-                "n_cycles": int(n_cycles_raw),
-                "cycle_mode": cycle_mode,
-                "freq_list": self.entries["freq_list"].get(),
-                "delay": float(self.entries["delay"].get()),
-                "aper": self.aper_combobox.get(),
-                "alc_enabled": self.var_alc.get(),
-                "corr_enabled": self.var_corr.get(),
-                "cable_len": self.cable_len_combobox.get(),
-                "lcr_visa": visa_addr,
-            }
-
-            if not all(
-                [
-                    params["sample_name"],
-                    params["lcr_visa"],
-                    self.file_location_path,
-                ]
-            ):
-                raise ValueError(
-                    "Sample Name, VISA address, and Save Location"
-                    " are required."
-                )
-
-            # --- Voltage input validation with clamping ---
-            v_start = params["v_start"]
-            v_stop = params["v_stop"]
-            v_step = abs(params["v_step"])
-
-            if v_step <= 0:
-                raise ValueError("Voltage step must be > 0.")
-
-            clamped = False
-            for name, val in (("v_start", v_start), ("v_stop", v_stop)):
-                if abs(val) > V_ABS_MAX:
-                    clamped = True
-            v_start = max(-V_ABS_MAX, min(V_ABS_MAX, v_start))
-            v_stop = max(-V_ABS_MAX, min(V_ABS_MAX, v_stop))
-            if clamped:
-                self.log(
-                    f"WARNING: voltage limits clamped to ±{V_ABS_MAX} V "
-                    f"(hardcoded safety cutoff)."
-                )
-            params["v_start"], params["v_stop"] = v_start, v_stop
-
-            # Cycle amplitude is derived from V Stop (no separate Vmax
-            # input); v_stop is already clamped to ±V_ABS_MAX above.
-            params["v_max"] = abs(v_stop) if cycle_mode else 0.0
-
-            if not (0 < params["ac_bias"] <= V_AC_MAX):
-                raise ValueError(
-                    f"AC level must be in (0, {V_AC_MAX}] Vrms."
-                )
-
-            # --- Voltage waveform construction (cycle mode or linear ramp) ---
-            def _ramp(a, b, step):
-                d = 1 if b >= a else -1
-                return np.append(np.arange(a, b, d * step), b)
-
-            if cycle_mode:
-                v_max = abs(params["v_max"])
-                n_cycles = params["n_cycles"]
-                if n_cycles < 1:
-                    raise ValueError("Number of cycles must be >= 1.")
-                if v_max <= 0:
-                    raise ValueError(
-                        "Cycle mode requires a non-zero Stop Voltage "
-                        "(V Stop sets the cycle amplitude)."
-                    )
-                # Build one cycle: 0 -> +Vmax -> -Vmax -> 0
-                # [1:] slices avoid duplicating endpoints between segments.
-                one_cycle = np.concatenate(
-                    [
-                        _ramp(0.0, v_max, v_step)[1:],      # 0 -> +Vmax
-                        _ramp(v_max, -v_max, v_step)[1:],   # +Vmax -> -Vmax
-                        _ramp(-v_max, 0.0, v_step)[1:],     # -Vmax -> 0
-                    ]
-                )
-                # Leading [0.0] gives a defined start point.
-                self.voltage_points = np.concatenate(
-                    [[0.0]] + [one_cycle] * n_cycles
-                )
-                self.log(
-                    f"Cycle mode: {n_cycles} cycle(s), Vmax = ±{v_max} V, "
-                    f"{len(self.voltage_points)} points/frequency."
-                )
-            else:
-                self.voltage_points = _ramp(v_start, v_stop, v_step)
-
-            # --- Frequency list parsing & validation ---
-            self.freq_list = sorted(
-                {
-                    float(tok)
-                    for tok in params["freq_list"].split(",")
-                    if tok.strip()
-                }
-            )
-            if not self.freq_list:
-                raise ValueError("At least one frequency is required.")
-            for f in self.freq_list:
-                if not (FREQ_MIN <= f <= FREQ_MAX):
-                    raise ValueError(
-                        f"Frequency {f} Hz outside "
-                        f"{FREQ_MIN}-{FREQ_MAX} Hz."
-                    )
-
-            # --- Mandatory discharge confirmation ---
-            if not messagebox.askokcancel(
-                "Safety Check",
-                "Warning: Ensure the sample/capacitor is fully discharged "
-                "before measurement to prevent instrument damage.\n\n"
-                "Proceed with CV sweep?",
-                icon="warning",
-            ):
-                self.log("Sweep aborted by user at discharge check.")
-                return
-
-            self.backend.initialize_instrument(params)
-
-            try:
-                self.is_running = True
-                self.start_button.config(state="disabled")
-                self.stop_button.config(state="normal")
-                self.scan_button.config(state="disabled")
-
-                for key in self.data_storage:
-                    self.data_storage[key].clear()
-
-                self.line_cp.set_data([], [])
-                self.line_g.set_data([], [])
-                self._decade_ylims.clear()  # fresh dataset re-snaps decades
-                self.canvas.draw()
-
-                self.sweep_index = 0
-                self.progress_bar["value"] = 0
-                # progress_bar maximum scales automatically with
-                # len(self.voltage_points) — works for both modes.
-                self.progress_bar["maximum"] = (
-                    len(self.freq_list) * len(self.voltage_points)
-                )
-
-                self.log(
-                    f"Starting CV sweep: {len(self.freq_list)} freq(s) × "
-                    f"{len(self.voltage_points)} voltage points..."
-                )
-
-                self.sweep_delay = float(self.entries["delay"].get())
-
-                self.stop_event.clear()
-                self.worker_thread = threading.Thread(
-                    target=self._sweep_loop, daemon=True
-                )
-                self.worker_thread.start()
-
-                self.root.after(100, self._poll_queue)
-
-            except Exception as sweep_err:
-                self.backend.close_instrument()
-                raise sweep_err
-
+            params = self._collect_params()
         except Exception as e:
-            self.log(f"ERROR during startup: {traceback.format_exc()}")
-            # Safety: if init failed after bias was turned on, force 0V
-            if self.backend.instrument:
-                self.backend.force_zero_bias()
-            messagebox.showerror(
-                "Initialization Error",
-                f"Could not start sweep.\n\n{e}",
+            self.log(f"ERROR: {e}")
+            messagebox.showerror("Input Error", f"Could not start sweep.\n\n{e}")
+            return
+
+        if params["clamped"]:
+            self.log(
+                f"WARNING: voltage limits clamped to +/-{V_ABS_MAX} V "
+                f"(hardcoded safety cutoff)."
             )
+        if params["cycle_mode"]:
+            self.log(
+                f"Cycle mode: {params['n_cycles']} cycle(s), {params['shape']}, "
+                f"Vmax = {params['v_max']} V, {len(params['waveform'])} points/frequency."
+            )
+        else:
+            self.log(
+                f"Linear mode: {params['v_start']} -> {params['v_stop']} V, "
+                f"{len(params['waveform'])} points/frequency."
+            )
+
+        # --- Mandatory discharge confirmation (operator is present at Start) ---
+        if not messagebox.askokcancel(
+            "Safety Check",
+            "Warning: Ensure the sample/capacitor is fully discharged "
+            "before measurement to prevent instrument damage.\n\n"
+            "Proceed with CV sweep?",
+            icon="warning",
+        ):
+            self.log("Sweep aborted by user at discharge check.")
+            return
+
+        self.voltage_points = [v for _, _, v in params["waveform"]]
+        self.freq_list = params["freqs"]
+        self.sweep_delay = params["delay"]
+
+        self.is_running = True
+        self.start_button.config(state="disabled")
+        self.stop_button.config(state="normal")
+        self.scan_button.config(state="disabled")
+
+        for key in self.data_storage:
+            self.data_storage[key].clear()
+        self.line_cp.set_data([], [])
+        self.line_g.set_data([], [])
+        self._decade_ylims.clear()  # fresh dataset re-snaps decades
+        self.canvas.draw()
+
+        self.sweep_index = 0
+        self.progress_bar["value"] = 0
+        self.progress_bar["maximum"] = len(self.freq_list) * len(self.voltage_points)
+
+        self.log(
+            f"Starting CV sweep: {len(self.freq_list)} freq(s) x "
+            f"{len(self.voltage_points)} voltage points..."
+        )
+
+        self.stop_event.clear()
+        self.data_queue = queue.Queue()
+        self.link = E4980ALink(params["lcr_visa"])
+        self.worker = CVWorker(params, self.link, self.stop_event, self.data_queue)
+        self.worker_thread = threading.Thread(target=self.worker.run, daemon=True)
+        self.worker_thread.start()
+        self.root.after(100, self._poll_queue)
 
     def stop_sweep(self, reason=""):
         """Signal the worker to stop, then finish cleanup asynchronously.
-
-        Thread-race fix: signal the worker BEFORE closing the instrument,
-        then wait for it to exit measure_point() cleanly instead of
-        touching a closed VISA handle. The wait is a non-blocking
-        root.after() poll so the GUI never freezes while a slow VISA
-        read (up to 60 s timeout) drains.
-        """
+        The worker zeroes the bias, writes the END lines and closes the
+        link itself; the GUI only waits for it (non-blocking poll)."""
         if self._stopping or not self.is_running:
             return
         self._stopping = True
         self.is_running = False
         self.stop_event.set()
-        self.lbl_current_freq.config(text="Measuring: STOPPING…")
+        self.lbl_current_freq.config(text="Measuring: STOPPING...")
         self.stop_button.config(state="disabled")
 
         if reason:
@@ -1280,6 +1791,7 @@ class LCR_Freq_GUI:
         self._poll_worker_stopped(reason)
 
     def _poll_worker_stopped(self, reason):
+        self._drain_queue()
         t = self.worker_thread
         if (
             t is not None
@@ -1291,138 +1803,84 @@ class LCR_Freq_GUI:
         if t is not None and t.is_alive():
             self.log(
                 "WARNING: worker did not exit within timeout; "
-                "closing instrument anyway."
+                "forcing bias to 0 V and closing the instrument anyway."
             )
+            try:
+                self.link.force_zero_bias()
+                self.link.close()
+            except Exception as e:
+                self.log(f"WARNING: error closing instrument: {e}")
         self._finalize_stop(reason)
 
     def _finalize_stop(self, reason):
-        try:
-            self.backend.close_instrument()
-        except Exception as e:
-            self.log(f"WARNING: error closing instrument: {e}")
-
+        self._drain_queue()
         self.lbl_current_freq.config(text="Measuring: STOPPED")
         self.start_button.config(state="normal")
         self.scan_button.config(state="normal")
         self._stopping = False
+        self.log("Instrument disconnected (bias 0 V, off).")
 
         if self._close_after_stop:
             self.root.destroy()
-            return
 
-        if not reason:
-            messagebox.showinfo(
-                "Info",
-                "Sweep stopped and instrument disconnected.",
-            )
-
-    def _sweep_loop(self):
-        """Worker thread: nested freq (outer) × voltage (inner) CV sweep."""
-        try:
-            point = 0
-            for f in self.freq_list:
-                if self.stop_event.is_set():
-                    break
-                self.backend.set_frequency(f)
-                self.backend.set_bias_voltage(0.0)  # discharge between freqs
-                # NEW_FILE tuple: frequency value is carried in the "v" slot.
-                self.data_queue.put(("NEW_FILE", f, None, None, None, None))
-
-                for v in self.voltage_points:
-                    if self.stop_event.is_set():
-                        break
-                    self.backend.set_bias_voltage(v)
-                    R, X, status = self.backend.measure_point(
-                        self.sweep_delay
-                    )
-                    point += 1
-                    self.data_queue.put((f, v, R, X, status, point))
-
-            # Always end discharged — but only if instrument still alive
+    # -- Queue handling --------------------------------------------------------
+    def _drain_queue(self):
+        """Process everything the worker has queued; no re-scheduling."""
+        while True:
             try:
-                if (
-                    self.backend.instrument is not None
-                    and not self.stop_event.is_set()
-                ):
-                    self.backend.set_bias_voltage(0.0)
-            except Exception:
-                pass  # ignore cleanup errors after stop
+                msg = self.data_queue.get_nowait()
+            except queue.Empty:
+                return
+            self._handle_message(msg)
 
-            if not self.stop_event.is_set():
-                self.data_queue.put(("DONE", None, None, None, None, None))
-        except Exception as e:
-            # CRITICAL SAFETY: drive voltage to zero on any worker crash
-            self.backend.force_zero_bias()
-            # Traceback must be captured HERE (worker thread) — the main
-            # thread's format_exc() would just print "NoneType: None".
-            self.data_queue.put(
-                ("ERROR", e, traceback.format_exc(), None, None, None))
+    def _handle_message(self, msg):
+        kind = msg[0]
+        if kind == "log":
+            self.log(msg[1])
+        elif kind == "status":
+            self.lbl_current_freq.config(text=f"Measuring: {msg[1]}")
+        elif kind == "new_file":
+            self._on_new_file(msg[1], msg[2])
+        elif kind == "point":
+            _, f, v, cycle, seg, status, derived = msg
+            self.sweep_index += 1
+            self.lbl_current_freq.config(
+                text=f"f = {f:,.0f} Hz | V = {v:+.3f} V | cycle {cycle} seg {seg}"
+            )
+            self._process_sweep_point(v, status, derived)
+            self._update_sweep_plot()
+        elif kind == "error":
+            self._handle_sweep_error(msg[1])
+        elif kind == "done":
+            self._handle_sweep_completion(msg[1])
 
-    def _open_new_file(self, freq):
-        p = self.backend.params
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        fname = f"{p['sample_name']}_{ts}_CV_{freq:.0f}Hz.txt"
-        self.data_filepath = os.path.join(self.file_location_path, fname)
-        with open(self.data_filepath, "w", encoding="utf-8") as fh:
-            if p.get("cycle_mode", False):
-                fh.write(
-                    f"# Sample: {p['sample_name']} | Freq: {freq} Hz | "
-                    f"AC: {p['ac_bias']}V | Cycle mode: "
-                    f"{p['n_cycles']} × (0 -> +{p['v_max']} -> "
-                    f"-{p['v_max']} -> 0) | APER: {p['aper']}\n"
-                )
-            else:
-                fh.write(
-                    f"# Sample: {p['sample_name']} | Freq: {freq} Hz | "
-                    f"AC: {p['ac_bias']}V | Sweep: {p['v_start']} to "
-                    f"{p['v_stop']} V | APER: {p['aper']}\n"
-                )
-            fh.write("Voltage(V)\t" + self.DATA_HEADER + "\n")
+    def _poll_queue(self):
+        """Main thread: processes data from the worker thread."""
+        self._drain_queue()
+        if self.is_running:
+            self.root.after(100, self._poll_queue)
 
-        # Reset plot for new frequency
+    def _on_new_file(self, path, freq):
+        self.data_filepath = path
         for key in self.data_storage:
             self.data_storage[key].clear()
         self.line_cp.set_data([], [])
         self.line_g.set_data([], [])
         self._decade_ylims.clear()  # fresh dataset re-snaps decades
         self.canvas.draw_idle()
-        self.log(f"New file: {fname}")
-
-    def _poll_queue(self):
-        """Main thread: processes data from the worker thread."""
-        try:
-            while not self.data_queue.empty():
-                f, v, R, X, status, idx = self.data_queue.get_nowait()
-                if f == "DONE":
-                    self._handle_sweep_completion()
-                    return
-                if f == "ERROR":
-                    self._handle_sweep_error(v, R)
-                    return
-                if f == "NEW_FILE":
-                    # v carries the frequency here (tuple reuse).
-                    self._open_new_file(v)
-                    continue
-                self.sweep_index = idx
-                self.lbl_current_freq.config(
-                    text=f"f = {f:,.0f} Hz | V = {v:+.3f} V"
-                )
-                self._process_sweep_point(f, v, R, X, status)
-                self._update_sweep_plot()
-        except queue.Empty:
-            pass
-
-        if self.is_running:
-            self.root.after(100, self._poll_queue)
 
     def _scan_for_visa(self):
         """Identity-aware instrument scan."""
-        if not PYVISA_AVAILABLE or self.backend.rm is None:
+        if not PYVISA_AVAILABLE:
             self.log("ERROR: PyVISA/VISA manager unavailable.")
             return
 
         self.log("Scanning for VISA instruments (querying *IDN?)...")
-        rm = self.backend.rm
+        try:
+            rm = pyvisa.ResourceManager()
+        except Exception as e:
+            self.log(f"ERROR: VISA manager unavailable: {e}")
+            return
         found = []
         e4980_label = None
 
@@ -1476,46 +1934,18 @@ class LCR_Freq_GUI:
                 self._close_after_stop = True
                 self.stop_sweep("User closed application.")
         elif self._stopping:
-            # Stop already in progress — just close once it finishes.
+            # Stop already in progress; just close once it finishes.
             self._close_after_stop = True
         else:
             self.root.destroy()
 
-    def _process_sweep_point(self, f, v, R, X, status=0):
-        if status != 0:
-            self.log(
-                f"WARNING: V={v} V returned status {status} "
-                f"(0=normal, non-zero=overload/ALC issue)."
-            )
-
-        self.log(
-            f"f: {f} Hz | V: {v:+.3f} V | R: {R:.4e} | X: {X:.4e} | "
-            f"st: {status}"
-        )
-
-        try:
-            calc_vals = self.calculate_impedance_parameters(f, R, X)
-        except Exception as calc_err:
-            self.log(
-                f"Calc error at V={v} V: {calc_err}. "
-                f"Saving raw row with NaN for derived values."
-            )
-            calc_vals = [float("nan")] * 18
-
-        # Row: Voltage + Frequency + 18 calculated values
-        row_vals = [v, f] + calc_vals
-        row_str = "\t".join(f"{x:.6E}" for x in row_vals)
-
-        with open(self.data_filepath, "a", encoding="utf-8") as file:
-            file.write(row_str + "\n")
-            file.flush()
-
-        # calc_vals indices: Cp=4, G=2, Rs=11, Rp=13
+    def _process_sweep_point(self, v, status, derived):
+        # derived indices: Cp=4, G=2, Rs=11, Rp=13
         self.data_storage["volt"].append(v)
-        self.data_storage["cp"].append(calc_vals[4])
-        self.data_storage["g"].append(calc_vals[2])
-        self.data_storage["rs"].append(calc_vals[11])
-        self.data_storage["rp"].append(calc_vals[13])
+        self.data_storage["cp"].append(derived[4])
+        self.data_storage["g"].append(derived[2])
+        self.data_storage["rs"].append(derived[11])
+        self.data_storage["rp"].append(derived[13])
         self.data_storage["status"].append(status)
 
     def _update_sweep_plot(self):
@@ -1537,26 +1967,27 @@ class LCR_Freq_GUI:
         self.canvas.draw_idle()
         self.progress_bar["value"] = self.sweep_index
 
-    def _handle_sweep_completion(self):
-        self.lbl_current_freq.config(text="Measuring: DONE")
-        self.log("CV sweep finished successfully.")
-        self.stop_sweep("Sweep naturally complete.")
-        messagebox.showinfo("Finished", "CV sweep is complete.")
+    # Unattended rule: nothing modal during or after a run. Log, label, beep.
+    def _handle_sweep_completion(self, reason):
+        if reason == "complete":
+            self.lbl_current_freq.config(text="Measuring: DONE")
+            self.log("CV sweep finished successfully.")
+        else:
+            self.log(f"Run ended: {reason}")
+        try:
+            self.root.bell()
+        except tk.TclError:
+            pass
+        if self.is_running:
+            self.stop_sweep(f"Worker finished ({reason}).")
 
-    def _handle_sweep_error(self, exception, tb=None):
-        self.log(f"RUNTIME ERROR: {exception}\n{tb or ''}")
-        # Explicitly call force_zero_bias just to be absolutely certain
-        # the worker thread's safety routine executed.
-        if self.backend.instrument:
-            self.backend.force_zero_bias()
-        self.stop_sweep(
-            "A critical hardware or measurement error occurred."
-        )
-        messagebox.showerror(
-            "Runtime Error",
-            f"An error occurred during the sweep:\n\n{exception}\n\n"
-            "See console for the full traceback.",
-        )
+    def _handle_sweep_error(self, text):
+        self.log(f"RUNTIME ERROR: {text}")
+        self.lbl_current_freq.config(text="Measuring: ERROR (see console)")
+        try:
+            self.root.bell()
+        except tk.TclError:
+            pass
 
 
 def main():
