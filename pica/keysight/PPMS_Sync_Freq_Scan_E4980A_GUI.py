@@ -233,7 +233,7 @@ v1.7 — DATED CLOCK PLANNER + EXPLICIT LOW-T TOLERANCES
          (1)" — the reference-sequence value — stays selectable).
 
 ============================================================
-v1.8 — DESYNC RECOVERY (Co-07 Fscan-at-Tstep forensic, 2026-07-23)
+v1.8 — DESYNC RECOVERY (Ref-A Fscan-at-Tstep forensic, 2026-07-23)
 ============================================================
 Root cause fixed here: on the 2026-07-17..19 run the PPMS advanced
 its .seq every 25 min while this scanner waited up to 90 min per
@@ -283,7 +283,7 @@ always PPMS-controlled; only the labels were wrong.
            run's own TimingLog suggested ~40 min above 200 K where
            the old flat 25 min dwell caused the runaway.
   RATE-2   Slope-matched default ramp rates from the measured probe
-           response (Co-07 TempLog): 0.8 K/min below 120 K, 0.5 for
+           response (Ref-A TempLog): 0.8 K/min below 120 K, 0.5 for
            120-150 K, 0.3 K/min above 150 K (the probe cannot follow
            faster there — the old 1-3 K/min only built lag). Tier
            picked by the warmer end of each ramp: direction-neutral,
@@ -703,7 +703,7 @@ def tol_from_table(table, target, base_tol):
 
 # ============================================================
 # GLITCH-1: probe-reading validation thresholds
-# (the Co-07 run logged 39 stray 0.000 K reads plus a few non-zero
+# (the Ref-A run logged 39 stray 0.000 K reads plus a few non-zero
 # garbage spikes — brief Lake Shore glitches, never real temperature)
 # ============================================================
 GLITCH_LOW_K = 1.0       # PPMS base T is 1.8 K; anything ≤ 1 K is a dropout
@@ -1030,7 +1030,7 @@ class LCR_Backend:
 # FRONTEND: PPMS-synchronized GUI
 # ============================================================
 class PPMSSyncGUI:
-    PROGRAM_VERSION = "1.8-PPMS-Sync"  # desync recovery (Co-07 forensic)
+    PROGRAM_VERSION = "1.8-PPMS-Sync"  # desync recovery (Ref-A forensic)
     LEFT_PANEL_WIDTH = 480
 
     # HARD-3: SetThreadExecutionState flags (Windows keep-awake during a run)
@@ -1502,7 +1502,7 @@ class PPMSSyncGUI:
         # TIME-1: 35 min ≈ one slope-matched PPMS step period minus the
         # scan — a single timeout can never leave the scanner a full
         # step behind (the old 90 min default let it fall 3+ steps
-        # behind per timeout on the Co-07 run).
+        # behind per timeout on the Ref-A run).
         self._create_grid_entry(frame, "Timeout (min, 0=off):",
                                 "stab_timeout", "35", 4, 0)
         self._create_grid_entry(frame, "Poll Delay (s):", "delay", "2", 4, 3)
@@ -1956,7 +1956,7 @@ class PPMSSyncGUI:
             command=lambda: self._seq_set_all("wait", self.seq_wait_all))
         self.seq_wait_all_btn.pack(side="left", padx=(2, 0))
 
-        # --- DWELL-1: temperature-dependent WAITFOR floor (Co-07: the
+        # --- DWELL-1: temperature-dependent WAITFOR floor (Ref-A: the
         # flat 25-min dwell above ~205 K caused the label runaway; the
         # run's own TimingLog suggested ~40 min there) ---
         dwl = ttk.Frame(parent)
@@ -2781,7 +2781,7 @@ class PPMSSyncGUI:
     def _seq_default_rate(self, target, prev):
         """Default ramp rate (K/min) for the PPMS plan, clamped to Max
         rate. RATE-2 (2026-07-23): SLOPE-MATCHED to the measured probe
-        response of the Co-07 reference run — the probe follows the
+        response of the Ref-A run — the probe follows the
         block at ~0.8-0.95 K/min below 120 K but only ~0.25-0.3 K/min
         above 150 K; commanding the block faster (the old 1-3 K/min)
         only builds probe lag that the dwell then has to absorb. The
@@ -2968,7 +2968,7 @@ class PPMSSyncGUI:
         except OSError as e:
             messagebox.showerror("Save failed", str(e))
             return
-        # TIME-1: matched-timeout advice from THIS plan. Rule (Co-07
+        # TIME-1: matched-timeout advice from THIS plan. Rule (Ref-A
         # forensic): the scanner's stabilization Timeout must not exceed
         # one PPMS step period (ramp + WAITFOR) minus the scan, or a
         # single timeout leaves the scanner a full step behind.

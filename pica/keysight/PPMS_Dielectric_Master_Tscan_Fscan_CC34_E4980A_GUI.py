@@ -196,7 +196,7 @@ v1.4 — EXPLICIT LOW-T TOLERANCES + FAST-SETTLE DEFAULT
 ============================================================
 v1.5 — DESYNC-RECOVERY BACKPORT (from Sync v1.8, 2026-07-24)
 ============================================================
-Backport of the Co-07 Fscan-at-Tstep forensic fixes; the two
+Backport of the Ref-A Fscan-at-Tstep forensic fixes; the two
 embedded copies stay behaviorally identical where the programs
 overlap (Fscan phase).
   DATA-1   Fscan rows carry the MEASURED probe temperature
@@ -223,7 +223,7 @@ overlap (Fscan phase).
            scanner a full step behind the PPMS.
   RATE-2   Fscan ramp default 1 → 0.5 K/min: the probe follows
            the block at only ~0.3-0.5 K/min above 120 K
-           (measured, Co-07 TempLog) — faster commanded ramps
+           (measured, Ref-A TempLog) — faster commanded ramps
            only build probe lag.
   RESYNC-1 "Re-sync to PPMS on timeout" checkbox (OFF by
            default): on a diverged stabilization timeout the
@@ -544,7 +544,7 @@ def tol_from_table(table, target, base_tol):
 
 # ============================================================
 # GLITCH-1: probe-reading validation thresholds
-# (embedded copy from PPMS_Sync_Freq_Scan_E4980A_GUI.py — the Co-07
+# (embedded copy from PPMS_Sync_Freq_Scan_E4980A_GUI.py — the Ref-A
 # run logged 39 stray 0.000 K reads plus a few non-zero garbage
 # spikes: brief Lake Shore glitches, never real temperature)
 # ============================================================
@@ -1927,7 +1927,7 @@ class PPMSMasterGUI:
                               "final_cooldown", "3:00", 7, 2)
         self._add_proto_entry(frame, "Field set rate (Oe/s):", "field_rate",
                               "50", 8, 0)
-        # RATE-2 (Co-07 forensic): the probe follows the block at only
+        # RATE-2 (Ref-A forensic): the probe follows the block at only
         # ~0.3-0.5 K/min above 120 K — 1 K/min just built lag that the
         # step wait then had to absorb. Editable per protocol as always.
         self._add_proto_entry(frame, "Fscan ramp (K/min):", "fscan_rate",
@@ -2270,7 +2270,7 @@ class PPMSMasterGUI:
         self._create_grid_entry(frame, "Drift Lim (K/min):", "drift", "0.05", 3, 0)
         self._create_grid_entry(frame, "Target guard (±K, 0=off):",
                                 "guard", "2.0", 3, 3)
-        # TIME-1 (Co-07 forensic, from the Sync GUI): the timeout must
+        # TIME-1 (Ref-A forensic, from the Sync GUI): the timeout must
         # stay below one PPMS step period (ramp + WAITFOR) minus the
         # scan — 90 min let the scanner fall multiple steps behind.
         self._create_grid_entry(frame, "Timeout (min, 0=off):",
@@ -2364,7 +2364,7 @@ class PPMSMasterGUI:
         self._prerun_simple.append(self.agn_dt_entry)
 
         # DWELL-1 (from Sync v1.8): per-temperature floor for the
-        # generated Fscan WAITFORs — Co-07 showed probe settle time
+        # generated Fscan WAITFORs — Ref-A showed probe settle time
         # GROWS with T while a single step wait is flat.
         self.var_dwell_table = tk.BooleanVar(value=True)
         self.chk_dwell_table = ttk.Checkbutton(
