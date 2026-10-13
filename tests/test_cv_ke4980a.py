@@ -356,10 +356,21 @@ def test_stop_ends_the_file_with_an_end_line_and_zeroes_the_bias():
 def test_bus_error_is_retried_with_retry_and_reconnect_lines_and_a_reconfigure():
     folder = _tmp()
     fake = FakeE4980A(fail_reads={2})
-    worker, msgs, files, log_path = run_cv(fake, folder)
+    at_fetch = []                                            # (instrument freq, bias) per :FETC?
+    fake.on_fetch = lambda idx: at_fetch.append((fake.freq, fake.v))
+    worker, msgs, files, log_path = run_cv(fake, folder, freq_list="10000")
     assert worker.end_reason == "complete" and worker.retry_total == 1
     _, columns, rows, _ = read_data_file(files[0])
     assert len(rows) == len(gui.build_waveform(True, gui.SHAPE_POS_FIRST, 1.0, 0, 0, 0.5, 1))
+    # *RST in the re-configure must not leave the unit at 1 kHz / 0 V: every
+    # measurement, the retried one included, is at the file's frequency and
+    # at the bias its row claims (the fake's Vdc monitor reads 0.999 x V).
+    assert all(f == 10000.0 for f, _ in at_fetch), at_fetch
+    volts = column(rows, columns, "Voltage(V)")
+    vdc = column(rows, columns, "Vdc_mon(V)")
+    assert all(abs(m - 0.999 * v) < 1e-6 for v, m in zip(volts, vdc)), list(zip(volts, vdc))
+    cp = column(rows, columns, "Cp")
+    assert all(abs(c - 1e-9) < 1e-11 for c in cp), cp
     events = log_lines(log_path)
     retries = [e for e in events if e.startswith("RETRY ")]
     reconnects = [e for e in events if e.startswith("RECONNECT ")]

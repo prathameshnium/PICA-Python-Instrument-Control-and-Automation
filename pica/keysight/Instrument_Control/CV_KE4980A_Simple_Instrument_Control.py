@@ -459,6 +459,8 @@ class E4980ALink:
         self.opt = ""
         self.has_opt001 = False
         self.config = None
+        self.freq = None            # last :FREQ written, re-asserted by reconnect()
+        self.bias_target = None     # last ramp_bias() target, re-ramped by reconnect()
 
     # -- transport ------------------------------------------------------
     def open(self):
@@ -604,12 +606,19 @@ class E4980ALink:
         return snap
 
     def reconnect(self):
-        """Close, reopen, identify and re-configure (bias on at 0 V)."""
+        """Close, reopen, identify, re-configure (*RST leaves the unit at
+        1 kHz, bias on at 0 V), then put back the frequency and ramp the
+        bias to the point the run was at, so the retried command measures
+        what its row says."""
         self.close()
         self.open()
         self.identify()
         if self.config is not None:
             self.configure(self.config)
+            if self.freq is not None:
+                self.set_frequency(self.freq)
+            if self.bias_target is not None:
+                self.ramp_bias(self.bias_target)
 
     # -- bias -------------------------------------------------------------
     def bias_voltage(self):
@@ -621,6 +630,7 @@ class E4980ALink:
             raise ValueError(
                 f"Bias {target_v} V blocked by hardcoded {V_ABS_MAX} V cutoff."
             )
+        self.bias_target = float(target_v)
         current_v = self.bias_voltage()
         if abs(target_v - current_v) < RAMP_SKIP_V:
             return
@@ -650,6 +660,7 @@ class E4980ALink:
 
     # -- measurement ------------------------------------------------------
     def set_frequency(self, freq):
+        self.freq = freq
         self.write(f":FREQ {freq}")
 
     def trigger_and_fetch(self):
