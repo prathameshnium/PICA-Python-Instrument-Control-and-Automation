@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pica-suite"
-version = "1.0.6"
+version = "1.0.7"
 authors = [
   { name="Prathamesh Deshmukh", email="pdeshmukh@csr.res.in" },
   { name="Sudip Mukherjee", email="sudipm@csr.res.in" },
@@ -46,9 +46,13 @@ gpib = ["gpib-ctypes>=0.3.0"]
 "Source" = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
 "Changelog" = "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/CHANGELOG.md"
 
-# This finds the new 'pica' folder automatically
 [tool.setuptools]
 include-package-data = true
+
+# Documentation shown by the launcher's Help menu. setup.py copies these
+# from the repository root into pica/ at build time; they are gitignored.
+[tool.setuptools.package-data]
+pica = ["README.md", "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md", "docs/*.md"]
 
 [tool.setuptools.packages.find]
 where = ["."]

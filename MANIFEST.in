@@ -1,9 +1,11 @@
+# Source distribution contents. Everything the custom build_py in setup.py
+# copies into the package must be here, taken from the repository root.
+include README.md LICENSE CHANGELOG.md CONTRIBUTING.md
+include docs/User_Manual.md docs/Instruments_Manuals_Lists.md
 recursive-include pica/assets *
 recursive-include pica *.py
 
-# Include top-level documentation and legal files that are copied into the pica package
-include pica/README.md
-include pica/LICENSE
-include pica/CHANGELOG.md
-include pica/CONTRIBUTING.md
-recursive-include pica/docs *
+# The copies that build_py makes inside pica/ are build products, never
+# sources: keep stale local copies out of the sdist.
+exclude pica/README.md pica/LICENSE pica/CHANGELOG.md pica/CONTRIBUTING.md
+prune pica/docs

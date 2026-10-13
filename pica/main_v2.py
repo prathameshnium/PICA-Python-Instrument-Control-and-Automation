@@ -1585,7 +1585,7 @@ class PICALauncherV2:
     CITE_AUTHORS = (("Deshmukh", "Prathamesh"), ("Mukherjee", "Sudip"))
     CITE_TITLE = ("PICA: Advanced High-Precision Transport Measurement "
                   "Automation with Python")
-    CITE_DOI = "10.5281/zenodo.18377217"
+    CITE_DOI = "10.5281/zenodo.18377216"
     CITE_YEAR = "2026"
 
     def __init__(self, root):

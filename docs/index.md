@@ -11,7 +11,7 @@ PICA (**Python Instrument Control and Automation**) is a modular, open-source Py
 
 [![GitHub Release](https://img.shields.io/github/v/release/prathameshnium/PICA-Python-Instrument-Control-and-Automation)](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/LICENSE)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18377217.svg)](https://doi.org/10.5281/zenodo.18377217)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18377216.svg)](https://doi.org/10.5281/zenodo.18377216)
 [![Read the Docs](https://readthedocs.org/projects/pica-python-instrument-control-and-automation/badge/?version=latest)](https://pica-python-instrument-control-and-automation.readthedocs.io/en/latest/)
 
 ---

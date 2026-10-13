@@ -1,18 +1,18 @@
 ---
 myst:
   html_meta:
-    description: "Complete user manual for PICA v1.0.6 — installation, VISA/GPIB setup, safety, and every measurement module: ultra-low resistance (delta mode), I-V, high-resistance electrometry, pyroelectric current, dielectric spectroscopy, and temperature control."
+    description: "Complete user manual for PICA v1.0.7 — installation, VISA/GPIB setup, safety, and every measurement module: ultra-low resistance (delta mode), I-V, high-resistance electrometry, pyroelectric current, dielectric spectroscopy, and temperature control."
     keywords: "PICA user manual, PyVISA setup, NI-VISA, delta mode, Keithley 6221 2182, Keithley 2400, Keithley 6517B electrometer, Keysight E4980A LCR, Lakeshore 350, pyroelectric measurement, dielectric spectroscopy"
 ---
 
 # PICA: Advanced High-Precision Transport Measurement Automation with Python
 
-*Comprehensive Guide for Version 1.0.6*
+*Comprehensive Guide for Version 1.0.7*
 
 ---
 
 :::{note}
-**v1.0.6 is now live!** Cryo-con 34 and Lakeshore 340 support, AC resistivity, PPMS dielectric master protocol, Novocontrol Alpha-A broadband dielectric spectroscopy (experimental), an interactive SCPI console, plotting engine improvements, diagnostics and new utilities. Install or upgrade via pip:
+**v1.0.7 is now live!** Linux install guide, Keithley 2400 memristor modules, C-V module v2, launcher module search and hover cards. Install or upgrade via pip:
 
 ```bash
 pip install --upgrade pica-suite
@@ -1009,11 +1009,12 @@ The full preprint of the PICA software suite, detailing its design, implementati
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
   title        = {{PICA: Advanced High-Precision Transport Measurement Automation with Python}},
   month        = oct,
-  day          = 6,
+  day          = 14,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {1.0.6},
-  url          = {https://doi.org/10.5281/zenodo.18377217}
+  version      = {1.0.7},
+  doi          = {10.5281/zenodo.18377216},
+  url          = {https://doi.org/10.5281/zenodo.18377216}
 }
 ```
 
@@ -1067,7 +1068,7 @@ This project is licensed under the MIT License - see the [LICENSE](https://githu
 
 ## 15. Appendix A: Project File Structure
 
-For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.6; test files and assets abridged).
+For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.7; test files and assets abridged).
 
 :::{note}
 Adding a new module to the main launcher into the GUI requires modifying `pica/main.py`.

@@ -15,7 +15,7 @@
   <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/draft-pdf.yml"><img src="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/draft-pdf.yml/badge.svg" alt="Draft PDF"></a>
   <a href="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation"><img src="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation/branch/main/graph/badge.svg" alt="Code Coverage"></a>
   <img src="https://img.shields.io/badge/Python-3.10+-brightgreen.svg?logo=python&logoColor=white&style=flat-square" alt="Python Version">
-  <a href="https://doi.org/10.5281/zenodo.18377217"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.18377217.svg" alt="DOI"></a>
+  <a href="https://doi.org/10.5281/zenodo.18377216"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.18377216.svg" alt="DOI"></a>
   <a href="https://joss.theoj.org/papers/444957f999023680f8abbbf0e75687fa"><img src="https://joss.theoj.org/papers/444957f999023680f8abbbf0e75687fa/status.svg"></a>
   <a href="https://pypi.org/project/pica-suite/"><img src="https://img.shields.io/pypi/v/pica-suite.svg?style=flat-square&label=PyPI&color=blue" alt="PyPI Version"></a>
   <a href="https://pypi.org/project/pica-suite/"><img src="https://img.shields.io/pypi/dm/pica-suite?style=flat-square&label=PyPI%20Downloads" alt="PyPI Downloads"></a>
@@ -38,7 +38,7 @@
 
 ---
 
-> **v1.0.6 is now live!** Cryo-con 34 and Lakeshore 340 support, AC resistivity, a PPMS dielectric master protocol, diagnostics and new utilities. Install or upgrade via pip: `pip install --upgrade pica-suite`
+> **v1.0.7 is now live!** Linux install guide, Keithley 2400 memristor modules, C-V module v2, launcher module search and hover cards. Install or upgrade via pip: `pip install --upgrade pica-suite`
 
 ---
 
@@ -72,7 +72,7 @@ The suite performs automated protocols including:
 ## Table of Contents
 
 - [Overview](#overview)
-- [What's New in v1.0.6](#whats-new-in-v106)
+- [What's New in v1.0.7](#whats-new-in-v107)
 - [Motivation](#motivation)
 - [Key Features](#key-features)
 - [Design and Implementation](#design-and-implementation)
@@ -89,12 +89,12 @@ The suite performs automated protocols including:
 
 ---
 
-## What's New in v1.0.6
+## What's New in v1.0.7
 
-**v1.0.6** (October 2026) is the latest release and is available on PyPI and GitHub Releases.
+**v1.0.7** (October 2026) is the latest release and is available on PyPI and GitHub Releases.
 
 ```bash
-pip install pica-suite==1.0.6
+pip install pica-suite==1.0.7
 # or upgrade from a previous version:
 pip install --upgrade pica-suite
 ```
@@ -237,7 +237,7 @@ PICA is available on [PyPI](https://pypi.org/project/pica-suite/) and structured
 pip install pica-suite
 ```
 
-To upgrade to the latest version (currently **v1.0.6**):
+To upgrade to the latest version (currently **v1.0.7**):
 
 ```bash
 pip install --upgrade pica-suite
@@ -476,13 +476,8 @@ For downloadable release builds, please visit the [releases page](https://github
 
 PICA evolved from simple offline scripts in 2022 to a full-stack automated suite.
 
-  * **v1.0.7 (in progress, unreleased):** documentation and packaging so far; more to be added before release.
-    * Full Linux install guide in the README and the user manual, with a clear warning that running against real instruments on Linux is not yet verified.
-    * New "Linux report" issue template for Linux problems and successes; the Windows bug-report template now points Linux users to it.
-    * The old "Windows only" warning retired; the platform list now states what is verified on each OS.
-    * PyPI classifiers for Windows, Linux, Python 3.10-3.12 and Science/Research.
-    * Dedicated CI job that opens every GUI window on Linux under Xvfb with Python 3.12.
-  * **v1.0.6 (Latest):** Advanced Lakeshore step control (adaptive ramp rates, low-temperature safety caps), Cryo-con 34 and Lakeshore 340 support, AC resistivity (SR830 / 197A), PPMS dielectric master protocol, Novocontrol Alpha-A (experimental), I-V fixes, launcher v2, diagnostic tools and new utilities. Available on [PyPI](https://pypi.org/project/pica-suite/).
+  * **v1.0.7 (Latest):** Linux install guide and issue template, Keithley 2400 memristor sweep / retention / endurance modules with a read-only analysis utility, C-V module v2, K6221/2182 custom-list I-V, launcher module search and hover cards, cleaner wheel. Available on [PyPI](https://pypi.org/project/pica-suite/).
+  * **v1.0.6:** Advanced Lakeshore step control (adaptive ramp rates, low-temperature safety caps), Cryo-con 34 and Lakeshore 340 support, AC resistivity (SR830 / 197A), PPMS dielectric master protocol, Novocontrol Alpha-A (experimental), I-V fixes, launcher v2, diagnostic tools and new utilities. Available on [PyPI](https://pypi.org/project/pica-suite/).
   * **v1.0.5:** E4980A frequency and temperature scan programs, Lakeshore 350 direct and step control, K6517B poling, new utilities (P-E plotter, calculators, unit converter) and core fixes.
   * **v1.0.4:** Documentation infrastructure release — Read the Docs integration, preprint page with automated PDF build, and CI/CD workflow updates.
   * **v1.0.3:** GUI refreshed with the **Latte** theme — lighter, warmer, and less dark. First release published to PyPI.
@@ -525,12 +520,12 @@ If you use this software in your research, please cite it:
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
   title        = {{PICA: Advanced High-Precision Transport Measurement Automation with Python}},
   month        = oct,
-  day          = 6,
+  day          = 14,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {1.0.6},
-  doi          = {10.5281/zenodo.18377217},
-  url          = {https://doi.org/10.5281/zenodo.18377217}
+  version      = {1.0.7},
+  doi          = {10.5281/zenodo.18377216},
+  url          = {https://doi.org/10.5281/zenodo.18377216}
 }
 ```
 

@@ -1,62 +1,42 @@
-from setuptools import setup
-from setuptools.command.build_py import build_py as build_py_orig
+"""Build hook only: all project metadata lives in pyproject.toml.
+
+The launcher's Help menu shows the README, license, change log and user
+manual, so copies of those files have to ship inside the ``pica`` package.
+They are kept once, at the repository root, and copied into ``pica/`` here
+at build time (the copies are gitignored). ``[tool.setuptools.package-data]``
+in pyproject.toml lists them so the wheel picks them up at their copied
+location, and MANIFEST.in excludes the copies from the sdist so a stale
+local copy can never ship.
+"""
 import os
 import shutil
 
+from setuptools import setup
+from setuptools.command.build_py import build_py as build_py_orig
 
 SETUP_DIR = os.path.dirname(os.path.abspath(__file__))
-PICA_PKG_DIR = 'pica'
+PICA_PKG_DIR = os.path.join(SETUP_DIR, "pica")
 
 DATA_FILES_TO_COPY = {
-    '': [
-        'README.md',
-        'LICENSE',
-        'CHANGELOG.md',
-        'CONTRIBUTING.md',
-    ],
-    'docs': [
-        'docs/User_Manual.md',
-        'docs/Instruments_Manuals_Lists.md',
-    ]
+    "": ["README.md", "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md"],
+    "docs": ["docs/User_Manual.md", "docs/Instruments_Manuals_Lists.md"],
 }
 
 
 class build_py(build_py_orig):
-    """
-    Custom build command to copy data files into the package source tree
-    before the main build, ensuring they are included in the wheel.
-    """
+    """Copy the root documentation into pica/ before the normal build."""
+
     def run(self):
-        print("--- [Custom Build] Running robust data file copy ---")
-        
-        # Copy the files using absolute paths
         for dest_subdir, files in DATA_FILES_TO_COPY.items():
-            # Destination directory inside the 'pica' package
             dest_dir = os.path.join(PICA_PKG_DIR, dest_subdir)
-            
-            if not os.path.exists(dest_dir):
-                print(f"--- [Custom Build] Creating directory: {dest_dir}")
-                os.makedirs(dest_dir)
-            
-            for file_name in files:
-                # Construct absolute source path
-                source_path = os.path.join(SETUP_DIR, file_name)
-                
-                if os.path.exists(source_path):
-                    print(f"--- [Custom Build] Copying '{source_path}' to '{dest_dir}'")
-                    shutil.copy(source_path, dest_dir)
+            os.makedirs(dest_dir, exist_ok=True)
+            for rel in files:
+                src = os.path.join(SETUP_DIR, rel)
+                if os.path.exists(src):
+                    shutil.copy(src, dest_dir)
                 else:
-                    # This warning is critical for debugging
-                    print(f"--- [Custom Build] WARNING: Source file not found, cannot copy: {source_path}")
-        
-        # Then, run the original build_py command to continue the build
-        print("--- [Custom Build] Handing over to original build process ---")
+                    print(f"[build_py] WARNING: {src} not found; not copied")
         build_py_orig.run(self)
 
 
-# --- Main setup ---
-# All project metadata is in pyproject.toml.
-# We only use setup.py to inject our custom build command.
-setup(
-    cmdclass={'build_py': build_py}
-)
+setup(cmdclass={"build_py": build_py})
