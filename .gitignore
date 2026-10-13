@@ -6,53 +6,11 @@
 !.vscode/extensions.json
 *.code-workspace
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Virtual Environments
-.env
-.venv
-env/
-venv/
-ENV/
-
-# Distribution / packaging
-build/
-dist/
-*.egg-info/
-*.egg
-
-# PyInstaller
-*.spec
-# ...except the portable-utils spec: the build workflow needs it in the repo.
-!PICA_Utils_Portable.spec
-
-# Test & Coverage
-.pytest_cache/
-.tox/
-htmlcov/
-.coverage
-.coverage.*
-.cache
-
 # IDE - General
 .idea/
 
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# Claude Code (local session settings)
+.claude/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -82,7 +40,11 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-Untracked_Stuff/
+
+# PyInstaller
+*.spec
+# ...except the portable-utils spec: the build workflow needs it in the repo.
+!PICA_Utils_Portable.spec
 
 # Installer logs
 pip-log.txt
@@ -113,6 +75,23 @@ ENV/
 env.bak/
 venv.bak/
 
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Logs, temp files, Office lock files
+*.log
+*.tmp
+~$*
+
+# Local-only files
+Untracked_Stuff/
 capture_screenshots.py
 paper/JOSS_submition_supplimentory.md
 print_tree.py
@@ -122,8 +101,9 @@ pica/docs/Instruments_Manuals_Lists.md
 pica/README.md
 pica/LICENSE
 pica/CONTRIBUTING.md
-.claude/settings.json
 gpib_lifeline_report_*.txt
+# stray file a PowerShell redirect to "$null" can create
+$null
 
 # ============================================================================
 # STRICT RULE: data_file_for_ref/ folders are LAB REFERENCE DATA and must
@@ -134,9 +114,55 @@ gpib_lifeline_report_*.txt
 # ============================================================================
 **/data_file_for_ref/
 pica/keysight/data_file_for_ref/
-ica/novocontrol/data_file_for_ref/
-pica/PPMS/data_file_for_ref
+pica/novocontrol/data_file_for_ref/
+pica/PPMS/data_file_for_ref/
 
 # UI prototypes (quick HTML mockups, not shipped code)
 prototypes/
-$null
+
+# ============================================================================
+# Measurement data, documents and binaries: ignored everywhere by default so
+# lab data, manuals and generated pages never get committed by accident.
+# Deliberate exceptions are re-included at the end of this block.
+# ============================================================================
+data/
+docs/_build/
+*.dat
+*.csv
+*.tsv
+*.txt
+*.xls
+*.xlsx
+*.npy
+*.npz
+*.h5
+*.hdf5
+*.mat
+*.pkl
+*.pickle
+*.opj
+*.opju
+*.seq
+*.pdf
+*.doc
+*.docx
+*.ppt
+*.pptx
+*.html
+*.htm
+*.zip
+*.7z
+*.rar
+*.exe
+*.msi
+*.bak
+*.orig
+*.swp
+*~
+
+# --- exceptions (keep these LAST) ---
+!/requirements*.txt
+!/robots.txt
+!/docs/requirements.txt
+!/examples/**
+!/publications/**
