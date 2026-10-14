@@ -13,6 +13,9 @@ v1.5 (14 Oct 2026) - log instrument errors (K's note "Memristor Sweep
     :OUTP OFF succeeded. Each entry is a console line "INSTRUMENT ERROR
     [<stage>]: <reply>" and an INSTR_ERROR event in the run log; an empty
     queue is one "INSTR_ERROR_QUEUE stage=... | empty" event.
+    When the 5 % compliance read-back refuses the run, the queue is
+    drained first (stage "configure refused" / "... refused") and the
+    refusal is raised unchanged.
   * Before connecting, the 200 V source range with an I cc above 105 mA
     is logged as a warning (p. 6-10, 18-62; possible +826); run continues.
   * Log only: the SCPI writes, the data file and every refusal, retry and
@@ -1991,7 +1994,7 @@ def envelope_warning(source_range_v, i_cc_plus, i_cc_minus):
     if float(source_range_v) == 200.0 and i_max > K2400_ENVELOPE_LOW_I_MAX_A:
         return (f"200 V source range with I cc {i_max:g} A: above 105 mA the 1 A measure range is not "
                 f"allowed on this range (manual p. 6-10, 18-62); the 2400 may report error +826. "
-                f"Run continues.")
+                f"Run continues (the compliance read-back may still refuse it).")
     return None
 
 
@@ -2011,14 +2014,18 @@ def parse_error_reply(reply):
 def drain_error_queue(link):
     """:SYST:ERR? (the single-message form, safe on firmware C20) until
     code 0 or an unparseable reply, at most 12 reads. Returns the non-zero
-    replies oldest first. Exceptions propagate to the caller."""
+    replies oldest first; an unparseable reply is kept as the last entry
+    (so it is logged, not reported as an empty queue). Exceptions
+    propagate to the caller."""
     entries = []
     for _ in range(K2400_ERROR_QUEUE_MAX_READS):
         reply = link.query(":SYST:ERR?")
         code, _ = parse_error_reply(reply)
-        if code is None or code == 0:
+        if code == 0:
             break
         entries.append(reply)
+        if code is None:
+            break
     return entries
 
 
@@ -2034,6 +2041,12 @@ class SweepWorker(WorkerBase):
         """Drain the 2400 error queue and log it. Never raises and never
         goes through with_retry: a failed query is one log line, with no
         RETRY, no reconnect and no change to retry_total."""
+        try:
+            self._log_error_queue(stage)
+        except Exception:
+            pass            # logging must never end the run or break the shutdown
+
+    def _log_error_queue(self, stage):
         events = []
         try:
             entries = drain_error_queue(self.link)
@@ -2047,10 +2060,13 @@ class SweepWorker(WorkerBase):
             if not entries:
                 events.append(f"INSTR_ERROR_QUEUE stage={header_value(stage)} | empty")
         for text in events:
-            if self.run_log is None:
-                self.pending_events.append(text)
-            else:
-                self.log_event(text)
+            try:
+                if self.run_log is None:
+                    self.pending_events.append(text)    # lost if the run log never opens; the console has it
+                else:
+                    self.log_event(text)
+            except Exception:
+                pass                                    # a log write must never end the run or the shutdown
 
     def startup(self, source_range_v, protection_v, i_cc, dwell_s):
         """WorkerBase.startup plus the 'after configure' drain while the
@@ -2060,7 +2076,11 @@ class SweepWorker(WorkerBase):
         self.link.open()
         self.link.ramp_step_v = self.shutdown_step_v()
         idn = self.link.reset_and_identify()
-        self.link.configure(source_range_v, protection_v, i_cc, dwell_s, NPLC_DEFAULT)
+        try:
+            self.link.configure(source_range_v, protection_v, i_cc, dwell_s, NPLC_DEFAULT)
+        except ConfigMismatch:
+            self.log_error_queue("configure refused")     # output still off; the refusal is unchanged
+            raise
         self.log_compliance()
         self.log_error_queue("after configure")
         self.link.source(0.0)
@@ -2113,7 +2133,8 @@ class SweepWorker(WorkerBase):
         plan = run_plan(p["shape"], p["vmax_plus"], p["vmax_minus"], p["step_v"], p["loops"], p["ladder"])
         largest_v = max(max(a, b) for _, a, b in plan)
         source_range = source_range_for(largest_v)
-        warning = envelope_warning(source_range, p["i_cc_plus"], p["i_cc_minus"])
+        i_cc_minus_used = p["i_cc_plus"] if p["shape"] == SHAPE_UNIPOLAR_PLUS else p["i_cc_minus"]  # greyed there
+        warning = envelope_warning(source_range, p["i_cc_plus"], i_cc_minus_used)
         if warning:
             self.log("WARNING: " + warning)
             self.pending_events.append(f"INSTR_ENVELOPE_WARNING stage=envelope | {header_value(warning)}")
@@ -2195,7 +2216,11 @@ class SweepWorker(WorkerBase):
         if sign == self.current_sign:
             return
         i_cc = self.p["i_cc_plus"] if sign > 0 else self.p["i_cc_minus"]
-        self.with_retry(lambda: self.link.set_compliance(i_cc), f"compliance {i_cc:g} A")
+        try:
+            self.with_retry(lambda: self.link.set_compliance(i_cc), f"compliance {i_cc:g} A")
+        except ConfigMismatch:
+            self.log_error_queue(f"compliance change to {i_cc:g} A refused")   # at 0 V; refusal unchanged
+            raise
         self.log_compliance()
         self.log_error_queue(f"after compliance change to {i_cc:g} A")   # the source is at 0 V here
         self.current_sign = sign

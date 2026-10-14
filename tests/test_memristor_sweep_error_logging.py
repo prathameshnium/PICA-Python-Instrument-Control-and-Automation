@@ -12,11 +12,14 @@ compliance change happens at 0 V; no query while sourcing; no drain when
 import hashlib
 import os
 import sys
+import queue
 import tempfile
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from memristor_test_support import (  # noqa: E402
-    FakeK2400, end_reason, log_events, read_file, run_module_tests, run_sweep, sweep)
+    FakeK2400, end_reason, log_events, make_link, read_file, run_module_tests, run_sweep, run_worker, sweep,
+    sweep_params)
 
 ERR_826 = '+826,"Attempt to exceed power limit"'
 
@@ -81,8 +84,8 @@ def test_drain_error_queue_stops_at_zero_garbage_or_12_reads():
             return self.replies.pop(0) if self.replies else ERR_826
     link = L([ERR_826, '-113,"Undefined header"', '0,"No error"', ERR_826])
     assert sweep.drain_error_queue(link) == [ERR_826, '-113,"Undefined header"'] and link.n == 3
-    link = L(["junk"])
-    assert sweep.drain_error_queue(link) == [] and link.n == 1
+    link = L(["junk", ERR_826])                         # unparseable: kept, then stop
+    assert sweep.drain_error_queue(link) == ["junk"] and link.n == 1
     link = L([])                                        # never empties: capped
     assert len(sweep.drain_error_queue(link)) == 12 and link.n == 12
 
@@ -202,6 +205,86 @@ def test_no_end_drain_when_output_off_fails():
         assert not any(kind == "q" and cmd == ":SYST:ERR?" for kind, cmd in fake.log[last_off:])
         assert not any("end of run" in t for t in _instr_events(path))
         assert end_reason(path) == "completed"
+
+
+
+def test_a_failing_run_log_write_never_breaks_the_shutdown():
+    """Disk gone at the end drain: the run still closes the link and posts done."""
+    class Fake(FakeK2400):
+        def write(self, cmd):
+            super().write(cmd)
+            if cmd == ":OUTP OFF":
+                self.err_queue.append(ERR_826)       # so the end drain has a console line to fail on
+    with tempfile.TemporaryDirectory() as d:
+        fake = Fake(1e6)
+        p = sweep_params(d)
+        link = make_link(sweep, fake)
+        worker = sweep.SweepWorker(p, link, threading.Event(), queue.Queue(), sleep=lambda s: None)
+        worker.gui_version = "test"
+        real = worker.log_event
+
+        def flaky(text):
+            if text.startswith("INSTR_") and "end of run" in text:
+                raise OSError("disk gone")
+            real(text)
+        worker.log_event = flaky
+        real_log = worker.log
+
+        def flaky_log(text):
+            if "[end of run" in text:
+                raise RuntimeError("console gone")
+            real_log(text)
+        worker.log = flaky_log
+        msgs = run_worker(worker)
+        assert fake.queries[-1] == ":SYST:ERR?" and not fake.err_queue      # the drain ran and read it
+        assert fake.closed and fake.writes[-1] == ":OUTP OFF"
+        assert any(m[0] == "done" and m[1] == "finished" for m in msgs)
+        assert worker.reason == "completed"
+
+
+
+def _run_refused(fake, folder):
+    """A run refused at configure writes no data file, so no run_sweep()."""
+    link = make_link(sweep, fake)
+    worker = sweep.SweepWorker(sweep_params(folder), link, threading.Event(), queue.Queue(), sleep=lambda s: None)
+    worker.gui_version = "test"
+    return worker, run_worker(worker)
+
+
+def test_a_compliance_refusal_drains_the_queue_and_still_refuses():
+    """+826 behind a refused read-back: logged before the unchanged refusal."""
+    with tempfile.TemporaryDirectory() as d:                      # at configure: console only (no run log yet)
+        fake = FakeK2400(1e6, prot_readback=5e-3, err_queue=[ERR_826])
+        worker, msgs = _run_refused(fake, d)
+        assert worker.reason.startswith("exception: compliance read-back")
+        assert f"INSTRUMENT ERROR [configure refused]: {ERR_826}" in _console(msgs)
+        assert fake.writes[-1] == ":OUTP OFF" and ":OUTP ON" not in fake.writes
+
+    class Fake(FakeK2400):
+        def query(self, cmd):
+            if cmd.strip().upper() == ":SENS:CURR:PROT?" and self.icc == 2e-6:
+                self.err_queue.append(ERR_826)
+                return "+1.000000E-04\n"
+            return super().query(cmd)
+    with tempfile.TemporaryDirectory() as d:                      # at the sign change: run log too, at 0 V
+        fake = Fake(1e6)
+        worker, msgs, path = run_sweep(fake, d, i_cc_minus=2e-6, vmax_plus=5, vmax_minus=5, step_v=0.5)
+        assert worker.reason.startswith("exception: compliance read-back")
+        assert f"INSTR_ERROR stage=compliance change to 2e-06 A refused | reply={ERR_826}" in _instr_events(path)
+        assert end_reason(path).startswith("exception: compliance read-back")
+        assert fake.writes[-1] == ":OUTP OFF"
+
+
+def test_envelope_warning_ignores_the_greyed_minus_compliance():
+    with tempfile.TemporaryDirectory() as d:
+        _, msgs, _ = run_sweep(FakeK2400(1e9), d, shape=sweep.SHAPE_UNIPOLAR_PLUS, vmax_plus=150, step_v=50,
+                               i_cc_minus=1.0, protection_v=None)
+        assert not any("WARNING" in t for t in _console(msgs))
+    with tempfile.TemporaryDirectory() as d:
+        _, msgs, path = run_sweep(FakeK2400(1e9), d, vmax_plus=150, vmax_minus=150, step_v=50,
+                                  i_cc_minus=1.0, protection_v=None)
+        assert any(t.startswith("WARNING: 200 V source range") for t in _console(msgs))
+        assert any(t.startswith("INSTR_ENVELOPE_WARNING stage=envelope") for t in log_events(path))
 
 
 if __name__ == "__main__":
