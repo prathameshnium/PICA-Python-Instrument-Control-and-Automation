@@ -306,7 +306,7 @@ def test_sweep_on_1_megohm_trips_at_10v_confirms_turns_around_and_measures_the_r
         assert list(columns) == list(sweep.SWEEP_COLUMNS)
         assert end_reason(path) == "completed"
         assert_data_only(path)
-        events = log_events(path)
+        events = [t for t in log_events(path) if not t.startswith("INSTR_")]   # v1.5 error-queue lines
         assert events[0] == f"FILES data_file={os.path.basename(path)}" and len(events) == 2
         assert analysis.header_blocks(header)["protocol"]["log_file"] == \
             os.path.basename(path).replace("_sweep.csv", "_sweep_log.txt")

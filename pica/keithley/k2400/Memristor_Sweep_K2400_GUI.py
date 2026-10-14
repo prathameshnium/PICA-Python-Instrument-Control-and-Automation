@@ -4,6 +4,20 @@ Purpose: Switching I-V sweep of a memristor pellet with current compliance
          on a Keithley 2400 (protocol "Memristor measurement modules for
          PICA" v1.1, Section 3, and addendum A1 of 13 Oct 2026).
 
+v1.5 (14 Oct 2026) - log instrument errors (K's note "Memristor Sweep
+  (K2400): log instrument errors (v1.4 -> v1.5)" of 14 Oct 2026)
+  * The 2400 error queue is drained with :SYST:ERR? (manual p. 18-109;
+    at most 12 reads, oldest first) while the output is off or the source
+    sits at 0 V: after configure (before the output goes on), after each
+    compliance change between the halves, and at the end of the run once
+    :OUTP OFF succeeded. Each entry is a console line "INSTRUMENT ERROR
+    [<stage>]: <reply>" and an INSTR_ERROR event in the run log; an empty
+    queue is one "INSTR_ERROR_QUEUE stage=... | empty" event.
+  * Before connecting, the 200 V source range with an I cc above 105 mA
+    is logged as a warning (p. 6-10, 18-62; possible +826); run continues.
+  * Log only: the SCPI writes, the data file and every refusal, retry and
+    stop rule are unchanged. The queries never go through the retry rule:
+    a failed query is one INSTR_ERROR_QUERY_FAILED event and nothing else.
 v1.4 (13 Oct 2026) - addendum A1: pause between full loops (K's ruling)
   * New input "Pause between loops (s)", every shape (ladder: between
     entries), default 0 s which reproduces v1.3 exactly. After a loop's
@@ -1964,8 +1978,132 @@ def run_plan(shape, vmax_plus, vmax_minus, step, loops, ladder):
     return [(k + 1, vmax_plus, vmax_minus) for k in range(int(loops))]
 
 
+# Error-queue logging (v1.5; manual 2400S-900-01 Rev. K). Log only.
+K2400_ENVELOPE_LOW_I_MAX_A = 0.105   # 100 mA range spans 105 mA (p. 6-10, 18-62)
+K2400_ERROR_QUEUE_MAX_READS = 12     # queue holds 10 (p. 18-109), plus overflow margin
+
+
+def envelope_warning(source_range_v, i_cc_plus, i_cc_minus):
+    """Warning text when the 200 V source range meets an I cc above 105 mA
+    (measure_range_for() would then ask for the 1 A range, which the
+    manual does not allow on that source range); None otherwise."""
+    i_max = max(abs(float(i_cc_plus)), abs(float(i_cc_minus)))
+    if float(source_range_v) == 200.0 and i_max > K2400_ENVELOPE_LOW_I_MAX_A:
+        return (f"200 V source range with I cc {i_max:g} A: above 105 mA the 1 A measure range is not "
+                f"allowed on this range (manual p. 6-10, 18-62); the 2400 may report error +826. "
+                f"Run continues.")
+    return None
+
+
+def parse_error_reply(reply):
+    """'+826,"Attempt to exceed power limit"' -> (826, 'Attempt to exceed
+    power limit'); '0,"No error"' and '+000,...' give code 0; a reply
+    without a leading integer gives (None, reply)."""
+    text = str(reply).strip()
+    head, _, rest = text.partition(",")
+    try:
+        code = int(head.strip())
+    except ValueError:
+        return None, text
+    return code, rest.strip().strip('"')
+
+
+def drain_error_queue(link):
+    """:SYST:ERR? (the single-message form, safe on firmware C20) until
+    code 0 or an unparseable reply, at most 12 reads. Returns the non-zero
+    replies oldest first. Exceptions propagate to the caller."""
+    entries = []
+    for _ in range(K2400_ERROR_QUEUE_MAX_READS):
+        reply = link.query(":SYST:ERR?")
+        code, _ = parse_error_reply(reply)
+        if code is None or code == 0:
+            break
+        entries.append(reply)
+    return entries
+
+
 class SweepWorker(WorkerBase):
     """Switching I-V sweep with current compliance (protocol Section 3)."""
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.pending_events = []    # error-queue lines held until the run log opens
+
+    # -- instrument error queue (v1.5, log only) -----------------------------
+    def log_error_queue(self, stage):
+        """Drain the 2400 error queue and log it. Never raises and never
+        goes through with_retry: a failed query is one log line, with no
+        RETRY, no reconnect and no change to retry_total."""
+        events = []
+        try:
+            entries = drain_error_queue(self.link)
+        except Exception as exc:
+            self.log(f"Error-queue query failed [{stage}]: {exc}")
+            events.append(f"INSTR_ERROR_QUERY_FAILED stage={header_value(stage)} | error={header_value(exc)}")
+        else:
+            for reply in entries:
+                self.log(f"INSTRUMENT ERROR [{stage}]: {reply}")
+                events.append(f"INSTR_ERROR stage={header_value(stage)} | reply={header_value(reply)}")
+            if not entries:
+                events.append(f"INSTR_ERROR_QUEUE stage={header_value(stage)} | empty")
+        for text in events:
+            if self.run_log is None:
+                self.pending_events.append(text)
+            else:
+                self.log_event(text)
+
+    def startup(self, source_range_v, protection_v, i_cc, dwell_s):
+        """WorkerBase.startup plus the 'after configure' drain while the
+        output is still off. Copied here so the common block stays
+        byte-identical in the three modules."""
+        self.status(state="configuring")
+        self.link.open()
+        self.link.ramp_step_v = self.shutdown_step_v()
+        idn = self.link.reset_and_identify()
+        self.link.configure(source_range_v, protection_v, i_cc, dwell_s, NPLC_DEFAULT)
+        self.log_compliance()
+        self.log_error_queue("after configure")
+        self.link.source(0.0)
+        self.link.output(True)
+        return idn
+
+    def shutdown(self, ramp_step_v):
+        """WorkerBase.shutdown plus the 'end of run, output off' drain,
+        sent only when :OUTP OFF succeeded, before the link is closed.
+        Copied here for the same reason as startup()."""
+        problems = []
+        self.status(state="ramping down")
+        try:
+            if self.link.clear_auto:
+                self.link.set_clear_auto(False)
+            if self.link.smode != "NORM":
+                self.link.set_output_off_mode("NORM")
+        except Exception as exc:
+            problems.append(f"restore output mode: {exc}")
+        try:
+            self.link.ramp_to_zero(ramp_step_v)
+        except Exception as exc:
+            problems.append(f"ramp: {exc}")
+        output_off = False
+        try:
+            self.link.output(False)
+            output_off = True
+        except Exception as exc:
+            problems.append(f"output off: {exc}")
+            # one more attempt with a short timeout (D4)
+            try:
+                if self.link.inst is not None:
+                    self.link.inst.timeout = 2000
+                self.link.write(":OUTP OFF", pace=False)
+            except Exception as exc2:
+                problems.append(f"output off retry: {exc2}")
+        if output_off:
+            self.log_error_queue("end of run, output off")
+        try:
+            self.link.close()
+        except Exception:
+            pass
+        return "; ".join(problems)
 
     def shutdown_step_v(self):
         return self.p["step_v"]
@@ -1975,6 +2113,10 @@ class SweepWorker(WorkerBase):
         plan = run_plan(p["shape"], p["vmax_plus"], p["vmax_minus"], p["step_v"], p["loops"], p["ladder"])
         largest_v = max(max(a, b) for _, a, b in plan)
         source_range = source_range_for(largest_v)
+        warning = envelope_warning(source_range, p["i_cc_plus"], p["i_cc_minus"])
+        if warning:
+            self.log("WARNING: " + warning)
+            self.pending_events.append(f"INSTR_ENVELOPE_WARNING stage=envelope | {header_value(warning)}")
         idn = self.startup(source_range, p["protection_v"], p["i_cc_plus"], p["dwell_s"])
         self.current_sign = 1
         self.link.i_cc = p["i_cc_plus"]
@@ -1995,6 +2137,9 @@ class SweepWorker(WorkerBase):
                                 ("log_file", os.path.basename(log_path))])]
         self.file = RunFile(path, "sweep", blocks, SWEEP_COLUMNS, self.gui_version)
         self.open_run_log(log_path, [self.file])
+        for text in self.pending_events:    # call sites A and B, in their order
+            self.log_event(text)
+        self.pending_events = []
         self.status(file=path)
 
         total_points = sum(loop_point_count(p["shape"], a, b, p["step_v"]) for _, a, b in plan) + N_SETTLE_READINGS
@@ -2052,6 +2197,7 @@ class SweepWorker(WorkerBase):
         i_cc = self.p["i_cc_plus"] if sign > 0 else self.p["i_cc_minus"]
         self.with_retry(lambda: self.link.set_compliance(i_cc), f"compliance {i_cc:g} A")
         self.log_compliance()
+        self.log_error_queue(f"after compliance change to {i_cc:g} A")   # the source is at 0 V here
         self.current_sign = sign
 
     def measure(self, v):
@@ -2122,7 +2268,7 @@ class SweepWorker(WorkerBase):
 class SweepGUI(MemristorGuiBase):
     MODULE_TITLE = "Sweep"
     MODULE_KEY = "sweep"
-    PROGRAM_VERSION = "1.4"
+    PROGRAM_VERSION = "1.5"
 
     def create_module_inputs(self, parent):
         frame = self.make_frame(parent, 'Sweep')

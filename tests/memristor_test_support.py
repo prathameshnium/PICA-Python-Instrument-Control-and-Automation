@@ -65,9 +65,11 @@ class FakeK2400:
     """Resistor of `resistance` ohm behind the 2400's current compliance.
     Records every write in order. fail_reads: set of :READ? indices (0-based)
     that raise; fail_forever: every :READ? raises. ovp_at: |V| at or above
-    which status bit 4 is set."""
+    which status bit 4 is set. err_queue: replies :SYST:ERR? hands out
+    oldest first (then '0,"No error"'); fail_err_query: that query raises."""
 
-    def __init__(self, resistance=1e6, fail_reads=(), fail_forever=False, ovp_at=None, prot_readback=None):
+    def __init__(self, resistance=1e6, fail_reads=(), fail_forever=False, ovp_at=None, prot_readback=None,
+                 err_queue=None, fail_err_query=False):
         self.r = float(resistance)
         self.writes = []
         self.v = 0.0
@@ -81,11 +83,16 @@ class FakeK2400:
         self.prot_readback = prot_readback
         self.clear_auto = False
         self.closed = False
+        self.err_queue = list(err_queue or [])
+        self.fail_err_query = fail_err_query
+        self.queries = []            # every query in order, interleaved with writes in self.log
+        self.log = []                # ('w', cmd) / ('q', cmd) in bus order
         self.on_read = None          # callable(idx) run before every :READ? (deterministic Stop)
         self.t0 = time.perf_counter()
 
     def write(self, cmd):
         self.writes.append(cmd)
+        self.log.append(("w", cmd))
         parts = cmd.split()
         key = parts[0].upper()
         if key == ":SOUR:VOLT":
@@ -114,6 +121,12 @@ class FakeK2400:
 
     def query(self, cmd):
         c = cmd.strip().upper()
+        self.queries.append(cmd)
+        self.log.append(("q", cmd))
+        if c == ":SYST:ERR?":
+            if self.fail_err_query:
+                raise IOError("VI_ERROR_TMO: timeout")
+            return (self.err_queue.pop(0) if self.err_queue else '0,"No error"') + "\n"
         if c == "*IDN?":
             return "KEITHLEY INSTRUMENTS INC.,MODEL 2400,1234567,C30   Mar 17 2006 09:29:29/A02  /K/J\n"
         if c == ":READ?":
