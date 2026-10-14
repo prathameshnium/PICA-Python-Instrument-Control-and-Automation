@@ -4,6 +4,19 @@ Purpose: Switching I-V sweep of a memristor pellet with current compliance
          on a Keithley 2400 (protocol "Memristor measurement modules for
          PICA" v1.1, Section 3, and addendum A1 of 13 Oct 2026).
 
+v1.6 (15 Oct 2026) - PROT / RANG order by direction (fixes +824)
+  * set_compliance() sends :SENS:CURR:PROT before :SENS:CURR:RANG when the
+    compliance range goes up, and keeps the old RANG-first order (protocol
+    A6) when it stays or goes down. The 2400 refuses a measure range above
+    the present compliance range (manual p. 18-62, note 3; +824 "Cannot
+    exceed compliance range", p. B-7), so the old order drew +824 at
+    configure (after *RST the compliance is 105 uA) and on a compliance
+    increase between the halves (1 mA + / 1 A -); that RANG command was
+    ignored and AUTO ON followed, so the data were not affected. RANG
+    first is still needed going down: compliance below 0.1 % of the
+    present range is refused (p. 18-68). Same three commands and values;
+    compliance, auto range, timing and columns unchanged. Seen in the 14
+    Oct 2026 runs.
 v1.5 (14 Oct 2026) - log instrument errors (K's note "Memristor Sweep
   (K2400): log instrument errors (v1.4 -> v1.5)" of 14 Oct 2026)
   * The 2400 error queue is drained with :SYST:ERR? (manual p. 18-109;
@@ -165,6 +178,7 @@ V_SOURCE_MAX_V = 210.0
 I_CC_MIN_A = 1e-9                   # p. 6-2: compliance 1 nA to 1.05 A
 I_CC_MAX_A = 1.05
 COMPLIANCE_READBACK_TOLERANCE = 0.05    # protocol 2.2 step 4 (A6) said 1 %; widened to 5 % for read-back rounding
+COMPLIANCE_AFTER_RST_A = 1.05e-4       # p. 18-12, Table 18-6: :SENS:CURR:PROT after *RST
 CONSOLE_MAX_LINES = 3000                # the console keeps only the newest lines (every point is logged)
 MEASURE_RANGES_A = (1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0)
 
@@ -609,6 +623,7 @@ class K2400Link:
         self.config = None          # dict given to configure()
         self.i_cc = None
         self.i_cc_readback = None
+        self.compliance_now = COMPLIANCE_AFTER_RST_A   # last compliance sent; picks the PROT/RANG order
         self.source_delay_s = None
         self.nplc = None
         self.smode = "NORM"
@@ -658,6 +673,7 @@ class K2400Link:
     # -- startup (protocol 2.2) -------------------------------------------
     def reset_and_identify(self):
         self.write("*RST", pace=False)
+        self.compliance_now = COMPLIANCE_AFTER_RST_A
         self.write("*CLS", pace=False)
         self.sleep(RST_SLEEP_S)
         self.idn = self.query("*IDN?")
@@ -691,11 +707,37 @@ class K2400Link:
         self.set_clear_auto(False)
 
     def set_compliance(self, i_cc):
-        """A6 sequence: fixed range that holds I cc, then PROT, then AUTO ON,
-        then read back PROT? and refuse a mismatch above 5 %."""
+        """A6 sequence: PROT and the fixed range that holds I cc, in the order
+        below, then AUTO ON, then read back PROT? and refuse a mismatch above
+        5 %.
+
+        The order of PROT and RANG depends on the direction (15 Oct 2026),
+        because the 2400 has two rules and each order breaks one of them:
+          * no measure range above the present compliance range (manual
+            p. 18-62, note 3), else +824 "Cannot exceed compliance range"
+            (p. B-7) and the RANG command is ignored;
+          * no compliance below 0.1 % of the present measure range (p. 18-68,
+            protocol answer A6), else the PROT command is refused and the
+            read-back check stops the run.
+        So: compliance range going UP -> PROT first, then RANG (the old
+        RANG-first order drew +824 at every start with I cc above 105 uA,
+        since *RST leaves 105 uA, and on every increase; harmless, as AUTO
+        ON followed, but noisy).
+        Same range or going DOWN -> RANG first, then PROT (the A6 order,
+        which keeps an I cc below 100 nA possible after *RST).
+        Same three commands and values as before; only the order of the
+        first two can differ."""
         i_cc = float(i_cc)
-        self.write(f":SENS:CURR:RANG {measure_range_for(i_cc):g}")
-        self.write(f":SENS:CURR:PROT {i_cc:g}")
+        rang_cmd = f":SENS:CURR:RANG {measure_range_for(i_cc):g}"
+        prot_cmd = f":SENS:CURR:PROT {i_cc:g}"
+        if measure_range_for(i_cc) > measure_range_for(self.compliance_now):
+            self.write(prot_cmd)
+            self.compliance_now = i_cc
+            self.write(rang_cmd)
+        else:
+            self.write(rang_cmd)
+            self.write(prot_cmd)
+            self.compliance_now = i_cc
         self.write(":SENS:CURR:RANG:AUTO ON")
         reply = self.query(":SENS:CURR:PROT?")
         try:
@@ -790,6 +832,7 @@ class K2400Link:
             delay = self.source_delay_s if self.source_delay_s is not None else cfg["dwell_s"]
             nplc = self.nplc if self.nplc is not None else cfg["nplc"]
             smode, clear_auto = self.smode, self.clear_auto
+            self.compliance_now = i_cc      # re-assert in the A6 order (RANG first), as before 15 Oct 2026
             self.configure(cfg["source_range_v"], cfg["protection_v"], i_cc,
                            delay, nplc)
             if smode != "NORM":
@@ -1064,6 +1107,8 @@ class WorkerBase:
         finally:
             shutdown_note = self.shutdown(self.shutdown_step_v())
             extra = [("shutdown", shutdown_note)] if shutdown_note else None
+            if shutdown_note and self.link.idn:   # 15 Oct 2026: was in the END line only (skipped if never connected)
+                self.log(f"WARNING: shutdown problem ({shutdown_note}). CHECK THAT THE 2400 OUTPUT IS OFF.")
             for f in self.files:            # END lines first, then close the data files and the log
                 try:
                     self.log_event(f.end_text(self.reason, extra))
@@ -2293,7 +2338,7 @@ class SweepWorker(WorkerBase):
 class SweepGUI(MemristorGuiBase):
     MODULE_TITLE = "Sweep"
     MODULE_KEY = "sweep"
-    PROGRAM_VERSION = "1.5"
+    PROGRAM_VERSION = "1.6"
 
     def create_module_inputs(self, parent):
         frame = self.make_frame(parent, 'Sweep')

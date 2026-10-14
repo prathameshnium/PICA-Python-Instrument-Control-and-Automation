@@ -61,12 +61,28 @@ for _m in MODULES:
 
 # -- fake instrument ----------------------------------------------------
 
+ERR_824 = '+824,"Cannot exceed compliance range"'
+ERR_822 = '+822,"Too small for sense range"'     # assumed code for the 0.1 % rule (p. 18-68)
+K2400_I_RANGES_A = (1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0)
+
+
+def _range_of(i_a):
+    """The 2400 current range that holds i_a (each spans 105 % of nominal)."""
+    for r in K2400_I_RANGES_A:
+        if abs(i_a) <= r * 1.05 * (1 + 1e-9):
+            return r
+    return K2400_I_RANGES_A[-1]
+
+
 class FakeK2400:
     """Resistor of `resistance` ohm behind the 2400's current compliance.
     Records every write in order. fail_reads: set of :READ? indices (0-based)
     that raise; fail_forever: every :READ? raises. ovp_at: |V| at or above
     which status bit 4 is set. err_queue: replies :SYST:ERR? hands out
-    oldest first (then '0,"No error"'); fail_err_query: that query raises."""
+    oldest first (then '0,"No error"'); fail_err_query: that query raises.
+    A :SENS:CURR:RANG above the present compliance range queues +824 and is
+    ignored; a :SENS:CURR:PROT below 0.1 % of the present measure range is
+    refused (queued as +822), as the real 2400 does."""
 
     def __init__(self, resistance=1e6, fail_reads=(), fail_forever=False, ovp_at=None, prot_readback=None,
                  err_queue=None, fail_err_query=False):
@@ -74,6 +90,7 @@ class FakeK2400:
         self.writes = []
         self.v = 0.0
         self.icc = 1.05
+        self.meas_range = 1.0
         self.output_on = False
         self.timeout = 0
         self.reads = 0
@@ -98,13 +115,29 @@ class FakeK2400:
         if key == ":SOUR:VOLT":
             self.v = float(parts[1])
         elif key == ":SENS:CURR:PROT":
-            self.icc = float(parts[1])
+            # 2400 rule (p. 18-68, protocol A6): no compliance below 0.1 % of
+            # the present measure range; refused (error), compliance unchanged.
+            val = float(parts[1])
+            if val < 1e-3 * self.meas_range * (1 - 1e-9):
+                self.err_queue.append(ERR_822)
+            else:
+                self.icc = val
+        elif key == ":SENS:CURR:RANG":
+            # 2400 rule (manual p. 18-62, note 3): no measure range above the
+            # compliance range; refused with +824 (p. B-7), range unchanged.
+            if _range_of(float(parts[1])) > _range_of(self.icc):
+                self.err_queue.append(ERR_824)
+            else:
+                self.meas_range = _range_of(float(parts[1]))
+        elif key == ":SENS:CURR:RANG:AUTO":
+            self.meas_range = _range_of(self.icc)    # worst case: autorange may sit up to the compliance range
         elif key == ":OUTP":
             self.output_on = parts[1].upper() == "ON"
         elif key == ":SOUR:CLE:AUTO":
             self.clear_auto = parts[1].upper() == "ON"
         elif key == "*RST":
             self.v, self.icc, self.output_on, self.clear_auto = 0.0, 1.05e-4, False, False
+            self.meas_range = 1e-4
 
     def _reading(self):
         i = self.v / self.r
@@ -149,6 +182,29 @@ class FakeK2400:
 
     def close(self):
         self.closed = True
+
+
+def assert_compliance_order(mod, writes):
+    """Every compliance change in `writes` is PROT then RANG when the
+    compliance range goes up and RANG then PROT otherwise (A6), followed by
+    :SENS:CURR:RANG:AUTO ON; the values are those of measure_range_for()."""
+    w = [c for c in writes if c.startswith(":SENS:CURR:") or c == "*RST"]
+    prev = 1.05e-4
+    n = 0
+    for k, c in enumerate(w):
+        if c == "*RST":
+            prev = 1.05e-4
+        elif c.startswith(":SENS:CURR:PROT "):
+            i_cc = float(c.split()[1])
+            rang = f":SENS:CURR:RANG {mod.measure_range_for(i_cc):g}"
+            if mod.measure_range_for(i_cc) > mod.measure_range_for(prev):
+                assert w[k + 1] == rang and w[k + 2] == ":SENS:CURR:RANG:AUTO ON", w[k - 1:k + 3]
+            else:
+                assert w[k - 1] == rang and w[k + 1] == ":SENS:CURR:RANG:AUTO ON", w[k - 2:k + 2]
+            prev = i_cc
+            n += 1
+    assert n > 0
+    return n
 
 
 def make_link(mod, fake):

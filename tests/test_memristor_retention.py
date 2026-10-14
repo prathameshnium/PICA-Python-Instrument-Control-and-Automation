@@ -314,5 +314,21 @@ def test_planned_reads_count_matches_a_fake_run():
         retention.time = real_time
 
 
+
+def test_retention_compliance_order_follows_the_direction_so_no_error():
+    """15 Oct 2026 fix (common block): PROT first when the compliance range
+    goes up, RANG first otherwise (A6). The fake refuses both mistakes, as
+    the 2400 does; retention never reads the queue, so it must stay empty."""
+    from memristor_test_support import assert_compliance_order
+    for extra in (dict(), dict(i_cc_write=1.0), dict(i_cc_write=1e-3, state="HRS"), dict(i_cc_write=5e-8),
+                  dict(scheme=retention.SCHEME_INTERMITTENT, i_cc_write=0.5)):
+        with tempfile.TemporaryDirectory() as d:
+            fake = FakeK2400(1e6)
+            worker, _, wpath, rpath = run_retention(fake, d, **extra)
+            assert fake.err_queue == [], (extra, fake.err_queue)
+            assert worker.outcome == "finished" and end_reason(rpath) == worker.reason, (extra, worker.reason)
+            assert_compliance_order(retention, fake.writes)
+
+
 if __name__ == "__main__":
     run_module_tests(globals())

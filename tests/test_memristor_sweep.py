@@ -207,7 +207,7 @@ def test_link_startup_order_follows_a6_and_remembers_config():
     assert ":SOUR:VOLT:RANG 20" in w and ":SOUR:VOLT:PROT 20" in w
     i_rang, i_prot, i_auto = (w.index(":SENS:CURR:RANG 1e-05"), w.index(":SENS:CURR:PROT 1e-05"),
                               w.index(":SENS:CURR:RANG:AUTO ON"))
-    assert i_rang < i_prot < i_auto
+    assert i_rang < i_prot < i_auto                         # 10 uA is not above 105 uA: A6 order
     assert ":SENS:CURR:NPLC 1" in w and ":SOUR:DEL 0.1" in w
     assert ":OUTP:SMOD NORM" in w and ":SOUR:CLE:AUTO OFF" in w
     assert ":ROUT:TERM FRON" in w and ":SYST:RSEN OFF" in w
@@ -666,6 +666,41 @@ def test_sweep_time_estimate_adds_the_pauses_and_the_gui_validates_them():
                 assert False, bad
             except ValueError as exc:
                 assert "Pause" in str(exc)
+
+
+
+def test_compliance_order_follows_the_direction_so_the_2400_never_complains():
+    """15 Oct 2026: RANG before PROT drew +824 at every start (the 14 Oct
+    runs) and on every increase; PROT before RANG would break A6 (I cc below
+    0.1 % of the present range is refused). The fake applies both 2400
+    rules; each fixed order fails one of them, the direction rule neither."""
+    from memristor_test_support import ERR_824, ERR_822, assert_compliance_order
+    fake = FakeK2400()
+    fake.write("*RST")                                    # compliance 105 uA, range 100 uA
+    fake.write(":SENS:CURR:RANG 1")
+    fake.write(":SENS:CURR:PROT 1")
+    assert fake.err_queue == [ERR_824]                    # old order, going up
+    fake = FakeK2400()
+    fake.write("*RST")
+    fake.write(":SENS:CURR:PROT 5e-08")
+    assert fake.err_queue == [ERR_822] and fake.icc == 1.05e-4   # PROT first, going down: refused
+    for i_cc in (1.0, 1e-3, 0.5, 1e-4, 1.05e-4, 1e-5, 5e-8, 1e-9, 1.05):
+        fake = FakeK2400()
+        link = make_link(sweep, fake)
+        link.open()
+        link.reset_and_identify()
+        link.configure(20, 20.0, i_cc, 0.1)
+        for nxt in (1.0, 1e-3, 1e-6, 1e-9, 0.5, 2e-8, 1.0, 1.0, 1e-3):   # up, down, equal, big jumps
+            link.set_compliance(nxt)
+        assert fake.err_queue == [], (i_cc, fake.err_queue)
+        assert_compliance_order(sweep, fake.writes)
+        link.reconnect()                                  # re-asserts the same compliance: no complaint
+        assert fake.err_queue == [], i_cc
+        assert_compliance_order(sweep, fake.writes)       # reconnect uses the A6 order (RANG first)
+        fake.writes.clear()
+        link.compliance_now = 1.0                         # stale after a bus drop mid-change
+        link.reconnect()
+        assert [c for c in fake.writes if c.startswith(":SENS:CURR:")][:2] ==             [":SENS:CURR:RANG 0.001", ":SENS:CURR:PROT 0.001"]          # last I cc of the loop: 1 mA
 
 
 if __name__ == "__main__":

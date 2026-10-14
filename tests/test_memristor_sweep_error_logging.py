@@ -37,9 +37,20 @@ V14_CASES = {
 }
 
 
+def as_v14_order(writes):
+    """v1.6 sends :SENS:CURR:PROT before :SENS:CURR:RANG when the compliance
+    range goes up (the +824 fix); swap each such pair back so the rest can
+    be compared with v1.4 exactly."""
+    out = list(writes)
+    for k in range(len(out) - 1):
+        if out[k].startswith(":SENS:CURR:PROT ") and out[k + 1].startswith(":SENS:CURR:RANG "):
+            out[k], out[k + 1] = out[k + 1], out[k]
+    return out
+
+
 def _fingerprint(worker, path):
     _, cols, rows = read_file(path)
-    writes = worker.link.fake.writes
+    writes = as_v14_order(worker.link.fake.writes)
     wr = "\n".join(writes)
     rr = "\n".join(repr([r[c] for c in cols if c != "t_s"]) for r in rows)
     return (len(writes), hashlib.sha256(wr.encode()).hexdigest()[:16], len(rows),
@@ -90,7 +101,7 @@ def test_drain_error_queue_stops_at_zero_garbage_or_12_reads():
     assert len(sweep.drain_error_queue(link)) == 12 and link.n == 12
 
 
-def test_writes_and_rows_are_identical_to_v14():
+def test_writes_and_rows_are_identical_to_v14_apart_from_the_prot_rang_order():
     for name, (extra, expected) in V14_CASES.items():
         with tempfile.TemporaryDirectory() as d:
             worker, _, path = run_sweep(FakeK2400(1e6), d, **extra)
@@ -200,11 +211,13 @@ def test_no_end_drain_when_output_off_fails():
             super().write(cmd)
     with tempfile.TemporaryDirectory() as d:
         fake = Fake(1e6)
-        worker, _, path = run_sweep(fake, d)
+        worker, msgs, path = run_sweep(fake, d)
         last_off = max(k for k, (kind, cmd) in enumerate(fake.log) if cmd == ":OUTP OFF")
         assert not any(kind == "q" and cmd == ":SYST:ERR?" for kind, cmd in fake.log[last_off:])
         assert not any("end of run" in t for t in _instr_events(path))
         assert end_reason(path) == "completed"
+        assert any(t.startswith("WARNING: shutdown problem (output off:") and "CHECK THAT THE 2400 OUTPUT IS OFF" in t
+                   for t in _console(msgs))
 
 
 
@@ -285,6 +298,28 @@ def test_envelope_warning_ignores_the_greyed_minus_compliance():
                                   i_cc_minus=1.0, protection_v=None)
         assert any(t.startswith("WARNING: 200 V source range") for t in _console(msgs))
         assert any(t.startswith("INSTR_ENVELOPE_WARNING stage=envelope") for t in log_events(path))
+
+
+
+def test_day2_settings_now_give_an_empty_queue_everywhere():
+    """The 14 Oct 2026 combinations (2 V / 1 A, 2 V / 1 mA, 20 V / 0.5 A,
+    20 V / 1 A ladder, 1 mA + / 1 A - asymmetric): every check is empty."""
+    cases = (dict(vmax_plus=1, vmax_minus=1, step_v=0.5, i_cc_plus=1.0, i_cc_minus=1.0),
+             dict(vmax_plus=1, vmax_minus=1, step_v=0.5, i_cc_plus=1e-3, i_cc_minus=1e-3),
+             dict(vmax_plus=5, vmax_minus=5, step_v=1, i_cc_plus=0.5, i_cc_minus=0.5),
+             dict(shape=sweep.SHAPE_LADDER, ladder=[2.0, 5.0], step_v=1, i_cc_plus=1.0, i_cc_minus=1.0),
+             dict(shape=sweep.SHAPE_BIPOLAR_MINUS, vmax_plus=5, vmax_minus=5, step_v=1,
+                  i_cc_plus=1e-3, i_cc_minus=1.0),
+             dict(vmax_plus=1, vmax_minus=1, step_v=0.5, i_cc_plus=5e-8, i_cc_minus=1e-9),   # A6: below 100 nA
+             dict(vmax_plus=1, vmax_minus=1, step_v=0.5, i_cc_plus=1.0, i_cc_minus=1e-9))
+    for extra in cases:
+        with tempfile.TemporaryDirectory() as d:
+            fake = FakeK2400(1e6)
+            _, msgs, path = run_sweep(fake, d, **extra)
+            ev = _instr_events(path)
+            assert ev and all(t.endswith("| empty") for t in ev), (extra, ev)
+            assert not any("INSTRUMENT ERROR" in t for t in _console(msgs)), extra
+            assert end_reason(path) == "completed", extra
 
 
 if __name__ == "__main__":

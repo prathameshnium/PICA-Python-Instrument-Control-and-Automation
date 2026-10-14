@@ -347,5 +347,24 @@ def test_endurance_pulse_mode_greys_the_sweep_leg_fields():
         gui._on_mode()
         assert all(w.state == "normal" for w in gui.widgets.values())
 
+
+
+def test_endurance_compliance_order_follows_the_direction_so_no_error():
+    """15 Oct 2026 fix (common block): SET and RESET compliances differ, so
+    the compliance goes up and down every cycle; neither direction may draw
+    an error from the fake 2400 (+824 going up, the A6 rule going down)."""
+    from memristor_test_support import assert_compliance_order
+    for extra in (dict(n_cycles=2, i_cc_reset=1e-4), dict(n_cycles=2, i_cc_set=1e-3, i_cc_reset=1.0),
+                  dict(n_cycles=2, i_cc_set=1.0, i_cc_reset=5e-8),
+                  dict(mode=endurance.MODE_PULSE, n_cycles=2, lo_earthed=True, pulse_width_s=2.5e-3,
+                       i_cc_set=1e-3, i_cc_reset=0.5)):
+        with tempfile.TemporaryDirectory() as d:
+            fake = FakeK2400(1e6)
+            worker, _, _, _ = run_endurance(fake, d, **extra)
+            assert worker.outcome == "finished", (extra, worker.reason)
+            assert fake.err_queue == [], (extra, fake.err_queue)
+            assert assert_compliance_order(endurance, fake.writes) >= 3, extra
+
+
 if __name__ == "__main__":
     run_module_tests(globals())
