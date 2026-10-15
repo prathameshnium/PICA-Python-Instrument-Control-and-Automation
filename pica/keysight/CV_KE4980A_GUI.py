@@ -1301,6 +1301,11 @@ class LCR_Freq_GUI:
 
         left_canvas.configure(yscrollcommand=scrollbar.set)
         left_canvas.pack(side="left", fill="both", expand=True)
+        # The mouse wheel never changes a dropdown (aperture, cable length,
+        # address, shape): the ttk class binding would change the value under
+        # the pointer unnoticed. 15 Oct 2026.
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.root.unbind_class("TCombobox", seq)
         scrollbar.pack(side="right", fill="y")
 
         info_frame = self.create_info_frame(scrollable_frame)
