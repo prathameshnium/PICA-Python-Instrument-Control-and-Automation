@@ -139,15 +139,15 @@ def test_average_readings_or_flags_and_averages_values():
 
 
 def test_retention_gui_warns_when_intermittent_spacing_is_finer_than_the_soak():
-    base = dict(sample_name="Demo01", visa_address="GPIB1::24::INSTR", protection="20", state="HRS", swap=False, vmax_write="5",
-                i_cc_write_uA="10", step_v="0.1", dwell_s="0.1", n_confirm="3", v_read="0.1", t_rec="60",
+    base = dict(sample_name="Demo01", visa_address="GPIB1::24::INSTR", protection="20", state="HRS", swap=False, set_vmax="5",
+                set_icc_uA="10", reset_vmax="5", reset_icc_uA="10", step_v="0.1", dwell_s="0.1", n_confirm="3", v_read="0.1", t_rec="60",
                 t_soak="60", t_stop="10000", scheme=retention.SCHEME_INTERMITTENT, spacing=retention.SPACING_LINEAR,
                 points_per_decade="10", dt="10", n_avg="3")
     with tempfile.TemporaryDirectory() as d:
         gui = _gui_shell(retention.RetentionGUI, retention, base, d)
         p = gui.collect_params()
         assert p["polarity"] == -1 and "skipped" in p["_warning"]
-        gui = _gui_shell(retention.RetentionGUI, retention, dict(base, swap=True, scheme=retention.SCHEME_CONSTANT), d)
+        gui = _gui_shell(retention.RetentionGUI, retention, dict(base, reset_sign="+", scheme=retention.SCHEME_CONSTANT), d)
         p = gui.collect_params()
         assert p["polarity"] == 1 and p["_warning"] == ""
 
@@ -155,7 +155,7 @@ def test_retention_gui_warns_when_intermittent_spacing_is_finer_than_the_soak():
 # -- UI round 1 (K's ruling of 12 Oct 2026) ------------------------------
 
 GUI_BASE = dict(sample_name="Demo01", visa_address="GPIB1::24::INSTR", protection="20", state="LRS", swap=False,
-                vmax_write="5", i_cc_write_uA="10", step_v="0.1", dwell_s="0.1", n_confirm="3", v_read="0.1",
+                set_vmax="5", set_icc_uA="10", reset_vmax="5", reset_icc_uA="10", step_v="0.1", dwell_s="0.1", n_confirm="3", v_read="0.1",
                 t_rec="60", t_soak="60", t_stop="10000", scheme=retention.SCHEME_CONSTANT,
                 spacing=retention.SPACING_LOG, points_per_decade="10", dt="10", n_avg="3")
 
@@ -174,12 +174,12 @@ def test_write_polarity_table():
 def test_negative_vmax_write_is_refused_with_the_swap_pointer():
     with tempfile.TemporaryDirectory() as d:
         try:
-            _collect(d, vmax_write="-5")
+            _collect(d, set_vmax="-5")
             assert False, "negative V max accepted"
         except ValueError as exc:
-            assert str(exc) == "Type V max as a positive number; tick Swap polarity for a negative leg."
+            assert str(exc) == "Type V max as a positive number; choose the sign with SET sign / RESET sign."
         try:
-            _collect(d, vmax_write="0")
+            _collect(d, set_vmax="0")
             assert False, "zero V max accepted"
         except ValueError as exc:
             assert "at least 1e-06" in str(exc)
@@ -369,7 +369,8 @@ def _timed_reads(rpath):
 
 def master_params(folder, **extra):
     p = retention_params(folder, master=True, state="master", polarity=0, set_vmax=5.0, set_icc=1e-5,
-                         reset_vmax=4.0, reset_icc=2e-5, rest_s=REST_S, **SHORT)
+                         reset_vmax=4.0, reset_icc=2e-5, rest_s=REST_S, set_swap=False,
+                         reset_swap=False, **SHORT)
     p.update(extra)
     return p
 
@@ -419,7 +420,7 @@ def fake_sourced(fake):
     return [float(w.split()[1]) for w in fake.writes if w.startswith(":SOUR:VOLT ")]
 
 
-def _check_master_sequence(d, fake, worker, swap=False):
+def _check_master_sequence(d, fake, worker, set_swap=False, reset_swap=False):
     assert worker.outcome == "finished" and worker.reason == "completed", worker.reason
     names = [os.path.basename(f) for f in _files(d, ".csv")]
     assert sorted(n.split("_retention_")[1] for n in names) == sorted(
@@ -434,11 +435,13 @@ def _check_master_sequence(d, fake, worker, swap=False):
     assert all("reason=max_time" in text for _, text in events if text.startswith("RUN_END"))
     assert "file=" in events[2][1] and "_control_reads" in events[2][1]
     assert events[-1][1].startswith("MASTER_END reason=completed")
-    sign = -1 if swap else 1
+    s_set, s_reset = (-1 if set_swap else 1), (-1 if reset_swap else 1)
     _, _, lrs_w = read_file(_files(d, "_LRS_write")[0])
     _, _, hrs_w = read_file(_files(d, "_HRS_write")[0])
-    assert max(sign * r["V_set_V"] for r in lrs_w) == 5.0 and min(sign * r["V_set_V"] for r in lrs_w) == 0.0
-    assert min(sign * r["V_set_V"] for r in hrs_w) == -4.0 and max(sign * r["V_set_V"] for r in hrs_w) == 0.0
+    assert max(s_set * r["V_set_V"] for r in lrs_w) == 5.0 and min(s_set * r["V_set_V"] for r in lrs_w) == 0.0
+    assert min(s_reset * r["V_set_V"] for r in hrs_w) == -4.0 and max(s_reset * r["V_set_V"] for r in hrs_w) == 0.0
+    for path, swapped in ((_files(d, "_LRS_write")[0], set_swap), (_files(d, "_HRS_write")[0], reset_swap)):
+        assert analysis.header_blocks(read_file(path)[0])["protocol"]["swap_polarity"] == ("1" if swapped else "0")
     # nothing measured during the rests: no row of any file falls inside one
     rest_marks = [(t, text) for t, text in events if text.startswith(("REST_START", "REST_END"))]
     rests = [(t0, t1) for (t0, _), (t1, _) in zip(rest_marks[::2], rest_marks[1::2])]
@@ -465,12 +468,14 @@ def _check_master_sequence(d, fake, worker, swap=False):
 
 
 def test_master_sequence_control_lrs_hrs_with_rests():
-    """Section 5 test 2 (and the swapped polarity)."""
-    for swap in (False, True):
+    """Section 5 test 2, with each write's sign flipped on its own (SET -
+    alone, RESET + alone as for a unipolar pellet, both)."""
+    for set_swap, reset_swap in ((False, False), (True, False), (False, True), (True, True)):
         with tempfile.TemporaryDirectory() as d:
             fake = FakeK2400(1e6)
-            worker = _virtual_run(retention.MasterRetentionWorker, master_params(d, swap=swap), fake)
-            _check_master_sequence(d, fake, worker, swap)
+            p = master_params(d, set_swap=set_swap, reset_swap=reset_swap)
+            worker = _virtual_run(retention.MasterRetentionWorker, p, fake)
+            _check_master_sequence(d, fake, worker, set_swap, reset_swap)
 
 
 def test_master_stop_during_a_rest_ends_the_sequence():
@@ -520,10 +525,11 @@ def test_master_estimate_matches_the_run_within_5_percent():
 
 
 def test_master_gui_fields_and_grey_out():
-    assert retention.disabled_write_fields(True, "LRS") == {"state", "vmax_write", "i_cc_write_uA"}
-    assert retention.disabled_write_fields(False, "control") == \
-        set(retention.MASTER_FIELDS) | {"swap", "vmax_write", "step_v", "dwell_s", "n_confirm"}
-    assert retention.disabled_write_fields(False, "HRS") == set(retention.MASTER_FIELDS)
+    assert retention.disabled_write_fields(True, "LRS") == {"state"}
+    assert retention.disabled_write_fields(False, "LRS") == {"rest_h", "reset_sign", "reset_vmax", "reset_icc_uA"}
+    assert retention.disabled_write_fields(False, "HRS") == {"rest_h", "set_sign", "set_vmax", "set_icc_uA"}
+    assert retention.disabled_write_fields(False, "control") == {
+        "rest_h", "set_sign", "set_vmax", "reset_sign", "reset_vmax", "reset_icc_uA", "step_v", "dwell_s", "n_confirm"}
     with tempfile.TemporaryDirectory() as d:
         master = dict(master=True, set_vmax="5", set_icc_uA="10", reset_vmax="3", reset_icc_uA="20", rest_h="2")
         p = _collect(d, **master)
@@ -537,9 +543,27 @@ def test_master_gui_fields_and_grey_out():
         except ValueError as exc:
             assert str(exc) == retention.VMAX_NEGATIVE_ERROR
         # control: greyed write fields are not read, and no 'half of V max' warning
-        p = _collect(d, state="control", vmax_write="junk", step_v="", v_read="2.5")
+        p = _collect(d, state="control", set_vmax="junk", reset_vmax="", reset_icc_uA="x", step_v="", v_read="2.5")
         assert p["polarity"] == 0 and p["vmax_write"] == 0 and "at least half" not in p["_warning"]
-        line = retention.master_line_text(False, 5, 10, 3, 20, 0.1, 2)
+        assert p["i_cc_write"] == 1e-5                       # control reads use SET I cc
+        # single mode: LRS writes with the SET pair, HRS with the RESET pair
+        p = _collect(d, state="LRS", set_vmax="4", set_icc_uA="10", reset_vmax="3", reset_icc_uA="20")
+        assert (p["vmax_write"], p["i_cc_write"], p["polarity"]) == (4, 1e-5, 1)
+        p = _collect(d, state="HRS", set_vmax="4", set_icc_uA="10", reset_vmax="3", reset_icc_uA="20")
+        assert (p["vmax_write"], p["i_cc_write"], p["polarity"]) == (3, 2e-5, -1)
+        p = _collect(d, state="HRS", set_vmax="junk", set_icc_uA="")      # greyed SET pair not read
+        assert p["vmax_write"] == 5
+        # each sign on its own: a unipolar pellet writes both legs negative
+        p = _collect(d, **dict(master, set_sign="-", reset_sign="-"))
+        assert p["set_swap"] and not p["reset_swap"]
+        assert retention.master_line_text(True, False, 5, 10, 3, 20, 0.1, 0) == (
+            "Master: control (no write) -> LRS: 0 -> -5 V -> 0 at 10 uA -> HRS: 0 -> -3 V -> 0 at 20 uA. "
+            "Reads at +0.1 V.")
+        p = _collect(d, state="HRS", reset_sign="+")
+        assert p["polarity"] == 1 and p["swap"]
+        p = _collect(d, state="LRS", reset_sign="+")
+        assert p["polarity"] == 1 and not p["swap"]
+        line = retention.master_line_text(False, False, 5, 10, 3, 20, 0.1, 2)
         assert line == ("Master: control (no write) -> rest 2 h -> LRS: 0 -> +5 V -> 0 at 10 uA -> rest 2 h -> "
                         "HRS: 0 -> -3 V -> 0 at 20 uA. Reads at +0.1 V.")
 

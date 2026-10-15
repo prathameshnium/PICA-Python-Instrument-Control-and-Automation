@@ -1295,6 +1295,11 @@ class MemristorGuiBase:
             except Exception:
                 pass
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        # The wheel scrolls the panel, never a dropdown: the ttk class binding
+        # would change a combobox value under the pointer while scrolling
+        # (it once moved Never-exceed V to 210 unnoticed). 15 Oct 2026.
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.root.unbind_class("TCombobox", seq)
 
         right_container = tk.Frame(self.main_pane, bg='white')
         self.main_pane.add(right_container, weight=1)

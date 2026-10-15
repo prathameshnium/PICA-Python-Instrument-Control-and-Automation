@@ -10,8 +10,15 @@ v1.5 (15 Oct 2026) - master mode and control fix (K's rulings of 15 Oct)
   * Control applies no write: no write leg, no _write file; write=none
     (control), write_file=none and 'none' for the write-only header keys
     (every key kept). t = 0 is the start of t rec; the reads are as for
-    LRS / HRS. The write fields are greyed except I cc write, which is the
+    LRS / HRS. The write fields are greyed except SET I cc, which is the
     compliance of the reads. The 'half of V max' warning is gone for it.
+  * '|V max| write', 'I cc write' and Swap polarity are replaced by a SET
+    group (sign, V max, I cc) and a RESET group (sign, V max, I cc), so
+    each write's sign is chosen on its own (e.g. both - for a unipolar
+    pellet); swap_polarity in a run header says whether that run's sign
+    differs from its default. Both groups are used by single and master
+    mode alike: LRS writes with the SET group, HRS with the RESET group;
+    the group a run ignores is greyed.
     Every run header gains write=SET / RESET / none (control).
   * Master mode tick box: control, then LRS (SET V max, SET I cc), then
     HRS (RESET V max with the opposite sign, RESET I cc), on one
@@ -1291,6 +1298,11 @@ class MemristorGuiBase:
             except Exception:
                 pass
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        # The wheel scrolls the panel, never a dropdown: the ttk class binding
+        # would change a combobox value under the pointer while scrolling
+        # (it once moved Never-exceed V to 210 unnoticed). 15 Oct 2026.
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.root.unbind_class("TCombobox", seq)
 
         right_container = tk.Frame(self.main_pane, bg='white')
         self.main_pane.add(right_container, weight=1)
@@ -1935,13 +1947,14 @@ SPACING_LINEAR = "linear"
 SPACINGS = (SPACING_LOG, SPACING_LINEAR)
 V_READ_WARN_V = 1.0                 # above this the read bias stresses the state (warning only)
 V_READ_SWITCH_FRACTION = 0.5        # V read at or above this x |V max write| may switch (warning only)
-VMAX_NEGATIVE_ERROR = "Type V max as a positive number; tick Swap polarity for a negative leg."
+VMAX_NEGATIVE_ERROR = "Type V max as a positive number; choose the sign with SET sign / RESET sign."
 CONTROL_RAMP_STEP_V = 0.1           # control run: no write step exists; shutdown / reconnect ramp step
 MASTER_ORDER = ("control", "LRS", "HRS")    # K's ruling of 15 Oct 2026: all three, always, in this order
 REST_CHECK_INTERVAL_S = 60.0        # rest: one :OUTP? per minute, so a bus error is seen and retried
 REST_LOG_INTERVAL_S = 600.0         # rest: one countdown line in the console every 10 min
-WRITE_ONLY_FIELDS = ("swap", "vmax_write", "step_v", "dwell_s", "n_confirm")
-MASTER_FIELDS = ("set_vmax", "set_icc_uA", "reset_vmax", "reset_icc_uA", "rest_h")
+SET_FIELDS = ("set_sign", "set_vmax", "set_icc_uA")          # LRS write; SET I cc is also the control run's read limit
+RESET_FIELDS = ("reset_sign", "reset_vmax", "reset_icc_uA")    # HRS write
+WRITE_FIELDS = ("state", "step_v", "dwell_s", "n_confirm", "rest_h") + SET_FIELDS + RESET_FIELDS
 
 WRITE_COLUMNS = ("t_s", "loop", "segment", "vmax_V", "V_set_V", "V_meas_V", "I_A", "R_ohm",
                  "compliance_flag", "trip_query", "status_bits", "event_code", "phase")
@@ -2013,14 +2026,14 @@ def read_bias_warnings(v_read, vmax_write):
     return out
 
 
-def master_line_text(swap, set_vmax, set_icc_uA, reset_vmax, reset_icc_uA, v_read, rest_h):
-    """The live line of the Write frame in master mode: the three runs."""
-    s_set, s_reset = write_polarity("LRS", swap), write_polarity("HRS", swap)
+def master_line_text(set_swap, reset_swap, set_vmax, set_icc_uA, reset_vmax, reset_icc_uA, v_read, rest_h):
+    """The live line of the Write frame in master mode: the three runs.
+    set_swap / reset_swap flip the SET / RESET sign independently."""
+    s_set, s_reset = write_polarity("LRS", set_swap), write_polarity("HRS", reset_swap)
     rest = f" -> rest {float(rest_h):g} h ->" if rest_h else " ->"
-    swapped = " (swapped)" if swap else ""
     return (f"Master: control (no write){rest} LRS: 0 -> {s_set * abs(float(set_vmax)):+g} V -> 0 at "
             f"{float(set_icc_uA):g} uA{rest} HRS: 0 -> {s_reset * abs(float(reset_vmax)):+g} V -> 0 at "
-            f"{float(reset_icc_uA):g} uA{swapped}. Reads at {float(v_read):+g} V.")
+            f"{float(reset_icc_uA):g} uA. Reads at {float(v_read):+g} V.")
 
 
 def disabled_read_fields(spacing):
@@ -2029,13 +2042,18 @@ def disabled_read_fields(spacing):
 
 
 def disabled_write_fields(master, state):
-    """Write and master fields the current mode ignores (shown greyed).
-    I cc write stays live for control: it is the compliance of the reads."""
+    """Write fields the current mode ignores (shown greyed). Single mode:
+    LRS uses the SET pair, HRS the RESET pair, control no write at all but
+    SET I cc stays live (the compliance of its reads, as in master mode)."""
     if master:
-        return {"state", "vmax_write", "i_cc_write_uA"}
-    out = set(MASTER_FIELDS)
-    if state == "control":
-        out |= set(WRITE_ONLY_FIELDS)
+        return {"state"}
+    out = {"rest_h"}
+    if state == "LRS":
+        out |= set(RESET_FIELDS)
+    elif state == "HRS":
+        out |= set(SET_FIELDS)
+    else:
+        out |= {"set_sign", "set_vmax", "step_v", "dwell_s", "n_confirm"} | set(RESET_FIELDS)
     return out
 
 
@@ -2509,9 +2527,10 @@ class MasterRetentionWorker(RetentionWorker):
         if state == "control":
             rp.update(polarity=0, vmax_write=0.0, i_cc_write=m["set_icc"])
         elif state == "LRS":
-            rp.update(polarity=write_polarity("LRS", m["swap"]), vmax_write=m["set_vmax"], i_cc_write=m["set_icc"])
+            rp.update(swap=m["set_swap"], polarity=write_polarity("LRS", m["set_swap"]), vmax_write=m["set_vmax"],
+                      i_cc_write=m["set_icc"])
         else:
-            rp.update(polarity=write_polarity("HRS", m["swap"]), vmax_write=m["reset_vmax"],
+            rp.update(swap=m["reset_swap"], polarity=write_polarity("HRS", m["reset_swap"]), vmax_write=m["reset_vmax"],
                       i_cc_write=m["reset_icc"])
         return rp
 
@@ -2536,7 +2555,7 @@ class MasterRetentionWorker(RetentionWorker):
         self.master_event(f"MASTER_START master_id={self.master_id} | order={','.join(MASTER_ORDER)} | "
                           f"SET_Vmax_V={m['set_vmax']:g} | SET_I_cc_A={m['set_icc']:g} | "
                           f"RESET_Vmax_V={m['reset_vmax']:g} | RESET_I_cc_A={m['reset_icc']:g} | "
-                          f"swap_polarity={'1' if m['swap'] else '0'} | step_V={m['step_v']:g} | "
+                          f"SET_sign={'-' if m['set_swap'] else '+'} | RESET_sign={'+' if m['reset_swap'] else '-'} | step_V={m['step_v']:g} | "
                           f"dwell_s={m['dwell_s']:g} | n_confirm={m['n_confirm']} | V_read_V={m['v_read']:g} | "
                           f"t_rec_s={m['t_rec']:g} | t_soak_s={m['t_soak']:g} | t_stop_s={m['t_stop']:g} | "
                           f"read_scheme={m['scheme']} | spacing={m['spacing']} | "
@@ -2661,28 +2680,24 @@ class RetentionGUI(MemristorGuiBase):
         frame = self.make_frame(parent, 'Write')
         r = 0
         self.add_check(frame, r, "Master mode (control, then LRS, then HRS)", "master", False,
-                       "runs all three with a rest between them; State is ignored; SET / RESET values "
-                       "in the Master mode frame", command=self.refresh_estimate); r += 1
+                       "runs all three with a rest between them; State is ignored",
+                       command=self.refresh_estimate); r += 1
         self.add_combo(frame, r, "State", "state", STATES, "LRS",
                        "LRS = SET leg, HRS = RESET leg, control = no write", width=10); r += 1
-        self.add_check(frame, r, "Swap polarity", "swap", False,
-                       "flips the write sign: use for a pellet that SETs negative, or for the HRS run "
-                       "of a unipolar pellet", command=self.refresh_estimate); r += 1
-        self.add_entry(frame, r, "|V max| write (V)", "vmax_write", "5",
-                       "type a positive value; the sign comes from State and Swap"); r += 1
-        self.add_entry(frame, r, "I cc write (uA)", "i_cc_write_uA", "10", "control: the compliance of the reads"); r += 1
+        self.add_entry(frame, r, "Rest between runs (h)", "rest_h", "2",
+                       "master mode: 0 V, output on, nothing measured; 0 allowed"); r += 1
+        self.add_combo(frame, r, "SET: sign", "set_sign", ("+", "-"), "+",
+                       "- for a pellet that SETs negative"); r += 1
+        self.add_combo(frame, r, "RESET: sign", "reset_sign", ("-", "+"), "-",
+                       "+ for a unipolar pellet"); r += 1
+        self.add_entry(frame, r, "SET: |V max| (V)", "set_vmax", "5", "LRS write; type a positive value"); r += 1
+        self.add_entry(frame, r, "SET: I cc (uA)", "set_icc_uA", "10", "also the read limit of a control run"); r += 1
+        self.add_entry(frame, r, "RESET: |V max| (V)", "reset_vmax", "5", "HRS write; type a positive value"); r += 1
+        self.add_entry(frame, r, "RESET: I cc (uA)", "reset_icc_uA", "10"); r += 1
         self.write_line_label = self.add_wide_label(frame, "", fg='#7A3B00')
         self.add_entry(frame, r, "Step (V)", "step_v", "0.1"); r += 1
         self.add_entry(frame, r, "Dwell (s)", "dwell_s", "0.1", "time at each write voltage step, before its reading"); r += 1
         self.add_entry(frame, r, "n confirm", "n_confirm", "3", "consecutive compliance points before turning around"); r += 1
-
-        frame_m = self.make_frame(parent, 'Master mode')
-        r = 0
-        self.add_entry(frame_m, r, "SET: V max (V)", "set_vmax", "5", "LRS write, + unless Swap"); r += 1
-        self.add_entry(frame_m, r, "SET: I cc (uA)", "set_icc_uA", "10", "also the control run's compliance"); r += 1
-        self.add_entry(frame_m, r, "RESET: V max (V)", "reset_vmax", "5", "HRS write, opposite sign"); r += 1
-        self.add_entry(frame_m, r, "RESET: I cc (uA)", "reset_icc_uA", "10"); r += 1
-        self.add_entry(frame_m, r, "Rest between runs (h)", "rest_h", "2", "0 V, output on, nothing measured; 0 allowed"); r += 1
 
         frame2 = self.make_frame(parent, 'Read log')
         r = 0
@@ -2706,12 +2721,18 @@ class RetentionGUI(MemristorGuiBase):
     def refresh_estimate(self):
         super().refresh_estimate()
         self.apply_field_states(("points_per_decade", "dt"), disabled_read_fields(self.get_str("spacing")))
-        self.apply_field_states(("state", "i_cc_write_uA") + WRITE_ONLY_FIELDS + MASTER_FIELDS,
-                                disabled_write_fields(self.is_master(), self.get_str("state")))
+        self.apply_field_states(WRITE_FIELDS, disabled_write_fields(self.is_master(), self.get_str("state")))
         self._refresh_end_clock()
         self._refresh_write_line()
         self._refresh_live_warnings()
         self._refresh_planned_reads()
+
+    def flip(self, key):
+        """True when the SET / RESET sign combo is set against its default
+        (SET +, RESET -); the worker flips that write's sign."""
+        default = "-" if key == "reset_sign" else "+"
+        value = self.get_str(key) or default
+        return value != default
 
     def is_master(self):
         try:
@@ -2733,17 +2754,17 @@ class RetentionGUI(MemristorGuiBase):
     def _refresh_write_line(self):
         try:
             if self.is_master():
-                text = master_line_text(bool(self.vars["swap"].get()), self.get_float("set_vmax", "SET V max"),
+                text = master_line_text(self.flip("set_sign"), self.flip("reset_sign"),
+                                        self.get_float("set_vmax", "SET V max"),
                                         self.get_float("set_icc_uA", "SET I cc"),
                                         self.get_float("reset_vmax", "RESET V max"),
                                         self.get_float("reset_icc_uA", "RESET I cc"),
                                         self.get_float("v_read", "V read"), self.get_float("rest_h", "Rest", 0))
             else:
                 state = self.get_str("state")
-                text = write_line_text(state, bool(self.vars["swap"].get()),
+                text = write_line_text(state, self.flip("reset_sign" if state == "HRS" else "set_sign"),
                                        0.0 if state == "control" else self.get_vmax_write(),
-                                       self.get_float("i_cc_write_uA", "I cc write"),
-                                       self.get_float("v_read", "V read"))
+                                       self.get_icc_uA(state), self.get_float("v_read", "V read"))
         except Exception as exc:
             text = f"This run: -- ({ascii_text(exc)})"
         try:
@@ -2934,14 +2955,25 @@ class RetentionGUI(MemristorGuiBase):
         return self.get_float(key, label, 1e-6)
 
     def get_vmax_write(self):
-        """|V max| write: a positive number; a negative leg comes only from
-        State plus Swap, so a typed minus sign is refused with a pointer."""
-        return self.get_positive_vmax("vmax_write", "V max write")
+        """|V max| of the single-mode write: SET for LRS, RESET for HRS. A
+        positive number; the sign comes from SET sign / RESET sign, so
+        a typed minus sign is refused with a pointer."""
+        if self.get_str("state") == "HRS":
+            return self.get_positive_vmax("reset_vmax", "RESET V max")
+        return self.get_positive_vmax("set_vmax", "SET V max")
+
+    def get_icc_uA(self, state):
+        """Single-mode compliance in uA: RESET I cc for HRS, SET I cc for
+        LRS and for the reads of a control run."""
+        if state == "HRS":
+            return self.get_float("reset_icc_uA", "RESET I cc", 0)
+        return self.get_float("set_icc_uA", "SET I cc", 0)
 
     def collect_params(self):
         p = self.collect_common_params()
         p["master"] = self.is_master()
-        p["swap"] = bool(self.vars["swap"].get())
+        p["set_swap"], p["reset_swap"] = self.flip("set_sign"), self.flip("reset_sign")
+        p["swap"] = p["reset_swap"] if self.get_str("state") == "HRS" and not p["master"] else p["set_swap"]
         p.update(self.write_voltages())
         if p["master"]:
             p["state"] = "master"
@@ -2953,7 +2985,8 @@ class RetentionGUI(MemristorGuiBase):
         else:
             p["state"] = self.get_str("state")
             p["polarity"] = 0 if p["state"] == "control" else write_polarity(p["state"], p["swap"])
-            p["i_cc_write"] = validate_i_cc(self.get_float("i_cc_write_uA", "I cc write", 0) / 1e6, "I cc write")
+            label = "RESET I cc" if p["state"] == "HRS" else "SET I cc"
+            p["i_cc_write"] = validate_i_cc(self.get_icc_uA(p["state"]) / 1e6, label)
         if p["state"] == "control":
             # no write: the greyed write fields are not read (a stale value cannot block Start)
             p["step_v"], p["dwell_s"], p["n_confirm"] = CONTROL_RAMP_STEP_V, 0.0, 0
@@ -2994,7 +3027,7 @@ class RetentionGUI(MemristorGuiBase):
 
     def describe_params(self, p):
         if p.get("master"):
-            sp, sr = write_polarity("LRS", p["swap"]), write_polarity("HRS", p["swap"])
+            sp, sr = write_polarity("LRS", p["set_swap"]), write_polarity("HRS", p["reset_swap"])
             write = (f"master control -> rest {p['rest_s'] / 3600:g} h -> LRS {sp * p['set_vmax']:+g} V Icc "
                      f"{p['set_icc']:g} A -> rest -> HRS {sr * p['reset_vmax']:+g} V Icc {p['reset_icc']:g} A "
                      f"step {p['step_v']:g} V dwell {p['dwell_s']:g} s")
