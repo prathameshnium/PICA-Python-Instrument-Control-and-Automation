@@ -308,7 +308,9 @@ def test_ladder_run_labels_cycles_by_entry_and_records_the_list_in_the_header():
 def test_ladder_pause_rests_at_zero_volts_between_entries_only():
     folder = _tmp()
     fake = FakeE4980A()
-    pause = 0.05
+    # well above any point-to-point gap: 0.05 s was flaky, one ordinary
+    # point took 0.059 s on a slow CI runner (15 Oct 2026)
+    pause = 0.5
     worker, msgs, files, log_path = run_cv(fake, folder, shape=gui.SHAPE_LADDER, ladder="0.5, 1, 2",
                                            v_step=0.5, ladder_pause=pause, worker_sleep=time.sleep)
     assert worker.end_reason == "complete"
