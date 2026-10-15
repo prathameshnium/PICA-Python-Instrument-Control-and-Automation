@@ -141,7 +141,7 @@ def test_average_readings_or_flags_and_averages_values():
 def test_retention_gui_warns_when_intermittent_spacing_is_finer_than_the_soak():
     base = dict(sample_name="Demo01", visa_address="GPIB1::24::INSTR", protection="20", state="HRS", swap=False, set_vmax="5",
                 set_icc_uA="10", reset_vmax="5", reset_icc_uA="10", step_v="0.1", dwell_s="0.1", n_confirm="3", v_read="0.1", t_rec="60",
-                t_soak="60", t_stop="10000", scheme=retention.SCHEME_INTERMITTENT, spacing=retention.SPACING_LINEAR,
+                t_soak="60", t_stop_h="2.78", scheme=retention.SCHEME_INTERMITTENT, spacing=retention.SPACING_LINEAR,
                 points_per_decade="10", dt="10", n_avg="3")
     with tempfile.TemporaryDirectory() as d:
         gui = _gui_shell(retention.RetentionGUI, retention, base, d)
@@ -156,7 +156,7 @@ def test_retention_gui_warns_when_intermittent_spacing_is_finer_than_the_soak():
 
 GUI_BASE = dict(sample_name="Demo01", visa_address="GPIB1::24::INSTR", protection="20", state="LRS", swap=False,
                 set_vmax="5", set_icc_uA="10", reset_vmax="5", reset_icc_uA="10", step_v="0.1", dwell_s="0.1", n_confirm="3", v_read="0.1",
-                t_rec="60", t_soak="60", t_stop="10000", scheme=retention.SCHEME_CONSTANT,
+                t_rec="60", t_soak="60", t_stop_h="2.78", scheme=retention.SCHEME_CONSTANT,
                 spacing=retention.SPACING_LOG, points_per_decade="10", dt="10", n_avg="3")
 
 
@@ -566,6 +566,17 @@ def test_master_gui_fields_and_grey_out():
         line = retention.master_line_text(False, False, 5, 10, 3, 20, 0.1, 2)
         assert line == ("Master: control (no write) -> rest 2 h -> LRS: 0 -> +5 V -> 0 at 10 uA -> rest 2 h -> "
                         "HRS: 0 -> -3 V -> 0 at 20 uA. Reads at +0.1 V.")
+
+
+def test_t_stop_is_typed_in_hours_and_kept_in_seconds():
+    with tempfile.TemporaryDirectory() as d:
+        assert _collect(d, t_stop_h="1")["t_stop"] == 3600.0
+        assert _collect(d)["t_stop"] == 2.78 * 3600
+        try:
+            _collect(d, t_stop_h="0")
+            assert False, "t stop 0 h accepted"
+        except ValueError as exc:
+            assert "t stop" in str(exc)
 
 
 if __name__ == "__main__":

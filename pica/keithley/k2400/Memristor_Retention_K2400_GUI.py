@@ -31,6 +31,8 @@ v1.5 (15 Oct 2026) - master mode and control fix (K's rulings of 15 Oct)
     one :OUTP? per minute lets the usual retry catch a bus error; the rest
     still ends at its planned time. Whether the RESET worked is not
     checked (K's ruling).
+  * t stop is typed in hours (default 2.78 h = 10 008 s, was 10 000 s);
+    files and header keep t_stop_s in seconds.
   * The live plot keeps the earlier runs of a master sequence; the SET /
     RESET I cc is shown in the legend.
   * The mouse wheel no longer changes a dropdown (Never-exceed V ...)
@@ -1266,6 +1268,13 @@ class MemristorGuiBase:
         style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
         style.configure('TCheckbutton', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
         style.configure('TCombobox', font=self.FONT_BASE)
+        # An active pick-list dropdown looks like an entry (white, dark text);
+        # only a disabled one is grey with faded text, so greyed means ignored.
+        style.map('TCombobox',
+                  fieldbackground=[('disabled', '#DCDAD5'), ('readonly', 'white')],
+                  foreground=[('disabled', '#8C8C8C'), ('readonly', self.CLR_TEXT_DARK)],
+                  selectbackground=[('readonly', 'white')],
+                  selectforeground=[('readonly', self.CLR_TEXT_DARK)])
         mpl.rcParams['font.family'] = 'Segoe UI'
         mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
         mpl.rcParams['axes.titlesize'] = self.FONT_SIZE_BASE + 4
@@ -2707,7 +2716,8 @@ class RetentionGUI(MemristorGuiBase):
         self.add_entry(frame2, r, "t rec (s)", "t_rec", "60", "time at 0 V right after the write, logged every 1 s"); r += 1
         self.add_entry(frame2, r, "t soak (s)", "t_soak", "60",
                        "time at V read before the first scheduled read, logged every 1 s"); r += 1
-        self.add_entry(frame2, r, "t stop (s)", "t_stop", "10000", "total time measured after the write ends"); r += 1
+        self.add_entry(frame2, r, "t stop (h)", "t_stop_h", "2.78",
+                       "total time measured after the write ends; 2.78 h = 10 000 s"); r += 1
         self.add_combo(frame2, r, "Read scheme", "scheme", SCHEMES, SCHEME_CONSTANT, width=14); r += 1
         self.add_combo(frame2, r, "Spacing", "spacing", SPACINGS, SPACING_LOG, width=8); r += 1
         self.add_entry(frame2, r, "Points per decade", "points_per_decade", "10", "reads per decade of time (log spacing)"); r += 1
@@ -2795,7 +2805,7 @@ class RetentionGUI(MemristorGuiBase):
     def _refresh_planned_reads(self):
         try:
             p = {"t_rec": self.get_float("t_rec", "t rec", 0), "t_soak": self.get_float("t_soak", "t soak", 0),
-                 "t_stop": self.get_float("t_stop", "t stop", 1e-3), "scheme": self.get_str("scheme"),
+                 "t_stop": self.get_t_stop_s(), "scheme": self.get_str("scheme"),
                  "spacing": self.get_str("spacing"),
                  "points_per_decade": self.get_int("points_per_decade", "Points per decade", 1),
                  "dt": self.get_float("dt", "Delta t", 1e-3)}
@@ -2917,7 +2927,7 @@ class RetentionGUI(MemristorGuiBase):
         return f", {kind} I cc {i_cc * 1e6:g} uA" if i_cc else ""
 
     def estimate_run_time_s(self):
-        t_stop = self.get_float("t_stop", "t stop", 0)
+        t_stop = self.get_t_stop_s()
         if self.is_master():
             v = self.write_voltages()
             return master_estimate_s({"set_vmax": v["set_vmax"], "reset_vmax": v["reset_vmax"],
@@ -2955,6 +2965,11 @@ class RetentionGUI(MemristorGuiBase):
         if negative:
             raise ValueError(VMAX_NEGATIVE_ERROR)
         return self.get_float(key, label, 1e-6)
+
+    def get_t_stop_s(self):
+        """t stop is typed in hours; the worker, the files and the header
+        (t_stop_s) keep seconds."""
+        return 3600.0 * self.get_float("t_stop_h", "t stop", 1e-6)
 
     def get_vmax_write(self):
         """|V max| of the single-mode write: SET for LRS, RESET for HRS. A
@@ -2999,7 +3014,7 @@ class RetentionGUI(MemristorGuiBase):
         p["v_read"] = self.get_float("v_read", "V read", 1e-6)
         p["t_rec"] = self.get_float("t_rec", "t rec", 0)
         p["t_soak"] = self.get_float("t_soak", "t soak", 0)
-        p["t_stop"] = self.get_float("t_stop", "t stop", 1e-3)
+        p["t_stop"] = self.get_t_stop_s()
         p["scheme"] = self.get_str("scheme")
         p["spacing"] = self.get_str("spacing")
         p["points_per_decade"] = self.get_int("points_per_decade", "Points per decade", 1)

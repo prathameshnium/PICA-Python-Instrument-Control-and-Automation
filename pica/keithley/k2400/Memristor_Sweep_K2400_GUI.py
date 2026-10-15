@@ -1272,6 +1272,13 @@ class MemristorGuiBase:
         style.map('Stop.TButton', background=[('active', '#D63C2A'), ('hover', '#D63C2A')])
         style.configure('TCheckbutton', background=self.CLR_BG_DARK, foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
         style.configure('TCombobox', font=self.FONT_BASE)
+        # An active pick-list dropdown looks like an entry (white, dark text);
+        # only a disabled one is grey with faded text, so greyed means ignored.
+        style.map('TCombobox',
+                  fieldbackground=[('disabled', '#DCDAD5'), ('readonly', 'white')],
+                  foreground=[('disabled', '#8C8C8C'), ('readonly', self.CLR_TEXT_DARK)],
+                  selectbackground=[('readonly', 'white')],
+                  selectforeground=[('readonly', self.CLR_TEXT_DARK)])
         mpl.rcParams['font.family'] = 'Segoe UI'
         mpl.rcParams['font.size'] = self.FONT_SIZE_BASE
         mpl.rcParams['axes.titlesize'] = self.FONT_SIZE_BASE + 4
