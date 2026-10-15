@@ -16,6 +16,8 @@ v1.5 (15 Oct 2026) - PROT / RANG order by direction (fixes +824)
     needed going down: compliance below 0.1 % of the present range is
     refused (p. 18-68). Same three commands and values; compliance, auto
     range, timing and columns unchanged. Seen in the 14 Oct 2026 runs.
+  * The mouse wheel no longer changes a dropdown (Never-exceed V ...)
+    under the pointer (common block, all three modules).
 v1.4 (12 Oct 2026) - review fixes
   * Summary columns read_cc_LRS and read_cc_HRS: 1 when the soaked read
     after SET / RESET hit I cc (the flag was computed and dropped before).

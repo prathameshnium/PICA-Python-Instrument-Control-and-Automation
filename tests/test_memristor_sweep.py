@@ -471,6 +471,38 @@ def test_sweep_file_name_is_sample_timestamp_kind_and_a_rerun_never_overwrites()
         assert os.path.basename(sweep.run_file_path(d, "Demo01", "sweep", ts)) == f"Demo01_{ts}_sweep_2.csv"
 
 
+def test_sweep_greyed_fields_never_block_start_or_leak_into_the_run():
+    """v1.7: a leftover value in a field the shape greys out (V max below
+    the step, junk, above never-exceed) no longer refuses Start, and the
+    unused side takes the used side's V max and I cc."""
+    base = dict(sample_name="Demo01", visa_address="GPIB1::24::INSTR", protection="20", vmax_plus="5",
+                vmax_minus="5", step_v="0.1", dwell_s="0.1", i_cc_plus_uA="10", i_cc_minus_uA="10", loops="2",
+                ladder="", n_confirm="3", pause_s="0")
+    with tempfile.TemporaryDirectory() as d:
+        def collect(**v):
+            return _gui_shell(sweep.SweepGUI, sweep, dict(base, **v), d).collect_params()
+        for junk in ("0.05", "abc", "", "150"):
+            p = collect(shape=sweep.SHAPE_UNIPOLAR_PLUS, vmax_minus=junk, i_cc_minus_uA=junk)
+            assert (p["vmax_minus"], p["i_cc_minus"]) == (5.0, 1e-5), junk
+            p = collect(shape=sweep.SHAPE_UNIPOLAR_MINUS, vmax_plus=junk, i_cc_plus_uA=junk, i_cc_minus_uA="20")
+            assert (p["vmax_plus"], p["i_cc_plus"], p["i_cc_minus"]) == (5.0, 2e-5, 2e-5), junk
+            p = collect(shape=sweep.SHAPE_LADDER, ladder="1, 3", vmax_plus=junk, vmax_minus=junk, loops=junk)
+            assert (p["vmax_plus"], p["vmax_minus"], p["loops"]) == (3.0, 3.0, 2), junk
+        # the step check stays on the values that are used
+        for shape, field in ((sweep.SHAPE_UNIPOLAR_PLUS, "vmax_plus"), (sweep.SHAPE_BIPOLAR_PLUS, "vmax_minus")):
+            try:
+                collect(shape=shape, **{field: "0.05"})
+                assert False, (shape, field)
+            except ValueError as exc:
+                assert "Step 0.1 V is larger than V max 0.05 V" in str(exc)
+    # a greyed V max - of 150 V no longer picks the 200 V range on a unipolar + run
+    with tempfile.TemporaryDirectory() as d:
+        gui = _gui_shell(sweep.SweepGUI, sweep, dict(base, shape=sweep.SHAPE_UNIPOLAR_PLUS, vmax_minus="150",
+                                                     step_v="1"), d)
+        p = gui.collect_params()
+        assert p["vmax_minus"] == 5.0 and sweep.source_range_for(max(p["vmax_plus"], p["vmax_minus"])) == 20.0
+
+
 def test_sweep_gui_refuses_vmax_above_protection_and_bad_ladder():
     base = dict(sample_name="Demo01", visa_address="GPIB1::24::INSTR", protection="20", shape=sweep.SHAPE_BIPOLAR_PLUS, vmax_plus="5",
                 vmax_minus="5", step_v="0.1", dwell_s="0.1", i_cc_plus_uA="10", i_cc_minus_uA="10", loops="1",

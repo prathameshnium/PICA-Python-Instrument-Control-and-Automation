@@ -33,6 +33,8 @@ v1.5 (15 Oct 2026) - master mode and control fix (K's rulings of 15 Oct)
     checked (K's ruling).
   * The live plot keeps the earlier runs of a master sequence; the SET /
     RESET I cc is shown in the legend.
+  * The mouse wheel no longer changes a dropdown (Never-exceed V ...)
+    under the pointer (common block, all three modules).
 v1.4 (15 Oct 2026) - PROT / RANG order by direction (fixes +824)
   * set_compliance() sends :SENS:CURR:PROT before :SENS:CURR:RANG when the
     compliance range goes up, and keeps the old RANG-first order (protocol

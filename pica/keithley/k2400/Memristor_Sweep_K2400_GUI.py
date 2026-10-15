@@ -4,6 +4,17 @@ Purpose: Switching I-V sweep of a memristor pellet with current compliance
          on a Keithley 2400 (protocol "Memristor measurement modules for
          PICA" v1.1, Section 3, and addendum A1 of 13 Oct 2026).
 
+v1.7 (15 Oct 2026) - greyed fields never read
+  * Start checked V max +, V max - and both I cc whatever the shape, so a
+    leftover value in a greyed field (e.g. V max - below the step on a
+    unipolar + sweep) refused Start. Only the fields the shape uses are
+    read now: the side a unipolar shape ignores takes the used side's V
+    max and I cc (so a greyed value can no longer raise the source range,
+    and unipolar - starts at its own compliance, not the greyed I cc +);
+    ladder takes its largest entry as V max and one loop per entry. The
+    step-larger-than-V-max refusal stays, on the used values only.
+  * The mouse wheel no longer changes a dropdown (Never-exceed V, Shape
+    ...) under the pointer (common block, all three modules).
 v1.6 (15 Oct 2026) - PROT / RANG order by direction (fixes +824)
   * set_compliance() sends :SENS:CURR:PROT before :SENS:CURR:RANG when the
     compliance range goes up, and keeps the old RANG-first order (protocol
@@ -2343,7 +2354,7 @@ class SweepWorker(WorkerBase):
 class SweepGUI(MemristorGuiBase):
     MODULE_TITLE = "Sweep"
     MODULE_KEY = "sweep"
-    PROGRAM_VERSION = "1.6"
+    PROGRAM_VERSION = "1.7"
 
     def create_module_inputs(self, parent):
         frame = self.make_frame(parent, 'Sweep')
@@ -2436,12 +2447,20 @@ class SweepGUI(MemristorGuiBase):
 
     def _plan_from_inputs(self):
         shape = self.get_str("shape")
+        """Only the fields the shape uses are read (greyed ones never block
+        Start); the side a unipolar shape ignores takes the used side's
+        value, and ladder takes its largest entry and one loop per entry."""
         step = self.get_float("step_v", "Step", 1e-6)
-        vmax_plus = self.get_float("vmax_plus", "V max +", 1e-6)
-        vmax_minus = self.get_float("vmax_minus", "V max -", 1e-6)
+        if shape == SHAPE_LADDER:
+            ladder = parse_ladder(self.get_str("ladder"))
+            top = max(ladder) if ladder else step
+            return shape, step, top, top, len(ladder), ladder
+        vmax_plus = None if shape == SHAPE_UNIPOLAR_MINUS else self.get_float("vmax_plus", "V max +", 1e-6)
+        vmax_minus = None if shape == SHAPE_UNIPOLAR_PLUS else self.get_float("vmax_minus", "V max -", 1e-6)
+        vmax_plus = vmax_minus if vmax_plus is None else vmax_plus
+        vmax_minus = vmax_plus if vmax_minus is None else vmax_minus
         loops = self.get_int("loops", "Loops", 1)
-        ladder = parse_ladder(self.get_str("ladder")) if shape == SHAPE_LADDER else []
-        return shape, step, vmax_plus, vmax_minus, loops, ladder
+        return shape, step, vmax_plus, vmax_minus, loops, []
 
     def _pause_from_inputs(self, shape):
         """Addendum A1: bare 0 V pause between full loops, every shape."""
@@ -2461,8 +2480,14 @@ class SweepGUI(MemristorGuiBase):
         p.update(shape=shape, step_v=step, vmax_plus=vp, vmax_minus=vm, loops=loops, ladder=ladder)
         p["pause_s"] = self._pause_from_inputs(shape)
         p["dwell_s"] = self.get_float("dwell_s", "Dwell", 0)
-        p["i_cc_plus"] = validate_i_cc(self.get_float("i_cc_plus_uA", "I cc +", 0) / 1e6, "I cc +")
-        p["i_cc_minus"] = validate_i_cc(self.get_float("i_cc_minus_uA", "I cc -", 0) / 1e6, "I cc -")
+        # a greyed I cc is not read: the unused side takes the used side's value
+        # (unipolar - also starts with its own compliance, not the greyed I cc +)
+        if shape != SHAPE_UNIPOLAR_MINUS:
+            p["i_cc_plus"] = validate_i_cc(self.get_float("i_cc_plus_uA", "I cc +", 0) / 1e6, "I cc +")
+        if shape != SHAPE_UNIPOLAR_PLUS:
+            p["i_cc_minus"] = validate_i_cc(self.get_float("i_cc_minus_uA", "I cc -", 0) / 1e6, "I cc -")
+        p.setdefault("i_cc_plus", p.get("i_cc_minus"))
+        p.setdefault("i_cc_minus", p["i_cc_plus"])
         p["n_confirm"] = self.get_int("n_confirm", "n confirm", 0)
         if shape == SHAPE_LADDER and not ladder:
             raise ValueError("Ladder shape needs a ladder list, e.g. 5, 10, 20.")
