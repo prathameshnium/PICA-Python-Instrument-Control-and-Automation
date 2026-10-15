@@ -1,10 +1,31 @@
 """
 Module: Memristor_Retention_K2400_GUI.py
-Purpose: Write one resistive state (SET for LRS, RESET for HRS, or a
-         sub-threshold control write) on a Keithley 2400, then log the
-         read resistance against time since the write (protocol "Memristor
-         measurement modules for PICA" v1.1, Section 4).
+Purpose: Write one resistive state (SET for LRS, RESET for HRS; a control
+         run writes nothing) on a Keithley 2400, then log the read
+         resistance against time since the write (protocol "Memristor
+         measurement modules for PICA" v1.1, Section 4). Master mode runs
+         control, LRS and HRS in sequence with a rest between them.
 
+v1.5 (15 Oct 2026) - master mode and control fix (K's rulings of 15 Oct)
+  * Control applies no write: no write leg, no _write file; write=none
+    (control), write_file=none and 'none' for the write-only header keys
+    (every key kept). t = 0 is the start of t rec; the reads are as for
+    LRS / HRS. The write fields are greyed except I cc write, which is the
+    compliance of the reads. The 'half of V max' warning is gone for it.
+    Every run header gains write=SET / RESET / none (control).
+  * Master mode tick box: control, then LRS (SET V max, SET I cc), then
+    HRS (RESET V max with the opposite sign, RESET I cc), on one
+    connection, with a rest (default 2 h, 0 allowed) at 0 V, output on,
+    nothing measured, between runs. Each run writes its usual files plus
+    master_id, master_run and rest_before_s; the sequence goes to
+    <sample>_<ts>_retention_master_log.txt (fsynced per line). The control
+    run uses SET I cc as its compliance. Stop ends the whole sequence. The
+    estimate shows the total and the planned end clock time. During a rest
+    one :OUTP? per minute lets the usual retry catch a bus error; the rest
+    still ends at its planned time. Whether the RESET worked is not
+    checked (K's ruling).
+  * The live plot keeps the earlier runs of a master sequence; the SET /
+    RESET I cc is shown in the legend.
 v1.4 (15 Oct 2026) - PROT / RANG order by direction (fixes +824)
   * set_compliance() sends :SENS:CURR:PROT before :SENS:CURR:RANG when the
     compliance range goes up, and keeps the old RANG-first order (protocol
@@ -1915,6 +1936,12 @@ SPACINGS = (SPACING_LOG, SPACING_LINEAR)
 V_READ_WARN_V = 1.0                 # above this the read bias stresses the state (warning only)
 V_READ_SWITCH_FRACTION = 0.5        # V read at or above this x |V max write| may switch (warning only)
 VMAX_NEGATIVE_ERROR = "Type V max as a positive number; tick Swap polarity for a negative leg."
+CONTROL_RAMP_STEP_V = 0.1           # control run: no write step exists; shutdown / reconnect ramp step
+MASTER_ORDER = ("control", "LRS", "HRS")    # K's ruling of 15 Oct 2026: all three, always, in this order
+REST_CHECK_INTERVAL_S = 60.0        # rest: one :OUTP? per minute, so a bus error is seen and retried
+REST_LOG_INTERVAL_S = 600.0         # rest: one countdown line in the console every 10 min
+WRITE_ONLY_FIELDS = ("swap", "vmax_write", "step_v", "dwell_s", "n_confirm")
+MASTER_FIELDS = ("set_vmax", "set_icc_uA", "reset_vmax", "reset_icc_uA", "rest_h")
 
 WRITE_COLUMNS = ("t_s", "loop", "segment", "vmax_V", "V_set_V", "V_meas_V", "I_A", "R_ohm",
                  "compliance_flag", "trip_query", "status_bits", "event_code", "phase")
@@ -1964,7 +1991,11 @@ def linear_schedule(dt, t_from, t_to):
 
 def write_line_text(state, swap, vmax_abs, i_cc_uA, v_read):
     """The live 'This run: ...' line of the Write frame. The write sign
-    comes from State and Swap only; V read is applied as typed."""
+    comes from State and Swap only; V read is applied as typed. A control
+    run has no write."""
+    if state == "control":
+        return (f"This run: no write (control); t = 0 is the start of t rec. Reads at {float(v_read):+g} V, "
+                f"I cc {float(i_cc_uA):g} uA.")
     sign = write_polarity(state, swap)
     kind = {"LRS": "SET", "HRS": "RESET"}.get(state, "no switching intended")
     swapped = " (swapped)" if swap else ""
@@ -1982,26 +2013,62 @@ def read_bias_warnings(v_read, vmax_write):
     return out
 
 
+def master_line_text(swap, set_vmax, set_icc_uA, reset_vmax, reset_icc_uA, v_read, rest_h):
+    """The live line of the Write frame in master mode: the three runs."""
+    s_set, s_reset = write_polarity("LRS", swap), write_polarity("HRS", swap)
+    rest = f" -> rest {float(rest_h):g} h ->" if rest_h else " ->"
+    swapped = " (swapped)" if swap else ""
+    return (f"Master: control (no write){rest} LRS: 0 -> {s_set * abs(float(set_vmax)):+g} V -> 0 at "
+            f"{float(set_icc_uA):g} uA{rest} HRS: 0 -> {s_reset * abs(float(reset_vmax)):+g} V -> 0 at "
+            f"{float(reset_icc_uA):g} uA{swapped}. Reads at {float(v_read):+g} V.")
+
+
 def disabled_read_fields(spacing):
     """Read log fields the current spacing ignores (shown greyed)."""
     return {"dt"} if spacing == SPACING_LOG else {"points_per_decade"}
 
 
+def disabled_write_fields(master, state):
+    """Write and master fields the current mode ignores (shown greyed).
+    I cc write stays live for control: it is the compliance of the reads."""
+    if master:
+        return {"state", "vmax_write", "i_cc_write_uA"}
+    out = set(MASTER_FIELDS)
+    if state == "control":
+        out |= set(WRITE_ONLY_FIELDS)
+    return out
+
+
+def master_estimate_s(p):
+    """Planned length of a master sequence: startup, three runs of settle +
+    t stop (t stop is counted from the write end and holds t rec), two
+    rests and the SET and RESET write legs."""
+    legs = 0.0
+    for vmax in (p["set_vmax"], p["reset_vmax"]):
+        n = len(half_leg(vmax, p["step_v"])) + len(return_leg(vmax, p["step_v"]))
+        legs += sweep_time_estimate_s(n, p["dwell_s"])
+    return RST_SLEEP_S + 3 * (SETTLE_S + float(p["t_stop"])) + 2 * float(p["rest_s"]) + legs
+
+
 def retention_checks(p):
     """Voltage and schedule checks shared by Start and the live warning line.
     Raises ValueError to refuse Start; returns the warnings (Start stays
-    enabled). Needs vmax_write, v_read, protection_v, scheme, spacing, dt,
-    t_soak."""
-    ok, msg = check_vmax_against_protection(p["vmax_write"], p["protection_v"])
-    if not ok:
-        raise ValueError(msg)
-    warnings = [msg] if msg else []
+    enabled). Needs vmax_write (0 for control: no write), v_read,
+    protection_v, scheme, spacing, dt, t_soak; master mode passes
+    vmax_checks [(label, V), ...] and vmax_min instead."""
+    warnings = []
+    for label, vmax in p.get("vmax_checks") or [("V max", p["vmax_write"])]:
+        ok, msg = check_vmax_against_protection(vmax, p["protection_v"], label)
+        if not ok:
+            raise ValueError(msg)
+        if msg:
+            warnings.append(msg)
     ok, msg = check_vmax_against_protection(p["v_read"], p["protection_v"], "V read")
     if not ok:
         raise ValueError(msg)
     if msg:
         warnings.append(msg)
-    warnings += read_bias_warnings(p["v_read"], p["vmax_write"])
+    warnings += read_bias_warnings(p["v_read"], p.get("vmax_min", p["vmax_write"]))
     if p["scheme"] == SCHEME_INTERMITTENT:
         if p["spacing"] == SPACING_LINEAR and p["dt"] < p["t_soak"]:
             warnings.append(f"Intermittent reads need t soak ({p['t_soak']:g} s) between instants; "
@@ -2136,35 +2203,61 @@ class RetentionWorker(WorkerBase):
 
     def protocol(self):
         p = self.p
-        source_range = source_range_for(max(p["vmax_write"], p["v_read"]))
-        idn = self.startup(source_range, p["protection_v"], p["i_cc_write"], p["dwell_s"])
+        self.source_range = source_range_for(max(p["vmax_write"], p["v_read"]))
+        self.idn = self.startup(self.source_range, p["protection_v"], p["i_cc_write"], p["dwell_s"])
+        self.run_one()
 
-        ts = timestamp_for_name()
+    def protocol_pairs(self, log_path, extra_pairs=()):
+        """[protocol] block of the _write file (the _reads file swaps the
+        first pair). A control run has no write: write=none (control) and
+        'none' for every write-only key, so the keys stay the same."""
+        p = self.p
+        control = p["state"] == "control"
+
+        def w(text):
+            return "none" if control else text
+        write_kind = "none (control)" if control else ("SET" if p["state"] == "LRS" else "RESET")
+        return [("module", "retention_write"), ("state", p["state"]), ("write", write_kind),
+                ("polarity", w("+" if p["polarity"] > 0 else "-")),
+                ("swap_polarity", w("1" if p["swap"] else "0")), ("Vmax_write_V", w(f"{p['vmax_write']:g}")),
+                ("I_cc_write_A", w(f"{p['i_cc_write']:g}")), ("step_V", w(f"{p['step_v']:g}")),
+                ("dwell_s", w(f"{p['dwell_s']:g}")), ("V_read_V", f"{p['v_read']:g}"), ("t_rec_s", f"{p['t_rec']:g}"),
+                ("t_soak_s", f"{p['t_soak']:g}"), ("t_stop_s", f"{p['t_stop']:g}"),
+                ("read_scheme", "constant_bias" if p["scheme"] == SCHEME_CONSTANT else "intermittent"),
+                ("spacing", p["spacing"]), ("points_per_decade", str(p["points_per_decade"])),
+                ("delta_t_s", f"{p['dt']:g}"), ("n_avg", str(p["n_avg"])), ("n_confirm", w(str(p["n_confirm"]))),
+                ("log_interval_s", f"{LOG_INTERVAL_S:g}"),
+                ("soak_logging", "phase read in constant bias, phase soak in intermittent"),
+                ("companion_file", os.path.basename(p["companion"]) if p["companion"] else ""),
+                ("start_time", iso_now()), ("log_file", os.path.basename(log_path))] + list(extra_pairs)
+
+    def run_one(self, extra_pairs=()):
+        """One retention run on the configured instrument: its files, the
+        settle readings, the write leg (none for control), then the reads
+        to t stop. t = 0 is the write end; for control, the start of t rec."""
+        p = self.p
         state = p["state"]
-        write_path = run_file_path(p["folder"], p["stem"], f"retention_{state}_write", ts)
+        control = state == "control"
+        ts = timestamp_for_name()
+        write_path = None if control else run_file_path(p["folder"], p["stem"], f"retention_{state}_write", ts)
         reads_path = run_file_path(p["folder"], p["stem"], f"retention_{state}_reads", ts)
         log_path = run_log_path(p["folder"], p["stem"], f"retention_{state}_log", ts)
-        proto_pairs = [("module", "retention_write"), ("state", state), ("polarity", "+" if p["polarity"] > 0 else "-"),
-                       ("swap_polarity", "1" if p["swap"] else "0"), ("Vmax_write_V", f"{p['vmax_write']:g}"),
-                       ("I_cc_write_A", f"{p['i_cc_write']:g}"), ("step_V", f"{p['step_v']:g}"),
-                       ("dwell_s", f"{p['dwell_s']:g}"), ("V_read_V", f"{p['v_read']:g}"), ("t_rec_s", f"{p['t_rec']:g}"),
-                       ("t_soak_s", f"{p['t_soak']:g}"), ("t_stop_s", f"{p['t_stop']:g}"),
-                       ("read_scheme", "constant_bias" if p["scheme"] == SCHEME_CONSTANT else "intermittent"),
-                       ("spacing", p["spacing"]), ("points_per_decade", str(p["points_per_decade"])),
-                       ("delta_t_s", f"{p['dt']:g}"), ("n_avg", str(p["n_avg"])), ("n_confirm", str(p["n_confirm"])),
-                       ("log_interval_s", f"{LOG_INTERVAL_S:g}"),
-                       ("soak_logging", "phase read in constant bias, phase soak in intermittent"),
-                       ("companion_file", os.path.basename(p["companion"]) if p["companion"] else ""),
-                       ("start_time", iso_now()), ("log_file", os.path.basename(log_path))]
-        instr = self.instrument_block(idn, source_range)
-        self.write_file = RunFile(write_path, "retention", [p["_sample_block"], instr, ("protocol", proto_pairs)],
-                                  WRITE_COLUMNS, self.gui_version)
-        reads_pairs = [("module", "retention_reads"), ("write_file", os.path.basename(write_path))] + proto_pairs[1:]
+        proto_pairs = self.protocol_pairs(log_path, extra_pairs)
+        instr = self.instrument_block(self.idn, self.source_range)
+        files = []
+        self.write_file = None
+        if not control:
+            self.write_file = RunFile(write_path, "retention", [p["_sample_block"], instr, ("protocol", proto_pairs)],
+                                      WRITE_COLUMNS, self.gui_version)
+            files.append(self.write_file)
+        reads_pairs = ([("module", "retention_reads"),
+                        ("write_file", os.path.basename(write_path) if write_path else "none")] + proto_pairs[1:])
         self.reads_file = RunFile(reads_path, "retention", [p["_sample_block"], instr, ("protocol", reads_pairs)],
                                   READS_COLUMNS, self.gui_version)
-        self.open_run_log(log_path, [self.write_file, self.reads_file])
-        self.status(file=write_path)
-        self.status(file=reads_path)
+        files.append(self.reads_file)
+        self.open_run_log(log_path, files)
+        for f in files:
+            self.status(file=f.path)
 
         self.t_write_end = None
         self.settle_readings(lambda rd: self.write_read_row(rd, "settle", 0.0, 1))
@@ -2173,11 +2266,12 @@ class RetentionWorker(WorkerBase):
 
         # -- write leg (unipolar at +/- V max, compliance handling as 3.4) --
         self.status(state="running")
-        self.write_leg()
-        if self.check_stop():
-            return
+        if not control:
+            self.write_leg()
+            if self.check_stop():
+                return
         self.t_write_end = self.t_s()
-        self.log_event(f"WRITE_END t_s={self.t_write_end:.3f}")
+        self.log_event(f"WRITE_END t_s={self.t_write_end:.3f}" + (" | write=none (control)" if control else ""))
 
         self.with_retry(lambda: self.link.set_source_delay(0.0), "read delay 0")
 
@@ -2275,7 +2369,7 @@ class RetentionWorker(WorkerBase):
         row = {"t_s": self.t_s(), "loop": 1, "segment": segment, "vmax_V": self.p["vmax_write"], "V_set_V": v_set,
                "V_meas_V": rd.v, "I_A": rd.i, "R_ohm": rd.r_ohm, "compliance_flag": rd.compliance_flag,
                "trip_query": rd.trip_query, "status_bits": rd.stat, "event": event,
-               "event_code": event_code(event), "phase": "sweep"}
+               "event_code": event_code(event), "phase": "sweep", "state": self.p["state"]}
         self.write_file.write_row([row[c] for c in WRITE_COLUMNS])
         self.post("row", "write", row)
 
@@ -2287,9 +2381,12 @@ class RetentionWorker(WorkerBase):
         tsw = self.t_since_write()
         row = {"t_since_write_s": tsw, "t_wall_s": self.t_s(), "phase": phase, "V_set_V": v_set, "V_meas_V": v,
                "I_A": i, "R_ohm": resistance_ohm(v, i), "n_avg": n_avg, "compliance_flag": flag,
-               "trip_query": trip, "status_bits": stat}
+               "trip_query": trip, "status_bits": stat, "state": self.p["state"]}
         self.reads_file.write_row([row[c] for c in READS_COLUMNS])
         self.post("row", "reads", row)
+        self.report_progress(tsw)
+
+    def report_progress(self, tsw):
         if tsw is not None and self.p["t_stop"] > 0:
             self.status(progress=min(1.0, tsw / self.p["t_stop"]), left_s=max(0.0, self.p["t_stop"] - tsw))
 
@@ -2389,28 +2486,203 @@ class RetentionWorker(WorkerBase):
         self.write_read_row(None, phase, v_read, None, average_readings(readings))
 
 
+class MasterRetentionWorker(RetentionWorker):
+    """Master mode (K's ruling of 15 Oct 2026): control, LRS, HRS in that
+    order on one connection, a rest at 0 V (output on, nothing measured)
+    between runs. Each run writes its usual files plus master_id,
+    master_run and rest_before_s; the sequence is logged line by line in
+    <sample>_<ts>_retention_master_log.txt. Stop, during a run or a rest,
+    ends the whole sequence. Whether the RESET worked is not checked."""
+
+    def __init__(self, params, link, stop_event, out_queue, sleep=time.sleep):
+        super().__init__(params, link, stop_event, out_queue, sleep)
+        self.master_p = dict(params)
+        self.master_log = None
+        self.master_id = None
+        self.run_index = 0
+        self.open_run = None         # (k, state, file names) of the run in progress
+
+    def run_params(self, k):
+        m = self.master_p
+        state = MASTER_ORDER[k]
+        rp = dict(m, state=state)
+        if state == "control":
+            rp.update(polarity=0, vmax_write=0.0, i_cc_write=m["set_icc"])
+        elif state == "LRS":
+            rp.update(polarity=write_polarity("LRS", m["swap"]), vmax_write=m["set_vmax"], i_cc_write=m["set_icc"])
+        else:
+            rp.update(polarity=write_polarity("HRS", m["swap"]), vmax_write=m["reset_vmax"],
+                      i_cc_write=m["reset_icc"])
+        return rp
+
+    def master_event(self, text):
+        if self.master_log is not None:
+            self.master_log.write(text)
+
+    def log_event(self, text):
+        """Run events go to the open run's log; between runs (the rests)
+        RETRY / RECONNECT go to the master log instead."""
+        if self.run_log is not None:
+            self.run_log.write(text)
+        else:
+            self.master_event(text)
+
+    def protocol(self):
+        m = self.master_p
+        self.master_id = timestamp_for_name()
+        log_path = run_log_path(m["folder"], m["stem"], "retention_master_log", self.master_id)
+        self.master_log = RunLog(log_path, self.t_s)
+        self.status(file=log_path)
+        self.master_event(f"MASTER_START master_id={self.master_id} | order={','.join(MASTER_ORDER)} | "
+                          f"SET_Vmax_V={m['set_vmax']:g} | SET_I_cc_A={m['set_icc']:g} | "
+                          f"RESET_Vmax_V={m['reset_vmax']:g} | RESET_I_cc_A={m['reset_icc']:g} | "
+                          f"swap_polarity={'1' if m['swap'] else '0'} | step_V={m['step_v']:g} | "
+                          f"dwell_s={m['dwell_s']:g} | n_confirm={m['n_confirm']} | V_read_V={m['v_read']:g} | "
+                          f"t_rec_s={m['t_rec']:g} | t_soak_s={m['t_soak']:g} | t_stop_s={m['t_stop']:g} | "
+                          f"read_scheme={m['scheme']} | spacing={m['spacing']} | "
+                          f"points_per_decade={m['points_per_decade']} | delta_t_s={m['dt']:g} | n_avg={m['n_avg']} | "
+                          f"rest_s={m['rest_s']:g} | V_protection_V={protection_command_value(m['protection_v']):g} | "
+                          f"address={m['visa_address']}")
+        self.source_range = source_range_for(max(m["set_vmax"], m["reset_vmax"], m["v_read"]))
+        self.idn = self.startup(self.source_range, m["protection_v"], m["set_icc"], m["dwell_s"])
+        for k, state in enumerate(MASTER_ORDER):
+            self.run_index = k
+            if k and self.rest(k):
+                return
+            self.p = self.run_params(k)
+            self.reason = "completed"
+            if k:
+                i_cc = self.p["i_cc_write"]
+                if self.link.i_cc != i_cc:
+                    self.with_retry(lambda: self.link.set_compliance(i_cc), "compliance")
+                    self.log_compliance()
+                self.with_retry(lambda: self.link.set_source_delay(self.p["dwell_s"]), "write dwell")
+            self.log(f"Master run {k + 1}/3: {state}.")
+            self.master_event(f"RUN_START run={k + 1}/3 | state={state}")
+            self.open_run = (k, state, [])
+            self.run_one([("master_id", self.master_id), ("master_run", f"{k + 1}/3"),
+                          ("rest_before_s", f"{m['rest_s'] if k else 0:g}")])
+            if self.check_stop():
+                return
+            self.close_run(self.reason)
+            self.reason = "completed"       # so Stop during the next rest reads as stop_button
+        self.status(progress=1.0)
+
+    def open_run_log(self, log_path, files):
+        super().open_run_log(log_path, files)
+        if self.open_run is not None:
+            self.open_run[2][:] = [os.path.basename(f.path) for f in files] + [os.path.basename(log_path)]
+
+    def run_end_text(self, reason):
+        k, state, names = self.open_run
+        return (f"RUN_END run={k + 1}/3 | state={state} | reason={header_value(reason)} | "
+                + " | ".join(f"file={n}" for n in names))
+
+    def close_run(self, reason):
+        """END lines, then close the run's files and log; the next run (or
+        the rest) starts with no file open."""
+        for f in self.files:
+            self.log_event(f.end_text(reason))
+        for f in self.files:
+            f.close()
+        if self.run_log is not None:
+            self.run_log.close()
+        self.run_log = None
+        self.files = []
+        self.master_event(self.run_end_text(reason))
+        self.open_run = None
+
+    def rest(self, k):
+        """Rest before run k: 0 V sourced, output on, nothing measured.
+        One :OUTP? per REST_CHECK_INTERVAL_S keeps the bus checked (retried
+        as any command); the rest ends at its planned time even after a
+        retry gap. Returns True on Stop."""
+        rest_s = float(self.master_p["rest_s"])
+        nxt = MASTER_ORDER[k]
+        self.status(state="resting")
+        self.with_retry(lambda: self.link.ramp_to_zero(self.shutdown_step_v()), "ramp to 0 V for the rest")
+        t_start = time.perf_counter()
+        t_end = t_start + rest_s
+        self.master_event(f"REST_START before_run={k + 1}/3 ({nxt}) | rest_s={rest_s:g}")
+        self.log(f"Rest {format_duration(rest_s)} at 0 V, nothing measured; run {k + 1}/3 ({nxt}) starts after it.")
+        next_check = t_start + REST_CHECK_INTERVAL_S
+        next_line = t_start + REST_LOG_INTERVAL_S
+        done_before = k * self.master_p["t_stop"] + (k - 1) * rest_s
+        while True:
+            now = time.perf_counter()
+            left = t_end - now
+            if left <= 0:
+                break
+            self.status(state=f"resting, {format_duration(left)} left before {nxt}")
+            self.post_overall(done_before + (now - t_start))
+            if now >= next_line:
+                self.log(f"Rest: {format_duration(left)} left before run {k + 1}/3 ({nxt}).")
+                next_line += REST_LOG_INTERVAL_S
+            if now >= next_check:
+                self.with_retry(self.link.output_is_on, "rest check")
+                next_check = time.perf_counter() + REST_CHECK_INTERVAL_S
+                continue
+            if wait_with_stop(min(1.0, left, max(0.0, next_check - now)), self.stop_event, sleep=self.sleep):
+                return True
+        self.master_event(f"REST_END before_run={k + 1}/3 ({nxt}) | rest_s={time.perf_counter() - t_start:.3f}")
+        return False
+
+    def report_progress(self, tsw):
+        if tsw is not None:
+            m = self.master_p
+            self.post_overall(self.run_index * (m["t_stop"] + m["rest_s"]) + min(tsw, m["t_stop"]))
+
+    def post_overall(self, done_s):
+        m = self.master_p
+        total = 3 * m["t_stop"] + 2 * m["rest_s"]
+        if total > 0:
+            self.status(progress=min(1.0, done_s / total), left_s=max(0.0, total - done_s))
+
+    def run(self):
+        try:
+            super().run()
+        finally:
+            if self.open_run is not None:
+                self.master_event(self.run_end_text(self.reason))
+                self.open_run = None
+            self.master_event(f"MASTER_END reason={header_value(self.reason)} | outcome={self.outcome}")
+            if self.master_log is not None:
+                self.master_log.close()
+
+
 class RetentionGUI(MemristorGuiBase):
     MODULE_TITLE = "Retention"
     MODULE_KEY = "retention"
-    PROGRAM_VERSION = "1.4"
+    PROGRAM_VERSION = "1.5"
 
     def create_module_inputs(self, parent):
         self.companion_path = ""
         self.companion_rows = []
         frame = self.make_frame(parent, 'Write')
         r = 0
+        self.add_check(frame, r, "Master mode (control, then LRS, then HRS)", "master", False,
+                       "runs all three with a rest between them; State is ignored; SET / RESET values "
+                       "in the Master mode frame", command=self.refresh_estimate); r += 1
         self.add_combo(frame, r, "State", "state", STATES, "LRS",
-                       "LRS = SET leg, HRS = RESET leg, control = sub-switching leg", width=10); r += 1
+                       "LRS = SET leg, HRS = RESET leg, control = no write", width=10); r += 1
         self.add_check(frame, r, "Swap polarity", "swap", False,
                        "flips the write sign: use for a pellet that SETs negative, or for the HRS run "
                        "of a unipolar pellet", command=self.refresh_estimate); r += 1
         self.add_entry(frame, r, "|V max| write (V)", "vmax_write", "5",
                        "type a positive value; the sign comes from State and Swap"); r += 1
-        self.add_entry(frame, r, "I cc write (uA)", "i_cc_write_uA", "10"); r += 1
+        self.add_entry(frame, r, "I cc write (uA)", "i_cc_write_uA", "10", "control: the compliance of the reads"); r += 1
         self.write_line_label = self.add_wide_label(frame, "", fg='#7A3B00')
         self.add_entry(frame, r, "Step (V)", "step_v", "0.1"); r += 1
         self.add_entry(frame, r, "Dwell (s)", "dwell_s", "0.1", "time at each write voltage step, before its reading"); r += 1
         self.add_entry(frame, r, "n confirm", "n_confirm", "3", "consecutive compliance points before turning around"); r += 1
+
+        frame_m = self.make_frame(parent, 'Master mode')
+        r = 0
+        self.add_entry(frame_m, r, "SET: V max (V)", "set_vmax", "5", "LRS write, + unless Swap"); r += 1
+        self.add_entry(frame_m, r, "SET: I cc (uA)", "set_icc_uA", "10", "also the control run's compliance"); r += 1
+        self.add_entry(frame_m, r, "RESET: V max (V)", "reset_vmax", "5", "HRS write, opposite sign"); r += 1
+        self.add_entry(frame_m, r, "RESET: I cc (uA)", "reset_icc_uA", "10"); r += 1
+        self.add_entry(frame_m, r, "Rest between runs (h)", "rest_h", "2", "0 V, output on, nothing measured; 0 allowed"); r += 1
 
         frame2 = self.make_frame(parent, 'Read log')
         r = 0
@@ -2434,16 +2706,44 @@ class RetentionGUI(MemristorGuiBase):
     def refresh_estimate(self):
         super().refresh_estimate()
         self.apply_field_states(("points_per_decade", "dt"), disabled_read_fields(self.get_str("spacing")))
+        self.apply_field_states(("state", "i_cc_write_uA") + WRITE_ONLY_FIELDS + MASTER_FIELDS,
+                                disabled_write_fields(self.is_master(), self.get_str("state")))
+        self._refresh_end_clock()
         self._refresh_write_line()
         self._refresh_live_warnings()
         self._refresh_planned_reads()
 
+    def is_master(self):
+        try:
+            return bool(self.vars["master"].get())
+        except Exception:
+            return False
+
+    def _refresh_end_clock(self):
+        """Master mode: the planned end clock time after the total (2.6)."""
+        try:
+            est = self.estimate_total_s
+            if self.is_master() and est:
+                end = datetime.fromtimestamp(time.time() + est).strftime("%a %d %b %H:%M")
+                self.estimate_label.config(text=f"estimate: {format_duration(est)} for 3 runs + 2 rests, "
+                                                f"ends about {end}")
+        except Exception:
+            pass
+
     def _refresh_write_line(self):
         try:
-            text = write_line_text(self.get_str("state"), bool(self.vars["swap"].get()),
-                                   self.get_vmax_write(),
-                                   self.get_float("i_cc_write_uA", "I cc write"),
-                                   self.get_float("v_read", "V read"))
+            if self.is_master():
+                text = master_line_text(bool(self.vars["swap"].get()), self.get_float("set_vmax", "SET V max"),
+                                        self.get_float("set_icc_uA", "SET I cc"),
+                                        self.get_float("reset_vmax", "RESET V max"),
+                                        self.get_float("reset_icc_uA", "RESET I cc"),
+                                        self.get_float("v_read", "V read"), self.get_float("rest_h", "Rest", 0))
+            else:
+                state = self.get_str("state")
+                text = write_line_text(state, bool(self.vars["swap"].get()),
+                                       0.0 if state == "control" else self.get_vmax_write(),
+                                       self.get_float("i_cc_write_uA", "I cc write"),
+                                       self.get_float("v_read", "V read"))
         except Exception as exc:
             text = f"This run: -- ({ascii_text(exc)})"
         try:
@@ -2453,11 +2753,11 @@ class RetentionGUI(MemristorGuiBase):
 
     def _refresh_live_warnings(self):
         try:
-            p = {"vmax_write": self.get_vmax_write(),
-                 "v_read": self.get_float("v_read", "V read"),
+            p = {"v_read": self.get_float("v_read", "V read"),
                  "protection_v": parse_protection(self.get_str("protection")),
                  "scheme": self.get_str("scheme"), "spacing": self.get_str("spacing"),
                  "dt": self.get_float("dt", "Delta t"), "t_soak": self.get_float("t_soak", "t soak")}
+            p.update(self.write_voltages())
             try:
                 text = " ".join(retention_checks(p))
             except ValueError as exc:
@@ -2547,13 +2847,23 @@ class RetentionGUI(MemristorGuiBase):
             self.ax_v.plot(t_set, v_set, '-', color=COLOUR_VSET, lw=1.0, label="V set")
             self.ax_v.plot(t_set, v_meas, '.', color=COLOUR_VMEAS, ms=3, label="V meas")
             self.ax_v.legend(fontsize=8, loc='best')
-        state = p.get("state", "LRS")
-        colour = {"LRS": COLOUR_LRS, "HRS": COLOUR_HRS}.get(state, COLOUR_CONTROL)
         reads = [r for r in self.read_rows if r.get("phase") == "read" and r.get("R_ohm") not in (None, "")
                  and r.get("t_since_write_s") not in (None, "") and r["t_since_write_s"] > 0]
-        if reads:
-            self.ax_r.plot([r["t_since_write_s"] for r in reads], [abs(r["R_ohm"]) for r in reads], 'o-', ms=3,
-                           lw=0.8, color=colour, label=f"{state} (this run)")
+        # one curve per run; in master mode the earlier runs of the sequence stay on the axes
+        order = []
+        for r in self.read_rows:
+            if r.get("state") not in order:
+                order.append(r.get("state"))
+        state = order[-1] if order else ("control" if p.get("master") else p.get("state", "LRS"))
+        colour = {"LRS": COLOUR_LRS, "HRS": COLOUR_HRS}.get(state, COLOUR_CONTROL)
+        for k, st in enumerate(order):
+            run = [r for r in reads if r.get("state") == st]
+            if not run:
+                continue
+            label = f"{st} ({'this run' if st == state else f'run {k + 1}/3'}){self.icc_label(st)}"
+            self.ax_r.plot([r["t_since_write_s"] for r in run], [abs(r["R_ohm"]) for r in run],
+                           'o-' if st == state else 's-', ms=3, lw=0.8,
+                           color={"LRS": COLOUR_LRS, "HRS": COLOUR_HRS}.get(st, COLOUR_CONTROL), label=label)
         if self.companion_rows:
             comp = [r for r in self.companion_rows if r.get("R_ohm") not in (None, "") and r.get("t_since_write_s")
                     not in (None, "") and r["t_since_write_s"] > 0]
@@ -2565,39 +2875,92 @@ class RetentionGUI(MemristorGuiBase):
             self.ax_r.legend(fontsize=8, loc='best')
         if p:
             scheme = "constant bias" if p["scheme"] == SCHEME_CONSTANT else "intermittent"
-            self.figure.suptitle(ascii_text(f"{p['sample_name']} | retention | {state} | V read {p['v_read']:g} V | {scheme}"),
+            mode = f"master run {MASTER_ORDER.index(state) + 1}/3 {state}" if p.get("master") else state
+            self.figure.suptitle(ascii_text(f"{p['sample_name']} | retention | {mode} | V read {p['v_read']:g} V | {scheme}"),
                                  fontsize=10)
 
+    def icc_label(self, state):
+        """', SET I cc 10 uA' for the legend: the write's current limit is
+        reported next to the I-t curve (Lanza 2019); nothing for control."""
+        p = self.params or {}
+        if state == "LRS":
+            i_cc = p.get("set_icc") if p.get("master") else p.get("i_cc_write")
+            kind = "SET"
+        elif state == "HRS":
+            i_cc = p.get("reset_icc") if p.get("master") else p.get("i_cc_write")
+            kind = "RESET"
+        else:
+            return ""
+        return f", {kind} I cc {i_cc * 1e6:g} uA" if i_cc else ""
+
     def estimate_run_time_s(self):
+        t_stop = self.get_float("t_stop", "t stop", 0)
+        if self.is_master():
+            v = self.write_voltages()
+            return master_estimate_s({"set_vmax": v["set_vmax"], "reset_vmax": v["reset_vmax"],
+                                      "step_v": self.get_float("step_v", "Step", 1e-6),
+                                      "dwell_s": self.get_float("dwell_s", "Dwell", 0), "t_stop": t_stop,
+                                      "rest_s": 3600.0 * self.get_float("rest_h", "Rest between runs", 0)})
+        if self.get_str("state") == "control":
+            return RST_SLEEP_S + SETTLE_S + t_stop
         step = self.get_float("step_v", "Step", 1e-6)
         vmax = self.get_vmax_write()
         dwell = self.get_float("dwell_s", "Dwell", 0)
         n_write = len(half_leg(vmax, step)) + len(return_leg(vmax, step))
-        t_stop = self.get_float("t_stop", "t stop", 0)
         return RST_SLEEP_S + SETTLE_S + sweep_time_estimate_s(n_write, dwell) + t_stop
 
-    def get_vmax_write(self):
-        """|V max| write: a positive number; a negative leg comes only from
-        State plus Swap, so a typed minus sign is refused with a pointer."""
-        text = self.get_str("vmax_write")
+    def write_voltages(self):
+        """The write V max values the checks need: single mode vmax_write
+        (0 for control: no write); master mode SET and RESET with
+        vmax_checks / vmax_min for retention_checks()."""
+        if self.is_master():
+            set_v = self.get_positive_vmax("set_vmax", "SET V max")
+            reset_v = self.get_positive_vmax("reset_vmax", "RESET V max")
+            return {"set_vmax": set_v, "reset_vmax": reset_v, "vmax_write": max(set_v, reset_v),
+                    "vmax_checks": [("SET V max", set_v), ("RESET V max", reset_v)],
+                    "vmax_min": min(set_v, reset_v)}
+        if self.get_str("state") == "control":
+            return {"vmax_write": 0.0}
+        return {"vmax_write": self.get_vmax_write()}
+
+    def get_positive_vmax(self, key, label):
+        text = self.get_str(key)
         try:
             negative = float(text) < 0
         except ValueError:
             negative = False
         if negative:
             raise ValueError(VMAX_NEGATIVE_ERROR)
-        return self.get_float("vmax_write", "V max write", 1e-6)
+        return self.get_float(key, label, 1e-6)
+
+    def get_vmax_write(self):
+        """|V max| write: a positive number; a negative leg comes only from
+        State plus Swap, so a typed minus sign is refused with a pointer."""
+        return self.get_positive_vmax("vmax_write", "V max write")
 
     def collect_params(self):
         p = self.collect_common_params()
-        p["state"] = self.get_str("state")
+        p["master"] = self.is_master()
         p["swap"] = bool(self.vars["swap"].get())
-        p["polarity"] = write_polarity(p["state"], p["swap"])
-        p["vmax_write"] = self.get_vmax_write()
-        p["i_cc_write"] = validate_i_cc(self.get_float("i_cc_write_uA", "I cc write", 0) / 1e6, "I cc write")
-        p["step_v"] = self.get_float("step_v", "Step", 1e-6)
-        p["dwell_s"] = self.get_float("dwell_s", "Dwell", 0)
-        p["n_confirm"] = self.get_int("n_confirm", "n confirm", 0)
+        p.update(self.write_voltages())
+        if p["master"]:
+            p["state"] = "master"
+            p["polarity"] = 0
+            p["set_icc"] = validate_i_cc(self.get_float("set_icc_uA", "SET I cc", 0) / 1e6, "SET I cc")
+            p["reset_icc"] = validate_i_cc(self.get_float("reset_icc_uA", "RESET I cc", 0) / 1e6, "RESET I cc")
+            p["i_cc_write"] = p["set_icc"]
+            p["rest_s"] = 3600.0 * self.get_float("rest_h", "Rest between runs", 0)
+        else:
+            p["state"] = self.get_str("state")
+            p["polarity"] = 0 if p["state"] == "control" else write_polarity(p["state"], p["swap"])
+            p["i_cc_write"] = validate_i_cc(self.get_float("i_cc_write_uA", "I cc write", 0) / 1e6, "I cc write")
+        if p["state"] == "control":
+            # no write: the greyed write fields are not read (a stale value cannot block Start)
+            p["step_v"], p["dwell_s"], p["n_confirm"] = CONTROL_RAMP_STEP_V, 0.0, 0
+        else:
+            p["step_v"] = self.get_float("step_v", "Step", 1e-6)
+            p["dwell_s"] = self.get_float("dwell_s", "Dwell", 0)
+            p["n_confirm"] = self.get_int("n_confirm", "n confirm", 0)
         p["v_read"] = self.get_float("v_read", "V read", 1e-6)
         p["t_rec"] = self.get_float("t_rec", "t rec", 0)
         p["t_soak"] = self.get_float("t_soak", "t soak", 0)
@@ -2608,7 +2971,9 @@ class RetentionGUI(MemristorGuiBase):
         p["dt"] = self.get_float("dt", "Delta t", 1e-3)
         p["n_avg"] = self.get_int("n_avg", "n avg", 1)
         p["companion"] = self.companion_path
-        if p["step_v"] > p["vmax_write"]:
+        if p["master"] and p["step_v"] > p["vmax_min"]:
+            raise ValueError("Step is larger than SET or RESET V max.")
+        if not p["master"] and p["state"] != "control" and p["step_v"] > p["vmax_write"]:
             raise ValueError("Step is larger than V max write.")
         warnings = retention_checks(p)
         p["_warning"] = " ".join(warnings)
@@ -2622,13 +2987,23 @@ class RetentionGUI(MemristorGuiBase):
     def make_worker(self, params):
         timeout = max(VISA_TIMEOUT_MIN_S, 3 * (params["dwell_s"] + NPLC_DEFAULT * PLC_S + 0.5))
         link = K2400Link(params["visa_address"], timeout)
-        worker = RetentionWorker(params, link, self.stop_event, self.data_queue)
+        cls = MasterRetentionWorker if params.get("master") else RetentionWorker
+        worker = cls(params, link, self.stop_event, self.data_queue)
         worker.gui_version = self.PROGRAM_VERSION
         return worker
 
     def describe_params(self, p):
-        return (f"{p['sample_name']} | {p['state']} | write {'+' if p['polarity'] > 0 else '-'}{p['vmax_write']:g} V "
-                f"Icc {p['i_cc_write']:g} A step {p['step_v']:g} V dwell {p['dwell_s']:g} s | V read {p['v_read']:g} V | "
+        if p.get("master"):
+            sp, sr = write_polarity("LRS", p["swap"]), write_polarity("HRS", p["swap"])
+            write = (f"master control -> rest {p['rest_s'] / 3600:g} h -> LRS {sp * p['set_vmax']:+g} V Icc "
+                     f"{p['set_icc']:g} A -> rest -> HRS {sr * p['reset_vmax']:+g} V Icc {p['reset_icc']:g} A "
+                     f"step {p['step_v']:g} V dwell {p['dwell_s']:g} s")
+        elif p["state"] == "control":
+            write = f"control, no write | Icc {p['i_cc_write']:g} A"
+        else:
+            write = (f"{p['state']} | write {'+' if p['polarity'] > 0 else '-'}{p['vmax_write']:g} V "
+                     f"Icc {p['i_cc_write']:g} A step {p['step_v']:g} V dwell {p['dwell_s']:g} s")
+        return (f"{p['sample_name']} | {write} | V read {p['v_read']:g} V | "
                 f"t rec {p['t_rec']:g} s t soak {p['t_soak']:g} s t stop {p['t_stop']:g} s | {p['scheme']} | "
                 f"{p['spacing']} ppd {p['points_per_decade']} dt {p['dt']:g} s | n avg {p['n_avg']}")
 

@@ -216,7 +216,7 @@ def test_live_write_line_text():
     assert retention.write_line_text("HRS", False, 5, 10, 0.1) == \
         "This run: 0 -> -5 V -> 0 at I cc 10 uA (RESET, HRS)" + tail
     assert retention.write_line_text("control", False, 0.5, 1, 0.1) == \
-        "This run: 0 -> +0.5 V -> 0 at I cc 1 uA (no switching intended, control)" + tail
+        "This run: no write (control); t = 0 is the start of t rec. Reads at +0.1 V, I cc 1 uA."
     assert retention.write_line_text("LRS", True, 5, 10, 0.1) == \
         "This run: 0 -> -5 V -> 0 at I cc 10 uA (SET, LRS) (swapped)" + tail
     assert retention.write_line_text("HRS", True, 5, 10, 0.1) == \
@@ -328,6 +328,220 @@ def test_retention_compliance_order_follows_the_direction_so_no_error():
             assert fake.err_queue == [], (extra, fake.err_queue)
             assert worker.outcome == "finished" and end_reason(rpath) == worker.reason, (extra, worker.reason)
             assert_compliance_order(retention, fake.writes)
+
+
+# -- control fix and master mode (K's rulings of 15 Oct 2026) -------------
+
+SHORT = dict(t_rec=0.1, t_soak=0.2, t_stop=1.5)
+REST_S = 0.01 * 3600        # 0.01 h
+
+
+def _virtual_run(cls, p, fake, on_sleep=None):
+    """Run a worker on the virtual clock (deterministic, rests take no real
+    time). on_sleep(worker, stop) is called on every sleep."""
+    clock = _VirtualClock()
+    stop = threading.Event()
+    worker = None
+
+    def sleep(s):
+        clock.sleep(s)
+        if on_sleep is not None and worker is not None:
+            on_sleep(worker, stop)
+    real_time = retention.time
+    retention.time = clock
+    try:
+        worker = cls(p, make_link(retention, fake), stop, queue.Queue(), sleep=sleep)
+        worker.gui_version = "test"
+        run_worker(worker, None, stop)
+    finally:
+        retention.time = real_time
+    return worker
+
+
+def _files(folder, part):
+    return sorted(os.path.join(folder, f) for f in os.listdir(folder) if part in f)
+
+
+def _timed_reads(rpath):
+    _, _, rows = read_file(rpath)
+    return [r["t_since_write_s"] for r in rows if r["phase"] == "read" and r["n_avg"] == 3]
+
+
+def master_params(folder, **extra):
+    p = retention_params(folder, master=True, state="master", polarity=0, set_vmax=5.0, set_icc=1e-5,
+                         reset_vmax=4.0, reset_icc=2e-5, rest_s=REST_S, **SHORT)
+    p.update(extra)
+    return p
+
+
+def _master_log(folder):
+    """(t_s, text) of every master log line."""
+    path = _files(folder, "_retention_master_log")
+    assert len(path) == 1, path
+    out = []
+    with open(path[0], encoding="utf-8") as fh:
+        for ln in fh:
+            iso, t_s, text = ln.rstrip("\n").split(" | ", 2)
+            assert "T" in iso and t_s.startswith("t_s="), ln
+            out.append((float(t_s[4:]), text))
+    return out
+
+
+def test_control_run_has_no_write_and_the_lrs_read_schedule():
+    """Section 5 test 1."""
+    with tempfile.TemporaryDirectory() as d:
+        p = retention_params(d, state="control", polarity=0, vmax_write=0.0, step_v=0.1, n_confirm=0, **SHORT)
+        fake = FakeK2400(1e6)
+        worker = _virtual_run(retention.RetentionWorker, p, fake)
+        assert worker.reason == "max_time"
+        assert _files(d, "_write") == []
+        rpath = _files(d, "_reads")[0]
+        assert "_retention_control_reads" in rpath
+        rh, _, rrows = read_file(rpath)
+        proto = analysis.header_blocks(rh)["protocol"]
+        assert proto["write"] == "none (control)" and proto["write_file"] == "none"
+        assert proto["Vmax_write_V"] == "none" and proto["I_cc_write_A"] == "none" and proto["polarity"] == "none"
+        assert "t_soak_s" in proto and "n_confirm" in proto and "log_file" in proto
+        assert max(abs(v) for v in fake_sourced(fake)) <= 0.1 + 1e-12      # nothing above V read was sourced
+        assert log_events(rpath)[0] == f"FILES data_file={os.path.basename(rpath)}"
+        assert comment_lines(rpath, "WRITE_END t_s=")[0].endswith("| write=none (control)")
+        assert [r["phase"] for r in rrows][:4] == ["settle"] * 3 + ["recover"]
+        assert abs(rrows[3]["t_since_write_s"]) < 1e-3         # t = 0 is the start of t rec
+        control_reads = _timed_reads(rpath)
+    with tempfile.TemporaryDirectory() as d:
+        _virtual_run(retention.RetentionWorker, retention_params(d, **SHORT), FakeK2400(1e6))
+        lrs_reads = _timed_reads(_files(d, "_reads")[0])
+    assert len(control_reads) == len(lrs_reads) >= 3
+    assert all(abs(a - b) < 1e-3 for a, b in zip(control_reads, lrs_reads))
+
+
+def fake_sourced(fake):
+    return [float(w.split()[1]) for w in fake.writes if w.startswith(":SOUR:VOLT ")]
+
+
+def _check_master_sequence(d, fake, worker, swap=False):
+    assert worker.outcome == "finished" and worker.reason == "completed", worker.reason
+    names = [os.path.basename(f) for f in _files(d, ".csv")]
+    assert sorted(n.split("_retention_")[1] for n in names) == sorted(
+        ["control_reads.csv", "LRS_write.csv", "LRS_reads.csv", "HRS_write.csv", "HRS_reads.csv"])
+    events = _master_log(d)
+    kinds = [text.split(" ")[0] for _, text in events if not text.startswith(("RETRY", "RECONNECT"))]
+    assert kinds == ["MASTER_START", "RUN_START", "RUN_END", "REST_START", "REST_END", "RUN_START", "RUN_END",
+                     "REST_START", "REST_END", "RUN_START", "RUN_END", "MASTER_END"], kinds
+    starts = [text for _, text in events if text.startswith("RUN_START")]
+    assert starts == ["RUN_START run=1/3 | state=control", "RUN_START run=2/3 | state=LRS",
+                      "RUN_START run=3/3 | state=HRS"]
+    assert all("reason=max_time" in text for _, text in events if text.startswith("RUN_END"))
+    assert "file=" in events[2][1] and "_control_reads" in events[2][1]
+    assert events[-1][1].startswith("MASTER_END reason=completed")
+    sign = -1 if swap else 1
+    _, _, lrs_w = read_file(_files(d, "_LRS_write")[0])
+    _, _, hrs_w = read_file(_files(d, "_HRS_write")[0])
+    assert max(sign * r["V_set_V"] for r in lrs_w) == 5.0 and min(sign * r["V_set_V"] for r in lrs_w) == 0.0
+    assert min(sign * r["V_set_V"] for r in hrs_w) == -4.0 and max(sign * r["V_set_V"] for r in hrs_w) == 0.0
+    # nothing measured during the rests: no row of any file falls inside one
+    rest_marks = [(t, text) for t, text in events if text.startswith(("REST_START", "REST_END"))]
+    rests = [(t0, t1) for (t0, _), (t1, _) in zip(rest_marks[::2], rest_marks[1::2])]
+    assert len(rests) == 2 and all(abs((t1 - t0) - REST_S) < 1.0 for t0, t1 in rests)
+    ids = set()
+    for k, state in enumerate(retention.MASTER_ORDER):
+        for path in _files(d, f"_retention_{state}_"):
+            if not path.endswith(".csv"):
+                continue
+            h, _, rows = read_file(path)
+            proto = analysis.header_blocks(h)["protocol"]
+            ids.add(proto["master_id"])
+            assert proto["master_run"] == f"{k + 1}/3" and float(proto["rest_before_s"]) == (REST_S if k else 0)
+            t = [r["t_wall_s" if "_reads" in path else "t_s"] for r in rows]
+            assert not any(t0 < x < t1 for x in t for t0, t1 in rests), path
+            assert end_reason(path) == "max_time"
+            assert_data_only(path)
+    assert len(ids) == 1
+    _, _, lrs_r = read_file(_files(d, "_LRS_reads")[0])
+    assert analysis.header_blocks(read_file(_files(d, "_LRS_reads")[0])[0])["instrument"]["I_cc_A"] == "1e-05"
+    assert analysis.header_blocks(read_file(_files(d, "_HRS_reads")[0])[0])["instrument"]["I_cc_A"] == "2e-05"
+    assert not fake.output_on and fake.writes[-1] == ":OUTP OFF"
+    return events
+
+
+def test_master_sequence_control_lrs_hrs_with_rests():
+    """Section 5 test 2 (and the swapped polarity)."""
+    for swap in (False, True):
+        with tempfile.TemporaryDirectory() as d:
+            fake = FakeK2400(1e6)
+            worker = _virtual_run(retention.MasterRetentionWorker, master_params(d, swap=swap), fake)
+            _check_master_sequence(d, fake, worker, swap)
+
+
+def test_master_stop_during_a_rest_ends_the_sequence():
+    """Section 5 test 3."""
+    def press_stop(worker, stop):
+        if worker.state.startswith("resting"):
+            stop.set()
+    with tempfile.TemporaryDirectory() as d:
+        fake = FakeK2400(1e6)
+        worker = _virtual_run(retention.MasterRetentionWorker, master_params(d), fake, press_stop)
+        assert worker.reason == "stop_button" and worker.outcome == "stopped"
+        assert not fake.output_on and fake.writes[-1] == ":OUTP OFF"
+        events = _master_log(d)
+        assert events[-1][1].startswith("MASTER_END reason=stop_button")
+        assert [t for _, t in events if t.startswith("RUN_START")] == ["RUN_START run=1/3 | state=control"]
+        assert events[-2][1].startswith("REST_START")
+        csvs = _files(d, ".csv")
+        assert len(csvs) == 1 and "_control_reads" in csvs[0] and end_reason(csvs[0]) == "max_time"
+
+
+def test_master_bus_error_during_a_rest_is_retried_and_the_rest_keeps_its_time():
+    """Section 5 test 4: the first rest check fails once."""
+    old = retention.REST_CHECK_INTERVAL_S
+    retention.REST_CHECK_INTERVAL_S = 5.0
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            fake = FakeK2400(1e6, fail_outp={0})
+            worker = _virtual_run(retention.MasterRetentionWorker, master_params(d), fake)
+            events = _check_master_sequence(d, fake, worker)
+            texts = [t for _, t in events]
+            k = texts.index(next(t for t in texts if t.startswith("RETRY")))
+            assert texts[k - 1].startswith("REST_START") and "what=rest check" in texts[k]
+            assert texts[k + 1].startswith("RECONNECT") and texts[k + 2].startswith("REST_END")
+            assert fake.outp_queries > 3
+    finally:
+        retention.REST_CHECK_INTERVAL_S = old
+
+
+def test_master_estimate_matches_the_run_within_5_percent():
+    """Section 5 test 5."""
+    with tempfile.TemporaryDirectory() as d:
+        p = master_params(d)
+        _virtual_run(retention.MasterRetentionWorker, p, FakeK2400(1e6))
+        duration = _master_log(d)[-1][0]
+        est = retention.master_estimate_s(p)
+        assert abs(est - duration) <= 0.05 * duration, (est, duration)
+
+
+def test_master_gui_fields_and_grey_out():
+    assert retention.disabled_write_fields(True, "LRS") == {"state", "vmax_write", "i_cc_write_uA"}
+    assert retention.disabled_write_fields(False, "control") == \
+        set(retention.MASTER_FIELDS) | {"swap", "vmax_write", "step_v", "dwell_s", "n_confirm"}
+    assert retention.disabled_write_fields(False, "HRS") == set(retention.MASTER_FIELDS)
+    with tempfile.TemporaryDirectory() as d:
+        master = dict(master=True, set_vmax="5", set_icc_uA="10", reset_vmax="3", reset_icc_uA="20", rest_h="2")
+        p = _collect(d, **master)
+        assert p["master"] and p["rest_s"] == 7200 and p["set_icc"] == 1e-5 and p["reset_icc"] == 2e-5
+        assert p["vmax_min"] == 3 and p["vmax_write"] == 5
+        p = _collect(d, **dict(master, v_read="2"))
+        assert "at least half" in p["_warning"]             # 2 V >= half of the 3 V RESET
+        try:
+            _collect(d, **dict(master, reset_vmax="-3"))
+            assert False, "negative RESET V max accepted"
+        except ValueError as exc:
+            assert str(exc) == retention.VMAX_NEGATIVE_ERROR
+        # control: greyed write fields are not read, and no 'half of V max' warning
+        p = _collect(d, state="control", vmax_write="junk", step_v="", v_read="2.5")
+        assert p["polarity"] == 0 and p["vmax_write"] == 0 and "at least half" not in p["_warning"]
+        line = retention.master_line_text(False, 5, 10, 3, 20, 0.1, 2)
+        assert line == ("Master: control (no write) -> rest 2 h -> LRS: 0 -> +5 V -> 0 at 10 uA -> rest 2 h -> "
+                        "HRS: 0 -> -3 V -> 0 at 20 uA. Reads at +0.1 V.")
 
 
 if __name__ == "__main__":

@@ -82,10 +82,11 @@ class FakeK2400:
     oldest first (then '0,"No error"'); fail_err_query: that query raises.
     A :SENS:CURR:RANG above the present compliance range queues +824 and is
     ignored; a :SENS:CURR:PROT below 0.1 % of the present measure range is
-    refused (queued as +822), as the real 2400 does."""
+    refused (queued as +822), as the real 2400 does. fail_outp: set of
+    :OUTP? indices (0-based) that raise (a bus error during a rest)."""
 
     def __init__(self, resistance=1e6, fail_reads=(), fail_forever=False, ovp_at=None, prot_readback=None,
-                 err_queue=None, fail_err_query=False):
+                 err_queue=None, fail_err_query=False, fail_outp=()):
         self.r = float(resistance)
         self.writes = []
         self.v = 0.0
@@ -102,6 +103,8 @@ class FakeK2400:
         self.closed = False
         self.err_queue = list(err_queue or [])
         self.fail_err_query = fail_err_query
+        self.fail_outp = set(fail_outp)
+        self.outp_queries = 0
         self.queries = []            # every query in order, interleaved with writes in self.log
         self.log = []                # ('w', cmd) / ('q', cmd) in bus order
         self.on_read = None          # callable(idx) run before every :READ? (deterministic Stop)
@@ -177,6 +180,10 @@ class FakeK2400:
         if c == ":SENS:CURR:PROT?":
             return f"{self.prot_readback if self.prot_readback is not None else self.icc:+.6E}\n"
         if c == ":OUTP?":
+            idx = self.outp_queries
+            self.outp_queries += 1
+            if idx in self.fail_outp:
+                raise IOError("VI_ERROR_TMO: timeout")
             return "1\n" if self.output_on else "0\n"
         raise AssertionError(f"unexpected query {cmd!r}")
 
