@@ -77,7 +77,9 @@ FREQ_MIN, FREQ_MAX = 20.0, 2e6
 # --- Bias ramp (the only soft start the instrument gets) ---
 RAMP_STEP_V = 0.5       # volts per write while ramping the DC bias
 RAMP_DWELL_S = 0.1      # seconds between ramp writes
-RAMP_SKIP_V = 0.01      # |target - current| below this: no write at all
+RAMP_SKIP_V = 1e-4      # |target - current| below this: no write at all
+                        # (was 0.01: steps <= 10 mV were silently skipped)
+V_STEP_MIN = 1e-3       # smallest sweep step accepted (V)
 
 # --- Timing ---
 VISA_TIMEOUT_S = 60.0   # low-freq + LONG + autorange can be slow
@@ -485,13 +487,27 @@ def nan_derived():
     return [float("nan")] * N_DERIVED
 
 
+BAD_NAME_CHARS = '\\/:*?"<>|'
+
+
+def _check_whole_mv(label, v):
+    """The bias is written as :BIAS:VOLT with 1 mV resolution; a value
+    between millivolts would be rounded while the file kept the typed V."""
+    if abs(float(v) * 1000.0 - round(float(v) * 1000.0)) > 1e-6:
+        raise ValueError(f"{label} {v:g} V must be a whole number of millivolts.")
+
+
 def validate_params(p):
     """Raise ValueError on anything the window should refuse at Start.
     Returns the params with v_max set and voltages clamped to V_ABS_MAX."""
     p = dict(p)
+    bad = [c for c in BAD_NAME_CHARS if c in str(p.get("sample_name", ""))]
+    if bad:
+        raise ValueError(f"Sample name must not contain {' '.join(bad)} (used in file names).")
     v_step = abs(float(p["v_step"]))
-    if v_step <= 0:
-        raise ValueError("Voltage step must be > 0.")
+    if v_step < V_STEP_MIN:
+        raise ValueError(f"Voltage step must be >= {V_STEP_MIN:g} V.")
+    _check_whole_mv("Voltage step", v_step)
     p["v_step"] = v_step
     if float(p["delay"]) < 0:
         raise ValueError("Delay per step must be >= 0 s.")
@@ -504,14 +520,19 @@ def validate_params(p):
 
     def volts(key):
         """A voltage entry; an ignored entry may be blank and counts as 0."""
-        raw = p.get(key, "")
-        if key in ignored and (raw is None or str(raw).strip() == ""):
+        if key in ignored:
             return 0.0
-        return float(raw)
+        v = float(p.get(key, ""))
+        if not math.isfinite(v):
+            raise ValueError(f"{key} must be a finite number.")
+        return v
 
     v_start, v_stop = volts("v_start"), volts("v_stop")
     p["clamped"] = any(abs(v) > V_ABS_MAX for k, v in (("v_start", v_start), ("v_stop", v_stop))
                        if k not in ignored)
+    for key, label in (("v_start", "V Start"), ("v_stop", "V Stop")):
+        if key not in ignored:
+            _check_whole_mv(label, v_start if key == "v_start" else v_stop)
     p["v_start"] = max(-V_ABS_MAX, min(V_ABS_MAX, v_start))
     p["v_stop"] = max(-V_ABS_MAX, min(V_ABS_MAX, v_stop))
     p["v_max"] = abs(p["v_stop"]) if p["cycle_mode"] else 0.0
@@ -522,6 +543,8 @@ def validate_params(p):
     if p["cycle_mode"]:
         if p["shape"] == SHAPE_LADDER:
             p["ladder"] = parse_ladder(ladder_text)
+            for v in p["ladder"]:
+                _check_whole_mv("Ladder entry", v)
             p["v_max"] = max(p["ladder"])
             p["n_cycles"] = len(p["ladder"])
             pause = 0.0 if pause_raw is None or str(pause_raw).strip() == "" else float(pause_raw)
@@ -751,13 +774,20 @@ class E4980ALink:
         """Emergency: drive the bias to 0 V and switch it off. Swallows
         every error so it can be used in any error handler."""
         if self.inst is None:
-            return
+            try:
+                self.open()  # link lost mid-retry: reopen once to zero the bias
+            except Exception as exc:
+                print(f"  CRITICAL SAFETY WARNING: Failed to force bias to 0V! {exc}")
+                return
         try:
             try:
                 self.ramp_bias(0.0, step=1.0, dwell=0.05)
             except Exception:
-                self.inst.write(":BIAS:VOLT 0")
-                self.sleep(0.2)
+                try:
+                    self.inst.write(":BIAS:VOLT 0")
+                    self.sleep(0.2)
+                except Exception:
+                    pass
             self.inst.write(":BIAS:STAT OFF")
         except Exception as exc:
             print(f"  CRITICAL SAFETY WARNING: Failed to force bias to 0V! {exc}")
@@ -873,13 +903,20 @@ class CVWorker:
                 self.log_event(f"RETRY n={attempt} | what={what} | error={header_value(exc)}")
                 self.log(f"Bus error ({what}): {exc}. Retry {attempt} in {delay:g} s.")
                 self.status(f"RECONNECTING (attempt {attempt}, next try in {delay:g} s)")
-                if wait_with_stop(delay, self.stop_event, sleep=self.sleep):
-                    raise StopRequested()
-                try:
-                    self.link.reconnect()
-                except BusError as exc2:
-                    self.log_event(f"RETRY n={attempt} | what=reconnect | error={header_value(exc2)}")
-                    continue
+                # Reconnect until it fully succeeds; fn() only runs again on a
+                # re-configured unit with frequency and bias restored.
+                while True:
+                    if wait_with_stop(delay, self.stop_event, sleep=self.sleep):
+                        raise StopRequested()
+                    try:
+                        self.link.reconnect()
+                        break
+                    except BusError as exc2:
+                        attempt += 1
+                        self.retry_total += 1
+                        delay = RETRY_SCHEDULE_S[min(attempt - 1, len(RETRY_SCHEDULE_S) - 1)]
+                        self.log_event(f"RETRY n={attempt} | what=reconnect | error={header_value(exc2)}")
+                        self.status(f"RECONNECTING (attempt {attempt}, next try in {delay:g} s)")
 
     # -- files --------------------------------------------------------------
     def _header_lines(self, k, freq, snap):
@@ -1041,17 +1078,28 @@ class CVWorker:
             reason = f"error: {exc}"
             self.q.put(("error", f"{exc}\n{traceback.format_exc()}"))
         finally:
-            self._end_data_file(reason)
-            self.status("DISCHARGING")
+            # Bias to 0 V first; a failing file write (e.g. the data file
+            # locked by Excel) must never skip the discharge or the "done".
             try:
-                self.link.force_zero_bias()
-            except Exception:
-                pass
-            self.link.close()
-            self.log_event(f"END reason={header_value(reason)} | points={self.points_total} | "
-                           f"retries={self.retry_total} | files={len(self.files)} | end_time={iso_now()}")
-            self.end_reason = reason
-            self.q.put(("done", reason))
+                self.status("DISCHARGING")
+                for step in (self.link.force_zero_bias, self.link.close):
+                    try:
+                        step()
+                    except Exception:
+                        pass
+                for step in (
+                    lambda: self._end_data_file(reason),
+                    lambda: self.log_event(
+                        f"END reason={header_value(reason)} | points={self.points_total} | "
+                        f"retries={self.retry_total} | files={len(self.files)} | end_time={iso_now()}"),
+                ):
+                    try:
+                        step()
+                    except Exception as exc:
+                        self.log(f"WARNING: could not write the END line: {exc}")
+            finally:
+                self.end_reason = reason
+                self.q.put(("done", reason))
 
 
 # ===============================================================================
@@ -1907,7 +1955,9 @@ class LCR_Freq_GUI:
             f"{len(self.voltage_points)} voltage points..."
         )
 
-        self.stop_event.clear()
+        # A fresh Event per run: an old worker still stuck after a stop
+        # timeout keeps seeing its own Stop.
+        self.stop_event = threading.Event()
         self.data_queue = queue.Queue()
         self.link = E4980ALink(params["lcr_visa"])
         self.worker = CVWorker(params, self.link, self.stop_event, self.data_queue)
@@ -1947,10 +1997,23 @@ class LCR_Freq_GUI:
             self.root.after(200, lambda: self._poll_worker_stopped(reason))
             return
         if t is not None and t.is_alive():
-            self.log(
-                "WARNING: worker did not exit within timeout; "
-                "forcing bias to 0 V and closing the instrument anyway."
-            )
+            if not getattr(self, "_forced_zero", False):
+                self._forced_zero = True
+                self.log(
+                    "WARNING: worker did not exit within timeout; "
+                    "forcing bias to 0 V and closing the instrument anyway. "
+                    "Start stays disabled until the worker has exited."
+                )
+                try:
+                    self.link.force_zero_bias()
+                    self.link.close()
+                except Exception as e:
+                    self.log(f"WARNING: error closing instrument: {e}")
+            self.root.after(1000, lambda: self._poll_worker_stopped(reason))
+            return
+        self._forced_zero = False
+        if self.link is not None and self.link.inst is not None:
+            # the worker died without its own cleanup: zero the bias here
             try:
                 self.link.force_zero_bias()
                 self.link.close()
