@@ -8,7 +8,7 @@ All notable changes to PICA are documented here. The format follows [Keep a Chan
 
 ### Added
 
-- **Linux documentation** (docs only, no code change): Full Linux install guide in the README and the user manual (venv, tkinter, `pyvisa-py`, USB-TMC / serial / GPIB setup, known differences), with a clear warning that running against real instruments on Linux is not yet verified. New "Linux report" issue template; the Windows bug-report template points Linux users to it. The old "Windows only" warning is retired; the platform list states what is verified on each OS.
+- **Linux documentation** (docs only update): Full Linux install guide in the README and the user manual (venv, tkinter, `pyvisa-py`, USB-TMC / serial / GPIB setup, known differences), with a clear warning that running against real instruments on Linux is not yet verified. New "Linux report" issue template; the Windows bug-report template points Linux users to it. The old "Windows only" warning is retired; the platform list states what is verified on each OS.
 - **Memristor modules (Keithley 2400)**: Switching I-V sweep (bipolar, unipolar and ladder shapes with current compliance, optional pause between loops), retention (write then timed reads) and endurance (pulse cycling) programs in `pica/keithley/k2400/`, plus a read-only **Memristor Analysis** utility (V set / V reset, retention ratio, endurance window). Events go to a separate `_log.txt`; data files hold data only.
 - **Pull request template**: checklist for tests, sibling-copy updates, ASCII-safe headers and no real sample data.
 
