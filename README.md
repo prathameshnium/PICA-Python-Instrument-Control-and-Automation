@@ -100,13 +100,14 @@ pip install pica-suite==1.0.7
 pip install --upgrade pica-suite
 ```
 
-Highlights — *new temperature controllers, AC resistivity & dielectric automation*:
+Highlights — *changes since v1.0.6*:
 
-* **Cryo-con 34 and Lakeshore 340 (experimental):** temperature sensing, direct and step control, sensor-curve loading and viewing, plus Cryo-con / L340 variants of the R-T, pyroelectric and dielectric programs.
-* **AC resistivity (experimental):** Keithley 6221 AC source with an SR830 lock-in or a Keithley 197A DMM — I-V, frequency scan and R-T modules.
-* **Dielectric:** PPMS Dielectric Master (unattended Tscan + Fscan), Field Step Frequency Scan, E4980A open/short correction, and Novocontrol Alpha-A broadband spectroscopy (experimental).
-* **I-V fixes:** reworked sweeps with custom lists for the K2400, K2400 + 2182 and K6517B; the K2400 I-V module now reads voltage correctly.
-* **Launcher v2, diagnostics & utilities:** Quick Select launcher, read-only diagnostic tools, SCPI console, List Maker, MD ratio calculator, and PPMS helpers.
+* **Linux documentation:** a Linux install guide (venv, tkinter, `pyvisa-py`, USB-TMC / serial / GPIB) and a "Linux report" issue template. This is documentation only; running against real instruments on Linux is not yet verified.
+* **Memristor modules (Keithley 2400):** switching I-V sweep, retention and endurance programs, plus a read-only Memristor Analysis utility.
+* **C-V module v2 (Keysight E4980A):** rewritten sweep builder (bipolar, unipolar, ladder), bus-error retry and a separate event log.
+* **K6221 / 2182 I-V:** custom list sweeps (paste from the List Maker), µA units and zero-crossing fixes.
+* **Launcher v2 updates:** module search (`Ctrl+F`), hover cards in Advanced Options, View menu and an in-app viewer for the manual, README, change log and license.
+* **Packaging, CI & utilities:** cleaner wheel, wider CI matrix (Python 3.10-3.13, Linux GUI smoke test), Quick Calc typesetting, Time Utility event log.
 
 For the full changelog, see [`CHANGELOG.md`](CHANGELOG.md).
 
