@@ -8,7 +8,7 @@
 
 ## How it was tested
 
-- [ ] `python -m pytest tests/` passes locally (mocked instruments, no hardware needed)
+- [ ] `python -B -m pytest -p no:cacheprovider tests/` passes locally (mocked instruments, no hardware needed)
 - [ ] New or changed behaviour has a test in `tests/`
 - [ ] Run against real hardware (say which instrument, firmware and OS below), or not tested on hardware
 

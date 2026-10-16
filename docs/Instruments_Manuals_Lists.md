@@ -1,7 +1,7 @@
 ---
 myst:
   html_meta:
-    description: "Reference list of instrument manuals and datasheets used with PICA — Keithley 2400, 6221, 2182, 6517B, Keysight E4980A, Lakeshore 350/340, Novocontrol Alpha, and more."
+    description: "Reference list of instrument manuals and datasheets used with PICA — Keithley 6221, 2182, 6517B, Keysight E4980A, Lakeshore 350/340, Novocontrol Alpha-AN, plus PyMeasure and PyVISA documentation."
     keywords: "instrument manuals, Keithley reference manual, Keysight E4980A manual, Lakeshore 350 manual, SCPI programming reference"
 ---
 
@@ -50,16 +50,10 @@ myst:
 
 ## **PyMeasure Software**
 
-* **PyMeasure Documentation (Development Build - August)**
+* **PyMeasure Documentation**
     * **Creator:** PyMeasure Developers
-    * **Date:** August 27, 2025
-    * **Version:** Release 0.15.1.dev366+gcb643a9c2.d20250827
-
-* **PyMeasure Documentation (Development Build - September)**
-    * **Creator:** PyMeasure Developers
-    * **Date:** September 11, 2025
-    * **Version:** Release 0.15.1.dev374+gb3750209b.d20250911
-    * *Note: This is the latest version of the PyMeasure documentation you uploaded.*
+    * **Link:** [https://pymeasure.readthedocs.io/](https://pymeasure.readthedocs.io/)
+    * **Version Note:** PICA requires PyMeasure >= 0.10.0.
 
 * **Keithley 2400 SourceMeter (PyMeasure API)**
     * **Creator:** PyMeasure Developers
@@ -68,16 +62,11 @@ myst:
 
 ## **PyVISA Software**
 
-* **PyVISA Documentation (Full)**
+* **PyVISA Documentation**
     * **Creator:** PyVISA Developers
-    * **Type:** Complete Documentation (EPUB format)
-    ***Contents:** Covers Installation, Architecture, Backends, Communication, and API references.
-
-* **PyVISA "A More Complex Example" (Tutorial Excerpt)**
-    * **Creator:** PyVISA Developers
-    * **Type:** Tutorial / PDF Excerpt
-    * **Context:** A guide on using SCPI commands with a Keithley 2000 multimeter, including initializing the instrument and reading voltages. 
-    ***Version Note:** The document notes that "1.12.0 is the latest version available" at the time of its creation.
+    * **Link:** [https://pyvisa.readthedocs.io/](https://pyvisa.readthedocs.io/)
+    * **Contents:** Covers installation, architecture, backends, communication and API references.
+    * **Version Note:** PICA requires PyVISA >= 1.12.0. On Linux PICA uses the pyvisa-py backend: [https://pyvisa.readthedocs.io/projects/pyvisa-py/](https://pyvisa.readthedocs.io/projects/pyvisa-py/)
 
 ## **Keysight Technologies**
 

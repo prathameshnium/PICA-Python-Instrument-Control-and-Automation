@@ -1,15 +1,15 @@
-# Novocontrol Alpha over the NI GPIB card — bring-up runbook
+# Novocontrol Alpha-AN over GPIB: setup and troubleshooting
 
-Goal: establish Python ↔ Alpha-AN communication on the lab PC. The PC now has
-an **NI PCI GPIB interface** on a fresh install of **NI-488.2, the Keysight IO
-Libraries, and 64-bit Python 3.10** with all packages. The previous
-Novocontrol/ines card (and its pyvisa-py + gpib-ctypes workaround chain) is
-retired; that era's runbook and code live in git history.
+Goal: establish Python ↔ Alpha-AN communication on a Windows PC. This guide
+assumes an NI GPIB interface (e.g. NI PCI-GPIB) with NI-488.2 and a VISA
+library (NI-VISA or the Keysight IO Libraries) installed, and 64-bit Python
+3.10 or newer with PICA installed. PCs that have only a 32-bit GPIB stack and
+no usable VISA are covered at the end.
 
 ## Ground rules — the tools are gentle by design
 
-The Alpha is delicate and expensive, and the old card's lock-ups were never
-fully explained. All PICA tooling therefore follows these rules:
+The Alpha is delicate and expensive, and GPIB lock-ups are not always
+explainable after the fact. All PICA tooling therefore follows these rules:
 
 - **Refresh/scan sends nothing.** The SCPI Console's Refresh only *lists*
   VISA addresses; no instrument is opened or queried until you press
@@ -19,12 +19,12 @@ fully explained. All PICA tooling therefore follows these rules:
 - **Every state-changing write asks for confirmation** (anything not ending
   in `?`), in both the GUI and the lifeline terminal. Queries send freely.
 - **DCV/DCE and RSTH are blocked outright** in both tools: DCV/DCE set the
-  DC bias (this mainframe has no bias hardware; `pica/novocontrol` never
-  sends them) and RSTH is a hard reset.
+  DC bias (PICA's Alpha-AN modules do not use DC bias; `pica/novocontrol`
+  never sends them) and RSTH is a hard reset.
 - **One program on the bus.** Never run WinDETA (or NI MAX's communicator)
   and a PICA tool at the same time.
 
-## At the lab PC, in order
+## First connection, in order
 
 1. **Close WinDETA** and any other GPIB program.
 2. Optional sanity check without Python: open **NI MAX** (installed with
@@ -34,8 +34,8 @@ fully explained. All PICA tooling therefore follows these rules:
 3. GUI: `python pica/utils/SCPI_Console_GUI.py` → the log names the active
    VISA backend (NI or Keysight, whichever is registered as primary) →
    **Refresh** lists addresses only. Select the `GPIB0::N::INSTR` entry or
-   type it (the Alpha's address is in WinDETA's device settings; historically
-   it has been 5, i.e. `GPIB0::5::INSTR`). **Term auto-sets to EOI** for GPIB
+   type it (the Alpha's address is in WinDETA's device settings; 5 is used
+   as the example below, i.e. `GPIB0::5::INSTR`). **Term auto-sets to EOI** for GPIB
    addresses → **Connect**.
 4. `*IDN?` should return `NOVOCONTROL … Alpha`. Then try `INTTYP?` — the ZG4
    interface reports code 5. Both are read-only.
@@ -74,14 +74,14 @@ fully explained. All PICA tooling therefore follows these rules:
   used by `pica/novocontrol/`.
 - `*RST` parks the generator and **preserves** the stored calibration tables
   (per the Alpha manual and `pica/novocontrol`) — but like every
-  state-changing write it now requires an explicit yes before it is sent.
+  state-changing write it requires an explicit yes before it is sent.
 - In the lifeline terminal, `:safe` parks the analyzer with the documented
   sequence `MBK, ACV=0, ZCONSPL=0` (same order as
   `pica/novocontrol` `safe_state()`).
 
 ## When the PC has only a 32-bit GPIB stack (no usable VISA)
 
-Some Novocontrol PCs end up with a working 32-bit `gpib-32.dll` and no VISA
+Some PCs end up with a working 32-bit `gpib-32.dll` and no VISA
 GPIB interface at all. There, `pyvisa.ResourceManager().list_resources()`
 returns `()` however healthy the bus is, so the SCPI Console and the Scanner
 GUI show nothing. Neither of the two tools below uses pyvisa or VISA: both are
@@ -94,8 +94,11 @@ Python. They report which they are, and a 64-bit interpreter that finds a
        py -3.10-32 pica\utils\GPIB_Scanner_32bit_GUI.py
        py -3.10-32 pica\utils\GPIB_Scanner_32bit_CLI.py
 
-   The window is also in both launchers, under Tools and PICA Utils, as
-   **GPIB Scanner (32-bit)**. The launchers start it in their own
+   (`py -3-32` works too if a different 32-bit Python 3 is installed.)
+
+   The window is also in both launchers: as **GPIB Scanner (32-bit)** under
+   PICA Utils, and as **GPIB Scanner (32-bit, no VISA)** in the Launcher v2
+   Tools menu. The launchers start it in their own
    interpreter, so if the launcher itself is 64-bit the window will say so
    and offer **Reopen in 32-bit Python**, which restarts it through
    `py -3.10-32`. Nothing is scanned until you press **Scan the bus**, and
@@ -123,7 +126,7 @@ explicitly, and only those:
 
 3. **Then measure.** The frequency scan has a 32-bit twin,
    `pica\novocontrol\Frequency_Scan_AlphaAN_32bit_GUI.py`, listed in both
-   launchers as **Alpha-AN Freq. Scan (32-bit GPIB)**. It is the same program
+   launchers as **Frequency Scan (fixed T, 32-bit GPIB)**. It is the same program
    as the VISA edition with the transport swapped for raw NI-488.2: same
    command flow, same safety ceilings, same ack protocol, same WinDETA
    export. Differences worth knowing:

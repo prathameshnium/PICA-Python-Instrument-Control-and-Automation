@@ -38,8 +38,8 @@ What you expected to happen instead.
 
 Every measurement module has a scrolling console at the bottom of its control
 window. Click in it, press Ctrl+A, Ctrl+C, and paste the text here. The
-Diagnostics and SCPI Console tools have a "Save Log As..." button instead;
-attach that file.
+Diagnostics tools have a "Save Log As..." button and the SCPI Console has a
+"Save Log" button instead; attach that file.
 
 ```text
 paste the console log here

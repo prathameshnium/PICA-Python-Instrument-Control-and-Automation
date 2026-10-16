@@ -2,13 +2,13 @@
 
 First of all, thank you for considering contributing to PICA. With support from the community, we can create an open-source tool for scientific measurement and instrument automation to use instead of costly proprietary licensed software.
 
-# Building a Collaborative Ecosystem
+## Building a Collaborative Ecosystem
 
 PICA is distributed under the permissive [MIT License](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/LICENSE) because we believe scientific software should be a dynamic, living project rather than a static tool. Our goal is to foster a community-driven ecosystem where researchers are free to modify and extend the codebase to support their specific instruments.
 
-We designed PICA with a modular architecture specifically to make this process straightforward preventing the redundant effort of rewriting automation scripts from scratch. By contributing your custom drivers or experimental protocols back to the project via GitHub Pull Requests, you help create a more robust and versatile tool for the entire scientific community. Additionally, we rely on community feedback via GitHub Issues to identify edge cases and resolve bugs across diverse hardware setups, accelerating development far beyond what a single team could achieve.
+We designed PICA with a modular architecture specifically to make this process straightforward, preventing the redundant effort of rewriting automation scripts from scratch. By contributing your custom drivers or experimental protocols back to the project via GitHub Pull Requests, you help create a more robust and versatile tool for the entire scientific community. Additionally, we rely on community feedback via GitHub Issues to identify edge cases and resolve bugs across diverse hardware setups, accelerating development far beyond what a single team could achieve.
 
-# Commitment to Transparency & Reproducibility
+## Commitment to Transparency & Reproducibility
 
 Beyond practical utility, making PICA open source is a statement of scientific integrity. Unlike proprietary "black box" software that obscures experimental methodology, PICA ensures complete transparency. By accessing the full source code, researchers can audit the exact SCPI command sequences, timing delays, and data handling procedures used in an experiment. This methodological clarity is essential for rigorous validation and reproducibility in modern experimental science.
 
@@ -22,7 +22,7 @@ When reporting a bug, please include as much detail as possible:
 *   **Expected behavior:** What did you expect to happen?
 *   **Actual behavior:** What actually happened?
 *   **PICA version:** Specify the [version](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases) of PICA you are using.
-*   **Operating system:** Your OS and version (e.g., Windows 10, Ubuntu 20.04).
+*   **Operating system:** Your OS and version (e.g., Windows 11, Ubuntu 24.04).
 *   **Hardware setup:** Briefly describe your instrument setup if relevant.
 *   **Measurement module:** The script file name or launcher label of the module involved.
 *   **Error messages/logs:** The module's console log (Ctrl+A, Ctrl+C in the console pane) and any terminal traceback.
@@ -31,6 +31,8 @@ Two issue templates collect this for you:
 
 *   [Bug report (Windows)](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues/new?template=bug_report.md) for Windows, the platform PICA is validated on with real instruments.
 *   [Linux report](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues/new?template=linux_report.md) for anything Linux-specific. Running against real instruments from Linux is not yet verified, so successes are as welcome as problems. This template also asks for the VISA backend, `pyvisa-info` output and GPIB/USB/serial permission details.
+
+macOS has not been tested.
 
 ## Contributing Code
 
@@ -46,13 +48,21 @@ git checkout -b feature/add-new-instrument
 
 Make sure you're running the [test suite locally](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/docs/User_Manual.md#34-development-dependencies-for-testing-optional). It's a good idea to do this before you start making changes to ensure that everything is working correctly.
 
+```sh
+pip install -e .
+pip install -r requirements-dev.txt
+python -B -m pytest -p no:cacheprovider tests/
+```
+
+Tests live in `tests/` (one test file per module). Every instrument is mocked, so no hardware is needed. Tests that open real windows are skipped unless `PICA_REAL_WINDOWS=1` is set. If you change a module's behaviour, add or update a test for it.
+
 ### Coding Style Guide
 
-PICA adheres to [PEP 8](https://www.python.org/dev/peps/pep-0008/) for Python code style. Please ensure your contributions follow these guidelines. You can use tools like `flake8` or `black` to help format your code.
+PICA adheres to [PEP 8](https://www.python.org/dev/peps/pep-0008/) for Python code style. Please ensure your contributions follow these guidelines. CI runs `flake8` (syntax errors fail the build; style is reported with `--max-line-length=127`). Please do not run an auto-formatter such as `black` over existing files; it produces large unrelated diffs.
 
 ### Implement your fix or feature
 
-At this point, you're ready to make your changes! Feel free to ask for help; everyone is a beginner at first:
+At this point, you're ready to make your changes. Feel free to ask for help in an issue; everyone is a beginner at first. Please keep real sample names, measurement data and lab paths out of code, tests and docs, keep data-file headers ASCII-safe, and add a line under `[Unreleased]` in `CHANGELOG.md` for user-visible changes.
 
 ### Make a Pull Request
 
@@ -93,7 +103,8 @@ To learn more about rebasing and merging, check out this guide from Atlassian:
 One of the most important contributions you can make is to add support for new instruments. The architecture was designed to make this process straightforward by following a set of well-defined steps. Essentially, these are the same steps the original developers followed when adding new modules.
 
 #### Understanding the Architecture
-Code duplication is considered acceptable to avoid over-abstraction, which can make the project harder to maintain.
+
+Each measurement program is a single self-contained file that can be run on its own; the launcher starts each one in its own process. By design there are no shared base classes or helper modules. The resulting code duplication is accepted so that a change for one instrument cannot break another. When sibling copies of the same logic exist (for example the Lake Shore 340, Lake Shore 350 and Cryo-con 34 variants of a module, or the common block shared by the three memristor modules), update every copy.
 
 #### Start with a Template
 
@@ -102,26 +113,26 @@ The easiest way to start is to copy an existing module that is closest to your t
 #### 1. Create New Files
 
 1.  Create a new directory for your instrument under the appropriate vendor (e.g., `pica/new_vendor/my_instrument/`).
-2.  Paste the copied files into this new directory.
-3.  Rename the files to reflect your new module (e.g., `IV_ABC_Instrument_GUI.py` and `IV_ABC_Instrument_Control.py`).
+2.  Paste the copied file into this new directory. Each measurement program is one self-contained `*_GUI.py` file.
+3.  Rename the file to reflect your new module (e.g., `IV_ABC_Instrument_GUI.py`). An optional command-line version (e.g., `IV_ABC_Instrument_Control.py`) goes in an `Instrument_Control/` subfolder.
 
 #### 2. Implement the Instrument Control Logic
 
-Start with the basic instrument communication, then add measurement protocols, data saving, and plotting. Ensure that instrument communication (handled by `PyVISA` or `pymeasure`) uses the correct SCPI commands,  Replace the existing SCPI commands (e.g. `:SOUR:VOLT`, `:MEAS:CURR?`) with the commands specific to your instrument.. Your instrument's programming manual is the definitive source for these commands.Adjust the data parsing logic to handle the output format of your instrument.
+Start with the basic instrument communication, then add measurement protocols, data saving, and plotting. Ensure that instrument communication (handled by `PyVISA` or `pymeasure`) uses the correct SCPI commands. Replace the existing SCPI commands (e.g. `:SOUR:VOLT`, `:MEAS:CURR?`) with the commands specific to your instrument. Your instrument's programming manual is the definitive source for these commands. Adjust the data parsing logic to handle the output format of your instrument.
 
 #### 3. Modify the GUI (`..._GUI.py`)
 
 1.  Open your new `..._GUI.py` file.
 2.  Update the `Tkinter` widgets (labels, entry boxes, dropdowns) to match the parameters required for your instrument (e.g., voltage range, compliance, measurement speed).
-3.  Ensure the "Start" button calls your new control logic (copy the logic from Instrument_Control file to here), passing the necessary parameters from the GUI.
+3.  Ensure the "Start" button runs your control logic inside the same file (not imported from a shared module), passing the necessary parameters from the GUI.
 
 #### 4. Integrate into the PICA Launcher
 
 To make your new module accessible from the main dashboard:
 
 1.  **Classic launcher (`pica-gui`, legacy):** open `pica/main.py`, add your script to the `SCRIPT_PATHS` dictionary (a display key mapped to `resource_path("vendor/.../Your_Module_GUI.py")`), then add an entry `(button label, script key)` to the button list of the matching `self._create_suite_frame(...)` call in `create_launcher_panel`. Add `'control'` or `'sensing'` as a third item if the module drives or only reads a temperature controller.
-2.  **Launcher v2 (`run_pica_v2.py`):** add the same entry to the matching group in `CATALOG` in `pica/main_v2.py` so it appears in Advanced Options, and to `QUICK_CATALOG` if it also belongs on the Quick Select screen.
-3.  Run the launcher tests (`python -B -m pytest tests/test_gui_module_registry.py tests/test_launcher_v2_wiring.py -p no:cacheprovider`) to check that every key points to a file that exists.
+2.  **Launcher v2 (`run_pica_v2.py`):** add the same entry to the matching group in `CATALOG` in `pica/main_v2.py` (Advanced Options), to `QUICK_CATALOG` if it also belongs on Quick Select, and add a hover-card description for the same key to `MODULE_INFO` in `pica/module_info.py` (`tests/test_launcher_v2_search_and_hover.py` fails otherwise).
+3.  Run the launcher tests (`python -B -m pytest tests/test_gui_module_registry.py tests/test_launcher_v2_wiring.py tests/test_launcher_v2_search_and_hover.py -p no:cacheprovider`) to check that every key points to a file that exists.
 
 #### 5. Test and Document
 
@@ -134,4 +145,4 @@ For any questions, support, or assistance, please open a GitHub Issue in the mai
 
 ## Code of Conduct
 
-Everyone interacting in the PICA project's codebases, issue trackers, chat rooms, and mailing lists is expected to follow the [PICA Code of Conduct](CODE_OF_CONDUCT.md).
+Everyone interacting in the PICA project's codebases, issue trackers and pull requests is expected to follow the [PICA Code of Conduct](CODE_OF_CONDUCT.md).

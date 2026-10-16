@@ -41,6 +41,7 @@ pip install --upgrade pica-suite
    * [Standalone Temperature Utilities](#69-standalone-temperature-utilities)
    * [Bench Multimeter Logging (Keithley 197A)](#610-bench-multimeter-logging-keithley-197a)
    * [AC Transport (Keithley 6221 AC Current Source)](#611-ac-transport-keithley-6221-ac-current-source)
+   * [Memristor Switching (Keithley 2400)](#612-memristor-switching-keithley-2400)
 7. [Releases and Versions](#7-releases-and-versions)
 8. [Common Issues & Troubleshooting](#8-common-issues--troubleshooting)
 9. [Technical Reference](#9-technical-reference)
@@ -56,9 +57,9 @@ pip install --upgrade pica-suite
 
 ## 1. Overview
 
-High-precision, low-noise transport measurements are essential for advancing research in spintronics and materials characterization. To enable such progress, highly precise and accurate automation software is required. PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and material samples. PICA is designed as a versatile framework capable of operating on any standard laboratory workstation. 
-It provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analyser, and temperature controllers. Built on the robust Python scientific ecosystem, PICA leverages community standard libraries as an alternative to licensed commercial software for instrument control.
-By utilising `threading` and `multiprocessing` capabilities, PICA ensures that the entire hardware ecosystem functions seamlessly and as a single cohesive unit. This allows the system to perform automated protocols, including temperature-dependent wide range resistance measurement (10<sup>-8</sup> - 10<sup>16</sup> Ω), current voltage (I-V) characterisation,  capacitance characterisation, and pyroelectric current measurement, and orchestrates measurements under varying magnetic fields and temperatures without requiring physical reconfiguration of the measurement setups.
+High-precision, low-noise transport measurements are essential for advancing research in spintronics and materials characterization. To enable such progress, highly precise and accurate automation software is required. PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and material samples. It runs on a standard Windows laboratory PC, and its installation, tests and windows are also verified on Linux.
+It provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analysers, and temperature controllers. Built on the robust Python scientific ecosystem, PICA leverages community standard libraries as an alternative to licensed commercial software for instrument control.
+Using `threading` and `multiprocessing`, PICA drives these instruments together from one interface. It performs automated protocols, including temperature-dependent wide range resistance measurement (10<sup>-8</sup> - 10<sup>16</sup> Ω), current voltage (I-V) characterisation,  capacitance characterisation, and pyroelectric current measurement. Temperature is controlled or logged through a Lakeshore 350/340 or Cryo-con 34, and measurements can run inside a cryostat such as a PPMS while it sets the magnetic field, without rewiring the setup between protocols.
 
 ## 2. Design Philosophy & Architecture
 
@@ -77,15 +78,15 @@ While early automation scripts often rely on Command Line Interfaces (CLIs), the
 * **Workflow Visualization:** A visual interface helps new users and students mentally map the experimental workflow, reducing the learning curve.
 
 ### 2.3 Operational Transparency (No "Black Box")
-To foster trust and reproducibility, PICA rejects the opaque nature of proprietary software. measurement module features an **Embedded Console Log**:
+To foster trust and reproducibility, PICA rejects the opaque nature of proprietary software. Every measurement module has an **Embedded Console Log**:
 * **Status Streaming:** Displays a real-time stream of operations, such as "Ramping temperature to 300 K" or "Connecting to GPIB0::4::INSTR".
 * **Immediate Diagnostics:** Instantly reports VISA timeouts or command errors, providing exact context for hardware failures rather than generic error codes.
 
 ### 2.4 Architecture: Process Isolation
-PICA employs a multiprocess architecture using Python's `multiprocessing` library.
-* **Frontend (GUI):** Handles user interaction and live plotting.
-* **Backend (Logic):** Executes in a **separate, isolated process**.
-This ensures that if a measurement script hangs due to a hardware timeout, it does not crash the main application, preserving the stability of the suite and other concurrent tasks.
+The launcher starts every program in its own process with Python's `multiprocessing` library.
+* **Launcher:** Lists the programs, scans the bus and shows instrument status.
+* **Each measurement program:** Runs in a **separate process**, with its own window, plots and instrument connections.
+If a measurement program hangs on a hardware timeout or crashes, the launcher and the other open programs keep running, and the hung program can be closed on its own.
 
 ### 2.5 Self-Contained and Modular Programs
 In PICA, each program is designed to be self-contained. This architectural choice reduces dependency chains and mitigates the excessive abstraction layers that can make other projects difficult to understand or modify. Each program (i.e., each Python file or module) can operate independently, thereby facilitating debugging and maintenance.
@@ -108,8 +109,8 @@ The 32-bit Novocontrol Alpha-AN frequency scan and the 32-bit GPIB scanner call 
 :::
 
 #### Software Dependencies
-1.  **Python 3.10+**: The core execution environment.
-2.  **Dependencies:** Install via `pip install -r requirements.txt`.
+1.  **Python 3.10+** (tested on 3.10 to 3.13).
+2.  **Dependencies:** installed automatically by `pip install pica-suite` (NumPy, pandas, Matplotlib, SciPy, PyVISA, PyVISA-py, PyMeasure, Pillow, psutil, zeroconf).
 
 :::{warning}
 **A VISA Backend is Required:** [`PyVISA`](https://github.com/pyvisa/pyvisa) is a Python wrapper, not a driver. For PICA to communicate with hardware, you **must** install a VISA backend on your system first. If you attempt to run the software on a clean machine without a VISA implementation, it will fail to find the instruments. This is the most common failure point for new instrument control setups.
@@ -124,6 +125,16 @@ Choose one of the following:
 ### 3.2 Getting Started
 
 PICA is structured as a standard Python package. The steps below are for Windows, the platform PICA is validated on in the lab. For Linux, see [Installing on Linux](#installing-on-linux).
+
+**Option A: install from PyPI (recommended)**
+
+```bash
+pip install pica-suite
+```
+
+To upgrade an existing installation, run `pip install --upgrade pica-suite`.
+
+**Option B: install from source**
 
 1.  **Clone the Repository**
     ```bash
@@ -160,7 +171,7 @@ PICA is structured as a standard Python package. The steps below are for Windows
 
 **What has been checked:**
 
-| Check | Ubuntu 24.04, Python 3.10 (CI, every push) | Ubuntu 26.04, Python 3.14 (manual) |
+| Check | Ubuntu 24.04, CI on every push (full suite on Python 3.10, GUI smoke test on 3.13) | Ubuntu 26.04, Python 3.14 (manual) |
 |---|---|---|
 | `pip install` | Yes | Yes |
 | Test suite (mocked instruments) | Yes | Yes |
@@ -219,7 +230,7 @@ pica-gui
 ```
 
 **Differences from Windows:**
-- **Sleep during overnight runs.** On Windows, PICA stops the PC from sleeping during a run. On Linux it can't, so block sleep yourself, for example by launching PICA through `systemd-inhibit`:
+- **Sleep during overnight runs.** On Windows, the long unattended programs (the E4980A temperature, frequency and PPMS scans, the Cryo-con 34 R-T modules and the pressure logger) stop the PC from sleeping during a run; other modules do not. On Linux none can, so block sleep yourself, for example by launching PICA through `systemd-inhibit`:
   ```bash
   systemd-inhibit --what=idle:sleep --why="PICA measurement" pica-gui
   ```
@@ -241,7 +252,7 @@ pica-gui
     > You can also run any of the individual GUI measurement modules independently. This is useful for quickly accessing a specific measurement without opening the main launcher. To do this, simply run the Python script for the desired module.
     > For example:
     > ```bash
-    > python pica/keithley/k6517b/High_Resistance/IV_K6517B_GUI.py
+    > python -m pica.keithley.k6517b.High_Resistance.IV_K6517B_GUI
     > ```
 
 2.  **Launcher v2 (in testing)**
@@ -250,21 +261,26 @@ pica-gui
     that narrow a measurement down in plain language — and keeps the full card
     grid in an **Advanced Options** window (`Ctrl+Shift+A`, or the View
     menu). Advanced Options lists every module unfiltered, including those
-    Quick Select leaves out (Cryo-con 34 and Lakeshore 340 variants,
-    temperature utilities, Novocontrol Alpha-AN, bench multimeter). See
+    Quick Select leaves out (the Lakeshore 340 variants and most Cryo-con 34
+    ones, the temperature utilities, the Novocontrol Alpha-AN, the bench
+    multimeter, the pressure log, the function generator, the Keithley 2400
+    memristor modules and the diagnostic tools). See
     [Launcher v2](#55-launcher-v2-quick-select-and-advanced-options).
     ```bash
-    python run_pica_v2.py
+    python -m pica.main_v2
     ```
+    This works after `pip install pica-suite`. From a source checkout,
+    `python run_pica_v2.py` does the same. `pica-gui` always opens the
+    classic launcher.
 
 3.  **Command Line Interface (CLI)**
-    For headless operation (e.g., Raspberry Pi).
+    For headless operation, without the GUI.
     ```bash
     pica-cli
     ```
 
 :::{important}
-**Template Scripts:** The instrument control modules (CLI's) provided are designed as **template scripts**. Users are expected to modify these scripts programmatically to adapt them to their specific experimental requirements and custom workflows. They are also excellent for developing **custom measurement protocols, sequences, and for learning instrument automation**. These scripts are typically named with an 'Instrument_Control' suffix to denote their programmatic nature. This approach ensures maximum flexibility and customization for advanced research applications.
+**Template Scripts:** The instrument control modules (CLIs) provided are designed as **template scripts**. Users are expected to edit these scripts to adapt them to their specific experimental requirements and custom workflows. They are also excellent for developing **custom measurement protocols, sequences, and for learning instrument automation**. These scripts are typically named with an 'Instrument_Control' suffix to denote their programmatic nature. This approach ensures maximum flexibility and customization for advanced research applications.
 :::
 
 :::{note}
@@ -281,11 +297,15 @@ If you plan to contribute to PICA or run the test suite, you will need to instal
 pip install -r requirements-dev.txt
 ```
 
-How to Check Coverage Locally
+Run the test suite (all instruments are mocked, so no hardware is needed):
 
-To see the coverage percentage on your local machine, run this command instead:
+```bash
+python -B -m pytest -p no:cacheprovider
+```
 
-```powershell
+To see the coverage percentage as well:
+
+```bash
 python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
 ```
 
@@ -301,9 +321,9 @@ python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
 
 *File Reference: `pica/utils/GPIB_Instrument_Scanner_GUI.py`*
 
-Automatically launched upon startup (and accessible within modules), this utility scans for connected hardware. It uses `ResourceManager.list_resources()` to find devices and sends a standard `*IDN?` query to verify communication. This allows users to verify their hardware configuration before starting any experiment. The VISA scanner also includes an address guide, which can be edited by the user for quick reference.
+Launched automatically at startup by the classic launcher (`pica-gui`), and accessible from the modules, this utility scans for connected hardware. It uses `ResourceManager.list_resources()` to find devices and sends a standard `*IDN?` query to verify communication. This allows users to verify their hardware configuration before starting any experiment. The VISA scanner also includes an address guide (a reference table kept in the script, which a lab can edit to match its rack).
 
-In the main PICA launcher, the VISA/GPIB scanner is configured to execute automatically at application startup. This design choice is motivated by the fact that initiating a measurement without first verifying the instrument connection is highly likely to fail and may result in non-informative error messages, such as a VISA connection timeout.
+In the classic launcher (`pica-gui`), the VISA/GPIB scanner opens automatically about half a second after startup; launcher v2 instead opens it with Advanced Options (§5.5). This design choice is motivated by the fact that initiating a measurement without first verifying the instrument connection is highly likely to fail and may result in non-informative error messages, such as a VISA connection timeout.
 
 :::{figure} Images/screenshots/01_GPIB_Scanner.png
 :alt: GPIB Scanner
@@ -333,38 +353,38 @@ The PICA Plotter Utility, a tool for data visualization and comparative analysis
 
 ### 5.3 Embedded Document Viewer
 
-To ensure the software is self-contained (useful for offline lab computers), PICA includes an in-app viewer for project documentation, including this User Manual, the Instrument Manuals List, the License, and the Changelog.
+To ensure the software is self-contained (useful for offline lab computers), PICA includes an in-app viewer for project documentation: this User Manual, the README, the Change Log and the License.
 
 ### 5.4 Measurement Module Interface
 
-Each measurement module consists of two primary windows: the control window on the left and the plotter window on the right. The dimensions of both windows are resizable. Upon launching a measurement module, it is recommended to first enlarge the control window, as it is required for configuring all experimental parameters. Typical settings include specifying the sample file name, selecting the file storage location, choosing the instrument address via a selection box, and defining voltage and temperature step sizes, delays, and other experimental parameters.
+Each measurement module is a single window with two panels, the control panel on the left and the plot panel on the right, separated by a draggable divider. Upon launching a measurement module, it is recommended to first widen the control panel, as it is required for configuring all experimental parameters. Typical settings include specifying the sample file name, selecting the file storage location, choosing the instrument address via a selection box, and defining voltage and temperature step sizes, delays, and other experimental parameters.
 
-The control window also contains a console located below the parameter settings. This console can be scrolled and provides a continuous log of all operations executed by the software. The right-hand plot window is a simplified plotting interface that can display one, two, or three plots, depending on the specific module. The plots are updated in real time, and some modules allow switching the axes to a logarithmic scale to improve data visualization. The plotting interface is intentionally kept minimalistic, with limited functionality, to reduce unnecessary user interaction with the measurement setup, and maintaining the measurement program in a simplified form by omitting nonessential features.
+The control panel also contains a console located below the parameter settings. This console can be scrolled and provides a continuous log of all operations executed by the software. The right-hand plot panel is a simplified plotting interface that can display one to four plots, depending on the specific module. The plots are updated in real time, and some modules allow switching the axes to a logarithmic scale to improve data visualization. The plotting interface is intentionally kept minimalistic, with limited functionality, to reduce unnecessary user interaction with the measurement setup and to keep the measurement program simple by omitting nonessential features.
 
-Above the plot area, there are two buttons providing access to the [VISA Instrument Scanner](#51-visa-instrument-scanner) and [PICA Plotter Utility](#52-pica-plotter-utility). These utilities are accessible from all modules to facilitate rapid testing and diagnostics. The VISA/GPIB scanner allows the user to quickly verify whether instruments are properly connected and recognized by the system, while the plotter utility offers additional plotting capabilities beyond those available in the default plot window.
+At the right end of the header bar, at the top of the window, two icon buttons open the [VISA Instrument Scanner](#51-visa-instrument-scanner) (📟) and the [PICA Plotter Utility](#52-pica-plotter-utility) (📈). Nearly every measurement module carries them (the Voltage Polling module has the scanner only), so rapid testing and diagnostics are one click away. The VISA/GPIB scanner allows the user to quickly verify whether instruments are properly connected and recognized by the system, while the plotter utility offers additional plotting capabilities beyond those available in the default plot window.
 
 
 ### 5.5 Launcher v2: Quick Select and Advanced Options
 
-*File Reference: `pica/main_v2.py` (run with `python run_pica_v2.py`)*
+*File Reference: `pica/main_v2.py` (run with `python -m pica.main_v2`, or `python run_pica_v2.py` from a source checkout)*
 
 Launcher v2 is a second dashboard, developed alongside the classic launcher
-(`pica-gui`), which it does not replace. It exists because the two people who
-use PICA want opposite things from it: someone meeting the instrument rack for
-the first time wants to be asked what they are measuring, and someone who runs
-the rack every day wants every module on one screen. v2 gives each of them a
-window.
+(`pica-gui`), which it does not replace. It exists because PICA has two kinds
+of user who want opposite things from it: someone meeting the instrument rack
+for the first time wants to be asked what they are measuring, and someone who
+runs the rack every day wants every module on one screen. v2 gives each a
+window of its own.
 
 **Quick Select (the main screen).** Three dropdowns, answered in the order a
-person actually thinks in:
+person naturally thinks about a measurement:
 
 1. **Category** — *DC Resistance*, *AC Resistance*, *Impedance Spectroscopy*
    or *Pyroelectric*.
 2. **Module** — the resistance range or the measurement style. Under DC
-   Resistance: *Ultra Low Resistance* (~10 nΩ – 1 µΩ), *Low Resistance* (above
-   ~1 µΩ), *Resistance, High Precision* (~1 µΩ – 100 MΩ), *Normal Resistance*
-   (~100 µΩ – 200 MΩ) and *High Resistance* (~1 Ω – 10 PΩ). The ranges are
-   approximate, which is what the "~" says. Ultra Low and Low
+   Resistance: *Ultra Low Resistance* (10 nΩ – 1 µΩ), *Low Resistance* (above
+   1 µΩ), *Resistance, High Precision* (1 µΩ – 100 MΩ), *Normal Resistance*
+   (100 µΩ – 200 MΩ) and *High Resistance* (1 Ω – 10 PΩ). All of these ranges
+   are approximate. Ultra Low and Low
    run the same delta-mode scripts; they are listed separately because a
    10 nΩ contact and a 10 mΩ film are different measurements to the person
    making them, whatever the instrument pair.
@@ -388,10 +408,11 @@ with the rack. The protocol block ends with a *You enter* line listing the
 fields that program's form will ask for — the same list the hover card and
 the Ctrl+F search show, from the same entry in `pica/module_info.py`.
 
-The **Cryo-con 34** appears in Quick Select under the LCR meter and the
-electrometer only — the two benches it serves — where its protocols sit next
-to the Lakeshore 350 ones. Every other module is Lakeshore 350 here; the
-Cryo-con twins of those scripts still exist and are in Advanced Options.
+The **Cryo-con 34** appears in Quick Select under the LCR meter, the
+electrometer and the two AC benches (lock-in and DMM), where its protocols sit
+next to the Lakeshore 350 ones. The delta-mode and Keithley 2400 modules are
+Lakeshore 350 only here; their Cryo-con twins still exist and are in Advanced
+Options.
 
 > **Two shortcuts find any program.** **`Ctrl+Shift+A`** opens **Advanced
 > Options**: every module PICA ships, nothing filtered. **`Ctrl+F`** opens
@@ -402,8 +423,9 @@ Cryo-con twins of those scripts still exist and are in Advanced Options.
 grid: every module PICA ships, grouped by measurement range and instrument,
 with the folder shortcut on each card. Nothing here is filtered or
 range-limited — this is the expert route, and the one to use for the
-temperature utilities, the Novocontrol Alpha-AN and the bench multimeter,
-which Quick Select does not list. The window opens maximised and reflows its
+temperature utilities, the Novocontrol Alpha-AN, the bench multimeter, the
+pressure log, the function generator and the memristor modules, which Quick
+Select does not list. The window opens maximised and reflows its
 cards into up to four columns, so a wide screen shows more of them before you
 scroll; its bottom strip is the compact one, with the Instrument Status button
 in place of the chips.
@@ -445,8 +467,8 @@ calculators — are in the list as well.
 
 **Console.** Everything the launcher does is logged, whether or not anything
 is showing it. Quick Select keeps it behind the **Console** button on the
-strip, which opens it in a window of its own; Advanced Options carries one
-inline, above its strip. A console opened after the fact still shows the lines
+strip, which opens it in a window of its own; Advanced Options carries a
+three-line console inside its strip. A console opened after the fact still shows the lines
 written at startup, and every open view updates together.
 
 **View menu.** Every window the launcher can show is in one place: Main
@@ -464,9 +486,9 @@ function (`f(x) = x^2 + 1`) for the lines below, and `ans` is the line above.
 `^` is a power; `2pi`, `3(x+1)` and `I R` multiply; RAD / DEG sets the
 trigonometry.
 
-**Pressure gauge.** The Pfeiffer TPG 361 address is set from the gauge
-button in the top-right corner of Advanced Options, or by searching for
-`pressure`. It is not in the Tools menu.
+**Pressure gauge.** The Pfeiffer TPG 361 address is set from the
+**Gauge Address Setup** row on the Vacuum Gauge Logging card in Advanced
+Options, or by searching for `pressure`. It is not in the Tools menu.
 
 **Help menu.** User Manual, README, Change Log and License open in a viewer
 inside the launcher (with **Open on GitHub** as a fallback). **About PICA**
@@ -475,27 +497,28 @@ with a **Copy Info** button for bug reports; **Cite PICA** gives the citation
 in APA and BibTeX form, and the DOI, each with its own **Copy** button.
 
 **Status strip.** Both windows carry a band along their bottom edge. On Quick
-Select it holds only what a measurement actually needs to know before it
-starts — the temperature snapshot, a pressure tile (a placeholder: no gauge is
-on the bus yet, and the tile is drawn now so the strip does not change shape
-when one arrives), and a button reading, for example, *Instrument Status
-3/10 on the bus*. Advanced Options keeps the whole instrument list on its
-strip, chip by chip.
+Select it holds the temperature snapshot, a pressure tile (reading "no gauge
+configured" until a Pfeiffer TPG 361 address has been set; after that it shows
+the pressure from each scan), the instruments the current choice needs (each
+with its light), and the **Console**, **Reload** and **Instrument Status**
+buttons. The status button reads, for example, *Instrument Status 3/10 on the
+bus*. Advanced Options uses a compact strip with the readings, a three-line
+console and the Instrument Status button, but no chips.
 
 **Instrument Status window.** It opens by itself a moment after the launcher
 starts, and fills in when the first scan lands (so it still appears, and still
 explains itself, when PyVISA is missing or the VISA backend errors). After
 that it is opened from the strip button — launching a measurement does not
-raise it, which would only bury the module you just asked for. Launching does
-repaint the bottom panel of every open window; it does not rescan, because a module that has just started is opening its own
+raise it, which would only bury the module you just asked for. A launch from
+Quick Select or Search repaints the bottom panel of every open window; it does not rescan, because a module that has just started is opening its own
 connections and the launcher must stay off the bus. Press **Reload** for a
 deliberate rescan. The window is the launcher's own VISA scanner:
 
 * every known instrument as a chip with its light. The dot key reads
-  **green ●** — on the bus and answering (the dot blinks), **grey ●** — not
-  found on the last scan, **hollow ○** — never probed (the Novocontrol
-  Alpha-AN is permanently in this state; see the
-  [GPIB runbook](Novocontrol_GPIB_Runbook.md) for why).
+  **● on** (green, blinking: on the bus and answering), **● off** (grey: not
+  found on the last scan) and **○ protected** (hollow: never probed; the
+  Novocontrol Alpha-AN is permanently in this state, see the
+  [GPIB runbook](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/docs/Novocontrol_GPIB_Runbook.md) for why).
 * an instrument that answers but matches nothing in the reference table gets
   a chip of its own, named from its `*IDN?` reply and marked **(new)** — so a
   newly racked instrument shows up without anyone editing PICA first.
@@ -506,37 +529,38 @@ deliberate rescan. The window is the launcher's own VISA scanner:
   dots — no address is opened twice to build it — and appears half a second
   after the lights settle.
 * **Full VISA / GPIB Scanner** opens the standalone scanner utility
-  (§5.1), unchanged, for the address guide and for sending SCPI by hand. It
-  is not opened at startup — it repeats, in a second process and a second
-  pass over the bus, what this window already shows — but it does come up
-  with Advanced Options by default, and it is in the Tools menu and on the
-  toolbar.
+  (§5.1), unchanged, for its address guide (the SCPI Console, in the Tools
+  menu, is the place to send commands by hand). It is not opened at startup,
+  because it repeats, in a second process and a second pass over the bus,
+  what this window already shows. It does open about 1.5 s after Advanced
+  Options is opened, and it is in the Tools menu and on the toolbar.
 
 :::{important}
 The strip is filled by a single read-only scan at startup, and again only when
 **Reload** is pressed. The launcher never polls in the background, so once a
-measurement is running it stays off the GPIB bus. Pressing Reload while a
-measurement launched from that window is still alive raises a confirmation
+measurement is running it stays off the GPIB bus. Pressing Reload while any
+measurement started from the launcher is still running raises a confirmation
 first.
 :::
 
 ## 6. Supported Measurement Modules
 
-The system is currently validated with industry-standard hardware, covering a resistance range spanning 24 orders of magnitude, 10<sup>-15</sup> resolution pyroelectric current measurements, and capacitance characterisation from 20 Hz - 2 MHz.
+The system is currently validated with industry-standard hardware, covering a resistance range spanning 24 orders of magnitude, pyroelectric current measurements with 10<sup>-15</sup> A resolution, and capacitance characterisation from 20 Hz - 2 MHz.
 
 | Module | Configuration / Instrument | Use Case | Range |
 | :--- | :--- | :--- | :--- |
-| **Ultra Low Resistance Measurements** | **Keithley 6221** + **K2182** + Lakeshore 350/340 | Superconductors & metallic films; cancels thermal EMFs via AC Delta method. | 10 nΩ - 100 MΩ |
+| **Ultra Low Resistance Measurements** | **Keithley 6221** + **K2182** + Lakeshore 350/340 | Superconductors & metallic films; cancels thermal EMFs by current reversal (Keithley Delta mode). | 10 nΩ - 100 MΩ |
 | **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter + Lakeshore 350/340 | Semiconductors, oxides, general transport. | 100 µΩ - 200 MΩ |
 | **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** + Lakeshore 350/340 | Detecting subtle phase transitions. | 1 µΩ - 100 MΩ |
 | **High-Resistance** | **Keithley 6517B** Electrometer + Lakeshore 350/340 | High bandgap materials, polymers, & ceramics. | 1 Ω - 10 PΩ |
 | **Capacitance Analysis** | **Keysight E4980A** + Lakeshore 350/340 | C-V Analysis and Magnetocapacitance characterization. | 20 Hz - 2 MHz |
-| **Broadband Dielectric** | **Novocontrol Alpha-AN** + ZG4 | Permittivity, electric modulus & AC conductivity (WinDETA-compatible). | 3 µHz - 20 MHz |
+| **Broadband Dielectric** | **Novocontrol Alpha-AN** + ZG4 | Permittivity, electric modulus & AC conductivity (WinDETA-compatible). Experimental. | 20 Hz - 10 MHz |
+| **Memristor switching** | **Keithley 2400** | Switching I-V, retention and endurance of resistive-switching devices. | ±200 V source, hardware never-exceed voltage and current compliance set per run |
 | **Pyroelectric** | **K6517B** + Lakeshore 350/340 | Current vs Temp (detecting Curie temperature). | 10<sup>-15</sup> A Resolution |
 
 *While the current implementation drives specific instruments, the underlying framework is highly customizable. Researchers need only replace specific SCPI commands to utilize the suite with different models.*
 
-PICA is designed to be as versatile, while being optimized for specific classes of instruments. The following modules represent the core capabilities of the suite, supporting a resistance scale spanning **24 orders of magnitude** (10 nΩ to 10 PΩ) depending on the hardware used.
+PICA is designed to be versatile while being optimized for specific classes of instruments. The following modules represent the core capabilities of the suite, supporting a resistance scale spanning **24 orders of magnitude** (10 nΩ to 10 PΩ) depending on the hardware used.
 Pyroelectric measurement performed using an electrometer enables highly sensitive characterization of ferroelectric phase transitions by detecting extremely small pyroelectric currents, with a resolution on the order of 10<sup>-15</sup> A. The
 impedance analyzer enables the characterization of capacitance anomalies over the frequency range from 20 Hz to 2 MHz and is utilized for magnetocapacitance and photoinduced characterization across a wide variety of multiferroic systems. 
 
@@ -546,7 +570,7 @@ impedance analyzer enables the characterization of capacitance anomalies over th
 **Typical Range:** 10 nΩ to 100 MΩ.
 
   * **Scientific Objective:** Ideal for superconductors, metallic films, and low-impedance devices. It actively cancels thermal offsets (Seebeck EMFs) generated in leads and contacts.
-  * **Principle:** Uses the **AC Delta Method**.
+  * **Principle:** Uses the Keithley **Delta mode** (current reversal).
 
 :::{note}
 **Understanding "Delta Mode":** The term "Delta Mode" refers specifically to a technique used by Keithley Models 6220 and 6221 Current Sources in conjunction with the Model 2182/2182A Nanovoltmeter for very low resistance measurements. This method is described in detail in the [Keithley Low Level Measurements Handbook](https://www.tek.com/en/documents/product-article/keithley-low-level-measurements-handbook---7th-edition). In this documentation, "Ultra Low Resistance Measurements" is used as the general scientific term, while "Delta Mode" may appear when specifically referencing the Keithley-specific method or program files.
@@ -555,7 +579,7 @@ impedance analyzer enables the characterization of capacitance anomalies over th
 2. Source -I, measure V2.
 3. Compute V\_corr = (V1 - V2) / 2.
 
-The software synchronizes the source and voltmeter via a **hardware trigger link (RS-232)** for microsecond-level timing.
+The 6221 runs the sequence itself: it talks to the 2182 over an RS-232 cable and synchronises each reading through a Trigger Link cable. Both cables are needed.
 :::
 
 :::{figure} Images/screenshots/K6221_IV_Sweep.png
@@ -563,7 +587,7 @@ The software synchronizes the source and voltmeter via a **hardware trigger link
 :width: 600px
 :align: center
 
-I-V sweep measurement using the Sweep Mode, designed for low-resistance measurements with a Keithley 6221 and 2182. Sweep types: linear or logarithmic Start to Stop, or a Custom List of currents (uA) pasted from the List Maker; the 105 mA source limit is checked before the instruments are touched.
+I-V sweep measurement using the Sweep Mode, designed for low-resistance measurements with a Keithley 6221 and 2182. Sweep types: linear or logarithmic Start to Stop, or a Custom List of currents (µA) pasted from the List Maker; the 105 mA source limit is checked before the instruments are touched.
 :::
 
 :::{figure} Images/screenshots/K6221_RT_Control.png
@@ -650,10 +674,10 @@ High-precision R-T measurement in sensing mode, leveraging the K2400 and K2182 f
 
 ### 6.4 Electrometry & High Resistance
 
-**Target Hardware:** Keithley 6517B Electrometer (or compatible High-R meter).
+**Target Hardware:** Keithley 6517B Electrometer.
 **Typical Range:** 1 Ω to 10 PΩ (10<sup>16</sup> Ω).
 
-  * **Scientific Objective:** Characterization of capacitances, polymers, and ceramics (Electrometry).
+  * **Scientific Objective:** Characterization of insulators, polymers, and ceramics (Electrometry).
   * **Principle (Voltage Driven):** Applies a high voltage and measures the resulting leakage current (pA/fA range).
   * **Note:** PICA manages instrument settling times, allowing for a necessary initial delay for the system to stabilize. This is crucial in high-impedance setups to ensure steady-state ohmic currents are accurately recorded.
 
@@ -717,8 +741,8 @@ This utility provides a dedicated interface for **In-situ and ex-situ electrical
 ### 6.7 Dielectric Spectroscopy
 
 **Target Hardware:** Keysight E4980A Precision LCR Meter.
-**Frequency Range:** 20 Hz to 2 MHz
-  * **Temperature Range:** 5 K – 380 K
+**Frequency Range:** 20 Hz to 2 MHz.
+**Temperature Range:** set by the cryostat (validated 5 K – 380 K in a PPMS).
 
   *   **Scientific Objective:** Measures Capacitance (C) and Loss Tangent (tan delta) as a function of frequency or DC bias voltage (C-V Analysis).
 
@@ -736,8 +760,8 @@ Capacitance-Voltage (C-V) characterization of a device or a sample using a Keysi
 
 ### 6.8 Broadband Dielectric Spectroscopy
 
-**Target Hardware:** Novocontrol Alpha-AN Impedance Analyzer with a ZG4 sample interface, over direct GPIB.
-**Frequency Range:** 3 µHz to 20 MHz (this module sweeps a fixed 20 Hz – 1 MHz logarithmic series, 115 points).
+**Target Hardware:** Novocontrol Alpha-AN Impedance Analyzer with a ZG4 sample interface, over GPIB through VISA. *Status: experimental.*
+**Frequency Range:** the module runs one of two fixed logarithmic series, 115 points from 20 Hz to 1 MHz (default) or 40 points from 20 Hz to 10 MHz.
 
   *   **Scientific Objective:** Measures the complex permittivity (ε', ε''), electric modulus (M', M'') and AC conductivity (σ', σ'') of a dielectric sample at fixed temperature. Output is written in a **WinDETA-compatible** format so it opens directly in Novocontrol's WinFIT analysis tool, alongside a PICA `.dat` for the built-in Plotter.
 
@@ -913,6 +937,25 @@ and takes the 6221 output off on every exit path.
 *Status: experimental. The pairings work and the conversions are tested, but
 neither set has been through a full measurement campaign.*
 
+### 6.12 Memristor Switching (Keithley 2400)
+
+**Target Hardware:** Keithley 2400 SourceMeter, sourcing voltage with a current compliance.
+*New in v1.0.7.*
+
+Three measurement programs in `pica/keithley/k2400/` and one analysis utility:
+
+  * **Switching I-V sweep** (`Memristor_Sweep_K2400_GUI.py`): voltage loops with a separate maximum voltage and current compliance for the positive and negative sides. Loop shapes: bipolar (positive or negative side first), unipolar + or −, and a ladder that runs one bipolar loop per listed amplitude. An optional pause can be set between loops.
+  * **Retention** (`Memristor_Retention_K2400_GUI.py`): writes one state (SET for the low-resistance state, RESET for the high-resistance state, or nothing for a control run), then reads the resistance against time since the write. Master mode runs control, LRS and HRS one after another on one connection, with a rest at 0 V between them.
+  * **Endurance** (`Memristor_Endurance_K2400_GUI.py`): SET, read, RESET, read, repeated for N cycles, with each write done as a sweep or a pulse. One summary row per cycle, plus full I-V data for the cycles you list.
+  * **Memristor Analysis** (`pica/utils/Memristor_Analysis_GUI.py`, in PICA Utils): reads the files the three programs write and reports V set / V reset, the retention ratio and drift, and the endurance window against cycle number. It only reads: it never changes or writes a file.
+
+Shared behaviour:
+
+  * A **never-exceed voltage** is set on the 2400 itself (its hardware voltage protection) in addition to the software limits.
+  * Data files hold data only: a commented header, the column row and the data. Retries, reconnects and the end reason go to a separate `_log.txt` file next to the data.
+  * A bus error is retried at growing intervals, and the run continues after a reconnect. Nothing modal appears during or after a run.
+  * The run-end beep uses Windows' `winsound`. On Linux these three programs are silent; the console and banners still report the end of the run.
+
 ## 7. Releases and Versions
 
 For downloadable release builds, please visit the [Releases page](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases).
@@ -955,14 +998,16 @@ pip install . --force-reinstall
 ### 9.1 File Naming Convention
 
 To ensure data integrity and easy sorting, PICA automatically generates filenames using a standardized format. This allows for easier parsing by external analysis tools.
-Format: `[SampleName]_[Timestamp]_[Identifier].dat`
-Example: `SampleA_2025-12-04_1430_IV_Sweep.dat`
+Format: `[SampleName]_[YYYYMMDD_HHMMSS]_[Identifier].dat`
+Example: `SampleA_20251204_143000_IV.dat`
+
+Some modules write more than one file per run (for example a separate `_log.txt` for events, or a summary file next to the raw data); each name starts with the same sample name and timestamp.
 
 ### 9.2 GPIB Address Guide
 
-PICA uses standard VISA resource strings. While the defaults below are common, users should verify their specific instrument addresses using the built-in **Instrument Scanner** or front-panel settings.
+PICA uses standard VISA resource strings. The addresses below are the ones on the authors' rack, and several GUIs use them as defaults. Your rack will almost certainly differ: find the real addresses with the built-in **Instrument Scanner** or on each instrument's front panel, and pick them from the address dropdown in each module.
 
-  * **Lake Shore 350:** `GPIB1::15::INSTR`
+  * **Lake Shore 350:** `GPIB1::12::INSTR`
   * **Lake Shore 340:** `GPIB1::19::INSTR`
   * **Cryo-con 34:** `GPIB1::23::INSTR`
   * **Keithley 2400:** `GPIB1::4::INSTR`
@@ -978,14 +1023,14 @@ This project is manually backed up weekly to a [GitLab repository](https://gitla
 
 ### 9.4 Data File Format
 
-The data file includes a commented header line (starting with `#`) that contains metadata, such as the sample name. This is followed by a header row with column names and then the data rows.
+The data file starts with commented header lines (starting with `#`) that hold metadata such as the sample name, the date and the run parameters. These are followed by a row of column names and then the data rows. The example below, from `examples/`, has a single header line; files from current modules carry more.
 
 This structure makes it easy to import the data into various analysis programs like Origin, or to parse it programmatically with libraries like Pandas.
 
 **Example: Ultra Low Resistance (I-V) Module**
 
 ```text
-# Sample: Delta_Test_10ohm
+# Sample: Low_R_Test_10ohm
 Set Current (A),Measured Voltage (V),Resistance (Ohm)
 -1.000000e-05,-1.037917e-04,1.037917e+01
 -9.797980e-06,-1.017006e-04,1.037975e+01
@@ -1109,7 +1154,6 @@ PICA (Root Directory)/
     robots.txt
     run_pica.py
     run_pica_v2.py
-    setup.cfg
     setup.py
     .github/
         workflows/
@@ -1164,9 +1208,12 @@ PICA (Root Directory)/
                 Monitor_K197A_GUI.py
                 Instrument_Control/
                     Monitor_K197A_Instrument_Control.py
-            k2400/              <-- Mid resistance (K2400)
+            k2400/              <-- Mid resistance and memristor switching (K2400)
                 IV_K2400_GUI.py
                 K2400_DirectControl_GUI.py
+                Memristor_Endurance_K2400_GUI.py
+                Memristor_Retention_K2400_GUI.py
+                Memristor_Sweep_K2400_GUI.py
                 RT_K2400_CC34_T_Sensing_GUI.py
                 RT_K2400_L340_T_Control_GUI.py
                 RT_K2400_L340_T_Sensing_GUI.py
@@ -1281,6 +1328,7 @@ PICA (Root Directory)/
             GUI_Basic_Format.py
             List_Maker_GUI.py
             MD_Ratio_Calculator_GUI.py
+            Memristor_Analysis_GUI.py
             PE_plotter.py
             PID_Simulator_GUI.py
             PlotterUtil_GUI.py
@@ -1291,5 +1339,5 @@ PICA (Root Directory)/
             parser.py
     tests/                      <-- Automated test suite (pytest, mocked VISA)
         conftest.py
-        test_*.py               (67 files)
+        test_*.py               (81 files)
 ```

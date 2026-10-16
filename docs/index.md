@@ -1,7 +1,7 @@
 ---
 myst:
   html_meta:
-    description: "PICA is an open-source Python suite for laboratory instrument control and automation — GPIB/VISA and SCPI orchestration of Keithley, Keysight, Lakeshore, and Novocontrol instruments for cryogenic transport, resistivity, I-V, dielectric, and pyroelectric measurements."
+    description: "PICA is an open-source Python suite for laboratory instrument control and automation — GPIB/VISA and SCPI orchestration of Keithley, Keysight, Lake Shore, Cryo-con, Novocontrol, Stanford Research, Tektronix and Pfeiffer instruments for cryogenic transport, resistivity, I-V, dielectric, and pyroelectric measurements."
     keywords: "Python instrument control, laboratory automation, GPIB, PyVISA, SCPI, Keithley, Keysight E4980A, Lakeshore 350, cryogenics, transport measurements"
 ---
 
@@ -36,6 +36,10 @@ Then launch the GUI:
 pica-gui
 ```
 
+or open Launcher v2 (Quick Select, search, hover cards) with `python -m pica.main_v2`.
+
+**Platforms:** Windows 10/11 is fully supported and used daily with real instruments. On Linux, installation, the test suite and every GUI are verified; measurements against real instruments are not yet verified. macOS has not been tested.
+
 ---
 
 ## Key Features
@@ -43,7 +47,7 @@ pica-gui
 - **Unified GUI** — Single launcher for all measurement modules
 - **Wide resistance range** — 10 nΩ to 10 PΩ across four hardware configurations
 - **Real-time plotting** — Live visualization during acquisition
-- **Process isolation** — Backend crashes never affect the GUI
+- **Process isolation** — each measurement program runs in its own process, so a hung or crashed program does not take down the launcher
 - **Open source** — MIT licensed, fully auditable SCPI commands
 
 ---

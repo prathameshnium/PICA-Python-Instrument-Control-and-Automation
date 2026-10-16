@@ -28,9 +28,9 @@ The steps you took, including the parameters you entered (sample name, temperatu
 ## PICA console log (required for module problems)
 
 Every measurement module has a scrolling console at the bottom of its control
-window. Click in it, press Ctrl+A, Ctrl+C, and paste the text here. The
-Diagnostics and SCPI Console tools have a "Save Log As..." button instead;
-attach that file.
+window. Click in it, press Ctrl+/ (select all on Linux), then Ctrl+C, and paste the text here. The
+Diagnostics tools have a "Save Log As..." button and the SCPI Console has a
+"Save Log" button instead; attach that file.
 
 ```text
 paste the console log here
