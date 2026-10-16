@@ -102,7 +102,7 @@ pip install --upgrade pica-suite
 
 Highlights — *changes since v1.0.6*:
 
-* **Linux documentation:** a Linux install guide (venv, tkinter, `pyvisa-py`, USB-TMC / serial / GPIB) and a "Linux report" issue template. This is documentation only; running against real instruments on Linux is not yet verified.
+* **Linux documentation:** a Linux install guide (venv, tkinter, `pyvisa-py`, USB-TMC / serial / GPIB) and a "Linux report" issue template; running against real instruments on Linux is not yet verified.
 * **Memristor modules (Keithley 2400):** switching I-V sweep, retention and endurance programs, plus a read-only Memristor Analysis utility.
 * **C-V module v2 (Keysight E4980A):** rewritten sweep builder (bipolar, unipolar, ladder), bus-error retry and a separate event log.
 * **K6221 / 2182 I-V:** custom list sweeps (paste from the List Maker), µA units and zero-crossing fixes.
