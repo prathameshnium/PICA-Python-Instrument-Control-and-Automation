@@ -13,7 +13,7 @@ authors:
 title: "PICA: Advanced High-Precision Transport Measurement Automation with Python"
 version: 1.0.7
 doi: 10.5281/zenodo.18377216
-date-released: 2026-10-14
+date-released: 2026-10-17
 url: "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
 repository-code: "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
 license: MIT

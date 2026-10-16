@@ -4,7 +4,7 @@ All notable changes to PICA are documented here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
-## [1.0.7] - 2026-10-14
+## [1.0.7] - 2026-10-17
 
 ### Added
 

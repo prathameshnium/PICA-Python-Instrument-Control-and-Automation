@@ -1059,7 +1059,7 @@ The full preprint of the PICA software suite, detailing its design, implementati
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
   title        = {{PICA: Advanced High-Precision Transport Measurement Automation with Python}},
   month        = oct,
-  day          = 14,
+  day          = 17,
   year         = 2026,
   publisher    = {Zenodo},
   version      = {1.0.7},
