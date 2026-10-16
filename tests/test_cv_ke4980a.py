@@ -12,14 +12,16 @@ import ast
 import inspect
 import math
 import os
+import queue
 import sys
 import tempfile
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cv_ke4980a_test_support import (  # noqa: E402
     FakeE4980A, MODULES, gui, script, run_cv, read_data_file, column, log_lines,
-    plotter_reads, run_module_tests, base_params)
+    plotter_reads, run_module_tests, base_params, make_link, run_worker)
 
 
 def _tmp():
@@ -582,3 +584,111 @@ def test_source_hygiene_no_sample_names_no_pymeasure_ascii_sources():
 
 if __name__ == "__main__":
     run_module_tests(dict(globals()))
+
+
+def test_small_voltage_steps_are_applied_not_skipped():
+    for mod in MODULES:
+        folder = _tmp()
+        fake = FakeE4980A()
+        run_cv(fake, folder, mod=mod, cycle_mode=False, v_start=0.0, v_stop=0.05, v_step=0.005)
+        bias = [round(float(w.split()[1]), 3) for w in fake.writes if w.startswith(":BIAS:VOLT ")]
+        for k in range(1, 11):
+            assert round(k * 0.005, 3) in bias
+        try:
+            mod.validate_params(base_params(folder, v_step=0.0005))
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("a 0.5 mV step must be refused")
+
+
+def _expect_value_error(fn):
+    try:
+        fn()
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError")
+
+
+def test_nan_or_sub_millivolt_voltages_are_refused_not_clamped_or_rounded():
+    folder = _tmp()
+    for mod in MODULES:
+        for extra in (dict(cycle_mode=False, v_start=0.0, v_stop="nan"),
+                      dict(v_stop=float("-nan")),
+                      dict(v_step=0.0015),
+                      dict(cycle_mode=False, v_start=0.1234, v_stop=1.0),
+                      dict(shape=mod.SHAPE_LADDER, ladder="0.5, 1.0005")):
+            _expect_value_error(lambda: mod.validate_params(base_params(folder, **extra)))
+        # an ignored field may hold anything the entry allows, e.g. a lone "-"
+        p = mod.validate_params(base_params(folder, shape=mod.SHAPE_LADDER, ladder="0.5, 1",
+                                            v_stop="-", v_start="."))
+        assert p["ladder"] == [0.5, 1.0]
+
+
+def test_retried_command_never_runs_before_a_reconnect_fully_succeeds():
+    for mod in MODULES:
+        folder = _tmp()
+        fake = FakeE4980A(fail_reads={1})
+        at_fetch = []
+        fake.on_fetch = lambda idx: at_fetch.append((fake.freq, fake.v))
+        real_write = fake.write
+        failed = []
+
+        def write(cmd):
+            # the :FREQ restore inside the first reconnect fails once
+            if cmd.startswith(":FREQ") and fake.opens == 2 and not failed:
+                failed.append(cmd)
+                raise IOError("VI_ERROR_TMO: timeout")
+            real_write(cmd)
+        fake.write = write
+        worker, _, files, _ = run_cv(fake, folder, mod=mod, cycle_mode=False, v_start=1.0,
+                                     v_stop=2.0, freq_list="5000")
+        assert failed and worker.end_reason == "complete"
+        assert all(f == 5000.0 for f, _ in at_fetch[2:]), at_fetch
+        _, columns, rows, _ = read_data_file(files[0])
+        volts = column(rows, columns, "Voltage(V)")
+        vdc = column(rows, columns, "Vdc_mon(V)")
+        assert all(abs(m - 0.999 * v) < 1e-6 for v, m in zip(volts, vdc)), list(zip(volts, vdc))
+
+
+def test_bias_is_zeroed_on_stop_even_when_the_link_was_lost_mid_retry():
+    for mod in MODULES:
+        folder = _tmp()
+        fake = FakeE4980A(fail_reads={1})
+        p = mod.validate_params(base_params(folder, cycle_mode=False, v_start=5.0, v_stop=6.0))
+        stop = threading.Event()
+        link = make_link(mod, fake)
+        real_open, opens = link.open, []
+
+        def flaky_open():
+            opens.append(1)
+            if len(opens) == 2:          # the reconnect's reopen fails, then Stop
+                stop.set()
+                raise mod.BusError("open failed")
+            real_open()
+        link.open = flaky_open
+        worker = mod.CVWorker(p, link, stop, queue.Queue(), sleep=lambda s: None)
+        run_worker(worker)
+        assert worker.end_reason == "stop_button_during_retry"
+        assert fake.v == 0.0 and not fake.bias_on
+
+
+def test_locked_data_file_still_zeroes_the_bias_and_sends_done():
+    for mod in MODULES:
+        folder = _tmp()
+        fake = FakeE4980A()
+        p = mod.validate_params(base_params(folder, cycle_mode=False, v_start=-2.0, v_stop=2.0))
+        stop = threading.Event()
+        worker = mod.CVWorker(p, make_link(mod, fake), stop, queue.Queue(), sleep=lambda s: None)
+        real_append = worker._append
+
+        def append(path, text):
+            # the data file becomes write-locked (e.g. opened in Excel) after the first row
+            if path == worker.data_path and worker.points_in_file >= 1:
+                raise PermissionError("locked")
+            real_append(path, text)
+        worker._append = append
+        msgs = run_worker(worker)
+        assert msgs[-1][0] == "done" and worker.end_reason.startswith("error")
+        assert fake.v == 0.0 and not fake.bias_on
+        _expect_value_error(lambda: mod.validate_params(base_params(folder, sample_name="a:b")))
