@@ -86,5 +86,39 @@ def test_plotter_tolerates_a_trailing_delimiter_and_whitespace_files():
         assert headers == ["T_K", "R_ohm"] and delim is None and data.shape == (2, 2)
 
 
+def test_plotter_reads_files_resaved_by_excel_with_a_bom():
+    # 'CSV UTF-8' adds a UTF-8 BOM before the first '#'; 'Unicode Text' is UTF-16 + tabs
+    reader = _plotter_reader()
+    text = ("# title line\n# [block] key=a,b | other=1\n"
+            "t_s,phase,V_V,I_A\n,settle,0,1e-6\n1.5,read,0.1,2e-3\n2.5,read,0.1,3e-3\n")
+    with tempfile.TemporaryDirectory() as d:
+        for name, enc, body in (("b.csv", "utf-8-sig", text),
+                                ("u.txt", "utf-16", text.replace(",", "\t"))):
+            path = os.path.join(d, name)
+            with open(path, "w", encoding=enc, newline="") as fh:
+                fh.write(body)
+            headers, _, data = reader._read_data_from_file(path)
+            assert headers == ["t_s", "phase", "V_V", "I_A"], name
+            assert data.shape == (3, 4), name
+            assert np.isnan(data[0, 0]) and data[2, 0] == 2.5 and data[2, 3] == 3e-3, name
+
+
+def test_plotter_reads_a_cp1252_windeta_style_export():
+    # Windows-native exports write the degree sign as the single byte 0xB0
+    reader = _plotter_reader()
+    text = ("Demo title, 1.1.2020, 10:00\n"
+            "Diameter[mm] 1.000e+01  Thickness[mm] 1.000e+00\n"
+            "Fixed value(s) :  Freq. [Hz]=1.000e+06  AC Volt  [Vrms]=1.000e+00\n"
+            " Temp. [°C]\t Eps'    \t Eps''   \n"
+            "1.0e+02\t2.0e+01\t-1.0e-01\n1.1e+02\t2.1e+01\t1.0e-01\n")
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "w.txt")
+        with open(path, "w", encoding="cp1252", newline="\r\n") as fh:
+            fh.write(text)
+        headers, delim, data = reader._read_data_from_file(path)
+        assert headers == ["Temp. [°C]", "Eps'", "Eps''"] and delim == "\t"
+        assert data.shape == (2, 3) and data[1, 0] == 110.0 and data[0, 2] == -0.1
+
+
 if __name__ == "__main__":
     run_module_tests(globals())

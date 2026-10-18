@@ -517,6 +517,29 @@ class PlotterAppGUI:
         return None
 
     @staticmethod
+    def _sniff_encoding(filepath):
+        """Pick the text encoding from the byte-order mark, if any.
+
+        Files re-saved from Excel carry a BOM: 'CSV UTF-8' prepends a UTF-8
+        BOM (which would hide the leading '#' of the first comment line) and
+        'Unicode Text' writes UTF-16. Without a BOM the file is UTF-8 unless
+        it fails to decode, as Windows-native exports (e.g. WinDETA's
+        'Temp. [°C]' header) are cp1252.
+        """
+        with open(filepath, 'rb') as f:
+            head = f.read(65536)
+        if head.startswith(b'\xef\xbb\xbf'):
+            return 'utf-8-sig'
+        if head.startswith((b'\xff\xfe', b'\xfe\xff')):
+            return 'utf-16'
+        try:
+            head.decode('utf-8')
+        except UnicodeDecodeError as e:
+            if e.start < len(head) - 3:  # not just a character cut at the edge
+                return 'cp1252'
+        return 'utf-8'
+
+    @staticmethod
     def _dedupe_headers(headers):
         """Cp, Cp'' -> stays distinct; true duplicates get _2, _3 suffixes."""
         seen, out = {}, []
@@ -718,7 +741,7 @@ class PlotterAppGUI:
             return [t for t in s.split() if t]
 
         lines = []
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(filepath, 'r', encoding=self._sniff_encoding(filepath), errors='ignore') as f:
             for i, line in enumerate(f):
                 lines.append(line.strip())
                 if i >= 500:  # header must appear near the top
@@ -768,7 +791,8 @@ class PlotterAppGUI:
             comments='#',
             autostrip=True,
             invalid_raise=False,
-            skip_header=header_idx + 1)
+            skip_header=header_idx + 1,
+            encoding=self._sniff_encoding(filepath))
 
         data_array = np.atleast_2d(np.asarray(data_array, dtype=float))
         if data_array.size == 0:
@@ -828,6 +852,10 @@ class PlotterAppGUI:
         if not file_info or 'size' not in file_info:
             self.log(
                 "Cannot append data: file information is incomplete. Performing full reload.")
+            self.load_file_data(self.active_filepath)
+            return
+        if self._sniff_encoding(self.active_filepath) == 'utf-16':
+            # Byte offsets can't be resumed mid-file in UTF-16; reload instead
             self.load_file_data(self.active_filepath)
             return
 
