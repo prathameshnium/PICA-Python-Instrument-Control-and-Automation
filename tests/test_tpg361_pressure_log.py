@@ -488,6 +488,158 @@ def test_data_files_are_written_as_utf8():
     assert "open(self.data_filepath, 'a', newline='')" not in TPG_SOURCE
 
 
+# ------------------------------------- a fake TPG 361 on a real TCP socket
+# The Ethernet link end to end through the installed pyvisa: a localhost
+# server that speaks the mnemonic / ACK / ENQ protocol the way the manual
+# describes it, and NAKs anything it does not know. Skipped when pyvisa
+# has no backend that can open a TCPIP SOCKET resource.
+
+import socket as _socket
+
+
+class _FakeTPG:
+    def __init__(self, replies=None):
+        self.replies = replies or {
+            "AYT": "TPG361,PTG28040,00000000,010100,010100",
+            "UNI": "0", "PR1": "0,+1.2340E-03"}
+        self.wire = []
+        self.closed_by_client = threading.Event()
+        self.srv = _socket.socket()
+        self.srv.bind(("127.0.0.1", 0))
+        self.srv.listen(5)
+        self.resource = f"TCPIP0::127.0.0.1::{self.srv.getsockname()[1]}::SOCKET"
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    def _serve(self):
+        while True:
+            try:
+                conn, _ = self.srv.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._handle, args=(conn,), daemon=True).start()
+
+    def _handle(self, conn):
+        pending, buf = None, b""
+        while True:
+            try:
+                data = conn.recv(256)
+            except OSError:
+                data = b""
+            if not data:
+                self.closed_by_client.set()
+                return
+            buf += data
+            while buf:
+                if buf[:1] == b"\x03":
+                    self.wire.append("ETX")
+                    buf, pending = buf[1:], None
+                elif buf[:1] == b"\x05":
+                    self.wire.append("ENQ")
+                    buf = buf[1:]
+                    conn.sendall((self.replies.get(pending, "") + "\r\n").encode())
+                elif b"\r\n" in buf:
+                    line, buf = buf.split(b"\r\n", 1)
+                    mnemonic = line.decode().strip()
+                    self.wire.append(mnemonic)
+                    if mnemonic in self.replies:
+                        pending = mnemonic
+                        conn.sendall(b"\x06\r\n")
+                    else:
+                        conn.sendall(b"\x15\r\n")
+                else:
+                    break
+
+    def stop(self):
+        self.srv.close()
+
+
+def _socket_visa_or_skip():
+    try:
+        import pyvisa
+        rm = pyvisa.ResourceManager()
+        fake = _FakeTPG()
+        rm.open_resource(fake.resource).close()
+        fake.stop()
+        return True
+    except Exception:
+        try:
+            import pytest
+            pytest.skip("no pyvisa backend that opens TCPIP SOCKET resources")
+        except ImportError:
+            return False
+
+
+def test_the_logger_talks_to_a_fake_gauge_over_a_real_socket():
+    if _socket_visa_or_skip() is False:
+        return
+    fake = _FakeTPG()
+    try:
+        b = tpg.TPG361_Backend(fake.resource)
+        assert b.identity.startswith("TPG361")
+        assert b.unit == "mbar"
+        assert b.read_pressure() == (0, 1.234e-3, "mbar")
+        b.reconnect()
+        assert b.read_pressure() == (0, 1.234e-3, "mbar")
+        b.close()
+        # ETX first, then every mnemonic followed by its own ENQ.
+        assert fake.wire[:7] == ["ETX", "AYT", "ENQ", "UNI", "ENQ", "PR1", "ENQ"]
+        assert set(fake.wire) <= {"ETX", "ENQ", "AYT", "UNI", "PR1"}
+    finally:
+        fake.stop()
+
+
+def test_a_failed_start_lets_go_of_the_port():
+    # A gauge that NAKs AYT stands in for a wrong port / wrong baud. The
+    # backend must close the link itself, or the next Start finds the COM
+    # port busy.
+    if _socket_visa_or_skip() is False:
+        return
+    fake = _FakeTPG(replies={"UNI": "0", "PR1": "0,+1.0E-03"})
+    kept = []
+    try:
+        try:
+            tpg.TPG361_Backend(fake.resource)
+            raise AssertionError("a NAK on AYT should fail the connect")
+        except IOError as e:
+            # Holding the error holds its traceback, and with it the half-
+            # built backend -- so garbage collection cannot close the port
+            # for us and only an explicit close() passes.
+            kept.append(e)
+        assert fake.closed_by_client.wait(3), "the session was left open"
+    finally:
+        fake.stop()
+
+
+def test_the_launcher_reads_a_fake_gauge_over_a_real_socket():
+    if _socket_visa_or_skip() is False:
+        return
+    import pyvisa
+    v2 = _v2()
+    fake = _FakeTPG(replies={"UNI": "1", "PR1": "0,+7.5000E-04"})
+    try:
+        r = v2.read_pressure_gauge(pyvisa.ResourceManager(),
+                                   {"resource": fake.resource, "baud": 9600})
+        assert r["error"] is None
+        assert r["pressure"] == 7.5e-4 and r["units"] == "Torr"
+        assert fake.wire == ["UNI", "ENQ", "PR1", "ENQ"]   # queries only
+    finally:
+        fake.stop()
+
+
+def test_the_launcher_reports_an_underrange_in_words():
+    if _socket_visa_or_skip() is False:
+        return
+    import pyvisa
+    v2 = _v2()
+    fake = _FakeTPG(replies={"UNI": "0", "PR1": "1,+1.0000E-04"})
+    try:
+        r = v2.read_pressure_gauge(pyvisa.ResourceManager(),
+                                   {"resource": fake.resource, "baud": 9600})
+        assert r["pressure"] is None and r["error"] == "Underrange"
+    finally:
+        fake.stop()
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(list(globals().items())):

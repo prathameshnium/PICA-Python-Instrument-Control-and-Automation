@@ -366,7 +366,15 @@ class TPG361_Backend:
         self.unit = "mbar"
         self.identity = ""
         self._rm = None
-        self.connect()
+        try:
+            self.connect()
+        except Exception:
+            # A wrong port or baud fails inside connect() after the port is
+            # already open. The GUI never gets this object to close, and a
+            # COM port left open is "busy" to the next Start, so let go of
+            # it here before the error travels on.
+            self.close()
+            raise
 
     # ------------------------------------------------------------------ link
     def connect(self):
@@ -808,7 +816,7 @@ class PressureMonitorGUI:
             row=2, column=1, sticky='ew', padx=10, pady=8)
 
         details_text = ("Program Name: Pressure vs. Time Logger\n"
-                        "Instrument: Pfeiffer TPG 361 SingleGauge (RS-232)\n"
+                        "Instrument: Pfeiffer TPG 361 SingleGauge (USB / Ethernet)\n"
                         "Reading: gauge 1 (PR1), read-only -- no setting is changed")
         ttk.Label(frame, text=details_text, justify='left').grid(
             row=3, column=0, columnspan=2, padx=15, pady=(0, 10), sticky='w')
