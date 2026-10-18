@@ -735,5 +735,22 @@ def test_compliance_order_follows_the_direction_so_the_2400_never_complains():
         assert [c for c in fake.writes if c.startswith(":SENS:CURR:")][:2] ==             [":SENS:CURR:RANG 0.001", ":SENS:CURR:PROT 0.001"]          # last I cc of the loop: 1 mA
 
 
+def test_sweep_legend_adds_a_column_per_25_loops_and_redraws_fast():
+    from matplotlib.figure import Figure
+    gui = object.__new__(sweep.SweepGUI)
+    gui.figure = Figure(figsize=(9, 4))
+    gui.ax_lin, gui.ax_log = gui.figure.subplots(1, 2)
+    gui.params = {}
+    for n, ncol in ((1, 1), (25, 1), (26, 2), (50, 2), (51, 3), (100, 4)):
+        gui.points = [{"loop": k, "segment": 1, "V_meas_V": v, "I_A": v * 1e-3, "compliance_flag": 0}
+                      for k in range(1, n + 1) for v in (0.0, 0.5, 1.0)]
+        t0 = time.time()
+        gui.redraw()
+        gui.figure.canvas.draw()
+        leg = gui.ax_lin.get_legend()
+        assert leg._ncols == ncol and len(leg.texts) == n, n
+        assert time.time() - t0 < 5, n
+
+
 if __name__ == "__main__":
     run_module_tests(globals())

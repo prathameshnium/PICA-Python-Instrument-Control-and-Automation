@@ -2446,7 +2446,15 @@ class SweepGUI(MemristorGuiBase):
             if p["i_cc_minus"] != p["i_cc_plus"]:
                 self.ax_log.axhline(p["i_cc_minus"], ls='--', lw=0.8, color='#777777')
         if loops:
-            self.ax_lin.legend(fontsize=8, loc='best')
+            # One more column per 25 loops so many loops never outgrow the
+            # axes; 'best' placement is O(lines) per redraw, so pin it once long.
+            n = len(loops)
+            leg = self.ax_lin.legend(fontsize=8 if n <= 10 else 7,
+                                     loc='best' if n <= 10 else 'upper left',
+                                     ncol=-(-n // 25), columnspacing=0.8,
+                                     handlelength=1.2, handletextpad=0.4,
+                                     labelspacing=0.2, borderpad=0.3, framealpha=0.7)
+            leg.set_draggable(True)
         if p:
             self.figure.suptitle(ascii_text(
                 f"{p['sample_name']} | sweep | {SHAPE_KEYS[p['shape']]} | Vmax +{p['vmax_plus']:g}/-{p['vmax_minus']:g} V | "
