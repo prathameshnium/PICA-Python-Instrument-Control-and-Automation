@@ -120,5 +120,18 @@ def test_plotter_reads_a_cp1252_windeta_style_export():
         assert data.shape == (2, 3) and data[1, 0] == 110.0 and data[0, 2] == -0.1
 
 
+def test_plotter_skips_csv_quoted_comment_lines():
+    # csv.writer.writerow(["# ..."]) quotes a comment that contains a comma
+    reader = _plotter_reader()
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "q.dat")
+        with open(path, "w", newline="") as fh:
+            fh.write('"# Instrument: VENDOR,MODEL,1,1.0"\n# plain comment\n'
+                     "Timestamp,Elapsed_s,T_K\n12:00:00,0.0,300.0\n12:00:01,1.0,300.5\n")
+        headers, delim, data = reader._read_data_from_file(path)
+        assert headers == ["Timestamp", "Elapsed_s", "T_K"] and delim == ","
+        assert data.shape == (2, 3) and data[1, 2] == 300.5
+
+
 if __name__ == "__main__":
     run_module_tests(globals())

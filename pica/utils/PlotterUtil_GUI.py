@@ -748,7 +748,7 @@ class PlotterAppGUI:
                     break
 
         for i, s in enumerate(lines):
-            if not s or s.startswith('#'):
+            if not s or s.lstrip('"').startswith('#'):
                 continue
             delim = self._detect_delimiter(s)
             tokens = tokenize(s, delim)
@@ -758,7 +758,7 @@ class PlotterAppGUI:
             # line with the same column count is the header.
             for j in range(i - 1, -1, -1):
                 prev = lines[j]
-                if not prev or prev.startswith('#'):
+                if not prev or prev.lstrip('"').startswith('#'):
                     continue
                 prev_tokens = tokenize(prev, delim)
                 n_row = len(tokens)
@@ -774,7 +774,7 @@ class PlotterAppGUI:
         # fall back to treating the first multi-token non-numeric line as
         # the header, as before.
         for i, s in enumerate(lines):
-            if not s or s.startswith('#'):
+            if not s or s.lstrip('"').startswith('#'):
                 continue
             delim = self._detect_delimiter(s)
             tokens = tokenize(s, delim)
@@ -889,7 +889,7 @@ class PlotterAppGUI:
             # Process lines, stripping whitespace and filtering comments/empty lines
             new_lines = [
                 line for line in new_text.strip().splitlines()
-                if line.strip() and not line.strip().startswith('#')
+                if line.strip() and not line.strip().lstrip('"').startswith('#')
             ]
             return new_lines
         except Exception as e:
