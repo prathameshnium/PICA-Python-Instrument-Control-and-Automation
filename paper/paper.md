@@ -40,21 +40,15 @@ By utilising `threading` and `multiprocessing` capabilities, PICA ensures that t
 # Statement of need
 
 Advancements in experimental physics and device manufacturing depend on the precise characterisation of material properties under extreme physical conditions (e.g. low temperature and high magnetic/electric fields). For automating experiments, researchers have to choose between expensive proprietary graphical programming environments or developing a custom measurement script from scratch.
+
+# State of the field
+
 While powerful ecosystem libraries such as PyVISA [@grecco2023pyvisa] and PyMeasure [@pymeasure_2025] provide the foundational drivers for instrument communication, they are fundamentally software libraries that require the user to write and maintain code, creating a barrier to entry for researchers requiring direct data acquisition without the overhead of developing and maintaining a custom codebase.
-
-## Research impact
-
 PICA addresses this gap by functioning as a turnkey application rather than as a library. It offers a "ready-to-run" graphical interface that abstracts the underlying control logic, allowing experimentalists to focus on data acquisition without needing to develop custom software scripts for the supported hardware configurations.
-PICA’s architecture is designed to be highly configurable, enabling users to readily adapt it to their specific requirements and to implement user‑defined protocols in addition to the standard measurement protocols already provided. It eliminates the need for reconfiguring the measurement setup to achieve comprehensive characterisation, enabling continuous operation across the full range from ultra-low-resistance measurements (with the current reversal technique effectively removing constant offsets and improving the signal-to-noise ratio) for superconductors to high-impedance electrometric measurements for high-band gap insulators (covering 24 orders of magnitude in resistance), using a single unified framework.
-Pyroelectric measurement performed using an electrometer enables a highly sensitive characterisation of ferroelectric phase transitions by detecting extremely small pyroelectric currents, with a resolution on the order of $10^{-15}$ A. The impedance analyser enables the characterisation of capacitance anomalies over the frequency range from 20 Hz to 2 MHz and is utilised for magnetocapacitance and photoinduced characterisation across a wide variety of multiferroic systems. Thus, the primary objective of PICA is to serve as a robust software platform that enables advanced high‑precision characterisation of materials.
-
-The system is currently validated with scientific benchmark SMU (Source Measure Unit) hardware, including the AC-DC current source (Model: 6221, Keithley), the Nanovoltmeter (Model: 2182, Keithley), the Electrometer (Model: 6517B, Keithley), the DC Source Measure Unit (Model: 2400, Keithley), the impedance analyser (Model: E4980A, Keysight), and the temperature controller (Model: 350/340, Lakeshore). While the current implementation drives specific instruments, the underlying framework is highly customisable. Researchers using different hardware models need only replace the specific SCPI (Standard Commands for Programmable Instruments) commands with their instrument equivalent commands to utilise the suite.
 
 It differentiates itself through the following unique features:
 
 * **Accessibility:** A user-friendly GUI dashboard that allows researchers without coding experience to configure and run a complex measurement protocol immediately using the suite's pre-packaged measurement modules.
-
-* **Operational Validation:** PICA's protocols are actively used for transport measurements at cryogenic temperature using a laboratory-built, custom-designed, multifunctional cryostatic probe in-conjunction with the Physical Property Measurement System (PPMS, DynaCool, Quantum Design) (temperature range: 5-380 K, magnetic field: up to 14 T) at the UGC DAE Consortium for Scientific Research, Mumbai Centre, validating the software's core architecture in a real-world research environment and providing a stable, tested foundation for the university and researchers to build upon.
 
 * **Fault Tolerance:** PICA prevents hardware timeouts or driver crashes from freezing the main dashboard by isolating control logic from the user interface, which is a critical advantage over single-threaded scripts.
 
@@ -64,6 +58,15 @@ It differentiates itself through the following unique features:
 
 *  **Open Source Extensibility:** PICA's modular design allows researchers to easily integrate new instrument drivers or experimental protocols by subclassing existing templates, fostering a community-driven ecosystem for instrument control. This ensures that the software remains adaptable, allowing researchers to extend support for their unique instrument configurations.
 
+
+# Research impact statement
+
+PICA’s architecture is designed to be highly configurable, enabling users to readily adapt it to their specific requirements and to implement user‑defined protocols in addition to the standard measurement protocols already provided. It eliminates the need for reconfiguring the measurement setup to achieve comprehensive characterisation, enabling continuous operation across the full range from ultra-low-resistance measurements (with the current reversal technique effectively removing constant offsets and improving the signal-to-noise ratio) for superconductors to high-impedance electrometric measurements for high-band gap insulators (covering 24 orders of magnitude in resistance), using a single unified framework.
+Pyroelectric measurement performed using an electrometer enables a highly sensitive characterisation of ferroelectric phase transitions by detecting extremely small pyroelectric currents, with a resolution on the order of $10^{-15}$ A. The impedance analyser enables the characterisation of capacitance anomalies over the frequency range from 20 Hz to 2 MHz and is utilised for magnetocapacitance and photoinduced characterisation across a wide variety of multiferroic systems. Thus, the primary objective of PICA is to serve as a robust software platform that enables advanced high‑precision characterisation of materials.
+
+The system is currently validated with scientific benchmark SMU (Source Measure Unit) hardware, including the AC-DC current source (Model: 6221, Keithley), the Nanovoltmeter (Model: 2182, Keithley), the Electrometer (Model: 6517B, Keithley), the DC Source Measure Unit (Model: 2400, Keithley), the impedance analyser (Model: E4980A, Keysight), and the temperature controller (Model: 350/340, Lakeshore). While the current implementation drives specific instruments, the underlying framework is highly customisable. Researchers using different hardware models need only replace the specific SCPI (Standard Commands for Programmable Instruments) commands with their instrument equivalent commands to utilise the suite.
+
+* **Operational Validation:** PICA's protocols are actively used for transport measurements at cryogenic temperature using a laboratory-built, custom-designed, multifunctional cryostatic probe in-conjunction with the Physical Property Measurement System (PPMS, DynaCool, Quantum Design) (temperature range: 5-380 K, magnetic field: up to 14 T) at the UGC DAE Consortium for Scientific Research, Mumbai Centre, validating the software's core architecture in a real-world research environment and providing a stable, tested foundation for the university and researchers to build upon.
 
 
 # Software design
