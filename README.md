@@ -396,6 +396,13 @@ pica-gui
     `python run_pica_v2.py` does the same. `pica-gui` always opens the
     classic launcher.
 
+    > **Which launcher?** The classic launcher (`pica-gui`) is the canonical one.
+    > Launcher v2 is in testing. The two small scripts in the repository root,
+    > `run_pica.py` (classic) and `run_pica_v2.py` (v2), only start the launchers
+    > from a source checkout without installing. `setup.py` and
+    > `PICA_Utils_Portable.spec` are build files (packaging and the portable
+    > utilities `.exe`), not entry points.
+
     **Find any program fast: Advanced Options and Search**
 
     | Shortcut | Opens |

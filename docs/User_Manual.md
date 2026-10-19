@@ -1181,13 +1181,11 @@ PICA (Root Directory)/
     PICA_Utils_Portable.spec
     README.md
     codecov.yml
-    pica_cli.py
     tools/
         pica_utils_portable.py
     pyproject.toml
     requirements-dev.txt
     requirements.txt
-    robots.txt
     run_pica.py
     run_pica_v2.py
     setup.py

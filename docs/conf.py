@@ -103,7 +103,7 @@ html_static_path = []
 
 # This copies the pica/assets folder into the build output; robots.txt keeps
 # the site's crawler policy consistent across GitHub Pages and Read the Docs
-html_extra_path = ["../pica/assets", "../robots.txt"]
+html_extra_path = ["../pica/assets", "robots.txt"]
 
 # This ensures Sphinx doesn't complain about the pica folder
 # we manually move in the workflow. Image paths (Images/, LOGO/) resolve at

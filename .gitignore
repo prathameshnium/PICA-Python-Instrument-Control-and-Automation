@@ -162,7 +162,7 @@ docs/_build/
 
 # --- exceptions (keep these LAST) ---
 !/requirements*.txt
-!/robots.txt
+!/docs/robots.txt
 !/docs/requirements.txt
 !/examples/**
 !/publications/**

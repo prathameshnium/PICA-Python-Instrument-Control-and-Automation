@@ -12,14 +12,14 @@ sys.path.insert(0, os.path.abspath('.'))
 @patch('pica.cli.find_scripts')
 def test_pica_cli_exit(mock_find_scripts, mock_print_banner, mock_input, mock_subprocess_run):
     """
-    Test that pica_cli.py's main function exits correctly when 'q' is entered.
+    Test that the pica-cli entry point (pica.cli.main) exits correctly when 'q' is entered.
     """
     mock_find_scripts.return_value = [('Dummy Script', '/path/to/dummy_script.py')] # Provide a dummy script
     mock_input.side_effect = ['q'] # Simulate user entering 'q'
 
     with pytest.raises(SystemExit) as e:
-        import pica_cli
-        pica_cli.main()
+        import pica.cli
+        pica.cli.main()
     
     assert e.type == SystemExit
     assert e.value.code == 0
