@@ -238,6 +238,8 @@ Beyond the measurement modules, PICA ships a growing set of standalone laborator
 
 PICA is available on [PyPI](https://pypi.org/project/pica-suite/) and structured as a standard Python package. Options 1 and 2 are for Windows, the platform PICA is validated on in the lab. For Linux, see [Option 3](#option-3-installing-on-linux).
 
+**No instruments?** The [Try PICA Without Instruments](docs/User_Manual.md#35-try-pica-without-instruments) walk-through in the User Manual shows the launcher, a measurement module, the Plotter (on example data), the PID simulator and the mocked-instrument test suite, with no hardware needed.
+
 ### Option 1: Install from PyPI (Recommended)
 
 ```bash
@@ -516,6 +518,7 @@ The project's earlier history and foundational development are outlined below:
 * **Online Documentation:** Full documentation site at [https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/).
 * **PyPI Package:** Install directly via [https://pypi.org/project/pica-suite/](https://pypi.org/project/pica-suite/).
 * **User Manual:** Details on the project and usage guides are available in the [User Manual](docs/User_Manual.md).
+* **Generative AI use:** How AI tools were used in developing PICA, and the rules for contributors, in [CONTRIBUTING.md](CONTRIBUTING.md#use-of-generative-ai).
 * **Instrument Manuals:** A list of instrument manuals is available in [docs/Instruments_Manuals_Lists.md](docs/Instruments_Manuals_Lists.md).
 * **Novocontrol GPIB Runbook:** Setup and troubleshooting guide for the Alpha-AN analyzer over GPIB in [docs/Novocontrol_GPIB_Runbook.md](docs/Novocontrol_GPIB_Runbook.md).
 * **GitLab Backup:** This project is manually backed up weekly to a [GitLab repository](https://gitlab.com/prathameshnium/pica-python-instrument-control-and-automation).

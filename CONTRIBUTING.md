@@ -139,6 +139,23 @@ To make your new module accessible from the main dashboard:
 - Run your new module standalone and from the PICA launcher to ensure it works as expected. Test edge cases. It's often helpful to have a new user try it, as they can often find bugs you might have missed.
 - Consider adding a section for your new instrument in `docs/User_Manual.md` and adding a screenshot to `pica/assets/Images/screenshots/`.
 
+## Use of Generative AI
+
+PICA started before AI coding tools were in use. As these tools became more capable, we used them more, to improve the code quality, the tests, the user interfaces and the reliability of the software in production. What did not change is that we understand the code, knowing what is happening at every step is essential when the software drives real instruments and scientific measuremenets. The instrument manuals are the source of truth. Every instrument command is verified against them and tested, and we think through every edge case, because in a lab experiment:
+
+> *"Whatever could go wrong will go wrong."* (Prathamesh Deshmukh)
+
+**Tools used:** Google Gemini (2.5) in the earlier stages of development, and later Anthropic's Claude (Claude Code).
+
+**What they were used for:** writing and refactoring code, writing tests that run against mocked instruments, and drafting and proofreading documentation.
+
+**Rules:**
+
+- Every change is reviewed, run and understood by a maintainer before it is committed. The maintainers are responsible for all code in PICA, whoever or whatever drafted it.
+- Instrument-facing code is checked against the instrument manual and, wherever possible, on the real instrument before release. AI output alone is never treated as proof that an instrument command is correct.
+- Contributors may use AI tools, but must say so in their pull request and must understand what they are submitting.
+- Issues, reviews and discussions are written by people. AI may be used only for grammar or translation.
+
 ## Support
 
 For any questions, support, or assistance, please open a GitHub Issue in the main repository. This is the preferred and primary method for getting in touch with the development team and community for support.

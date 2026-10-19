@@ -55,6 +55,7 @@ or open Launcher v2 (Quick Select, search, hover cards) with `python -m pica.mai
 ## Getting Help
 
 - [Full User Manual](User_Manual.md)
+- [Try PICA Without Instruments](User_Manual.md#35-try-pica-without-instruments)
 - [GitHub Issues](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/issues)
 - [Releases](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/releases)
 - [Preprint](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/publications/)

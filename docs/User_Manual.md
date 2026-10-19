@@ -26,6 +26,7 @@ pip install --upgrade pica-suite
 1. [Overview](#1-overview)
 2. [Design Philosophy & Architecture](#2-design-philosophy--architecture)
 3. [Installation & Setup](#3-installation--setup)
+   * [Try PICA Without Instruments](#35-try-pica-without-instruments)
 4. [Safety Precautions](#4-safety-precautions)
 5. [Core Utilities](#5-core-utilities)
    * [Launcher v2: Quick Select and Advanced Options](#55-launcher-v2-quick-select-and-advanced-options)
@@ -307,6 +308,41 @@ To see the coverage percentage as well:
 
 ```bash
 python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
+```
+
+### 3.5 Try PICA Without Instruments
+
+You can look around PICA without any instruments connected, on Windows or Linux. This walk-through takes about 15 minutes.
+
+**1. Install and open the launcher.**
+
+```bash
+pip install pica-suite
+pica-gui
+```
+
+The launcher lists every measurement module grouped by instrument. To try the newer launcher instead, run `python -m pica.main_v2`. It opens on **Quick Select**, where you choose a measurement in three steps (category, module, protocol).
+
+**2. Open a measurement module.** Click any module card, for example **K2400 I-V**. The module opens in its own window and shows its settings form, live plot area and console. Fill in the form to see what a run asks for. Starting a run needs a connected instrument, so stop at the form.
+
+**3. Look for instruments.** Open the **VISA/GPIB scanner** from the launcher's top-right toolbar. With nothing connected it finds no instruments; on a lab PC it lists every instrument on the bus.
+
+**4. Plot a real data file.** Open the **Plotter Utility** from the same toolbar and add [`examples/Low_R_Test_10ohm_20251218_163101_IV.dat`](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/examples/Low_R_Test_10ohm_20251218_163101_IV.dat), an I-V sweep of a 10 Ω test resistor recorded with the Keithley 6221/2182A module. Choose `Set Current (A)` for X and `Measured Voltage (V)` or `Resistance (Ohm)` for Y. The [Data File Format](#94-data-file-format) section explains the file layout.
+
+**5. Try the PID simulator.** The temperature modules hold setpoints with a PID loop. The simulator shows how the PID settings change the approach to a setpoint on CCR and LN2 probes:
+
+```bash
+python -m pica.utils.PID_Simulator_GUI
+```
+
+**6. Run the test suite.** The tests drive the real module code against mocked instruments. They need a copy of the source:
+
+```bash
+git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
+cd PICA-Python-Instrument-Control-and-Automation
+pip install -e .
+pip install -r requirements-dev.txt
+python -B -m pytest -p no:cacheprovider
 ```
 
 ## 4. Safety Precautions
