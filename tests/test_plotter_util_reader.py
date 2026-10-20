@@ -133,5 +133,48 @@ def test_plotter_skips_csv_quoted_comment_lines():
         assert data.shape == (2, 3) and data[1, 2] == 300.5
 
 
+def test_plotter_reports_and_overrides_the_comment_line_count():
+    reader = _plotter_reader()
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "c.txt")
+        with open(path, "w", newline="") as fh:
+            fh.write("Sample run\nOperator notes\n"
+                     "T,R\n10,1.5\n20,2.5\n")
+        headers, _, data, n = reader._read_data_table(path)
+        assert headers == ["T", "R"] and n == 2 and data.shape == (2, 2)
+        # user says three comment lines: header line skipped, data headerless
+        headers, _, data, n = reader._read_data_table(path, 3)
+        assert headers == ["Col1", "Col2"] and n == 3
+        assert data.shape == (2, 2) and data[1, 1] == 2.5
+        # four: the first data row now counts as a comment
+        headers, _, data, n = reader._read_data_table(path, 4)
+        assert n == 4 and data.shape == (1, 2) and data[0, 0] == 20.0
+
+
+def test_plotter_comment_override_rejects_bad_lines():
+    reader = _plotter_reader()
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "c.txt")
+        with open(path, "w", newline="") as fh:
+            fh.write("Sample run\nOperator notes\nT,R\n10,1.5\n")
+        # title line with a space (not 2 columns against a comma file); past the end
+        for bad in (0, 9):
+            try:
+                reader._read_data_table(path, bad)
+            except ValueError:
+                continue
+            raise AssertionError(f"comment_lines={bad} should be rejected")
+
+
+def test_plotter_comment_count_for_headerless_files():
+    reader = _plotter_reader()
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "h.txt")
+        with open(path, "w", newline="") as fh:
+            fh.write("# note\n1 2\n3 4\n")
+        headers, _, data, n = reader._read_data_table(path)
+        assert headers == ["Col1", "Col2"] and n == 1 and data.shape == (2, 2)
+
+
 if __name__ == "__main__":
     run_module_tests(globals())

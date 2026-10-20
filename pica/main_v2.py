@@ -3960,8 +3960,12 @@ class PICALauncherV2:
             self.root.after(0, lambda: self._stream_scan_row(line, chip, done, total))
         results = scan_instruments(skip_addresses=self._session_protected,
                                    progress=progress)
-        # Marshal back to the Tk thread.
-        self.root.after(0, lambda: self._apply_scan(results))
+        # Marshal back to the Tk thread -- unless the launcher was closed
+        # while the scan ran, in which case there is nothing left to tell.
+        try:
+            self.root.after(0, lambda: self._apply_scan(results))
+        except RuntimeError:
+            pass
 
     def _stream_scan_row(self, line, chip, done, total):
         """Show one finished resource everywhere, mid-scan.
@@ -4106,8 +4110,8 @@ class PICALauncherV2:
                  f"{self._scan_timing_tail(r)}.")
 
         # The standalone scanner runs its own pass over the bus, so it is
-        # started only once the launcher has finished its own -- half a second
-        # after, the same beat the raw table appears on.
+        # never started from here: Advanced Options, the Tools menu and the
+        # toolbar open it.
 
 
     @staticmethod

@@ -418,13 +418,34 @@ class PlotterAppGUI:
         options_frame.configure(style='TFrame')
 
         self.style.configure('Input.TFrame', background=self.CLR_INPUT_BG)
+
+        # --- Comment lines: detected on load, editable per file ---
+        comment_frame = ttk.Frame(params_frame, style='TFrame')
+        comment_frame.grid(row=3, column=0, columnspan=2, sticky='ew', padx=10, pady=(0, 5))
+        ttk.Label(comment_frame, text="Comment lines at top:").pack(side='left')
+        self.comment_lines_var = tk.StringVar(value="")
+        digits_only = (self.root.register(lambda p: p == "" or p.isdigit()), '%P')
+        self.comment_lines_sb = ttk.Spinbox(
+            comment_frame, from_=0, to=500, width=5,
+            textvariable=self.comment_lines_var,
+            validate='key', validatecommand=digits_only,
+            command=self._apply_comment_lines)
+        self.comment_lines_sb.pack(side='left', padx=5)
+        self.comment_lines_sb.bind("<Return>", self._apply_comment_lines)
+        self.comment_lines_sb.bind("<FocusOut>", self._apply_comment_lines)
+        ttk.Button(comment_frame, text="Auto", width=6,
+                   command=self._reset_comment_lines).pack(side='left', padx=5)
+        self.comment_source_var = tk.StringVar(value="")
+        ttk.Label(comment_frame, textvariable=self.comment_source_var,
+                  font=('Segoe UI', 9, 'italic')).pack(side='left', padx=5)
+
         ttk.Button(
             params_frame,
             text="Reload & Plot",
             style="Plot.TButton",
             command=lambda: self.load_file_data(
                 self.active_filepath)).grid(
-            row=3,
+            row=4,
             column=0,
             columnspan=2,
             sticky='ew',
@@ -678,6 +699,7 @@ class PlotterAppGUI:
             self.y_col_cb.set('')
             self.x_col_cb['values'] = []
             self.y_col_cb['values'] = []
+            self._show_comment_lines(None)
             return
 
         # Highlight the new active file's label
@@ -690,6 +712,62 @@ class PlotterAppGUI:
         if self.active_filepath != filepath:
             self.active_filepath = filepath
             self.load_file_data(filepath)
+        else:
+            self._show_comment_lines(filepath)
+
+    def _show_comment_lines(self, filepath):
+        """Puts the file's comment-line count in the box."""
+        info = self.file_data_cache.get(filepath) or {}
+        n = info.get('comment_lines')
+        self.comment_lines_var.set("" if n is None else str(n))
+        if n is None:
+            self.comment_source_var.set("")
+        elif info.get('comment_override') is None:
+            self.comment_source_var.set("(detected)")
+        else:
+            self.comment_source_var.set("(set by you)")
+
+    def _apply_comment_lines(self, event=None):
+        """Re-reads the active file treating the first N lines as comments."""
+        fp = self.active_filepath
+        if not fp or fp not in self.file_data_cache:
+            self.comment_lines_var.set("")
+            return
+        info = self.file_data_cache[fp]
+        text = self.comment_lines_var.get().strip()
+        if not text or int(text) == info.get('comment_lines'):
+            self._show_comment_lines(fp)
+            return
+        n = int(text)
+        try:
+            headers, _, _, _ = self._read_data_table(fp, n)
+        except Exception as e:
+            self.log(f"Cannot skip {n} comment lines in '{os.path.basename(fp)}': {e}")
+            self._show_comment_lines(fp)
+            return
+        info['comment_override'] = n
+        self.log(f"'{os.path.basename(fp)}': first {n} lines treated as comments.")
+        self._reload_with_headers(fp, headers)
+
+    def _reload_with_headers(self, fp, headers):
+        """Reloads after the column names changed, dropping stale X/Y picks."""
+        for cb in (self.x_col_cb, self.y_col_cb):
+            if cb.get() not in headers:
+                cb.set('')
+        self.load_file_data(fp)
+
+    def _reset_comment_lines(self):
+        """Goes back to the automatically detected comment-line count."""
+        fp = self.active_filepath
+        if not fp or fp not in self.file_data_cache:
+            return
+        if self.file_data_cache[fp].pop('comment_override', None) is not None:
+            self.log(f"'{os.path.basename(fp)}': comment lines back to auto-detect.")
+            try:
+                headers = self._read_data_table(fp)[0]
+            except Exception:
+                headers = []  # load_file_data reports the error
+            self._reload_with_headers(fp, headers)
 
     def _load_file_data_into_cache(self, filepath):
         """Loads file data into the cache using the positional parser."""
@@ -697,8 +775,10 @@ class PlotterAppGUI:
             return False
 
         try:
-            headers, delim, data_array = self._read_data_from_file(filepath)
             file_info = self.file_data_cache[filepath]
+            headers, delim, data_array, n_comments = self._read_data_table(
+                filepath, file_info.get('comment_override'))
+            file_info['comment_lines'] = n_comments
             file_info['headers'] = headers
             file_info['delimiter'] = delim
             file_info['data'] = {h: data_array[:, j] for j, h in enumerate(headers)}
@@ -714,8 +794,13 @@ class PlotterAppGUI:
             self.log(f"Error caching file '{os.path.basename(filepath)}': {e}")
             return False
 
-    def _find_header_row(self, filepath):
-        """Returns (header_index, delimiter, headers). Raises on failure.
+    def _find_header_row(self, filepath, comment_lines=None):
+        """Returns (header_index, delimiter, headers, comment_lines). Raises on failure.
+
+        comment_lines is the number of lines above the column-name row (or
+        above the first data row in a headerless file). Passing it overrides
+        the detection: line comment_lines is taken as the column names, or as
+        the first data row when it is all numbers.
 
         Locates the first fully-numeric data row, then walks back to the
         nearest preceding line with a matching column count to use as the
@@ -747,6 +832,36 @@ class PlotterAppGUI:
                 if i >= 500:  # header must appear near the top
                     break
 
+        if comment_lines is not None:
+            if comment_lines >= len(lines) or not lines[comment_lines]:
+                raise ValueError(f"line {comment_lines + 1} is empty or past the end of the file")
+            header = lines[comment_lines]
+            if header.lstrip('"').startswith('#'):
+                header = header.lstrip('"').lstrip('#').rstrip('"').strip()
+            delim = self._detect_delimiter(header)
+            tokens = tokenize(header, delim)
+            if len(tokens) >= 2 and all(is_num(t) for t in tokens):
+                return comment_lines - 1, delim, [f"Col{k + 1}" for k in range(len(tokens))], comment_lines
+            # Column names: the delimiter and column count come from the
+            # first data row below, as in the detection.
+            body = [s for s in lines[comment_lines + 1:] if s and not s.lstrip('"').startswith('#')]
+            row = body[0] if body else header  # text-column files: no numeric row
+            for s in body:
+                s_tokens = tokenize(s, self._detect_delimiter(s))
+                if len(s_tokens) >= 2 and all(is_num(t) for t in s_tokens):
+                    row = s
+                    break
+            delim = self._detect_delimiter(row)
+            tokens = tokenize(header, delim)
+            row_tokens = tokenize(row, delim)
+            n_row = len(row_tokens)
+            while n_row > 0 and row_tokens[n_row - 1] == "":
+                n_row -= 1
+            if len(tokens) < 2 or (row is not header and len(tokens) not in (len(row_tokens), n_row)):
+                raise ValueError(f"line {comment_lines + 1} has {len(tokens)} column name(s) "
+                                 f"but the data has {n_row} columns")
+            return comment_lines, delim, self._dedupe_headers(tokens), comment_lines
+
         for i, s in enumerate(lines):
             if not s or s.lstrip('"').startswith('#'):
                 continue
@@ -765,10 +880,10 @@ class PlotterAppGUI:
                 while n_row > 0 and tokens[n_row - 1] == "":
                     n_row -= 1  # trailing delimiter / missing last cells
                 if len(prev_tokens) in (len(tokens), n_row) and not all(is_num(t) for t in prev_tokens):
-                    return j, delim, self._dedupe_headers(prev_tokens)
+                    return j, delim, self._dedupe_headers(prev_tokens), j
                 break
             # No matching header line -> headerless file
-            return i - 1, delim, [f"Col{k + 1}" for k in range(len(tokens))]
+            return i - 1, delim, [f"Col{k + 1}" for k in range(len(tokens))], i
 
         # No fully-numeric row found (e.g. a text column in every row):
         # fall back to treating the first multi-token non-numeric line as
@@ -779,12 +894,17 @@ class PlotterAppGUI:
             delim = self._detect_delimiter(s)
             tokens = tokenize(s, delim)
             if len(tokens) >= 2:
-                return i, delim, self._dedupe_headers(tokens)
+                return i, delim, self._dedupe_headers(tokens), i
         raise ValueError("No valid data header row found.")
 
     def _read_data_from_file(self, filepath):
         """Reads data by column index preserving special characters in headers."""
-        header_idx, delim, headers = self._find_header_row(filepath)
+        headers, delim, data_array, _ = self._read_data_table(filepath)
+        return headers, delim, data_array
+
+    def _read_data_table(self, filepath, comment_lines=None):
+        """Returns (headers, delimiter, data, comment_lines); see _find_header_row."""
+        header_idx, delim, headers, n_comments = self._find_header_row(filepath, comment_lines)
         data_array = np.genfromtxt(
             filepath,
             delimiter=delim,
@@ -802,7 +922,7 @@ class PlotterAppGUI:
             data_array = data_array[:, :len(headers)]
         elif data_array.shape[1] < len(headers):
             raise ValueError(f"Found {data_array.shape[1]} data columns but {len(headers)} headers.")
-        return headers, delim, data_array
+        return headers, delim, data_array, n_comments
 
     def _update_cache_and_ui(self, filepath, headers, delim, data_array):
         """Updates the file data cache and UI elements with new data."""
@@ -830,8 +950,13 @@ class PlotterAppGUI:
         self.stop_file_watcher(log_message=False)
 
         try:
-            headers, delim, data_array = self._read_data_from_file(filepath)
+            file_info = self.file_data_cache.setdefault(filepath, {"path": filepath})
+            headers, delim, data_array, n_comments = self._read_data_table(
+                filepath, file_info.get('comment_override'))
+            file_info['comment_lines'] = n_comments
             self._update_cache_and_ui(filepath, headers, delim, data_array)
+            if self.active_filepath == filepath:
+                self._show_comment_lines(filepath)
 
         except Exception as e:
             self._handle_load_error(filepath, e)
