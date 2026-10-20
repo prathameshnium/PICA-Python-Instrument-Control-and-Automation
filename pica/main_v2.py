@@ -4344,6 +4344,7 @@ class PICALauncherV2:
             ("Calculators", [("Quick Calc", "Quick Calc"),
                              ("Time Utility", "Time Utility"),
                              ("Unit Converter", "Unit Converter"),
+                             ("Ohm's Law Calculator", "Ohm's Law Calculator"),
                              ("List Maker", "List Maker")]),
         ]
 

@@ -307,6 +307,7 @@ class PICALauncherApp:
         "Quick Calc": resource_path("utils/Quick_Calc_GUI.py"),
         "Time Utility": resource_path("utils/Time_Utility_GUI.py"),
         "Unit Converter": resource_path("utils/Unit_Converter_GUI.py"),
+        "Ohm's Law Calculator": resource_path("utils/Ohms_Law_Calculator_GUI.py"),
         "List Maker": resource_path("utils/List_Maker_GUI.py"),
         "Sequence Visualizer": resource_path("PPMS/PPMS_SeqVisualizer_GUI.py"),
         "PPMS Time Estimator": resource_path("PPMS/PPMS_TimeEstimator_GUI.py"),
@@ -1206,6 +1207,7 @@ class PICALauncherApp:
                 ("Quick Calc", "Quick Calc"),
                 ("Time Utility", "Time Utility"),
                 ("Unit Converter", "Unit Converter"),
+                ("Ohm's Law Calculator", "Ohm's Law Calculator"),
                 ("List Maker", "List Maker"),
             ]),
             ("P-E Measurement", [

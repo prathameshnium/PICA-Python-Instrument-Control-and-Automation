@@ -36,7 +36,7 @@ SPEC_FILE = os.path.join(project_root, 'PICA_Utils_Portable.spec')
 EXPECTED_KEYS = {
     'plotter', 'ppms-plotter', 'pe-plotter',
     'seq-visualizer', 'time-estimator',
-    'quick-calc', 'time-utility', 'unit-converter',
+    'quick-calc', 'time-utility', 'unit-converter', 'ohms-law',
 }
 
 

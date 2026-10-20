@@ -1362,6 +1362,7 @@ PICA (Root Directory)/
             GUI_Basic_Format.py
             List_Maker_GUI.py
             MD_Ratio_Calculator_GUI.py
+            Ohms_Law_Calculator_GUI.py
             Memristor_Analysis_GUI.py
             PE_plotter.py
             PID_Simulator_GUI.py

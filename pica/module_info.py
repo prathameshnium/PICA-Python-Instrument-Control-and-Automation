@@ -728,6 +728,7 @@ UTILITY_TOOLS = [
     ("Quick Calc", "Quick Calc", "Calculators"),
     ("Time Utility", "Time Utility", "Calculators"),
     ("Unit Converter", "Unit Converter", "Calculators"),
+    ("Ohm's Law Calculator", "Ohm's Law Calculator", "Calculators"),
     ("List Maker", "List Maker", "Calculators"),
 ]
 
@@ -806,6 +807,10 @@ _add("Time Utility",
 _add("Unit Converter",
      "Convert between units of the quantities PICA measures.",
      "none", "category; value; from and to units")
+_add("Ohm's Law Calculator",
+     "Type any two of voltage, current and resistance and the third is "
+     "worked out as you type, with the power V x I. Each has its own unit.",
+     "none", "any two of V, I and R; a unit for each")
 _add("List Maker",
      "Build a numeric list (linear, log, cycles, turning points) and paste it "
      "into any module's custom list field.",

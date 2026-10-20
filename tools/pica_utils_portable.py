@@ -75,6 +75,7 @@ TOOL_GROUPS = [
         ("quick-calc",     "Quick Calc"),
         ("time-utility",   "Time Utility"),
         ("unit-converter", "Unit Converter"),
+        ("ohms-law",       "Ohm's Law Calculator"),
     ]),
 ]
 
@@ -100,6 +101,8 @@ def load_app_class(key):
         from pica.utils.Time_Utility_GUI import PICATimeUtilityApp as App
     elif key == 'unit-converter':
         from pica.utils.Unit_Converter_GUI import PICAUnitConverterApp as App
+    elif key == 'ohms-law':
+        from pica.utils.Ohms_Law_Calculator_GUI import PICAOhmsLawApp as App
     else:
         raise SystemExit(f"Unknown tool '{key}'. Known: {', '.join(TOOL_KEYS)}")
     return App

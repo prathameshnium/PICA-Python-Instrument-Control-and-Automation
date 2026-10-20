@@ -112,6 +112,7 @@ ALL_GUI_MODULES = [
     "pica.utils.Diagnostics_System_Info_GUI",
     "pica.utils.GPIB_Scanner_32bit_GUI",
     "pica.utils.Quick_Calc_GUI",
+    "pica.utils.Ohms_Law_Calculator_GUI",
     "pica.utils.List_Maker_GUI",
 ]
 
