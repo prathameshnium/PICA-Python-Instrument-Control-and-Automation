@@ -62,6 +62,7 @@ import shutil
 import subprocess
 import webbrowser
 import threading
+import time             # per-address scan timing, so a slow scan says why
 import multiprocessing
 from multiprocessing import Process
 from datetime import datetime
@@ -532,7 +533,12 @@ def read_pressure_gauge(rm, gauge):
     return out
 
 
-def scan_instruments(skip_addresses=None, gauge=None):
+def scan_row(resource, name, reply):
+    """One line of the Instrument Status scan table."""
+    return f"{resource:<28}{name:<36}{reply}\n"
+
+
+def scan_instruments(skip_addresses=None, gauge=None, progress=None):
     """Perform a one-shot, read-only VISA scan.
 
     Runs in a worker thread -- must not touch any Tk object. Returns a plain
@@ -548,7 +554,29 @@ def scan_instruments(skip_addresses=None, gauge=None):
     Novocontrol mainframe is nonetheless identified (because its address was
     not yet known), its address comes back in 'protect' so the caller can
     record it and never come back.
+
+    'progress', if given, is called as progress(line, chip, done, total):
+    once with line None and done 0 as soon as the bus is listed, then once per
+    resource the moment it is finished, with its scan_row() line and the name
+    of the instrument it turned out to be (None when nothing was identified).
+    That is what lets the table fill and the dots light while the rest of the
+    bus is still being asked. It adds nothing to the bus traffic and an
+    exception from it is ignored. Called from this (worker) thread.
     """
+    started = time.perf_counter()
+    done = [0]
+
+    def report(res, name, reply, chip=None):
+        if progress is None:
+            return
+        if res is not None:
+            done[0] += 1
+        try:
+            progress(scan_row(res, name, reply) if res is not None else None,
+                     chip, done[0], len(result['resources']))
+        except Exception:
+            pass
+
     protected = set(SKIP_GPIB_ADDRESSES)
     protected |= load_protected_addresses()
     protected |= set(skip_addresses or ())
@@ -574,6 +602,11 @@ def scan_instruments(skip_addresses=None, gauge=None):
         # something the reference table has not been told about yet, which is
         # exactly the thing worth seeing.
         'unknown': {},
+        # How long each probed resource took, resource -> seconds, and the
+        # whole scan. A silent address costs the full IDN_TIMEOUT_MS, which is
+        # where a slow scan nearly always goes.
+        'probe_s': {},
+        'elapsed_s': None,
         'novocontrol': None,
         'protect': set(),
         'temperature': None,
@@ -601,6 +634,7 @@ def scan_instruments(skip_addresses=None, gauge=None):
         return result
 
     result['resources'] = resources
+    report(None, None, None)
     lakeshore_resource = None
     lakeshore_name = "Lakeshore 350"
     cryocon_resource = None
@@ -611,6 +645,7 @@ def scan_instruments(skip_addresses=None, gauge=None):
             if addr is not None and addr in protected:
                 result['skipped'].append(res)   # protected: never opened
                 result['skip_reason'][res] = "protected — never probed"
+                report(res, "—", result['skip_reason'][res])
                 continue
             if gauge and res.strip().upper() == gauge['resource'].upper():
                 # The gauge speaks Pfeiffer mnemonics, not SCPI. It is read
@@ -618,15 +653,18 @@ def scan_instruments(skip_addresses=None, gauge=None):
                 # even if VISA has it registered as a TCPIP/USB resource.
                 result['skipped'].append(res)
                 result['skip_reason'][res] = "pressure gauge — read by its own protocol"
+                report(res, "—", result['skip_reason'][res])
                 continue
             if not _is_probeable(res):
                 result['skipped'].append(res)   # serial: see the gauge policy
                 result['skip_reason'][res] = (
                     "serial port — only the configured pressure gauge is read")
+                report(res, "—", result['skip_reason'][res])
                 continue
 
             idn = None
             inst = None
+            t0 = time.perf_counter()
             try:
                 inst = rm.open_resource(res)
                 inst.timeout = IDN_TIMEOUT_MS
@@ -643,7 +681,9 @@ def scan_instruments(skip_addresses=None, gauge=None):
                         pass
 
             result['idns'][res] = idn
+            result['probe_s'][res] = time.perf_counter() - t0
             if not idn:
+                report(res, "—", "no reply")
                 continue
 
             up = idn.upper()
@@ -658,12 +698,13 @@ def scan_instruments(skip_addresses=None, gauge=None):
                 result['novocontrol'] = res
                 if addr is not None:
                     result['protect'].add(addr)
+                report(res, NOVOCONTROL_CHIP, idn)
                 continue
 
-            matched = False
+            matched = None
             for name, subs in KNOWN_INSTRUMENTS:
                 if any(_idn_matches(head, s) for s in subs):
-                    matched = True
+                    matched = name
                     result['detected'][name] = res
                     if name == "Lakeshore 350":
                         lakeshore_resource = res
@@ -674,8 +715,12 @@ def scan_instruments(skip_addresses=None, gauge=None):
                         lakeshore_name = name
                     elif name == "Cryocon 34":
                         cryocon_resource = res
+            chip = matched
             if not matched:
-                result['unknown'][_idn_short_name(idn)] = res
+                chip = _idn_short_name(idn)
+                result['unknown'][chip] = res
+                matched = f"{chip} (new)"
+            report(res, matched, idn, chip=chip)
 
         # One temperature snapshot: the Lakeshore if present, otherwise the
         # Cryocon. Both are single read-only queries; nothing is configured.
@@ -720,6 +765,7 @@ def scan_instruments(skip_addresses=None, gauge=None):
         except Exception:
             pass
 
+    result['elapsed_s'] = time.perf_counter() - started
     return result
 
 
@@ -1600,6 +1646,11 @@ class PICALauncherV2:
 
         # Instrument-status state (updated only on scan)
         self._scanning = False
+        # The scan in flight, as it comes in: its table rows, the chips it
+        # has lit so far and how many of the bus's addresses are done.
+        self._scan_rows = []
+        self._scan_found = set()
+        self._scan_done = (0, None)
         # Browse-grid layout state, set before the first <Configure> fires.
         self._browse_cols = 2
         self._browse_width = 900
@@ -2107,8 +2158,8 @@ class PICALauncherV2:
             strip['link_sub'].config(text="scanning the VISA bus…")
         if strip.get('temp_sub') and self._last_scan is None:
             strip['temp_sub'].config(text="scanning the VISA bus…")
-        if strip.get('raw_note'):
-            strip['raw_note'].config(text="waiting for the scan to finish…")
+        self._paint_streamed_rows(strip)
+        self._paint_scan_progress(strip)
 
     def _set_strip_chips(self, strip, chip_names, render=True):
         """Rebuild one strip's chips, then repaint them from the last scan.
@@ -3609,15 +3660,12 @@ class PICALauncherV2:
         self._status_win = None
 
     def _schedule_raw(self, strip):
-        """Fill the raw scan table half a second after the lights settle.
+        """Redraw the raw scan table from the finished scan, straight away.
 
-        The identification pass comes first and the table second, in that
-        order and with a visible beat between them, so it is obvious which
-        answer came from where -- the same half second on which the
-        standalone scanner is started at launch.
+        It used to wait half a second after the lights, but the rows now
+        stream in while the scan runs, so there is nothing left to wait for.
         """
-        strip['raw_note'].config(text="Reading the bus listing…")
-        self.root.after(500, lambda: self._render_raw(strip))
+        self._render_raw(strip)
 
     def _render_raw(self, strip):
         """Render the resource-by-resource listing of the last scan.
@@ -3641,7 +3689,7 @@ class PICALauncherV2:
                 if r.get('novocontrol'):
                     by_resource[r['novocontrol']] = NOVOCONTROL_CHIP
                 skipped = set(r.get('skipped') or ())
-                widget.insert('end', f"{'RESOURCE':<28}{'IDENTIFIED AS':<36}REPLY\n")
+                widget.insert('end', scan_row('RESOURCE', 'IDENTIFIED AS', 'REPLY'))
                 widget.insert('end', "-" * 108 + "\n")
                 for res in r['resources']:
                     if res in skipped:
@@ -3650,14 +3698,15 @@ class PICALauncherV2:
                     else:
                         name = by_resource.get(res, "—")
                         reply = r.get('idns', {}).get(res) or "no reply"
-                    widget.insert('end', f"{res:<28}{name:<36}{reply}\n")
+                    widget.insert('end', scan_row(res, name, reply))
                 if not r['resources']:
                     widget.insert('end', "No VISA resources found.\n")
             widget.config(state='disabled')
+            widget.yview_moveto(0)      # the live rows left it scrolled down
             n_skipped = len(r.get('skipped') or ())
             strip['raw_note'].config(
                 text=f"{len(r['resources'])} VISA resource(s), {n_skipped} not probed · "
-                     f"scan {r['timestamp']}. Use the full VISA / GPIB Scanner above "
+                     f"scan {r['timestamp']}{self._scan_timing_tail(r)}. Use the full VISA / GPIB Scanner above "
                      f"for the address guide and for sending SCPI by hand.")
         except tk.TclError:
             pass
@@ -3895,12 +3944,111 @@ class PICALauncherV2:
             elif strip.get('temp_sub') and self._last_scan is None:
                 strip['temp_sub'].config(text="scanning the VISA bus…")
         self.log("Scanning instruments (startup/reload only)…")
+        # Every light goes out and comes back on as its instrument answers
+        # THIS scan, so a dot that is lit always means "answered just now".
+        self._scan_rows = []
+        self._scan_found = set()
+        self._scan_done = (0, None)
+        self._live_chips = set()
+        for strip in self._strips:
+            self._paint_streamed_rows(strip)
+            self._paint_scan_progress(strip)
         threading.Thread(target=self._scan_worker, daemon=True).start()
 
     def _scan_worker(self):
-        results = scan_instruments(skip_addresses=self._session_protected)
+        def progress(line, chip, done, total):
+            self.root.after(0, lambda: self._stream_scan_row(line, chip, done, total))
+        results = scan_instruments(skip_addresses=self._session_protected,
+                                   progress=progress)
         # Marshal back to the Tk thread.
         self.root.after(0, lambda: self._apply_scan(results))
+
+    def _stream_scan_row(self, line, chip, done, total):
+        """Show one finished resource everywhere, mid-scan.
+
+        The old standalone scanner printed each address as it answered; the
+        Status window used to stay empty until the very last one had, which
+        on a rack with a silent address or two felt far slower than it was.
+        Now the row goes into the table, the instrument's dot lights and
+        starts blinking, and the counters move, the moment it answers. The
+        whole window is still redrawn from the finished scan once it lands.
+        """
+        if not self._scanning:
+            return          # a late row from a scan that has already landed
+        self._scan_done = (done, total)
+        if line is not None:
+            self._scan_rows.append(line)
+        if chip:
+            self._scan_found.add(chip)
+            self._live_chips.add(chip)
+        for strip in list(self._strips):
+            widget = strip.get('raw')
+            try:
+                if widget is not None and line is not None:
+                    widget.config(state='normal')
+                    widget.insert('end', line)
+                    widget.see('end')
+                    widget.config(state='disabled')
+                self._paint_scan_progress(strip)
+            except tk.TclError:
+                pass
+
+    def _paint_scan_progress(self, strip):
+        """Paint the scan in flight into one strip: its lights and counters."""
+        done, total = self._scan_done
+        known = {name for name, _ in KNOWN_INSTRUMENTS}
+        n_found = len(self._scan_found & known)
+        n_known = len(KNOWN_INSTRUMENTS)
+        if total is None:
+            where = "listing the VISA bus…"
+        elif done < total:
+            where = f"{done} of {total} addresses checked"
+        else:
+            where = f"all {total} addresses checked, reading temperature / pressure…"
+        try:
+            for name, (dot, lbl, mode) in strip['chips'].items():
+                if mode == 'protected':
+                    continue
+                if name in self._scan_found:
+                    dot.config(fg=self.CLR_LIVE)
+                    lbl.config(fg=self.CLR_TEXT)
+                else:
+                    dot.config(fg=self.CLR_TEXT_FAINT)
+                    lbl.config(fg=self.CLR_TEXT_DIM)
+            if strip.get('link_value'):
+                strip['link_value'].config(
+                    text=str(n_found),
+                    foreground=self.CLR_OK if n_found else self.CLR_TEXT)
+                strip['link_sub'].config(text=f"SCANNING… {where}")
+            if strip.get('status_btn'):
+                strip['status_btn'].config(
+                    text=f"⚡ Instrument Status   scanning… {n_found}/{n_known} found so far")
+            if strip.get('raw_note'):
+                strip['raw_note'].config(
+                    text=f"● Scan still running — {where}. Each address appears "
+                         f"here the moment it answers or times out.",
+                    fg=self.CLR_ACCENT)
+            if (strip is getattr(self, '_status_strip', None)
+                    and self._status_win is not None):
+                self._status_win.title("PICA — Instrument Status  (scanning…)")
+        except tk.TclError:
+            pass
+
+    def _paint_streamed_rows(self, strip):
+        """Header plus whatever rows of the running scan are already in."""
+        widget = strip.get('raw')
+        if widget is None:
+            return
+        try:
+            widget.config(state='normal')
+            widget.delete('1.0', 'end')
+            widget.insert('end', scan_row('RESOURCE', 'IDENTIFIED AS', 'REPLY'))
+            widget.insert('end', "-" * 108 + "\n")
+            for line in self._scan_rows:
+                widget.insert('end', line)
+            widget.config(state='disabled')
+        except tk.TclError:
+            pass
 
     def _apply_scan(self, r):
         self._scanning = False
@@ -3908,6 +4056,16 @@ class PICALauncherV2:
         for strip in self._strips:
             if strip.get('reload_btn'):
                 strip['reload_btn'].config(state='normal', text="⟳ Reload")
+            if strip.get('raw_note'):
+                try:
+                    strip['raw_note'].config(fg=self.CLR_TEXT_DIM)
+                except tk.TclError:
+                    pass
+        if self._status_win is not None:
+            try:
+                self._status_win.title("PICA — Instrument Status")
+            except tk.TclError:
+                pass
 
         if not r['available']:
             self._refresh_strips()
@@ -3944,12 +4102,27 @@ class PICALauncherV2:
         # by design. The Instrument Status window still spells it out per
         # resource, which is where somebody auditing the bus is looking.
         self.log(f"Scan complete — {n_found}/{n_known} instruments detected "
-                 f"across {len(r['resources'])} VISA resource(s).")
+                 f"across {len(r['resources'])} VISA resource(s)"
+                 f"{self._scan_timing_tail(r)}.")
 
         # The standalone scanner runs its own pass over the bus, so it is
         # started only once the launcher has finished its own -- half a second
         # after, the same beat the raw table appears on.
 
+
+    @staticmethod
+    def _scan_timing_tail(r):
+        """' in 3.1 s (slowest: GPIB0::7::INSTR 0.9 s, no reply)', or ''."""
+        if r.get('elapsed_s') is None:
+            return ""
+        tail = f" in {r['elapsed_s']:.1f} s"
+        probes = r.get('probe_s') or {}
+        if probes:
+            res = max(probes, key=probes.get)
+            if probes[res] >= 0.5:
+                why = "" if r.get('idns', {}).get(res) else ", no reply"
+                tail += f" (slowest: {res} {probes[res]:.1f} s{why})"
+        return tail
 
     def _refresh_strips(self):
         """Render the last scan result into every strip that is alive.

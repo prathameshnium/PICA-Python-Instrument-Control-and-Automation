@@ -502,6 +502,94 @@ def test_scan_result_always_has_the_keys_the_gui_reads():
         assert key in r, key
 
 
+# ------------------------------------------------- streamed rows and timing
+
+def _mixed_bus():
+    return {
+        "GPIB0::5::INSTR": FakeInstrument(K2400),       # protected below
+        "ASRL1::INSTR": FakeInstrument(K2400),          # serial, never probed
+        "GPIB0::6::INSTR": FakeInstrument(None),        # silent
+        "GPIB0::7::INSTR": FakeInstrument(K2182),
+        "GPIB0::8::INSTR": FakeInstrument("ACME,WIDGET 9,1,1"),
+    }
+
+
+def test_rows_stream_one_per_resource_in_bus_order():
+    calls = []
+    with _Patch(FakeResourceManager(_mixed_bus())):
+        launcher.scan_instruments(skip_addresses=[5],
+                                  progress=lambda *a: calls.append(a))
+
+    # First call comes as soon as the bus is listed, before any probe.
+    assert calls[0] == (None, None, 0, 5)
+    rows = [line for line, _, _, _ in calls[1:]]
+    assert [done for _, _, done, _ in calls[1:]] == [1, 2, 3, 4, 5]
+    assert [row.split()[0] for row in rows] == list(_mixed_bus())
+    assert all(row.endswith("\n") for row in rows)
+    assert "protected" in rows[0]
+    assert "serial port" in rows[1]
+    assert "no reply" in rows[2]
+    assert "Keithley 2182" in rows[3] and K2182 in rows[3]
+    assert "(new)" in rows[4]
+
+
+def test_each_instrument_is_named_the_moment_it_answers():
+    """The chip name rides with its row, so its dot can light mid-scan."""
+    calls = []
+    with _Patch(FakeResourceManager(_mixed_bus())):
+        r = launcher.scan_instruments(skip_addresses=[5],
+                                      progress=lambda *a: calls.append(a))
+    chips = [chip for _, chip, _, _ in calls[1:]]
+    new_name = next(iter(r["unknown"]))
+    assert chips == [None, None, None, "Keithley 2182", new_name]
+
+
+def test_streaming_sends_nothing_extra_to_any_instrument():
+    plain, streamed = _mixed_bus(), _mixed_bus()
+    rm_plain, rm_streamed = FakeResourceManager(plain), FakeResourceManager(streamed)
+    with _Patch(rm_plain):
+        launcher.scan_instruments(skip_addresses=[5])
+    with _Patch(rm_streamed):
+        launcher.scan_instruments(skip_addresses=[5], progress=lambda *a: None)
+
+    assert rm_streamed.opened == rm_plain.opened
+    for res in plain:
+        assert streamed[res].queries == plain[res].queries, res
+    assert "GPIB0::5::INSTR" not in rm_streamed.opened
+    assert "ASRL1::INSTR" not in rm_streamed.opened
+
+
+def test_a_failing_progress_callback_does_not_break_the_scan():
+    def explode(*args):
+        raise RuntimeError("window closed mid-scan")
+
+    with _Patch(FakeResourceManager(_mixed_bus())):
+        r = launcher.scan_instruments(skip_addresses=[5], progress=explode)
+    assert r["error"] is None
+    assert r["detected"]["Keithley 2182"] == "GPIB0::7::INSTR"
+
+
+def test_scan_is_timed_per_probed_resource():
+    with _Patch(FakeResourceManager(_mixed_bus())):
+        r = launcher.scan_instruments(skip_addresses=[5])
+    assert set(r["probe_s"]) == {"GPIB0::6::INSTR", "GPIB0::7::INSTR",
+                                 "GPIB0::8::INSTR"}
+    assert all(t >= 0 for t in r["probe_s"].values())
+    assert r["elapsed_s"] >= max(r["probe_s"].values())
+
+
+def test_timing_tail_names_the_slowest_address_only_when_it_matters():
+    tail = launcher.PICALauncherV2._scan_timing_tail
+    slow = {"elapsed_s": 3.14,
+            "probe_s": {"GPIB0::6::INSTR": 0.91, "GPIB0::7::INSTR": 0.05},
+            "idns": {"GPIB0::6::INSTR": None, "GPIB0::7::INSTR": K2182}}
+    assert tail(slow) == " in 3.1 s (slowest: GPIB0::6::INSTR 0.9 s, no reply)"
+    fast = {"elapsed_s": 0.4, "probe_s": {"GPIB0::7::INSTR": 0.05},
+            "idns": {"GPIB0::7::INSTR": K2182}}
+    assert tail(fast) == " in 0.4 s"
+    assert tail({"elapsed_s": None}) == ""
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(list(globals().items())):
