@@ -371,13 +371,8 @@ def test_sweep_ladder_stops_after_the_entry_with_a_confirmed_trip():
 
 
 def test_sweep_stop_button_finishes_the_point_and_ramps_down():
-    class SlowFake(FakeK2400):
-        def query(self, cmd):
-            if cmd.strip().upper() == ":READ?":
-                time.sleep(0.02)
-            return FakeK2400.query(self, cmd)
     with tempfile.TemporaryDirectory() as d:
-        worker, msgs, path = run_sweep(SlowFake(1e9), d, stop_after=0.3, vmax_plus=20, vmax_minus=20, step_v=0.1)
+        worker, msgs, path = run_sweep(FakeK2400(1e9), d, stop_at_read=15, vmax_plus=20, vmax_minus=20, step_v=0.1)
         assert worker.reason == "stop_button"
         header, _, rows = read_file(path)
         assert end_reason(path) == "stop_button"

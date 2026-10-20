@@ -322,11 +322,15 @@ def sweep_params(folder, **extra):
     return p
 
 
-def run_sweep(fake, folder, stop_after=None, **extra):
+def run_sweep(fake, folder, stop_after=None, stop_at_read=None, **extra):
+    """stop_at_read: press Stop right before the N-th :READ? of the fake,
+    a deterministic alternative to the wall-clock stop_after."""
     p = sweep_params(folder, **extra)
     stop = threading.Event()
     q = queue.Queue()
     link = make_link(sweep, fake)
+    if stop_at_read is not None:
+        fake.on_read = lambda idx: stop.set() if idx >= stop_at_read else None
     worker = sweep.SweepWorker(p, link, stop, q, sleep=lambda s: None)
     worker.gui_version = "test"
     msgs = run_worker(worker, stop_after, stop, timeout=60)
