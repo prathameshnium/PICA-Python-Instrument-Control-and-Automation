@@ -149,12 +149,30 @@ def _builtins(degrees=False):
         'sqrt': math.sqrt, 'cbrt': lambda x: math.copysign(abs(x) ** (1 / 3), x),
         'exp': math.exp, 'ln': math.log, 'log10': math.log10, 'log2': math.log2,
         'log': lambda x, base=None: math.log10(x) if base is None else math.log(x, base),
-        'abs': abs, 'factorial': math.factorial, 'floor': math.floor,
+        'abs': abs, 'factorial': _factorial, 'floor': math.floor,
         'ceil': math.ceil, 'round': round, 'min': min, 'max': max,
         'deg': math.degrees, 'rad': math.radians, 'hypot': math.hypot,
     }
     consts = {'pi': math.pi, 'e': math.e, 'tau': math.tau, 'inf': math.inf}
     return fns, consts
+
+
+# Whole numbers are exact in Python and can grow without bound, so a line
+# like 9^9999 * 9^9999 or 100000! would freeze the window. Refuse results
+# past ~4,200 digits instead of computing them; Python will not print an
+# int longer than 4,300 digits anyway.
+MAX_INT_BITS = 14_000
+MAX_FACTORIAL = 1500
+
+
+def _factorial(n):
+    if n > MAX_FACTORIAL:
+        raise OverflowError("result too large")
+    return math.factorial(n)
+
+
+def _bits(v):
+    return v.bit_length() if isinstance(v, int) else 0
 
 
 class _Evaluator:
@@ -194,6 +212,8 @@ class _Evaluator:
         if isinstance(op, ast.Sub):
             return a - b
         if isinstance(op, ast.Mult):
+            if _bits(a) + _bits(b) > MAX_INT_BITS:
+                raise OverflowError("result too large")
             return a * b
         if isinstance(op, ast.Div):
             return a / b
@@ -203,6 +223,8 @@ class _Evaluator:
             return a % b
         if isinstance(op, ast.Pow):
             if abs(b) > 10000 and abs(a) > 1:
+                raise OverflowError("result too large")
+            if isinstance(b, int) and b > 0 and _bits(a) * b > MAX_INT_BITS:
                 raise OverflowError("result too large")
             return a ** b
         raise SyntaxError("operator not allowed")

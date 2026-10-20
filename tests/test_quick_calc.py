@@ -73,6 +73,19 @@ def test_a_huge_power_is_refused_not_computed():
     assert qc.evaluate_lines(["9^99999999"])[0]['error']
 
 
+@pytest.mark.parametrize("line", [
+    "9^9999 * 9^9999", "(9^9999)^9999", "100000!", "factorial(10^9)",
+])
+def test_a_huge_whole_number_is_refused_not_computed(line):
+    res = qc.evaluate_lines([line])[0]
+    assert res['value'] is None and res['error'] == "result too large"
+
+
+def test_ordinary_big_numbers_still_work():
+    assert _values(["2^64", "20!", "2^1000 * 3"]) == [2 ** 64, 2432902008176640000,
+                                                      2 ** 1000 * 3]
+
+
 # -------------------------------------------------------------- fractions
 @pytest.mark.parametrize("value, frac", [
     (0.75, (3, 4)), (1 / 3, (1, 3)), (-2 / 7, (-2, 7)), (0.1 + 0.2, (3, 10)),
