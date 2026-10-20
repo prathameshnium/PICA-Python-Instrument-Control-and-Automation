@@ -68,4 +68,5 @@ or open Launcher v2 (Quick Select, search, hover cards) with `python -m pica.mai
 
 User_Manual
 Instruments_Manuals_Lists
+Research_Impact
 ```

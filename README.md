@@ -526,6 +526,7 @@ The project's earlier history and foundational development are outlined below:
 * **PyPI Package:** Install directly via [https://pypi.org/project/pica-suite/](https://pypi.org/project/pica-suite/).
 * **User Manual:** Details on the project and usage guides are available in the [User Manual](docs/User_Manual.md).
 * **Generative AI use:** How AI tools were used in developing PICA, and the rules for contributors, in [CONTRIBUTING.md](CONTRIBUTING.md#use-of-generative-ai).
+* **Research Impact:** Publications that used PICA are listed in [docs/Research_Impact.md](docs/Research_Impact.md). Used PICA in a paper? Open an issue or PR to add it.
 * **Instrument Manuals:** A list of instrument manuals is available in [docs/Instruments_Manuals_Lists.md](docs/Instruments_Manuals_Lists.md).
 * **Novocontrol GPIB Runbook:** Setup and troubleshooting guide for the Alpha-AN analyzer over GPIB in [docs/Novocontrol_GPIB_Runbook.md](docs/Novocontrol_GPIB_Runbook.md).
 * **GitLab Backup:** This project is manually backed up weekly to a [GitLab repository](https://gitlab.com/prathameshnium/pica-python-instrument-control-and-automation).
