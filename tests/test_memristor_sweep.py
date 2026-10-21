@@ -653,14 +653,28 @@ def test_sweep_pause_zero_reproduces_the_old_file():
 
 
 def test_sweep_ladder_no_pause_after_the_entry_that_stops_on_a_confirmed_trip():
-    with tempfile.TemporaryDirectory() as d:
-        t0 = time.perf_counter()
-        _, _, path = run_sweep(FakeK2400(1e6), d, shape=sweep.SHAPE_LADDER, ladder=[5.0, 15.0, 30.0],
-                               pause_s=0.3, protection_v=None)
-        elapsed = time.perf_counter() - t0
-        _, _, rows = read_file(path)
-        assert sorted({int(r["loop"]) for r in rows if r["phase"] == "sweep"}) == [1, 2]
-        assert 0.3 <= elapsed < 2.6, elapsed                               # one pause only
+    # Counts the pauses instead of timing the run: a wall-clock ceiling
+    # failed on a slow CI runner (4.5 s against 2.6 s, 22 Oct 2026).
+    real_pause = sweep.SweepWorker.pause_between_loops
+    paused_after = []
+
+    def counting_pause(self, loop_no, pause_s):
+        paused_after.append(loop_no)
+        return real_pause(self, loop_no, pause_s)
+
+    sweep.SweepWorker.pause_between_loops = counting_pause
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            t0 = time.perf_counter()
+            _, _, path = run_sweep(FakeK2400(1e6), d, shape=sweep.SHAPE_LADDER, ladder=[5.0, 15.0, 30.0],
+                                   pause_s=0.3, protection_v=None)
+            elapsed = time.perf_counter() - t0
+            _, _, rows = read_file(path)
+    finally:
+        sweep.SweepWorker.pause_between_loops = real_pause
+    assert sorted({int(r["loop"]) for r in rows if r["phase"] == "sweep"}) == [1, 2]
+    assert paused_after == [1], paused_after                           # one pause only
+    assert elapsed >= 0.3, elapsed                                     # and it really waited
 
 
 def test_sweep_stop_during_a_pause_ends_at_once_with_stop_button():
