@@ -759,6 +759,62 @@ class TimeEstimatorGUI:
             f"Real runs land within a few % of this "
             f"(calibrated on real .seq/.DAT pairs).")
 
+    # ------------------------------------------------- layout (tight_layout)
+    @staticmethod
+    def _tick_texts(axis):
+        """Tick label strings (plus offset text) an axis will draw, computed
+        the same way the draw does but without a renderer."""
+        fmt = axis.get_major_formatter()
+        return tuple(fmt.format_ticks(axis.get_majorticklocs())) +             (fmt.get_offset(),)
+
+    @staticmethod
+    def _text_outside(ax):
+        """Annotations that can reach past the axes edge (section banners
+        above the top panel, labels near the right edge), with their position
+        in axes fractions. Annotations well inside the axes never move the
+        tight layout, so they are left out."""
+        x0, x1 = ax.get_xlim()
+        y0, y1 = ax.get_ylim()
+        out = []
+        for t in ax.texts:
+            coords = getattr(t, 'xycoords', None)
+            if coords is None:
+                continue
+            cx, cy = coords if isinstance(coords, tuple) else (coords, coords)
+            x, y = t.xy
+            fx = x if cx == 'axes fraction' else                 (ax.convert_xunits(x) - x0) / ((x1 - x0) or 1.0)
+            fy = y if cy == 'axes fraction' else                 (ax.convert_yunits(y) - y0) / ((y1 - y0) or 1.0)
+            if 0.0 <= fx <= 0.8 and 0.0 <= fy <= 0.95:
+                continue
+            out.append((t.get_text(), round(float(fx), 2),
+                        round(float(fy), 2)))
+        return tuple(out)
+
+    def _layout_signature(self):
+        """Everything tight_layout's result depends on that can change from
+        one redraw to the next: figure size, the text around each axes and
+        whether a suptitle is shown."""
+        w, h = self.figure.get_size_inches()
+        sup = self.figure._suptitle
+        sig = [(round(float(w), 3), round(float(h), 3)),
+               bool(sup is not None and sup.get_text())]
+        for ax in self.figure.axes:
+            sig.append((ax.get_title(), ax.get_xlabel(), ax.get_ylabel(),
+                        self._tick_texts(ax.xaxis),
+                        self._tick_texts(ax.yaxis),
+                        self._text_outside(ax)))
+        return tuple(sig)
+
+    def _relayout_if_needed(self):
+        """tight_layout only when the layout would actually change; a redraw
+        that only moves data inside the axes keeps the current margins."""
+        sig = self._layout_signature()
+        if sig != getattr(self, '_layout_sig', None):
+            self.figure.tight_layout()
+            # new axes sizes can re-space the ticks: remember the
+            # state as laid out, so an identical redraw matches it
+            self._layout_sig = self._layout_signature()
+
     def _plot_timeline(self, start_dt):
         self.ax_T.clear()
         self.ax_H.clear()
@@ -824,7 +880,7 @@ class TimeEstimatorGUI:
         self.figure.suptitle(
             f"Planned run  —  est. {self._fmt_dur(total)}",
             fontweight='bold')
-        self.figure.tight_layout()
+        self._relayout_if_needed()
         self.canvas.draw_idle()
 
     def _on_step_select(self, event=None):

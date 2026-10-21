@@ -75,7 +75,12 @@ def load_tscan_file(path):
 
 
 def _moving_median(x, k):
-    """Odd-window moving median with edge padding."""
+    """Odd-window moving median with edge padding.
+
+    Vectorised over a sliding-window view (no per-point Python loop);
+    the windows are processed in blocks so a large k on a long trace
+    never builds one huge (n, k) copy. Same values as the median of
+    each padded window xp[i:i + k], NaN windows included."""
     k = max(1, int(k))
     if k % 2 == 0:
         k += 1
@@ -83,7 +88,13 @@ def _moving_median(x, k):
         return np.asarray(x, float)
     pad = k // 2
     xp = np.pad(np.asarray(x, float), (pad, pad), mode="edge")
-    return np.array([np.median(xp[i:i + k]) for i in range(len(x))])
+    win = np.lib.stride_tricks.sliding_window_view(xp, k)
+    n = len(win)
+    out = np.empty(n, float)
+    block = max(1, 2_000_000 // k)
+    for s in range(0, n, block):
+        out[s:s + block] = np.median(win[s:s + block], axis=1)
+    return out
 
 
 def find_warming_ramps(T, min_span_k=30.0, smooth_n=15):
@@ -208,7 +219,9 @@ class MDRatioCalculatorGUI:
         self.folder_files = {}      # freq -> path (folder mode)
         self.ramps = []             # [(start, stop), ...]
         self.result = None          # last computed table (for save)
-        self._recalc_job = None
+        self._recalc_job = None     # pending debounced recalc
+        self._redetect_job = None   # pending debounced ramp re-detection
+        self._layout_sig = None     # tight_layout only when this changes
 
         self.setup_styles()
         self.create_widgets()
@@ -452,14 +465,26 @@ class MDRatioCalculatorGUI:
             var.trace_add("write", self._schedule_redetect)
 
     def _schedule_recalc(self, *_):
+        # A pending ramp re-detection ends in _recalc_now() anyway, so it
+        # absorbs the recalc (and must not be cancelled by it).
+        if self._redetect_job is not None:
+            return
         if self._recalc_job is not None:
             self.root.after_cancel(self._recalc_job)
         self._recalc_job = self.root.after(400, self._recalc_now)
 
     def _schedule_redetect(self, *_):
+        # Re-detection implies a recalc: drop any pending plain recalc.
         if self._recalc_job is not None:
             self.root.after_cancel(self._recalc_job)
-        self._recalc_job = self.root.after(400, self._detect_ramps)
+            self._recalc_job = None
+        if self._redetect_job is not None:
+            self.root.after_cancel(self._redetect_job)
+        self._redetect_job = self.root.after(400, self._redetect_now)
+
+    def _redetect_now(self):
+        self._redetect_job = None
+        self._detect_ramps()
 
     # ------------------------------------------------------ data loading
     def _open_file(self):
@@ -675,8 +700,26 @@ class MDRatioCalculatorGUI:
         self.ax_ml.axhline(0, color=self.CLR_FG, lw=0.8, alpha=0.5)
         self.ax_ml.set_ylabel(f"Δ{loss_name}/{loss_name} (%)")
         self.ax_ml.set_xlabel("Temperature (K)")
-        self.figure.tight_layout()
+        # tight_layout is the slow part of a redraw: rerun it only when
+        # something that sizes the margins (labels, tick-label widths,
+        # offset text) has changed since the last layout.
+        sig = self._layout_signature()
+        if sig != self._layout_sig:
+            self.figure.tight_layout()
+            self._layout_sig = sig
         self.canvas.draw_idle()
+
+    def _layout_signature(self):
+        """Cheap summary of what tight_layout depends on: axis labels,
+        the widest y tick label and the offset text of each panel."""
+        sig = []
+        for ax in (self.ax_cp, self.ax_md, self.ax_ml):
+            fmt = ax.yaxis.get_major_formatter()
+            labels = fmt.format_ticks(ax.yaxis.get_majorticklocs())
+            sig.append((ax.get_ylabel(), ax.get_xlabel(),
+                        max((len(s) for s in labels), default=0),
+                        fmt.get_offset()))
+        return tuple(sig)
 
     # ------------------------------------------------------------- save
     def _save_result(self):

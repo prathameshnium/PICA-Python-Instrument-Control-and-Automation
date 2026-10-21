@@ -6,8 +6,7 @@ Purpose: PE Hysteresis Plotter Utility (Part of PICA suite).
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext, Canvas
 import os
-import io
-import pandas as pd
+import numpy as np  # column arrays for the parsed loops (pandas cost ~1.5 s at startup)
 import traceback
 from datetime import datetime
 from matplotlib.figure import Figure
@@ -51,7 +50,8 @@ class PEPlotterAppGUI:
         self.root.configure(bg=self.CLR_BG)
 
         self.active_filepath = None
-        self.file_data_cache = {}  # {filepath: {'df': dataframe, 'metadata': dict}}
+        self.file_data_cache = {}  # {filepath: {'data': {column: np.ndarray}, 'metadata': dict}}
+        self._layout_key = None    # what tight_layout was last computed for
         self.file_ui_elements = {} # {filepath: {'var': boolVar, 'chk': checkbutton, 'lbl': label, 'frame': frame}}
         self.logo_image = None
 
@@ -263,15 +263,41 @@ class PEPlotterAppGUI:
                     if len(parts) >= 3:
                         data_lines.append(line_clean)
 
+        data = {}
         if data_lines:
             sep = ',' if filepath.lower().endswith('.csv') else '\t'
-            df = pd.read_csv(io.StringIO('\n'.join(data_lines)), sep=sep, header=None)
-            if len(df.columns) == len(headers):
-                df.columns = headers
-        else:
-            df = pd.DataFrame()
+            rows = [line.split(sep) for line in data_lines]
+            # Like a header-less CSV read: the first row fixes the column count,
+            # short rows are padded with missing values, long rows are an error.
+            n_cols = len(rows[0])
+            for i, row in enumerate(rows):
+                if len(row) > n_cols:
+                    raise ValueError(f"Expected {n_cols} fields in data row {i + 1}, saw {len(row)}")
+            names = headers if len(headers) == n_cols else list(range(n_cols))
+            for c, name in enumerate(names):
+                data[name] = self._column_array([row[c] if c < len(row) else '' for row in rows])
 
-        return metadata, df
+        return metadata, data
+
+    # Tokens read as a missing value (the same set a pandas CSV read uses).
+    _NA_TOKENS = frozenset(('', '#N/A', '#N/A N/A', '#NA', '-1.#IND', '-1.#QNAN', '-NaN', '-nan',
+                            '1.#IND', '1.#QNAN', '<NA>', 'N/A', 'NA', 'NULL', 'NaN', 'None',
+                            'n/a', 'nan', 'null'))
+
+    @classmethod
+    def _column_array(cls, tokens):
+        """One column of text fields -> int64, float64 (NaN for missing) or object array."""
+        missing = [t.strip() in cls._NA_TOKENS for t in tokens]
+        if not any(missing):
+            try:
+                return np.array([int(t) for t in tokens], dtype=np.int64)
+            except (ValueError, OverflowError):
+                pass
+        try:
+            return np.array([np.nan if m else float(t) for t, m in zip(tokens, missing)],
+                            dtype=np.float64)
+        except ValueError:
+            return np.array([np.nan if m else t for t, m in zip(tokens, missing)], dtype=object)
 
     def browse_files(self):
         filepaths = filedialog.askopenfilenames(
@@ -283,12 +309,12 @@ class PEPlotterAppGUI:
         for fp in filepaths:
             if fp not in self.file_data_cache:
                 try:
-                    metadata, df = self.parse_file_custom(fp)
-                    if df.empty:
+                    metadata, data = self.parse_file_custom(fp)
+                    if not data:
                         self.log(f"Warning: No tabular data found in {os.path.basename(fp)}")
                         continue
-                    
-                    self.file_data_cache[fp] = {'df': df, 'metadata': metadata}
+
+                    self.file_data_cache[fp] = {'data': data, 'metadata': metadata}
                     self._add_file_to_ui(fp)
                     
                     self.log(f"Loaded: {os.path.basename(fp)}")
@@ -296,7 +322,7 @@ class PEPlotterAppGUI:
                     self.log(f"  Area: {metadata['Sample Area']} cm2 | Thick: {metadata['Sample Thickness']} um")
                     self.log(f"  Voltage: {metadata['Applied Voltage']} V | Freq: {metadata['Frequency (Hz)']} Hz\n")
 
-                    self._update_dropdowns(df.columns.tolist())
+                    self._update_dropdowns(list(data))
                     
                 except Exception as e:
                     self.log(f"Error parsing {os.path.basename(fp)}: {e}")
@@ -361,15 +387,16 @@ class PEPlotterAppGUI:
 
         if not selected_filepaths or not x_col or not y_col:
             self.ax_main.set_title("Waiting for data selection...")
+            self._layout_key = None
             self.canvas.draw_idle()
             return
 
         for filepath in selected_filepaths:
-            df = self.file_data_cache[filepath]['df']
+            data = self.file_data_cache[filepath]['data']
             filename = os.path.basename(filepath)
 
-            if x_col in df.columns and y_col in df.columns:
-                self.ax_main.plot(df[x_col], df[y_col], linewidth=1.5,
+            if x_col in data and y_col in data:
+                self.ax_main.plot(data[x_col], data[y_col], linewidth=1.5,
                                   label=self._shorten_label(filename))
 
         self.ax_main.set_xlabel(x_col, fontweight='bold')
@@ -384,8 +411,12 @@ class PEPlotterAppGUI:
                                       framealpha=0.7,
                                       ncol=2 if len(handles) > 8 else 1)
             leg.set_draggable(True)
-        
-        self.figure.tight_layout()
+
+        # tight_layout is slow; redo it only when labels or the file set (tick widths) change.
+        layout_key = (x_col, y_col, tuple(selected_filepaths))
+        if layout_key != self._layout_key:
+            self._layout_key = layout_key
+            self.figure.tight_layout()
         self.canvas.draw_idle()
 
 

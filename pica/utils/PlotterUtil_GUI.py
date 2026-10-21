@@ -100,6 +100,10 @@ class PlotterAppGUI:
         self.logo_image = None
 
         self.file_watcher_job = None
+        # Live update redraws in place: {filepath: Line2D} of the current plot
+        # and the settings it was drawn with (None = must replot in full)
+        self._plot_lines = {}
+        self._plot_sig = None
 
         self.setup_styles()
         self.create_widgets()
@@ -549,6 +553,12 @@ class PlotterAppGUI:
         """
         with open(filepath, 'rb') as f:
             head = f.read(65536)
+        return PlotterAppGUI._sniff_encoding_bytes(head)
+
+    @staticmethod
+    def _sniff_encoding_bytes(head):
+        """_sniff_encoding on bytes already read (the first 64 KB are enough)."""
+        head = head[:65536]
         if head.startswith(b'\xef\xbb\xbf'):
             return 'utf-8-sig'
         if head.startswith((b'\xff\xfe', b'\xfe\xff')):
@@ -740,11 +750,14 @@ class PlotterAppGUI:
             return
         n = int(text)
         try:
-            headers, _, _, _ = self._read_data_table(fp, n)
+            table = self._read_data_snapshot(fp, n)
         except Exception as e:
             self.log(f"Cannot skip {n} comment lines in '{os.path.basename(fp)}': {e}")
             self._show_comment_lines(fp)
             return
+        # Store what was just read so the reload below uses it, not a second read
+        self._store_table(fp, table, n)
+        headers = table[0]
         info['comment_override'] = n
         self.log(f"'{os.path.basename(fp)}': first {n} lines treated as comments.")
         self._reload_with_headers(fp, headers)
@@ -764,7 +777,9 @@ class PlotterAppGUI:
         if self.file_data_cache[fp].pop('comment_override', None) is not None:
             self.log(f"'{os.path.basename(fp)}': comment lines back to auto-detect.")
             try:
-                headers = self._read_data_table(fp)[0]
+                table = self._read_data_snapshot(fp)
+                self._store_table(fp, table, None)
+                headers = table[0]
             except Exception:
                 headers = []  # load_file_data reports the error
             self._reload_with_headers(fp, headers)
@@ -775,17 +790,11 @@ class PlotterAppGUI:
             return False
 
         try:
-            file_info = self.file_data_cache[filepath]
-            headers, delim, data_array, n_comments = self._read_data_table(
-                filepath, file_info.get('comment_override'))
-            file_info['comment_lines'] = n_comments
-            file_info['headers'] = headers
-            file_info['delimiter'] = delim
-            file_info['data'] = {h: data_array[:, j] for j, h in enumerate(headers)}
-            file_info['mod_time'] = os.path.getmtime(filepath)
-            file_info['size'] = os.path.getsize(filepath)
+            override = self.file_data_cache[filepath].get('comment_override')
+            table = self._read_data_snapshot(filepath, override)
+            self._store_table(filepath, table, override)
 
-            self.log(f"Cached {data_array.shape[0]} data points from '{os.path.basename(filepath)}'.")
+            self.log(f"Cached {table[2].shape[0]} data points from '{os.path.basename(filepath)}'.")
             return True
         except Exception as e:
             if filepath in self.file_data_cache:
@@ -794,7 +803,35 @@ class PlotterAppGUI:
             self.log(f"Error caching file '{os.path.basename(filepath)}': {e}")
             return False
 
-    def _find_header_row(self, filepath, comment_lines=None):
+    def _store_table(self, filepath, table, override):
+        """Puts a _read_data_snapshot result into the file's cache entry."""
+        headers, delim, data_array, n_comments, snap = table
+        file_info = self.file_data_cache.setdefault(filepath, {"path": filepath})
+        file_info['comment_lines'] = n_comments
+        file_info['headers'] = headers
+        file_info['delimiter'] = delim
+        file_info['data'] = {h: data_array[:, j] for j, h in enumerate(headers)}
+        file_info['loaded_override'] = override
+        file_info.update(snap)
+
+    @staticmethod
+    def _cache_is_fresh(filepath, file_info):
+        """True when the cached table still matches the file on disk.
+
+        Same mtime and size as at the last read, read with the comment-line
+        setting now in force. Saves re-reading a file on every click.
+        """
+        if not file_info.get('headers') or 'file_size' not in file_info:
+            return False
+        if file_info.get('loaded_override') != file_info.get('comment_override'):
+            return False
+        try:
+            return (os.path.getmtime(filepath) == file_info.get('mod_time')
+                    and os.path.getsize(filepath) == file_info['file_size'])
+        except OSError:
+            return False
+
+    def _find_header_row(self, filepath, comment_lines=None, encoding=None):
         """Returns (header_index, delimiter, headers, comment_lines). Raises on failure.
 
         comment_lines is the number of lines above the column-name row (or
@@ -826,7 +863,8 @@ class PlotterAppGUI:
             return [t for t in s.split() if t]
 
         lines = []
-        with open(filepath, 'r', encoding=self._sniff_encoding(filepath), errors='ignore') as f:
+        encoding = encoding or self._sniff_encoding(filepath)
+        with open(filepath, 'r', encoding=encoding, errors='ignore') as f:
             for i, line in enumerate(f):
                 lines.append(line.strip())
                 if i >= 500:  # header must appear near the top
@@ -904,15 +942,41 @@ class PlotterAppGUI:
 
     def _read_data_table(self, filepath, comment_lines=None):
         """Returns (headers, delimiter, data, comment_lines); see _find_header_row."""
-        header_idx, delim, headers, n_comments = self._find_header_row(filepath, comment_lines)
-        data_array = np.genfromtxt(
-            filepath,
-            delimiter=delim,
-            comments='#',
-            autostrip=True,
-            invalid_raise=False,
-            skip_header=header_idx + 1,
-            encoding=self._sniff_encoding(filepath))
+        return self._read_data_snapshot(filepath, comment_lines)[:4]
+
+    @staticmethod
+    def _parse_table_lines(lines, delim, skip):
+        """Parses the data block. np.loadtxt is the fast path (~3.5x quicker);
+        any file it rejects (empty cells, ragged rows, text cells) goes through
+        np.genfromtxt exactly as before, which turns those into NaN or drops
+        the row."""
+        try:
+            return np.loadtxt(lines, delimiter=delim, comments='#',
+                              skiprows=skip, dtype=float)
+        except ValueError:
+            return np.genfromtxt(lines, delimiter=delim, comments='#',
+                                 autostrip=True, invalid_raise=False,
+                                 skip_header=skip)
+
+    def _read_data_snapshot(self, filepath, comment_lines=None):
+        """_read_data_table plus a snapshot dict for the cache and live update.
+
+        The file is read once as bytes, so the snapshot knows exactly what was
+        parsed: 'size' is the byte offset after the last complete line (where
+        live update resumes), 'file_size' the bytes read, 'encoding' the
+        sniffed encoding, and 'tail_row' whether a last line without its
+        newline (possibly still being written) became the final data row.
+        """
+        mod_time = os.path.getmtime(filepath)  # before reading: a later write changes it
+        with open(filepath, 'rb') as f:
+            raw = f.read()
+        encoding = self._sniff_encoding_bytes(raw)
+        header_idx, delim, headers, n_comments = self._find_header_row(
+            filepath, comment_lines, encoding)
+        # Universal newlines, as when numpy opened the file itself
+        text = raw.decode(encoding, errors='ignore')
+        lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+        data_array = self._parse_table_lines(lines, delim, header_idx + 1)
 
         data_array = np.atleast_2d(np.asarray(data_array, dtype=float))
         if data_array.size == 0:
@@ -922,17 +986,24 @@ class PlotterAppGUI:
             data_array = data_array[:, :len(headers)]
         elif data_array.shape[1] < len(headers):
             raise ValueError(f"Found {data_array.shape[1]} data columns but {len(headers)} headers.")
-        return headers, delim, data_array, n_comments
 
-    def _update_cache_and_ui(self, filepath, headers, delim, data_array):
-        """Updates the file data cache and UI elements with new data."""
-        file_info = self.file_data_cache[filepath]
-        file_info['headers'] = headers
-        file_info['delimiter'] = delim
-        file_info['data'] = {h: data_array[:, j] for j, h in enumerate(headers)}
-        file_info['mod_time'] = os.path.getmtime(filepath)
-        file_info['size'] = os.path.getsize(filepath)
+        cut = raw.rfind(b'\n') + 1
+        if encoding == 'utf-16' or cut == 0:
+            cut = len(raw)  # UTF-16 always reloads; no newline at all = nothing to resume
+        tail_row = False
+        if cut < len(raw) and data_array.shape[0]:
+            # Was the unterminated last line parsed as the last row? Then live
+            # update drops that row and re-reads the line once it is complete.
+            tail = raw[cut:].decode(encoding, errors='ignore')
+            rows = self._parse_appended_lines([tail], headers, delim)
+            tail_row = bool(rows) and np.array_equal(
+                np.asarray(rows[0]), data_array[-1], equal_nan=True)
+        snap = {'encoding': encoding, 'mod_time': mod_time, 'size': cut,
+                'file_size': len(raw), 'tail_row': tail_row}
+        return headers, delim, data_array, n_comments, snap
 
+    def _update_cache_and_ui(self, filepath, headers, n_rows):
+        """Fills the column pickers from the (already cached) file data."""
         self.x_col_cb['values'] = headers
         self.y_col_cb['values'] = headers
         if len(headers) > 1:
@@ -940,7 +1011,7 @@ class PlotterAppGUI:
             if not self.y_col_cb.get(): self.y_col_cb.set(headers[1])
         elif headers:
             if not self.x_col_cb.get(): self.x_col_cb.set(headers[0])
-        self.log(f"Loaded {data_array.shape[0]} data points from '{os.path.basename(filepath)}'.")
+        self.log(f"Loaded {n_rows} data points from '{os.path.basename(filepath)}'.")
 
     def load_file_data(self, filepath):
         if not filepath:
@@ -951,10 +1022,12 @@ class PlotterAppGUI:
 
         try:
             file_info = self.file_data_cache.setdefault(filepath, {"path": filepath})
-            headers, delim, data_array, n_comments = self._read_data_table(
-                filepath, file_info.get('comment_override'))
-            file_info['comment_lines'] = n_comments
-            self._update_cache_and_ui(filepath, headers, delim, data_array)
+            if not self._cache_is_fresh(filepath, file_info):
+                override = file_info.get('comment_override')
+                self._store_table(filepath, self._read_data_snapshot(filepath, override), override)
+            headers = file_info['headers']
+            n_rows = len(file_info['data'][headers[0]]) if headers else 0
+            self._update_cache_and_ui(filepath, headers, n_rows)
             if self.active_filepath == filepath:
                 self._show_comment_lines(filepath)
 
@@ -979,72 +1052,139 @@ class PlotterAppGUI:
                 "Cannot append data: file information is incomplete. Performing full reload.")
             self.load_file_data(self.active_filepath)
             return
-        if self._sniff_encoding(self.active_filepath) == 'utf-16':
+        encoding = file_info.get('encoding')
+        if encoding is None:
+            encoding = file_info['encoding'] = self._sniff_encoding(self.active_filepath)
+        if encoding == 'utf-16':
             # Byte offsets can't be resumed mid-file in UTF-16; reload instead
             self.load_file_data(self.active_filepath)
             return
 
         try:
-            new_lines = self._read_new_lines(self.active_filepath, file_info)
-            appended_count = self._parse_and_append_new_data(new_lines, file_info)
+            mod_time = os.path.getmtime(self.active_filepath)  # before reading
+            offset = file_info['size']
+            new_lines, new_offset = self._read_appended_lines(
+                self.active_filepath, offset, encoding)
+            file_info['mod_time'] = mod_time
+            if new_offset == offset:
+                return  # only part of a line so far; wait for its newline
 
-            if appended_count > 0:
-                file_info['mod_time'] = os.path.getmtime(self.active_filepath)
-                file_info['size'] = os.path.getsize(self.active_filepath)
-                self.log(f"Appended {appended_count} new data points.")
-                self.plot_data()
-                
+            headers = file_info['headers']
+            dropped = file_info.pop('tail_row', False)
+            if dropped:
+                # The unterminated last line parsed at load time is re-read
+                # whole now, so its (possibly cut-short) row goes
+                for header in headers:
+                    file_info['data'][header] = file_info['data'][header][:-1]
+            rows = self._parse_appended_lines(new_lines, headers, file_info.get('delimiter'))
+            if rows:
+                block = np.array(rows, dtype=float)
+                for j, header in enumerate(headers):
+                    file_info['data'][header] = np.concatenate(
+                        (file_info['data'][header], block[:, j]))
+            file_info['size'] = file_info['file_size'] = new_offset
+
+            if rows or dropped:
+                if rows:
+                    self.log(f"Appended {len(rows)} new data points.")
+                self._refresh_plot()
+
         except Exception:
             self.log(f"Error appending data: {traceback.format_exc()}")
             # Fallback to a full reload in case of parsing error
             self.load_file_data(self.active_filepath)
         finally:
             # Always restart the watcher after an append operation.
-            self.start_file_watcher()
-    def _read_new_lines(self, filepath, file_info):
-        """Reads new lines from a file since the last known size."""
-        try:
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                f.seek(file_info.get('size', 0))
-                new_text = f.read()
-            
-            if not new_text:
-                return []
+            self.start_file_watcher(log_message=False)
 
-            # Process lines, stripping whitespace and filtering comments/empty lines
-            new_lines = [
-                line for line in new_text.strip().splitlines()
-                if line.strip() and not line.strip().lstrip('"').startswith('#')
-            ]
-            return new_lines
-        except Exception as e:
-            self.log(f"Error reading new lines from file: {e}")
-            return []
+    @staticmethod
+    def _read_appended_lines(filepath, offset, encoding):
+        """Returns (lines, new_offset) for the complete lines after byte offset.
 
-    def _parse_and_append_new_data(self, new_lines, file_info):
-        """Parses new lines and appends them to the data cache."""
-        if not new_lines:
-            return 0
+        Reads in binary and stops at the last newline, so a line the writer
+        is still in the middle of is neither dropped nor parsed cut short
+        (1.2345 -> 1.23): it stays unread and new_offset points at its start.
+        """
+        with open(filepath, 'rb') as f:
+            f.seek(offset)
+            chunk = f.read()
+        cut = chunk.rfind(b'\n') + 1
+        if cut == 0:
+            return [], offset
+        return chunk[:cut].decode(encoding, errors='ignore').splitlines(), offset + cut
 
-        delim = file_info.get('delimiter')
-        new_data = {h: [] for h in file_info['headers']}
-        appended_count = 0
-        for line in new_lines:
-            row = [t.strip() for t in (line.split(delim) if delim else line.split()) if t.strip()]
-            if len(row) != len(file_info['headers']):
+    @staticmethod
+    def _parse_appended_lines(lines, headers, delim):
+        """Parses appended text lines into rows of floats, as the full load does.
+
+        Comments and blank lines are skipped, empty cells become NaN, a
+        trailing delimiter is tolerated, and rows with the wrong number of
+        columns are dropped.
+        """
+        rows = []
+        n = len(headers)
+        for line in lines:
+            line = line.split('#', 1)[0].strip()
+            if not line:
                 continue
-            for i, header in enumerate(file_info['headers']):
+            if delim:
+                tokens = [t.strip() for t in line.split(delim)]
+                while len(tokens) > n and tokens[-1] == "":
+                    tokens.pop()  # trailing-delimiter ghost column
+            else:
+                tokens = line.split()
+            if len(tokens) != n:
+                continue
+            row = []
+            for tok in tokens:
                 try:
-                    new_data[header].append(float(row[i]))
-                except (ValueError, TypeError):
-                    new_data[header].append(np.nan)
-            appended_count += 1
+                    row.append(float(tok))
+                except ValueError:
+                    row.append(np.nan)
+            rows.append(row)
+        return rows
 
-        for header in file_info['headers']:
-            file_info['data'][header] = np.concatenate(
-                (file_info['data'][header], np.array(new_data[header], dtype=float)))
-        
-        return appended_count
+    def _plot_signature(self):
+        """Everything that shapes the plot apart from the data itself."""
+        x_col, y_col, selected_filepaths = self._get_plot_parameters()
+        return (x_col, y_col, tuple(selected_filepaths), bool(self.x_log_var.get()),
+                bool(self.y_log_var.get()), len(self.file_ui_elements))
+
+    def _refresh_plot(self):
+        """Redraws the active file's line in place after a live-update append.
+
+        Same files, columns and scales as the last full plot: only the line
+        data changes, so the legend, labels and title are kept and the axes
+        rescale as a full replot would. Anything else falls back to plot_data.
+        """
+        fp = self.active_filepath
+        if not self._plot_lines or self._plot_signature() != self._plot_sig:
+            self.plot_data()
+            return
+        x_col, y_col, selected_filepaths = self._get_plot_parameters()
+        if fp not in selected_filepaths:
+            return  # the active file is unticked: nothing on screen changed
+        line = self._plot_lines.get(fp)
+        data = self.file_data_cache.get(fp, {}).get('data', {})
+        if line is None or x_col not in data or y_col not in data:
+            self.plot_data()
+            return
+        raw_x, raw_y = data[x_col], data[y_col]
+        finite_mask = np.isfinite(raw_x) & np.isfinite(raw_y)
+        if not finite_mask.any():
+            self.plot_data()
+            return
+        line.set_data(raw_x[finite_mask], raw_y[finite_mask])
+        line.set_markevery(self._markevery(int(finite_mask.sum())))
+        self.ax_main.relim()
+        self.ax_main.set_autoscale_on(True)  # a full replot reset the view too
+        self.ax_main.autoscale_view()
+        self.canvas.draw_idle()
+
+    @staticmethod
+    def _markevery(n_points):
+        """Marker spacing: every point up to 400, then about 200 markers per line."""
+        return max(1, n_points // 200)
 
     def plot_data(self, event=None):
         x_col, y_col, selected_filepaths = self._get_plot_parameters()
@@ -1065,6 +1205,7 @@ class PlotterAppGUI:
 
             if plotted_something:
                 self._finalize_plot(x_col, y_col, selected_filepaths)
+                self._plot_sig = self._plot_signature()
                 self.log(f"Plot updated for {len(selected_filepaths)} selected file(s).")
             else:
                 self.log("No valid data to plot for the selected files and columns.")
@@ -1086,6 +1227,8 @@ class PlotterAppGUI:
 
     def _clear_and_setup_plot(self):
         """Clears the plot and sets up the grid."""
+        self._plot_lines = {}
+        self._plot_sig = None
         self.ax_main.clear()
         self.ax_main.grid(True, linestyle='--', alpha=0.6)
 
@@ -1130,13 +1273,15 @@ class PlotterAppGUI:
             label_text = (self._shorten_label(filename)
                           if len(self.file_ui_elements) > 1
                           else f"{y_col} vs {x_col}")
-            self.ax_main.plot(
+            line, = self.ax_main.plot(
                 plot_x,
                 plot_y,
                 marker='o',
                 markersize=4,
+                markevery=self._markevery(plot_x.size),
                 linestyle='-',
                 label=label_text)
+            self._plot_lines[filepath] = line
             return True
         return False
 

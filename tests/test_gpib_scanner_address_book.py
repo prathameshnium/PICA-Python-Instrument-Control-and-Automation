@@ -1,9 +1,12 @@
-"""Checks on the GPIB scanner's Address Book table (data only, no windows)."""
+"""Checks on the GPIB scanner: Address Book table, queue pump, lazy pyvisa (no windows)."""
 
 import glob
 import os
+import queue
 import re
+import subprocess
 import sys
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -73,6 +76,67 @@ def test_scanner_and_instrument_status_both_open_the_book():
     assert "Address Book\", style='Aux.TButton'" in launcher
     assert "command=self._open_address_book" in launcher
     assert "import show_address_book" in launcher
+
+
+REPO = os.path.dirname(PICA_DIR)
+
+
+def test_importing_the_scanner_does_not_import_pyvisa():
+    # main_v2 imports show_address_book from here; the book must not pay for pyvisa.
+    code = ("import sys; sys.path.insert(0, %r); "
+            "import pica.utils.GPIB_Instrument_Scanner_GUI; "
+            "print('pyvisa' in sys.modules)" % REPO)
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                         text=True, timeout=120, cwd=REPO)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "False"
+
+
+def _bare_scanner(scanner):
+    app = scanner.GPIB_Instrument_Scanner_GUI.__new__(scanner.GPIB_Instrument_Scanner_GUI)
+    app.root = MagicMock()
+    app.scan_button = MagicMock()
+    app.result_queue = queue.Queue()
+    app.logged = []
+    app.log = lambda msg, add_timestamp=True: app.logged.append(msg)
+    return app
+
+
+def test_queue_pump_drains_everything_in_one_tick():
+    import pica.utils.GPIB_Instrument_Scanner_GUI as scanner
+    app = _bare_scanner(scanner)
+    for msg in ("a\n", "b\n", "c\n", "SCAN_COMPLETE"):
+        app.result_queue.put(msg)
+    app.process_queue()
+    assert app.result_queue.empty()
+    assert app.logged == ["a\n", "b\n", "c\n", "Scan complete."]
+    app.scan_button.config.assert_called_once_with(state='normal')
+    app.root.after.assert_called_once_with(100, app.process_queue)
+
+
+def test_scan_uses_patched_pyvisa_and_keeps_the_2_s_timeout():
+    import pica.utils.GPIB_Instrument_Scanner_GUI as scanner
+    fake = MagicMock()
+    rm = fake.ResourceManager.return_value
+    rm.list_resources.return_value = ("GPIB1::24::INSTR",)
+    instr = rm.open_resource.return_value.__enter__.return_value
+    instr.query.return_value = "KEITHLEY,2400\n"
+    app = _bare_scanner(scanner)
+    with patch.object(scanner, "pyvisa", fake):
+        app.run_scan_thread()
+    assert instr.timeout == 2000
+    instr.query.assert_called_once_with('*IDN?')
+    app.process_queue()
+    assert any("KEITHLEY,2400" in m for m in app.logged)
+    assert app.logged[-1] == "Scan complete."
+
+
+def test_first_scan_starts_after_100_ms():
+    with open(os.path.join(PICA_DIR, "utils", "GPIB_Instrument_Scanner_GUI.py"),
+              encoding="utf-8") as fh:
+        source = fh.read()
+    assert "self.root.after(100, self.start_scan)" in source
+    assert "self.root.after(1000, self.start_scan)" not in source
 
 
 if __name__ == "__main__":

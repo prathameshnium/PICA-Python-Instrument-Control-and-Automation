@@ -4,7 +4,7 @@ Purpose: Direct command workbench GUI for the Cryocon (Cryogenic Control
          Systems) Model 34 Cryogenic Temperature Controller.
          Sends individual SCPI commands for control-loop PID gains,
          setpoint, ramp rate, control type, heater range, heater load,
-         maximum power/setpoint, manual power, input configuration
+         manual power, input configuration
          (units, sensor index, name), alarms, over-temperature disconnect,
          keypad lockout, display settings and control engage/disengage.
 
@@ -25,7 +25,8 @@ Instrument facts used here (from that manual):
   - Input channels are addressed as A, B, C, D (or CHA, CHB, ...)
   - INPUT? <ch> reports temperature in that channel's OWN display units
   - Loop 1 is the primary heater (50 W into 50 ohm / 25 W into 25 ohm),
-    with ranges Hi / Mid / Low
+    with ranges in watts (see v1.6 below; the Model 32's Hi / Mid / Low
+    words are not Model 34 values)
   - LOOP:PGAIN 0-1000 (unitless), LOOP:IGAIN 0-1000 SECONDS,
     LOOP:DGAIN 0-1000 inverse seconds
   - LOOP:SETPT allowed 0 K to 1000 K, LOOP:RATE 0-100 units/min
@@ -60,6 +61,22 @@ for it on the Tk thread; a genuinely dead bus was polled for ever,
 because every field swallowed its own timeout. A field that has never
 answered is now asked once and then left alone; a timeout on one that
 has answered stops polling. See DirectControlGUI._poll_field.
+
+v1.6, 21 Oct 2026. Commands brought in line with the Model 34 manual
+(Edition 4, Remote Command Summary pp. 198-205) and with what the lab
+unit answered on 17 and 25 Sep 2026:
+  - heater range is sent in watts as the manual lists them, 50W / 5.0W /
+    0.5W / 0.05W for a 50 ohm load and 25W / 2.5W / 0.3W / 0.03W for
+    25 ohm. The lab unit itself answers HEATER:RANGE? with '5.0W'. The
+    load is read from the instrument before a range is sent, so a range
+    from the other load's list never goes out;
+  - the sensor curve is assigned with INPUT <ch>:SENIX, a Master Sensor
+    Table index (factory 0-14, user curve n = index n + 14). ISENIX and
+    USENIX are Model 32 commands; both time out on the lab unit, so the
+    old panel's curve assignment never reached it;
+  - the Output Limits panel (MAXPWR / MAXSET) and the SENPR? raw-reading
+    query are gone. None is in the Model 34 manual and the lab unit
+    refuses all three under either loop prefix.
 
 v1.3, 17 Sep 2026. Adds "Run Self-Test (read-only survey)" to the
 Advanced / System panel. The mnemonics above were verified against the
@@ -613,12 +630,19 @@ class Cryocon34Backend:
         'RampP': "PID with setpoint ramping (uses RATE)",
     }
 
-    # --- Loop 1 heater ranges (LOOP 1:RANGE) ---
+    # --- Loop 1 heater ranges (LOOP 1:RANGE), per heater load in ohms ---
+    # Model 34 manual, LOOP 1:RANGE: the values are full-scale watts and
+    # depend on the load. The lab unit answers RANGE? with '5.0W'.
     HEATER_RANGES = {
-        'Hi': "Hi  - 50 W into 50 ohm / 25 W into 25 ohm",
-        'Mid': "Mid - 5 W into 50 ohm / 2.5 W into 25 ohm",
-        'Low': "Low - 0.5 W into 50 ohm / 0.25 W into 25 ohm",
+        '50': ['50W', '5.0W', '0.5W', '0.05W'],
+        '25': ['25W', '2.5W', '0.3W', '0.03W'],
     }
+
+    # --- Master Sensor Table indices for INPUT <ch>:SENIX ---
+    # Measured on the lab unit 17 Sep 2026: factory block 0-14, twelve user
+    # slots 15-26 (user curve n = index n + 14), nothing past 26. Index 0
+    # is 'no sensor' and disables readings on that input.
+    SENSOR_INDEX_MAX = 26
 
     # --- Display filter time constants (SYSTEM:DISTC), seconds ---
     DISPLAY_TIME_CONSTANTS = ['0.5', '1', '2', '4', '8', '16', '32', '64']
@@ -939,12 +963,22 @@ class Cryocon34Backend:
     # -- Heater range and load (Manual: LOOP 1:RANGE / LOOP 1:LOAD) --
     # Both are Loop 1 (primary heater) commands only.
 
-    def set_range(self, range_value):
-        """Set the Loop 1 heater range (Hi / Mid / Low)."""
-        if range_value not in self.HEATER_RANGES:
+    def set_range(self, range_value, load=None):
+        """Set the Loop 1 heater range, in watts for the fitted load.
+
+        With no load given the instrument is asked (LOAD?), so a range
+        from the other load's list is refused here instead of being sent
+        and silently ignored.
+        """
+        if load is None:
+            load = self.get_load()
+        load = str(load).strip().upper().rstrip('OHMS').strip()
+        if load not in self.HEATER_RANGES:
+            raise ValueError(f"Heater load must be 50 or 25 ohm, got {load}")
+        if range_value not in self.HEATER_RANGES[load]:
             raise ValueError(
-                f"Range must be one of {list(self.HEATER_RANGES)}, "
-                f"got {range_value}")
+                f"Range for a {load} ohm load must be one of "
+                f"{self.HEATER_RANGES[load]}, got {range_value}")
         cmd = f"{self._loop(1)}:RANGE {range_value}"
         self._write(cmd)
         return cmd
@@ -965,39 +999,6 @@ class Cryocon34Backend:
         """Query the Loop 1 heater load resistance."""
         return self._query(f"{self._loop(1)}:LOAD?")
 
-    # -- Output limits (Manual: LOOP:MAXPWR / LOOP:MAXSET) --
-
-    def set_max_power(self, loop, percent):
-        """Set the loop's maximum output power, in percent of full scale."""
-        loop = self._check_loop(loop)
-        if not (0 <= percent <= 100):
-            raise ValueError(
-                f"Maximum power must be 0-100 %, got {percent}")
-        cmd = f"{self._loop(loop)}:MAXPWR {percent}"
-        self._write(cmd)
-        return cmd
-
-    def get_max_power(self, loop):
-        """Query the loop's maximum output power in percent."""
-        loop = self._check_loop(loop)
-        return self._to_float(
-            self._query(f"{self._loop(loop)}:MAXPWR?"), "MAXPWR?")
-
-    def set_max_setpoint(self, loop, value):
-        """Set the loop's maximum allowed setpoint."""
-        loop = self._check_loop(loop)
-        if not (0 <= value <= 1000):
-            raise ValueError(
-                f"Maximum setpoint must be 0-1000 K, got {value}")
-        cmd = f"{self._loop(loop)}:MAXSET {value}"
-        self._write(cmd)
-        return cmd
-
-    def get_max_setpoint(self, loop):
-        """Query the loop's maximum allowed setpoint."""
-        loop = self._check_loop(loop)
-        return self._to_float(
-            self._query(f"{self._loop(loop)}:MAXSET?"), "MAXSET?")
 
     # -- Manual power (Manual: LOOP:PMANUAL) --
     # Only used while the loop's TYPE is Man.
@@ -1078,7 +1079,7 @@ class Cryocon34Backend:
             return 'nan'
         return self._query(f"{self._loop(loop)}:{self.heater_query}")
 
-    # -- Temperature readings (Manual: INPUT? / INPUT:SENPR?) --
+    # -- Temperature readings (Manual: INPUT?) --
     # INPUT? reports in the CHANNEL's display units, not always Kelvin.
 
     def get_temperature(self, channel):
@@ -1086,16 +1087,11 @@ class Cryocon34Backend:
         raw = self._query(f"INPUT? {channel}")
         return self._to_float(raw, f"INPUT? {channel}")
 
-    def get_sensor_reading(self, channel):
-        """Query the raw sensor reading (Volts or Ohms)."""
-        raw = self._query(f"INPUT {channel}:SENPR?")
-        return self._to_float(raw, f"INPUT {channel}:SENPR?")
-
     def get_alarm_status(self, channel):
         """Query the channel alarm status ('--', 'SF', 'HI' or 'LO')."""
         return self._query(f"INPUT {channel}:ALARM?")
 
-    # -- Input configuration (Manual: INPUT:UNITS / ISENIX / USENIX / NAME) --
+    # -- Input configuration (Manual: INPUT:UNITS / SENIX / NAME) --
 
     def set_units(self, channel, units):
         """Set the channel display units (K, C, F or S)."""
@@ -1111,30 +1107,31 @@ class Cryocon34Backend:
         """Query the channel display units."""
         return self._query(f"INPUT {channel}:UNITS?")
 
-    def set_factory_sensor_index(self, channel, index):
-        """Assign a factory-installed sensor curve (ISENIX). 0 disables."""
-        if index < 0:
-            raise ValueError(f"Sensor index must be >= 0, got {index}")
-        cmd = f"INPUT {channel}:ISENIX {index}"
-        self._write(cmd)
-        return cmd
+    def set_sensor_index(self, channel, index):
+        """Point an input at a Master Sensor Table entry (SENIX).
 
-    def get_factory_sensor_index(self, channel):
-        """Query the factory sensor index (-1 if invalid)."""
-        return self._query(f"INPUT {channel}:ISENIX?")
-
-    def set_user_sensor_index(self, channel, index):
-        """Assign a user-installed sensor curve (USENIX), index 0-3."""
-        if not (0 <= index <= 3):
+        Factory curves are 0-14 and user curve n is index n + 14; 0 means
+        no sensor and disables readings on the input.
+        """
+        if channel not in self.INPUT_CHANNELS:
             raise ValueError(
-                f"User sensor index must be 0-3, got {index}")
-        cmd = f"INPUT {channel}:USENIX {index}"
+                f"Channel must be one of {self.INPUT_CHANNELS}, "
+                f"got {channel}")
+        if not (0 <= index <= self.SENSOR_INDEX_MAX):
+            raise ValueError(
+                f"Sensor index must be 0-{self.SENSOR_INDEX_MAX}, "
+                f"got {index}")
+        cmd = f"INPUT {channel}:SENIX {index}"
         self._write(cmd)
         return cmd
 
-    def get_user_sensor_index(self, channel):
-        """Query the user sensor index (-1 if outside 0-3)."""
-        return self._query(f"INPUT {channel}:USENIX?")
+    def get_sensor_index(self, channel):
+        """Query the Master Sensor Table index an input is using."""
+        return self._query(f"INPUT {channel}:SENIX?")
+
+    def get_sensor_name(self, index):
+        """Query the name of a Master Sensor Table entry (SENTYPE?)."""
+        return self._query(f"SENTYPE? {index}")
 
     def set_input_name(self, channel, name):
         """Set a custom name for an input channel (15 chars max)."""
@@ -1577,7 +1574,6 @@ class DirectControlGUI:
         self._create_setpoint_panel(scroll_frame, 4)
         self._create_range_panel(scroll_frame, 5)
         self._create_manual_output_panel(scroll_frame, 6)
-        self._create_limits_panel(scroll_frame, 7)
         self._create_input_config_panel(scroll_frame, 8)
         self._create_alarm_panel(scroll_frame, 9)
         self._create_advanced_panel(scroll_frame, 10)
@@ -1896,21 +1892,26 @@ class DirectControlGUI:
 
         ttk.Label(frame, text="Range:").grid(
             row=1, column=0, sticky='w', padx=10, pady=5)
-        self.range_var = tk.StringVar(value='Mid')
-        ttk.Combobox(
+        self.range_var = tk.StringVar(value='5.0W')
+        self.range_combo = ttk.Combobox(
             frame, textvariable=self.range_var,
-            values=list(Cryocon34Backend.HEATER_RANGES),
-            state='readonly').grid(
+            values=Cryocon34Backend.HEATER_RANGES['50'],
+            state='readonly')
+        self.range_combo.grid(
             row=1, column=1, sticky='ew', padx=10, pady=5)
 
         ttk.Label(frame, text="Load (ohm):").grid(
             row=2, column=0, sticky='w', padx=10, pady=5)
         self.load_var = tk.StringVar(value='50')
-        ttk.Combobox(
+        load_combo = ttk.Combobox(
             frame, textvariable=self.load_var,
             values=['50', '25'], state='readonly',
-            width=6).grid(row=2, column=1, sticky='w',
-                          padx=10, pady=5)
+            width=6)
+        load_combo.grid(row=2, column=1, sticky='w', padx=10, pady=5)
+        # The range list is the one for the selected load (manual: the
+        # watt values differ between a 50 and a 25 ohm heater).
+        load_combo.bind('<<ComboboxSelected>>',
+                        lambda _e: self._match_ranges_to_load())
 
         btn_frame = ttk.Frame(frame)
         btn_frame.grid(row=3, column=0, columnspan=2,
@@ -1980,41 +1981,6 @@ class DirectControlGUI:
             command=self._read_pmanual).grid(
             row=0, column=1, sticky='ew', padx=5)
 
-    def _create_limits_panel(self, parent, grid_row):
-        frame = ttk.LabelFrame(parent, text='Output Limits')
-        frame.grid(row=grid_row, column=0, sticky='new',
-                   pady=5, padx=10)
-        frame.grid_columnconfigure(1, weight=1)
-
-        self.limits_loop_var = tk.StringVar(value='1')
-        ttk.Label(frame, text="Loop:").grid(
-            row=0, column=0, sticky='w', padx=10, pady=5)
-        ttk.Combobox(
-            frame, textvariable=self.limits_loop_var,
-            values=Cryocon34Backend.LOOPS, state='readonly',
-            width=5).grid(row=0, column=1, sticky='w',
-                          padx=10, pady=5)
-
-        self.maxpwr_entry = self._make_entry(
-            frame, "Max Power (% of full scale)", "100", 1)
-        self.maxset_entry = self._make_entry(
-            frame, "Max Setpoint (K)", "320", 2)
-
-        btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=3, column=0, columnspan=2,
-                       sticky='ew', pady=5)
-        btn_frame.grid_columnconfigure((0, 1), weight=1)
-        ttk.Button(
-            btn_frame,
-            text="Send Limits",
-            command=self._send_limits).grid(
-            row=0, column=0, sticky='ew', padx=5)
-        ttk.Button(
-            btn_frame,
-            text="Read Limits",
-            command=self._read_limits).grid(
-            row=0, column=1, sticky='ew', padx=5)
-
     def _create_input_config_panel(self, parent, grid_row):
         frame = ttk.LabelFrame(parent, text='Input Configuration')
         frame.grid(row=grid_row, column=0, sticky='new',
@@ -2023,9 +1989,10 @@ class DirectControlGUI:
 
         ttk.Label(
             frame,
-            text=("Sensor index selects the calibration curve.\n"
-                  "Factory curves use ISENIX (0 disables the\n"
-                  "channel); user curves use USENIX, index 0-3.\n\n"
+            text=("Sensor index (SENIX) selects the calibration\n"
+                  "curve: factory curves 0-14, user curve n is\n"
+                  "index n + 14 (up to 26). 0 means no sensor and\n"
+                  "disables readings on the input.\n\n"
                   "A user curve has to be installed before an index\n"
                   "can point at it. The Model 34 has no Cernox curve\n"
                   "of its own, so a calibrated Cernox needs loading\n"
@@ -2056,17 +2023,9 @@ class DirectControlGUI:
             width=5).grid(row=2, column=1, sticky='w',
                           padx=10, pady=5)
 
-        ttk.Label(frame, text="Curve Source:").grid(
-            row=3, column=0, sticky='w', padx=10, pady=5)
-        self.incfg_curve_src_var = tk.StringVar(value='Factory (ISENIX)')
-        ttk.Combobox(
-            frame, textvariable=self.incfg_curve_src_var,
-            values=['Factory (ISENIX)', 'User (USENIX)'],
-            state='readonly').grid(
-            row=3, column=1, sticky='ew', padx=10, pady=5)
-
+        # Blank, not 0: sending a default 0 would disable the input.
         self.incfg_index_entry = self._make_entry(
-            frame, "Sensor Index", "0", 4)
+            frame, "Sensor Index", "", 4)
         self.incfg_name_entry = self._make_entry(
             frame, "Channel Name", "", 5)
 
@@ -2959,8 +2918,21 @@ class DirectControlGUI:
     # HEATER RANGE / LOAD HANDLERS
     # -----------------------------------------------------------------------
 
+    def _match_ranges_to_load(self):
+        """Offer the range list for the selected load, keeping the same
+        step (e.g. 5.0W at 50 ohm becomes 2.5W at 25 ohm)."""
+        ranges = Cryocon34Backend.HEATER_RANGES
+        new = ranges.get(self.load_var.get(), ranges['50'])
+        step = 1
+        for values in ranges.values():
+            if self.range_var.get() in values:
+                step = values.index(self.range_var.get())
+        self.range_combo['values'] = new
+        self.range_var.set(new[step])
+
     def _send_range(self):
-        """Send the Loop 1 heater range."""
+        """Send the Loop 1 heater range. The backend reads the fitted load
+        from the instrument first and refuses a range from the wrong list."""
         range_value = self.range_var.get()
         self._safe_command(
             f"Set Loop 1 heater range to {range_value}",
@@ -2973,6 +2945,8 @@ class DirectControlGUI:
         try:
             value = self.backend.get_range()
             self.log(f"Read Loop 1 heater range: {value}")
+            if value in self.range_combo['values']:
+                self.range_var.set(value)
         except Exception as e:
             self.log(f"ERROR reading heater range: {e}")
             messagebox.showerror("Read Failed", str(e))
@@ -2991,6 +2965,9 @@ class DirectControlGUI:
         try:
             value = self.backend.get_load()
             self.log(f"Read Loop 1 heater load: {value} ohm")
+            if value.strip() in Cryocon34Backend.HEATER_RANGES:
+                self.load_var.set(value.strip())
+                self._match_ranges_to_load()
         except Exception as e:
             self.log(f"ERROR reading heater load: {e}")
             messagebox.showerror("Read Failed", str(e))
@@ -3029,50 +3006,6 @@ class DirectControlGUI:
             messagebox.showerror("Read Failed", str(e))
 
     # -----------------------------------------------------------------------
-    # OUTPUT LIMIT HANDLERS
-    # -----------------------------------------------------------------------
-
-    def _send_limits(self):
-        """Send the maximum power and maximum setpoint."""
-        try:
-            loop = self.limits_loop_var.get()
-            max_pwr = self._read_float_entry(
-                self.maxpwr_entry, "Max power")
-            max_set = self._read_float_entry(
-                self.maxset_entry, "Max setpoint")
-        except ValueError as e:
-            self.log(f"ERROR: {e}")
-            messagebox.showerror("Invalid Input", str(e))
-            return
-
-        if self._safe_command(
-                f"Set max power (Loop {loop}): {max_pwr} %",
-                self.backend.set_max_power, loop, max_pwr) is None:
-            return
-        self._safe_command(
-            f"Set max setpoint (Loop {loop}): {max_set} K",
-            self.backend.set_max_setpoint, loop, max_set)
-
-    def _read_limits(self):
-        """Read the maximum power and maximum setpoint."""
-        if not self._require_connection():
-            return
-        try:
-            loop = self.limits_loop_var.get()
-            max_pwr = self.backend.get_max_power(loop)
-            max_set = self.backend.get_max_setpoint(loop)
-            self.log(
-                f"Read Loop {loop}: max power={max_pwr} %, "
-                f"max setpoint={max_set}")
-            self.maxpwr_entry.delete(0, 'end')
-            self.maxpwr_entry.insert(0, str(max_pwr))
-            self.maxset_entry.delete(0, 'end')
-            self.maxset_entry.insert(0, str(max_set))
-        except Exception as e:
-            self.log(f"ERROR reading output limits: {e}")
-            messagebox.showerror("Read Failed", str(e))
-
-    # -----------------------------------------------------------------------
     # INPUT CONFIGURATION HANDLERS
     # -----------------------------------------------------------------------
 
@@ -3104,14 +3037,9 @@ class DirectControlGUI:
                 "Invalid Input", "Sensor index must be an integer.")
             return
 
-        if self.incfg_curve_src_var.get().startswith('User'):
-            self._safe_command(
-                f"Set input {channel} user sensor index to {index}",
-                self.backend.set_user_sensor_index, channel, index)
-        else:
-            self._safe_command(
-                f"Set input {channel} factory sensor index to {index}",
-                self.backend.set_factory_sensor_index, channel, index)
+        self._safe_command(
+            f"Set input {channel} sensor index to {index}",
+            self.backend.set_sensor_index, channel, index)
 
     def _send_input_name(self):
         """Send a custom name for the selected input."""
@@ -3133,19 +3061,24 @@ class DirectControlGUI:
             self.backend.set_input_name, channel, name)
 
     def _read_input_config(self):
-        """Read units, sensor indices and name for the selected input."""
+        """Read units, sensor index and name for the selected input."""
         if not self._require_connection():
             return
         try:
             channel = self.incfg_ch_var.get()
             units = self.backend.get_units(channel)
-            isenix = self.backend.get_factory_sensor_index(channel)
-            usenix = self.backend.get_user_sensor_index(channel)
+            senix = self.backend.get_sensor_index(channel)
+            try:
+                sensor = self.backend.get_sensor_name(senix.strip())
+            except Exception:
+                sensor = '?'
             name = self.backend.get_input_name(channel)
             self.log(
                 f"Read input {channel}: units={units}, "
-                f"ISENIX={isenix}, USENIX={usenix}, name={name}")
+                f"SENIX={senix} ({sensor}), name={name}")
             self.channel_units[channel] = units
+            self.incfg_index_entry.delete(0, 'end')
+            self.incfg_index_entry.insert(0, senix.strip())
             self.incfg_name_entry.delete(0, 'end')
             self.incfg_name_entry.insert(0, name.strip('"'))
         except Exception as e:

@@ -176,5 +176,175 @@ def test_plotter_comment_count_for_headerless_files():
         assert headers == ["Col1", "Col2"] and n == 1 and data.shape == (2, 2)
 
 
+# --- Live update, cache and plotting (Agg canvas, no Tk) ---------------------
+
+class _Var:
+    def __init__(self, value):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.value = value
+
+
+class _Combo(_Var):
+    """Stands in for the X/Y column ttk.Combobox."""
+
+    def __init__(self, value=""):
+        super().__init__(value)
+        self.items = {}
+
+    def __setitem__(self, key, value):
+        self.items[key] = value
+
+
+def _live_app(path, x_col="", y_col=""):
+    """Bare plotter with stub widgets and a real (Agg) figure, `path` active."""
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    app = _plotter_reader()
+    app.logged = []
+    app.log = app.logged.append
+    app.live_update_var = _Var(False)
+    app.x_log_var, app.y_log_var = _Var(False), _Var(False)
+    app.x_col_cb, app.y_col_cb = _Combo(x_col), _Combo(y_col)
+    app.column_source_var, app.comment_lines_var, app.comment_source_var = _Var(""), _Var(""), _Var("")
+    app.file_watcher_job = None
+    app.figure = Figure()
+    app.ax_main = app.figure.add_subplot(111)
+    app.canvas = FigureCanvasAgg(app.figure)
+    app._plot_lines, app._plot_sig = {}, None
+    app.file_ui_elements = {path: {"var": _Var(True)}}
+    app.file_data_cache = {path: {"path": path}}
+    app.active_filepath = path
+    return app
+
+
+def _append(path, text):
+    with open(path, "a", newline="") as fh:
+        fh.write(text)
+    # mtime resolution on some filesystems is coarse; make the change visible
+    st = os.stat(path)
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 10_000_000))
+
+
+def test_append_reader_stops_at_a_half_written_last_line():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "live.csv")
+        with open(path, "w", newline="") as fh:
+            fh.write("T,R\n1,10\n2,1.23")  # writer is mid-way through '1.2345'
+        lines, offset = _plotter_reader()._read_appended_lines(path, 4, "utf-8")
+        assert lines == ["1,10"] and offset == len(b"T,R\n1,10\n")
+        _append(path, "45\n3,7\n4,")
+        lines, offset2 = _plotter_reader()._read_appended_lines(path, offset, "utf-8")
+        assert lines == ["2,1.2345", "3,7"]
+        assert offset2 == os.path.getsize(path) - len(b"4,")
+        # nothing complete yet -> offset unchanged
+        assert _plotter_reader()._read_appended_lines(path, offset2, "utf-8") == ([], offset2)
+
+
+def test_append_parser_matches_the_full_load_rules():
+    rows = _plotter_reader()._parse_appended_lines(
+        ["# note", "", "1,,3", "4,5,6,", "7,8", '"# Instrument: A,B,C"', "9,x,1 # tail"],
+        ["a", "b", "c"], ",")
+    assert len(rows) == 3
+    assert rows[0][0] == 1 and np.isnan(rows[0][1]) and rows[1] == [4, 5, 6]
+    assert rows[2][0] == 9 and np.isnan(rows[2][1]) and rows[2][2] == 1
+    assert _plotter_reader()._parse_appended_lines(["1  2", "3"], ["a", "b"], None) == [[1, 2]]
+
+
+def test_live_update_never_keeps_a_cut_short_value():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "live.csv")
+        with open(path, "w", newline="") as fh:
+            fh.write("# run\nT,R\n1,10\n2,1.23")
+        app = _live_app(path)
+        app.load_file_data(path)
+        info = app.file_data_cache[path]
+        # the full load shows the unterminated line but remembers it was partial
+        assert list(info["data"]["R"]) == [10, 1.23] and info["tail_row"]
+        assert info["size"] == len(b"# run\nT,R\n1,10\n")
+        _append(path, "45\n3,30\n4,4")
+        app.append_file_data()
+        assert list(info["data"]["T"]) == [1, 2, 3]
+        assert list(info["data"]["R"]) == [10, 1.2345, 30]
+        _append(path, "0\n")
+        app.append_file_data()
+        assert list(info["data"]["R"]) == [10, 1.2345, 30, 40]
+        assert info["size"] == os.path.getsize(path) and not info.get("tail_row")
+        assert info["encoding"] == "utf-8"
+
+
+def test_cached_file_is_not_read_again_until_it_changes():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "c.csv")
+        with open(path, "w", newline="") as fh:
+            fh.write("T,R\n1,10\n2,20\n")
+        app = _live_app(path)
+        reads = []
+        real = app._read_data_snapshot
+
+        def counting(fp, comment_lines=None):
+            reads.append(comment_lines)
+            return real(fp, comment_lines)
+        app._read_data_snapshot = counting
+        app.active_filepath = None
+        app._load_file_data_into_cache(path)          # add_files caches it ...
+        app.active_filepath = path
+        app.load_file_data(path)                      # ... and activating reuses it
+        app.load_file_data(path)                      # clicking the label again
+        assert reads == [None]
+        _append(path, "3,30\n")
+        app.load_file_data(path)                      # changed on disk -> re-read
+        assert len(reads) == 2 and len(app.file_data_cache[path]["data"]["T"]) == 3
+        # applying a comment-line count reads once, then the reload uses the cache
+        app.comment_lines_var.set("1")
+        app._apply_comment_lines()
+        assert reads[2:] == [1] and app.file_data_cache[path]["headers"] == ["Col1", "Col2"]
+        app._reset_comment_lines()
+        assert reads[3:] == [None] and app.file_data_cache[path]["headers"] == ["T", "R"]
+
+
+def test_loadtxt_fast_path_and_genfromtxt_fallback_agree():
+    parse = _plotter_reader()._parse_table_lines
+    clean = ["a,b", "1,2", "# c", "", "3,4e-3"]
+    expected = np.genfromtxt(clean, delimiter=",", comments="#", autostrip=True,
+                             invalid_raise=False, skip_header=1)
+    assert np.array_equal(parse(clean, ",", 1), expected)
+    messy = ["a,b", "1,", "3,4", "5,6,7"]  # loadtxt refuses -> genfromtxt result
+    expected = np.genfromtxt(messy, delimiter=",", comments="#", autostrip=True,
+                             invalid_raise=False, skip_header=1)
+    assert np.array_equal(parse(messy, ",", 1), expected, equal_nan=True)
+
+
+def test_live_append_updates_the_line_in_place():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "p.csv")
+        with open(path, "w", newline="") as fh:
+            fh.write("T,R\n" + "".join(f"{i},{i * 2}\n" for i in range(1, 501)))
+        app = _live_app(path, "T", "R")
+        app.load_file_data(path)
+        line = app._plot_lines[path]
+        legend = app.ax_main.get_legend()
+        assert line.get_markevery() == 2 and legend is not None  # 500 // 200
+        _append(path, "1000,5000\n")
+        app.append_file_data()
+        assert app._plot_lines[path] is line and app.ax_main.get_legend() is legend
+        assert len(line.get_xdata()) == 501
+        assert app.ax_main.get_xlim()[1] >= 1000 and app.ax_main.get_ylim()[1] >= 5000
+        # a changed setting (log Y) is a different plot -> full replot
+        app.y_log_var.set(True)
+        _append(path, "1001,5001\n")
+        app.append_file_data()
+        assert app._plot_lines[path] is not line and app.ax_main.get_yscale() == "log"
+
+
+def test_small_files_keep_a_marker_on_every_point():
+    m = _plotter_reader()._markevery
+    assert m(0) == 1 and m(399) == 1 and m(400) == 2 and m(100_000) == 500
+
+
 if __name__ == "__main__":
     run_module_tests(globals())

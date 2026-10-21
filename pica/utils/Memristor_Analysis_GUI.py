@@ -174,6 +174,23 @@ def sweep_loops(rows, cycle=None):
     return loops
 
 
+def cycle_index(rows):
+    """{cycle: [rows]} of the phase 'sweep' / 'pulse' rows, file order kept.
+    Built once when a file is added so a cycle change or a recompute does
+    not rescan every row: sweep_loops(), endurance_leg_segments() and
+    plot_raw_cycle() given index[cycle] return exactly what they return
+    for the whole file. Rows without a usable cycle number are left out."""
+    out = {}
+    for r in rows:
+        if r.get("phase") not in ("sweep", "pulse"):
+            continue
+        c = num(r.get("cycle"))
+        if not math.isfinite(c):
+            continue
+        out.setdefault(int(c), []).append(r)
+    return out
+
+
 def endurance_leg_segments(rows, cycle):
     """[(leg, segment, rows)] for the phase 'sweep' rows of one endurance
     raw cycle, keyed by (cycle, leg, segment): the SET and RESET legs both
@@ -435,6 +452,7 @@ class _TabBase:
         self.frame = tk.Frame(notebook, bg=self.CLR_BG)
         notebook.add(self.frame, text=title)
         self.files = []          # list of (path, header_blocks, columns, rows)
+        self.cycle_rows = {}     # path -> cycle_index(rows), built once per file
         self.params = {}
         self.results = []
         left = tk.Frame(self.frame, bg=self.CLR_BG, width=520)
@@ -547,19 +565,30 @@ class _TabBase:
             self.say([f"{os.path.basename(path)}: file kind '{kind}' does not belong on this tab."])
             return
         self.files.append((path, blocks, columns, rows))
+        self.cycle_rows[path] = cycle_index(rows)
         self.listbox.insert('end', f"[{kind}] {os.path.basename(path)}")
         self.on_files_changed()
 
     def remove_selected(self):
         for idx in sorted(self.listbox.curselection(), reverse=True):
             self.listbox.delete(idx)
+            self.cycle_rows.pop(self.files[idx][0], None)
             del self.files[idx]
         self.on_files_changed()
 
     def clear_files(self):
         self.listbox.delete(0, 'end')
         self.files = []
+        self.cycle_rows = {}
         self.on_files_changed()
+
+    def rows_of_cycle(self, path, rows, cycle):
+        """The sweep/pulse rows of one cycle from the index built at load
+        (falls back to the whole file if the index is missing)."""
+        index = self.cycle_rows.get(path)
+        if index is None:
+            return rows
+        return index.get(int(cycle), [])
 
     def on_files_changed(self):
         pass
@@ -612,6 +641,8 @@ class SweepTab(_TabBase):
         self.ax_log.clear()
         for path, blocks, columns, rows in self.files:
             kind = file_kind(blocks, columns)
+            if kind == "endurance_raw":
+                rows = self.rows_of_cycle(path, rows, cycle)
             groups = switching_groups(rows, kind, cycle)
             name = os.path.basename(path)
             if not groups:
@@ -663,6 +694,7 @@ class RetentionTab(_TabBase):
 
     def build_axes(self):
         self.ax = self.figure.add_subplot(1, 1, 1)
+        self.ax2 = None          # ratio twin of the last compute, if any
 
     def state_of(self, blocks, path):
         state = blocks.get("protocol", {}).get("state", "")
@@ -681,6 +713,11 @@ class RetentionTab(_TabBase):
         except ValueError as exc:
             messagebox.showerror("Check the criteria", str(exc))
             return
+        # ax.clear() leaves the ratio twin of the previous run on the figure;
+        # remove it so twins do not pile up (each run makes at most one).
+        if getattr(self, "ax2", None) is not None:
+            self.ax2.remove()
+            self.ax2 = None
         self.ax.clear()
         curves = {}
         lines = [f"ratio threshold {ratio_thr:g} | drift factor {drift:g} | t ref {t_ref:g} s"]
@@ -712,7 +749,7 @@ class RetentionTab(_TabBase):
                 lines.append(f"ratio rule (HRS interpolated onto the LRS instants in log t, common window "
                              f"{window[0]:.4g} to {window[1]:.4g} s): {verdict}")
                 self.results.append(("LRS+HRS", "pair", "ratio", fire, None, window[0], window[1]))
-                ax2 = self.ax.twinx()
+                ax2 = self.ax2 = self.ax.twinx()
                 ax2.plot(grid, ratio, '--', lw=1.0, color=SEGMENT_COLOURS[2], label="R_HRS / R_LRS (interp.)")
                 ax2.set_ylabel("ratio")
                 ax2.set_yscale("log")
@@ -754,7 +791,8 @@ class EnduranceTab(_TabBase):
         cycles = set()
         for path, blocks, columns, rows in self.files:
             if file_kind(blocks, columns) == "endurance_raw":
-                cycles.update(int(num(r.get("cycle"))) for r in rows if r.get("phase") in ("sweep", "pulse"))
+                index = self.cycle_rows.get(path)
+                cycles.update(index if index is not None else cycle_index(rows))
         values = [str(c) for c in sorted(cycles)]
         try:
             combo = [w for w in self.param_box.winfo_children() if isinstance(w, ttk.Combobox)][0]
@@ -829,7 +867,7 @@ class EnduranceTab(_TabBase):
         if raws and cycle_text:
             cycle = int(float(cycle_text))
             for path, blocks, columns, rows in raws:
-                plot_raw_cycle(self.ax_iv, rows, cycle)
+                plot_raw_cycle(self.ax_iv, self.rows_of_cycle(path, rows, cycle), cycle)
             self.ax_iv.set_title(f"raw cycle {cycle}", fontsize=9)
             handles, labels = self.ax_iv.get_legend_handles_labels()
             if labels:

@@ -285,7 +285,7 @@ def test_a_ramped_setpoint_sets_the_rate_before_the_setpoint():
 
 def test_heater_range_and_load_are_loop_1_only():
     backend, _fake = _connected_backend()
-    assert backend.set_range("Low") == "HEATER:RANGE Low"
+    assert backend.set_range("0.5W", load=50) == "HEATER:RANGE 0.5W"
     assert backend.set_load(50) == "HEATER:LOAD 50"
 
 
@@ -383,7 +383,7 @@ def test_every_control_command_reaches_the_lab_unit():
         backend.set_rate(1, 2),
         backend.set_loop_type(1, "PID"),
         backend.set_loop_source(1, "A"),
-        backend.set_range("Mid"),
+        backend.set_range("5.0W"),
         backend.set_load(50),
         backend.set_manual_power(1, 10),
         backend.set_loop_type(2, "Off"),
@@ -392,6 +392,42 @@ def test_every_control_command_reaches_the_lab_unit():
         assert command.startswith(("HEATER:", "AOUT:")), command
         assert not command.startswith("LOOP"), command
     assert fake.writes == sent, (fake.writes, sent)
+
+
+def test_heater_range_is_checked_against_the_load_the_unit_reports():
+    """Model 34 manual, LOOP 1:RANGE: the watt values differ between a 50
+    and a 25 ohm heater. The lab unit reports 50 ohm, so a 25 ohm value is
+    refused before anything is written."""
+    backend, fake = _lab_backend()
+    fake.writes.clear()
+    assert backend.set_range("0.05W") == "HEATER:RANGE 0.05W"
+    assert "HEATER:LOAD?" in fake.queries, fake.queries
+    try:
+        backend.set_range("2.5W")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a 25 ohm range was accepted on a 50 ohm load")
+    assert fake.writes == ["HEATER:RANGE 0.05W"], fake.writes
+
+
+def test_the_sensor_curve_is_assigned_with_senix():
+    """ISENIX / USENIX are Model 32 commands the lab unit never answered;
+    the Model 34 manual's command is INPUT <ch>:SENIX."""
+    backend, fake = _connected_backend()
+    assert backend.set_sensor_index("A", 17) == "INPUT A:SENIX 17"
+    assert backend.set_sensor_index("B", 0) == "INPUT B:SENIX 0"
+    assert fake.writes == ["INPUT A:SENIX 17", "INPUT B:SENIX 0"]
+
+
+def test_commands_the_lab_unit_refuses_are_not_offered():
+    """MAXPWR, MAXSET, SENPR, ISENIX and USENIX are absent from the Model 34
+    manual and timed out on the lab unit (17 and 25 Sep 2026)."""
+    for name in ("set_max_power", "get_max_power", "set_max_setpoint",
+                 "get_max_setpoint", "get_sensor_reading",
+                 "set_factory_sensor_index", "get_factory_sensor_index",
+                 "set_user_sensor_index", "get_user_sensor_index"):
+        assert not hasattr(control.Cryocon34Backend, name), name
 
 
 def test_the_readers_come_back_with_the_instruments_own_numbers():
@@ -455,7 +491,7 @@ def test_the_numbered_form_is_still_available_for_other_firmware():
     backend, _fake = _connected_backend()
     backend.loop_prefix_mode = 'number'
     assert backend.set_pid(1, 1, 1, 0) == "LOOP 1:PGAIN 1;IGAIN 1;DGAIN 0"
-    assert backend.set_range("Low") == "LOOP 1:RANGE Low"
+    assert backend.set_range("0.5W", load=50) == "LOOP 1:RANGE 0.5W"
     assert backend.set_loop_type(2, "PID") == "LOOP 2:TYPE PID"
 
 
@@ -522,10 +558,14 @@ def test_out_of_range_values_never_reach_the_instrument():
         (backend.set_setpoint_with_ramp, (1, 300, 0)),
         (backend.set_setpoint_with_ramp, (1, 300, 101)),
         (backend.set_rate, (1, 101)),
-        (backend.set_max_power, (1, 101)),
-        (backend.set_max_setpoint, (1, 1001)),
         (backend.set_manual_power, (1, 101)),
-        (backend.set_range, ("Blazing",)),
+        (backend.set_range, ("Blazing", 50)),
+        (backend.set_range, ("Mid", 50)),
+        (backend.set_range, ("2.5W", 50)),
+        (backend.set_range, ("5.0W", 100)),
+        (backend.set_sensor_index, ("A", -1)),
+        (backend.set_sensor_index, ("A", 27)),
+        (backend.set_sensor_index, ("Z", 17)),
         (backend.set_load, (100,)),
         (backend.set_loop_type, (1, "Turbo")),
         (backend.set_loop_source, (1, "Z")),
@@ -720,11 +760,11 @@ ALLOWED_CRYOCON_COMMANDS = {
     "LOOP:SETPT", "LOOP:SETPT?", "LOOP:RATE", "LOOP:RATE?", "LOOP:RAMP?",
     "LOOP:TYPE", "LOOP:TYPE?", "LOOP:SOURCE", "LOOP:SOURCE?",
     "LOOP:RANGE", "LOOP:RANGE?", "LOOP:LOAD", "LOOP:LOAD?",
-    "LOOP:MAXPWR", "LOOP:MAXPWR?", "LOOP:MAXSET", "LOOP:MAXSET?",
+    "LOOP:MAXPWR?", "LOOP:MAXSET?",
     "LOOP:PMANUAL", "LOOP:PMANUAL?", "LOOP:OUTPWR?", "LOOP:HTRREAD?",
     # Input subsystem
     "INPUT?", "INPUT:UNITS", "INPUT:UNITS?", "INPUT:SENPR?",
-    "INPUT:ISENIX", "INPUT:ISENIX?", "INPUT:USENIX", "INPUT:USENIX?",
+    "INPUT:ISENIX?", "INPUT:USENIX?",
     "INPUT:NAME", "INPUT:NAME?", "INPUT:ALARM?",
     "INPUT:ALARM:HIGHEST", "INPUT:ALARM:HIGHEST?",
     "INPUT:ALARM:LOWEST", "INPUT:ALARM:LOWEST?",
@@ -774,10 +814,10 @@ ALLOWED_CRYOCON_COMMANDS = {
     # prefix placeholder and checks both spellings.
     "HEATER:PGAIN", "HEATER:IGAIN", "HEATER:DGAIN", "HEATER:SETPT",
     "HEATER:RATE", "HEATER:TYPE", "HEATER:SOURCE", "HEATER:RANGE",
-    "HEATER:LOAD", "HEATER:MAXPWR", "HEATER:MAXSET", "HEATER:PMANUAL",
+    "HEATER:LOAD", "HEATER:PMANUAL",
     "AOUT:SETPT", "AOUT:TYPE",
     "AOUT:PGAIN", "AOUT:IGAIN", "AOUT:DGAIN", "AOUT:RATE", "AOUT:SOURCE",
-    "AOUT:RANGE", "AOUT:LOAD", "AOUT:MAXPWR", "AOUT:MAXSET",
+    "AOUT:RANGE", "AOUT:LOAD",
     "AOUT:PMANUAL", "AOUT:RAMP?", "AOUT:OUTPWR?", "AOUT:PMANUAL?",
     "AOUT:RATE?", "AOUT:SOURCE?", "AOUT:PGAIN?", "AOUT:IGAIN?",
     "AOUT:DGAIN?", "AOUT:RANGE?", "AOUT:LOAD?", "AOUT:MAXPWR?",

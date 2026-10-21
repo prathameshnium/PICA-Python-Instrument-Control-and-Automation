@@ -1960,7 +1960,11 @@ class Integrated_CT_GUI:
         with open(self.t_log_path, 'w', encoding='utf-8') as fh:
             fh.write("# Cryocon Model 34, input channel "
                      f"{self.backend.params.get('channel', '?')}, read only; "
-                     f"{htr_note}\n")
+                     f"{htr_note}; "
+                     # One row per sweep, while the per-frequency files
+                     # carry the T read before each of their own points.
+                     "Temperature_K is the reading taken before the last "
+                     "frequency of each sweep\n")
             fh.write("DateTime\tElapsed_s\tTemperature_K\tHeater_pct\n")
             fh.flush()
             os.fsync(fh.fileno())

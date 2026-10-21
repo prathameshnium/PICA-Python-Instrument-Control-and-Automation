@@ -173,6 +173,149 @@ def test_ramp_detection_ignores_short_blips():
     assert m.find_warming_ramps(T, min_span_k=30.0) == []
 
 
+def _moving_median_reference(x, k):
+    """The pre-vectorisation implementation, kept verbatim as the oracle."""
+    k = max(1, int(k))
+    if k % 2 == 0:
+        k += 1
+    if k == 1 or len(x) < k:
+        return np.asarray(x, float)
+    pad = k // 2
+    xp = np.pad(np.asarray(x, float), (pad, pad), mode="edge")
+    return np.array([np.median(xp[i:i + k]) for i in range(len(x))])
+
+
+def test_moving_median_matches_the_old_loop_exactly():
+    rng = np.random.default_rng(7)
+    traces = [protocol_temperatures(), rng.normal(0, 1, 501),
+              np.arange(10.0), np.array([3.0, 1.0, 2.0]), np.array([]),
+              np.array([5.0, np.nan, 7.0, 1.0, 2.0, np.inf, 0.0, -3.0, 9.0])]
+    for x in traces:
+        for k in (0, 1, 2, 3, 4, 5, 9, 15, 16, 101, 2000):
+            new = m._moving_median(x, k)
+            old = _moving_median_reference(x, k)
+            assert new.shape == old.shape and new.dtype == old.dtype
+            assert np.array_equal(new, old, equal_nan=True), (len(x), k)
+    # a plain list in, as find_warming_ramps may pass
+    assert np.array_equal(m._moving_median([1, 9, 2, 8, 3], 3),
+                          _moving_median_reference([1, 9, 2, 8, 3], 3))
+    # the block loop: a window wide enough to force several blocks
+    x = rng.normal(0, 1, 3000)
+    assert np.array_equal(m._moving_median(x, 1001),
+                          _moving_median_reference(x, 1001))
+
+
+class _FakeRoot:
+    """root.after / after_cancel recorder; run() fires what is pending."""
+    def __init__(self):
+        self.pending = {}
+        self.cancelled = []
+        self._n = 0
+
+    def after(self, ms, fn):
+        self._n += 1
+        job = f"after#{self._n}"
+        self.pending[job] = fn
+        return job
+
+    def after_cancel(self, job):
+        self.cancelled.append(job)
+        self.pending.pop(job, None)
+
+    def run(self):
+        jobs, self.pending = self.pending, {}
+        for fn in jobs.values():
+            fn()
+
+
+def _windowless_gui():
+    """The GUI object with only the scheduling state and a fake root;
+    _detect_ramps / _recalc_now are counted, not run."""
+    gui = m.MDRatioCalculatorGUI.__new__(m.MDRatioCalculatorGUI)
+    gui.root = _FakeRoot()
+    gui._recalc_job = None
+    gui._redetect_job = None
+    gui.calls = []
+    gui._detect_ramps = lambda: gui.calls.append("detect")
+
+    def recalc():
+        gui._recalc_job = None
+        gui.calls.append("recalc")
+    gui._recalc_now = recalc
+    return gui
+
+
+def test_recalc_does_not_cancel_a_pending_ramp_redetection():
+    """Review finding: both schedulers shared one job id, so a recalc
+    scheduled after a redetect (e.g. min-span edit, then a T-range edit
+    within 400 ms) cancelled the ramp re-detection."""
+    gui = _windowless_gui()
+    gui._schedule_redetect()
+    gui._schedule_recalc()                 # absorbed: redetect recalcs anyway
+    assert gui.root.cancelled == [] and len(gui.root.pending) == 1
+    gui.root.run()
+    assert gui.calls == ["detect"] and gui._redetect_job is None
+
+    # recalc first, then redetect: the recalc is dropped (redetect covers it)
+    gui.calls.clear()
+    gui._schedule_recalc()
+    gui._schedule_redetect()
+    assert len(gui.root.pending) == 1 and gui._recalc_job is None
+    gui.root.run()
+    assert gui.calls == ["detect"]
+
+    # repeated edits still debounce to one run each
+    gui.calls.clear()
+    for _ in range(3):
+        gui._schedule_redetect()
+    for _ in range(3):
+        gui._schedule_recalc()
+    gui.root.run()
+    assert gui.calls == ["detect"]
+    for _ in range(3):
+        gui._schedule_recalc()
+    gui.root.run()
+    assert gui.calls == ["detect", "recalc"]
+
+
+def test_redetect_still_recomputes():
+    # _detect_ramps ends with _recalc_now(), which is what lets a pending
+    # redetect absorb a recalc.
+    import inspect
+    src = inspect.getsource(m.MDRatioCalculatorGUI._detect_ramps)
+    assert src.rstrip().endswith("self._recalc_now()")
+
+
+def test_plot_reruns_tight_layout_only_when_the_layout_changes():
+    from matplotlib.figure import Figure
+    gui = m.MDRatioCalculatorGUI.__new__(m.MDRatioCalculatorGUI)
+    gui.figure = Figure(dpi=100)
+    gui.ax_cp = gui.figure.add_subplot(311)
+    gui.ax_md = gui.figure.add_subplot(312, sharex=gui.ax_cp)
+    gui.ax_ml = gui.figure.add_subplot(313, sharex=gui.ax_cp)
+    gui._layout_sig = None
+    draws = []
+    gui.canvas = type("C", (), {"draw_idle": lambda self: draws.append(1)})()
+    layouts = []
+    real = gui.figure.tight_layout
+    gui.figure.tight_layout = lambda *a, **k: (layouts.append(1), real(*a, **k))
+
+    T = np.linspace(20, 300, 200)
+    cp0 = 1e-10 * (1 + 0.004 * T)
+    md = -2.0 + 0.1 * np.sin(T / 20)
+    args = (T, cp0, T, cp0 * 0.98, T, md, md * 2, "5000 Oe")
+    gui._plot(*args, "G")
+    assert layouts == [1]
+    gui._plot(*args, "G")                       # same data: no re-layout
+    gui._plot(T, cp0, T, cp0 * 0.98, T, md, md * 2, "1 T", "G")   # legend only
+    assert layouts == [1] and len(draws) == 3
+    gui._plot(*args, "tanδ")                    # new y label
+    assert layouts == [1, 1]
+    gui._plot(T, cp0, T, cp0 * 0.98, T, md * 1000, md * 2, "5000 Oe", "tanδ")
+    assert layouts == [1, 1, 1]                 # wider MD tick labels
+    gui.figure.canvas.draw()                    # Agg draw works
+
+
 def test_estimator_fscan_sweep_seconds():
     for aper in ("SHOR", "MED", "LONG"):
         assert te.estimate_fscan_sweep_seconds(377, aper, 0.2) > 0

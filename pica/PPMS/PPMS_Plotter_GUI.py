@@ -141,7 +141,6 @@ def parse_qd_dat(filepath):
     ncol = len(headers)
 
     rows = []
-    n_raw = 0
     for line in lines[data_start + 2:]:
         parts = line.rstrip('\n').split(',')
         if len(parts) < max(2, ncol // 2):
@@ -153,16 +152,38 @@ def parse_qd_dat(filepath):
             # Extra commas live in the leading Comment field.
             extra = len(parts) - ncol
             parts = [','.join(parts[:extra + 1])] + parts[extra + 1:]
-        n_raw += 1
-        row = np.empty(ncol)
-        for j, p in enumerate(parts):
-            try:
-                row[j] = float(p)
-            except ValueError:
-                row[j] = np.nan
-        rows.append(row)
+        rows.append(parts)
+    n_raw = len(rows)
 
-    matrix = np.array(rows) if rows else np.empty((0, ncol))
+    # Convert column by column: a fully numeric column goes through one
+    # map(float) pass; only columns holding blanks/text fall back to a cell
+    # loop, where blanks are skipped without raising. Same float() parsing
+    # as before, so NaN placement and values are unchanged.
+    def to_float(cells):
+        n = len(cells)
+        try:
+            return np.fromiter(map(float, cells), dtype=float, count=n)
+        except ValueError:
+            pass
+        out = np.full(n, np.nan)
+        if not ''.join(cells).strip():          # column left empty
+            return out
+        idx = [k for k, p in enumerate(cells) if p.strip()]
+        try:                                    # numbers and blanks only
+            out[idx] = np.fromiter(map(float, (cells[k] for k in idx)),
+                                   dtype=float, count=len(idx))
+        except ValueError:                      # text in the column
+            for k in idx:
+                try:
+                    out[k] = float(cells[k])
+                except ValueError:
+                    pass
+        return out
+
+    if rows:
+        matrix = np.column_stack([to_float(c) for c in zip(*rows)])
+    else:
+        matrix = np.empty((0, ncol))
     cols = {h: matrix[:, j] for j, h in enumerate(headers)}
 
     def series(name):
@@ -219,6 +240,23 @@ def _split_by_direction(T, s, e, hyst=2.0):
     return [(idx[k], idx[k + 1]) for k in range(len(idx) - 1)]
 
 
+def _majority_filter(cls, w=7, n_classes=3):
+    """Most common class in the w-point window centred on each point
+    (window truncated at the ends); a tie goes to the lowest class.
+
+    Vectorised: each class is one-hot counted with a convolution, so a 50k
+    point file takes milliseconds instead of a per-point np.unique.
+    """
+    n = len(cls)
+    if n == 0:
+        return cls.copy()
+    ones = np.ones(w, dtype=int)
+    counts = np.stack([np.convolve((cls == c).astype(int), ones,
+                                   mode='full')[w // 2:w // 2 + n]
+                       for c in range(n_classes)])
+    return counts.argmax(axis=0)
+
+
 def segment_measurements(T, H, min_pts=10):
     """Classify a VSM dataset into measurement segments.
 
@@ -245,12 +283,7 @@ def segment_measurements(T, H, min_pts=10):
     cls[np.abs(dH) > 2.0] = 2
 
     # Majority filter so single-point glitches don't split segments.
-    w = 7
-    sm = cls.copy()
-    for i in range(n):
-        lo, hi = max(0, i - w // 2), min(n, i + w // 2 + 1)
-        vals, cnts = np.unique(cls[lo:hi], return_counts=True)
-        sm[i] = vals[np.argmax(cnts)]
+    sm = _majority_filter(cls)
 
     runs = []
     s = 0
@@ -594,6 +627,8 @@ class PPMSPlotterGUI:
         self.ax_main.set_ylabel("Moment (emu)")
         self.ax_main.grid(True, linestyle='--', alpha=0.6)
         self.figure.tight_layout()
+        self._seq_axes = None      # stacked axes of the last Sequence view
+        self._layout_sig = None    # what the last tight_layout was fitted to
 
         self.canvas = FigureCanvasTkAgg(self.figure, container)
         self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
@@ -858,10 +893,45 @@ class PPMSPlotterGUI:
             return None
 
     def _reset_figure(self):
-        """Single empty axes; Sequence mode replaces this with its own grid."""
-        self.figure.clf()
-        self.ax_main = self.figure.add_subplot(111)
+        """Single empty axes; Sequence mode replaces this with its own grid.
+
+        The axes is only rebuilt when the subplot structure changes (e.g.
+        coming back from the stacked Sequence view); otherwise it is cleared
+        in place, which is much cheaper than clf() + add_subplot()."""
+        if self.figure.axes == [self.ax_main]:
+            self.ax_main.clear()
+        else:
+            self.figure.clf()
+            self.ax_main = self.figure.add_subplot(111)
+            self._layout_sig = None
         self.ax_main.grid(True, linestyle='--', alpha=0.6)
+
+    @staticmethod
+    def _tick_texts(axis):
+        """Tick label strings (plus offset text) an axis will draw, computed
+        the same way the draw does but without a renderer."""
+        fmt = axis.get_major_formatter()
+        return tuple(fmt.format_ticks(axis.get_majorticklocs())) + \
+            (fmt.get_offset(),)
+
+    def _layout_signature(self):
+        """Everything tight_layout's result depends on that can change from
+        one replot to the next: figure size and the text around each axes."""
+        sig = [tuple(np.round(self.figure.get_size_inches(), 3))]
+        for ax in self.figure.axes:
+            sig.append((ax.get_title(), ax.get_xlabel(), ax.get_ylabel(),
+                        self._tick_texts(ax.xaxis),
+                        self._tick_texts(ax.yaxis)))
+        return tuple(sig)
+
+    def _relayout_if_needed(self):
+        """tight_layout only when the layout would actually change."""
+        sig = self._layout_signature()
+        if sig != getattr(self, '_layout_sig', None):
+            self.figure.tight_layout()
+            # new axes sizes can re-space the ticks: remember the
+            # state as laid out, so an identical redraw matches it
+            self._layout_sig = self._layout_signature()
 
     def plot_data(self, event=None):
         selected = [fp for fp in self._selected_filepaths()
@@ -880,7 +950,6 @@ class PPMSPlotterGUI:
             mode = self._resolve_mode(selected)
             per_gram = self.units_cb.get() == 'emu/g'
             if mode == 'SEQ':
-                self.figure.clf()
                 plotted = self._plot_sequence(selected)
             else:
                 self._reset_figure()
@@ -928,7 +997,19 @@ class PPMSPlotterGUI:
                      "Sequence Overview.")
             return 0
 
-        axes = np.atleast_1d(self.figure.subplots(len(avail), 1, sharex=True))
+        # Reuse the stacked axes when the panel count is unchanged; rebuild
+        # only when the subplot structure changes.
+        axes = getattr(self, '_seq_axes', None)
+        if axes is not None and len(axes) == len(avail) \
+                and self.figure.axes == list(axes):
+            for ax in axes:
+                ax.clear()
+        else:
+            self.figure.clf()
+            axes = np.atleast_1d(
+                self.figure.subplots(len(avail), 1, sharex=True))
+            self._seq_axes = axes
+            self._layout_sig = None
         plotted = 0
         for fi, fp in enumerate(selected):
             data = self.file_data_cache[fp]['data']
@@ -968,7 +1049,7 @@ class PPMSPlotterGUI:
             leg.set_draggable(True)
         axes[0].set_title(title, fontweight='bold')
         self.ax_main = axes[0]
-        self.figure.tight_layout()
+        self._relayout_if_needed()
         return plotted
 
     def _y_values(self, filepath, seg, per_gram):
@@ -1175,7 +1256,7 @@ class PPMSPlotterGUI:
                                       ncol=2 if len(handles) > 8 else 1)
             leg.get_title().set_color(self.CLR_FG)
             leg.set_draggable(True)
-        self.figure.tight_layout()
+        self._relayout_if_needed()
 
 
 if __name__ == '__main__':

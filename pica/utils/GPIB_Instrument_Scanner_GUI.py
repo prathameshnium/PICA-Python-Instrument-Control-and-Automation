@@ -17,15 +17,29 @@ from tkinter import ttk, scrolledtext
 from tkinter import font as tkfont
 import threading
 import queue
+import importlib.util  # find pyvisa without importing it
 from datetime import datetime
 
 # --- Packages for Back end ---
+# pyvisa costs ~0.7 s to import and the Address Book (also opened from the v2
+# launcher) never needs it, so it is only located here and imported by the scan.
+pyvisa = None
 try:
-    import pyvisa
+    PYVISA_AVAILABLE = importlib.util.find_spec("pyvisa") is not None
+except ValueError:  # already in sys.modules without a spec (e.g. a stand-in), so present
     PYVISA_AVAILABLE = True
-except ImportError:
-    pyvisa = None
-    PYVISA_AVAILABLE = False
+
+
+def _load_pyvisa():
+    """Import pyvisa on first use; returns the module or None."""
+    global pyvisa, PYVISA_AVAILABLE
+    if pyvisa is None and PYVISA_AVAILABLE:
+        try:
+            import pyvisa as _pyvisa
+            pyvisa = _pyvisa
+        except ImportError:
+            PYVISA_AVAILABLE = False
+    return pyvisa
 
 # -------------------------------------------------------------------------------
 # --- ADDRESS BOOK ---
@@ -306,8 +320,8 @@ class GPIB_Instrument_Scanner_GUI:
 
         self.log("GPIB/VISA scanner window opened. Auto-scan will begin shortly.")
         self.root.after(100, self.process_queue)  # Start the queue processor
-        # Auto-start the scan after 1 second
-        self.root.after(1000, self.start_scan)
+        # Auto-start the scan once the window has had a moment to draw
+        self.root.after(100, self.start_scan)
 
     def setup_styles(self):
         """Configures ttk styles for a modern look."""
@@ -409,7 +423,7 @@ class GPIB_Instrument_Scanner_GUI:
                 level='error')
             self.scan_button.config(state='disabled')
         else:
-            self.log("Auto-scanning for instruments in 1 second...")
+            self.log("Auto-scanning for instruments...")
 
     def log(self, message, add_timestamp=True):
         """Adds a message to the console widget with a timestamp."""
@@ -441,14 +455,15 @@ class GPIB_Instrument_Scanner_GUI:
         scan_thread.start()
 
     def process_queue(self):
-        """Checks the queue for messages from the worker thread and updates the GUI."""
+        """Drains every queued message from the worker thread and updates the GUI."""
         try:
-            message = self.result_queue.get_nowait()
-            if message == "SCAN_COMPLETE":
-                self.scan_button.config(state='normal')
-                self.log("Scan complete.")
-            else:
-                self.log(message, add_timestamp=False)
+            while True:
+                message = self.result_queue.get_nowait()
+                if message == "SCAN_COMPLETE":
+                    self.scan_button.config(state='normal')
+                    self.log("Scan complete.")
+                else:
+                    self.log(message, add_timestamp=False)
         except queue.Empty:
             pass
         finally:
@@ -470,7 +485,7 @@ class GPIB_Instrument_Scanner_GUI:
         It performs the VISA scan and puts results into the thread-safe queue.
         This is the logic from your original 'gpib_interface_test.py' script.
         """
-        if not pyvisa:
+        if not _load_pyvisa():
             self.result_queue.put("ERROR: PyVISA is not available.\n")
             self.result_queue.put("SCAN_COMPLETE")
             return

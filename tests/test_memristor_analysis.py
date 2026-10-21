@@ -185,5 +185,132 @@ def test_analysis_sweep_tab_keeps_set_and_reset_legs_apart_for_an_endurance_cycl
     assert res["v_reset"] is None     # a linear resistor has no current drop: 'none', not -0 V
 
 
+class _Var:
+    """Stand-in for a tk.StringVar (no Tk root needed)."""
+    def __init__(self, value):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.value = value
+
+
+class _Canvas:
+    def __init__(self):
+        self.draws = 0
+
+    def draw_idle(self):
+        self.draws += 1
+
+
+def _windowless_tab(cls, **params):
+    """A tab object with its real figure and axes but no Tk widgets: the
+    Results box write fails quietly inside say(), the canvas is a stub."""
+    from matplotlib.figure import Figure
+    tab = cls.__new__(cls)
+    tab.files, tab.cycle_rows, tab.results = [], {}, []
+    tab.params = {k: _Var(v) for k, v in params.items()}
+    tab.figure = Figure(figsize=(8, 6.5), dpi=100, facecolor='white', layout='constrained')
+    tab.build_axes()
+    tab.canvas = _Canvas()
+    return tab
+
+
+def _reads_rows(r_values):
+    return [{"phase": "read", "t_since_write_s": float(t), "R_ohm": float(r)}
+            for t, r in zip((1, 2, 5, 10, 20, 50, 100), r_values)]
+
+
+def test_analysis_retention_recompute_keeps_one_ratio_twin():
+    """Review finding: every compute made a new ax.twinx() and ax.clear()
+    left the old twin on the figure, so axes piled up and redraws slowed."""
+    tab = _windowless_tab(analysis.RetentionTab, ratio="10", drift="2", t_ref="10")
+    blocks_l = {"protocol": {"state": "LRS"}, "end": {}}
+    blocks_h = {"protocol": {"state": "HRS"}, "end": {}}
+    tab.files = [("a_LRS_.csv", blocks_l, [], _reads_rows([1e4] * 7)),
+                 ("a_HRS_.csv", blocks_h, [], _reads_rows([1e6, 1e6, 1e6, 1e6, 5e4, 5e4, 5e4]))]
+    tab.compute()
+    n_axes = len(tab.figure.axes)
+    assert n_axes == 2 and tab.ax2 is not None
+    for _ in range(5):
+        tab.compute()
+        assert len(tab.figure.axes) == n_axes
+    assert tab.ax2.get_ylabel() == "ratio" and len(tab.ax2.get_lines()) == 2   # ratio + threshold
+    assert ("LRS+HRS", "pair", "ratio", 20.0, None, 1.0, 100.0) in tab.results
+    # no pair any more: the twin goes away instead of lingering
+    tab.files = tab.files[:1]
+    tab.compute()
+    assert len(tab.figure.axes) == 1 and tab.ax2 is None
+    tab.figure.canvas.draw()      # Agg draw of the final state works
+
+
+def _multi_cycle_rows():
+    """Three cycles of hand-made sweep rows, pulse rows for cycle 2, read rows
+    and one row with no cycle number (never indexed, never matched)."""
+    rows = []
+    for c in (1, 2, 3):
+        rows += _raw_cycle_rows(c)
+        rows.append({"phase": "read", "cycle": c, "leg": "", "segment": "", "R_ohm": 1e4})
+    for seg, leg in ((1, "set"), (2, "reset")):
+        for v in (0.0, 1.0, 2.0):
+            rows.append({"phase": "pulse", "cycle": 2, "loop": 2, "leg": leg, "segment": seg,
+                         "V_set_V": v, "V_meas_V": v, "I_A": v * 1e-6, "compliance_flag": 0})
+    rows.append({"phase": "sweep", "cycle": "", "loop": "", "leg": "set", "segment": 1,
+                 "V_set_V": 0.0, "V_meas_V": 0.0, "I_A": 0.0, "compliance_flag": 0})
+    return rows
+
+
+def test_analysis_cycle_index_gives_the_same_results_as_scanning_every_row():
+    from matplotlib.figure import Figure
+    hand = [r for r in _multi_cycle_rows() if r["cycle"] != ""]     # the old code cannot take a blank cycle
+    with tempfile.TemporaryDirectory() as d:
+        _, _, _, raw = run_endurance(FakeK2400(2e5), d)
+        _, _, real = analysis.parse_pica_csv(raw)
+    for rows in (hand, real):
+        index = analysis.cycle_index(rows)
+        cycles = {int(analysis.num(r.get("cycle"))) for r in rows if r.get("phase") in ("sweep", "pulse")}
+        assert set(index) == cycles and len(cycles) >= 3
+        for c in sorted(cycles) + [99]:
+            sub = index.get(c, [])
+            assert analysis.endurance_leg_segments(sub, c) == analysis.endurance_leg_segments(rows, c)
+            assert analysis.sweep_loops(sub, c) == analysis.sweep_loops(rows, c)
+            assert analysis.switching_groups(sub, "endurance_raw", c) == analysis.switching_groups(rows, "endurance_raw", c)
+            ax_a, ax_b = Figure().add_subplot(111), Figure().add_subplot(111)
+            analysis.plot_raw_cycle(ax_a, rows, c)
+            analysis.plot_raw_cycle(ax_b, sub, c)
+            la, lb = ax_a.get_lines(), ax_b.get_lines()
+            assert len(la) == len(lb)
+            for a, b in zip(la, lb):
+                assert list(a.get_xdata()) == list(b.get_xdata()) and list(a.get_ydata()) == list(b.get_ydata())
+                assert (a.get_color(), a.get_linestyle(), a.get_label()) == (b.get_color(), b.get_linestyle(), b.get_label())
+    # a row with no usable cycle number is left out of the index
+    assert sum(len(v) for v in analysis.cycle_index(_multi_cycle_rows()).values()) == \
+        sum(len(v) for v in analysis.cycle_index(hand).values())
+
+
+def test_analysis_tabs_use_the_cycle_index_built_at_load():
+    with tempfile.TemporaryDirectory() as d:
+        _, _, _, raw = run_endurance(FakeK2400(2e5), d)
+        header, columns, rows = analysis.parse_pica_csv(raw)
+    blocks = analysis.header_blocks(header)
+    entry = (raw, blocks, columns, rows)
+    sweep = _windowless_tab(analysis.SweepTab, rule="1", factor="10", floor="1", set_sign="+", cycle="2")
+    sweep.files, sweep.cycle_rows = [entry], {raw: analysis.cycle_index(rows)}
+    sweep.compute()
+    with_index = list(sweep.results)
+    sweep.cycle_rows = {}                      # fallback: scan the whole file
+    sweep.compute()
+    assert with_index and with_index == sweep.results
+    endu = _windowless_tab(analysis.EnduranceTab, threshold="10", k="3", raw_cycle="5")
+    endu.files, endu.cycle_rows = [entry], {raw: analysis.cycle_index(rows)}
+    endu.compute()
+    drawn = [(list(ln.get_xdata()), list(ln.get_ydata())) for ln in endu.ax_iv.get_lines()]
+    endu.cycle_rows = {}
+    endu.compute()
+    assert drawn and drawn == [(list(ln.get_xdata()), list(ln.get_ydata())) for ln in endu.ax_iv.get_lines()]
+
+
 if __name__ == "__main__":
     run_module_tests(globals())
