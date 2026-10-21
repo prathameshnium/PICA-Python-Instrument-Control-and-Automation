@@ -21,6 +21,7 @@ import tempfile
 
 import matplotlib.style
 import numpy as np
+from matplotlib.backend_bases import NavigationToolbar2
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
@@ -482,6 +483,30 @@ def test_replot_in_the_same_mode_reuses_axes_and_skips_tight_layout():
         for ax in seq[:-1]:
             assert not any(t.get_visible()
                            for t in ax.get_xticklabels(which='both'))
+
+
+def test_toolbar_home_after_a_replot_does_not_restore_the_old_plot():
+    """clf() used to empty the toolbar's view history; reused axes must do
+    the same, or Home after a mode/units change puts back the previous
+    plot's limits (found in review, 22 Oct 2026)."""
+    with tempfile.TemporaryDirectory() as d:
+        app = _bare_app(_cache(d))
+        toolbar = NavigationToolbar2(app.figure.canvas)
+        for first, then in ((("M vs T", "emu"), ("M vs H", "emu")),
+                            (("M vs T", "emu"), ("M vs T", "emu/g")),
+                            (("Sequence Overview", "emu"),
+                             ("Sequence Overview", "emu/g"))):
+            app.mode_cb.set(first[0]); app.units_cb.set(first[1])
+            app.plot_data()
+            toolbar.push_current()
+            app.figure.axes[0].set_xlim(50, 60)       # a zoom
+            toolbar.push_current()
+            app.mode_cb.set(then[0]); app.units_cb.set(then[1])
+            app.plot_data()
+            fresh = [(ax.get_xlim(), ax.get_ylim()) for ax in app.figure.axes]
+            toolbar.home()
+            assert [(ax.get_xlim(), ax.get_ylim())
+                    for ax in app.figure.axes] == fresh, (first, then)
 
 
 if __name__ == "__main__":

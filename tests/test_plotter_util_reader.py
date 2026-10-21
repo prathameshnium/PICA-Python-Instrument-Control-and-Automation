@@ -235,14 +235,16 @@ def test_append_reader_stops_at_a_half_written_last_line():
         path = os.path.join(d, "live.csv")
         with open(path, "w", newline="") as fh:
             fh.write("T,R\n1,10\n2,1.23")  # writer is mid-way through '1.2345'
-        lines, offset = _plotter_reader()._read_appended_lines(path, 4, "utf-8")
+        lines, offset, end = _plotter_reader()._read_appended_lines(path, 4, "utf-8")
         assert lines == ["1,10"] and offset == len(b"T,R\n1,10\n")
+        assert end == os.path.getsize(path)
         _append(path, "45\n3,7\n4,")
-        lines, offset2 = _plotter_reader()._read_appended_lines(path, offset, "utf-8")
+        lines, offset2, end = _plotter_reader()._read_appended_lines(path, offset, "utf-8")
         assert lines == ["2,1.2345", "3,7"]
         assert offset2 == os.path.getsize(path) - len(b"4,")
         # nothing complete yet -> offset unchanged
-        assert _plotter_reader()._read_appended_lines(path, offset2, "utf-8") == ([], offset2)
+        assert _plotter_reader()._read_appended_lines(path, offset2, "utf-8") == (
+            [], offset2, os.path.getsize(path))
 
 
 def test_append_parser_matches_the_full_load_rules():
@@ -275,6 +277,51 @@ def test_live_update_never_keeps_a_cut_short_value():
         assert list(info["data"]["R"]) == [10, 1.2345, 30, 40]
         assert info["size"] == os.path.getsize(path) and not info.get("tail_row")
         assert info["encoding"] == "utf-8"
+
+
+def test_live_update_follows_a_cr_only_file():
+    """Old-Mac style line ends (a lone CR): the resume point used to look
+    for LF only, so no new row ever appeared (review, 22 Oct 2026)."""
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "live.csv")
+        with open(path, "w", newline="") as fh:
+            fh.write("a,b\r1,2\r")
+        app = _live_app(path)
+        app.load_file_data(path)
+        _append(path, "3,4\r5,6\r")
+        app.append_file_data()
+        info = app.file_data_cache[path]
+        assert list(info["data"]["a"]) == [1, 3, 5]
+        assert list(info["data"]["b"]) == [2, 4, 6]
+
+
+class _Root:
+    def after(self, ms, fn):
+        return None
+
+    def after_cancel(self, job):
+        pass
+
+
+def test_a_file_overwritten_by_a_shorter_one_is_reloaded_not_spliced():
+    """The watcher compared the new length with the resume point; a shorter
+    file still past the end of the old last complete line was then
+    'appended' onto the old rows (review, 22 Oct 2026)."""
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "live.csv")
+        with open(path, "w", newline="") as fh:
+            fh.write("a,b\n1,2\n3,4\n5,66")          # 18 bytes, last line open
+        app = _live_app(path)
+        app.root, app.live_update_var = _Root(), _Var(True)
+        app.load_file_data(path)
+        with open(path, "w", newline="") as fh:
+            fh.write("a,b\n7,8\n9,1\n2,3\n")        # 17 bytes, a new run
+        st = os.stat(path)
+        os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 10_000_000))
+        app.check_for_updates()
+        info = app.file_data_cache[path]
+        assert list(info["data"]["a"]) == [7, 9, 2]
+        assert list(info["data"]["b"]) == [8, 1, 3]
 
 
 def test_cached_file_is_not_read_again_until_it_changes():

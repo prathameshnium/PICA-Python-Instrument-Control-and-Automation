@@ -150,5 +150,18 @@ def test_tight_layout_only_when_layout_changes():
     assert app.figure.tight_layout.call_count == 2
 
 
+def test_tight_layout_again_after_a_window_resize():
+    """A resize with the same columns and files must re-fit the margins, or
+    a shrunk window clips the axis labels (review, 22 Oct 2026)."""
+    app = _fake_app(["V", "P", "T"])
+    app.figure.get_size_inches.return_value = (8.0, 6.0)
+    app.plot_data()
+    app.plot_data()
+    assert app.figure.tight_layout.call_count == 1
+    app.figure.get_size_inches.return_value = (4.0, 3.0)
+    app.plot_data()
+    assert app.figure.tight_layout.call_count == 2
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

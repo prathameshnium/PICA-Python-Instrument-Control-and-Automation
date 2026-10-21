@@ -37,8 +37,8 @@ def _load_pyvisa():
         try:
             import pyvisa as _pyvisa
             pyvisa = _pyvisa
-        except ImportError:
-            PYVISA_AVAILABLE = False
+        except Exception:   # not just ImportError: a broken install raises
+            PYVISA_AVAILABLE = False   # others, and the Scan button must recover
     return pyvisa
 
 # -------------------------------------------------------------------------------

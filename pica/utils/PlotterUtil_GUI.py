@@ -987,7 +987,9 @@ class PlotterAppGUI:
         elif data_array.shape[1] < len(headers):
             raise ValueError(f"Found {data_array.shape[1]} data columns but {len(headers)} headers.")
 
-        cut = raw.rfind(b'\n') + 1
+        # A line ends at \n or at a lone \r (CR-only writers); a CRLF split
+        # across two reads only leaves a blank line, which is skipped
+        cut = max(raw.rfind(b'\n'), raw.rfind(b'\r')) + 1
         if encoding == 'utf-16' or cut == 0:
             cut = len(raw)  # UTF-16 always reloads; no newline at all = nothing to resume
         tail_row = False
@@ -1063,9 +1065,12 @@ class PlotterAppGUI:
         try:
             mod_time = os.path.getmtime(self.active_filepath)  # before reading
             offset = file_info['size']
-            new_lines, new_offset = self._read_appended_lines(
+            new_lines, new_offset, end = self._read_appended_lines(
                 self.active_filepath, offset, encoding)
             file_info['mod_time'] = mod_time
+            # bytes seen, not the resume point: the watcher compares the
+            # file length with this to tell growth from an overwrite
+            file_info['file_size'] = end
             if new_offset == offset:
                 return  # only part of a line so far; wait for its newline
 
@@ -1082,7 +1087,7 @@ class PlotterAppGUI:
                 for j, header in enumerate(headers):
                     file_info['data'][header] = np.concatenate(
                         (file_info['data'][header], block[:, j]))
-            file_info['size'] = file_info['file_size'] = new_offset
+            file_info['size'] = new_offset
 
             if rows or dropped:
                 if rows:
@@ -1099,7 +1104,8 @@ class PlotterAppGUI:
 
     @staticmethod
     def _read_appended_lines(filepath, offset, encoding):
-        """Returns (lines, new_offset) for the complete lines after byte offset.
+        """Returns (lines, new_offset, end) for the complete lines after byte
+        offset; end is the byte length seen, including any unfinished line.
 
         Reads in binary and stops at the last newline, so a line the writer
         is still in the middle of is neither dropped nor parsed cut short
@@ -1108,10 +1114,12 @@ class PlotterAppGUI:
         with open(filepath, 'rb') as f:
             f.seek(offset)
             chunk = f.read()
-        cut = chunk.rfind(b'\n') + 1
+        end = offset + len(chunk)
+        cut = max(chunk.rfind(b'\n'), chunk.rfind(b'\r')) + 1
         if cut == 0:
-            return [], offset
-        return chunk[:cut].decode(encoding, errors='ignore').splitlines(), offset + cut
+            return [], offset, end
+        return (chunk[:cut].decode(encoding, errors='ignore').splitlines(),
+                offset + cut, end)
 
     @staticmethod
     def _parse_appended_lines(lines, headers, delim):
@@ -1370,7 +1378,11 @@ class PlotterAppGUI:
             current_size = os.path.getsize(self.active_filepath)
 
             if mod_time != file_info.get('mod_time'):
-                if current_size > file_info.get('size', 0):
+                # Compare with the bytes last seen, not the resume point: a
+                # file overwritten by a shorter one can still be longer than
+                # the end of its last complete line
+                if current_size > file_info.get('file_size',
+                                                file_info.get('size', 0)):
                     # File has grown, append new data
                     self.append_file_data()
                 else:

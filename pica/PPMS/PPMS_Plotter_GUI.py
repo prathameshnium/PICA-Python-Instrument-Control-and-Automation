@@ -900,11 +900,21 @@ class PPMSPlotterGUI:
         in place, which is much cheaper than clf() + add_subplot()."""
         if self.figure.axes == [self.ax_main]:
             self.ax_main.clear()
+            self._forget_toolbar_views()
         else:
             self.figure.clf()
             self.ax_main = self.figure.add_subplot(111)
             self._layout_sig = None
         self.ax_main.grid(True, linestyle='--', alpha=0.6)
+
+    def _forget_toolbar_views(self):
+        """Empty the toolbar's Home/Back/Forward history, as clf() does.
+
+        Reused axes keep their identity, so without this Home after a mode
+        or units change would restore the previous plot's limits."""
+        toolbar = getattr(self.figure.canvas, 'toolbar', None)
+        if toolbar is not None:
+            toolbar.update()
 
     @staticmethod
     def _tick_texts(axis):
@@ -1004,6 +1014,7 @@ class PPMSPlotterGUI:
                 and self.figure.axes == list(axes):
             for ax in axes:
                 ax.clear()
+            self._forget_toolbar_views()
         else:
             self.figure.clf()
             axes = np.atleast_1d(

@@ -412,8 +412,10 @@ class PEPlotterAppGUI:
                                       ncol=2 if len(handles) > 8 else 1)
             leg.set_draggable(True)
 
-        # tight_layout is slow; redo it only when labels or the file set (tick widths) change.
-        layout_key = (x_col, y_col, tuple(selected_filepaths))
+        # tight_layout is slow; redo it only when labels, the file set (tick widths)
+        # or the window size change.
+        layout_key = (x_col, y_col, tuple(selected_filepaths),
+                      tuple(round(float(v), 3) for v in self.figure.get_size_inches()))
         if layout_key != self._layout_key:
             self._layout_key = layout_key
             self.figure.tight_layout()
