@@ -59,6 +59,7 @@ import sys
 import platform
 import shlex
 import shutil
+import importlib.util   # find_spec: is pyvisa installed, without importing it
 import subprocess
 import webbrowser
 import threading
@@ -97,12 +98,19 @@ from pica.module_info import (
     search_modules,
 )
 
-try:
-    import pyvisa
-    PYVISA_AVAILABLE = True
-except ImportError:
-    pyvisa = None
-    PYVISA_AVAILABLE = False
+# pyvisa costs ~0.7 s to import and the launcher window does not need it to
+# draw, so it is looked up here and imported on first use by _visa().
+PYVISA_AVAILABLE = importlib.util.find_spec("pyvisa") is not None
+pyvisa = None
+
+
+def _visa():
+    """Return the pyvisa module, importing it the first time it is needed."""
+    global pyvisa
+    if pyvisa is None:
+        import pyvisa as _pyvisa
+        pyvisa = _pyvisa
+    return pyvisa
 
 try:
     from PIL import Image, ImageTk
@@ -511,8 +519,8 @@ def read_pressure_gauge(rm, gauge):
             try:
                 inst.baud_rate = gauge['baud']
                 inst.data_bits = 8
-                inst.parity = pyvisa.constants.Parity.none
-                inst.stop_bits = pyvisa.constants.StopBits.one
+                inst.parity = _visa().constants.Parity.none
+                inst.stop_bits = _visa().constants.StopBits.one
             except Exception:
                 pass                  # backend without full serial control
         inst.write_termination = '\r\n'
@@ -643,7 +651,7 @@ def scan_instruments(skip_addresses=None, gauge=None, progress=None,
 
     rm = None
     try:
-        rm = pyvisa.ResourceManager()
+        rm = _visa().ResourceManager()
         resources = list(rm.list_resources())
     except Exception as e:
         result['error'] = f"VISA backend error: {e}"
@@ -4380,7 +4388,7 @@ class PICALauncherV2:
                    style='Aux.TButton', command=_find_on_lan).pack(
             anchor='w', pady=(0, 10))
         try:
-            rm = pyvisa.ResourceManager()
+            rm = _visa().ResourceManager()
             try:
                 found = [r for r in rm.list_resources()
                          if r.upper().startswith("ASRL")]
