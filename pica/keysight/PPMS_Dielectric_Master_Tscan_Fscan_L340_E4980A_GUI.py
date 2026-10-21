@@ -380,6 +380,17 @@ except ImportError:
 # ============================================================
 # Subprocess launchers (unchanged from originals)
 # ============================================================
+def _is_gpib_address(resource, hint):
+    """True if resource is on the GPIB primary address named in hint, such
+    as "::19::" or "::23::INSTR", on any board. Secondary-address copies
+    (board::primary::secondary::INSTR), which a Lakeshore answers on, are
+    not a match."""
+    want = [part for part in hint.split("::") if part.isdigit()][:1]
+    parts = resource.split("::")
+    return (len(parts) == 3 and parts[0].upper().startswith("GPIB")
+            and parts[1:2] == want)
+
+
 def run_script_process(script_path):
     try:
         os.chdir(os.path.dirname(script_path))
@@ -2946,7 +2957,7 @@ class PPMSMasterGUI:
                 # never picked by address alone.
                 if is_lakeshore340_idn(idn) and (
                         ls_pick is None
-                        or LAKESHORE340_ADDRESS_HINT in res):
+                        or _is_gpib_address(res, LAKESHORE340_ADDRESS_HINT)):
                     ls_pick = label
                 if "E4980" in idn and lcr_pick is None:
                     lcr_pick = label

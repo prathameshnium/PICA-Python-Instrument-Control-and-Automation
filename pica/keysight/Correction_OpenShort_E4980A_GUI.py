@@ -598,7 +598,7 @@ class CorrectionGUI:
         row2.pack(fill='x', pady=(2, 8))
         self.visa_cb = ttk.Combobox(row2, width=52, font=self.FONT_SUB_LABEL)
         self.visa_cb.pack(side='left', fill='x', expand=True)
-        self.visa_cb.set("GPIB0::17::INSTR")
+        self.visa_cb.set("GPIB1::17::INSTR")
         ttk.Button(row2, text="Scan", command=self._scan_visa).pack(side='right', padx=(6, 0))
 
         self.all_spots_var = tk.BooleanVar(value=False)

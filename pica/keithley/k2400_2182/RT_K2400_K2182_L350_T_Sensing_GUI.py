@@ -54,6 +54,17 @@ import runpy
 from multiprocessing import Process
 
 
+def _is_gpib_address(resource, hint):
+    """True if resource is on the GPIB primary address named in hint, such
+    as "::19::" or "::23::INSTR", on any board. Secondary-address copies
+    (board::primary::secondary::INSTR), which a Lakeshore answers on, are
+    not a match."""
+    want = [part for part in hint.split("::") if part.isdigit()][:1]
+    parts = resource.split("::")
+    return (len(parts) == 3 and parts[0].upper().startswith("GPIB")
+            and parts[1:2] == want)
+
+
 def run_script_process(script_path):
     """
     Wrapper function to execute a script using runpy in its own directory.
@@ -706,11 +717,12 @@ class VT_GUI_Passive:
             self.ls_cb['values'] = resources
             self.k2400_cb['values'] = resources
             self.k2182_cb['values'] = resources
-            default_k2400_addr = 'GPIB1::4::INSTR'
+            default_k2400_addr = next(
+                (r for r in resources if _is_gpib_address(r, "::24::")), None)
             for r in resources:
-                if 'GPIB1::15' in r:
+                if _is_gpib_address(r, "::12::"):
                     self.ls_cb.set(r)
-                if 'GPIB0::7' in r:
+                if _is_gpib_address(r, "::7::"):
                     self.k2182_cb.set(r)
             if default_k2400_addr in resources:
                 self.k2400_cb.set(default_k2400_addr)

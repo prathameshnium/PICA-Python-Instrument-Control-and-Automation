@@ -67,6 +67,17 @@ except ImportError:
     pyvisa = None
 
 
+def _is_gpib_address(resource, hint):
+    """True if resource is on the GPIB primary address named in hint, such
+    as "::19::" or "::23::INSTR", on any board. Secondary-address copies
+    (board::primary::secondary::INSTR), which a Lakeshore answers on, are
+    not a match."""
+    want = [part for part in hint.split("::") if part.isdigit()][:1]
+    parts = resource.split("::")
+    return (len(parts) == 3 and parts[0].upper().startswith("GPIB")
+            and parts[1:2] == want)
+
+
 def run_script_process(script_path):
     """Execute a script using runpy in its own directory (child process)."""
     try:
@@ -1329,7 +1340,7 @@ class TempControlGUI:
             self.ls_cb['values'] = resources
             # The lab's 340 is set to address 19 (3 Sep 2026); pre-select
             # it when present. Identify confirms by *IDN?.
-            preferred = [r for r in resources if LAKESHORE340_ADDRESS_HINT in r]
+            preferred = [r for r in resources if _is_gpib_address(r, LAKESHORE340_ADDRESS_HINT)]
             if preferred:
                 self.ls_cb.set(preferred[0])
                 self.log(f"Pre-selected {preferred[0]} (lab address 19). "

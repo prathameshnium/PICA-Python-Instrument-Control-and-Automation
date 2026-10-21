@@ -13,7 +13,7 @@ def main():
     current_data = []
 
     try:
-        keithley = Keithley6517B("GPIB0::27::INSTR")
+        keithley = Keithley6517B("GPIB1::27::INSTR")
         time.sleep(0.5)
         keithley.measure_current()
         time.sleep(0.5)

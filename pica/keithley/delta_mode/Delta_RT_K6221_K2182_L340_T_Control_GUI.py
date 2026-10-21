@@ -78,6 +78,17 @@ except ImportError:
     pyvisa = None
 
 
+def _is_gpib_address(resource, hint):
+    """True if resource is on the GPIB primary address named in hint, such
+    as "::19::" or "::23::INSTR", on any board. Secondary-address copies
+    (board::primary::secondary::INSTR), which a Lakeshore answers on, are
+    not a match."""
+    want = [part for part in hint.split("::") if part.isdigit()][:1]
+    parts = resource.split("::")
+    return (len(parts) == 3 and parts[0].upper().startswith("GPIB")
+            and parts[1:2] == want)
+
+
 def run_script_process(script_path):
 
     try:
@@ -1436,9 +1447,9 @@ class Advanced_Delta_GUI:
                 # Auto-select common addresses: the lab's 340 sits at 19
                 # (never 12 or 15, those are the 350 / CC34 / 6221).
                 for res in result:
-                    if LAKESHORE340_ADDRESS_HINT in res:
+                    if _is_gpib_address(res, LAKESHORE340_ADDRESS_HINT):
                         self.lakeshore_cb.set(res)
-                    if "GPIB0::13" in res:
+                    if _is_gpib_address(res, "::13::"):
                         self.keithley_cb.set(res)
             else:
                 self.log("No VISA instruments found.")

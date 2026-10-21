@@ -131,9 +131,20 @@ import runpy
 PROTOCOL_VERSION = "1.1"
 
 # GPIB scanner address book (pica/utils/GPIB_Instrument_Scanner_GUI.py):
-# Keithley 2400 at address 24 on GPIB1, scan of 29 Aug 2026.
+# Keithley 2400 at address 24 on GPIB1, scans of 29 Aug and 21 Oct 2026.
+# Its old address 4 is no longer offered.
 DEFAULT_GPIB_ADDRESS = "GPIB1::24::INSTR"
-ALT_GPIB_ADDRESS = "GPIB1::4::INSTR"
+
+
+def _is_gpib_address(resource, hint):
+    """True if resource is on the GPIB primary address named in hint, such
+    as "::19::" or "::23::INSTR", on any board. Secondary-address copies
+    (board::primary::secondary::INSTR), which a Lakeshore answers on, are
+    not a match."""
+    want = [part for part in hint.split("::") if part.isdigit()][:1]
+    parts = resource.split("::")
+    return (len(parts) == 3 and parts[0].upper().startswith("GPIB")
+            and parts[1:2] == want)
 
 # Command pacing and settling (protocol 2.2, 2.3; all go into the header).
 PACING_S = 0.05            # after every configuration write
@@ -1539,7 +1550,7 @@ class MemristorGuiBase:
         self._chip(frame, "Keithley 2400 VISA:", None, r, c, span, padx)
         self.vars["visa_address"] = tk.StringVar(master=self.root, value=DEFAULT_GPIB_ADDRESS)
         self.visa_combobox = ttk.Combobox(frame, textvariable=self.vars["visa_address"],
-                                          values=[DEFAULT_GPIB_ADDRESS, ALT_GPIB_ADDRESS], font=self.FONT_BASE)
+                                          values=[DEFAULT_GPIB_ADDRESS], font=self.FONT_BASE)
         self.visa_combobox.grid(row=r + 1, column=c, columnspan=span, padx=padx, pady=(0, 5), sticky='ew')
         self.add_combo(frame, 0, "Never-exceed V", "protection", PROTECTION_CHOICES, "20", ":SOUR:VOLT:PROT")
         self.scan_button = self.add_wide_button(frame, "Scan for Instruments", self._scan_for_visa_instruments)
@@ -1837,10 +1848,10 @@ class MemristorGuiBase:
             return
         self.log(f"Found: {resources}")
         self.visa_combobox['values'] = resources
-        if DEFAULT_GPIB_ADDRESS in resources:
-            self.vars["visa_address"].set(DEFAULT_GPIB_ADDRESS)
-        elif ALT_GPIB_ADDRESS in resources:
-            self.vars["visa_address"].set(ALT_GPIB_ADDRESS)
+        pick = next((r for r in resources
+                     if _is_gpib_address(r, DEFAULT_GPIB_ADDRESS)), None)
+        if pick:
+            self.vars["visa_address"].set(pick)
         else:
             self.vars["visa_address"].set(resources[0])
 

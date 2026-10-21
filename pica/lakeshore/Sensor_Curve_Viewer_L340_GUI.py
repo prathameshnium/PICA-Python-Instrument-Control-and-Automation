@@ -200,6 +200,17 @@ from multiprocessing import Process
 # UTILITY LAUNCHERS (identical to the sibling Lakeshore modules)
 # ---------------------------------------------------------------------------
 
+def _is_gpib_address(resource, hint):
+    """True if resource is on the GPIB primary address named in hint, such
+    as "::19::" or "::23::INSTR", on any board. Secondary-address copies
+    (board::primary::secondary::INSTR), which a Lakeshore answers on, are
+    not a match."""
+    want = [part for part in hint.split("::") if part.isdigit()][:1]
+    parts = resource.split("::")
+    return (len(parts) == 3 and parts[0].upper().startswith("GPIB")
+            and parts[1:2] == want)
+
+
 def run_script_process(script_path):
     """Wrapper to execute a script in its own directory via runpy."""
     try:
@@ -2019,7 +2030,7 @@ class CurveViewerGUI:
         candidates = [r for r in resources
                       if is_model_340_idn(identities.get(r, ''))]
         lakeshore = next((r for r in candidates
-                          if LAKESHORE_ADDRESS_HINT in r), None)
+                          if _is_gpib_address(r, LAKESHORE_ADDRESS_HINT)), None)
         if lakeshore is None and candidates:
             lakeshore = candidates[0]
         if lakeshore:

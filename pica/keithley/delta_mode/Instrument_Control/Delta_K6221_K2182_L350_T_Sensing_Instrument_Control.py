@@ -8,8 +8,8 @@ import time
 
 # --- Configuration ---
 # Centralized configuration for easy modification.
-KEITHLEY_6221_ADDRESS = "GPIB0::13::INSTR"
-LAKESHORE_350_ADDRESS = "GPIB1::15::INSTR"
+KEITHLEY_6221_ADDRESS = "GPIB1::13::INSTR"
+LAKESHORE_350_ADDRESS = "GPIB1::12::INSTR"
 DELTA_CURRENT = 0.002  # Delta current in Amps
 OUTPUT_FILENAME = 'Delta_Lakeshore_Data.csv'
 TEMPERATURE_LIMIT = 302.5  # Temperature in Kelvin to stop the measurement

@@ -32,7 +32,7 @@ class IV_Combined_Backend:
         self.k2400 = None
         self.results = {'I': [], 'V': []}
 
-    def connect_instruments(self, k2400_addr="GPIB::4", k2182_addr="GPIB::7"):
+    def connect_instruments(self, k2400_addr="GPIB1::24::INSTR", k2182_addr="GPIB::7"):
         """Initializes connection to the instruments."""
         try:
             self.rm = pyvisa.ResourceManager()

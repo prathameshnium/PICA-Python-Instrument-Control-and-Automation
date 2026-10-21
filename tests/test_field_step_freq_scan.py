@@ -407,8 +407,8 @@ def test_cryocon_link_refuses_commands_without_question_mark():
 
 
 def test_thermometer_defaults():
-    assert m.THERMO_DEFAULT_ADDR[m.THERMO_LS350] == "GPIB0::12::INSTR"
-    assert m.THERMO_DEFAULT_ADDR[m.THERMO_CC34] == "GPIB0::23::INSTR"
+    assert m.THERMO_DEFAULT_ADDR[m.THERMO_LS350] == "GPIB1::12::INSTR"
+    assert m.THERMO_DEFAULT_ADDR[m.THERMO_CC34] == "GPIB1::23::INSTR"
     assert m.open_thermometer(m.THERMO_NONE, "", "A") is None
 
 

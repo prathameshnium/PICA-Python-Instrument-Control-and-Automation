@@ -2126,7 +2126,7 @@ class DiagnosticsGUI:
                               padding=(10, 6))
         conn.pack(fill='x', padx=12, pady=(6, 4))
         ttk.Label(conn, text="VISA address:").pack(side='left')
-        self.address_var = tk.StringVar(value=f"GPIB0{CRYOCON_ADDRESS_HINT}")
+        self.address_var = tk.StringVar(value=f"GPIB1{CRYOCON_ADDRESS_HINT}")
         self.address_box = ttk.Combobox(conn, textvariable=self.address_var,
                                         width=32)
         self.address_box.pack(side='left', padx=(6, 6))

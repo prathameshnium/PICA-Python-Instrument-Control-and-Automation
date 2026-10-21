@@ -154,6 +154,17 @@ import runpy
 from multiprocessing import Process
 
 
+def _is_gpib_address(resource, hint):
+    """True if resource is on the GPIB primary address named in hint, such
+    as "::19::" or "::23::INSTR", on any board. Secondary-address copies
+    (board::primary::secondary::INSTR), which a Lakeshore answers on, are
+    not a match."""
+    want = [part for part in hint.split("::") if part.isdigit()][:1]
+    parts = resource.split("::")
+    return (len(parts) == 3 and parts[0].upper().startswith("GPIB")
+            and parts[1:2] == want)
+
+
 def run_script_process(script_path):
     """Execute a script with runpy in its own directory, in a new process."""
     try:
@@ -1210,8 +1221,8 @@ def build_log_header(sample, operator, source, detector, thermometer,
 class ACResistanceTControlGUI:
     PROGRAM_VERSION = PROGRAM_VERSION
     MODULE_NAME = MODULE_NAME
-    DEFAULT_SOURCE_ADDRESS = "GPIB0::13::INSTR"
-    DEFAULT_DETECTOR_ADDRESS = "GPIB0::8::INSTR"
+    DEFAULT_SOURCE_ADDRESS = "GPIB1::13::INSTR"
+    DEFAULT_DETECTOR_ADDRESS = "GPIB1::8::INSTR"
     # The lab's Model 340 since 3 Sep 2026. A scan pre-selects a "::19::"
     # resource; the *IDN? check at connect is what actually decides.
     DEFAULT_THERMOMETER_ADDRESS = "GPIB1::19::INSTR"
@@ -1849,7 +1860,7 @@ class ACResistanceTControlGUI:
                 # Pre-select the lab's 340 at IEEE address 19. A hint only:
                 # the *IDN? check at connect is what decides.
                 preferred = [r for r in resources
-                             if LAKESHORE340_ADDRESS_HINT in r]
+                             if _is_gpib_address(r, LAKESHORE340_ADDRESS_HINT)]
                 if preferred:
                     self.thermometer_cb.set(preferred[0])
                     self.log("Lakeshore 340 box set to %s (address 19 hint)."

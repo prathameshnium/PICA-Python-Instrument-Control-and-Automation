@@ -32,7 +32,7 @@ except ImportError:
 
 PROGRAM_VERSION = "1.0"
 MODULE_NAME = "Comms_SR830_Instrument_Control.py"
-DEFAULT_ADDRESS = "GPIB0::8::INSTR"
+DEFAULT_ADDRESS = "GPIB1::8::INSTR"
 
 # An SR830 answers *IDN? with "Stanford_Research_Systems,SR830,s/n,ver".
 # Identification is by this string, never by address: the default above is

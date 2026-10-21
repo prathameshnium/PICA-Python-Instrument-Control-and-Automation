@@ -460,8 +460,8 @@ THERMO_CC34 = "cc34"
 THERMO_NAMES = {THERMO_NONE: "no thermometer",
                 THERMO_LS350: "Lake Shore 350",
                 THERMO_CC34: "Cryo-con 34"}
-THERMO_DEFAULT_ADDR = {THERMO_LS350: "GPIB0::12::INSTR",
-                       THERMO_CC34: "GPIB0::23::INSTR"}
+THERMO_DEFAULT_ADDR = {THERMO_LS350: "GPIB1::12::INSTR",
+                       THERMO_CC34: "GPIB1::23::INSTR"}
 
 
 class Lakeshore350_Link:
@@ -1244,7 +1244,7 @@ class FieldStepFreqScanGUI:
         ttk.Label(adv, text="LCR meter VISA address").grid(
             row=8, column=0, columnspan=2, padx=8, pady=(6, 0), sticky="w")
         self.lcr_combobox = ttk.Combobox(adv, font=self.FONT_BASE)
-        self.lcr_combobox.set("GPIB0::17::INSTR")
+        self.lcr_combobox.set("GPIB1::17::INSTR")
         self.lcr_combobox.grid(row=9, column=0, columnspan=2, padx=8, pady=(0, 6), sticky="ew")
         self.btn_scan = ttk.Button(adv, text="Scan for instruments (*IDN?)",
                                    command=self._scan_for_visa)

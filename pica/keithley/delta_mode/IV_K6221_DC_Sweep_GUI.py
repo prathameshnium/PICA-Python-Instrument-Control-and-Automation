@@ -61,6 +61,17 @@ try:
 except Exception:
     pass # Path manipulation can fail in some environments (e.g., frozen executables)
 
+def _is_gpib_address(resource, hint):
+    """True if resource is on the GPIB primary address named in hint, such
+    as "::19::" or "::23::INSTR", on any board. Secondary-address copies
+    (board::primary::secondary::INSTR), which a Lakeshore answers on, are
+    not a match."""
+    want = [part for part in hint.split("::") if part.isdigit()][:1]
+    parts = resource.split("::")
+    return (len(parts) == 3 and parts[0].upper().startswith("GPIB")
+            and parts[1:2] == want)
+
+
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
@@ -700,7 +711,7 @@ class Passthrough_IV_GUI:
             elif result:
                 self.log(f"Found: {result}"); self.k6221_cb['values'] = result
                 for res in result:
-                    if "GPIB0::13" in res: self.k6221_cb.set(res); break
+                    if _is_gpib_address(res, "::13::"): self.k6221_cb.set(res); break
             else: self.log("No VISA instruments found.")
             self.scan_button.config(state='normal')
         except queue.Empty:

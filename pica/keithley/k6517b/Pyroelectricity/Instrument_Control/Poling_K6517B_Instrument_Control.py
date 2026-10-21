@@ -15,7 +15,7 @@ def main():
     keithley = None
     try:
         # Initialize and configure the instrument
-        keithley = Keithley6517B("GPIB0::27::INSTR")
+        keithley = Keithley6517B("GPIB1::27::INSTR")
         time.sleep(0.5)
 
         # Apply a poling voltage

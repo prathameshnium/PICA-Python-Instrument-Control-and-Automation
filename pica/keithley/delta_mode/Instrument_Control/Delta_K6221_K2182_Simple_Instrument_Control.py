@@ -9,7 +9,7 @@ from pica.utils.parser import parse_keithley_output
 
 # --- Configuration ---
 # Use constants for easier changes later.
-KEITHLEY_6221_ADDRESS = "GPIB0::13::INSTR"
+KEITHLEY_6221_ADDRESS = "GPIB1::13::INSTR"
 DELTA_CURRENT = 1 * 10**(-11)  # Current in Amps
 # Example 0.001
 

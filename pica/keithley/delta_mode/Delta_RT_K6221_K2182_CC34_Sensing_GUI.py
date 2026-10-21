@@ -158,6 +158,17 @@ CRYOCON_READ_RETRIES = 3            # extra tries before a point becomes NaN
 CRYOCON_READ_RETRY_S = 0.3          # pause between those tries
 
 
+def _is_gpib_address(resource, hint):
+    """True if resource is on the GPIB primary address named in hint, such
+    as "::19::" or "::23::INSTR", on any board. Secondary-address copies
+    (board::primary::secondary::INSTR), which a Lakeshore answers on, are
+    not a match."""
+    want = [part for part in hint.split("::") if part.isdigit()][:1]
+    parts = resource.split("::")
+    return (len(parts) == 3 and parts[0].upper().startswith("GPIB")
+            and parts[1:2] == want)
+
+
 class CryoconStatusError(ValueError):
     """A query returned a Cryo-con status string where a number was expected."""
 
@@ -1696,7 +1707,7 @@ class MeasurementAppGUI:
                 else:
                     hint = next(
                         (r for r in result
-                         if CRYOCON_ADDRESS_HINT in r), None)
+                         if _is_gpib_address(r, CRYOCON_ADDRESS_HINT)), None)
                     if hint:
                         self.cryocon_cb.set(hint)
                         self.log(
@@ -1716,7 +1727,7 @@ class MeasurementAppGUI:
                     self.log(f"Keithley 6221 identified at {keithley}.")
                 else:
                     for res in result:
-                        if "GPIB0::13" in res:
+                        if _is_gpib_address(res, "::13::"):
                             self.keithley_cb.set(res)
             else:
                 self.log("No VISA instruments found.")

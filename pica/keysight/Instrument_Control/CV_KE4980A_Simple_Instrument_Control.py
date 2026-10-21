@@ -35,7 +35,7 @@ except ImportError:
 # ---------------------------------------------------------------
 # USER INPUT (edit here; placeholders only, no sample names in the repo)
 SAMPLE_NAME = "Sample_A"
-VISA_ADDRESS = "GPIB0::17::INSTR"
+VISA_ADDRESS = "GPIB1::17::INSTR"
 SAVE_FOLDER = os.path.join(os.path.expanduser("~"), "Desktop", "CV_data")
 CYCLE_MODE = True            # True: loops of the chosen SHAPE; False: one way v_start -> v_stop
 SHAPE = "positive first"     # "positive first" | "negative first" | "unipolar positive" | "unipolar negative" | "ladder"

@@ -101,7 +101,7 @@ DEFAULT_POLL_INTERVAL = 1.0
 
 # The owner has only confirmed one address on this rack (SR830 at
 # GPIB0::8::INSTR). The 197A address is a placeholder.
-DEFAULT_VISA_ADDRESS = "GPIB0::7::INSTR"
+DEFAULT_VISA_ADDRESS = "GPIB1::20::INSTR"
 
 # UNVERIFIED: the reply format of the 197A is not documented to us. This
 # regex pulls the first floating point number out of whatever comes back.

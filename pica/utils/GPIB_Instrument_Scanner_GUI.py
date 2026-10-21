@@ -9,11 +9,12 @@ Purpose: GUI module for GPIB Instrument Scanner GUI v4.
 #               and display their identification strings. (Updated to match PICA Launcher)
 # Author:       Prathamesh Deshmukh
 # Created:      17/09/2025
-# Version:      V: 2.0
+# Version:      V: 2.1
 # -------------------------------------------------------------------------------
 
 import tkinter as tk
 from tkinter import ttk, scrolledtext
+from tkinter import font as tkfont
 import threading
 import queue
 from datetime import datetime
@@ -27,13 +28,247 @@ except ImportError:
     PYVISA_AVAILABLE = False
 
 # -------------------------------------------------------------------------------
+# --- ADDRESS BOOK ---
+# -------------------------------------------------------------------------------
+# One row per GPIB primary address 0-30, shown by the Address Book popup.
+# Hints, not facts: any address can be changed from an instrument's front panel,
+# so modules identify instruments by their *IDN? reply and only use the address
+# as a pre-selection. Always trust the scan over this table.
+#
+# Provenance:
+#   * 8, 11, 12, 13, 17, 19, 20, 24, 27: all answered on GPIB1 in the scan of
+#     21 Oct 2026. 23 (Cryocon 34) answered on GPIB1 the same day, in a later
+#     scan with the Cryocon switched on.
+#   * The E4980A (17) used to sit on GPIB0; on 21 Oct 2026 it answered on GPIB1.
+#     GPIB0::12 and GPIB0::17 still show up but fail with VI_ERROR_ALLOC: stale
+#     entries for a board that is no longer there, not instruments.
+#   * L340 -> 19 and Cryocon 34 -> 23 were set on the front panels on
+#     3 Sep 2026. Both used to sit on 12, the factory default they share with
+#     the L350.
+#   * The AFG3022B (11) is switched on and off at the rack.
+#   * K197A (20) has no *IDN?; the 1973A/1972A card hands back a pending
+#     reading such as "OOHM+9.99999E+9" (overflow ohms). Probable, not proven.
+#   * K2182 (7) has not been seen on recent scans; keep 7 for it.
+#   * 4 was the K2400's old address. On 21 Oct 2026 every K2400 module was
+#     moved to default to GPIB1::24, so 4 is free again.
+#   * Novocontrol Alpha-AN (5) answers *IDN? but is not SCPI; never probe it.
+#   * The L350 and L340 also answer on every secondary address (GPIB1::12::0
+#     to ::12::30): their GPIB chips ignore the secondary byte. Same instrument,
+#     not 31 more of them.
+#
+# Never: 0 is the controller (the PC's GPIB board), 21 is used by controllers
+# and Keysight adapters, 30 by some adapters, 31 is invalid.
+# Avoid: factory defaults of instruments a lab tends to acquire later.
+# A VI_ERROR_TMO is a busy instrument (held open by a running module), not an
+# empty address. Close the other program and rescan before concluding anything.
+#
+# When you assign a new address: set it on the front panel, change its row here,
+# and update the *_ADDRESS_HINT of the module that talks to the instrument.
+ADDRESS_BOOK_SEEN = "21 Oct 2026"
+
+# (address, status, instrument, bus, last seen, note)
+# status is one of: "In use", "Reserved", "Free", "Avoid", "Never"
+ADDRESS_BOOK = [
+    (0, "Never", "", "", "", "The PC's GPIB board (bus controller)"),
+    (1, "Avoid", "", "", "", "Tektronix factory default"),
+    (2, "Free", "", "", "", ""),
+    (3, "Free", "", "", "", ""),
+    (4, "Free", "", "", "", ""),
+    (5, "Reserved", "Novocontrol Alpha-AN", "", "hint only",
+     "Not SCPI: never probe"),
+    (6, "Free", "", "", "", ""),
+    (7, "Reserved", "Keithley 2182", "", "not recently",
+     "Kept for the 2182"),
+    (8, "In use", "SRS SR830 lock-in", "GPIB1", ADDRESS_BOOK_SEEN, ""),
+    (9, "Avoid", "", "", "", "Agilent 34970A factory default"),
+    (10, "Avoid", "", "", "", "Agilent 332xx factory default"),
+    (11, "In use", "Tektronix AFG3022B", "GPIB1", ADDRESS_BOOK_SEEN,
+     "Switched on/off at the rack"),
+    (12, "In use", "Lakeshore 350", "GPIB1", ADDRESS_BOOK_SEEN,
+     "Also answers on every secondary address"),
+    (13, "In use", "Keithley 6221", "GPIB1", ADDRESS_BOOK_SEEN, ""),
+    (14, "Avoid", "", "", "", "Keithley 6485 factory default"),
+    (15, "Avoid", "", "", "",
+     "Old Lakeshore address, still in two Instrument_Control scripts"),
+    (16, "Avoid", "", "", "", "Keithley 2000/2010/2700 factory default"),
+    (17, "In use", "Keysight E4980A", "GPIB1", ADDRESS_BOOK_SEEN,
+     "Was on GPIB0 before"),
+    (18, "Avoid", "", "", "", "Keithley 2450 factory default"),
+    (19, "In use", "Lakeshore 340", "GPIB1", ADDRESS_BOOK_SEEN,
+     "Was 12 before 3 Sep 2026; answers on every secondary"),
+    (20, "In use", "Keithley 197A DMM", "GPIB1", ADDRESS_BOOK_SEEN,
+     "No *IDN?: replies with a reading"),
+    (21, "Never", "", "", "", "Controllers and Keysight adapters"),
+    (22, "Avoid", "", "", "", "Agilent 3458A/34401A factory default"),
+    (23, "In use", "Cryocon 34", "GPIB1", ADDRESS_BOOK_SEEN,
+     "Was 12 before 3 Sep 2026"),
+    (24, "In use", "Keithley 2400", "GPIB1", ADDRESS_BOOK_SEEN, ""),
+    (25, "Free", "", "", "", ""),
+    (26, "Free", "", "", "", ""),
+    (27, "In use", "Keithley 6517B", "GPIB1", ADDRESS_BOOK_SEEN, ""),
+    (28, "Free", "", "", "", ""),
+    (29, "Free", "", "", "", ""),
+    (30, "Never", "", "", "", "Used by some adapters (31 is invalid)"),
+]
+
+# Free addresses in the order to hand them out, safest first.
+FREE_ADDRESSES_SAFEST_FIRST = (26, 29, 25, 28, 2, 3, 4, 6)
+
+# Address Book colours by status: (tile background, tile text, table row).
+ADDRESS_BOOK_COLOURS = {
+    "In use": ('#5E8C4F', '#FFFFFF', '#D9E8CF'),
+    "Reserved": ('#8F8173', '#FFFFFF', '#E5DCD3'),
+    "Free": ('#FFFFFF', '#2C2825', '#FFFFFF'),
+    "Avoid": ('#E3B24A', '#2C2825', '#F6E3B8'),
+    "Never": ('#B5483B', '#FFFFFF', '#EDC2BB'),
+}
+
+# Long instrument names shortened to fit an address tile.
+_TILE_NAME_CUTS = (("Keithley ", "K"), ("Lakeshore ", "LS"), ("Tektronix ", ""),
+                   ("SRS ", ""), (" lock-in", ""), ("Keysight ", ""),
+                   ("Novocontrol ", ""), (" DMM", ""))
+
+
+def _tile_name(row):
+    """Short instrument name for a tile, or the status for an empty address."""
+    name = row[2]
+    if not name:
+        return row[1].lower()
+    for old, new in _TILE_NAME_CUTS:
+        name = name.replace(old, new)
+    return name
+
+
+def show_address_book(parent):
+    """Open the Address Book popup over parent and return its Toplevel.
+
+    A colour map of addresses 0-30 to read at a glance, then the full table.
+    Plain tk widgets and its own Treeview style, so it looks the same from the
+    scanner and from the v2 launcher's Instrument Status window.
+    """
+    bg, panel, text, dim, accent = '#B8A392', '#E5DCD3', '#1A1A1A', '#4A423C', '#BA6B5E'
+    font_base = ('Segoe UI', 11)
+
+    win = tk.Toplevel(parent)
+    win.title("PICA GPIB Address Book")
+    win.configure(bg=bg)
+    win.geometry("1000x860")
+    win.minsize(820, 600)
+
+    frame = tk.Frame(win, bg=bg, padx=16, pady=12)
+    frame.pack(fill='both', expand=True)
+    frame.columnconfigure(0, weight=1)
+    frame.rowconfigure(4, weight=1)
+
+    # --- headline --------------------------------------------------------
+    head = tk.Frame(frame, bg=bg)
+    head.grid(row=0, column=0, sticky='ew')
+    tk.Label(head, text="GPIB Address Book", bg=bg, fg=accent,
+             font=('Segoe UI', 18, 'bold')).pack(side='left')
+    tk.Label(head, text=f"  bus as seen {ADDRESS_BOOK_SEEN} · hints, trust the scan",
+             bg=bg, fg=dim, font=('Segoe UI', 10)).pack(side='left', pady=(8, 0))
+    tk.Label(head, text=f"Next free address:  {FREE_ADDRESSES_SAFEST_FIRST[0]}",
+             bg=ADDRESS_BOOK_COLOURS["In use"][0], fg='#FFFFFF',
+             font=('Segoe UI', 13, 'bold'), padx=12, pady=4).pack(side='right')
+
+    # --- legend with counts ----------------------------------------------
+    legend = tk.Frame(frame, bg=bg)
+    legend.grid(row=1, column=0, sticky='w', pady=(8, 6))
+    for status, (tile_bg, tile_fg, _) in ADDRESS_BOOK_COLOURS.items():
+        count = sum(1 for row in ADDRESS_BOOK if row[1] == status)
+        tk.Label(legend, text=f" {status}  {count} ", bg=tile_bg, fg=tile_fg,
+                 font=('Segoe UI', 10, 'bold'), padx=6, pady=2,
+                 highlightthickness=1, highlightbackground='#8F8173').pack(
+            side='left', padx=(0, 8))
+
+    # --- address map: 0-30 in rows of eight -------------------------------
+    grid = tk.Frame(frame, bg=bg)
+    grid.grid(row=2, column=0, sticky='ew')
+    cols = 8
+    for c in range(cols):
+        grid.columnconfigure(c, weight=1, uniform='tile')
+    tiles = list(ADDRESS_BOOK) + [(31, "Never", "", "", "", "Invalid address")]
+    tree_rows = {}
+
+    def _select(addr):
+        item = tree_rows.get(addr)
+        if item:
+            tree.selection_set(item)
+            tree.see(item)
+
+    for i, row in enumerate(tiles):
+        tile_bg, tile_fg, _ = ADDRESS_BOOK_COLOURS[row[1]]
+        tile = tk.Frame(grid, bg=tile_bg, highlightthickness=1,
+                        highlightbackground='#8F8173', padx=6, pady=4, cursor='hand2')
+        tile.grid(row=i // cols, column=i % cols, sticky='nsew', padx=3, pady=3)
+        num = tk.Label(tile, text=str(row[0]), bg=tile_bg, fg=tile_fg,
+                       font=('Segoe UI', 18, 'bold'))
+        num.pack(anchor='w')
+        name = tk.Label(tile, text=_tile_name(row) if row[0] < 31 else "invalid",
+                        bg=tile_bg, fg=tile_fg,
+                        font=('Segoe UI', 10, 'bold' if row[2] else 'normal'))
+        name.pack(anchor='w')
+        for widget in (tile, num, name):
+            widget.bind('<Button-1>', lambda _e, a=row[0]: _select(a))
+
+    # --- full table --------------------------------------------------------
+    tk.Label(frame, text="DETAILS  (click a tile to jump to its row)", bg=bg, fg=dim,
+             font=('Segoe UI', 10, 'bold')).grid(row=3, column=0, sticky='w',
+                                                 pady=(12, 4))
+    table = tk.Frame(frame, bg=bg)
+    table.grid(row=4, column=0, sticky='nsew')
+    table.rowconfigure(0, weight=1)
+    table.columnconfigure(0, weight=1)
+
+    # Row height from the font, or rows clip on a high-DPI screen.
+    style = ttk.Style(win)
+    line = tkfont.Font(root=win, font=font_base).metrics('linespace')
+    style.configure('AddrBook.Treeview', font=font_base, rowheight=int(line * 1.4))
+    style.configure('AddrBook.Treeview.Heading', font=font_base + ('bold',))
+
+    columns = ("addr", "status", "instrument", "bus", "seen", "note")
+    headings = ("Addr", "Status", "Instrument", "Bus", "Last seen", "Note")
+    widths = (55, 90, 220, 65, 115, 340)
+    tree = ttk.Treeview(table, columns=columns, show='headings',
+                        style='AddrBook.Treeview')
+    for col, heading, width in zip(columns, headings, widths):
+        tree.heading(col, text=heading)
+        tree.column(col, width=width, minwidth=width,
+                    anchor='center' if col in ("addr", "status", "bus") else 'w',
+                    stretch=(col == "note"))
+    for status, (_, _, row_bg) in ADDRESS_BOOK_COLOURS.items():
+        tree.tag_configure(status, background=row_bg)
+    for row in ADDRESS_BOOK:
+        tree_rows[row[0]] = tree.insert('', 'end', values=row, tags=(row[1],))
+    scroll = ttk.Scrollbar(table, orient='vertical', command=tree.yview)
+    tree.configure(yscrollcommand=scroll.set)
+    tree.grid(row=0, column=0, sticky='nsew')
+    scroll.grid(row=0, column=1, sticky='ns')
+
+    notes = ("•  Lakeshores also answer on every secondary address "
+             "(GPIB1::12::0 to ::12::30): same instrument, not more of them.\n"
+             "•  GPIB0 entries failing with VI_ERROR_ALLOC are stale; a "
+             "VI_ERROR_TMO is a busy instrument, not a free address.\n"
+             "•  New address: set it on the front panel, edit ADDRESS_BOOK in "
+             "GPIB_Instrument_Scanner_GUI.py, update the module's *_ADDRESS_HINT.")
+    tk.Label(frame, text=notes, justify='left', anchor='w', wraplength=950,
+             bg=bg, fg=text, font=('Segoe UI', 10)).grid(
+        row=5, column=0, sticky='ew', pady=(10, 0))
+
+    tk.Button(frame, text="Close", command=win.destroy, bg=panel, fg=accent,
+              font=font_base, relief='flat', pady=6).grid(
+        row=6, column=0, sticky='ew', pady=(10, 0))
+    return win
+
+
+# -------------------------------------------------------------------------------
 # --- FRONT END (GUI) ---
 # -------------------------------------------------------------------------------
 
 
 class GPIB_Instrument_Scanner_GUI:
     """The main GUI application class for scanning VISA instruments."""
-    PROGRAM_VERSION = "2.0"
+    PROGRAM_VERSION = "2.1"
     # --- Styling constants from PICA Launcher ---
     CLR_BG_DARK = '#B8A392'
     CLR_HEADER = '#E5DCD3'
@@ -64,6 +299,7 @@ class GPIB_Instrument_Scanner_GUI:
 
         # Queue for thread-safe communication from backend to GUI
         self.result_queue = queue.Queue()
+        self.address_book_win = None
 
         self.setup_styles()
         self.create_widgets()
@@ -131,7 +367,7 @@ class GPIB_Instrument_Scanner_GUI:
 
         guide_button = ttk.Button(
             controls_frame,
-            text="Address Guide",
+            text="Address Book",
             command=self.show_address_guide,
             style='App.TButton')
         guide_button.grid(row=0, column=1, padx=5, sticky='ew')
@@ -220,82 +456,13 @@ class GPIB_Instrument_Scanner_GUI:
             self.root.after(100, self.process_queue)
 
     def show_address_guide(self):
-        """Displays a list of common instrument addresses in the console."""
-        # Address guide shown under the scan. Kept as two ASCII tables so it reads at a
-        # glance in the Consolas console; the background is in these comments.
-        #
-        # Why hints, not facts: any address can be changed from an instrument's front
-        # panel, so modules identify instruments by their *IDN? reply and only use the
-        # address as a pre-selection. Always take the address from the scan itself.
-        #
-        # Provenance of the "seen" column:
-        #   * L350, K6221, K2400, SR830, AFG3022B, K197A: scan of 29 Aug 2026 on GPIB1.
-        #     The AFG3022B answered the 15:31 scan but not the 15:19 one, so it is
-        #     switched on and off at the rack.
-        #   * K197A is PROBABLE only. It has no *IDN?; the 1973A/1972A card hands back
-        #     a pending reading, and 20 answered "OOHM+9.99999E+9" (overflow ohms in
-        #     197 dialect). Confirm on the meter's front panel before writing to it.
-        #   * L340 -> 19 and Cryocon 34 -> 23 were set on the front panels on
-        #     3 Sep 2026. Both used to sit on 12, the factory default they share with
-        #     the L350 and the K6221 (the 340 on GPIB1::12, the Cryocon on GPIB0::12).
-        #     Confirmed on the bus 4 Sep 2026. Keysight Connection Expert keeps the
-        #     old entries in its cache with a red cross; delete them there and re-add
-        #     the new addresses, or its own scans keep reporting them as missing.
-        #   * K6517B, K2182, E4980A have not been seen on recent scans: stale hints.
-        #   * Novocontrol Alpha-AN answers *IDN? but is not SCPI. The v2 launcher
-        #     records its address the first time it sees it and never probes it again.
-        #     If it is on this bus, note its address and leave it alone.
-        #
-        # Buses: GPIB1 is the Keysight GPIB-USB adapter (most of the rack), GPIB0 is
-        # the NI PCI board (E4980A). Connection Expert lists them under those names.
-        #
-        # Reserved / avoid: 0 and 21 are used by GPIB controllers and Keysight
-        # adapters, 30 by some adapters, 31 is invalid. The "avoid" row lists common
-        # factory defaults of instruments a lab tends to acquire later (1 Tektronix,
-        # 9 Agilent 34970A, 10 Agilent 332xx, 14 Keithley 6485, 16 Keithley
-        # 2000/2010/2700, 18 Keithley 2450, 22 Agilent 3458A/34401A).
-        #
-        # When you assign a new address: set it on the front panel, add a row here,
-        # and update the *_ADDRESS_HINT of the module that talks to the instrument.
-        #
-        # A timeout is not an empty address. In the 15:31 scan of 29 Aug 2026 the
-        # 6221, the 197A and the 2400 all returned VI_ERROR_TMO while the L350 and
-        # SR830 answered: an instrument already held open by a running PICA module,
-        # or left mid-transfer, times out here. Close the other program and rescan
-        # before concluding anything has moved.
-        guide_text = """
---- PICA Instrument Address Guide (hints, not facts: trust the scan above) ---
-
-+------+----------------------+-------+----------------------+--------------------+
-| Addr | Instrument           | Bus   | *IDN? / reply        | Seen               |
-+------+----------------------+-------+----------------------+--------------------+
-|   8  | SRS SR830 lock-in    | GPIB1 | Stanford_Research..  | 29 Aug 2026        |
-|  11  | Tektronix AFG3022B   | GPIB1 | TEKTRONIX,AFG3022B   | 29 Aug 2026 (*)    |
-|  12  | Lakeshore 350        | GPIB1 | LSCI,MODEL350        | 29 Aug 2026        |
-|  13  | Keithley 6221        | GPIB1 | ..MODEL 6221..       | 29 Aug 2026        |
-|  19  | Lakeshore 340        | GPIB1 | LSCI,MODEL340        | 4 Sep 2026 (was 12)|
-|  20  | Keithley 197A DMM    | GPIB1 | none; reading only   | 29 Aug 2026 (?)    |
-|  23  | Cryocon 34           | GPIB1 | Cryocon Model 34     | 4 Sep 2026 (was 12)|
-|  24  | Keithley 2400        | GPIB1 | ..MODEL 2400..       | 29 Aug 2026        |
-|   4  | Keithley 2400 (alt)  |   -   | ..MODEL 2400..       | hint only          |
-|   5  | Novocontrol Alpha-AN |   -   | not SCPI: never probe| hint only          |
-|   7  | Keithley 2182        | GPIB0 | ..MODEL 2182..       | stale hint         |
-|  17  | Keysight E4980A      | GPIB0 | ..E4980A..           | stale hint         |
-|  27  | Keithley 6517B       | GPIB1 | ..MODEL 6517B..      | stale hint         |
-+------+----------------------+-------+----------------------+--------------------+
- (*) on/off at the rack   (?) probable, no *IDN?; confirm on the front panel
- GPIB1 = Keysight GPIB-USB adapter, GPIB0 = NI PCI board.
-
-+--------------+-------------------------------------------------------------+
-| Never assign | 0  21  30  31                                               |
-| Avoid        | 1  9  10  14  16  18  22   (other makers' factory defaults) |
-| Free         | 26  29  25  28  2  3  6    (safest first)                   |
-+--------------+-------------------------------------------------------------+
- New address: set it on the front panel, add a row here, update the module's
- *_ADDRESS_HINT.  A VI_ERROR_TMO is a busy instrument, not an empty address.
-
-"""
-        self.log(guide_text, add_timestamp=False)
+        """Opens the Address Book popup, or raises it if it is already open."""
+        win = self.address_book_win
+        if win is not None and win.winfo_exists():
+            win.deiconify()
+            win.lift()
+            return
+        self.address_book_win = show_address_book(self.root)
 
     def run_scan_thread(self):
         """

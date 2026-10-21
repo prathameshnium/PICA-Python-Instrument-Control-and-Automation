@@ -29,7 +29,7 @@ except ImportError:
     exit()
 
 # --- Configuration Constants ---
-LAKESHORE_VISA = "GPIB1::15::INSTR"
+LAKESHORE_VISA = "GPIB1::12::INSTR"
 KEITHLEY_VISA = "GPIB1::27::INSTR"
 
 # Lakeshore hardware configuration

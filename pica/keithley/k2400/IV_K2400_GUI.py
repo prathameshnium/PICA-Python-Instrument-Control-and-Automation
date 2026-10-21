@@ -72,6 +72,17 @@ import runpy
 from multiprocessing import Process
 
 
+def _is_gpib_address(resource, hint):
+    """True if resource is on the GPIB primary address named in hint, such
+    as "::19::" or "::23::INSTR", on any board. Secondary-address copies
+    (board::primary::secondary::INSTR), which a Lakeshore answers on, are
+    not a match."""
+    want = [part for part in hint.split("::") if part.isdigit()][:1]
+    parts = resource.split("::")
+    return (len(parts) == 3 and parts[0].upper().startswith("GPIB")
+            and parts[1:2] == want)
+
+
 def run_script_process(script_path):
     """
     Wrapper function to execute a script using runpy in its own directory.
@@ -1295,12 +1306,13 @@ class MeasurementAppGUI:
             if resources:
                 self.log(f"Found: {resources}")
                 self.keithley_combobox['values'] = resources
-                default_k2400_addr = 'GPIB1::4::INSTR'
-                if default_k2400_addr in resources:
+                default_k2400_addr = next(
+                    (r for r in resources if _is_gpib_address(r, "::24::")), None)
+                if default_k2400_addr:
                     self.keithley_combobox.set(default_k2400_addr)
                 else:
                     for res in resources:
-                        if "::4::" in res or "24" in res:
+                        if _is_gpib_address(res, "::24::"):
                             self.keithley_combobox.set(res)
                             break
                     if not self.keithley_combobox.get() and resources:

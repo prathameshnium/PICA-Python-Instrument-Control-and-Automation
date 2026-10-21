@@ -157,6 +157,17 @@ CRYOCON_READ_RETRIES = 3            # extra tries before a point becomes NaN
 CRYOCON_READ_RETRY_S = 0.3          # pause between those tries
 
 
+def _is_gpib_address(resource, hint):
+    """True if resource is on the GPIB primary address named in hint, such
+    as "::19::" or "::23::INSTR", on any board. Secondary-address copies
+    (board::primary::secondary::INSTR), which a Lakeshore answers on, are
+    not a match."""
+    want = [part for part in hint.split("::") if part.isdigit()][:1]
+    parts = resource.split("::")
+    return (len(parts) == 3 and parts[0].upper().startswith("GPIB")
+            and parts[1:2] == want)
+
+
 class CryoconStatusError(ValueError):
     """A query returned a Cryo-con status string where a number was expected."""
 
@@ -1253,7 +1264,8 @@ class RT_GUI_Passive:
             self.log(f"Found: {resources}")
             self.cc_cb['values'] = resources
             self.k2400_cb['values'] = resources
-            default_k2400_addr = 'GPIB1::4::INSTR'
+            default_k2400_addr = next(
+                (r for r in resources if _is_gpib_address(r, "::24::")), None)
 
             # Pick the Cryocon by what it says it is, not by where it sits.
             # It moved to GPIB0::12 and the Lakeshore 350 now answers on
@@ -1271,7 +1283,7 @@ class RT_GUI_Passive:
                 self.log(f"Cryocon identified at {cryocon} and selected.")
             else:
                 hint = next(
-                    (r for r in resources if CRYOCON_ADDRESS_HINT in r), None)
+                    (r for r in resources if _is_gpib_address(r, CRYOCON_ADDRESS_HINT)), None)
                 if hint:
                     self.cc_cb.set(hint)
                     self.log(f"WARNING: no Cryo-con answered *IDN?. Selected "

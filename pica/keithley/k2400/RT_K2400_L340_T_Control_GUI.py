@@ -90,6 +90,17 @@ import runpy
 from multiprocessing import Process
 
 
+def _is_gpib_address(resource, hint):
+    """True if resource is on the GPIB primary address named in hint, such
+    as "::19::" or "::23::INSTR", on any board. Secondary-address copies
+    (board::primary::secondary::INSTR), which a Lakeshore answers on, are
+    not a match."""
+    want = [part for part in hint.split("::") if part.isdigit()][:1]
+    parts = resource.split("::")
+    return (len(parts) == 3 and parts[0].upper().startswith("GPIB")
+            and parts[1:2] == want)
+
+
 def run_script_process(script_path):
     """
     Wrapper function to execute a script using runpy in its own directory.
@@ -1091,9 +1102,9 @@ class RT_GUI_Active:
             for r in resources:
                 # Lab 340 sits at IEEE address 19; a hint only, the IDN
                 # check at Start decides.
-                if LAKESHORE340_ADDRESS_HINT in r:
+                if _is_gpib_address(r, LAKESHORE340_ADDRESS_HINT):
                     self.ls_cb.set(r)
-                if 'GPIB1::4' in r:
+                if _is_gpib_address(r, "::24::"):
                     self.k2400_cb.set(r)
         else:
             self.log("No VISA instruments found.")

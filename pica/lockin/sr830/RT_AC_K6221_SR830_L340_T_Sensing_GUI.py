@@ -131,6 +131,17 @@ import runpy
 from multiprocessing import Process
 
 
+def _is_gpib_address(resource, hint):
+    """True if resource is on the GPIB primary address named in hint, such
+    as "::19::" or "::23::INSTR", on any board. Secondary-address copies
+    (board::primary::secondary::INSTR), which a Lakeshore answers on, are
+    not a match."""
+    want = [part for part in hint.split("::") if part.isdigit()][:1]
+    parts = resource.split("::")
+    return (len(parts) == 3 and parts[0].upper().startswith("GPIB")
+            and parts[1:2] == want)
+
+
 def run_script_process(script_path):
     """Execute a script with runpy in its own directory, in a new process."""
     try:
@@ -1006,8 +1017,8 @@ def build_log_header(sample, operator, source, detector, thermometer,
 class ACResistanceTSensingGUI:
     PROGRAM_VERSION = PROGRAM_VERSION
     MODULE_NAME = MODULE_NAME
-    DEFAULT_SOURCE_ADDRESS = "GPIB0::13::INSTR"
-    DEFAULT_DETECTOR_ADDRESS = "GPIB0::8::INSTR"
+    DEFAULT_SOURCE_ADDRESS = "GPIB1::13::INSTR"
+    DEFAULT_DETECTOR_ADDRESS = "GPIB1::8::INSTR"
     DEFAULT_THERMOMETER_ADDRESS = "GPIB1::19::INSTR"  # lab 340, re-addressed 3 Sep 2026
     LOGO_SIZE = 110
     LEFT_PANEL_WIDTH = 560
@@ -1637,7 +1648,7 @@ class ACResistanceTSensingGUI:
                 # the 6221), so ::19:: is pre-selected when present. Any
                 # other address can still be picked by hand.
                 preferred = [r for r in resources
-                             if LAKESHORE340_ADDRESS_HINT in r]
+                             if _is_gpib_address(r, LAKESHORE340_ADDRESS_HINT)]
                 if preferred:
                     self.thermometer_cb.set(preferred[0])
                     self.log("Pre-selected %s for the Lakeshore 340 (lab "

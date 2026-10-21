@@ -11,7 +11,7 @@ from tkinter import filedialog
 from datetime import datetime
 
 # --- Configuration Constants ---
-VISA_ADDRESS = "GPIB0::13::INSTR"
+VISA_ADDRESS = "GPIB1::12::INSTR"
 SENSOR_INPUT = 'A'        # Sensor input to monitor (A, B, C, or D)
 HEATER_OUTPUT = 1         # Control output loop for the heater (1 or 2)
 

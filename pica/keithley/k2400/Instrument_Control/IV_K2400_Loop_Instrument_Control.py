@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--path", help="Path to save the data file. Defaults to a 'data' folder.")
     parser.add_argument("--range", type=float, default=1.0, help="Highest value of Current (in micro A).")
     parser.add_argument("--step", type=float, default=0.2, help="The step size (in micro A).")
-    parser.add_argument("--gpib-address", default="GPIB::4", help="GPIB address of the instrument.")
+    parser.add_argument("--gpib-address", default="GPIB1::24::INSTR", help="GPIB address of the instrument.")
     args = parser.parse_args()
 
     # object creation ----------------------------------

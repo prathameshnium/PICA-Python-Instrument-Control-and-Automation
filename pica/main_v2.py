@@ -3571,6 +3571,8 @@ class PICALauncherV2:
         strip['reload_btn'].pack(side='right')
         ttk.Button(head, text="📟 Full VISA / GPIB Scanner", style='Aux.TButton',
                    command=self._launch_gpib_scanner).pack(side='right', padx=(0, 8))
+        ttk.Button(head, text="📖 Address Book", style='Aux.TButton',
+                   command=self._open_address_book).pack(side='right', padx=(0, 8))
 
         tk.Label(win, text="One read-only pass over the bus, taken at startup and "
                            "whenever you press Reload. Every address that answers is "
@@ -4482,6 +4484,20 @@ class PICALauncherV2:
                                  "The 'pyvisa' library is required.\n\npip install pyvisa pyvisa-py")
             return
         launch_gpib_scanner()
+
+    def _open_address_book(self):
+        """Open the GPIB Address Book popup, or raise it if already open.
+
+        The table lives in the scanner module, so the scanner and this window
+        always show the same book. Nothing here touches the bus.
+        """
+        win = getattr(self, '_address_book_win', None)
+        if win is not None and win.winfo_exists():
+            win.deiconify()
+            win.lift()
+            return
+        from pica.utils.GPIB_Instrument_Scanner_GUI import show_address_book
+        self._address_book_win = show_address_book(self._status_win or self.root)
 
     def _auto_launch_gpib_scanner(self):
         """Open the standalone VISA/GPIB scanner with Advanced Options.

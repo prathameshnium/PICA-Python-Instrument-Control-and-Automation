@@ -79,6 +79,17 @@ except ImportError:
 import runpy
 
 
+def _is_gpib_address(resource, hint):
+    """True if resource is on the GPIB primary address named in hint, such
+    as "::19::" or "::23::INSTR", on any board. Secondary-address copies
+    (board::primary::secondary::INSTR), which a Lakeshore answers on, are
+    not a match."""
+    want = [part for part in hint.split("::") if part.isdigit()][:1]
+    parts = resource.split("::")
+    return (len(parts) == 3 and parts[0].upper().startswith("GPIB")
+            and parts[1:2] == want)
+
+
 def run_script_process(script_path):
     """
     Wrapper function to execute a script using runpy in its own directory.
@@ -1361,11 +1372,11 @@ class PyroelectricAppGUI:
         self.keithley_combobox['values'] = resources
         self.lakeshore_combobox['values'] = resources
         for res in resources:
-            if "GPIB1::27" in res:
+            if _is_gpib_address(res, "::27::"):
                 self.keithley_combobox.set(res)
             # Lab 340 sits at IEEE address 19; a hint only, the IDN check
             # at Start decides.
-            if LAKESHORE340_ADDRESS_HINT in res:
+            if _is_gpib_address(res, LAKESHORE340_ADDRESS_HINT):
                 self.lakeshore_combobox.set(res)
 
     def _set_default_combobox_values(self, resources):

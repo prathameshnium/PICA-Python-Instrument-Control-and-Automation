@@ -51,7 +51,7 @@ def main():
         time.sleep(1)
 
         # Connect and configure Lakeshore 350
-        temp_controller = rm.open_resource("GPIB::12")
+        temp_controller = rm.open_resource("GPIB1::12::INSTR")
         print(f"\nConnected to {temp_controller.query('*IDN?').strip()}")
         temp_controller.write('*RST; *CLS')
         time.sleep(0.5)
@@ -66,7 +66,7 @@ def main():
         print("Lakeshore 350 configured.")
 
         # Connect and configure Keithley 6517B
-        keithley = Keithley6517B("GPIB0::27::INSTR")
+        keithley = Keithley6517B("GPIB1::27::INSTR")
         time.sleep(1)
         print(f"\nConnected to {keithley.id}")
         print("\n-----------------------------------------------------\n")

@@ -80,7 +80,7 @@ DEFAULT_POLL_INTERVAL = 1.0
 
 # Only one address on this rack is confirmed (SR830 at GPIB0::8::INSTR).
 # The 197A address is a placeholder; run the GPIB Scanner if it is wrong.
-DEFAULT_VISA_ADDRESS = "GPIB0::7::INSTR"
+DEFAULT_VISA_ADDRESS = "GPIB1::20::INSTR"
 
 PROGRAM_VERSION = "1.0"
 

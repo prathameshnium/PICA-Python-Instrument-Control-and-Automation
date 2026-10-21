@@ -1041,17 +1041,22 @@ Some modules write more than one file per run (for example a separate `_log.txt`
 
 ### 9.2 GPIB Address Guide
 
-PICA uses standard VISA resource strings. The addresses below are the ones on the authors' rack, and several GUIs use them as defaults. Your rack will almost certainly differ: find the real addresses with the built-in **Instrument Scanner** or on each instrument's front panel, and pick them from the address dropdown in each module.
+PICA uses standard VISA resource strings. The addresses below are the ones on the authors' rack (bus as seen on 21 Oct 2026), and several GUIs use them as defaults. Your rack will almost certainly differ: find the real addresses with the built-in **Instrument Scanner** or on each instrument's front panel, and pick them from the address dropdown in each module. The **Address Book** button, in the GPIB Scanner and in the v2 launcher's Instrument Status window, shows every address 0-30 as in use, reserved, free, avoid or never.
 
+  * **SRS SR830 lock-in:** `GPIB1::8::INSTR`
+  * **Tektronix AFG3022B:** `GPIB1::11::INSTR`
   * **Lake Shore 350:** `GPIB1::12::INSTR`
+  * **Keithley 6221:** `GPIB1::13::INSTR`
+  * **Keysight E4980A:** `GPIB1::17::INSTR`
   * **Lake Shore 340:** `GPIB1::19::INSTR`
+  * **Keithley 197A:** `GPIB1::20::INSTR` (no `*IDN?`; answers with a reading)
   * **Cryo-con 34:** `GPIB1::23::INSTR`
-  * **Keithley 2400:** `GPIB1::4::INSTR`
-  * **Keithley 6221:** `GPIB0::13::INSTR`
-  * **Keithley 2182:** `GPIB0::7::INSTR`
+  * **Keithley 2400:** `GPIB1::24::INSTR`
   * **Keithley 6517B:** `GPIB1::27::INSTR`
-  * **Keysight E4980A:** `GPIB0::17::INSTR`
-  * **Novocontrol Alpha-AN:** `GPIB0::5::INSTR`
+  * **Keithley 2182:** address 7 (not seen on recent scans)
+  * **Novocontrol Alpha-AN:** address 5 (not SCPI; never probe it)
+
+Free addresses, safest first: 26, 29, 25, 28, 2, 3, 4, 6. Avoid 1, 9, 10, 14, 15, 16, 18 and 22 (other makers' factory defaults, and 15 is an old Lakeshore address). Never assign 0, 21 or 30.
 
 ### 9.3 Repository Mirroring
 
