@@ -173,6 +173,21 @@ def test_a_serial_number_cannot_masquerade_as_a_model_number():
     assert r["detected"]["Keithley 2182"] is None
 
 
+def test_secondary_addresses_are_skipped_only_when_asked():
+    ls350 = "LSCI,MODEL350,LSA2FKB/#######,1.7"
+    bus = {"GPIB1::12::INSTR": FakeInstrument(ls350),
+           "GPIB1::12::5::INSTR": FakeInstrument(ls350),
+           "GPIB1::12::30::INSTR": FakeInstrument(ls350)}
+    with _Patch(FakeResourceManager(bus)):
+        everything = launcher.scan_instruments()
+        filtered = launcher.scan_instruments(skip_secondary=True)
+    assert len(everything["resources"]) == 3
+    assert everything["secondary_skipped"] == 0
+    assert filtered["resources"] == ["GPIB1::12::INSTR"]
+    assert filtered["secondary_skipped"] == 2
+    assert filtered["detected"]["Lakeshore 350"] == "GPIB1::12::INSTR"
+
+
 def test_every_cryocon_idn_spelling_is_recognised():
     """All the forms a Cryo-con is known to answer with must match."""
     for idn in ("Cryocon,34,204683,3.18A",

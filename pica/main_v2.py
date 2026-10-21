@@ -233,6 +233,17 @@ def _gpib_address_of(resource):
     return int(m.group(1)) if m else None
 
 
+def _is_secondary_gpib(resource):
+    """True for a GPIB secondary-address resource (GPIB1::12::5::INSTR).
+
+    The Lakeshore 340 and 350 answer on every secondary address of their
+    primary one, so each is listed 31 more times; nothing in the lab uses
+    secondary addresses. Skipping them is the Instrument Status toggle.
+    """
+    parts = resource.split("::")
+    return len(parts) == 4 and parts[0].upper().startswith("GPIB")
+
+
 def _is_probeable(resource):
     """True if this resource kind may be sent a *IDN?.
 
@@ -538,7 +549,8 @@ def scan_row(resource, name, reply):
     return f"{resource:<28}{name:<36}{reply}\n"
 
 
-def scan_instruments(skip_addresses=None, gauge=None, progress=None):
+def scan_instruments(skip_addresses=None, gauge=None, progress=None,
+                     skip_secondary=False):
     """Perform a one-shot, read-only VISA scan.
 
     Runs in a worker thread -- must not touch any Tk object. Returns a plain
@@ -548,6 +560,9 @@ def scan_instruments(skip_addresses=None, gauge=None, progress=None):
     whether or not it is in KNOWN_INSTRUMENTS: a reply matching nothing in the
     table comes back under 'unknown' and is shown as a new instrument rather
     than discarded.
+
+    With skip_secondary, GPIB secondary-address resources (GPIB1::12::5::INSTR)
+    are dropped before anything is probed; how many is in 'secondary_skipped'.
 
     Never probes an address listed in SKIP_GPIB_ADDRESSES, in the persistent
     protected-address file, or in the caller-supplied 'skip_addresses'. If a
@@ -586,6 +601,7 @@ def scan_instruments(skip_addresses=None, gauge=None, progress=None):
         'error': None,
         'resources': [],
         'skipped': [],
+        'secondary_skipped': 0,
         'detected': {name: None for name, _ in KNOWN_INSTRUMENTS},
         # Every *IDN? reply this scan collected, resource -> reply (None when
         # the address was opened but stayed silent). Nothing extra is sent to
@@ -632,6 +648,10 @@ def scan_instruments(skip_addresses=None, gauge=None, progress=None):
     except Exception as e:
         result['error'] = f"VISA backend error: {e}"
         return result
+    if skip_secondary:
+        kept = [res for res in resources if not _is_secondary_gpib(res)]
+        result['secondary_skipped'] = len(resources) - len(kept)
+        resources = kept
 
     result['resources'] = resources
     report(None, None, None)
@@ -1702,6 +1722,8 @@ class PICALauncherV2:
         # from the persistent file so a Novocontrol identified on a previous
         # run is skipped from the very first scan of this one.
         self._session_protected = load_protected_addresses()
+        # Instrument Status toggle; off by default, read at each scan's start.
+        self._skip_secondary = tk.BooleanVar(master=self.root, value=False)
 
         self._setup_styles()
         self._build_menubar()
@@ -3618,9 +3640,14 @@ class PICALauncherV2:
                      font=self.FONT_STRIP_BOLD).pack(side='left')
 
         # --- raw scan table ------------------------------------------------
-        tk.Label(win, text="VISA / GPIB SCAN", bg=self.CLR_APP,
-                 fg=self.CLR_TEXT_FAINT, font=self.FONT_LABEL).pack(
-            anchor='w', padx=18, pady=(14, 4))
+        scan_head = tk.Frame(win, bg=self.CLR_APP)
+        scan_head.pack(fill='x', padx=18, pady=(14, 4))
+        tk.Label(scan_head, text="VISA / GPIB SCAN", bg=self.CLR_APP,
+                 fg=self.CLR_TEXT_FAINT, font=self.FONT_LABEL).pack(side='left')
+        # The Lakeshores answer on all 31 secondary addresses of their own;
+        # this hides those copies. It applies from the next Reload, so
+        # switching it never puts anything on the bus by itself.
+        self._build_secondary_toggle(scan_head).pack(side='right')
 
         table_wrap = tk.Frame(win, bg=self.CLR_PANEL, highlightthickness=1,
                               highlightbackground=self.CLR_BORDER)
@@ -3706,10 +3733,14 @@ class PICALauncherV2:
             widget.config(state='disabled')
             widget.yview_moveto(0)      # the live rows left it scrolled down
             n_skipped = len(r.get('skipped') or ())
+            n_secondary = r.get('secondary_skipped') or 0
+            hidden = (f", {n_secondary} secondary address(es) hidden"
+                      if n_secondary else "")
             strip['raw_note'].config(
-                text=f"{len(r['resources'])} VISA resource(s), {n_skipped} not probed · "
-                     f"scan {r['timestamp']}{self._scan_timing_tail(r)}. Use the full VISA / GPIB Scanner above "
-                     f"for the address guide and for sending SCPI by hand.")
+                text=f"{len(r['resources'])} VISA resource(s), {n_skipped} not probed"
+                     f"{hidden} · scan {r['timestamp']}{self._scan_timing_tail(r)}. "
+                     f"Address Book: which address is which. Full VISA / GPIB "
+                     f"Scanner: sending SCPI by hand.")
         except tk.TclError:
             pass
 
@@ -3955,13 +3986,15 @@ class PICALauncherV2:
         for strip in self._strips:
             self._paint_streamed_rows(strip)
             self._paint_scan_progress(strip)
-        threading.Thread(target=self._scan_worker, daemon=True).start()
+        threading.Thread(target=self._scan_worker,
+                         args=(self._skip_secondary.get(),), daemon=True).start()
 
-    def _scan_worker(self):
+    def _scan_worker(self, skip_secondary=False):
         def progress(line, chip, done, total):
             self.root.after(0, lambda: self._stream_scan_row(line, chip, done, total))
         results = scan_instruments(skip_addresses=self._session_protected,
-                                   progress=progress)
+                                   progress=progress,
+                                   skip_secondary=skip_secondary)
         # Marshal back to the Tk thread -- unless the launcher was closed
         # while the scan ran, in which case there is nothing left to tell.
         try:
@@ -4484,6 +4517,40 @@ class PICALauncherV2:
                                  "The 'pyvisa' library is required.\n\npip install pyvisa pyvisa-py")
             return
         launch_gpib_scanner()
+
+    def _build_secondary_toggle(self, parent):
+        """A Show | Hide segmented switch bound to self._skip_secondary."""
+        box = tk.Frame(parent, bg=self.CLR_APP)
+        tk.Label(box, text="Secondary addresses", bg=self.CLR_APP,
+                 fg=self.CLR_TEXT_DIM, font=self.FONT_SMALL).pack(
+            side='left', padx=(0, 8))
+        pill = tk.Frame(box, bg=self.CLR_BORDER, padx=1, pady=1)
+        pill.pack(side='left')
+        segments = {}
+        for value, text in ((False, "Show"), (True, "Hide")):
+            seg = tk.Label(pill, text=text, font=self.FONT_SMALL, padx=14,
+                           pady=3, cursor='hand2')
+            seg.pack(side='left')
+            seg.bind('<Button-1>', lambda _e, v=value: self._skip_secondary.set(v))
+            segments[value] = seg
+        note = tk.Label(box, text="", bg=self.CLR_APP, fg=self.CLR_TEXT_FAINT,
+                        font=self.FONT_STRIP)
+        note.pack(side='left', padx=(8, 0))
+
+        def paint(*_):
+            on = self._skip_secondary.get()
+            for value, seg in segments.items():
+                chosen = value == on
+                seg.config(bg=self.CLR_ACCENT if chosen else self.CLR_PANEL,
+                           fg=self.CLR_TEXT_LIGHT if chosen else self.CLR_TEXT_DIM)
+            note.config(text="from next Reload")
+
+        trace = self._skip_secondary.trace_add('write', paint)
+        box.bind('<Destroy>', lambda e: e.widget is box and
+                 self._skip_secondary.trace_remove('write', trace))
+        paint()
+        note.config(text="")      # nothing changed yet
+        return box
 
     def _open_address_book(self):
         """Open the GPIB Address Book popup, or raise it if already open.
