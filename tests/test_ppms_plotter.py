@@ -19,6 +19,7 @@ import os
 import sys
 import tempfile
 
+import matplotlib.style
 import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
@@ -410,8 +411,15 @@ def test_replots_render_like_the_rebuild_every_time_code():
     """Same axes geometry and the same picture as clf + tight_layout on
     every replot. Geometry may differ in the last float bit (tight_layout
     itself is not bit-stable from one call to the next), which can nudge a
-    loc='best' legend by a pixel, so a handful of pixels are allowed."""
-    with tempfile.TemporaryDirectory() as d:
+    loc='best' legend by a pixel, so a handful of pixels are allowed.
+
+    Runs under matplotlib's default style: the instrument GUIs set
+    rcParams (Segoe UI, larger sizes) globally when built, so in a full
+    suite this test inherits whatever an earlier test left. Under some of
+    those fonts tight_layout from two different histories lands a pixel
+    apart, which failed CI while passing locally."""
+    with matplotlib.style.context('default'), \
+            tempfile.TemporaryDirectory() as d:
         cache = _cache(d)
         new, old = _bare_app(cache), _bare_app(cache, old_style=True)
         for mode, unit in STEPS:
