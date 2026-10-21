@@ -388,9 +388,26 @@ def _bare_app(cache, old_style=False):
     return app
 
 
-def _render(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba()).copy()
+def _drawn(ax):
+    """What an axes shows, independent of sub-pixel layout: the data and
+    style of every line, the legend, the grid and which tick labels show."""
+    # data as bytes, so a NaN gap compares equal to itself
+    data = lambda v: np.asarray(v, dtype=float).tobytes()
+    lines = [(data(ln.get_xdata()), data(ln.get_ydata()), ln.get_color(),
+              ln.get_linestyle(), ln.get_marker(), ln.get_visible())
+             for ln in ax.lines]
+    legend = ax.get_legend()
+    return {
+        'title': ax.get_title(), 'xlabel': ax.get_xlabel(),
+        'ylabel': ax.get_ylabel(),
+        'xlim': ax.get_xlim(), 'ylim': ax.get_ylim(),
+        'lines': lines,
+        'legend': legend and [t.get_text() for t in legend.get_texts()],
+        'grid': [any(g.get_visible() for g in axis.get_gridlines())
+                 for axis in (ax.xaxis, ax.yaxis)],
+        'xticklabels_shown': any(t.get_visible()
+                                 for t in ax.get_xticklabels(which='both')),
+    }
 
 
 STEPS = [("M vs T", "emu"), ("M vs T", "emu"), ("M vs H", "emu"),
@@ -408,20 +425,23 @@ def _cache(folder):
 
 
 def test_replots_render_like_the_rebuild_every_time_code():
-    """Same axes geometry and the same picture as clf + tight_layout on
-    every replot. Geometry may differ in the last float bit (tight_layout
-    itself is not bit-stable from one call to the next), which can nudge a
-    loc='best' legend by a pixel, so a handful of pixels are allowed.
+    """Every replot shows what clf + tight_layout would have drawn.
 
-    Runs under matplotlib's default style: the instrument GUIs set
-    rcParams (Segoe UI, larger sizes) globally when built, so in a full
-    suite this test inherits whatever an earlier test left. Under some of
-    those fonts tight_layout from two different histories lands a pixel
-    apart, which failed CI while passing locally."""
-    with matplotlib.style.context('default'), \
-            tempfile.TemporaryDirectory() as d:
+    Compared on content, not pixels. tight_layout is path dependent: the
+    tick set it fits to depends on the axes size it starts from, so two
+    histories of the same plot can land a fraction of a pixel apart.
+    Anti-aliasing turns that into thousands of changed pixels along a
+    noisy trace - more than a genuinely missing line changes - and it
+    depends on the fonts and on rcParams that earlier GUI tests leave set,
+    which is how this passed locally and failed on CI (21-22 Oct 2026).
+    So geometry may differ by up to one pixel, and everything drawn must
+    match exactly. Run under the default style so the result does not
+    depend on which GUI test ran before this one."""
+    with matplotlib.style.context('default'),             tempfile.TemporaryDirectory() as d:
         cache = _cache(d)
         new, old = _bare_app(cache), _bare_app(cache, old_style=True)
+        width, height = new.figure.canvas.get_width_height()
+        one_px = np.array([1 / width, 1 / height, 1 / width, 1 / height])
         for mode, unit in STEPS:
             for app in (new, old):
                 app.mode_cb.set(mode)
@@ -429,18 +449,10 @@ def test_replots_render_like_the_rebuild_every_time_code():
                 app.plot_data()
             assert len(new.figure.axes) == len(old.figure.axes)
             for a, b in zip(new.figure.axes, old.figure.axes):
-                assert np.allclose(a.get_position().bounds,
-                                   b.get_position().bounds,
-                                   rtol=0, atol=1e-12), (mode, unit)
-                assert a.get_title() == b.get_title()
-                assert a.get_xlabel() == b.get_xlabel()
-                assert a.get_ylabel() == b.get_ylabel()
-                assert a.get_xlim() == b.get_xlim()
-                assert a.get_ylim() == b.get_ylim()
-                assert len(a.lines) == len(b.lines)
-            img_new, img_old = _render(new.figure), _render(old.figure)
-            differing = (img_new != img_old).any(axis=-1).sum()
-            assert differing <= 0.001 * img_new.shape[0] * img_new.shape[1],                 (mode, unit, differing)
+                shift = np.abs(np.subtract(a.get_position().bounds,
+                                           b.get_position().bounds))
+                assert (shift <= one_px).all(), (mode, unit, shift / one_px)
+                assert _drawn(a) == _drawn(b), (mode, unit)
 
 
 def test_replot_in_the_same_mode_reuses_axes_and_skips_tight_layout():
