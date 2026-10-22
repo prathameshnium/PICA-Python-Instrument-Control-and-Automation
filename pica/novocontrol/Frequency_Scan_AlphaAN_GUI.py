@@ -2,8 +2,10 @@
  PROGRAM:      Novocontrol Alpha-AN Broadband Dielectric Frequency Scan GUI
  PURPOSE:      Fixed-temperature broadband frequency scan on a Novocontrol
                Alpha-AN mainframe with a ZG4 sample interface, over direct
-               GPIB. Sweeps a frozen 20 Hz - 1 MHz logarithmic series,
-               converts the measured complex impedance to permittivity,
+               GPIB. Sweeps one of two frozen logarithmic series (20 Hz -
+               1 MHz or 20 Hz - 10 MHz) or a comma-separated list the user
+               types (each value checked against the 3e-5 Hz - 20 MHz
+               generator span), converts the measured complex impedance to permittivity,
                electric modulus and AC conductivity, and writes a
                WinDETA-compatible file alongside a PICA .dat for the
                built-in Plotter.

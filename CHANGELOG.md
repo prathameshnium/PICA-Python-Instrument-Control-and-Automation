@@ -4,6 +4,12 @@ All notable changes to PICA are documented here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+- **Alpha-AN frequency scan**: custom comma-separated frequency list (range-checked, 3e-5 Hz to 20 MHz) with a List Maker button; greyed out unless chosen.
+
+### Changed
+- **Alpha-AN frequency scan**: window shows the edition (32-bit or 64-bit); REF calibration explains itself before starting.
+
 ## [1.0.7] - 2026-10-17
 
 ### Added

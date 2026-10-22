@@ -797,11 +797,14 @@ Capacitance-Voltage (C-V) characterization of a device or a sample using a Keysi
 ### 6.8 Broadband Dielectric Spectroscopy
 
 **Target Hardware:** Novocontrol Alpha-AN Impedance Analyzer with a ZG4 sample interface, over GPIB through VISA. *Status: experimental.*
-**Frequency Range:** the module runs one of two fixed logarithmic series, 115 points from 20 Hz to 1 MHz (default) or 40 points from 20 Hz to 10 MHz.
+**Frequency Range:** choose one of two fixed logarithmic series, 115 points from 20 Hz to 1 MHz (default) or 40 points from 20 Hz to 10 MHz, or **Custom list** to type your own.
+**Editions:** the regular module goes through VISA and is labelled **64-bit (VISA)**; its twin for PCs with only a 32-bit `gpib-32.dll` is labelled **32-bit (NI-488.2 GPIB)**. The label is in the window title and header.
 
   *   **Scientific Objective:** Measures the complex permittivity (ε', ε''), electric modulus (M', M'') and AC conductivity (σ', σ'') of a dielectric sample at fixed temperature. Output is written in a **WinDETA-compatible** format so it opens directly in Novocontrol's WinFIT analysis tool, alongside a PICA `.dat` for the built-in Plotter.
 
-  *   **Reference Calibration:** Use the dedicated **Run REF Calibration** button before a measurement session. It must run with the **sample disconnected** from the ZG4 (the GUI prompts you). Calibration data is stored inside the mainframe and survives resets, so a sweep runs on the most recent calibration; the GUI logs the calibration's age but never blocks on it.
+  *   **Custom Frequency List:** pick **Custom list** and type frequencies in Hz separated by commas (spaces, semicolons and new lines also work), e.g. `20, 100, 1e3, 1e4, 1e5`. Points run in the order typed. A line under the box shows the point count and span, or why the list would be refused: every value must be within the Alpha-AN range of 3e-5 Hz to 20 MHz, at most 1000 points. The **List Maker** button next to the box opens the List Maker utility to build a list; paste its output into the box. The box and button are greyed out while a preset is selected.
+
+  *   **Reference Calibration:** Use the dedicated **Run REF Calibration** button before a measurement session. It must run with the **sample disconnected** from the ZG4. Before anything is sent, the GUI explains what the calibration does and what to disconnect; OK starts it, Cancel sends nothing. Calibration data is stored inside the mainframe and survives resets, so a sweep runs on the most recent calibration; the GUI logs the calibration's age but never blocks on it.
 
 :::{note}
 This mainframe has **no DC bias hardware** — the module never transmits a bias command. A stale reference calibration shows up as a step or kink in ε'(f) at a reference-capacitor switch boundary rather than as uniform noise; re-run the REF calibration if you see one.
@@ -1054,7 +1057,7 @@ PICA uses standard VISA resource strings. The addresses below are the ones on th
   * **Keithley 2400:** `GPIB1::24::INSTR`
   * **Keithley 6517B:** `GPIB1::27::INSTR`
   * **Keithley 2182:** address 7 (not seen on recent scans)
-  * **Novocontrol Alpha-AN:** address 5 (not SCPI; never probe it)
+  * **Novocontrol Alpha-AN:** `GPIB0::10` on the BDS PC (WinALPHA auto-detect; not SCPI; never probe it)
 
 Free addresses, safest first: 26, 29, 25, 28, 2, 3, 4, 6. Avoid 1, 9, 10, 14, 15, 16, 18 and 22 (other makers' factory defaults, and 15 is an old Lakeshore address). Never assign 0, 21 or 30.
 

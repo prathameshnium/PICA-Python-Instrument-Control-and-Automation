@@ -596,7 +596,8 @@ for _key, _bits in (("Alpha-AN Freq. Scan", ""),
          "Novocontrol Alpha-AN analyser with ZG4 sample interface",
          "sample name; electrode geometry (area in cm² or diameter in mm) "
          "and thickness (mm); ZG4 wire mode; AC voltage (Vrms); frequency "
-         "list; initial delay (s); Alpha-AN GPIB address",
+         "list (one of two presets, or your own comma-separated list "
+         "in Hz); initial delay (s); Alpha-AN GPIB address",
          "Experimental. The launcher never probes the Alpha-AN; see the "
          "Novocontrol GPIB runbook before the first run.")
 
