@@ -79,6 +79,26 @@ def run_script_process(script_path):
         print("-------------------------")
 
 
+def launch_list_maker():
+    """Finds and launches the List Maker utility in a new process."""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        maker_path = os.path.join(
+            script_dir, "..", "utils", "List_Maker_GUI.py"
+        )
+        if not os.path.exists(maker_path):
+            messagebox.showerror(
+                "File Not Found",
+                f"List Maker not found at expected path:\n{maker_path}",
+            )
+            return
+        Process(target=run_script_process, args=(maker_path,)).start()
+    except Exception as e:
+        messagebox.showerror(
+            "Launch Error", f"Failed to launch List Maker: {e}"
+        )
+
+
 def launch_plotter_utility():
     """Finds and launches the plotter utility script in a new process."""
     try:
@@ -734,6 +754,52 @@ for _name, _series in FREQ_PRESETS.items():
         FREQ_HW_MIN <= _f <= FREQ_HW_MAX for _f in _series
     ), f"Preset {_name!r} contains a point outside the Alpha-AN range."
 
+# Third choice in the Frequency List box: a list the user types. Not a
+# preset, so it never goes through the guardrail above; every value is
+# checked by parse_frequency_list instead (and again by
+# validate_parameters before anything reaches the bus).
+CUSTOM_FREQ_LABEL = "Custom list (type your own below)"
+# Sanity cap only: at ~1 s per point this is already a 15+ minute sweep.
+CUSTOM_FREQ_MAX_POINTS = 1000
+
+
+def parse_frequency_list(text):
+    """User-typed frequency list (Hz) -> tuple of floats, in typed order.
+
+    Commas separate values; semicolons, spaces and new lines are accepted
+    too, so a list pasted from List Maker or a spreadsheet works as is.
+    Every value must lie inside the Alpha-AN generator span
+    FREQ_HW_MIN-FREQ_HW_MAX. Raises ValueError naming the first bad entry.
+    """
+    tokens = text.replace(",", " ").replace(";", " ").split()
+    if not tokens:
+        raise ValueError("Custom frequency list is empty.")
+    if len(tokens) > CUSTOM_FREQ_MAX_POINTS:
+        raise ValueError(
+            f"Custom frequency list has {len(tokens)} points; the limit is "
+            f"{CUSTOM_FREQ_MAX_POINTS}."
+        )
+    values = []
+    for tok in tokens:
+        try:
+            f = float(tok)
+        except ValueError:
+            raise ValueError(
+                f"Custom frequency list: '{tok}' is not a number. "
+                f"Use values in Hz such as 20, 1000, 1e6."
+            ) from None
+        if not math.isfinite(f):
+            raise ValueError(
+                f"Custom frequency list: '{tok}' is not a finite number."
+            )
+        if not (FREQ_HW_MIN <= f <= FREQ_HW_MAX):
+            raise ValueError(
+                f"Custom frequency list: {tok} Hz is outside the Alpha-AN "
+                f"range {FREQ_HW_MIN:g} Hz to {FREQ_HW_MAX:g} Hz."
+            )
+        values.append(f)
+    return tuple(values)
+
 
 # WinDETA column header. Order and names are FIXED - WinFIT parses this
 # positionally. Do not add, remove or reorder columns. Zp comes BEFORE Sig,
@@ -1368,7 +1434,7 @@ class AlphaAN_FreqScan_GUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("Novocontrol Alpha-AN Frequency Scan (32-bit GPIB)")
+        self.root.title("Novocontrol Alpha-AN Frequency Scan - 32-bit (NI-488.2 GPIB)")
         self.root.geometry("1600x950")
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1300, 850)
@@ -1495,7 +1561,8 @@ class AlphaAN_FreqScan_GUI:
 
         Label(
             header_frame,
-            text="Novocontrol Alpha-AN: Broadband Frequency Scan",
+            text="Novocontrol Alpha-AN: Broadband Frequency Scan"
+                 "   [32-bit edition, NI-488.2 GPIB]",
             bg=self.CLR_HEADER,
             fg=self.CLR_FG_LIGHT,
             font=font_title_italic,
@@ -1714,22 +1781,57 @@ class AlphaAN_FreqScan_GUI:
             self.entries[key].bind("<KeyRelease>", self._update_c0_label)
         self._update_c0_label()
 
-        # Two frozen scan recipes only - the lists themselves are never
-        # user-editable, so runs stay comparable point-for-point.
+        # Two frozen scan recipes (never editable, so runs stay comparable
+        # point-for-point) plus a custom list the user types. The custom
+        # box and its List Maker button are greyed unless chosen.
         Label(
             frame, text="Frequency List:", font=self.FONT_BASE
         ).grid(
             row=13, column=0, columnspan=2, padx=padx, pady=(10, 2), sticky="w"
         )
-        self.freq_combobox = ttk.Combobox(
-            frame, font=self.FONT_BASE, state="readonly",
-            values=list(FREQ_PRESETS),
-        )
-        self.freq_combobox.set(DEFAULT_FREQ_PRESET)
-        self.freq_combobox.grid(
+        freq_frame = ttk.Frame(frame)
+        freq_frame.grid(
             row=14, column=0, columnspan=2, padx=padx, pady=(0, 4),
             sticky="ew",
         )
+        freq_frame.grid_columnconfigure(0, weight=1)
+        self.freq_combobox = ttk.Combobox(
+            freq_frame, font=self.FONT_BASE, state="readonly",
+            values=list(FREQ_PRESETS) + [CUSTOM_FREQ_LABEL],
+        )
+        self.freq_combobox.set(DEFAULT_FREQ_PRESET)
+        self.freq_combobox.grid(row=0, column=0, columnspan=2, sticky="ew")
+        self.freq_combobox.bind(
+            "<<ComboboxSelected>>", self._on_freq_list_change
+        )
+
+        self.lbl_custom_freq = Label(
+            freq_frame, font=("Segoe UI", 9),
+            text=f"Frequencies in Hz, comma-separated "
+                 f"({FREQ_HW_MIN:g} to {FREQ_HW_MAX:g} Hz):",
+        )
+        self.lbl_custom_freq.grid(row=1, column=0, pady=(4, 0), sticky="w")
+        self.list_maker_button = ttk.Button(
+            freq_frame, text="List Maker", width=10,
+            command=launch_list_maker,
+        )
+        self.list_maker_button.grid(row=1, column=1, pady=(4, 0), sticky="e")
+        self.custom_freq_text = tk.Text(
+            freq_frame, height=3, wrap="word", font=self.FONT_CONSOLE,
+            relief="solid", bd=1,
+        )
+        self.custom_freq_text.grid(
+            row=2, column=0, columnspan=2, pady=(2, 0), sticky="ew"
+        )
+        self.custom_freq_text.bind(
+            "<KeyRelease>", self._update_custom_freq_hint
+        )
+        self.lbl_custom_hint = Label(
+            freq_frame, text="", font=("Segoe UI", 9), anchor="w",
+            justify="left", wraplength=self.LEFT_PANEL_WIDTH - 60,
+        )
+        self.lbl_custom_hint.grid(row=3, column=0, columnspan=2, sticky="w")
+        self._on_freq_list_change()
 
         Label(
             frame, text="Alpha-AN VISA (GPIB):", font=self.FONT_BASE
@@ -1828,7 +1930,8 @@ class AlphaAN_FreqScan_GUI:
         self.console_widget.pack(pady=5, padx=5, fill="both", expand=True)
         self.log(
             f"Alpha-AN Frequency Scan initialized. "
-            f"{len(FREQ_PRESETS)} frozen frequency presets available."
+            f"{len(FREQ_PRESETS)} frozen frequency presets available, "
+            f"plus a custom list."
         )
         self.log(self.cal_age_str)
         return frame
@@ -2016,6 +2119,59 @@ class AlphaAN_FreqScan_GUI:
         except Exception as e:
             self.log(f"ERROR during scan: {e}")
 
+    def _on_freq_list_change(self, _event=None):
+        """Grey the custom-list box and List Maker button unless chosen."""
+        custom = self.freq_combobox.get() == CUSTOM_FREQ_LABEL
+        if custom:
+            self.custom_freq_text.config(
+                state="normal", bg="white", fg=self.CLR_TEXT_DARK
+            )
+            self.lbl_custom_freq.config(fg=self.CLR_TEXT_DARK)
+            self.list_maker_button.config(state="normal")
+            self.lbl_custom_hint.grid()
+            self._update_custom_freq_hint()
+        else:
+            self.custom_freq_text.config(
+                state="disabled", bg="#D9D2CB", fg="#8A837D"
+            )
+            self.lbl_custom_freq.config(fg="#8A837D")
+            self.list_maker_button.config(state="disabled")
+            # An empty Label still draws as a blank strip, so hide it.
+            self.lbl_custom_hint.grid_remove()
+
+    def _update_custom_freq_hint(self, _event=None):
+        """Live readout under the custom box: point count and span, or
+        the reason the list would be refused at Start."""
+        if self.freq_combobox.get() != CUSTOM_FREQ_LABEL:
+            return
+        text = self.custom_freq_text.get("1.0", "end")
+        if not text.strip():
+            self.lbl_custom_hint.config(
+                text="Type or paste a list, e.g. 20, 100, 1000, 1e4, 1e5",
+                fg=self.CLR_TEXT_DARK,
+            )
+            return
+        try:
+            freqs = parse_frequency_list(text)
+        except ValueError as e:
+            self.lbl_custom_hint.config(text=str(e), fg="#B00020")
+            return
+        self.lbl_custom_hint.config(
+            text=f"{len(freqs)} points, {min(freqs):g} Hz to "
+                 f"{max(freqs):g} Hz",
+            fg=self.CLR_TEXT_DARK,
+        )
+
+    def _selected_frequencies(self):
+        """(label for headers/log, frequency tuple) for the chosen list."""
+        choice = self.freq_combobox.get()
+        if choice == CUSTOM_FREQ_LABEL:
+            freqs = parse_frequency_list(
+                self.custom_freq_text.get("1.0", "end")
+            )
+            return f"Custom list ({len(freqs)} pts)", freqs
+        return choice, FREQ_PRESETS[choice]
+
     def _browse_file_location(self):
         path = filedialog.askdirectory()
         if path:
@@ -2042,10 +2198,24 @@ class AlphaAN_FreqScan_GUI:
 
         if not messagebox.askokcancel(
             "Reference Calibration",
-            "DISCONNECT the sample from the ZG4 now.\n\n"
-            "Reference calibration takes about 30 seconds and must run "
-            "with nothing connected to the sample interface.\n\n"
-            "Press OK once the sample is disconnected.",
+            "You are about to run a REF (reference) calibration on the "
+            f"Alpha-AN at {visa_addr}.\n\n"
+            "What it does:\n"
+            "  - Measures the analyzer's internal reference capacitors "
+            "against each other and stores the result INSIDE the "
+            "instrument, replacing the previous REF calibration.\n"
+            "  - Every later sweep (from PICA or WinDETA) uses this new "
+            "calibration.\n"
+            "  - Takes about 30 seconds. Start is locked until it ends.\n\n"
+            "Before you press OK:\n"
+            "  - DISCONNECT the sample from the ZG4. Nothing may be "
+            "connected to the sample interface.\n"
+            "  - Close WinALPHA / WinDETA so nothing else uses the GPIB "
+            "bus.\n\n"
+            "Afterwards: reconnect the sample before starting a sweep.\n\n"
+            "OK = start the calibration now.   Cancel = go back, nothing "
+            "is sent.",
+            icon="warning",
         ):
             return
 
@@ -2129,6 +2299,7 @@ class AlphaAN_FreqScan_GUI:
                 raise RuntimeError("A calibration is still running.")
 
             geom_mode = self.geom_mode_var.get()
+            freq_label, frequencies = self._selected_frequencies()
             params = {
                 "sample_name": self.entries["sample_name"].get().strip(),
                 "comment": self.entries["comment"].get().strip(),
@@ -2139,8 +2310,8 @@ class AlphaAN_FreqScan_GUI:
                 "delay": float(self.entries["delay"].get()),
                 "wire_mode": self.wire_combobox.get(),
                 "visa": self._selected_visa_address(),
-                "freq_preset": self.freq_combobox.get(),
-                "frequencies": FREQ_PRESETS[self.freq_combobox.get()],
+                "freq_preset": freq_label,
+                "frequencies": frequencies,
             }
             geom_value = float(self.entries["geom_value"].get())
             if geom_mode == "area":
