@@ -568,19 +568,28 @@ class AlphaGpibSession:
 
         ibwait takes its deadline from the device timeout, so the requested
         window is installed first and the working timeout restored after.
+        The longest NI-488.2 timeout code is T1000s, so a longer window
+        (slow low-frequency points) is waited out as repeated ibwait
+        calls of at most 1000 s each until the full deadline has passed.
         """
         previous = self._timeout_ms
-        self._set_timeout_seconds(timeout_ms / 1000.0)
+        longest = TIMEOUT_CODES[-1][0]
+        deadline = time.monotonic() + timeout_ms / 1000.0
         try:
-            sta = self._driver.ibwait(self._handle, RQS | TIMO)
-            if sta & ERR and not sta & TIMO:
-                raise GpibError(
-                    f"ibwait failed: {sta_text(sta)}; "
-                    f"{iberr_text(self._driver.error_code())}")
-            if not sta & RQS:
-                raise TimeoutError(
-                    f"No SRQ within {timeout_ms / 1000.0:.0f} s "
-                    f"({sta_text(sta)}).")
+            while True:
+                remaining = deadline - time.monotonic()
+                self._set_timeout_seconds(min(max(remaining, 0.0), longest))
+                sta = self._driver.ibwait(self._handle, RQS | TIMO)
+                if sta & ERR and not sta & TIMO:
+                    raise GpibError(
+                        f"ibwait failed: {sta_text(sta)}; "
+                        f"{iberr_text(self._driver.error_code())}")
+                if sta & RQS:
+                    return
+                if remaining <= longest or time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"No SRQ within {timeout_ms / 1000.0:.0f} s "
+                        f"({sta_text(sta)}).")
         finally:
             try:
                 self._set_timeout_seconds(previous / 1000.0)
@@ -670,6 +679,18 @@ ZG4_INTERFACE_CODE = 5
 # Timeouts (s) for the SRQ waits. A REF calibration takes ~30 s.
 SRQ_TIMEOUT_MEASURE_S = 120.0
 SRQ_TIMEOUT_CAL_S = 300.0
+
+
+def point_timeout_s(freq_hz, mtm_s):
+    """SRQ budget for one point.
+
+    A point integrates the sample and (reference mode "Always") the
+    reference, each for at least MTM and at least one signal period. A fixed
+    120 s budget is too short below ~0.02 Hz or above MTM ~55 s, so scale it;
+    never go below SRQ_TIMEOUT_MEASURE_S.
+    """
+    return max(SRQ_TIMEOUT_MEASURE_S,
+               4.0 * max(float(mtm_s), 1.0 / float(freq_hz)) + 60.0)
 
 # After *RST the Alpha drops off the GPIB bus while it reinitializes (no
 # listener: every write fails with ENOL) and only answers again some seconds
@@ -1384,7 +1405,7 @@ class AlphaAN_Backend:
 
     # --- per-point -------------------------------------------------------
 
-    def measure_point(self, freq, timeout_s=SRQ_TIMEOUT_MEASURE_S):
+    def measure_point(self, freq, timeout_s=None):
         """Set frequency, trigger one point, wait for SRQ, read the result.
 
         Returns (Zs', Zs'', f_actual, status, ref). The caller must use
@@ -1393,6 +1414,9 @@ class AlphaAN_Backend:
         inst = self.instrument
         if inst is None:
             raise ConnectionError("Instrument is not connected.")
+
+        if timeout_s is None:
+            timeout_s = point_timeout_s(freq, self.params.get('mtm', 0.0))
 
         self._exec(f"GFR={freq:.6e}")
         # Clear any stale status immediately before triggering, so a fast
@@ -2680,9 +2704,13 @@ class AlphaAN_FreqScan_GUI:
             self.log("Sweep stopped by user.")
         self.log("Waiting for worker thread to finish...")
 
-        # A single point can legitimately take a long MTM at low frequency,
-        # so allow the full measurement SRQ timeout plus slack.
-        self._stop_deadline = time.time() + SRQ_TIMEOUT_MEASURE_S + 15.0
+        # The worker only sees stop_event between points, so give it the
+        # longest single point plus margin before the session is closed
+        # under it.
+        mtm = self.backend.params.get('mtm', 0.0)
+        worst = max((point_timeout_s(f, mtm) for f in self.sweep_frequencies),
+                    default=SRQ_TIMEOUT_MEASURE_S)
+        self._stop_deadline = time.time() + worst + 15.0
         self._poll_worker_stopped(reason)
 
     def _poll_worker_stopped(self, reason):

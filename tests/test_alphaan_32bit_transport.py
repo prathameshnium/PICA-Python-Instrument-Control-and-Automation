@@ -191,6 +191,62 @@ def test_wait_for_srq_restores_the_working_timeout():
     assert codes == [16, 15]
 
 
+class _FakeClock:
+    """Replaces time.monotonic; each ibwait timeout advances it fully."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+def _wait_with_fake_clock(wait_ms, wait_sta):
+    driver, session = _session(wait_sta=wait_sta)
+    clock = _FakeClock()
+    seconds_of = {code: limit for limit, code in alpha.TIMEOUT_CODES}
+    real_ibwait = driver.ibwait
+    installed = []
+
+    def ibtmo(handle, code):
+        installed.append(code)
+        driver.calls.append(("ibtmo", code))
+        return alpha.CMPL
+
+    def ibwait(handle, mask):
+        clock.now += seconds_of[installed[-1]]
+        return real_ibwait(handle, mask)
+
+    driver.ibtmo, driver.ibwait = ibtmo, ibwait
+    real_monotonic = alpha.time.monotonic
+    alpha.time.monotonic = clock
+    try:
+        session.wait_for_srq(wait_ms)
+        raised = False
+    except TimeoutError:
+        raised = True
+    finally:
+        alpha.time.monotonic = real_monotonic
+    waits = sum(1 for c in driver.calls if c[0] == "ibwait")
+    return raised, waits, clock.now
+
+
+def test_a_wait_longer_than_t1000s_is_split_and_not_cut_short():
+    # T1000s is the longest NI-488.2 code; a 1e-4 Hz point needs far more.
+    raised, waits, elapsed = _wait_with_fake_clock(
+        2500 * 1000, alpha.TIMO | alpha.ERR)
+    assert raised
+    assert waits == 3
+    assert elapsed >= 2500
+
+
+def test_a_split_wait_returns_on_the_first_srq():
+    raised, waits, _ = _wait_with_fake_clock(
+        2500 * 1000, alpha.RQS | alpha.CMPL)
+    assert not raised
+    assert waits == 1
+
+
 # ------------------------------------------------------------- the editions
 
 def test_the_32bit_edition_never_imports_pyvisa():

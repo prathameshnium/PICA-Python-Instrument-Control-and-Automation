@@ -229,6 +229,74 @@ def test_stale_status_is_cleared_before_every_trigger():
         assert fake.stb_reads >= 1, label
 
 
+def _srq_window_s(fake):
+    waits = [t for kind, t in fake.traffic if kind == "wait_for_srq"]
+    assert len(waits) == 1
+    return waits[0] / 1000.0
+
+
+def test_the_srq_wait_grows_with_the_signal_period():
+    """A fixed 120 s aborted every point at or below about 0.01 Hz."""
+    for label, module in GUI_EDITIONS:
+        windows = []
+        for freq in (1e6, 1.0, 1e-2, 1e-4):
+            fake = FakeAlpha(answers={"ZRE?": f"ZRE=1 1 {freq} 2 0"})
+            _backend(module, fake).measure_point(freq)
+            windows.append(_srq_window_s(fake))
+        assert windows == sorted(windows), label
+        assert windows[0] >= module.SRQ_TIMEOUT_MEASURE_S, label
+        # Several periods of the test signal, not just one.
+        assert windows[2] >= module.SRQ_TIMEOUT_MEASURE_S + 3 / 1e-2, label
+        assert windows[3] >= 3 / 1e-4, label
+
+
+def test_the_srq_wait_includes_the_integration_time():
+    for label, module in GUI_EDITIONS:
+        fake = FakeAlpha(answers={"ZRE?": "ZRE=1 1 1000.0 2 0"})
+        backend = _backend(module, fake)
+        backend.params = {"mtm": 1000.0}
+        backend.measure_point(1000.0)
+        assert _srq_window_s(fake) > 1000.0 + module.SRQ_TIMEOUT_MEASURE_S - 1, label
+
+
+def test_an_explicit_srq_window_is_still_honoured():
+    for label, module in GUI_EDITIONS:
+        fake = FakeAlpha(answers={"ZRE?": "ZRE=1 1 1e-4 2 0"})
+        _backend(module, fake).measure_point(1e-4, timeout_s=7.0)
+        assert _srq_window_s(fake) == 7.0, label
+
+
+def test_both_editions_compute_the_same_srq_window():
+    for freq, mtm in ((1e6, 0.01), (1.0, 1.0), (3e-5, 1000.0)):
+        assert (visa_ed.point_timeout_s(freq, mtm)
+                == bit32_ed.point_timeout_s(freq, mtm))
+
+
+def _function_source(source, name):
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return ast.unparse(node)
+    return None
+
+
+def test_every_alpha_module_uses_the_same_srq_window():
+    """The Fscan editions once kept a flat 120 s while the rest scaled."""
+    folder = os.path.dirname(VISA_PATH)
+    reference = _function_source(SOURCES["VISA"], "point_timeout_s")
+    assert reference is not None
+    checked = 0
+    for name in sorted(os.listdir(folder)):
+        if not name.endswith("AlphaAN_GUI.py") and "AlphaAN_32bit" not in name:
+            continue
+        with open(os.path.join(folder, name), encoding="utf-8") as handle:
+            source = handle.read()
+        if "SRQ_TIMEOUT_MEASURE_S" not in source:
+            continue
+        assert _function_source(source, "point_timeout_s") == reference, name
+        checked += 1
+    assert checked >= 11
+
+
 # ------------------------------------------------------- the ZG4 ceiling
 
 def test_the_acv_ceiling_steps_down_with_frequency():
