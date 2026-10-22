@@ -35,7 +35,12 @@ def _gui(fake=None, freqs=(1000.0, 2000.0), save_dir=None):
     gui.lcr_backend, fake = connected_backend(mod, fake)
     gui.lcr_params = {"sample_name": "TestSample", "acv": 1.0, "mtm": 0.5,
                       "delay": 0.0, "wire_mode": "2",
-                      "lcr_visa": "GPIB0::10::INSTR"}
+                      "lcr_visa": "GPIB0::10::INSTR",
+                      "geometry_mode": "diameter", "diameter_mm": 9.68,
+                      "thickness_mm": 1.14, "save_pica": True,
+                      "save_windeta": True,
+                      "temp_controller": "Lakeshore 350"}
+    gui.c0_farads = mod.c0_from_params(gui.lcr_params)
     gui.save_dir = save_dir or tempfile.mkdtemp(prefix="pica_stepfscan_")
     gui.sweep_frequencies = list(freqs)
     gui.is_running = True
@@ -56,11 +61,26 @@ def _gui(fake=None, freqs=(1000.0, 2000.0), save_dir=None):
 
 
 def _rows(gui):
-    names = [n for n in os.listdir(gui.save_dir) if n.endswith("_FreqScan.txt")]
+    """PICA file: its first '#' row, the header and the parsed data rows
+    (the WinDETA metadata rows in between are checked separately)."""
+    names = [n for n in os.listdir(gui.save_dir)
+             if n.endswith("_FreqScan_pica_format.dat")]
     assert len(names) == 1, names
     with open(os.path.join(gui.save_dir, names[0]), encoding="utf-8") as fh:
         lines = fh.read().splitlines()
+    n_meta = sum(1 for ln in lines if ln.startswith("#"))
+    lines = [lines[0]] + lines[n_meta:]
     return lines, [[float(v) for v in ln.split("\t")] for ln in lines[2:]]
+
+
+def _windeta_raw(gui):
+    names = [n for n in os.listdir(gui.save_dir)
+             if n.endswith("_FreqScan_windeta_format.txt")]
+    assert len(names) <= 1, names
+    if not names:
+        return None
+    with open(os.path.join(gui.save_dir, names[0]), "rb") as fh:
+        return fh.read()
 
 
 def _logs(gui):
@@ -182,11 +202,15 @@ def test_reconnect_reopens_and_reconfigures_without_dc_bias():
 def _validate(**over):
     gui = mod.CombinedGUI.__new__(mod.CombinedGUI)
     gui.lcr_backend, fake = connected_backend(mod)
-    values = {"sample_name": "S", "acv": "1.0", "mtm": "0.5", "delay": "0"}
+    values = {"sample_name": "S", "acv": "1.0", "mtm": "0.5", "delay": "0",
+              "geom_value": "1.0", "thickness_mm": "1.0"}
     values.update({k: v for k, v in over.items() if k in values})
     gui.lcr_entries = {k: _Entry(v) for k, v in values.items()}
     gui.wire_cb = _Entry(over.get("wire", "2"))
     gui.lcr_cb = _Entry("GPIB0::10::INSTR  ->  ALPHA Analyzer")
+    gui.geom_mode_var = _Entry(over.get("geom", "area"))
+    gui.fmt_pica_var = _Entry(over.get("pica", True))
+    gui.fmt_windeta_var = _Entry(over.get("windeta", True))
     gui.sweep_frequencies = over.get("freqs", [40.0, 1e3, 2e6])
     return gui, fake
 
@@ -195,9 +219,13 @@ def test_settings_are_validated_at_start_before_any_instrument_opens():
     gui, fake = _validate()
     p = gui._validate_lcr_params()
     assert p["lcr_visa"] == "GPIB0::10::INSTR" and p["wire_mode"] == "2"
+    assert p["area_mm2"] == 1.0 and "diameter_mm" not in p
+    assert math.isclose(gui.c0_farads, mod.compute_c0_from_area(1.0, 1.0))
     for bad in ({"acv": "3.5"}, {"acv": "0"}, {"mtm": "0"},
                 {"wire": "5"}, {"delay": "-1"},
-                {"acv": "3.0", "freqs": [1e3, 5e6]}):
+                {"acv": "3.0", "freqs": [1e3, 5e6]},
+                {"thickness_mm": "0"}, {"geom": "diameter", "geom_value": "-2"},
+                {"pica": False, "windeta": False}):
         gui, fake = _validate(**bad)
         try:
             gui._validate_lcr_params()
@@ -210,6 +238,59 @@ def test_settings_are_validated_at_start_before_any_instrument_opens():
 
 def _sweep_rows_for_fix(gui):
     return _rows(gui)
+
+
+# --- output formats (PICA metadata + WinDETA file per step) -----------------
+
+def test_windeta_file_per_step_matches_the_frequency_scan_layout():
+    fake = FakeAlpha({"ZRE?": ["ZRE=1E5 -2E6 1001.5 2 1",
+                               "ZRE=1E5 -2E6 2003.0 2 1"]})
+    gui, _ = _gui(fake)
+    gui._run_frequency_sweep(150.0, 0, 2)
+    raw = _windeta_raw(gui)
+    assert b"\n" not in raw.replace(b"\r\n", b"")          # CRLF only
+    lines = raw.decode("cp1252").split("\r\n")
+    assert lines[0].startswith("TestSample 150.00 K, ")
+    assert lines[1] == "Fixed value(s) :  AC Volt  [Vrms]=1.0000e+00"
+    assert lines[2] == mod.WINDETA_HEADER and lines[-1] == ""
+    rows = [[float(v) for v in ln.split("\t")] for ln in lines[3:-1]]
+    assert len(rows) == 2 and all(len(r) == 9 for r in rows)
+    want = mod.impedance_to_dielectric(1e5, -2e6, 1001.5, gui.c0_farads)
+    assert all(math.isclose(a, b, rel_tol=1e-5)
+               for a, b in zip(rows[0], want))
+
+
+def test_the_dielectric_conversion_is_the_frequency_scan_one():
+    fscan, _ = load_port("Frequency_Scan_AlphaAN_GUI.py")
+    assert mod.WINDETA_HEADER == fscan.WINDETA_HEADER
+    for zr, zi, f, c0 in ((1e5, -2e6, 1e3, 1e-12), (3.0, 40.0, 1e6, 5e-13)):
+        assert (mod.impedance_to_dielectric(zr, zi, f, c0)
+                == fscan.impedance_to_dielectric(zr, zi, f, c0))
+    assert mod.compute_c0_from_area(7.0, 0.5) == \
+        fscan.compute_c0_from_area(7.0, 0.5)
+
+
+def test_pica_file_carries_ascii_metadata_and_unticked_formats_are_skipped():
+    gui, _ = _gui(freqs=(1000.0,))
+    gui.lcr_params.update(save_windeta=False, geometry_mode="area",
+                          area_mm2=50.0)
+    gui._run_frequency_sweep(80.0, 0, 1)
+    assert _windeta_raw(gui) is None
+    names = os.listdir(gui.save_dir)
+    with open(os.path.join(gui.save_dir, names[0]), encoding="utf-8") as fh:
+        meta = [ln for ln in fh.read().splitlines() if ln.startswith("#")]
+    assert all(ln.isascii() for ln in meta)
+    joined = "\n".join(meta)
+    for want in ("T_set = 80.0 K", "A = 50.0 mm^2", "Area electrode",
+                 f"C0 = {gui.c0_farads:.5e} F", "ZREFMODE=-3", "ZSLCAL=1",
+                 "ZLLCOR=1", "DRS=0 0", "Lakeshore 350", "1 pts"):
+        assert want in joined, want
+
+    gui, _ = _gui(freqs=(1000.0,))
+    gui.lcr_params["save_pica"] = False
+    gui._run_frequency_sweep(80.0, 0, 1)
+    assert [n.endswith("_windeta_format.txt")
+            for n in os.listdir(gui.save_dir)] == [True]
 
 
 # --- pre-lab fixes (A1/A3/A5/A6/A8, B1-B3) ----------------------------------

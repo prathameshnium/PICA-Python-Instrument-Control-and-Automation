@@ -307,6 +307,156 @@ EPS0_CM = 8.8541878128e-14   # F/cm - used only so sigma lands in S/cm
 WIRE_MODES = ("2", "3", "4")
 
 
+# WinDETA Tscan export: one file per fixed frequency, laid out exactly like
+# data_file_for_ref/Sample_Tscan.TXT - title line, geometry line, fixed
+# value(s) line, this column header, then T / eps' / eps'' rows. WinDETA
+# writes the temperature in deg C and the file in cp1252 with CRLF. Never
+# add lines or columns to it.
+WINDETA_TSCAN_HEADER = " Temp. [°C]\t Eps'    \t Eps''   "
+KELVIN_OFFSET = 273.15
+
+
+def compute_c0(diameter_mm, thickness_mm):
+    """Geometric (empty-cell) capacitance of a round-plate electrode, in F.
+
+    A = pi * (D/2)^2 ;  C0 = eps0 * A / d
+    """
+    if diameter_mm <= 0 or thickness_mm <= 0:
+        raise ValueError("Diameter and thickness must both be positive.")
+    d_m = diameter_mm * 1e-3
+    t_m = thickness_mm * 1e-3
+    area = math.pi * (d_m / 2.0) ** 2
+    return EPS0_SI * area / t_m
+
+
+def compute_c0_from_area(area_mm2, thickness_mm):
+    """Geometric (empty-cell) capacitance from electrode AREA, in F.
+
+    For irregular electrodes where the area is known directly.
+    C0 = eps0 * A / d, with A in mm^2 (as WinDETA) and d in mm.
+    """
+    if area_mm2 <= 0 or thickness_mm <= 0:
+        raise ValueError("Area and thickness must both be positive.")
+    a_m2 = area_mm2 * 1e-6
+    t_m = thickness_mm * 1e-3
+    return EPS0_SI * a_m2 / t_m
+
+
+def c0_from_params(params):
+    """C0 from the geometry the user chose (validated, positive)."""
+    if params["geometry_mode"] == "area":
+        return compute_c0_from_area(params["area_mm2"],
+                                    params["thickness_mm"])
+    return compute_c0(params["diameter_mm"], params["thickness_mm"])
+
+
+def calculate_eps(f_actual, zr, zi, c0):
+    """eps' and eps'' from the series impedance Zs = zr + j*zi, as the
+    frequency scan module (and WinDETA) computes them:
+
+        eps* = 1 / (j * w * C0 * Zs)
+    """
+    omega = 2.0 * math.pi * f_actual
+    omega_safe = omega if omega != 0 else 1e-20
+    z_mag_sq = zr ** 2 + zi ** 2
+    z_mag_sq_safe = z_mag_sq if z_mag_sq != 0 else 1e-20
+    c0_safe = c0 if c0 != 0 else 1e-20
+    denom = omega_safe * c0_safe * z_mag_sq_safe
+    return -zi / denom, zr / denom
+
+
+def windeta_tscan_header_lines(params, freq_hz, when):
+    """The three header lines of a WinDETA Tscan export plus its column
+    header (Sample_Tscan.TXT). The title is the sample name, dated like
+    the frequency scan's WinDETA file. WinDETA records a diameter only, so
+    an area is written as the round plate of the same area.
+    """
+    if params["geometry_mode"] == "area":
+        diameter = 2.0 * math.sqrt(params["area_mm2"] / math.pi)
+    else:
+        diameter = params["diameter_mm"]
+    date_str = f"{when.day:2d}.{when.month:02d}.{when.year}"
+    time_str = f"{when.hour}:{when.minute:02d}"
+    return [
+        f"{params['sample_name']}, {date_str}, {time_str}",
+        f"Diameter[mm] {diameter:.3e}  "
+        f"Thickness[mm] {params['thickness_mm']:.3e}  "
+        f"Spacer Capacity[pF] {0.0:.3e}  Spacer Area[mm^2] {0.0:.3e}",
+        f"Fixed value(s) :  Freq. [Hz]={freq_hz:.3e}  "
+        f"AC Volt  [Vrms]={params['acv']:.3e}",
+        WINDETA_TSCAN_HEADER,
+    ]
+
+
+def windeta_tscan_row(temp_k, eps1, eps2):
+    """One WinDETA Tscan data row: T in deg C, then eps' and eps''."""
+    return "\t".join(f"{v:.5e}"
+                     for v in (temp_k - KELVIN_OFFSET, eps1, eps2))
+
+
+def dat_metadata_lines(params, c0_farads, freq_hz, when):
+    """'#' comment rows for a PICA per-frequency file: what WinDETA keeps
+    in its measurement definition (SAMPLE / START CONDITIONS / LIST /
+    IMPEDANCE DEVICE sections of mes_def_Tscan.txt), so a file documents
+    itself.
+
+    ASCII only - the lab PCs are cp1252 and the Plotter skips '#' rows.
+    The analyzer settings below are the ones initialize_instrument sends.
+    """
+    freqs = params["frequencies"]
+    if params["geometry_mode"] == "area":
+        evaluation = "Area electrode"
+        size = f"A = {params['area_mm2']} mm^2"
+    else:
+        evaluation = "Round plate electrode"
+        size = f"D = {params['diameter_mm']} mm"
+    wires = "4 Wire" if str(params["wire_mode"]) == "4" else "2 Wire"
+    return [
+        f"# Sample: {params['sample_name']} | "
+        f"ACV: {params['acv']} Vrms | MTM: {params['mtm']} s | "
+        f"FRS: {params['wire_mode']}-wire | "
+        f"Fixed frequency: {freq_tag(freq_hz)} Hz",
+        f"# Geometry: {size}, d = {params['thickness_mm']} mm, "
+        f"C0 = {c0_farads:.5e} F",
+        "# Last REF calibration: not recorded by PICA (Start never "
+        "calibrates)",
+        f"# Comment    : {params['sample_name']}",
+        f"# Date       : {when.strftime('%d.%m.%Y %H:%M:%S')}",
+        f"# Evaluation : {evaluation}",
+        f"# Size       : {size}",
+        f"# Thickness  = {params['thickness_mm']} mm",
+        "# C-Spacer   = 0 pF, A-Spacer = 0 mm^2, edge compensation off",
+        f"# AcV        = {params['acv']} Vrms (no DC bias)",
+        f"# Frequency list : {len(freqs)} pts, {min(freqs):g} - "
+        f"{max(freqs):g} Hz",
+        f"# Temperature    : {params['temp_program']}",
+        f"# Delay per freq : {params['delay']} s",
+        f"# Analyzer       : Novocontrol Alpha-AN + ZG4 at "
+        f"{params['lcr_visa']}",
+        "# Reference Measurement                : Always, 3 auto "
+        "capacitors max (ZREFMODE=-3)",
+        "# Low capacity open calibration        : Off",
+        "# Low impedance load short calibration : On (ZSLCAL=1)",
+        "# Low loss reference capacitor corr.   : On (ZLLCOR=1)",
+        f"# 4 Wire Front State                   : {wires}",
+        "# Driven HI / LO Shield                : Off / Off (DRS=0 0)",
+        f"# Integration time                     : {params['mtm']} s (MTM)",
+    ]
+
+
+def validate_output_settings(params):
+    """Geometry and output-format checks, run before any instrument opens."""
+    if params["geometry_mode"] == "area":
+        if params["area_mm2"] <= 0 or params["thickness_mm"] <= 0:
+            raise ValueError("Area and thickness must both be positive.")
+    else:
+        if params["diameter_mm"] <= 0 or params["thickness_mm"] <= 0:
+            raise ValueError("Diameter and thickness must both be positive.")
+    if not (params["save_pica"] or params["save_windeta"]):
+        raise ValueError(
+            "Tick at least one output format (PICA or WinDETA).")
+
+
 def acv_ceiling(freq_hz):
     """ZG4 AC-voltage ceiling (Vrms) at a given frequency."""
     if freq_hz <= ACV_FREQ_MID_HZ:
@@ -938,7 +1088,9 @@ class Integrated_CT_GUI:
         # --- File / frequency state ---
         self.file_location_path = ""
         self.frequencies = []
-        self.freq_filepaths = {}
+        self.freq_filepaths = {}      # PICA format, {freq: path}
+        self.windeta_filepaths = {}   # WinDETA format, {freq: path}
+        self.c0_farads = None
         self.plot_freq = None
 
         # --- Data storage (Appendix A.4: keyed per frequency, bounded) ---
@@ -1265,6 +1417,50 @@ class Integrated_CT_GUI:
             row=r, column=1, padx=(5, 10), pady=(0, 10), sticky='ew')
         r += 1
 
+        # --- Geometry: Area (mm^2) or Diameter (mm), as WinDETA ---
+        # Each mode keeps its own value, so flipping the toggle never turns
+        # an area into a diameter: defaults D = 1 mm, A = 1 mm^2, d = 1 mm.
+        self.geom_mode_var = tk.StringVar(value="area")
+        self._geom_values = {"area": "1.0", "diameter": "1.0"}
+        geom_radio_frame = tk.Frame(frame, bg=self.CLR_BG_DARK)
+        geom_radio_frame.grid(
+            row=r, column=0, columnspan=2, padx=padx_val,
+            pady=pady_val, sticky='w')
+        Label(geom_radio_frame, text="Geometry input:").pack(side='left')
+        ttk.Radiobutton(
+            geom_radio_frame, text="Area (mm²)", value="area",
+            variable=self.geom_mode_var,
+            command=self._on_geom_mode_change).pack(side='left', padx=(10, 0))
+        ttk.Radiobutton(
+            geom_radio_frame, text="Diameter (mm)", value="diameter",
+            variable=self.geom_mode_var,
+            command=self._on_geom_mode_change).pack(side='left', padx=(10, 0))
+        r += 1
+        self.lbl_geom = Label(frame, text="Electrode Area (mm²):")
+        self.lbl_geom.grid(
+            row=r, column=0, padx=padx_val, pady=pady_val, sticky='w')
+        Label(frame, text="Sample Thickness (mm):").grid(
+            row=r, column=1, padx=padx_val, pady=pady_val, sticky='w')
+        r += 1
+        self.entries["Geometry"] = Entry(frame, font=self.FONT_BASE)
+        self.entries["Geometry"].insert(0, "1.0")
+        self.entries["Geometry"].grid(
+            row=r, column=0, padx=(10, 5), pady=(0, 5), sticky='ew')
+        self.entries["Thickness"] = Entry(frame, font=self.FONT_BASE)
+        self.entries["Thickness"].insert(0, "1.0")
+        self.entries["Thickness"].grid(
+            row=r, column=1, padx=(5, 10), pady=(0, 5), sticky='ew')
+        r += 1
+        # Live C0 readout, recomputed as the geometry is typed.
+        self.lbl_c0 = Label(frame, text="C0 = --")
+        self.lbl_c0.grid(
+            row=r, column=0, columnspan=2, padx=padx_val,
+            pady=(0, 10), sticky='w')
+        for key in ("Geometry", "Thickness"):
+            self.entries[key].bind("<KeyRelease>", self._update_c0_label)
+        self._update_c0_label()
+        r += 1
+
         # --- Frequency list text box (Section 4) ---
         Label(frame, text="Frequencies (Hz, comma-separated):").grid(
             row=r, column=0, columnspan=2, padx=padx_val,
@@ -1323,6 +1519,22 @@ class Integrated_CT_GUI:
         self.file_button.grid(
             row=r, column=0, columnspan=2, padx=padx_val,
             pady=4, sticky='ew')
+        r += 1
+
+        # --- Output formats. Both on by default; at least one required ---
+        self.fmt_pica_var = tk.BooleanVar(value=True)
+        self.fmt_windeta_var = tk.BooleanVar(value=True)
+        fmt_frame = tk.Frame(frame, bg=self.CLR_BG_DARK)
+        fmt_frame.grid(
+            row=r, column=0, columnspan=2, padx=padx_val,
+            pady=(4, 0), sticky='w')
+        Label(fmt_frame, text="Save as:").pack(side='left')
+        ttk.Checkbutton(
+            fmt_frame, text="PICA format (.dat)",
+            variable=self.fmt_pica_var).pack(side='left', padx=(10, 0))
+        ttk.Checkbutton(
+            fmt_frame, text="WinDETA format (.txt)",
+            variable=self.fmt_windeta_var).pack(side='left', padx=(10, 0))
         r += 1
 
         # --- Start | Stop ---
@@ -1579,7 +1791,20 @@ class Integrated_CT_GUI:
                                       self.lakeshore_cb.get()),
                 'lcr_visa':      self._extract_visa(
                                       self.lcr_cb.get()),
+                'geometry_mode': self.geom_mode_var.get(),
+                'thickness_mm':  float(self.entries["Thickness"].get()),
+                'save_pica':     self.fmt_pica_var.get(),
+                'save_windeta':  self.fmt_windeta_var.get(),
             }
+            geom_value = float(self.entries["Geometry"].get())
+            if params['geometry_mode'] == "area":
+                params['area_mm2'] = geom_value
+            else:
+                params['diameter_mm'] = geom_value
+            params['temp_program'] = (
+                f"Ramp {params['start_temp']} -> {params['end_temp']} K at "
+                f"{params['rate']} K/min, cutoff {params['cutoff']} K "
+                f"(Lakeshore 350 at {params['lakeshore_visa']})")
 
             # --- Validation ---
             if not all([params['sample_name'],
@@ -1596,6 +1821,8 @@ class Integrated_CT_GUI:
                 raise ValueError("Delay per Freq cannot be negative.")
             if not (0.1 <= params['rate'] <= 100.0):
                 raise ValueError("Ramp rate must be 0.1 - 100 K/min.")
+            validate_output_settings(params)
+            self.c0_farads = c0_from_params(params)
 
             # --- Initialize hardware ---
             self.backend.initialize_instruments(params)
@@ -1603,11 +1830,12 @@ class Integrated_CT_GUI:
                      f"{params['sample_name']}")
 
             # --- Appendix A.2: create one file per frequency ---
-            self._create_per_frequency_files(params['sample_name'])
+            self._create_per_frequency_files(params)
+            n_files = len(self.freq_filepaths) + len(self.windeta_filepaths)
             self.log(
                 f"Number of frequencies entered: {len(self.frequencies)}. "
-                f"{len(self.frequencies)} output files created in "
-                f"{self.file_location_path}")
+                f"{n_files} output files created in "
+                f"{self.file_location_path} (C0 = {self.c0_farads:.5e} F)")
 
             # --- Appendix A.4: populate plot-frequency dropdown ---
             self._populate_plot_freq_dropdown()
@@ -1654,6 +1882,34 @@ class Integrated_CT_GUI:
                 f"Could not start measurement.\n{e}")
 
     # ------------------------------------------------------------------
+    def _on_geom_mode_change(self):
+        """Relabel the geometry entry when the Diameter/Area toggle flips,
+        parking the old mode's value and restoring the new mode's."""
+        new_mode = self.geom_mode_var.get()
+        old_mode = "diameter" if new_mode == "area" else "area"
+        entry = self.entries["Geometry"]
+        self._geom_values[old_mode] = entry.get()
+        entry.delete(0, "end")
+        entry.insert(0, self._geom_values[new_mode])
+        if new_mode == "area":
+            self.lbl_geom.config(text="Electrode Area (mm²):")
+        else:
+            self.lbl_geom.config(text="Electrode Diameter (mm):")
+        self._update_c0_label()
+
+    def _update_c0_label(self, _event=None):
+        try:
+            g = float(self.entries["Geometry"].get())
+            t = float(self.entries["Thickness"].get())
+            if self.geom_mode_var.get() == "area":
+                c0 = compute_c0_from_area(g, t)
+            else:
+                c0 = compute_c0(g, t)
+            self.lbl_c0.config(text=f"C0 = {c0:.5e} F")
+        except (ValueError, ZeroDivisionError):
+            self.lbl_c0.config(text="C0 = -- (check geometry)")
+
+    # ------------------------------------------------------------------
     def _extract_visa(self, combo_val):
         """Strips the '  ->  IDN' suffix added by the identity-aware scan."""
         if "  ->  " in combo_val:
@@ -1661,33 +1917,56 @@ class Integrated_CT_GUI:
         return combo_val.strip()
 
     # ------------------------------------------------------------------
-    def _create_per_frequency_files(self, sample_name):
+    def _create_per_frequency_files(self, params):
         """
         Appendix A.2 / A.3:
-        One .txt file per frequency, header pre-written.
+        One file per frequency and ticked format, header pre-written:
+        <sample>-<f>Hz_pica_format.dat (ASCII '#' metadata rows, then
+        DATA_HEADER) and <sample>-<f>Hz_windeta_format.txt (the WinDETA
+        Tscan layout, cp1252, CRLF). An unticked format gets no files.
         If any target file already exists, appends a timestamp to the
         sample name to avoid silently overwriting previous data.
         """
-        candidate_paths = {
-            f: os.path.join(self.file_location_path,
-                            f"{sample_name}-{freq_tag(f)}Hz.txt")
-            for f in self.frequencies
-        }
-        if any(os.path.exists(p) for p in candidate_paths.values()):
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            sample_name = f"{sample_name}_{ts}"
-            candidate_paths = {
+        def paths_for(sample_name, suffix, wanted):
+            if not wanted:
+                return {}
+            return {
                 f: os.path.join(self.file_location_path,
-                                f"{sample_name}-{freq_tag(f)}Hz.txt")
+                                f"{sample_name}-{freq_tag(f)}Hz{suffix}")
                 for f in self.frequencies
             }
+
+        sample_name = params['sample_name']
+        pica = paths_for(sample_name, "_pica_format.dat",
+                         params['save_pica'])
+        windeta = paths_for(sample_name, "_windeta_format.txt",
+                            params['save_windeta'])
+        if any(os.path.exists(p)
+               for p in list(pica.values()) + list(windeta.values())):
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            sample_name = f"{sample_name}_{ts}"
+            pica = paths_for(sample_name, "_pica_format.dat",
+                             params['save_pica'])
+            windeta = paths_for(sample_name, "_windeta_format.txt",
+                                params['save_windeta'])
             self.log(f"Existing files detected. Using unique sample "
                      f"tag: {sample_name}")
 
-        self.freq_filepaths = candidate_paths
+        now = datetime.now()
+        self.freq_filepaths = pica
+        self.windeta_filepaths = windeta
         for f, path in self.freq_filepaths.items():
             with open(path, 'w', encoding='utf-8') as fh:
+                for line in dat_metadata_lines(params, self.c0_farads, f,
+                                               now):
+                    fh.write(line + "\n")
                 fh.write(self.DATA_HEADER + "\n")
+        # newline="\r\n" and cp1252: WinDETA exports are CRLF and ANSI
+        # (the deg C sign is byte 0xB0), on any OS.
+        for f, path in self.windeta_filepaths.items():
+            with open(path, 'w', encoding='cp1252', newline='\r\n') as fh:
+                for line in windeta_tscan_header_lines(params, f, now):
+                    fh.write(line + "\n")
 
     # ------------------------------------------------------------------
     def _populate_plot_freq_dropdown(self):
@@ -1936,9 +2215,20 @@ class Integrated_CT_GUI:
 
             # Open, append, close for every single point: if the program
             # crashes mid-experiment, no data already written is lost.
-            with open(self.freq_filepaths[f], 'a',
-                      encoding='utf-8') as fh:
-                fh.write(row_str + "\n")
+            if f in self.freq_filepaths:
+                with open(self.freq_filepaths[f], 'a',
+                          encoding='utf-8') as fh:
+                    fh.write(row_str + "\n")
+
+            # WinDETA file: T (deg C), eps', eps''. The safety-kill NaN
+            # row is PICA-only - WinFIT cannot read 'nan'.
+            if f in self.windeta_filepaths:
+                eps1, eps2 = calculate_eps(f_act, R, X, self.c0_farads)
+                vals = (temp, eps1, eps2)
+                if all(math.isfinite(v) for v in vals):
+                    with open(self.windeta_filepaths[f], 'a',
+                              encoding='cp1252', newline='\r\n') as fh:
+                        fh.write(windeta_tscan_row(*vals) + "\n")
 
     # ==================================================================
     # DATA STORAGE UPDATE (Appendix A.4: per-frequency keyed)

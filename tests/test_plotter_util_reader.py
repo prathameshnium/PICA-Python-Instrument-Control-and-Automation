@@ -120,6 +120,85 @@ def test_plotter_reads_a_cp1252_windeta_style_export():
         assert data.shape == (2, 3) and data[1, 0] == 110.0 and data[0, 2] == -0.1
 
 
+def test_plotter_reads_the_novocontrol_windeta_reference_exports():
+    reader = _plotter_reader()
+    ref = os.path.join(REPO_ROOT, "pica", "novocontrol", "data_file_for_ref")
+    expected = {"Fscan_data_Novo_Windeta.dat": (40, 9, "Freq. [Hz]"),
+                "Sample_Fscan_RT.TXT": (115, 9, "Freq. [Hz]"),
+                "Sample_Tscan.TXT": (77, 3, "Temp. [°C]")}
+    for name, (rows, cols, first) in expected.items():
+        path = os.path.join(ref, name)
+        if not os.path.exists(path):
+            continue  # reference exports are optional in a checkout
+        headers, delim, data = reader._read_data_from_file(path)
+        assert headers[0] == first and headers[1] == "Eps'" and delim == "\t", name
+        assert data.shape == (rows, cols) and np.isfinite(data).all(), name
+
+
+def test_plotter_reads_both_alpha_freqscan_output_formats():
+    # The real writer of the Alpha-AN frequency scan, driven headless
+    import test_fscan_against_references as fscan_test
+    reader = _plotter_reader()
+    with tempfile.TemporaryDirectory() as d:
+        gui = fscan_test.make_headless_gui(d)
+        gui._open_output_files(fscan_test.base_params())
+        for k in range(3):
+            gui._write_row([20.0 * 1.4 ** k, 1e3, 2e2, 1e-4, 2e-5, 3e4, 4e5, 5e-6, -6e-7])
+        for path, first in ((gui.txt_filepath, "Freq. [Hz]"), (gui.dat_filepath, "Frequency")):
+            headers, _, data = reader._read_data_from_file(path)
+            assert headers[0] == first and len(headers) == 9, path
+            assert data.shape == (3, 9) and data[2, 0] == 39.2 and data[0, 8] == -6e-7, path
+
+
+def test_plotter_reads_both_alpha_tscan_output_formats():
+    # The real per-frequency writer of the Alpha-AN temperature scan
+    import test_temprature_scan_alphaan as tscan_test
+    tscan = tscan_test.mod
+    reader = _plotter_reader()
+    with tempfile.TemporaryDirectory() as d:
+        gui = tscan_test._files(d)
+        valid = tscan.STATUS_RESULT_VALID
+        gui._save_cycle_to_files({"points": [
+            (300.0 + k, 1000.0, 1e5, -2e6, valid, 1000.0) for k in range(3)]})
+        headers, _, data = reader._read_data_from_file(gui.windeta_filepaths[1000.0])
+        assert headers == ["Temp. [°C]", "Eps'", "Eps''"]
+        assert data.shape == (3, 3) and np.isclose(data[2, 0], 28.85)
+        headers, _, data = reader._read_data_from_file(gui.freq_filepaths[1000.0])
+        assert headers[0] == "Temperature" and len(headers) == 19
+        assert data.shape == (3, 19) and data[1, 0] == 301.0
+
+
+def test_plotter_reads_both_alpha_step_freqscan_output_formats():
+    # The real per-setpoint writer of the Alpha-AN step frequency scan
+    import test_step_frequency_scan_alphaan as step_test
+    reader = _plotter_reader()
+    with tempfile.TemporaryDirectory() as d:
+        gui, _ = step_test._gui(save_dir=d)
+        gui._run_frequency_sweep(150.0, 0, 2)
+        for name in sorted(os.listdir(d)):
+            headers, _, data = reader._read_data_from_file(os.path.join(d, name))
+            if name.endswith("_windeta_format.txt"):
+                assert headers[0] == "Freq. [Hz]" and data.shape == (2, 9), name
+            else:
+                assert name.endswith("_pica_format.dat"), name
+                assert headers[0] == "Frequency" and data.shape == (2, 20), name
+            assert np.isfinite(data).all(), name
+
+
+def test_plotter_matches_the_same_quantity_across_pica_and_windeta_names():
+    match = _plotter_reader()._match_column
+    windeta = ["Freq. [Hz]", "Eps'", "Eps''", "Zp' [Ohms]", "Sig' [S/cm]"]
+    pica = ["Frequency", "Eps'", "Eps''", "Zp'", "Sig'"]
+    assert match("Frequency", windeta) == "Freq. [Hz]"
+    assert match("Freq. [Hz]", pica) == "Frequency"
+    assert match("Zp'", windeta) == "Zp' [Ohms]" and match("Sig' [S/cm]", pica) == "Sig'"
+    assert match("Eps''", windeta) == "Eps''"  # exact name, not Eps'
+    # different units, different quantities and ambiguity never match
+    assert match("Current [mA]", ["Current [A]"]) is None
+    assert match("Temperature", ["Temp. [°C]"]) is None
+    assert match("Zp'", ["Zp' [Ohms]", "Zp' [kOhms]"]) is None
+
+
 def test_plotter_skips_csv_quoted_comment_lines():
     # csv.writer.writerow(["# ..."]) quotes a comment that contains a comma
     reader = _plotter_reader()

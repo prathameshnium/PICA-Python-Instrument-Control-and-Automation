@@ -607,6 +607,11 @@ for _key, _bits in (("Alpha-AN Freq. Scan", ""),
 _ALPHA = "Novocontrol Alpha-AN analyser with ZG4 sample interface"
 _ALPHA_COMMON = ("AC voltage (Vrms); integration time (s); ZG4 wire mode; "
                  "Alpha-AN VISA address")
+# The Temp. Scan and Step Freq. Scan ports also convert to permittivity
+# and can write WinDETA-layout files beside the PICA ones.
+_ALPHA_OUTPUTS = ("electrode geometry (area in mm² or diameter in mm) and "
+                  "thickness (mm); save as PICA format (.dat) and/or "
+                  "WinDETA format (.txt)")
 _ALPHA_NOTE = ("Experimental: an Alpha-AN port of the E4980A module, not yet "
                "run on the hardware. DC bias is never applied.")
 
@@ -619,7 +624,7 @@ for _key, _t in (("Alpha-AN Temp. Scan (T_Control)", _L350),
          _ALPHA + ", " + _t,
          "sample name; " + _RAMP_INPUTS + "; frequencies (Hz, "
          "comma-separated); delay per frequency (s); live plot frequency; " +
-         _ALPHA_COMMON + "; Lakeshore VISA address",
+         _ALPHA_COMMON + "; Lakeshore VISA address; " + _ALPHA_OUTPUTS,
          _ALPHA_NOTE)
 
 for _key, _t in (("Alpha-AN Temp. Scan (T_Sensing)", _L350),
@@ -632,7 +637,8 @@ for _key, _t in (("Alpha-AN Temp. Scan (T_Sensing)", _L350),
          _ALPHA + ", " + _t,
          "sample name; frequencies (Hz, comma-separated); delay per "
          "frequency (s); live plot frequency; " + _ALPHA_COMMON +
-         "; thermometer VISA address; heater off at start",
+         "; thermometer VISA address; heater off at start; " +
+         _ALPHA_OUTPUTS,
          _ALPHA_NOTE + " Reconnects by itself and writes every point to "
          "disk as it goes.")
 
@@ -646,7 +652,7 @@ for _key, _t in (("Alpha-AN Temp. Step Freq. Scan (T_Control)", _L350),
          "setpoints (start, end, step or a manual list) and order; approach "
          "mode and rate; heater range; auto PID; frequency delay (s); max "
          "temperature (K); save directory; " + _ALPHA_COMMON +
-         "; Lakeshore VISA address",
+         "; Lakeshore VISA address; " + _ALPHA_OUTPUTS,
          _ALPHA_NOTE)
 
 _add("Alpha-AN C-V Measurement",

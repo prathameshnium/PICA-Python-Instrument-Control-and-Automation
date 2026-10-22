@@ -193,7 +193,9 @@ def _write_cycle(points):
             "cp": {f: {"T": [], "v": []} for f in paths},
             "g": {f: {"T": [], "v": []} for f in paths},
         }
-        gui = _gui(freq_filepaths=paths, data_storage=storage,
+        gui = _gui(freq_filepaths=paths, windeta_filepaths={},
+                   c0_farads=mod.compute_c0_from_area(1.0, 1.0),
+                   data_storage=storage,
                    _update_live_plots=lambda *a, **k: None)
         gui._process_cycle({"points": points, "heater": 10.0,
                             "tstatus": [(0, "ok")] * len(points)}, 1.0)
@@ -216,13 +218,146 @@ def test_non_valid_status_rows_are_discarded_not_written():
     assert len(warned) == 1 and "f=2000 Hz" in warned[0]
 
 
+def _params(**over):
+    p = {"sample_name": "S", "acv": 0.5, "mtm": 0.5, "delay": 0.0,
+         "wire_mode": "2", "frequencies": [1000.0, 2000.0],
+         "lcr_visa": "GPIB0::10::INSTR", "geometry_mode": "diameter",
+         "diameter_mm": 9.68, "thickness_mm": 1.14,
+         "temp_program": "Ramp 300 -> 400 K", "save_pica": True,
+         "save_windeta": True}
+    p.update(over)
+    return p
+
+
+def _files(tmp, **over):
+    params = _params(**over)
+    gui = _gui(file_location_path=tmp, frequencies=params["frequencies"],
+               c0_farads=mod.c0_from_params(params))
+    gui._create_per_frequency_files(params)
+    return gui
+
+
 def test_per_frequency_files_do_not_collide_below_1_hz():
     with tempfile.TemporaryDirectory() as tmp:
-        gui = _gui(file_location_path=tmp, frequencies=[0.1, 0.5, 1e6])
-        gui._create_per_frequency_files("S")
+        gui = _files(tmp, frequencies=[0.1, 0.5, 1e6], save_windeta=False)
         names = sorted(os.path.basename(p)
                        for p in gui.freq_filepaths.values())
-    assert names == ["S-0.1Hz.txt", "S-0.5Hz.txt", "S-1000000Hz.txt"]
+    assert names == ["S-0.1Hz_pica_format.dat", "S-0.5Hz_pica_format.dat",
+                     "S-1000000Hz_pica_format.dat"]
+    assert gui.windeta_filepaths == {}       # unticked format: no files
+
+
+def test_area_is_in_mm2_and_eps_matches_an_ideal_capacitor():
+    c0 = mod.compute_c0_from_area(100.0, 1.0)
+    assert math.isclose(c0, mod.EPS0_SI * 100e-6 / 1e-3)
+    assert math.isclose(mod.compute_c0(10.0, 1.0),
+                        mod.compute_c0_from_area(math.pi * 25.0, 1.0))
+    # eps_r = 12 with a loss of 0.5: Y = j*w*C0*(12 - 0.5j)
+    f = 1000.0
+    y = 1j * 2 * math.pi * f * c0 * (12 - 0.5j)
+    z = 1 / y
+    eps1, eps2 = mod.calculate_eps(f, z.real, z.imag, c0)
+    assert math.isclose(eps1, 12.0) and math.isclose(eps2, 0.5)
+
+
+def test_windeta_files_follow_the_sample_tscan_layout():
+    ref = os.path.join(os.path.dirname(PATH), "data_file_for_ref",
+                       "Sample_Tscan.TXT")
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _files(tmp)
+        c0 = gui.c0_farads
+        y = 1j * 2 * math.pi * 1000.0 * c0 * (13 - 2j)
+        z = 1 / y
+        valid = mod.STATUS_RESULT_VALID
+        gui._save_cycle_to_files({"points": [
+            (423.15, 1000.0, z.real, z.imag, valid, 1000.0),
+            (424.0, 2000.0, float("nan"), float("nan"), -1, 2000.0)]})
+        path = gui.windeta_filepaths[1000.0]
+        raw = open(path, "rb").read()
+        empty = open(gui.windeta_filepaths[2000.0], "rb").read()
+    assert os.path.basename(path) == "S-1000Hz_windeta_format.txt"
+    lines = raw.split(b"\r\n")
+    assert b"\n" not in raw.replace(b"\r\n", b"")          # CRLF only
+    assert lines[1] == (b"Diameter[mm] 9.680e+00  Thickness[mm] 1.140e+00"
+                        b"  Spacer Capacity[pF] 0.000e+00  Spacer "
+                        b"Area[mm^2] 0.000e+00")
+    assert lines[2] == (b"Fixed value(s) :  Freq. [Hz]=1.000e+03  "
+                        b"AC Volt  [Vrms]=5.000e-01")
+    assert lines[3] == b" Temp. [\xb0C]\t Eps'    \t Eps''   "   # cp1252
+    if os.path.exists(ref):
+        assert lines[3] == open(ref, "rb").read().split(b"\r\n")[3]
+    assert lines[0].startswith(b"S, ") and lines[4:] == [
+        b"1.50000e+02\t1.30000e+01\t2.00000e+00", b""]
+    assert empty.count(b"\r\n") == 4      # the NaN kill row is PICA-only
+
+
+def test_area_mode_writes_the_equivalent_diameter():
+    lines = mod.windeta_tscan_header_lines(
+        _params(geometry_mode="area", area_mm2=math.pi * 25.0), 1e3,
+        mod.datetime(2026, 1, 15, 11, 35))
+    assert lines[0] == "S, 15.01.2026, 11:35"
+    assert lines[1].startswith("Diameter[mm] 1.000e+01  ")
+
+
+def test_pica_files_start_with_ascii_metadata_rows():
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _files(tmp, geometry_mode="area", area_mm2=50.0)
+        text = open(gui.freq_filepaths[2000.0], encoding="utf-8").read()
+    lines = text.splitlines()
+    meta = [ln for ln in lines if ln.startswith("#")]
+    assert lines[len(meta)] == mod.Integrated_CT_GUI.DATA_HEADER
+    assert all(ln.isascii() for ln in meta)
+    joined = "\n".join(meta)
+    for want in ("Fixed frequency: 2000 Hz", "A = 50.0 mm^2",
+                 f"C0 = {gui.c0_farads:.5e} F", "Evaluation : Area electrode",
+                 "ZREFMODE=-3", "ZSLCAL=1", "ZLLCOR=1", "DRS=0 0",
+                 "Ramp 300 -> 400 K", "GPIB0::10::INSTR"):
+        assert want in joined, want
+
+
+def test_output_settings_are_checked_before_start():
+    for bad in (_params(save_pica=False, save_windeta=False),
+                _params(thickness_mm=0.0),
+                _params(geometry_mode="area", area_mm2=-1.0)):
+        try:
+            mod.validate_output_settings(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {bad}")
+    mod.validate_output_settings(_params(save_pica=False))
+
+
+def test_geometry_toggle_keeps_a_value_per_mode():
+    class _Entry:
+        def __init__(self, text):
+            self.text = text
+
+        def get(self):
+            return self.text
+
+        def delete(self, *a):
+            self.text = ""
+
+        def insert(self, _i, text):
+            self.text += text
+    labels = []
+    mode = types.SimpleNamespace(value="area")
+    gui = _gui(entries={"Geometry": _Entry("78.5"),
+                        "Thickness": _Entry("1.0")},
+               _geom_values={"area": "1.0", "diameter": "1.0"},
+               geom_mode_var=types.SimpleNamespace(get=lambda: mode.value),
+               lbl_geom=types.SimpleNamespace(
+                   config=lambda **k: labels.append(k["text"])),
+               lbl_c0=types.SimpleNamespace(config=lambda **k: None))
+    mode.value = "diameter"
+    gui._on_geom_mode_change()
+    assert gui.entries["Geometry"].get() == "1.0"
+    gui.entries["Geometry"].text = "10"
+    mode.value = "area"
+    gui._on_geom_mode_change()
+    assert gui.entries["Geometry"].get() == "78.5"
+    assert gui._geom_values["diameter"] == "10"
+    assert labels == ["Electrode Diameter (mm):", "Electrode Area (mm²):"]
 
 
 def test_plot_dropdown_maps_by_index_not_by_label():

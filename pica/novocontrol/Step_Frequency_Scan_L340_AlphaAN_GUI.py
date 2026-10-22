@@ -972,6 +972,181 @@ EPS0_CM = 8.8541878128e-14   # F/cm - used only so sigma lands in S/cm
 WIRE_MODES = ("2", "3", "4")
 
 
+# WinDETA column header, copied from Frequency_Scan_AlphaAN_GUI.py. Order and
+# names are FIXED - WinFIT parses this positionally. Do not add, remove or
+# reorder columns. Zp comes BEFORE Sig, matching the WinDETA export paired
+# with the mes_def (data_file_for_ref/Fscan_data_Novo_Windeta.dat).
+WINDETA_HEADER = (
+    " Freq. [Hz]\t Eps'    \t Eps''   \t Modulus'  \t Modulus''  \t"
+    " Zp' [Ohms]\t Zp'' [Ohms]\t Sig' [S/cm]\t Sig'' [S/cm]"
+)
+
+
+def compute_c0(diameter_mm, thickness_mm):
+    """Geometric (empty-cell) capacitance of a round-plate electrode, in F.
+
+    A = pi * (D/2)^2 ;  C0 = eps0 * A / d
+    """
+    if diameter_mm <= 0 or thickness_mm <= 0:
+        raise ValueError("Diameter and thickness must both be positive.")
+    d_m = diameter_mm * 1e-3
+    t_m = thickness_mm * 1e-3
+    area = math.pi * (d_m / 2.0) ** 2
+    return EPS0_SI * area / t_m
+
+
+def compute_c0_from_area(area_mm2, thickness_mm):
+    """Geometric (empty-cell) capacitance from electrode AREA, in F.
+
+    For irregular electrodes where the area is known directly.
+    C0 = eps0 * A / d, with A in mm^2 (as WinDETA) and d in mm.
+    """
+    if area_mm2 <= 0 or thickness_mm <= 0:
+        raise ValueError("Area and thickness must both be positive.")
+    a_m2 = area_mm2 * 1e-6
+    t_m = thickness_mm * 1e-3
+    return EPS0_SI * a_m2 / t_m
+
+
+def c0_from_params(params):
+    """C0 from the geometry the user chose (validated, positive)."""
+    if params["geometry_mode"] == "area":
+        return compute_c0_from_area(params["area_mm2"],
+                                    params["thickness_mm"])
+    return compute_c0(params["diameter_mm"], params["thickness_mm"])
+
+
+def impedance_to_dielectric(zr, zi, f_actual, c0):
+    """Convert one complex-impedance point to the nine WinDETA quantities,
+    exactly as Frequency_Scan_AlphaAN_GUI.py does (see its docstring for
+    the derivation and the reference-export verification):
+
+        eps'  = -X / (w * C0 * |Z|^2)
+        eps'' =  R / (w * C0 * |Z|^2)
+        M'    =  eps'  / (eps'^2 + eps''^2)
+        M''   =  eps'' / (eps'^2 + eps''^2)
+        Zp'   =  (R^2 + X^2) / R          (parallel-equivalent, no C0)
+        Zp''  = -(R^2 + X^2) / X
+        sig'  =  w * eps0 * eps''        (eps0 in F/cm -> sigma in S/cm)
+        sig'' = -w * eps0 * (eps' - 1)   (WinDETA subtracts the vacuum)
+
+    Returns a 9-tuple in WINDETA_HEADER column order.
+    """
+    omega = 2.0 * math.pi * f_actual
+    omega_safe = omega if omega != 0 else 1e-20
+
+    z_mag_sq = zr ** 2 + zi ** 2
+    z_mag_sq_safe = z_mag_sq if z_mag_sq != 0 else 1e-20
+
+    c0_safe = c0 if c0 != 0 else 1e-20
+    denom = omega_safe * c0_safe * z_mag_sq_safe
+
+    eps1 = -zi / denom
+    eps2 = zr / denom
+
+    eps_sq = eps1 ** 2 + eps2 ** 2
+    eps_sq_safe = eps_sq if eps_sq != 0 else 1e-20
+    m1 = eps1 / eps_sq_safe
+    m2 = eps2 / eps_sq_safe
+
+    sig1 = omega * EPS0_CM * eps2
+    sig2 = -omega * EPS0_CM * (eps1 - 1.0)
+
+    zr_safe = zr if zr != 0 else 1e-20
+    zi_safe = zi if zi != 0 else 1e-20
+    zp1 = z_mag_sq / zr_safe    # 1/G = parallel resistance
+    zp2 = -z_mag_sq / zi_safe   # 1/B = parallel reactance
+
+    return (f_actual, eps1, eps2, m1, m2, zp1, zp2, sig1, sig2)
+
+
+def windeta_header_lines(params, target_temp, when):
+    """The three header lines of the WinDETA frequency-scan export, as the
+    frequency scan module writes them. Line 1 is the WinDETA comment
+    (sample name and setpoint), dated the WinDETA way."""
+    date_str = f"{when.day:2d}.{when.month:02d}.{when.year}"
+    time_str = f"{when.hour}:{when.minute:02d}"
+    return [
+        f"{params['sample_name']} {target_temp:.2f} K, {date_str}, "
+        f"{time_str}",
+        f"Fixed value(s) :  AC Volt  [Vrms]={params['acv']:.4e}",
+        WINDETA_HEADER,
+    ]
+
+
+def dat_metadata_lines(params, c0_farads, target_temp, frequencies, when):
+    """'#' comment rows for a PICA per-setpoint sweep file: what WinDETA
+    keeps in its measurement definition (SAMPLE / START CONDITIONS / LIST
+    / IMPEDANCE DEVICE sections of mes_def_Fscan.txt), so a file documents
+    itself. The first row is the one this module always wrote.
+
+    ASCII only - the lab PCs are cp1252 and the Plotter skips '#' rows.
+    The analyzer settings below are the ones initialize_instrument sends.
+    """
+    freqs = [float(f) for f in frequencies]
+    if params["geometry_mode"] == "area":
+        evaluation = "Area electrode"
+        size = f"A = {params['area_mm2']} mm^2"
+    else:
+        evaluation = "Round plate electrode"
+        size = f"D = {params['diameter_mm']} mm"
+    wires = "4 Wire" if str(params["wire_mode"]) == "4" else "2 Wire"
+    return [
+        f"# Sample: {params['sample_name']} | T_set = {target_temp} K | "
+        f"AC: {params['acv']} Vrms | MTM: {params['mtm']} s | "
+        f"Wire: {params['wire_mode']} | Alpha-AN, Frequency = f_actual",
+        f"# Geometry: {size}, d = {params['thickness_mm']} mm, "
+        f"C0 = {c0_farads:.5e} F",
+        "# Last REF calibration: not recorded by PICA (Start never "
+        "calibrates)",
+        f"# Comment    : {params['sample_name']} {target_temp:.2f} K",
+        f"# Date       : {when.strftime('%d.%m.%Y %H:%M:%S')}",
+        f"# Evaluation : {evaluation}",
+        f"# Size       : {size}",
+        f"# Thickness  = {params['thickness_mm']} mm",
+        "# C-Spacer   = 0 pF, A-Spacer = 0 mm^2, edge compensation off",
+        f"# AcV        = {params['acv']} Vrms (no DC bias)",
+        f"# Frequency list : {len(freqs)} pts, {min(freqs):g} - "
+        f"{max(freqs):g} Hz",
+        f"# Temperature    : setpoint {target_temp} K, held stable on the "
+        f"{params['temp_controller']} before the sweep",
+        f"# Freq delay     : {params['delay']} s",
+        f"# Analyzer       : Novocontrol Alpha-AN + ZG4 at "
+        f"{params['lcr_visa']}",
+        "# Reference Measurement                : Always, 3 auto "
+        "capacitors max (ZREFMODE=-3)",
+        "# Low capacity open calibration        : Off",
+        "# Low impedance load short calibration : On (ZSLCAL=1)",
+        "# Low loss reference capacitor corr.   : On (ZLLCOR=1)",
+        f"# 4 Wire Front State                   : {wires}",
+        "# Driven HI / LO Shield                : Off / Off (DRS=0 0)",
+        f"# Integration time                     : {params['mtm']} s (MTM)",
+    ]
+
+
+def validate_output_settings(params):
+    """Geometry and output-format checks, run at Start before any
+    instrument opens."""
+    if params["geometry_mode"] == "area":
+        if params["area_mm2"] <= 0 or params["thickness_mm"] <= 0:
+            raise ValueError("Area and thickness must both be positive.")
+    else:
+        if params["diameter_mm"] <= 0 or params["thickness_mm"] <= 0:
+            raise ValueError("Diameter and thickness must both be positive.")
+    if not (params["save_pica"] or params["save_windeta"]):
+        raise ValueError(
+            "Tick at least one output format (PICA or WinDETA).")
+
+
+def append_line_durably(path, line, encoding="utf-8", newline=None):
+    """Open, append one line, flush and fsync, close (HARD-3: a power cut
+    loses at most the point being written)."""
+    with open(path, "a", encoding=encoding, newline=newline) as fh:
+        fh.write(line + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+
+
 def acv_ceiling(freq_hz):
     """ZG4 AC-voltage ceiling (Vrms) at a given frequency."""
     if freq_hz <= ACV_FREQ_MID_HZ:
@@ -1553,6 +1728,7 @@ class CombinedGUI:
 
         self.logo_image = None
         self.save_dir = ""
+        self.c0_farads = None   # set at Start from the geometry inputs
 
         # Frequency array (unchanged: 40 Hz to 2 MHz). Well inside the
         # Alpha-AN span and below 4 MHz, so the ZG4 ceiling is 3 Vrms.
@@ -1998,8 +2174,38 @@ class CombinedGUI:
         self.lcr_cb = ttk.Combobox(frame, state="readonly", width=28)
         self.lcr_cb.grid(row=3, column=1, columnspan=3, sticky="ew", padx=5, pady=2)
 
-        # Row 5: Start/Stop/Scan Buttons
-        bf = ttk.Frame(frame); bf.grid(row=5, column=0, columnspan=4, sticky="ew", pady=5, padx=5)
+        # Row 4: Geometry, Area (mm²) or Diameter (mm) as WinDETA, plus the
+        # live C0. Each mode keeps its own value, so flipping the toggle
+        # never turns an area into a diameter: defaults D = 1 mm,
+        # A = 1 mm², d = 1 mm.
+        self.geom_mode_var = tk.StringVar(value="area")
+        self._geom_values = {"area": "1.0", "diameter": "1.0"}
+        gf = ttk.Frame(frame); gf.grid(row=4, column=0, columnspan=4, sticky="w", padx=5, pady=2)
+        ttk.Label(gf, text="Geometry:").pack(side="left")
+        ttk.Radiobutton(gf, text="Area (mm²)", value="area", variable=self.geom_mode_var,
+                        command=self._on_geom_mode_change).pack(side="left", padx=(8, 0))
+        ttk.Radiobutton(gf, text="Diameter (mm)", value="diameter", variable=self.geom_mode_var,
+                        command=self._on_geom_mode_change).pack(side="left", padx=(8, 0))
+        self.lbl_c0 = ttk.Label(gf, text="C0 = --")
+        self.lbl_c0.pack(side="left", padx=(12, 0))
+
+        # Row 5: Geometry value and thickness
+        self.lbl_geom = self._add_lcr_entry(frame, "Area (mm²):", "geom_value", 5, 0, 1, "1.0")
+        self._add_lcr_entry(frame, "Thickness (mm):", "thickness_mm", 5, 2, 1, "1.0")
+        for key in ("geom_value", "thickness_mm"):
+            self.lcr_entries[key].bind("<KeyRelease>", self._update_c0_label)
+        self._update_c0_label()
+
+        # Row 6: Output formats. Both on by default; at least one required.
+        self.fmt_pica_var = tk.BooleanVar(value=True)
+        self.fmt_windeta_var = tk.BooleanVar(value=True)
+        ff = ttk.Frame(frame); ff.grid(row=6, column=0, columnspan=4, sticky="w", padx=5, pady=2)
+        ttk.Label(ff, text="Save as:").pack(side="left")
+        ttk.Checkbutton(ff, text="PICA format (.dat)", variable=self.fmt_pica_var).pack(side="left", padx=(8, 0))
+        ttk.Checkbutton(ff, text="WinDETA format (.txt)", variable=self.fmt_windeta_var).pack(side="left", padx=(8, 0))
+
+        # Row 7: Start/Stop/Scan Buttons
+        bf = ttk.Frame(frame); bf.grid(row=7, column=0, columnspan=4, sticky="ew", pady=5, padx=5)
         bf.grid_columnconfigure((0, 1, 2), weight=1)
         self.start_button = ttk.Button(bf, text="Start Sequence", style="Start.TButton", command=self.start_sequence)
         self.start_button.grid(row=0, column=0, sticky="ew", padx=2)
@@ -2014,12 +2220,37 @@ class CombinedGUI:
                                       command=self._skip_step)
         self.skip_button.grid(row=1, column=1, sticky="ew", padx=2, pady=(4, 0))
 
-        # Row 6: Browse Save Button
-        ttk.Button(frame, text="Browse Save…", command=self._browse_save).grid(row=6, column=0, columnspan=4, sticky="ew", padx=5, pady=(0, 5))
+        # Row 8: Browse Save Button
+        ttk.Button(frame, text="Browse Save…", command=self._browse_save).grid(row=8, column=0, columnspan=4, sticky="ew", padx=5, pady=(0, 5))
 
-        # Row 7: Save Directory Label
+        # Row 9: Save Directory Label
         self.save_dir_lbl = ttk.Label(frame, text="Save dir: (not set)", foreground=self.CLR_ACCENT_GOLD)
-        self.save_dir_lbl.grid(row=7, column=0, columnspan=4, sticky="w", padx=5)
+        self.save_dir_lbl.grid(row=9, column=0, columnspan=4, sticky="w", padx=5)
+
+    def _on_geom_mode_change(self):
+        """Relabel the geometry entry when the Diameter/Area toggle flips,
+        parking the old mode's value and restoring the new mode's."""
+        new_mode = self.geom_mode_var.get()
+        old_mode = "diameter" if new_mode == "area" else "area"
+        entry = self.lcr_entries["geom_value"]
+        self._geom_values[old_mode] = entry.get()
+        entry.delete(0, "end")
+        entry.insert(0, self._geom_values[new_mode])
+        self.lbl_geom.config(
+            text="Area (mm²):" if new_mode == "area" else "Diameter (mm):")
+        self._update_c0_label()
+
+    def _update_c0_label(self, _event=None):
+        try:
+            g = float(self.lcr_entries["geom_value"].get())
+            t = float(self.lcr_entries["thickness_mm"].get())
+            if self.geom_mode_var.get() == "area":
+                c0 = compute_c0_from_area(g, t)
+            else:
+                c0 = compute_c0(g, t)
+            self.lbl_c0.config(text=f"C0 = {c0:.5e} F")
+        except (ValueError, ZeroDivisionError):
+            self.lbl_c0.config(text="C0 = -- (check geometry)")
 
     def _create_pid_panel(self, parent, row):
         frame = ttk.LabelFrame(parent, text="Live PID Tuning (Loop 1, 0-1000 each)")
@@ -2260,10 +2491,12 @@ class CombinedGUI:
 
     def _add_lcr_entry(self, parent, label, key, r, c, span, default):
         # LCR-1 Layout fix: label and entry placed cleanly on same row.
-        ttk.Label(parent, text=label).grid(row=r, column=c, sticky="w", padx=5, pady=2)
+        lbl = ttk.Label(parent, text=label)
+        lbl.grid(row=r, column=c, sticky="w", padx=5, pady=2)
         e = ttk.Entry(parent, font=self.FONT_BASE, width=12)
         e.grid(row=r, column=c+1, columnspan=span, sticky="ew", padx=5, pady=2)
         e.insert(0, default); self.lcr_entries[key] = e
+        return lbl
 
     def _toggle_entry_lock(self, key):
         w = self.entries[key]
@@ -2716,9 +2949,21 @@ class CombinedGUI:
             "wire_mode": self.wire_cb.get(),
             "frequencies": [float(f) for f in self.sweep_frequencies],
             "lcr_visa": lcr_visa,
+            "geometry_mode": self.geom_mode_var.get(),
+            "thickness_mm": float(self.lcr_entries["thickness_mm"].get()),
+            "save_pica": self.fmt_pica_var.get(),
+            "save_windeta": self.fmt_windeta_var.get(),
+            "temp_controller": "Lakeshore 340",
         }
+        geom_value = float(self.lcr_entries["geom_value"].get())
+        if p["geometry_mode"] == "area":
+            p["area_mm2"] = geom_value
+        else:
+            p["diameter_mm"] = geom_value
         if not p["lcr_visa"]: raise ValueError("Select Alpha-AN VISA.")
         if p["delay"] < 0: raise ValueError("Freq Delay cannot be negative.")
+        validate_output_settings(p)
+        self.c0_farads = c0_from_params(p)
         # Every Alpha setting is checked here, at Start, before either
         # instrument is opened (ZG4 AC ceiling over the whole sweep).
         validate_alpha_parameters(p["frequencies"], p["acv"],
@@ -3547,92 +3792,117 @@ class CombinedGUI:
         Logs temperature (flag=1) interleaved between frequency points (§3d)."""
         # MAJ-3: timestamp prevents silent overwrite on re-run.
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        fname = (f"{self.lcr_params['sample_name']}_{target_temp:.2f}K_"
-                 f"{stamp}_FreqScan.txt")
-        fpath = os.path.join(self.save_dir, fname)
-        with open(fpath, "w", encoding="utf-8") as f:
-            f.write(f"# Sample: {self.lcr_params['sample_name']} | T_set = {target_temp} K | "
-                    f"AC: {self.lcr_params['acv']} Vrms | MTM: {self.lcr_params['mtm']} s | "
-                    f"Wire: {self.lcr_params['wire_mode']} | Alpha-AN, Frequency = f_actual\n")
-            f.write(self.lcr_backend.DATA_HEADER + "\n")
-            self._worker_phase = "SWEEP"
-            # HARD-2: while-loop so a frequency point can be RETRIED
-            # after a comm recovery instead of abandoning the sweep.
-            idx = 0
-            while idx < len(self.sweep_frequencies):
-                freq = self.sweep_frequencies[idx]
-                if not self.is_running:
-                    break
-                # check for stop / pid updates mid-sweep
+        base = os.path.join(
+            self.save_dir,
+            f"{self.lcr_params['sample_name']}_{target_temp:.2f}K_"
+            f"{stamp}_FreqScan")
+        # The suffix names the format; an unticked format gets no file.
+        pica_path = (base + "_pica_format.dat"
+                     if self.lcr_params["save_pica"] else "")
+        windeta_path = (base + "_windeta_format.txt"
+                        if self.lcr_params["save_windeta"] else "")
+        now = datetime.now()
+        if pica_path:
+            with open(pica_path, "w", encoding="utf-8") as f:
+                for line in dat_metadata_lines(
+                        self.lcr_params, self.c0_farads, target_temp,
+                        self.sweep_frequencies, now):
+                    f.write(line + "\n")
+                f.write(self.lcr_backend.DATA_HEADER + "\n")
+        # WinDETA exports are cp1252 with CRLF, on any OS.
+        if windeta_path:
+            with open(windeta_path, "w", encoding="cp1252",
+                      newline="\r\n") as f:
+                for line in windeta_header_lines(
+                        self.lcr_params, target_temp, now):
+                    f.write(line + "\n")
+        fname = ", ".join(os.path.basename(p)
+                          for p in (pica_path, windeta_path) if p)
+        self._worker_phase = "SWEEP"
+        # HARD-2: while-loop so a frequency point can be RETRIED
+        # after a comm recovery instead of abandoning the sweep.
+        idx = 0
+        while idx < len(self.sweep_frequencies):
+            freq = self.sweep_frequencies[idx]
+            if not self.is_running:
+                break
+            # check for stop / pid updates mid-sweep
+            if self._process_cmd_queue():
+                break
+            if not self.is_running:
+                break
+            # ADV-3: skip aborts the remainder of this sweep
+            if self._skip_requested:
+                self._skip_requested = False
+                self._put_gui_msg("log",
+                    text="⏭ Remaining sweep skipped by user.")
+                break
+            # ADV-3: pause holds between frequency points
+            while self._paused and self.is_running:
+                self._put_gui_msg("status",
+                    text=f"PAUSED (sweep at {target_temp} K)",
+                    color=self.CLR_ACCENT_GOLD)
                 if self._process_cmd_queue():
                     break
-                if not self.is_running:
-                    break
-                # ADV-3: skip aborts the remainder of this sweep
-                if self._skip_requested:
-                    self._skip_requested = False
-                    self._put_gui_msg("log",
-                        text="⏭ Remaining sweep skipped by user.")
-                    break
-                # ADV-3: pause holds between frequency points
-                while self._paused and self.is_running:
-                    self._put_gui_msg("status",
-                        text=f"PAUSED (sweep at {target_temp} K)",
-                        color=self.CLR_ACCENT_GOLD)
-                    if self._process_cmd_queue():
-                        break
-                    time.sleep(1.0)
-                if not self.is_running:
-                    break
-                if self.lcr_params["delay"] > 0:
-                    time.sleep(self.lcr_params["delay"])   # optional settle
-                try:
-                    R, X, f_act, status, _ref = self.lcr_backend.measure_point(
-                        float(freq))
-                except RuntimeError:
-                    # The Alpha ANSWERED with an error (non-OK ack, 'CR'):
-                    # not a link loss, so a reconnect cannot cure it.
-                    raise
-                except Exception as e:
-                    # HARD-2: reconnect forever, then retry THIS point
-                    # (was: log + abandon the rest of the sweep).
-                    if self._comm_recover(
-                            f"Alpha-AN measurement @ {freq_tag(freq)} Hz", e):
-                        continue
-                    break   # stop requested during recovery
-                if status in STATUS_FATAL:
-                    raise RuntimeError(
-                        f"Alpha-AN status {status} at {freq:.6g} Hz: "
-                        f"{status_message(status)}. Sweep aborted.")
-                # A6: a non-valid ZRE? status (2 = Result valid) is not a
-                # result: discard it (not written, not plotted), as
-                # Frequency_Scan_AlphaAN does. The point still counts as
-                # done so progress stays right.
-                if status != STATUS_RESULT_VALID:
-                    self._put_gui_msg("log",
-                        text=f"⚠️ Alpha-AN status {status} @ "
-                             f"{freq_tag(freq)} Hz "
-                             f"({status_message(status)}) — Point discarded.")
-                    done_pts += 1
-                    idx += 1
+                time.sleep(1.0)
+            if not self.is_running:
+                break
+            if self.lcr_params["delay"] > 0:
+                time.sleep(self.lcr_params["delay"])   # optional settle
+            try:
+                R, X, f_act, status, _ref = self.lcr_backend.measure_point(
+                    float(freq))
+            except RuntimeError:
+                # The Alpha ANSWERED with an error (non-OK ack, 'CR'):
+                # not a link loss, so a reconnect cannot cure it.
+                raise
+            except Exception as e:
+                # HARD-2: reconnect forever, then retry THIS point
+                # (was: log + abandon the rest of the sweep).
+                if self._comm_recover(
+                        f"Alpha-AN measurement @ {freq_tag(freq)} Hz", e):
                     continue
-                # Convert with the frequency the generator really produced.
-                vals = self.calculate_impedance_parameters(f_act, R, X)
-                row = [f_act] + vals + [target_temp]
-                f.write("\t".join(f"{v:.6E}" for v in row) + "\n")
-                f.flush()
-                os.fsync(f.fileno())   # HARD-3: survive a power cut
-                # Interleaved temperature log (flag=1) — §3c/§3d
-                try:
-                    self._log_temperature_point(target_temp, measuring_flag=1)
-                except SoftLimitAbort:
-                    raise    # ADV-4: graceful abort must reach the worker
-                except RuntimeError:
-                    break
+                break   # stop requested during recovery
+            if status in STATUS_FATAL:
+                raise RuntimeError(
+                    f"Alpha-AN status {status} at {freq:.6g} Hz: "
+                    f"{status_message(status)}. Sweep aborted.")
+            # A6: a non-valid ZRE? status (2 = Result valid) is not a
+            # result: discard it (not written, not plotted), as
+            # Frequency_Scan_AlphaAN does. The point still counts as
+            # done so progress stays right.
+            if status != STATUS_RESULT_VALID:
+                self._put_gui_msg("log",
+                    text=f"⚠️ Alpha-AN status {status} @ "
+                         f"{freq_tag(freq)} Hz "
+                         f"({status_message(status)}) — Point discarded.")
                 done_pts += 1
-                self._put_gui_msg("scan_point", freq=f_act, cp=vals[4], g=vals[2],
-                                  progress=done_pts)
-                idx += 1   # HARD-2: advance only after a completed point
+                idx += 1
+                continue
+            # Convert with the frequency the generator really produced.
+            vals = self.calculate_impedance_parameters(f_act, R, X)
+            row = [f_act] + vals + [target_temp]
+            # HARD-3: every point is fsynced, in each ticked format.
+            if pica_path:
+                append_line_durably(
+                    pica_path, "\t".join(f"{v:.6E}" for v in row))
+            if windeta_path:
+                append_line_durably(
+                    windeta_path,
+                    "\t".join(f"{v:.5e}" for v in impedance_to_dielectric(
+                        R, X, f_act, self.c0_farads)),
+                    encoding="cp1252", newline="\r\n")
+            # Interleaved temperature log (flag=1) — §3c/§3d
+            try:
+                self._log_temperature_point(target_temp, measuring_flag=1)
+            except SoftLimitAbort:
+                raise    # ADV-4: graceful abort must reach the worker
+            except RuntimeError:
+                break
+            done_pts += 1
+            self._put_gui_msg("scan_point", freq=f_act, cp=vals[4], g=vals[2],
+                              progress=done_pts)
+            idx += 1   # HARD-2: advance only after a completed point
         self._worker_phase = None
         self._put_gui_msg("log", text=f"Sweep saved: {fname}")
         return done_pts

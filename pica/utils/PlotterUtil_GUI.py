@@ -1251,6 +1251,36 @@ class PlotterAppGUI:
         tail = keep - head
         return f"{stem[:head]}…{stem[-tail:]}{ext}"
 
+    @staticmethod
+    def _match_column(name, headers):
+        """The column in `headers` holding the same quantity as `name`.
+
+        An exact name always wins. Otherwise a unit suffix is ignored when
+        only one side has it ("Zp' [Ohms]" = "Zp'") and "Freq. [Hz]" =
+        "Frequency", so a PICA .dat overlays a WinDETA export of the same
+        scan. Two different units never match, nor does an ambiguous name.
+        """
+        if name in headers:
+            return name
+
+        def split(col):
+            col = col.strip()
+            base, unit = col, None
+            if col.endswith(']') and '[' in col:
+                base, unit = col[:-1].rsplit('[', 1)
+                base, unit = base.strip(), unit.strip()
+            if base.lower() in ('freq', 'freq.', 'frequency') and unit in (None, 'Hz'):
+                base, unit = 'Frequency', None
+            return base, unit
+
+        base, unit = split(name)
+        hits = []
+        for h in headers:
+            h_base, h_unit = split(h)
+            if h_base == base and (unit is None or h_unit is None or unit == h_unit):
+                hits.append(h)
+        return hits[0] if len(hits) == 1 else None
+
     def _plot_file_data(self, filepath, x_col, y_col):
         """Plots data for a single file."""
         file_info = self.file_data_cache.get(filepath)
@@ -1260,12 +1290,18 @@ class PlotterAppGUI:
             self.log(f"Skipping '{filename}': Data is missing or invalid.")
             return False
 
-        if x_col not in file_info.get('headers', []) or y_col not in file_info.get('headers', []):
+        headers = file_info.get('headers', [])
+        file_x = self._match_column(x_col, headers)
+        file_y = self._match_column(y_col, headers)
+        if file_x is None or file_y is None:
             self.log(f"Skipping '{filename}': Does not contain '{x_col}' or '{y_col}'.")
             return False
+        if (file_x, file_y) != (x_col, y_col):
+            self.log(f"'{filename}': plotting '{file_y}' vs '{file_x}' "
+                     f"(same quantity, named differently).")
 
-        raw_x = file_info['data'][x_col]
-        raw_y = file_info['data'][y_col]
+        raw_x = file_info['data'][file_x]
+        raw_y = file_info['data'][file_y]
 
         # Log-scale with non-positive data warnings
         if self.x_log_var.get() and np.any(raw_x <= 0):

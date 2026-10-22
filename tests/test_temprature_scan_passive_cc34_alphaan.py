@@ -29,6 +29,7 @@ import re
 import sys
 import tempfile
 import threading
+import types
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from alphaan_port_test_support import (  # noqa: E402
@@ -477,8 +478,10 @@ def test_non_valid_points_are_discarded_but_the_kill_row_is_kept():
                         (400.5, 1e5, nan, nan, -1, 1e5)],
              "heater": 0.0}
     with tempfile.TemporaryDirectory() as tmpdir:
-        gui.freq_filepaths = {f: os.path.join(tmpdir, f"x-{int(f)}Hz.txt")
-                              for f in (1e3, 1e4, 1e5)}
+        gui.freq_filepaths = {
+            f: os.path.join(tmpdir, f"x-{int(f)}Hz_pica_format.dat")
+            for f in (1e3, 1e4, 1e5)}
+        gui.windeta_filepaths = {}
         gui._save_cycle_to_files(cycle)
         assert os.path.exists(gui.freq_filepaths[1e3])
         assert not os.path.exists(gui.freq_filepaths[1e4])
@@ -590,8 +593,9 @@ def test_points_are_converted_at_f_actual_and_filed_by_requested_f():
     gui._write_error_logged = False
     gui.log = lambda msg: None
     with tempfile.TemporaryDirectory() as tmpdir:
-        path = os.path.join(tmpdir, "x-1000Hz.txt")
+        path = os.path.join(tmpdir, "x-1000Hz_pica_format.dat")
         gui.freq_filepaths = {1000.0: path}
+        gui.windeta_filepaths = {}
         cycle = {"points": [(80.0, 1000.0, 1.0e5, -2.0e6, 2, 1001.5)],
                  "heater": 0.0}
         gui._save_cycle_to_files(cycle)
@@ -805,7 +809,9 @@ def _gui_with_files(tmpdir, cryocon=None):
         gui.frequencies = [1000.0]
         gui.freq_filepaths = {}
         gui.log = lambda msg: None
-        gui._create_per_frequency_files("port")
+        params = _out_params(sample_name="port", frequencies=[1000.0])
+        gui.c0_farads = mod.c0_from_params(params)
+        gui._create_per_frequency_files(params)
         gui.backend.close_instruments()
     return gui
 
@@ -818,7 +824,9 @@ def test_the_data_files_keep_the_source_format_and_are_ascii():
         tlog_raw = open(gui.t_log_path, "rb").read()
     data_raw.decode("ascii")
     tlog_raw.decode("ascii")
-    header = data_raw.decode("ascii").splitlines()[0]
+    lines = data_raw.decode("ascii").splitlines()
+    meta = [ln for ln in lines if ln.startswith("#")]
+    header = lines[len(meta)]               # after the '#' metadata rows
     assert header == mod.Integrated_CT_GUI.DATA_HEADER
     assert len(header.split("\t")) == 19
     tlog = tlog_raw.decode("ascii").splitlines()
@@ -831,6 +839,259 @@ def test_the_t_log_says_so_when_there_is_no_heater_readback():
         gui = _gui_with_files(tmpdir, StrictCryocon(heater_query=None))
         header = open(gui.t_log_path, encoding="utf-8").readline()
     assert "no heater read-back" in header and "NaN" in header
+
+
+# --- Output formats: PICA (.dat) and WinDETA Tscan (.txt) ------------------
+
+def _out_params(**over):
+    p = {"sample_name": "S", "acv": 0.5, "mtm": 0.5, "delay": 0.0,
+         "wire_mode": "2", "frequencies": [1000.0, 2000.0],
+         "lcr_visa": ALPHA_ADDR, "cryocon_visa": CRYOCON_ADDR,
+         "channel": "A", "stop_loops": False,
+         "geometry_mode": "diameter", "diameter_mm": 9.68,
+         "thickness_mm": 1.14,
+         "temp_program": "Passive, read only: Cryocon 34 input A",
+         "save_pica": True, "save_windeta": True}
+    p.update(over)
+    return p
+
+
+def _files(tmp, **over):
+    """A GUI shell with its per-frequency files created in tmp. The T-log
+    header only needs the Cryocon's heater query and the channel."""
+    params = _out_params(**over)
+    gui = object.__new__(mod.Integrated_CT_GUI)
+    gui.file_location_path = tmp
+    gui.frequencies = params["frequencies"]
+    gui.log = lambda msg: None
+    gui._pending_rows = mod.deque()
+    gui._write_error_logged = False
+    gui.backend = types.SimpleNamespace(
+        cryocon=types.SimpleNamespace(heater_query=None),
+        params={"channel": params["channel"]})
+    gui.c0_farads = mod.c0_from_params(params)
+    gui._create_per_frequency_files(params)
+    return gui
+
+
+def test_per_frequency_files_do_not_collide_below_1_hz():
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _files(tmp, frequencies=[0.1, 0.5, 1e6], save_windeta=False)
+        names = sorted(os.path.basename(p)
+                       for p in gui.freq_filepaths.values())
+        listing = sorted(os.listdir(tmp))
+    assert names == ["S-0.1Hz_pica_format.dat", "S-0.5Hz_pica_format.dat",
+                     "S-1000000Hz_pica_format.dat"]
+    assert gui.windeta_filepaths == {}       # unticked format: no files
+    assert listing == names + ["S_T-log.txt"]          # T-log still made
+
+
+def test_an_existing_file_of_either_format_gets_a_timestamped_tag():
+    with tempfile.TemporaryDirectory() as tmp:
+        open(os.path.join(tmp, "S-1000Hz_windeta_format.txt"), "w").close()
+        gui = _files(tmp)
+        names = [os.path.basename(p) for p in
+                 list(gui.freq_filepaths.values())
+                 + list(gui.windeta_filepaths.values()) + [gui.t_log_path]]
+    assert all(n.startswith("S_") for n in names), names
+
+
+def test_area_is_in_mm2_and_eps_matches_an_ideal_capacitor():
+    c0 = mod.compute_c0_from_area(100.0, 1.0)
+    assert math.isclose(c0, mod.EPS0_SI * 100e-6 / 1e-3)
+    assert math.isclose(mod.compute_c0(10.0, 1.0),
+                        mod.compute_c0_from_area(math.pi * 25.0, 1.0))
+    # eps_r = 12 with a loss of 0.5: Y = j*w*C0*(12 - 0.5j)
+    f = 1000.0
+    y = 1j * 2 * math.pi * f * c0 * (12 - 0.5j)
+    z = 1 / y
+    eps1, eps2 = mod.calculate_eps(f, z.real, z.imag, c0)
+    assert math.isclose(eps1, 12.0) and math.isclose(eps2, 0.5)
+
+
+def test_windeta_files_follow_the_sample_tscan_layout():
+    ref = os.path.join(os.path.dirname(PATH), "data_file_for_ref",
+                       "Sample_Tscan.TXT")
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _files(tmp)
+        c0 = gui.c0_farads
+        y = 1j * 2 * math.pi * 1000.0 * c0 * (13 - 2j)
+        z = 1 / y
+        valid = mod.STATUS_RESULT_VALID
+        gui._save_cycle_to_files({"points": [
+            (423.15, 1000.0, z.real, z.imag, valid, 1000.0),
+            (424.0, 2000.0, float("nan"), float("nan"), -1, 2000.0)]})
+        path = gui.windeta_filepaths[1000.0]
+        raw = open(path, "rb").read()
+        empty = open(gui.windeta_filepaths[2000.0], "rb").read()
+        kill = open(gui.freq_filepaths[2000.0], encoding="utf-8").read()
+    assert os.path.basename(path) == "S-1000Hz_windeta_format.txt"
+    lines = raw.split(b"\r\n")
+    assert b"\n" not in raw.replace(b"\r\n", b"")          # CRLF only
+    assert lines[1] == (b"Diameter[mm] 9.680e+00  Thickness[mm] 1.140e+00"
+                        b"  Spacer Capacity[pF] 0.000e+00  Spacer "
+                        b"Area[mm^2] 0.000e+00")
+    assert lines[2] == (b"Fixed value(s) :  Freq. [Hz]=1.000e+03  "
+                        b"AC Volt  [Vrms]=5.000e-01")
+    assert lines[3] == b" Temp. [\xb0C]\t Eps'    \t Eps''   "   # cp1252
+    if os.path.exists(ref):
+        assert lines[3] == open(ref, "rb").read().split(b"\r\n")[3]
+    assert lines[0].startswith(b"S, ") and lines[4:] == [
+        b"1.50000e+02\t1.30000e+01\t2.00000e+00", b""]
+    assert empty.count(b"\r\n") == 4      # the NaN kill row is PICA-only
+    assert kill.splitlines()[-1].startswith("4.240000E+02\tNAN")
+
+
+def test_a_windeta_write_failure_is_buffered_and_replayed_as_cp1252_crlf():
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _files(tmp, frequencies=[1000.0])
+        y = 1j * 2 * math.pi * 1000.0 * gui.c0_farads * (13 - 2j)
+        z = 1 / y
+        point = (300.0, 1000.0, z.real, z.imag, mod.STATUS_RESULT_VALID,
+                 1000.0)
+        real_write = gui._durable_write
+        gui._durable_write = lambda *a, **k: (_ for _ in ()).throw(
+            OSError("share gone"))
+        gui._save_cycle_to_files({"points": [point]})
+        assert len(gui._pending_rows) == 2             # PICA + WinDETA row
+        assert [r[2] for r in gui._pending_rows] == [False, True]
+        gui._durable_write = real_write
+        gui._save_cycle_to_files({"points": []})       # next cycle flushes
+        assert not gui._pending_rows
+        raw = open(gui.windeta_filepaths[1000.0], "rb").read()
+    assert raw.endswith(b"2.68500e+01\t1.30000e+01\t2.00000e+00\r\n")
+    assert b"\n" not in raw.replace(b"\r\n", b"")
+
+
+def test_area_mode_writes_the_equivalent_diameter():
+    lines = mod.windeta_tscan_header_lines(
+        _out_params(geometry_mode="area", area_mm2=math.pi * 25.0), 1e3,
+        mod.datetime(2026, 1, 15, 11, 35))
+    assert lines[0] == "S, 15.01.2026, 11:35"
+    assert lines[1].startswith("Diameter[mm] 1.000e+01  ")
+
+
+def test_pica_files_start_with_ascii_metadata_rows():
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _files(tmp, geometry_mode="area", area_mm2=50.0)
+        text = open(gui.freq_filepaths[2000.0], encoding="utf-8").read()
+    lines = text.splitlines()
+    meta = [ln for ln in lines if ln.startswith("#")]
+    assert lines[len(meta)] == mod.Integrated_CT_GUI.DATA_HEADER
+    assert all(ln.isascii() for ln in meta)
+    joined = "\n".join(meta)
+    for want in ("Fixed frequency: 2000 Hz", "A = 50.0 mm^2",
+                 f"C0 = {gui.c0_farads:.5e} F", "Evaluation : Area electrode",
+                 "ZREFMODE=-3", "ZSLCAL=1", "ZLLCOR=1", "DRS=0 0",
+                 "Passive, read only: Cryocon 34 input A", ALPHA_ADDR):
+        assert want in joined, want
+
+
+def test_output_settings_are_checked_before_start():
+    for bad in (_out_params(save_pica=False, save_windeta=False),
+                _out_params(thickness_mm=0.0),
+                _out_params(geometry_mode="area", area_mm2=-1.0)):
+        try:
+            mod.validate_output_settings(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {bad}")
+    mod.validate_output_settings(_out_params(save_pica=False))
+
+
+def _start_gui(geometry="1.0", save_pica=True, save_windeta=True,
+               stop_loops=False):
+    """A GUI shell whose start_measurement runs up to the hardware call;
+    the backend records the params it is handed and then refuses."""
+    def _var(value):
+        return types.SimpleNamespace(get=lambda: value)
+
+    seen = []
+
+    def _init(params):
+        seen.append(params)
+        raise RuntimeError("no hardware in tests")
+
+    gui = object.__new__(mod.Integrated_CT_GUI)
+    gui.measurement_thread = None
+    gui.log = lambda msg: None
+    gui.file_location_path = "unused"
+    gui._parse_frequencies = lambda: [1000.0]
+    gui.entries = {"Sample Name": _var("S"), "AC Bias": _var("0.5"),
+                   "MTM": _var("0.5"), "Delay": _var("0"),
+                   "Geometry": _var(geometry), "Thickness": _var("1.0")}
+    gui.channel_cb = _var("B")
+    gui.var_stop_loops = _var(stop_loops)
+    gui.wire_combobox = _var("2")
+    gui.cryocon_cb = _var(CRYOCON_ADDR)
+    gui.lcr_cb = _var(ALPHA_ADDR)
+    gui.geom_mode_var = _var("area")
+    gui.fmt_pica_var = _var(save_pica)
+    gui.fmt_windeta_var = _var(save_windeta)
+    gui.backend = types.SimpleNamespace(initialize_instruments=_init,
+                                        close_instruments=lambda: None)
+    shown = []
+    old = mod.messagebox
+    mod.messagebox = types.SimpleNamespace(
+        showerror=lambda *a, **k: shown.append(a))
+    try:
+        gui.start_measurement()
+    finally:
+        mod.messagebox = old
+    return gui, seen, shown
+
+
+def test_start_checks_geometry_and_formats_before_any_instrument():
+    for kw in ({"geometry": "0"}, {"save_pica": False,
+                                   "save_windeta": False}):
+        _, seen, shown = _start_gui(**kw)
+        assert seen == [] and len(shown) == 1, kw    # refused at Start
+
+
+def test_start_describes_the_passive_temperature_program_truthfully():
+    gui, seen, _ = _start_gui()
+    params = seen[0]
+    assert params["area_mm2"] == 1.0 and "diameter_mm" not in params
+    assert math.isclose(gui.c0_farads, mod.compute_c0_from_area(1.0, 1.0))
+    text = params["temp_program"]
+    assert text.isascii()
+    assert "Cryocon 34 input B" in text and CRYOCON_ADDR in text
+    assert "left untouched" in text and "Ramp" not in text
+    _, seen, _ = _start_gui(stop_loops=True)
+    assert "disengaged at Start (STOP, heaters off)" in seen[0]["temp_program"]
+
+
+def test_geometry_toggle_keeps_a_value_per_mode():
+    class _Entry:
+        def __init__(self, text):
+            self.text = text
+
+        def get(self):
+            return self.text
+
+        def delete(self, *a):
+            self.text = ""
+
+        def insert(self, _i, text):
+            self.text += text
+    labels = []
+    mode = types.SimpleNamespace(value="area")
+    gui = object.__new__(mod.Integrated_CT_GUI)
+    gui.entries = {"Geometry": _Entry("78.5"), "Thickness": _Entry("1.0")}
+    gui._geom_values = {"area": "1.0", "diameter": "1.0"}
+    gui.geom_mode_var = types.SimpleNamespace(get=lambda: mode.value)
+    gui.lbl_geom = types.SimpleNamespace(
+        config=lambda **k: labels.append(k["text"]))
+    gui.lbl_c0 = types.SimpleNamespace(config=lambda **k: None)
+    mode.value = "diameter"
+    gui._on_geom_mode_change()
+    assert gui.entries["Geometry"].get() == "1.0"
+    gui.entries["Geometry"].text = "10"
+    mode.value = "area"
+    gui._on_geom_mode_change()
+    assert gui.entries["Geometry"].get() == "78.5"
+    assert gui._geom_values["diameter"] == "10"
+    assert labels == ["Electrode Diameter (mm):", "Electrode Area (mm²):"]
 
 
 def test_the_unattended_handlers_open_no_dialog():
