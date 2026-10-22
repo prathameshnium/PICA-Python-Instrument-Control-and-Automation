@@ -1028,6 +1028,16 @@ CATALOG = [
             ("Frequency Scan (fixed T)", "Alpha-AN Freq. Scan", None),
             ("Frequency Scan (fixed T, 32-bit GPIB)",
              "Alpha-AN Freq. Scan (32-bit)", None),
+            # Ports of the E4980A modules, not yet run on the hardware.
+            ("Calibration (REF, load-short, open)", "Alpha-AN Calibration", None),
+            ("C-V Measurement", "Alpha-AN C-V Measurement", None),
+            ("Temp. Step Freq. Scan (T Control)", "Alpha-AN Temp. Step Freq. Scan (T_Control)", "control"),
+            ("Temp. Step Freq. Scan (T Control, L340)", "Alpha-AN Temp. Step Freq. Scan (T_Control, L340)", "control"),
+            ("Dielectric Temp. Scan (T Control)", "Alpha-AN Temp. Scan (T_Control)", "control"),
+            ("Dielectric Temp. Scan (T Control, L340)", "Alpha-AN Temp. Scan (T_Control, L340)", "control"),
+            ("Dielectric Temp. Scan (T Sensing, L350)", "Alpha-AN Temp. Scan (T_Sensing)", "sensing"),
+            ("Dielectric Temp. Scan (T Sensing, L340)", "Alpha-AN Temp. Scan (T_Sensing, L340)", "sensing"),
+            ("Dielectric Temp. Scan (T Sensing, Cryocon 34)", "Alpha-AN Temp. Scan (T_Sensing, CC34)", "sensing"),
         ],
     },
     {

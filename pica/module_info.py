@@ -601,6 +601,78 @@ for _key, _bits in (("Alpha-AN Freq. Scan", ""),
          "Experimental. The launcher never probes the Alpha-AN; see the "
          "Novocontrol GPIB runbook before the first run.")
 
+# Alpha-AN ports of the E4980A modules: the same temperature side, the
+# Alpha-AN in place of the LCR meter. Written 22 Oct 2026, not yet run on
+# the hardware.
+_ALPHA = "Novocontrol Alpha-AN analyser with ZG4 sample interface"
+_ALPHA_COMMON = ("AC voltage (Vrms); integration time (s); ZG4 wire mode; "
+                 "Alpha-AN VISA address")
+_ALPHA_NOTE = ("Experimental: an Alpha-AN port of the E4980A module, not yet "
+               "run on the hardware. DC bias is never applied.")
+
+for _key, _t in (("Alpha-AN Temp. Scan (T_Control)", _L350),
+                 ("Alpha-AN Temp. Scan (T_Control, L340)", _L340)):
+    _add(_key,
+         "Dielectric response against temperature at a list of fixed "
+         "frequencies, measured on the Alpha-AN continuously as the "
+         "temperature ramps. " + _t_control(_t),
+         _ALPHA + ", " + _t,
+         "sample name; " + _RAMP_INPUTS + "; frequencies (Hz, "
+         "comma-separated); delay per frequency (s); live plot frequency; " +
+         _ALPHA_COMMON + "; Lakeshore VISA address",
+         _ALPHA_NOTE)
+
+for _key, _t in (("Alpha-AN Temp. Scan (T_Sensing)", _L350),
+                 ("Alpha-AN Temp. Scan (T_Sensing, L340)", _L340),
+                 ("Alpha-AN Temp. Scan (T_Sensing, CC34)", _CC34)):
+    _add(_key,
+         "Dielectric response against temperature at a list of fixed "
+         "frequencies, measured on the Alpha-AN while an external ramp warms "
+         "or cools the sample. " + _t_sensing(_t),
+         _ALPHA + ", " + _t,
+         "sample name; frequencies (Hz, comma-separated); delay per "
+         "frequency (s); live plot frequency; " + _ALPHA_COMMON +
+         "; thermometer VISA address; heater off at start",
+         _ALPHA_NOTE + " Reconnects by itself and writes every point to "
+         "disk as it goes.")
+
+for _key, _t in (("Alpha-AN Temp. Step Freq. Scan (T_Control)", _L350),
+                 ("Alpha-AN Temp. Step Freq. Scan (T_Control, L340)", _L340)):
+    _add(_key,
+         "A full Alpha-AN frequency sweep at each of a list of temperature "
+         "setpoints. The module holds each setpoint on the " + _t + " until "
+         "it is stable, sweeps, then moves to the next.",
+         _ALPHA + ", " + _t,
+         "setpoints (start, end, step or a manual list) and order; approach "
+         "mode and rate; heater range; auto PID; frequency delay (s); max "
+         "temperature (K); save directory; " + _ALPHA_COMMON +
+         "; Lakeshore VISA address",
+         _ALPHA_NOTE)
+
+_add("Alpha-AN C-V Measurement",
+     "Capacitance against DC bias at a fixed frequency on the Alpha-AN: "
+     "ferroelectric C-V loops, depletion profiling and tunability.",
+     _ALPHA,
+     "sample name; frequency (Hz); AC voltage (Vrms); DC bias stop and step "
+     "(V, at most 20 V); cycle mode; delay per step (s); integration time "
+     "(s); ZG4 wire mode; Alpha-AN VISA address",
+     "Experimental: an Alpha-AN port of the E4980A C-V module, not yet run "
+     "on the hardware. The Alpha-AN's DC bias commands and its maximum bias "
+     "are not yet confirmed against the manual.")
+
+_add("Alpha-AN Calibration",
+     "Guided calibration of the Alpha-AN before a dielectric campaign: the "
+     "REF calibration (sample disconnected), the load-short calibration "
+     "with short and 100 Ω standards, and an open-cell measurement saved "
+     "for open correction. Not a sample measurement.",
+     _ALPHA,
+     "Alpha-AN VISA address; which steps to run; AC voltage (Vrms), "
+     "integration time (s), wire mode and frequency list for the open "
+     "measurement",
+     "Experimental, not yet run on the hardware. The load-short commands "
+     "come from the open-source JUMP project, not the Alpha manual. A REF "
+     "or load-short run overwrites the calibration stored in the analyser.")
+
 # ---- AC transport with the SR830 lock-in -----------------------------------
 _SR830_SET = "Keithley 6221 (AC current source), Stanford Research SR830 lock-in"
 _SR830_NOTE = ("Experimental. The 6221 must supply the reference to the SR830 "

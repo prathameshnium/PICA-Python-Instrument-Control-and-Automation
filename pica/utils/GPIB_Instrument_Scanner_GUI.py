@@ -69,6 +69,10 @@ def _load_pyvisa():
 #     It sits on the BDS PC's own GPIB0 bus, not the rack's GPIB1: WinALPHA's
 #     auto-detect found it at 10 on 22 Oct 2026. 5 was only ever a guess in
 #     the code, never its real address; keep 5 unused.
+#   * Keysight E4991B RF impedance analyzer (SN MY54100159, fw A.01.03): the
+#     same WinALPHA auto-detect found it at 17 on the BDS GPIB0 bus. It shares
+#     17 with the E4980A only because they sit on different buses; move one
+#     before the two ever share a bus. No PICA module talks to it yet.
 #   * The L350 and L340 also answer on every secondary address (GPIB1::12::0
 #     to ::12::30): their GPIB chips ignore the secondary byte. Same instrument,
 #     not 31 more of them.
@@ -109,8 +113,8 @@ ADDRESS_BOOK = [
     (15, "Avoid", "", "", "",
      "Old Lakeshore address, still in two Instrument_Control scripts"),
     (16, "Avoid", "", "", "", "Keithley 2000/2010/2700 factory default"),
-    (17, "In use", "Keysight E4980A", "GPIB1", ADDRESS_BOOK_SEEN,
-     "Was on GPIB0 before"),
+    (17, "In use", "Keysight E4980A / E4991B", "GPIB1", ADDRESS_BOOK_SEEN,
+     "E4980A on GPIB1 (was GPIB0). E4991B on BDS GPIB0, seen 22 Oct 2026"),
     (18, "Avoid", "", "", "", "Keithley 2450 factory default"),
     (19, "In use", "Lakeshore 340", "GPIB1", ADDRESS_BOOK_SEEN,
      "Was 12 before 3 Sep 2026; answers on every secondary"),

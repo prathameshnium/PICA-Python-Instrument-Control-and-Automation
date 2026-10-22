@@ -8,10 +8,22 @@ Purpose: Command-line broadband dielectric frequency scan on a Novocontrol
          Commands are Novocontrol proprietary (not SCPI), taken from the
          Alpha-AN Impedance Analyzer manual.
 
-         SAFETY: this mainframe has no DC bias hardware -- DCV/DCE are never
-         transmitted. Completion is SRQ-driven with a mandatory timeout, and
+         SAFETY: this script never uses DC bias -- DCV/DCE are never
+         transmitted (the analyzer does have DC bias - see Instrument).
+         Completion is SRQ-driven with a mandatory timeout, and
          every exit path drives the generator to a safe state before the VISA
          session is released.
+
+Instrument: the lab system this script was written for, read from
+         WinALPHA's auto-detect on 22 Oct 2026:
+           Analyzer   Novocontrol ALPHA ("ALPHA, BETA Analyzer"), SN 284
+           Interface  ZG4 sample cell interface, SN 284-0
+           *IDN?      ALPHA Analyzer, Novocontrol Technologies,
+                      6.25_200_40_284_ANB_16012009_G2
+           GPIB       address 10 on the BDS PC's NI GPIB card; a Keysight
+                      E4991B shares that bus at 17
+           DC bias    present (used in WinDETA experiments); maximum
+                      voltage not yet confirmed
 
          This script is deliberately self-contained (PICA convention): it
          duplicates the conversion and safety logic from
@@ -412,7 +424,7 @@ def main():
         exec_cmd(inst, "DRS=0 0")
         exec_cmd(inst, f"ACV={args.acv:.6g}")
         exec_cmd(inst, f"MTM={args.mtm:.6g}")
-        # DCV / DCE are NEVER sent: no bias hardware on this mainframe.
+        # DCV / DCE are NEVER sent: this script does not use DC bias.
         # "Low capacity open calibration" has no analyzer command - it is a
         # host-software correction (not implemented here), matching the
         # WinDETA mes_def's "Off" by construction.

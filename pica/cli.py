@@ -102,6 +102,15 @@ ALL_GUI_MODULES = [
     "pica.lockin.sr830.RT_AC_K6221_SR830_L350_T_Sensing_GUI",
     # novocontrol
     "pica.novocontrol.Frequency_Scan_AlphaAN_32bit_GUI",
+    "pica.novocontrol.Correction_OpenShort_AlphaAN_GUI",
+    "pica.novocontrol.CV_AlphaAN_GUI",
+    "pica.novocontrol.Step_Frequency_Scan_AlphaAN_GUI",
+    "pica.novocontrol.Step_Frequency_Scan_L340_AlphaAN_GUI",
+    "pica.novocontrol.Temprature_Scan_AlphaAN_GUI",
+    "pica.novocontrol.Temprature_Scan_L340_AlphaAN_GUI",
+    "pica.novocontrol.Temprature_Scan_Passive_AlphaAN_GUI",
+    "pica.novocontrol.Temprature_Scan_Passive_CC34_AlphaAN_GUI",
+    "pica.novocontrol.Temprature_Scan_Passive_L340_AlphaAN_GUI",
     # pfeiffer
     "pica.pfeiffer.Pressure_Log_TPG361_GUI",
     # tektronix

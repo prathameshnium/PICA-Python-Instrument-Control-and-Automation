@@ -807,7 +807,7 @@ Capacitance-Voltage (C-V) characterization of a device or a sample using a Keysi
   *   **Reference Calibration:** Use the dedicated **Run REF Calibration** button before a measurement session. It must run with the **sample disconnected** from the ZG4. Before anything is sent, the GUI explains what the calibration does and what to disconnect; OK starts it, Cancel sends nothing. Calibration data is stored inside the mainframe and survives resets, so a sweep runs on the most recent calibration; the GUI logs the calibration's age but never blocks on it.
 
 :::{note}
-This mainframe has **no DC bias hardware** — the module never transmits a bias command. A stale reference calibration shows up as a step or kink in ε'(f) at a reference-capacitor switch boundary rather than as uniform noise; re-run the REF calibration if you see one.
+The module **never applies DC bias** and never transmits a bias command (the analyzer does have DC bias; its maximum is not yet confirmed). A stale reference calibration shows up as a step or kink in ε'(f) at a reference-capacitor switch boundary rather than as uniform noise; re-run the REF calibration if you see one.
 :::
 
 ### 6.9 Standalone Temperature Utilities

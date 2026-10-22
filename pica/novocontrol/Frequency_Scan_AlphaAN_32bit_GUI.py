@@ -37,9 +37,22 @@
                cross-checked against JUMP (github.com/JMoVS/JUMP, MIT);
                no code was copied.
 
-               SAFETY: this mainframe has no DC bias hardware. DCV/DCE are
-               never transmitted. Every exit path drives the generator to a
+               SAFETY: this module never uses DC bias. DCV/DCE are never
+               transmitted (the analyzer does have DC bias - see
+               INSTRUMENT). Every exit path drives the generator to a
                safe state before releasing the VISA session.
+
+ INSTRUMENT:   The lab system this module was written for, read from
+               WinALPHA's auto-detect on 22 Oct 2026:
+                 Analyzer   Novocontrol ALPHA ("ALPHA, BETA Analyzer"),
+                            SN 284
+                 Interface  ZG4 sample cell interface, SN 284-0
+                 *IDN?      ALPHA Analyzer, Novocontrol Technologies,
+                            6.25_200_40_284_ANB_16012009_G2
+                 GPIB       address 10 on the BDS PC's NI GPIB card; a
+                            Keysight E4991B shares that bus at 17
+                 DC bias    present (used in WinDETA experiments);
+                            maximum voltage not yet confirmed
 '''
 
 import tkinter as tk
@@ -1319,7 +1332,7 @@ class AlphaAN_Backend:
         self._exec(f"ACV={p['acv']:.6g}")
         self._exec(f"MTM={p['mtm']:.6g}")
 
-        # DCV / DCE are NEVER sent: this mainframe has no bias hardware.
+        # DCV / DCE are NEVER sent: this module does not use DC bias.
 
         print(f"  Configured: ACV={p['acv']} Vrms, MTM={p['mtm']} s, "
               f"FRS={p['wire_mode']}-wire")
@@ -1705,7 +1718,7 @@ class AlphaAN_FreqScan_GUI:
 
         self._vfloat_cmd = (frame.register(_vfloat), "%P")
 
-        # No DC bias hardware on this mainframe - DCV/DCE are never sent.
+        # This module does not use DC bias - DCV/DCE are never sent.
         # (Deliberately not shown in the UI; see the SAFETY note in the
         # module docstring and initialize_instrument.)
 

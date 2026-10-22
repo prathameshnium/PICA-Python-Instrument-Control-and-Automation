@@ -41,6 +41,8 @@ MODULE_PATHS = {
     "t_sensing": ("pica", "cryocon", "T_Sensing_CC34_GUI.py"),
     "passive_lcr": ("pica", "keysight",
                     "Temprature_Scan_Passive_CC34_E4980A_GUI.py"),
+    "passive_alpha": ("pica", "novocontrol",
+                      "Temprature_Scan_Passive_CC34_AlphaAN_GUI.py"),
     "k2400": ("pica", "keithley", "k2400", "RT_K2400_CC34_T_Sensing_GUI.py"),
     "k2400_2182": ("pica", "keithley", "k2400_2182",
                    "RT_K2400_K2182_CC34_T_Sensing_GUI.py"),
@@ -155,7 +157,7 @@ def _reader(key):
             backend.last_status_error = None
             backend.status_reports = 0
             return backend.read_temperature_tolerant
-    elif key == "passive_lcr":
+    elif key in ("passive_lcr", "passive_alpha"):
         def build(link):
             backend = _bare(mod.Cryocon34_Backend)
             backend.channel = "A"
@@ -214,6 +216,7 @@ def _reader(key):
 # keeps no counter: its caller counts the None.
 FAULT_COUNTERS = {
     "t_sensing": "status_reports", "passive_lcr": "status_reports",
+    "passive_alpha": "status_reports",
     "ppms_master": "_status_reports", "ppms_sync": "_status_reports",
     "k2400": "_sensor_faults", "k2400_2182": "_sensor_faults",
     "delta": "_sensor_faults", "k6517b": "_sensor_faults",

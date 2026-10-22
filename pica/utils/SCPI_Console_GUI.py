@@ -96,8 +96,9 @@ SCPI_LIBRARY = {
 SCPI_WARN_COMMANDS = {"*RST", "*SAV 0", "*RCL 0", "ABOR"}
 
 # Writes that can drive hardware into a damaging state are refused outright.
-# On a Novocontrol Alpha, DCV/DCE set the DC bias (the lab mainframe has no
-# bias hardware and PICA never sends them) and RSTH is a hard reset.
+# On a Novocontrol Alpha, DCV/DCE set the DC bias (the lab analyzer has bias,
+# maximum unconfirmed; a console must never apply it) and RSTH is a hard
+# reset.
 BLOCKED_WRITE_PREFIXES = ("DCV", "DCE", "RSTH")
 
 # Human label -> actual termination character(s) handed to PyVISA.
@@ -716,8 +717,8 @@ class PICASCPIConsoleApp:
             self.log(
                 "error",
                 f"BLOCKED: '{command}' was not sent. On a Novocontrol Alpha, "
-                "DCV/DCE drive the DC bias (this mainframe has no bias "
-                "hardware) and RSTH is a hard reset.")
+                "DCV/DCE drive the DC bias (never applied from a console) "
+                "and RSTH is a hard reset.")
             return False
         if messagebox.askyesno(
                 "Confirm instrument write",

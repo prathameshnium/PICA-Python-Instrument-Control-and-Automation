@@ -19,6 +19,13 @@ ECIC), bus census, *IDN? / INTTYP? / GFR? on the Alpha. --reset-test sends
 sample for one point and asks you to type YES first; it always ends with
 ACV=0 and ZCONSPL=0.
 
+Lab system (WinALPHA auto-detect, 22 Oct 2026): Novocontrol ALPHA
+analyzer SN 284 ("ALPHA, BETA Analyzer") with ZG4 interface SN 284-0;
+*IDN? = "ALPHA Analyzer, Novocontrol Technologies,
+6.25_200_40_284_ANB_16012009_G2"; GPIB address 10, Keysight E4991B at 17 on
+the same bus. The analyzer has DC bias (maximum not yet confirmed); this
+tool never sends DCV/DCE.
+
 Everything is printed and written to AlphaDiag_<date>_<time>.log next to
 this file. Send that log back.
 '''

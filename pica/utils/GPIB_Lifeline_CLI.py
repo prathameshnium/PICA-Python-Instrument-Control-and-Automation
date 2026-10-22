@@ -17,8 +17,8 @@
                Everything is echoed to a timestamped report file.
 
                SAFETY: queries ('?') pass freely; state-changing writes need
-               an explicit yes; DCV/DCE (DC bias -- no bias hardware on this
-               mainframe) and RSTH (hard reset) are blocked outright; ':safe'
+               an explicit yes; DCV/DCE (DC bias -- never applied from a
+               console) and RSTH (hard reset) are blocked outright; ':safe'
                parks the analyzer with the documented sequence MBK, ACV=0,
                ZCONSPL=0.
 
@@ -75,8 +75,9 @@ IBERR_MEANINGS = {
 RESPONSE_STRIP = b" \t\r\n\x00\x10"
 
 # --- Instrument safety -------------------------------------------------------
-# DC-bias writes are hard-blocked: the lab's Alpha-AN mainframe has no bias
-# hardware, and pica/novocontrol never transmits DCV/DCE either. RSTH is a
+# DC-bias writes are hard-blocked: the lab's Alpha has bias (maximum not
+# yet confirmed) and a console must never apply it; the frequency-scan
+# modules in pica/novocontrol never transmit DCV/DCE either. RSTH is a
 # hard reset -- also blocked. Every other state-changing write requires an
 # explicit yes; queries ('?') pass freely.
 BLOCKED_WRITE_PREFIXES = ("DCV", "DCE", "RSTH")
@@ -336,8 +337,8 @@ def repl(gpib, handle, resource_label):
 
         if command.lower() != ":read" and not command.endswith("?"):
             if command.upper().startswith(BLOCKED_WRITE_PREFIXES):
-                print("  BLOCKED: DCV/DCE set the DC bias (this mainframe "
-                      "has no bias hardware) and RSTH is a hard reset. "
+                print("  BLOCKED: DCV/DCE set the DC bias (never applied "
+                      "from a console) and RSTH is a hard reset. "
                       "Not sent.")
                 continue
             try:

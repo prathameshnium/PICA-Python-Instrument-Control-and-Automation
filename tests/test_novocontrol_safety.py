@@ -13,7 +13,7 @@ The rules being pinned:
     ack path.
   * the ZG4 AC-voltage ceiling, which is frequency-dependent and is enforced
     before a byte reaches the bus.
-  * DCV / DCE are never transmitted -- this mainframe has no bias hardware.
+  * DCV / DCE are never transmitted -- the frequency scan does not use DC bias.
   * every exit path drives the generator to a safe state (MBK, ACV=0,
     ZCONSPL=0) before the session is released, and none of it can raise.
   * a fatal measurement status aborts the sweep instead of logging the point.
@@ -347,10 +347,10 @@ def _good_params(module):
     }
 
 
-# ------------------------------------------------------ no bias hardware
+# ------------------------------------------------------ no DC bias
 
 def test_dcv_and_dce_are_never_transmitted_by_any_edition():
-    """This mainframe has no bias hardware; a DC command has nowhere to go."""
+    """The frequency scan never applies DC bias, so no DC command is sent."""
     for label, source in SOURCES.items():
         for node in ast.walk(ast.parse(source)):
             if not isinstance(node, ast.Call):

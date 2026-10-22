@@ -611,34 +611,61 @@ def _phases(rows):
 
 def test_sweep_ladder_pause_is_a_bare_0v_delay_and_skips_the_last_entry():
     """Acceptance test 12 (bare pause): 1 MOhm, ladder 2, 4, 6."""
-    with tempfile.TemporaryDirectory() as d:
-        t0 = time.perf_counter()
-        worker, msgs, path = run_sweep(FakeK2400(1e6), d, shape=sweep.SHAPE_LADDER, ladder=[2.0, 4.0, 6.0],
-                                       step_v=0.5, pause_s=0.3, protection_v=None)
-        elapsed = time.perf_counter() - t0
-        assert worker.reason == "completed"
-        header, columns, rows = read_file(path)
-        assert analysis.header_blocks(header)["protocol"]["pause_between_loops_s"] == "0.3"
-        assert columns == list(sweep.SWEEP_COLUMNS)
-        assert _phases(rows) == {"settle", "sweep"}                       # nothing logged during the pause
-        assert sorted({int(r["loop"]) for r in rows if r["phase"] == "sweep"}) == [1, 2, 3]
-        assert 0.6 <= elapsed < 5.0, elapsed                               # two pauses, none after entry 3
-        w = worker.link.fake.writes
-        assert w.count(":OUTP OFF") == 1 and w[-1] == ":OUTP OFF"        # output stayed on
-        assert any(m[0] == "status" and str(m[1].get("state", "")).startswith("pausing (") for m in msgs)
-        assert_data_only(path)
+    # Counts the pauses instead of timing the run: a 5 s wall-clock ceiling
+    # failed on a slow CI runner (11.8 s, 22 Oct 2026).
+    real_pause = sweep.SweepWorker.pause_between_loops
+    paused_after = []
+
+    def counting_pause(self, loop_no, pause_s):
+        paused_after.append(loop_no)
+        return real_pause(self, loop_no, pause_s)
+
+    sweep.SweepWorker.pause_between_loops = counting_pause
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            t0 = time.perf_counter()
+            worker, msgs, path = run_sweep(FakeK2400(1e6), d, shape=sweep.SHAPE_LADDER, ladder=[2.0, 4.0, 6.0],
+                                           step_v=0.5, pause_s=0.3, protection_v=None)
+            elapsed = time.perf_counter() - t0
+            assert worker.reason == "completed"
+            header, columns, rows = read_file(path)
+            assert analysis.header_blocks(header)["protocol"]["pause_between_loops_s"] == "0.3"
+            assert columns == list(sweep.SWEEP_COLUMNS)
+            assert _phases(rows) == {"settle", "sweep"}                   # nothing logged during the pause
+            assert sorted({int(r["loop"]) for r in rows if r["phase"] == "sweep"}) == [1, 2, 3]
+            w = worker.link.fake.writes
+            assert w.count(":OUTP OFF") == 1 and w[-1] == ":OUTP OFF"    # output stayed on
+            assert any(m[0] == "status" and str(m[1].get("state", "")).startswith("pausing (") for m in msgs)
+            assert_data_only(path)
+    finally:
+        sweep.SweepWorker.pause_between_loops = real_pause
+    assert paused_after == [1, 2], paused_after                        # two pauses, none after entry 3
+    assert elapsed >= 0.6, elapsed                                     # and they really waited
 
 
 def test_sweep_bipolar_pauses_between_full_loops_too():
-    with tempfile.TemporaryDirectory() as d:
-        t0 = time.perf_counter()
-        worker, _, path = run_sweep(FakeK2400(1e6), d, loops=3, vmax_plus=2, vmax_minus=2, pause_s=0.3)
-        elapsed = time.perf_counter() - t0
-        header, _, rows = read_file(path)
-        assert analysis.header_blocks(header)["protocol"]["pause_between_loops_s"] == "0.3"
-        assert sorted({int(r["loop"]) for r in rows if r["phase"] == "sweep"}) == [1, 2, 3]
-        assert _phases(rows) == {"settle", "sweep"}
-        assert 0.6 <= elapsed < 5.0, elapsed
+    # Counted rather than timed, same reason as the ladder test above.
+    real_pause = sweep.SweepWorker.pause_between_loops
+    paused_after = []
+
+    def counting_pause(self, loop_no, pause_s):
+        paused_after.append(loop_no)
+        return real_pause(self, loop_no, pause_s)
+
+    sweep.SweepWorker.pause_between_loops = counting_pause
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            t0 = time.perf_counter()
+            _, _, path = run_sweep(FakeK2400(1e6), d, loops=3, vmax_plus=2, vmax_minus=2, pause_s=0.3)
+            elapsed = time.perf_counter() - t0
+            header, _, rows = read_file(path)
+    finally:
+        sweep.SweepWorker.pause_between_loops = real_pause
+    assert analysis.header_blocks(header)["protocol"]["pause_between_loops_s"] == "0.3"
+    assert sorted({int(r["loop"]) for r in rows if r["phase"] == "sweep"}) == [1, 2, 3]
+    assert _phases(rows) == {"settle", "sweep"}
+    assert paused_after == [1, 2], paused_after
+    assert elapsed >= 0.6, elapsed
 
 
 def test_sweep_pause_zero_reproduces_the_old_file():
