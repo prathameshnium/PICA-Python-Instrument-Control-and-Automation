@@ -1410,6 +1410,7 @@ class CombinedGUI:
         self.root = root
         self.root.title(
             f"Alpha-AN & L350: T-Control + Freq Sweep v{self.PROGRAM_VERSION}"
+            " - 64-bit (VISA)"
         )
         self.root.geometry("1700x950")
         self.root.minsize(1400, 850)
@@ -1547,7 +1548,8 @@ class CombinedGUI:
     def create_widgets(self):
         header = tk.Frame(self.root, bg=self.CLR_HEADER)
         header.pack(side="top", fill="x")
-        ttk.Label(header, text="Alpha-AN & L350: T-Control + Dielectric Spectroscopy",
+        ttk.Label(header, text="Alpha-AN & L350: T-Control + Dielectric Spectroscopy"
+                               "   [64-bit edition, VISA]",
                   style="Header.TLabel",
                   font=("Segoe UI", 14, "bold", "italic"),
                   foreground=self.CLR_ACCENT_GOLD

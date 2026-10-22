@@ -1801,7 +1801,7 @@ class LCR_Freq_GUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title(f"Novocontrol Alpha-AN CV Scan v{VERSION}")
+        self.root.title(f"Novocontrol Alpha-AN CV Scan v{VERSION} - 64-bit (VISA)")
         self.root.geometry("1600x950")
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1300, 850)
@@ -1948,7 +1948,8 @@ class LCR_Freq_GUI:
 
         Label(
             header_frame,
-            text="Novocontrol Alpha-AN: CV Scan (Zs', Zs'')",
+            text="Novocontrol Alpha-AN: CV Scan (Zs', Zs'')"
+                 "   [64-bit edition, VISA]",
             bg=self.CLR_HEADER,
             fg=self.CLR_FG_LIGHT,
             font=font_title_italic,

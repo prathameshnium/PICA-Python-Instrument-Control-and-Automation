@@ -1211,7 +1211,7 @@ class CalibrationGUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("Alpha-AN: Calibration (guided)")
+        self.root.title("Alpha-AN: Calibration (guided) - 64-bit (VISA)")
         self.root.geometry("1500x940")
         self.root.minsize(1200, 800)
         self.root.configure(bg=self.CLR_BG_DARK)
@@ -1319,7 +1319,7 @@ class CalibrationGUI:
         hf = tk.Frame(self.root, bg=self.CLR_HEADER)
         hf.pack(side='top', fill='x')
         self._try_logo(hf)
-        Label(hf, text="Alpha-AN: Calibration",
+        Label(hf, text="Alpha-AN: Calibration   [64-bit edition, VISA]",
               bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD,
               font=('Segoe UI', self.FONT_SIZE_BASE + 4, 'bold')
               ).pack(side='left', padx=16, pady=10)

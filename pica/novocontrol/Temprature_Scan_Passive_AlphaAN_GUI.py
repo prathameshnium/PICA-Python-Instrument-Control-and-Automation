@@ -1193,7 +1193,7 @@ class Integrated_CT_GUI:
     def __init__(self, root):
         self.root = root
         self.root.title(
-            "Alpha-AN & L350: Dielectric vs. Temperature (Passive T-Monitor)")
+            "Alpha-AN & L350: Dielectric vs. Temperature (Passive T-Monitor) - 64-bit (VISA)")
         self.root.geometry("1600x980")
         self.root.configure(bg=self.CLR_BG_DARK)
         self.root.minsize(1300, 880)
@@ -1389,7 +1389,8 @@ class Integrated_CT_GUI:
         header_frame.pack(side='top', fill='x')
 
         Label(header_frame,
-              text="Alpha-AN & L350: Dielectric vs. Temperature (Passive T-Monitor)",
+              text="Alpha-AN & L350: Dielectric vs. Temperature (Passive T-Monitor)"
+                   "   [64-bit edition, VISA]",
               bg=self.CLR_HEADER, fg=self.CLR_ACCENT_GOLD,
               font=font_title_main).pack(side='left', padx=20, pady=10)
 
