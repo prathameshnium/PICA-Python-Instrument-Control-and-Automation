@@ -1458,6 +1458,9 @@ class AlphaAN_FreqScan_GUI:
         self.is_calibrating = False
         self._stopping = False          # re-entrancy guard for stop_sweep
         self._close_after_stop = False  # destroy window once worker exits
+        # End-of-run pop-up, held until the instrument is parked so an open
+        # dialog can never delay the teardown or its log line.
+        self._end_dialog = None
         self.backend = AlphaAN_Backend()
         self.file_location_path = ""
         self.txt_filepath = ""
@@ -2633,25 +2636,39 @@ class AlphaAN_FreqScan_GUI:
             self.root.destroy()
             return
 
-        if not reason:
+        if self._end_dialog is not None:
+            self._show_end_dialog()
+        elif not reason:
             messagebox.showinfo(
                 "Info", "Sweep stopped and instrument disconnected."
             )
 
+    def _show_end_dialog(self):
+        show, title, text = self._end_dialog
+        self._end_dialog = None
+        show(title, text)
+
     def _handle_sweep_completion(self):
         self.lbl_status.config(text="Measuring: DONE")
         self.log("Sweep finished successfully.")
+        self._end_dialog = (
+            messagebox.showinfo, "Finished", "Frequency sweep is complete."
+        )
         self.stop_sweep("Sweep naturally complete.")
-        messagebox.showinfo("Finished", "Frequency sweep is complete.")
+        if not self._stopping and self._end_dialog is not None:
+            self._show_end_dialog()  # no stop was pending; show it now
 
     def _handle_sweep_error(self, exception, tb=None):
         self.log(f"RUNTIME ERROR: {exception}\n{tb or ''}")
-        self.stop_sweep("A critical hardware or measurement error occurred.")
-        messagebox.showerror(
+        self._end_dialog = (
+            messagebox.showerror,
             "Runtime Error",
             f"An error occurred during the sweep:\n\n{exception}\n\n"
             "See console for the full traceback.",
         )
+        self.stop_sweep("A critical hardware or measurement error occurred.")
+        if not self._stopping and self._end_dialog is not None:
+            self._show_end_dialog()  # no stop was pending; show it now
 
     def _on_closing(self):
         if self.is_running:
