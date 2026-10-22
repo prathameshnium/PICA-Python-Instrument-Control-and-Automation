@@ -7,7 +7,7 @@ Purpose: Install a calibrated sensor curve (Cernox, Ruthenium-Oxide,
 
          Written for the lab Cernox CX-1030-SD-4L sensors X17680 (in use) and
          X17681, whose Lake Shore CD files live in
-         Untracked_Stuff/Curv_for_Cernox/Cernox/Calibration Data/1068/.
+         Untracked_Stuff/Sensor_Calibration/Cernox/Calibration Data/1068/.
 
          THE SOURCE FILE IS X17680.340. There is no '.350' on that CD: the
          '.340' IS Lake Shore's breakpoint format, and a Model 350 stores the
@@ -73,11 +73,11 @@ EVERYTHING BELOW IS TAKEN FROM THE TWO MANUALS, NOT ASSUMED
 ===============================================================================
 
 Sources, both in this repository:
-  Untracked_Stuff/Lakeshore_340_Manual.pdf   ("Lake Shore Model 340
+  Untracked_Stuff/Manuals/Lakeshore_340_Manual.pdf   ("Lake Shore Model 340
       Temperature Controller User's Manual"). Curve commands are on PDF
       page 132, printed page 9-30; INCRV on PDF page 135, printed 9-33;
       INTYPE on PDF page 136, printed 9-34.
-  Untracked_Stuff/Lakeshore_350_Manual.pdf   ("Model 350 Temperature
+  Untracked_Stuff/Manuals/Lakeshore_350_Manual.pdf   ("Model 350 Temperature
       Controller"). Curve commands are on PDF page 157, printed page 143;
       INCRV and INTYPE on PDF pages 161-163, printed 147-149.
 

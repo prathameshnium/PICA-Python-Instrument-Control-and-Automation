@@ -595,7 +595,7 @@ class Cryocon34Backend:
     # --- How this firmware ADDRESSES those loops -------------------------
     #
     # Settled on the lab unit 2026-09-25, five diagnostic runs agreeing
-    # exactly (Untracked_Stuff/Diagnostics/log_25_09_26/): a Model 34 at
+    # exactly (Untracked_Stuff/Lab_Imports/log_25_09_26/): a Model 34 at
     # Rev 3.03A addresses its control loops BY NAME, not by number.
     #
     #   HEATER:SETPT?  -> '330.000000K'      LOOP 1:SETPT?  -> TIMEOUT

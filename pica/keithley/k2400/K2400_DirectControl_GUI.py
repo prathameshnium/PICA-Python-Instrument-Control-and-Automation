@@ -12,7 +12,7 @@ Purpose: Direct command workbench GUI for the Keithley Series 2400 SourceMeter.
 
 SCPI commands and every limit in this file were verified against:
   - Keithley Series 2400 SourceMeter User's Manual, 2400S-900-01 Rev. K
-    (local copy: Untracked_Stuff/Keithley_2400.pdf)
+    (local copy: Untracked_Stuff/Manuals/Keithley_2400.pdf)
 
 Instrument facts confirmed from that manual:
   - Source ranges (Model 2400), Specifications table:

@@ -46,7 +46,7 @@ WHAT THE MANUAL SAYS
 
 Source: "Cryo-con Model 34 Cryogenic Temperature Controller, User's Guide,
 Edition 4, August 2006", which in this repository is the file
-Untracked_Stuff/"The User Interface - Cryogenic Control Systems, Inc..pdf".
+Untracked_Stuff/Manuals/"The User Interface - Cryogenic Control Systems, Inc..pdf".
 
 CALCUR? <index>   (p.181-183)
   Returns the curve at that index as the same block the CALCUR command

@@ -13,7 +13,7 @@ polling on a bus error" branch could not run. On the lab unit that meant:
   * a genuinely dead bus was polled for ever, eight timeouts a tick.
 
 The fake below answers exactly what the lab unit answered in those runs
-(Untracked_Stuff/Diagnostics/log_25_09_26/) and times out on everything
+(Untracked_Stuff/Lab_Imports/log_25_09_26/) and times out on everything
 else, with the exception pyvisa really raises. A permissive fake would
 agree with the code by construction and prove nothing.
 

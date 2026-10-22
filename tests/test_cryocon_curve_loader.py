@@ -50,7 +50,7 @@ matplotlib.use("Agg")
 MODULE_PATH = os.path.join(REPO_ROOT, "pica", "cryocon",
                            "Sensor_Curve_Loader_CC34_GUI.py")
 
-CAL_DIR = os.path.join(REPO_ROOT, "Untracked_Stuff", "Curv_for_Cernox",
+CAL_DIR = os.path.join(REPO_ROOT, "Untracked_Stuff", "Sensor_Calibration",
                        "Cernox", "Calibration Data", "1068")
 DAT_17680 = os.path.join(CAL_DIR, "X17680.dat")
 DAT_17681 = os.path.join(CAL_DIR, "X17681.dat")

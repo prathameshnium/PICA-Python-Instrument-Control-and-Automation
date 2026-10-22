@@ -7,7 +7,7 @@ Purpose: Convert a Lake Shore calibrated-sensor file (Cernox, Ruthenium-Oxide,
 
          Written for the lab Cernox CX-1030-SD-4L sensors X17680 (in use) and
          X17681, whose Lake Shore CD files live in
-         Untracked_Stuff/Curv_for_Cernox/Cernox/Calibration Data/1068/.
+         Untracked_Stuff/Sensor_Calibration/Cernox/Calibration Data/1068/.
 
          The Model 34 has no Cernox curve of its own: its factory sensor list
          stops at two Ruthenium-Oxide entries (Appendix A). A Cernox therefore
@@ -27,7 +27,7 @@ EVERYTHING BELOW IS TAKEN FROM THE MODEL 34 MANUAL, NOT ASSUMED
 
 Source: "Cryo-con Model 34 Cryogenic Temperature Controller, User's Guide,
 Edition 4, August 2006". In this repository that manual is the file
-Untracked_Stuff/"The User Interface - Cryogenic Control Systems, Inc..pdf"
+Untracked_Stuff/Manuals/"The User Interface - Cryogenic Control Systems, Inc..pdf"
 (the download lost its title, but page 1 is the Model 34 cover). Page numbers
 below are PDF page numbers in that file.
 

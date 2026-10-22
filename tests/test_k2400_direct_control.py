@@ -16,7 +16,7 @@ sent, so the things that matter can be asserted directly:
     and cancelled exactly once.
 
 Every SCPI string asserted here was verified against the Series 2400
-SourceMeter User's Manual (Untracked_Stuff/Keithley_2400.pdf).
+SourceMeter User's Manual (Untracked_Stuff/Manuals/Keithley_2400.pdf).
 
 Runnable as plain Python as well as under pytest.
 """

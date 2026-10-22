@@ -116,7 +116,7 @@ STRICT_MODEL_34 = {
 # each with the run that established it. This category exists because on
 # 2026-09-25 the manual turned out to be wrong about this firmware in both
 # directions at once - five diagnostic runs agreeing exactly, in
-# Untracked_Stuff/Diagnostics/log_25_09_26/:
+# Untracked_Stuff/Lab_Imports/log_25_09_26/:
 #
 #   * the loops are addressed BY NAME, HEATER = loop 1 and AOUT = loop 2.
 #     Every 'LOOP <n>:...' in the manual's LOOP chapter times out, in every

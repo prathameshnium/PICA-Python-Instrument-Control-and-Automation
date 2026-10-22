@@ -161,7 +161,7 @@ CRYOCON_PROBE_TIMEOUT_MS = 3000
 # 2026-09-17: every LOOP <n>:...? timed out, so this settled to "no heater
 # read-back" - correct behaviour, but for the wrong reason.
 # 2026-09-25, five runs agreeing exactly
-# (Untracked_Stuff/Diagnostics/log_25_09_26/):
+# (Untracked_Stuff/Lab_Imports/log_25_09_26/):
 #
 #     HEATER:OUTPWR?    -> '0'        ANSWERS
 #     HEATER:HTRREAD?   -> TIMEOUT

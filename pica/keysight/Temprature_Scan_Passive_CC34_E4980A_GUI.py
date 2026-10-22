@@ -264,7 +264,7 @@ CRYOCON_HEATER_LOOP = '1'
 #                      full scale."   (example reply: '22%')
 #
 # ... and the lab unit refuses it. On 2026-09-25, five diagnostic runs
-# agreeing exactly (Untracked_Stuff/Diagnostics/log_25_09_26/):
+# agreeing exactly (Untracked_Stuff/Lab_Imports/log_25_09_26/):
 #
 #     HEATER:OUTPWR?    -> '0'        ANSWERS
 #     HEATER:HTRREAD?   -> TIMEOUT

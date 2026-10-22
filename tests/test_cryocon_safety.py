@@ -305,7 +305,7 @@ def test_loop_source_is_written_as_a_channel_name():
 
 class LabModel34(FakeCryocon):
     """The lab Cryo-con Model 34, Rev 3.03A, as five diagnostic runs on
-    2026-09-25 recorded it (Untracked_Stuff/Diagnostics/log_25_09_26/).
+    2026-09-25 recorded it (Untracked_Stuff/Lab_Imports/log_25_09_26/).
 
     Loops are addressed BY NAME. Every 'LOOP <n>:...' is met with silence,
     which on a Cryo-con is how a command it does not recognise fails - no
