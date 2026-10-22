@@ -722,7 +722,11 @@ class _ConnectHarness:
 
         backend.rm = _RM()
         if hasattr(self.module, "AlphaGpibSession"):
-            backend.driver = object()          # any truthy driver handle
+            class _Driver:                     # board is CIC, Alpha listens
+                def ensure_controller(self, board, pad, log=print):
+                    return True, 0x0100
+
+            backend.driver = _Driver()
             self._old_session = self.module.AlphaGpibSession
             self.module.AlphaGpibSession =                 lambda driver, board, pad, **kw: fake
         else:

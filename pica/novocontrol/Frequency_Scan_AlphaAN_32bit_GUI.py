@@ -192,9 +192,30 @@ SCAN_ADDRESSES = range(1, 31)
 # Boards looked at by the bus census, in order.
 SCAN_BOARDS = (0, 1)
 
+# The Alpha's address on the BDS bus, as WinALPHA's auto-detect reports it
+# ("Found device: Address: 10 - IDN string: ALPHA Analyzer, ..."). The
+# Keysight E4991B shares the bus at 17, so a scan finds two listeners.
+DEFAULT_ALPHA_PAD = 10
+
 
 class GpibError(RuntimeError):
     """Any failure reported by the NI-488.2 driver."""
+
+    def __init__(self, message, iberr=None):
+        super().__init__(message)
+        self.iberr = iberr
+
+
+# iberr for "no listener". A write that fails with it put no data byte on
+# the bus, so it is the one GPIB error that is always safe to retry.
+ENOL_CODE = 2
+
+# iberr when the board is not Controller-In-Charge. Typically left behind by
+# another GPIB program (WinALPHA / WinDETA); cleared by ibsic, which asserts
+# Interface Clear and makes the System Controller board CIC again. NI:
+# "Often ECIC errors are caused when you do not send an interface clear at
+# the start of your program" (GPIB Error Codes and Common Solutions).
+ECIC_CODE = 1
 
 
 def iberr_text(code):
@@ -283,6 +304,9 @@ class RawGpib:
                 f"{os.path.basename(dll_path)} lacks required exports: "
                 f"{', '.join(missing)}")
 
+        # Optional: only needed to recover from ECIC.
+        self.ibsic = _bind(lib, "ibsic", [c_int])
+
         self._thread_iberr = _bind(lib, "ThreadIberr", [])
         self._thread_ibcnt = (_bind(lib, "ThreadIbcntl", [], ctypes.c_long)
                               or _bind(lib, "ThreadIbcnt", [], ctypes.c_long))
@@ -327,6 +351,43 @@ class RawGpib:
         if sta & ERR:
             return None, sta
         return bool(flag.value), sta
+
+    def reclaim_controller(self, board):
+        """ibsic on the board: assert IFC and become Controller-In-Charge.
+
+        IFC resets the GPIB interface of every device on the bus (they are
+        unaddressed); it is not a device clear and sends no command bytes,
+        so instrument settings and measurements are not touched. Returns
+        (ok, message).
+        """
+        if self.ibsic is None:
+            return False, "driver has no ibsic export"
+        sta = self.ibsic(board)
+        if sta & ERR:
+            return False, (f"ibsic failed: {sta_text(sta)}; "
+                           f"{iberr_text(self.error_code())}")
+        return True, f"Interface Clear sent on board {board}"
+
+    def ensure_controller(self, board, pad, log=print):
+        """Probe the board; if it is not CIC, reclaim it once and re-probe.
+
+        Returns (present, ibsta) exactly like listener_at.
+        """
+        present, sta = self.listener_at(board, pad)
+        if present is None and self.error_code() == ECIC_CODE:
+            log(f"  board {board} is not Controller-In-Charge (another GPIB "
+                f"program such as WinALPHA may have taken the bus). "
+                f"Reclaiming it with Interface Clear...")
+            ok, message = self.reclaim_controller(board)
+            log(f"  {message}")
+            if ok:
+                present, sta = self.listener_at(board, pad)
+        return present, sta
+
+    def open_device(self, board, pad, timeout_code):
+        """ibdev with EOI on writes (eot=1) and no EOS byte -- the framing
+        the Novocontrol Alpha requires."""
+        return self.ibdev(board, pad, 0, timeout_code, 1, 0)
 
 
 def load_gpib_driver():
@@ -432,9 +493,10 @@ class AlphaGpibSession:
         payload = command.encode("ascii")
         sta = self._driver.ibwrt(self._handle, payload, len(payload))
         if sta & ERR:
+            code = self._driver.error_code()
             raise GpibError(
                 f"write {command!r} failed: {sta_text(sta)}; "
-                f"{iberr_text(self._driver.error_code())}")
+                f"{iberr_text(code)}", iberr=code)
         return len(payload)
 
     def read(self, max_len=65536):
@@ -573,6 +635,13 @@ ZG4_INTERFACE_CODE = 5
 # Timeouts (s) for the SRQ waits. A REF calibration takes ~30 s.
 SRQ_TIMEOUT_MEASURE_S = 120.0
 SRQ_TIMEOUT_CAL_S = 300.0
+
+# After *RST the Alpha drops off the GPIB bus while it reinitializes (no
+# listener: every write fails with ENOL) and only answers again some seconds
+# later. On the BDS PC it was still away after 1 s. Commands are retried on
+# ENOL only, until this deadline.
+RESET_READY_TIMEOUT_S = 30.0
+RESET_RETRY_INTERVAL_S = 0.5
 
 EPS0_SI = 8.8541878128e-12   # F/m  - used for the geometric capacitance C0
 EPS0_CM = 8.8541878128e-14   # F/cm - used only so sigma lands in S/cm
@@ -933,6 +1002,14 @@ class AlphaAN_Backend:
                 + " ".join(GPIB_DRIVER_REPORT))
 
         board, pad = parse_gpib_address(visa_addr)
+        # A board left not-CIC by another program fails every transfer with
+        # ECIC; reclaim it first. Nothing else about the bus is changed.
+        present, sta = self.driver.ensure_controller(board, pad)
+        if present is None:
+            raise ConnectionError(
+                f"GPIB board {board} is unusable: {sta_text(sta)}; "
+                f"{iberr_text(self.driver.error_code())}. Close WinALPHA / "
+                f"WinDETA and any other GPIB program, then try again.")
         inst = AlphaGpibSession(self.driver, board, pad)
         # 60 s; a long MTM at low frequency is slow. NI-488.2 timeouts are
         # discrete and there is no 60 s code, so this installs T100s: the
@@ -988,6 +1065,38 @@ class AlphaAN_Backend:
                 f"Command {cmd!r} failed: instrument answered {resp!r} "
                 f"({meaning})."
             )
+
+    def _reset_and_set_impedance_mode(self,
+                                      timeout_s=RESET_READY_TIMEOUT_S):
+        """*RST, wait until the Alpha answers again, then MODE=IMP.
+
+        *RST leaves no Novocontrol ack. While the Alpha reinitializes it is
+        not a listener and every write fails with ENOL, which put nothing on
+        the bus, so *IDN? is repeated until it is answered - the same
+        handshake JUMP uses after *RST (github.com/JMoVS/JUMP,
+        MeasurementHardware.py, ALPHA.initialize_instrument), including its
+        extra 1 s settle before MODE=IMP. Any other error is raised at once.
+        """
+        inst = self.instrument
+        inst.write("*RST")
+        start = time.monotonic()
+        while True:
+            time.sleep(RESET_RETRY_INTERVAL_S)
+            try:
+                inst.query("*IDN?")
+                break
+            except GpibError as exc:
+                if exc.iberr != ENOL_CODE:
+                    raise
+                if time.monotonic() - start >= timeout_s:
+                    raise ConnectionError(
+                        f"The Alpha did not rejoin the GPIB bus within "
+                        f"{timeout_s:.0f} s after *RST. Last error: "
+                        f"{exc}") from exc
+        print(f"  *RST complete; Alpha answering after "
+              f"{time.monotonic() - start:.1f} s.")
+        time.sleep(1.0)
+        self._exec("MODE=IMP")
 
     def _exec_tolerant(self, cmd):
         """_exec for shutdown paths: never raises, reports success."""
@@ -1070,9 +1179,7 @@ class AlphaAN_Backend:
         # the generator at ACV=0, DCE=0).
         # *RST is IEEE-488.2 common: it leaves NO Novocontrol ack (JUMP
         # queries *IDN? right after with no stale response in between).
-        inst.write("*RST")
-        time.sleep(1.0)
-        self._exec("MODE=IMP")
+        self._reset_and_set_impedance_mode()
 
         code = parse_inttyp(inst.query("INTTYP?"))
         if code != ZG4_INTERFACE_CODE:
@@ -1113,9 +1220,7 @@ class AlphaAN_Backend:
         if inst is None:
             raise ConnectionError("Instrument is not connected.")
 
-        inst.write("*RST")
-        time.sleep(1.0)  # graceful reset; *RST leaves no Novocontrol ack
-        self._exec("MODE=IMP")
+        self._reset_and_set_impedance_mode()
 
         code = parse_inttyp(inst.query("INTTYP?"))
         if code != ZG4_INTERFACE_CODE:
@@ -1870,7 +1975,7 @@ class AlphaAN_FreqScan_GUI:
 
         try:
             for board in SCAN_BOARDS:
-                probe, sta = driver.listener_at(board, 1)
+                probe, sta = driver.ensure_controller(board, 1, self.log)
                 if probe is None:
                     self.log(f"  board {board} unusable: {sta_text(sta)}; "
                              f"{iberr_text(driver.error_code())}")
@@ -1884,15 +1989,23 @@ class AlphaAN_FreqScan_GUI:
 
             self.visa_combobox["values"] = found
 
+            default = f"GPIB0::{DEFAULT_ALPHA_PAD}::INSTR"
             if len(found) == 1:
                 self.visa_combobox.set(found[0])
                 self.log("One instrument on the bus; selected. Press Connect "
                          "to confirm it is an Alpha with a ZG4.")
+            elif default in found:
+                self.visa_combobox.set(default)
+                self.log(
+                    f"{len(found)} instruments on the bus; selected {default}, "
+                    "the Alpha's address in WinALPHA. Press Connect to "
+                    "confirm it is an Alpha with a ZG4."
+                )
             elif found:
                 self.log(
                     f"{len(found)} instruments on the bus. Choose the "
-                    "Alpha's address (it is in WinDETA's device settings, "
-                    "historically 5), then press Connect."
+                    "Alpha's address (WinALPHA > Analyzer > Auto-detect "
+                    "shows it), then press Connect."
                 )
             else:
                 self.log("No listeners. Check instrument power, cable "
@@ -2319,6 +2432,8 @@ class AlphaAN_FreqScan_GUI:
     def _finalize_stop(self, reason):
         try:
             self.backend.close_instrument()
+            self.log("Instrument parked (ACV=0, ZCONSPL=0, *RST) and "
+                     "released.")
         except Exception as e:
             self.log(f"WARNING: error closing instrument: {e}")
 
@@ -2372,16 +2487,49 @@ class AlphaAN_FreqScan_GUI:
             self.root.destroy()
 
 
+def relaunch_in_32bit():
+    """From 64-bit Python, restart this file under a 32-bit interpreter.
+
+    Returns True when a 32-bit child was started (this process should then
+    just exit), False when no 32-bit Python with matplotlib is installed.
+    """
+    import subprocess
+    import sys
+    script = os.path.abspath(__file__)
+    for tag in ("-3.10-32", "-32"):
+        launcher = ["py", tag]
+        try:
+            probe = subprocess.run(
+                launcher + ["-c", "import struct, matplotlib; "
+                            "print(struct.calcsize('P') * 8)"],
+                capture_output=True, text=True, timeout=60,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if probe.returncode == 0 and probe.stdout.strip() == "32":
+            subprocess.Popen(launcher + [script] + sys.argv[1:],
+                             cwd=os.path.dirname(script))
+            return True
+    return False
+
+
 def main():
     bits = struct.calcsize("P") * 8
+    if not GPIB_AVAILABLE and bits == 64 and os.name == "nt":
+        # The usual way to land here: double-clicking the file, or running
+        # it from an IDE, both of which pick the default 64-bit Python.
+        if relaunch_in_32bit():
+            return
     if not GPIB_AVAILABLE:
         root = tk.Tk()
         root.withdraw()
         detail = "\n".join(GPIB_DRIVER_REPORT) or "No GPIB DLL found."
         if bits == 64:
             advice = (
-                "\n\nThis is 64-bit Python. The lab's driver is the 32-bit "
-                "gpib-32.dll, which can only be used from 32-bit Python:"
+                "\n\nThis is 64-bit Python and no 32-bit Python with "
+                "matplotlib was found to hand over to. The lab's driver is "
+                "the 32-bit gpib-32.dll, which can only be used from 32-bit "
+                "Python:"
                 "\n\n    py -3.10-32 Frequency_Scan_AlphaAN_32bit_GUI.py"
                 "\n\nmatplotlib (and Pillow) must be installed in that "
                 "interpreter."
