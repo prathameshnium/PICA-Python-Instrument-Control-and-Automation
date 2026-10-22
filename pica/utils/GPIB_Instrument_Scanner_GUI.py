@@ -65,7 +65,10 @@ def _load_pyvisa():
 #   * K2182 (7) has not been seen on recent scans; keep 7 for it.
 #   * 4 was the K2400's old address. On 21 Oct 2026 every K2400 module was
 #     moved to default to GPIB1::24, so 4 is free again.
-#   * Novocontrol Alpha-AN (5) answers *IDN? but is not SCPI; never probe it.
+#   * Novocontrol Alpha-AN (10) answers *IDN? but is not SCPI; never probe it.
+#     It sits on the BDS PC's own GPIB0 bus, not the rack's GPIB1: WinALPHA's
+#     auto-detect found it at 10 on 22 Oct 2026. 5 was only ever a guess in
+#     the code, never its real address; keep 5 unused.
 #   * The L350 and L340 also answer on every secondary address (GPIB1::12::0
 #     to ::12::30): their GPIB chips ignore the secondary byte. Same instrument,
 #     not 31 more of them.
@@ -88,14 +91,15 @@ ADDRESS_BOOK = [
     (2, "Free", "", "", "", ""),
     (3, "Free", "", "", "", ""),
     (4, "Free", "", "", "", ""),
-    (5, "Reserved", "Novocontrol Alpha-AN", "", "hint only",
-     "Not SCPI: never probe"),
+    (5, "Avoid", "", "", "",
+     "Old Alpha-AN guess, never its real address; don't use"),
     (6, "Free", "", "", "", ""),
     (7, "Reserved", "Keithley 2182", "", "not recently",
      "Kept for the 2182"),
     (8, "In use", "SRS SR830 lock-in", "GPIB1", ADDRESS_BOOK_SEEN, ""),
     (9, "Avoid", "", "", "", "Agilent 34970A factory default"),
-    (10, "Avoid", "", "", "", "Agilent 332xx factory default"),
+    (10, "In use", "Novocontrol Alpha-AN", "BDS GPIB0", "22 Oct 2026",
+     "BDS PC bus, not the rack. Not SCPI: never probe"),
     (11, "In use", "Tektronix AFG3022B", "GPIB1", ADDRESS_BOOK_SEEN,
      "Switched on/off at the rack"),
     (12, "In use", "Lakeshore 350", "GPIB1", ADDRESS_BOOK_SEEN,

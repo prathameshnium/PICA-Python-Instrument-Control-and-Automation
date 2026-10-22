@@ -188,6 +188,27 @@ ZG4_INTERFACE_CODE = 5
 SRQ_TIMEOUT_MEASURE_S = 120.0
 SRQ_TIMEOUT_CAL_S = 300.0
 
+# After *RST the Alpha drops off the GPIB bus while it reinitializes (no
+# listener: every write fails with VI_ERROR_NLISTENERS, NI-488.2's ENOL) and
+# only answers again some seconds later. Seen on hardware 22 Oct 2026: a
+# fixed 1 s sleep was too short and MODE=IMP failed. Commands are retried on
+# "no listeners" only, until this deadline.
+RESET_READY_TIMEOUT_S = 30.0
+RESET_RETRY_INTERVAL_S = 0.5
+
+# VISA status codes, as pyvisa reports them in VisaIOError.error_code.
+# NLISTENERS: no listener at that address; the write put no byte on the bus,
+# so it is the one GPIB error that is always safe to retry.
+# NCIC: the board is not Controller-In-Charge - typically left behind by
+# WinALPHA / WinDETA; cleared by one Interface Clear on the board.
+VI_ERROR_NLISTENERS = -1073807265
+VI_ERROR_NCIC = -1073807264
+
+# The Alpha's address on the BDS bus, as WinALPHA's auto-detect reports it
+# ("Found device: Address: 10 - IDN string: ALPHA Analyzer, ..."). The
+# Keysight E4991B shares that bus at 17.
+DEFAULT_ALPHA_PAD = 10
+
 EPS0_SI = 8.8541878128e-12   # F/m  - used for the geometric capacitance C0
 EPS0_CM = 8.8541878128e-14   # F/cm - used only so sigma lands in S/cm
 
@@ -218,6 +239,21 @@ def parse_inttyp(response):
     if "=" in text:
         text = text.split("=", 1)[1]
     return int(text.split()[0])
+
+
+def visa_error_code(exc):
+    """The VISA status code carried by a pyvisa VisaIOError, else None."""
+    code = getattr(exc, "error_code", None)
+    return int(code) if code is not None else None
+
+
+def gpib_board_of(visa_addr):
+    """'GPIB0::10::INSTR' -> 0; 'GPIB::10' -> 0; None if not a GPIB address."""
+    head = str(visa_addr).strip().upper().split("::", 1)[0]
+    if not head.startswith("GPIB"):
+        return None
+    tail = head[4:]
+    return int(tail) if tail.isdigit() else 0
 
 
 # Frozen frequency series: 20 Hz, x1.1 per step, final point clamped to
@@ -555,7 +591,30 @@ class AlphaAN_Backend:
         self.instrument = inst
 
         try:
-            idn = inst.query("*IDN?").strip()
+            try:
+                idn = inst.query("*IDN?").strip()
+            except Exception as exc:
+                # A board left not-CIC by another program (WinALPHA /
+                # WinDETA) fails every transfer. Reclaim it ONCE with
+                # Interface Clear and retry; any other error is raised.
+                if visa_error_code(exc) != VI_ERROR_NCIC:
+                    raise
+                board = gpib_board_of(visa_addr)
+                print(f"  GPIB board {board} is not Controller-In-Charge "
+                      f"(another GPIB program such as WinALPHA may have "
+                      f"taken the bus). Reclaiming it with Interface "
+                      f"Clear...")
+                self.send_interface_clear(board)
+                try:
+                    idn = inst.query("*IDN?").strip()
+                except Exception as exc2:
+                    if visa_error_code(exc2) == VI_ERROR_NCIC:
+                        raise ConnectionError(
+                            f"GPIB board {board} is still not "
+                            f"Controller-In-Charge after Interface Clear. "
+                            f"Close WinALPHA / WinDETA and any other GPIB "
+                            f"program, then try again.") from exc2
+                    raise
             # INTTYP? returns 'INTTYP=<code> <serial>'; the ZG4 is code 5,
             # NOT the literal string "ZG4".
             code = parse_inttyp(inst.query("INTTYP?"))
@@ -576,6 +635,24 @@ class AlphaAN_Backend:
         print(f"  Connected: {idn} | ZG4 interface code {code}")
         return idn, code
 
+    def send_interface_clear(self, board):
+        """Assert IFC on a GPIB board and make it Controller-In-Charge.
+
+        IFC resets the GPIB interface of every device on the bus (they are
+        unaddressed); it is not a device clear and sends no command bytes,
+        so instrument settings and measurements are not touched. Only ever
+        sent after the board reported 'not CIC', never on a healthy board.
+        """
+        if board is None:
+            raise ConnectionError(
+                "Interface Clear needs a GPIB address (GPIBn::...).")
+        intfc = self.rm.open_resource(f"GPIB{board}::INTFC")
+        try:
+            intfc.send_ifc()
+        finally:
+            intfc.close()
+        print(f"  Interface Clear sent on GPIB{board}.")
+
     # --- command acknowledgment ---------------------------------------
 
     def _exec(self, cmd):
@@ -595,6 +672,38 @@ class AlphaAN_Backend:
                 f"Command {cmd!r} failed: instrument answered {resp!r} "
                 f"({meaning})."
             )
+
+    def _reset_and_set_impedance_mode(self,
+                                      timeout_s=RESET_READY_TIMEOUT_S):
+        """*RST, wait until the Alpha answers again, then MODE=IMP.
+
+        *RST leaves no Novocontrol ack. While the Alpha reinitializes it is
+        not a listener and every write fails with VI_ERROR_NLISTENERS, which
+        put nothing on the bus, so *IDN? is repeated until it is answered -
+        the same handshake JUMP uses after *RST (github.com/JMoVS/JUMP,
+        MeasurementHardware.py, ALPHA.initialize_instrument), including its
+        extra 1 s settle before MODE=IMP. Any other error is raised at once.
+        """
+        inst = self.instrument
+        inst.write("*RST")
+        start = time.monotonic()
+        while True:
+            time.sleep(RESET_RETRY_INTERVAL_S)
+            try:
+                inst.query("*IDN?")
+                break
+            except Exception as exc:
+                if visa_error_code(exc) != VI_ERROR_NLISTENERS:
+                    raise
+                if time.monotonic() - start >= timeout_s:
+                    raise ConnectionError(
+                        f"The Alpha did not rejoin the GPIB bus within "
+                        f"{timeout_s:.0f} s after *RST. Last error: "
+                        f"{exc}") from exc
+        print(f"  *RST complete; Alpha answering after "
+              f"{time.monotonic() - start:.1f} s.")
+        time.sleep(1.0)
+        self._exec("MODE=IMP")
 
     def _exec_tolerant(self, cmd):
         """_exec for shutdown paths: never raises, reports success."""
@@ -677,9 +786,7 @@ class AlphaAN_Backend:
         # the generator at ACV=0, DCE=0).
         # *RST is IEEE-488.2 common: it leaves NO Novocontrol ack (JUMP
         # queries *IDN? right after with no stale response in between).
-        inst.write("*RST")
-        time.sleep(1.0)
-        self._exec("MODE=IMP")
+        self._reset_and_set_impedance_mode()
 
         code = parse_inttyp(inst.query("INTTYP?"))
         if code != ZG4_INTERFACE_CODE:
@@ -720,9 +827,7 @@ class AlphaAN_Backend:
         if inst is None:
             raise ConnectionError("Instrument is not connected.")
 
-        inst.write("*RST")
-        time.sleep(1.0)  # graceful reset; *RST leaves no Novocontrol ack
-        self._exec("MODE=IMP")
+        self._reset_and_set_impedance_mode()
 
         code = parse_inttyp(inst.query("INTTYP?"))
         if code != ZG4_INTERFACE_CODE:
@@ -1463,21 +1568,44 @@ class AlphaAN_FreqScan_GUI:
         rm = self.backend.rm
         found = []
         alpha_label = None
+        default_label = None
+        cleared_boards = set()
+
+        def _identify(res):
+            with rm.open_resource(res) as dev:
+                dev.timeout = 2000
+                # EOI-only, matching the Alpha-AN, so it is
+                # identifiable here (it uses no newline terminator).
+                dev.read_termination = ""
+                dev.write_termination = ""
+                dev.send_end = True
+                return dev.query("*IDN?").strip()
 
         try:
             for res in rm.list_resources():
                 idn = "Unknown / no response"
                 try:
-                    with rm.open_resource(res) as dev:
-                        dev.timeout = 2000
-                        # EOI-only, matching the Alpha-AN, so it is
-                        # identifiable here (it uses no newline terminator).
-                        dev.read_termination = ""
-                        dev.write_termination = ""
-                        dev.send_end = True
-                        idn = dev.query("*IDN?").strip()
-                except Exception:
-                    pass  # busy / non-SCPI / timeout - skip silently
+                    idn = _identify(res)
+                except Exception as exc:
+                    # Board left not-CIC by WinALPHA/WinDETA: every query
+                    # on it fails. Interface Clear once per board, retry.
+                    board = gpib_board_of(res)
+                    if (visa_error_code(exc) == VI_ERROR_NCIC
+                            and board is not None
+                            and board not in cleared_boards):
+                        cleared_boards.add(board)
+                        self.log(
+                            f"  GPIB{board} is not Controller-In-Charge "
+                            f"(another GPIB program such as WinALPHA may "
+                            f"have taken the bus). Reclaiming it with "
+                            f"Interface Clear...")
+                        try:
+                            self.backend.send_interface_clear(board)
+                            self.log(f"  Interface Clear sent on GPIB{board}")
+                            idn = _identify(res)
+                        except Exception:
+                            pass
+                    # otherwise busy / non-SCPI / timeout - skip silently
 
                 label = f"{res}  ->  {idn}"
                 found.append(label)
@@ -1486,6 +1614,9 @@ class AlphaAN_FreqScan_GUI:
                     "NOVOCONTROL" in upper or "ALPHA" in upper
                 ):
                     alpha_label = label
+                if (default_label is None and res.upper().startswith("GPIB")
+                        and f"::{DEFAULT_ALPHA_PAD}::" in res):
+                    default_label = label
                 self.log(f"  {label}")
 
             self.visa_combobox["values"] = found
@@ -1493,6 +1624,14 @@ class AlphaAN_FreqScan_GUI:
             if alpha_label:
                 self.visa_combobox.set(alpha_label)
                 self.log("Alpha-AN auto-selected.")
+            elif default_label:
+                self.visa_combobox.set(default_label)
+                self.log(
+                    f"WARNING: no instrument identified itself as an Alpha; "
+                    f"selected address {DEFAULT_ALPHA_PAD}, the Alpha's "
+                    f"address in WinALPHA. Start/Calibrate will confirm it "
+                    f"is an Alpha with a ZG4."
+                )
             elif found:
                 self.visa_combobox.set(found[0])
                 self.log(
@@ -1921,6 +2060,8 @@ class AlphaAN_FreqScan_GUI:
     def _finalize_stop(self, reason):
         try:
             self.backend.close_instrument()
+            self.log("Instrument parked (ACV=0, ZCONSPL=0, *RST) and "
+                     "released.")
         except Exception as e:
             self.log(f"WARNING: error closing instrument: {e}")
 

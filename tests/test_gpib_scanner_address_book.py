@@ -47,7 +47,8 @@ def test_controller_addresses_are_never_assigned():
 def test_lab_bus_as_seen_21_oct_2026():
     in_use = {row[0]: row[2] for row in ADDRESS_BOOK if row[1] == "In use"}
     assert in_use == {
-        8: "SRS SR830 lock-in", 11: "Tektronix AFG3022B", 12: "Lakeshore 350",
+        8: "SRS SR830 lock-in", 10: "Novocontrol Alpha-AN",  # 22 Oct, BDS bus
+        11: "Tektronix AFG3022B", 12: "Lakeshore 350",
         13: "Keithley 6221", 17: "Keysight E4980A", 19: "Lakeshore 340",
         20: "Keithley 197A DMM", 23: "Cryocon 34", 24: "Keithley 2400",
         27: "Keithley 6517B"}
