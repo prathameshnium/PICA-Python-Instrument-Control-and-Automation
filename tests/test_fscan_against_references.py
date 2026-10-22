@@ -243,7 +243,7 @@ def make_headless_gui(out_dir, geometry_mode="area"):
     gui.cal_age_str = "Last REF calibration: unknown (not recorded by PICA)"
     gui.log = lambda msg: None
     if geometry_mode == "area":
-        gui.c0_farads = fscan.compute_c0_from_area(1.0, 1.0)
+        gui.c0_farads = fscan.compute_c0_from_area(100.0, 1.0)
     else:
         gui.c0_farads = fscan.compute_c0(
             MES_DEF_DIAMETER_MM, MES_DEF_THICKNESS_MM
@@ -264,9 +264,11 @@ def base_params(geometry_mode="area"):
         "visa": "GPIB0::10::INSTR",
         "freq_preset": fscan.DEFAULT_FREQ_PRESET,
         "frequencies": fscan.FREQ_PRESETS[fscan.DEFAULT_FREQ_PRESET],
+        "save_pica": True,
+        "save_windeta": True,
     }
     if geometry_mode == "area":
-        p["area_cm2"] = 1.0
+        p["area_mm2"] = 100.0
     else:
         p["diameter_mm"] = MES_DEF_DIAMETER_MM
     return p
@@ -350,8 +352,34 @@ def run_header_format():
         dat_head = Path(gui.dat_filepath).read_text(encoding="utf-8")
         check(
             "PICA .dat records area-mode geometry and C0",
-            "A = 1.0 cm^2" in dat_head
+            "A = 100.0 mm^2" in dat_head
             and f"C0 = {gui.c0_farads:.5e} F" in dat_head,
+        )
+        # WinDETA mes_def metadata rides along as ASCII '#' comment rows.
+        meta = [ln for ln in dat_head.splitlines() if ln.startswith("#")]
+        check(
+            "PICA .dat carries the WinDETA measurement-definition metadata",
+            any("Evaluation : Area electrode" in ln for ln in meta)
+            and any("Thickness  = " in ln for ln in meta)
+            and any("Reference Measurement" in ln for ln in meta)
+            and all(ln.isascii() for ln in meta),
+        )
+        check(
+            "file names carry the format suffix",
+            gui.txt_filepath.endswith("_windeta_format.txt")
+            and gui.dat_filepath.endswith("_pica_format.dat"),
+        )
+
+        # Only the ticked format gets a file; rows go to that file alone.
+        only_pica = base_params()
+        only_pica["save_windeta"] = False
+        gui._open_output_files(only_pica)
+        gui._write_row([1.0] * 9)
+        check(
+            "unticked WinDETA format writes no .txt",
+            gui.txt_filepath == ""
+            and Path(gui.dat_filepath).read_text(encoding="utf-8")
+            .splitlines()[-1].startswith("1.00000e+00"),
         )
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)

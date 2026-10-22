@@ -124,7 +124,7 @@ def test_custom_list_still_meets_the_acv_ceiling():
         params = {
             "frequencies": alpha.parse_frequency_list("1000, 5e6"),
             "acv": 3.0, "mtm": 0.5, "wire_mode": "2",
-            "geometry_mode": "area", "area_cm2": 1.0, "thickness_mm": 1.0,
+            "geometry_mode": "area", "area_mm2": 100.0, "thickness_mm": 1.0,
             "delay": 1.0,
         }
         assert "safety limit" in _raises(alpha.validate_parameters, params)

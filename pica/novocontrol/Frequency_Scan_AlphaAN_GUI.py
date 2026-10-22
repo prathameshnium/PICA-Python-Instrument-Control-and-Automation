@@ -430,17 +430,62 @@ def compute_c0(diameter_mm, thickness_mm):
     return EPS0_SI * area / t_m
 
 
-def compute_c0_from_area(area_cm2, thickness_mm):
+def compute_c0_from_area(area_mm2, thickness_mm):
     """Geometric (empty-cell) capacitance from electrode AREA, in F.
 
     For irregular electrodes where the area is known directly.
-    C0 = eps0 * A / d, with A in cm^2 and d in mm.
+    C0 = eps0 * A / d, with A in mm^2 (as WinDETA) and d in mm.
     """
-    if area_cm2 <= 0 or thickness_mm <= 0:
+    if area_mm2 <= 0 or thickness_mm <= 0:
         raise ValueError("Area and thickness must both be positive.")
-    a_m2 = area_cm2 * 1e-4
+    a_m2 = area_mm2 * 1e-6
     t_m = thickness_mm * 1e-3
     return EPS0_SI * a_m2 / t_m
+
+
+def dat_metadata_lines(params, c0_farads, cal_age_str, when):
+    """'#' comment rows for the PICA .dat: what WinDETA keeps in its
+    measurement definition (SAMPLE / START CONDITIONS / LIST / IMPEDANCE
+    DEVICE sections of mes_def_Fscan.txt), so a file documents itself.
+
+    ASCII only - the lab PCs are cp1252 and the Plotter skips '#' rows.
+    The analyzer settings below are the ones initialize_instrument sends.
+    """
+    freqs = params["frequencies"]
+    if params["geometry_mode"] == "area":
+        evaluation = "Area electrode"
+        size = f"A = {params['area_mm2']} mm^2"
+    else:
+        evaluation = "Round plate electrode"
+        size = f"D = {params['diameter_mm']} mm"
+    wires = "4 Wire" if str(params["wire_mode"]) == "4" else "2 Wire"
+    return [
+        f"# Sample: {params['sample_name']} | "
+        f"ACV: {params['acv']} Vrms | MTM: {params['mtm']} s | "
+        f"FRS: {params['wire_mode']}-wire | List: {params['freq_preset']}",
+        f"# Geometry: {size}, d = {params['thickness_mm']} mm, "
+        f"C0 = {c0_farads:.5e} F",
+        f"# {cal_age_str}",
+        f"# Comment    : {params['comment']}",
+        f"# Date       : {when.strftime('%d.%m.%Y %H:%M:%S')}",
+        f"# Evaluation : {evaluation}",
+        f"# Size       : {size}",
+        f"# Thickness  = {params['thickness_mm']} mm",
+        "# C-Spacer   = 0 pF, A-Spacer = 0 mm^2, edge compensation off",
+        f"# AcV        = {params['acv']} Vrms (no DC bias)",
+        f"# Frequency list : {len(freqs)} pts, {min(freqs):g} - "
+        f"{max(freqs):g} Hz",
+        f"# Initial delay  : {params['delay']} s",
+        f"# Analyzer       : Novocontrol Alpha-AN + ZG4 at {params['visa']}",
+        "# Reference Measurement                : Always, 3 auto "
+        "capacitors max (ZREFMODE=-3)",
+        "# Low capacity open calibration        : Off",
+        "# Low impedance load short calibration : On (ZSLCAL=1)",
+        "# Low loss reference capacitor corr.   : On (ZLLCOR=1)",
+        f"# 4 Wire Front State                   : {wires}",
+        "# Driven HI / LO Shield                : Off / Off (DRS=0 0)",
+        f"# Integration time                     : {params['mtm']} s (MTM)",
+    ]
 
 
 def parse_zre(response):
@@ -565,7 +610,7 @@ def validate_parameters(params):
         raise ValueError(f"Wire mode must be one of {WIRE_MODES}.")
 
     if params["geometry_mode"] == "area":
-        if params["area_cm2"] <= 0 or params["thickness_mm"] <= 0:
+        if params["area_mm2"] <= 0 or params["thickness_mm"] <= 0:
             raise ValueError("Area and thickness must both be positive.")
     else:
         if params["diameter_mm"] <= 0 or params["thickness_mm"] <= 0:
@@ -1348,9 +1393,12 @@ class AlphaAN_FreqScan_GUI:
         )
 
         # Geometry can be given either as a round-plate DIAMETER or directly
-        # as an electrode AREA (irregular electrodes). Default is area mode
-        # with A = 1 cm^2, d = 1 mm.
+        # as an electrode AREA (irregular electrodes), in mm / mm^2 as
+        # WinDETA. Each mode keeps its own value, so flipping the toggle
+        # never turns an area into a diameter: defaults D = 1 mm,
+        # A = 1 mm^2, d = 1 mm.
         self.geom_mode_var = tk.StringVar(value="area")
+        self._geom_values = {"area": "1.0", "diameter": "1.0"}
         geom_radio_frame = ttk.Frame(frame)
         geom_radio_frame.grid(
             row=7, column=0, columnspan=2, padx=padx, pady=(2, 0), sticky="w"
@@ -1359,7 +1407,7 @@ class AlphaAN_FreqScan_GUI:
             geom_radio_frame, text="Geometry input:", font=self.FONT_BASE
         ).pack(side="left")
         ttk.Radiobutton(
-            geom_radio_frame, text="Area (cm²)", value="area",
+            geom_radio_frame, text="Area (mm²)", value="area",
             variable=self.geom_mode_var, command=self._on_geom_mode_change,
         ).pack(side="left", padx=(10, 0))
         ttk.Radiobutton(
@@ -1368,7 +1416,7 @@ class AlphaAN_FreqScan_GUI:
         ).pack(side="left", padx=(10, 0))
 
         self.lbl_geom = self._add_entry(
-            frame, "Electrode Area (cm²)", "geom_value", 8, 0,
+            frame, "Electrode Area (mm²)", "geom_value", 8, 0,
             default="1.0",
         )
         self._add_entry(
@@ -1481,6 +1529,22 @@ class AlphaAN_FreqScan_GUI:
             command=self._browse_file_location,
         ).grid(row=17, column=1, padx=padx, pady=5, sticky="ew")
 
+        # Output formats. Both on by default; at least one is required.
+        self.fmt_pica_var = tk.BooleanVar(value=True)
+        self.fmt_windeta_var = tk.BooleanVar(value=True)
+        fmt_frame = ttk.Frame(frame)
+        fmt_frame.grid(
+            row=18, column=0, columnspan=2, padx=padx, pady=(2, 0), sticky="w"
+        )
+        Label(fmt_frame, text="Save as:", font=self.FONT_BASE).pack(side="left")
+        ttk.Checkbutton(
+            fmt_frame, text="PICA format (.dat)", variable=self.fmt_pica_var,
+        ).pack(side="left", padx=(10, 0))
+        ttk.Checkbutton(
+            fmt_frame, text="WinDETA format (.txt)",
+            variable=self.fmt_windeta_var,
+        ).pack(side="left", padx=(10, 0))
+
         # REF calibration is a DELIBERATE, SEPARATE action. Start never
         # calibrates: the sample may be permanently mounted in the cell.
         self.cal_button = ttk.Button(
@@ -1488,7 +1552,7 @@ class AlphaAN_FreqScan_GUI:
             command=self.run_reference_calibration,
         )
         self.cal_button.grid(
-            row=18, column=0, columnspan=2, padx=padx, pady=(10, 2),
+            row=19, column=0, columnspan=2, padx=padx, pady=(10, 2),
             sticky="ew",
         )
 
@@ -1497,7 +1561,7 @@ class AlphaAN_FreqScan_GUI:
             foreground=self.CLR_TEXT_DARK,
         )
         self.lbl_cal_age.grid(
-            row=19, column=0, columnspan=2, padx=padx, sticky="w"
+            row=20, column=0, columnspan=2, padx=padx, sticky="w"
         )
 
         self.start_button = ttk.Button(
@@ -1505,14 +1569,14 @@ class AlphaAN_FreqScan_GUI:
             style="Start.TButton",
         )
         self.start_button.grid(
-            row=20, column=0, padx=(padx, 5), pady=15, sticky="ew"
+            row=21, column=0, padx=(padx, 5), pady=15, sticky="ew"
         )
         self.stop_button = ttk.Button(
             frame, text="Stop", command=self.stop_sweep,
             style="Stop.TButton", state="disabled",
         )
         self.stop_button.grid(
-            row=20, column=1, padx=(5, padx), pady=15, sticky="ew"
+            row=21, column=1, padx=(5, padx), pady=15, sticky="ew"
         )
 
         self.lbl_status = ttk.Label(
@@ -1520,14 +1584,14 @@ class AlphaAN_FreqScan_GUI:
             font=("Segoe UI", 12, "bold"),
             foreground=self.CLR_ACCENT_RED,
         )
-        self.lbl_status.grid(row=21, column=0, columnspan=2, pady=5)
+        self.lbl_status.grid(row=22, column=0, columnspan=2, pady=5)
 
         self.progress_bar = ttk.Progressbar(
             frame, orient="horizontal", mode="determinate",
             style="green.Horizontal.TProgressbar",
         )
         self.progress_bar.grid(
-            row=22, column=0, columnspan=2, padx=padx, pady=(5, 10),
+            row=23, column=0, columnspan=2, padx=padx, pady=(5, 10),
             sticky="ew",
         )
 
@@ -1648,9 +1712,16 @@ class AlphaAN_FreqScan_GUI:
         return label
 
     def _on_geom_mode_change(self):
-        """Relabel the geometry entry when the Diameter/Area toggle flips."""
-        if self.geom_mode_var.get() == "area":
-            self.lbl_geom.config(text="Electrode Area (cm²):")
+        """Relabel the geometry entry when the Diameter/Area toggle flips,
+        parking the old mode's value and restoring the new mode's."""
+        new_mode = self.geom_mode_var.get()
+        old_mode = "diameter" if new_mode == "area" else "area"
+        entry = self.entries["geom_value"]
+        self._geom_values[old_mode] = entry.get()
+        entry.delete(0, "end")
+        entry.insert(0, self._geom_values[new_mode])
+        if new_mode == "area":
+            self.lbl_geom.config(text="Electrode Area (mm²):")
         else:
             self.lbl_geom.config(text="Electrode Diameter (mm):")
         self._update_c0_label()
@@ -1958,10 +2029,12 @@ class AlphaAN_FreqScan_GUI:
                 "visa": self._selected_visa_address(),
                 "freq_preset": freq_label,
                 "frequencies": frequencies,
+                "save_pica": self.fmt_pica_var.get(),
+                "save_windeta": self.fmt_windeta_var.get(),
             }
             geom_value = float(self.entries["geom_value"].get())
             if geom_mode == "area":
-                params["area_cm2"] = geom_value
+                params["area_mm2"] = geom_value
             else:
                 params["diameter_mm"] = geom_value
             if not all([params["sample_name"], params["visa"],
@@ -1969,6 +2042,10 @@ class AlphaAN_FreqScan_GUI:
                 raise ValueError(
                     "Sample Name, VISA address, and Save Location "
                     "are required."
+                )
+            if not (params["save_pica"] or params["save_windeta"]):
+                raise ValueError(
+                    "Tick at least one output format (PICA or WinDETA)."
                 )
 
             # Validate BEFORE opening the session: nothing unsafe ever
@@ -2033,9 +2110,18 @@ class AlphaAN_FreqScan_GUI:
     def _open_output_files(self, params):
         """Create both output files and write their headers."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base = f"{params['sample_name']}_{timestamp}_AlphaAN_FreqScan"
-        self.txt_filepath = os.path.join(self.file_location_path, base + ".txt")
-        self.dat_filepath = os.path.join(self.file_location_path, base + ".dat")
+        base = os.path.join(
+            self.file_location_path,
+            f"{params['sample_name']}_{timestamp}_AlphaAN_FreqScan",
+        )
+        # The suffix names the format; an unticked format gets no file
+        # (empty path, skipped by _write_row).
+        self.txt_filepath = (
+            base + "_windeta_format.txt" if params["save_windeta"] else ""
+        )
+        self.dat_filepath = (
+            base + "_pica_format.dat" if params["save_pica"] else ""
+        )
 
         now = datetime.now()
         # Line 1 is the comment ONLY, exactly like the WinDETA exports; the
@@ -2047,36 +2133,27 @@ class AlphaAN_FreqScan_GUI:
         # newline="\r\n": WinDETA exports use CRLF. Explicit, so the files
         # are byte-identical on any OS (Python's default translation would
         # write LF on Linux).
-        with open(self.txt_filepath, "w", encoding="utf-8",
-                  newline="\r\n") as fh:
-            fh.write(f"{params['comment']}, {date_str}, {time_str}\n")
-            fh.write(
-                f"Fixed value(s) :  AC Volt  [Vrms]={params['acv']:.4e}\n"
-            )
-            fh.write(WINDETA_HEADER + "\n")
+        if self.txt_filepath:
+            with open(self.txt_filepath, "w", encoding="utf-8",
+                      newline="\r\n") as fh:
+                fh.write(f"{params['comment']}, {date_str}, {time_str}\n")
+                fh.write(
+                    f"Fixed value(s) :  AC Volt  [Vrms]={params['acv']:.4e}\n"
+                )
+                fh.write(WINDETA_HEADER + "\n")
 
-        if params["geometry_mode"] == "area":
-            geometry_str = f"A = {params['area_cm2']} cm^2"
-        else:
-            geometry_str = f"D = {params['diameter_mm']} mm"
-        with open(self.dat_filepath, "w", encoding="utf-8",
-                  newline="\r\n") as fh:
-            fh.write(
-                f"# Sample: {params['sample_name']} | "
-                f"ACV: {params['acv']} Vrms | MTM: {params['mtm']} s | "
-                f"FRS: {params['wire_mode']}-wire | "
-                f"List: {params['freq_preset']}\n"
-            )
-            fh.write(
-                f"# Geometry: {geometry_str}, "
-                f"d = {params['thickness_mm']} mm, "
-                f"C0 = {self.c0_farads:.5e} F\n"
-            )
-            fh.write(f"# {self.cal_age_str}\n")
-            fh.write(PICA_HEADER + "\n")
+        if self.dat_filepath:
+            with open(self.dat_filepath, "w", encoding="utf-8",
+                      newline="\r\n") as fh:
+                for line in dat_metadata_lines(
+                    params, self.c0_farads, self.cal_age_str, now
+                ):
+                    fh.write(line + "\n")
+                fh.write(PICA_HEADER + "\n")
 
-        self.log(f"Output files: {os.path.basename(self.txt_filepath)} "
-                 f"(WinDETA) + .dat (PICA)")
+        names = [os.path.basename(p)
+                 for p in (self.txt_filepath, self.dat_filepath) if p]
+        self.log(f"Output files: {', '.join(names)}")
 
     def _sweep_loop(self):
         """Worker thread: SRQ-driven per-point acquisition.
@@ -2169,7 +2246,7 @@ class AlphaAN_FreqScan_GUI:
         self.data_storage["eps2"].append(eps2)
 
     def _write_row(self, row):
-        """Append one point to BOTH files and flush.
+        """Append one point to every enabled output file and flush.
 
         Single source of truth for the row, formatted twice, so the WinDETA
         file and the PICA file can never disagree. Write-on-acquisition: a
@@ -2177,6 +2254,8 @@ class AlphaAN_FreqScan_GUI:
         """
         line = "\t".join(f"{v:.5e}" for v in row)
         for path in (self.txt_filepath, self.dat_filepath):
+            if not path:
+                continue
             with open(path, "a", encoding="utf-8", newline="\r\n") as fh:
                 fh.write(line + "\n")
                 fh.flush()

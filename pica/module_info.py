@@ -594,7 +594,7 @@ for _key, _bits in (("Alpha-AN Freq. Scan", ""),
          "records impedance, permittivity and loss, exported in a "
          "WinDETA-compatible layout." + _bits,
          "Novocontrol Alpha-AN analyser with ZG4 sample interface",
-         "sample name; electrode geometry (area in cm² or diameter in mm) "
+         "sample name; electrode geometry (area in mm² or diameter in mm) "
          "and thickness (mm); ZG4 wire mode; AC voltage (Vrms); frequency "
          "list (one of two presets, or your own comma-separated list "
          "in Hz); initial delay (s); Alpha-AN GPIB address",

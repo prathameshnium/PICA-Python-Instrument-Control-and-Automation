@@ -341,7 +341,7 @@ def _good_params(module):
         "wire_mode": "2",
         "geometry_mode": "diameter",
         "diameter_mm": 10.0,
-        "area_cm2": 0.785,
+        "area_mm2": 78.5,
         "thickness_mm": 1.0,
         "delay": 1.0,
     }

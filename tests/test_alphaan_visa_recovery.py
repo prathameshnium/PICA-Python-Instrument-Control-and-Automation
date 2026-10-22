@@ -168,7 +168,7 @@ def test_reset_gives_up_after_the_deadline_without_sending_mode():
 def test_sweep_initialisation_and_calibration_both_use_the_wait():
     params = {
         "frequencies": alpha.FREQUENCIES_115PT_1MHZ, "acv": 1.0, "mtm": 0.5,
-        "wire_mode": "2", "geometry_mode": "area", "area_cm2": 1.0,
+        "wire_mode": "2", "geometry_mode": "area", "area_mm2": 100.0,
         "thickness_mm": 1.0, "delay": 0.0,
     }
     for run in (lambda b: b.initialize_instrument(params),
