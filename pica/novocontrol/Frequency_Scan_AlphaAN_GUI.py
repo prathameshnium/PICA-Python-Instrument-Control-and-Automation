@@ -241,17 +241,25 @@ def point_timeout_s(freq_hz, mtm_s):
 # listener: every write fails with VI_ERROR_NLISTENERS, NI-488.2's ENOL) and
 # only answers again some seconds later. Seen on hardware 22 Oct 2026: a
 # fixed 1 s sleep was too short and MODE=IMP failed. Commands are retried on
-# "no listeners" only, until this deadline.
+# "no listeners" and on timeout, until this deadline.
+# On a second PC (64-bit VISA, 23 Oct 2026) the first *IDN? after *RST did
+# not fail with "no listeners" but hung in viWrite for the whole 60 s session
+# timeout (VI_ERROR_TMO). While waiting, each try therefore gets a short
+# timeout of its own, and a timed-out try is followed by a device clear.
 RESET_READY_TIMEOUT_S = 30.0
 RESET_RETRY_INTERVAL_S = 0.5
+RESET_POLL_TIMEOUT_MS = 3000
 
 # VISA status codes, as pyvisa reports them in VisaIOError.error_code.
 # NLISTENERS: no listener at that address; the write put no byte on the bus,
 # so it is the one GPIB error that is always safe to retry.
 # NCIC: the board is not Controller-In-Charge - typically left behind by
 # WinALPHA / WinDETA; cleared by one Interface Clear on the board.
+# TMO: the transfer did not complete in time; part of a command may have
+# reached the device, so it is retried only after a device clear.
 VI_ERROR_NLISTENERS = -1073807265
 VI_ERROR_NCIC = -1073807264
+VI_ERROR_TMO = -1073807339
 
 # The Alpha's address on the BDS bus, as WinALPHA's auto-detect reports it
 # ("Found device: Address: 10 - IDN string: ALPHA Analyzer, ..."). The
@@ -855,24 +863,46 @@ class AlphaAN_Backend:
         put nothing on the bus, so *IDN? is repeated until it is answered -
         the same handshake JUMP uses after *RST (github.com/JMoVS/JUMP,
         MeasurementHardware.py, ALPHA.initialize_instrument), including its
-        extra 1 s settle before MODE=IMP. Any other error is raised at once.
+        extra 1 s settle before MODE=IMP.
+
+        Some GPIB stacks report the reinitializing Alpha as a timeout
+        instead. Each try runs on a short timeout, a timed-out try is
+        followed by a device clear (flushes any half-received command), and
+        the session timeout is restored afterwards. Any other error is
+        raised at once.
         """
         inst = self.instrument
         inst.write("*RST")
         start = time.monotonic()
-        while True:
-            time.sleep(RESET_RETRY_INTERVAL_S)
-            try:
-                inst.query("*IDN?")
-                break
-            except Exception as exc:
-                if visa_error_code(exc) != VI_ERROR_NLISTENERS:
-                    raise
-                if time.monotonic() - start >= timeout_s:
-                    raise ConnectionError(
-                        f"The Alpha did not rejoin the GPIB bus within "
-                        f"{timeout_s:.0f} s after *RST. Last error: "
-                        f"{exc}") from exc
+        session_timeout = inst.timeout
+        inst.timeout = RESET_POLL_TIMEOUT_MS
+        try:
+            while True:
+                time.sleep(RESET_RETRY_INTERVAL_S)
+                try:
+                    inst.query("*IDN?")
+                    break
+                except Exception as exc:
+                    code = visa_error_code(exc)
+                    if code not in (VI_ERROR_NLISTENERS, VI_ERROR_TMO):
+                        raise
+                    elapsed = time.monotonic() - start
+                    kind = ("no listener" if code == VI_ERROR_NLISTENERS
+                            else "timeout")
+                    print(f"  Waiting for the Alpha after *RST: "
+                          f"{elapsed:.1f} s, {kind}.")
+                    if code == VI_ERROR_TMO:
+                        try:
+                            inst.clear()
+                        except Exception as clear_exc:
+                            print(f"  Device clear failed: {clear_exc}")
+                    if elapsed >= timeout_s:
+                        raise ConnectionError(
+                            f"The Alpha did not rejoin the GPIB bus within "
+                            f"{timeout_s:.0f} s after *RST. Last error: "
+                            f"{exc}") from exc
+        finally:
+            inst.timeout = session_timeout
         print(f"  *RST complete; Alpha answering after "
               f"{time.monotonic() - start:.1f} s.")
         time.sleep(1.0)
