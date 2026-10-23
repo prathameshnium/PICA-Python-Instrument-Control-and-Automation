@@ -310,8 +310,11 @@ def test_ladder_run_labels_cycles_by_entry_and_records_the_list_in_the_header():
 def test_ladder_pause_rests_at_zero_volts_between_entries_only():
     folder = _tmp()
     fake = FakeE4980A()
-    # well above any point-to-point gap: 0.05 s was flaky, one ordinary
-    # point took 0.059 s on a slow CI runner (15 Oct 2026)
+    # Wall-clock gaps only give a safe LOWER bound (the pause waits on a
+    # deadline). An upper bound on an ordinary point is a bound on the CI
+    # runner: 0.05 s failed at 0.059 s (15 Oct 2026) and 0.5 s failed at
+    # 0.511 s (Windows, Python 3.12, Oct 2026). Where the pauses happen is
+    # proven by the LADDER_PAUSE events below, not by timing.
     pause = 0.5
     worker, msgs, files, log_path = run_cv(fake, folder, shape=gui.SHAPE_LADDER, ladder="0.5, 1, 2",
                                            v_step=0.5, ladder_pause=pause, worker_sleep=time.sleep)
@@ -324,9 +327,9 @@ def test_ladder_pause_rests_at_zero_volts_between_entries_only():
     for gap, boundary, v_before in gaps:
         if boundary:
             assert gap >= pause and v_before == 0.0, (gap, v_before)   # pause taken at 0 V
-        else:
-            assert gap < pause, gap                                     # no pause inside a cycle
     assert sum(1 for g in gaps if g[1]) == 2                           # 3 entries -> 2 pauses
+    inner = sorted(g for g, boundary, _ in gaps if not boundary)
+    assert inner[len(inner) // 2] < pause, inner   # typical in-cycle gap has no pause; one slow point cannot fail this
     sweep = next(h for h in header if h.startswith("[sweep]"))
     assert f"ladder_pause_s={pause:g}" in sweep
     assert any(f"pause {pause:g} s at 0 V between values" in h for h in header if h.startswith("waveform:"))
