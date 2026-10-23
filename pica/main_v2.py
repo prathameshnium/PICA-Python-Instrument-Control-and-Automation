@@ -3260,7 +3260,7 @@ class PICALauncherV2:
         self.logo_image = None
         self.logo_canvas = tk.Canvas(pad, width=self.LOGO_SIZE, height=self.LOGO_SIZE,
                                      bg=self.CLR_PANEL, highlightthickness=0)
-        self.logo_canvas.pack(anchor='w', pady=(0, 12))
+        self.logo_canvas.pack(anchor='center', pady=(0, 12))
         self.root.after(60, self._load_logo)
 
         # Wraps to the rail width rather than at hardcoded newlines, so the
