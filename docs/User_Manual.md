@@ -1119,15 +1119,18 @@ Two dictionaries describe every module without opening it. They are the closest 
 * `pica.module_info.MODULE_INFO` maps the same name to a dict with `what` (what the module measures and how), `instruments` (which instruments it drives), `inputs` (the settings its form asks for) and, for some modules, `note`.
 
 ```python
+import sys
 from pica.main import PICALauncherApp
 from pica.module_info import MODULE_INFO
 
+sys.stdout.reconfigure(encoding="utf-8")  # descriptions contain symbols such as Ω and µ
+
 for name, path in sorted(PICALauncherApp.SCRIPT_PATHS.items()):
     info = MODULE_INFO.get(name, {})
-    print(f"{name}\n  file: {path}\n  what: {info.get('what', '')[:80]}")
+    print(f"{name}\n  file: {path}\n  what: {info.get('what', '')}\n")
 ```
 
-This prints every module with its file and a one-line description; it is the quickest way for a anyone to see the whole protocol set in one place. The launcher's Help panel shows the same text.
+This prints every launcher entry with its file and its full description; it is the quickest way to see the whole protocol set in one place. Launcher v2 shows the full entry, with what the module measures, its instruments and its input fields, on the card that opens when the pointer rests on a module in Advanced Options.
 
 ## 10. Citation & Open Source
 

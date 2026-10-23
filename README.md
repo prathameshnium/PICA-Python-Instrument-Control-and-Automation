@@ -475,14 +475,37 @@ Upon launching PICA (`pica-gui`), select your desired measurement module from th
 
 **Test coverage:** the suite has 3,500+ tests, all run against mocked VISA instruments, so no hardware is needed. They cover **34% of the statements in `pica/`** (measured 2026-10-17 with `--cov=pica`, v1.0.7). The [Codecov](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation) badge measures the whole repository, so its figure differs.
 
-To run the test suite locally, first install the development dependencies:
+To test a specific release, clone its tag into a fresh virtual environment and install from the clone. Do not also install from PyPI in the same environment, because the two installs replace each other. On Windows, clone into a short folder path, since some file paths in the repository are long.
 ```bash
+git clone --branch v1.0.7 https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
+cd PICA-Python-Instrument-Control-and-Automation
+pip install -e .
 pip install -r requirements-dev.txt
 ```
-Then, you can run the tests:
+Then run the tests:
 ```bash
 python -B -m pytest -p no:cacheprovider
 ```
+
+What to expect:
+
+* **Read the exit code.** A full run prints rows of dots and the mocked instruments' shutdown messages, and may end without a "passed" line. Exit code 0 means every test passed. The full suite takes a few minutes; v1.0.7 took about 4.5 minutes on a Windows PC.
+* **Window tests are skipped by default.** Tests that open a real PICA window run only when the environment variable `PICA_REAL_WINDOWS` is set to `1`. CI sets it, and on Linux runs them under `xvfb-run` to provide a display. Expect many PICA windows to flash open and shut while they run.
+  ```powershell
+  # Windows PowerShell (the variable stays set for this terminal session)
+  $env:PICA_REAL_WINDOWS = "1"; python -B -m pytest -p no:cacheprovider
+  ```
+  ```bash
+  # Linux, macOS or Git Bash
+  PICA_REAL_WINDOWS=1 python -B -m pytest -p no:cacheprovider
+  # Linux without a display, as in CI
+  PICA_REAL_WINDOWS=1 xvfb-run --auto-servernum python -B -m pytest -p no:cacheprovider
+  ```
+* **Run one module's tests on their own.** Most test files also run as plain Python:
+  ```bash
+  python -B -m pytest -p no:cacheprovider tests/test_iv_k2400_run_path.py
+  python -B tests/test_iv_k2400_run_path.py
+  ```
 
 **How to Check Coverage Locally**
 
