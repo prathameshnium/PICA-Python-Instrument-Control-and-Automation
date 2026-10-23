@@ -4,9 +4,10 @@ Ports of the two fixes proven on the BDS PC hardware on 22 Oct 2026 (32-bit
 edition, commit 4e3a6c5):
   * after *RST the Alpha leaves the bus for a while; every write fails with
     "no listeners". *IDN? is repeated on that error until it answers,
-    then 1 s, then MODE=IMP. Through 64-bit Keysight VISA (23 Oct 2026) the same
-    wait showed up as a timeout; that is retried too, after a device clear,
-    on a short per-try timeout. Any other error is raised at once.
+    then 1 s, then MODE=IMP. Through 64-bit Keysight VISA (23 Oct 2026)
+    the same wait showed up as a timeout; that is retried too, after a
+    device clear, on a short per-try timeout. Any other error is raised at
+    once.
   * a board left not Controller-In-Charge by WinALPHA fails every transfer;
     one Interface Clear reclaims it. Never sent on a healthy board.
 Also: the scan prefers address 10 (the Alpha in WinALPHA) when no instrument

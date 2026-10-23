@@ -869,10 +869,11 @@ class AlphaAN_Backend:
         While the Alpha reinitializes after *RST it is not a listener. Through
         NI-488.2 every write then fails at once with VI_ERROR_NLISTENERS,
         which put nothing on the bus. Through 64-bit Keysight VISA the write
-        hangs until the session timeout instead (VI_ERROR_TMO). Both are retried:
-        each try runs on a short timeout, a timed-out try is followed by a
-        device clear (flushes any half-received command), and the session
-        timeout is restored afterwards. Any other error is raised at once.
+        hangs until the session timeout instead (VI_ERROR_TMO). Both are
+        retried: each try runs on a short timeout, a timed-out try is
+        followed by a device clear (flushes any half-received command), and
+        the session timeout is restored afterwards. Any other error is
+        raised at once.
         Returns the *IDN? answer.
         """
         inst = self.instrument

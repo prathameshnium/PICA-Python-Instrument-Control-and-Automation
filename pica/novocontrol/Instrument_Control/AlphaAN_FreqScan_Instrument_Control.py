@@ -103,9 +103,9 @@ DEFAULT_GPIB_ADDRESS = "GPIB0::10::INSTR"
 # "no listeners" and on timeout, until this deadline. Through 64-bit
 # Keysight VISA (23 Oct 2026) the first *IDN? after *RST hung for the whole
 # session timeout (VI_ERROR_TMO), so each try gets a short timeout and a
-# timed-out try is followed by a device clear. On one PC the Alpha answered 1.4 s
-# after *RST through NI-488.2 and 4.1 s through 64-bit VISA. Same values as
-# the GUI.
+# timed-out try is followed by a device clear. On one PC the Alpha
+# answered 1.4 s after *RST through NI-488.2 and 4.1 s through 64-bit
+# VISA. Same values as the GUI.
 RESET_SETTLE_S = 2.0
 RESET_READY_TIMEOUT_S = 60.0
 RESET_RETRY_INTERVAL_S = 0.5
