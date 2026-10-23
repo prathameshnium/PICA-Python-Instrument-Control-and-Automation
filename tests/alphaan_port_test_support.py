@@ -12,6 +12,7 @@ import ast
 import importlib.util
 import os
 import sys
+from unittest.mock import patch
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
@@ -47,6 +48,7 @@ class FakeAlpha:
         self.srq_raises = srq_raises
         self.closed = False
         self.timeout = 0
+        self.idn_timeouts = []
         self.read_termination = None
         self.write_termination = None
         self.send_end = None
@@ -56,10 +58,17 @@ class FakeAlpha:
 
     def query(self, command):
         self.traffic.append(("query", command))
+        if command == "*IDN?":
+            self.idn_timeouts.append(self.timeout)
         answer = self.answers.get(command, "OK")
         if isinstance(answer, list):
-            return answer.pop(0) if answer else "OK"
+            answer = answer.pop(0) if answer else "OK"
+        if isinstance(answer, Exception):
+            raise answer
         return answer
+
+    def clear(self):
+        self.traffic.append(("clear", None))
 
     def read(self):
         self.traffic.append(("read", None))
@@ -79,6 +88,10 @@ class FakeAlpha:
     @property
     def commands(self):
         return [p for k, p in self.traffic if k in ("write", "query")]
+
+    @property
+    def clears(self):
+        return sum(1 for k, _ in self.traffic if k == "clear")
 
     def kind_of(self, command):
         for kind, payload in self.traffic:
@@ -178,7 +191,84 @@ def check_source_has_instrument_metadata(path):
     assert "SN 284" in source and "6.25_200_40_284_ANB_16012009_G2" in source
 
 
+class FakeVisaError(Exception):
+    """Shaped like pyvisa.errors.VisaIOError: carries .error_code."""
+
+    def __init__(self, code):
+        super().__init__(f"VISA error {code}")
+        self.error_code = code
+
+
+ALPHA_IDN = "ALPHA Analyzer, Novocontrol Technologies, 6.25_200_40_284"
+
+
+def check_reset_waits_through_timeout_and_no_listener(module):
+    """23 Oct 2026: through 64-bit Keysight VISA the first *IDN? after *RST
+    timed out; through NI-488.2 it failed with "no listeners"."""
+    fake = FakeAlpha({"*IDN?": [FakeVisaError(module.VI_ERROR_TMO),
+                                FakeVisaError(module.VI_ERROR_NLISTENERS),
+                                ALPHA_IDN]})
+    fake.timeout = 60000
+    backend, _ = connected_backend(module, fake)
+    sleeps = []
+    with patch.object(module.time, "sleep", sleeps.append):
+        backend._reset_and_set_impedance_mode()
+    assert fake.commands == ["*RST", "*IDN?", "*IDN?", "*IDN?", "MODE=IMP"]
+    assert fake.clears == 1, "a device clear follows a timeout only"
+    assert fake.idn_timeouts == [module.RESET_POLL_TIMEOUT_MS] * 3
+    assert fake.timeout == 60000, "session timeout restored"
+    assert sleeps[0] == module.RESET_SETTLE_S >= 2.0
+    assert module.RESET_READY_TIMEOUT_S >= 60.0
+
+
+def check_reset_gives_up_and_restores_the_timeout(module):
+    fake = FakeAlpha({"*IDN?": [FakeVisaError(module.VI_ERROR_TMO)] * 1000})
+    fake.timeout = 60000
+    backend, _ = connected_backend(module, fake)
+    clock = iter(range(10000))
+    with patch.object(module.time, "sleep"), \
+            patch.object(module.time, "monotonic", lambda: next(clock)):
+        try:
+            backend._reset_and_set_impedance_mode(timeout_s=5)
+        except ConnectionError as exc:
+            assert "did not rejoin" in str(exc)
+        else:
+            raise AssertionError("the reset wait never gave up")
+    assert "MODE=IMP" not in fake.commands
+    assert fake.timeout == 60000
+
+
+def check_reset_raises_any_other_error_at_once(module):
+    fake = FakeAlpha({"*IDN?": [FakeVisaError(-1073807298), ALPHA_IDN]})
+    backend, _ = connected_backend(module, fake)
+    with patch.object(module.time, "sleep"):
+        try:
+            backend._reset_and_set_impedance_mode()
+        except FakeVisaError:
+            pass
+        else:
+            raise AssertionError("an unexpected error was retried")
+    assert fake.commands == ["*RST", "*IDN?"] and fake.clears == 0
+
+
+def check_connect_waits_for_an_alpha_still_resetting(module):
+    """Start pressed a moment after a park (*RST): connect must wait."""
+    fake = FakeAlpha({"*IDN?": [FakeVisaError(module.VI_ERROR_TMO),
+                                ALPHA_IDN]})
+    backend, _ = connected_backend(module, fake)
+    backend.instrument = None
+    with patch.object(module.time, "sleep"):
+        backend.connect("GPIB0::10::INSTR")
+    assert backend.instrument is fake
+    assert fake.commands[:2] == ["*IDN?", "*IDN?"] and fake.clears == 1
+    assert fake.timeout == 60000, "session timeout restored"
+
+
 def run_common_backend_checks(module, path, dc_bias_allowed=False):
+    check_reset_waits_through_timeout_and_no_listener(module)
+    check_reset_gives_up_and_restores_the_timeout(module)
+    check_reset_raises_any_other_error_at_once(module)
+    check_connect_waits_for_an_alpha_still_resetting(module)
     check_set_commands_are_read_as_acks(module)
     check_non_ok_ack_raises(module)
     check_mst_written_directly(module)

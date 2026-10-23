@@ -242,13 +242,20 @@ def point_timeout_s(freq_hz, mtm_s):
 # only answers again some seconds later. Seen on hardware 22 Oct 2026: a
 # fixed 1 s sleep was too short and MODE=IMP failed. Commands are retried on
 # "no listeners" and on timeout, until this deadline.
-# On a second PC (64-bit VISA, 23 Oct 2026) the first *IDN? after *RST did
+# Through 64-bit Keysight VISA (23 Oct 2026) the first *IDN? after *RST did
 # not fail with "no listeners" but hung in viWrite for the whole 60 s session
 # timeout (VI_ERROR_TMO). While waiting, each try therefore gets a short
 # timeout of its own, and a timed-out try is followed by a device clear.
-RESET_READY_TIMEOUT_S = 30.0
+# On one PC (23 Oct 2026) the Alpha answered 1.4 s after *RST through the
+# 32-bit NI-488.2 edition and 4.1 s through 64-bit VISA, so the first try
+# waits RESET_SETTLE_S and the deadline is generous.
+# A session opened just after a park (*RST) can meet the same wait, so
+# connect retries *IDN? the same way for CONNECT_READY_TIMEOUT_S.
+RESET_SETTLE_S = 2.0
+RESET_READY_TIMEOUT_S = 60.0
 RESET_RETRY_INTERVAL_S = 0.5
 RESET_POLL_TIMEOUT_MS = 3000
+CONNECT_READY_TIMEOUT_S = 15.0
 
 # VISA status codes, as pyvisa reports them in VisaIOError.error_code.
 # NLISTENERS: no listener at that address; the write put no byte on the bus,
@@ -757,7 +764,8 @@ class AlphaAN_Backend:
 
         try:
             try:
-                idn = inst.query("*IDN?").strip()
+                idn = self._query_idn_until_answered(
+                    CONNECT_READY_TIMEOUT_S, "while connecting").strip()
             except Exception as exc:
                 # A board left not-CIC by another program (WinALPHA /
                 # WinDETA) fails every transfer. Reclaim it ONCE with
@@ -771,7 +779,8 @@ class AlphaAN_Backend:
                       f"Clear...")
                 self.send_interface_clear(board)
                 try:
-                    idn = inst.query("*IDN?").strip()
+                    idn = self._query_idn_until_answered(
+                        CONNECT_READY_TIMEOUT_S, "while connecting").strip()
                 except Exception as exc2:
                     if visa_error_code(exc2) == VI_ERROR_NCIC:
                         raise ConnectionError(
@@ -854,34 +863,26 @@ class AlphaAN_Backend:
                 f"({meaning})."
             )
 
-    def _reset_and_set_impedance_mode(self,
-                                      timeout_s=RESET_READY_TIMEOUT_S):
-        """*RST, wait until the Alpha answers again, then MODE=IMP.
+    def _query_idn_until_answered(self, timeout_s, situation):
+        """*IDN?, repeated while the Alpha is away reinitializing.
 
-        *RST leaves no Novocontrol ack. While the Alpha reinitializes it is
-        not a listener and every write fails with VI_ERROR_NLISTENERS, which
-        put nothing on the bus, so *IDN? is repeated until it is answered -
-        the same handshake JUMP uses after *RST (github.com/JMoVS/JUMP,
-        MeasurementHardware.py, ALPHA.initialize_instrument), including its
-        extra 1 s settle before MODE=IMP.
-
-        Some GPIB stacks report the reinitializing Alpha as a timeout
-        instead. Each try runs on a short timeout, a timed-out try is
-        followed by a device clear (flushes any half-received command), and
-        the session timeout is restored afterwards. Any other error is
-        raised at once.
+        While the Alpha reinitializes after *RST it is not a listener. Through
+        NI-488.2 every write then fails at once with VI_ERROR_NLISTENERS,
+        which put nothing on the bus. Through 64-bit Keysight VISA the write
+        hangs until the session timeout instead (VI_ERROR_TMO). Both are retried:
+        each try runs on a short timeout, a timed-out try is followed by a
+        device clear (flushes any half-received command), and the session
+        timeout is restored afterwards. Any other error is raised at once.
+        Returns the *IDN? answer.
         """
         inst = self.instrument
-        inst.write("*RST")
         start = time.monotonic()
         session_timeout = inst.timeout
         inst.timeout = RESET_POLL_TIMEOUT_MS
         try:
             while True:
-                time.sleep(RESET_RETRY_INTERVAL_S)
                 try:
-                    inst.query("*IDN?")
-                    break
+                    return inst.query("*IDN?")
                 except Exception as exc:
                     code = visa_error_code(exc)
                     if code not in (VI_ERROR_NLISTENERS, VI_ERROR_TMO):
@@ -889,7 +890,7 @@ class AlphaAN_Backend:
                     elapsed = time.monotonic() - start
                     kind = ("no listener" if code == VI_ERROR_NLISTENERS
                             else "timeout")
-                    print(f"  Waiting for the Alpha after *RST: "
+                    print(f"  Waiting for the Alpha {situation}: "
                           f"{elapsed:.1f} s, {kind}.")
                     if code == VI_ERROR_TMO:
                         try:
@@ -899,10 +900,27 @@ class AlphaAN_Backend:
                     if elapsed >= timeout_s:
                         raise ConnectionError(
                             f"The Alpha did not rejoin the GPIB bus within "
-                            f"{timeout_s:.0f} s after *RST. Last error: "
+                            f"{timeout_s:.0f} s {situation}. Last error: "
                             f"{exc}") from exc
+                time.sleep(RESET_RETRY_INTERVAL_S)
         finally:
             inst.timeout = session_timeout
+
+    def _reset_and_set_impedance_mode(self,
+                                      timeout_s=RESET_READY_TIMEOUT_S):
+        """*RST, wait until the Alpha answers again, then MODE=IMP.
+
+        *RST leaves no Novocontrol ack. The first *IDN? goes out after
+        RESET_SETTLE_S and is repeated until it is answered - the same
+        handshake JUMP uses after *RST (github.com/JMoVS/JUMP,
+        MeasurementHardware.py, ALPHA.initialize_instrument), including its
+        extra 1 s settle before MODE=IMP.
+        """
+        inst = self.instrument
+        inst.write("*RST")
+        start = time.monotonic()
+        time.sleep(RESET_SETTLE_S)
+        self._query_idn_until_answered(timeout_s, "after *RST")
         print(f"  *RST complete; Alpha answering after "
               f"{time.monotonic() - start:.1f} s.")
         time.sleep(1.0)

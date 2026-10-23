@@ -4,7 +4,7 @@ Ports of the two fixes proven on the BDS PC hardware on 22 Oct 2026 (32-bit
 edition, commit 4e3a6c5):
   * after *RST the Alpha leaves the bus for a while; every write fails with
     "no listeners". *IDN? is repeated on that error until it answers,
-    then 1 s, then MODE=IMP. On a 64-bit VISA PC (23 Oct 2026) the same
+    then 1 s, then MODE=IMP. Through 64-bit Keysight VISA (23 Oct 2026) the same
     wait showed up as a timeout; that is retried too, after a device clear,
     on a short per-try timeout. Any other error is raised at once.
   * a board left not Controller-In-Charge by WinALPHA fails every transfer;
@@ -37,6 +37,7 @@ alpha = _load("alphaan_visa_recovery", MODULE_PATH)
 ALPHA_IDN = ("ALPHA Analyzer, Novocontrol Technologies, "
              "6.25_200_40_284_ANB_16012009_G2")
 VI_ERROR_TMO = -1073807339
+VI_ERROR_IO = -1073807298
 
 
 class FakeVisaError(Exception):
@@ -149,7 +150,7 @@ def test_reset_waits_through_no_listener_then_selects_impedance_mode():
 
 
 def test_reset_retries_a_timeout_after_a_device_clear():
-    # 64-bit VISA PC, 23 Oct 2026: *IDN? after *RST hung in viWrite.
+    # 64-bit Keysight VISA, 23 Oct 2026: *IDN? after *RST hung in viWrite.
     fake = FakeAlpha({"*IDN?": [VI_ERROR_TMO, VI_ERROR_TMO, ALPHA_IDN]})
     fake.timeout = 60000
     with patch.object(alpha.time, "sleep"):
@@ -266,13 +267,53 @@ def test_connect_still_not_cic_says_to_close_winalpha_and_releases():
 
 
 def test_connect_does_not_clear_the_interface_on_other_errors():
-    fake = FakeAlpha({"*IDN?": [VI_ERROR_TMO]})
+    fake = FakeAlpha({"*IDN?": [VI_ERROR_IO]})
     backend, rm = _connect(fake)
     try:
         backend.connect("GPIB0::10::INSTR")
     except FakeVisaError:
         pass
     assert rm.ifc == []
+    assert fake.commands == ["*IDN?"], "an I/O error is not retried"
+
+
+def test_connect_waits_for_an_alpha_still_resetting():
+    # Start pressed a moment after the previous sweep parked with *RST.
+    fake = FakeAlpha({"*IDN?": [VI_ERROR_TMO, NO_LISTENER, ALPHA_IDN],
+                      "INTTYP?": "INTTYP=5 284"})
+    backend, rm = _connect(fake)
+    with patch.object(alpha.time, "sleep"):
+        backend.connect("GPIB0::10::INSTR")
+    assert fake.commands[:3] == ["*IDN?"] * 3
+    assert fake.clears == 1
+    assert fake.timeouts_seen == [alpha.RESET_POLL_TIMEOUT_MS] * 3
+    assert fake.timeout == 60000
+    assert rm.ifc == []
+
+
+def test_connect_gives_up_on_an_absent_alpha():
+    fake = FakeAlpha({"*IDN?": [NO_LISTENER] * 1000})
+    backend, _ = _connect(fake)
+    clock = iter(range(10000))
+    with patch.object(alpha.time, "sleep"), \
+            patch.object(alpha.time, "monotonic", lambda: next(clock)):
+        try:
+            backend.connect("GPIB0::10::INSTR")
+        except ConnectionError as exc:
+            assert "while connecting" in str(exc)
+        else:
+            raise AssertionError("connect waited forever")
+    assert fake.closed and backend.instrument is None
+    assert fake.commands == ["*IDN?"] * fake.commands.count("*IDN?")
+
+
+def test_reset_settles_before_the_first_try_and_waits_generously():
+    fake = FakeAlpha({"*IDN?": ALPHA_IDN})
+    sleeps = []
+    with patch.object(alpha.time, "sleep", sleeps.append):
+        _backend(fake)._reset_and_set_impedance_mode()
+    assert sleeps[0] == alpha.RESET_SETTLE_S >= 2.0
+    assert alpha.RESET_READY_TIMEOUT_S >= 60.0
 
 
 def test_gpib_board_of():

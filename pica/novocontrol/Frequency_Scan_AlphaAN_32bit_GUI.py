@@ -696,10 +696,16 @@ def point_timeout_s(freq_hz, mtm_s):
 
 # After *RST the Alpha drops off the GPIB bus while it reinitializes (no
 # listener: every write fails with ENOL) and only answers again some seconds
-# later. On the BDS PC it was still away after 1 s. Commands are retried on
-# ENOL only, until this deadline.
-RESET_READY_TIMEOUT_S = 30.0
+# later. On the BDS PC it was still away after 1 s; on 23 Oct 2026 this
+# edition saw it answer after 1.4 s, so the first try waits RESET_SETTLE_S
+# and the deadline is generous.
+# Commands are retried on ENOL only, until this deadline. A session opened
+# just after a park (*RST) can meet the same wait, so connect retries *IDN?
+# the same way for CONNECT_READY_TIMEOUT_S.
+RESET_SETTLE_S = 2.0
+RESET_READY_TIMEOUT_S = 60.0
 RESET_RETRY_INTERVAL_S = 0.5
+CONNECT_READY_TIMEOUT_S = 15.0
 
 EPS0_SI = 8.8541878128e-12   # F/m  - used for the geometric capacitance C0
 EPS0_CM = 8.8541878128e-14   # F/cm - used only so sigma lands in S/cm
@@ -1191,7 +1197,8 @@ class AlphaAN_Backend:
         is_alpha = False
 
         try:
-            idn = inst.query("*IDN?").strip()
+            idn = self._query_idn_until_answered(
+                CONNECT_READY_TIMEOUT_S, "while connecting").strip()
             # A wrong address must not get the Alpha shutdown sequence
             # (ACV=0, ZCONSPL=0, *RST) sent to another instrument.
             if not any(k in idn.upper() for k in ("ALPHA", "NOVOCONTROL")):
@@ -1248,33 +1255,46 @@ class AlphaAN_Backend:
                 f"({meaning})."
             )
 
+    def _query_idn_until_answered(self, timeout_s, situation):
+        """*IDN?, repeated while the Alpha is away reinitializing.
+
+        While the Alpha reinitializes it is not a listener and every write
+        fails with ENOL, which put nothing on the bus, so it is retried. Any
+        other error is raised at once. Returns the *IDN? answer.
+        """
+        inst = self.instrument
+        start = time.monotonic()
+        while True:
+            try:
+                return inst.query("*IDN?")
+            except GpibError as exc:
+                if exc.iberr != ENOL_CODE:
+                    raise
+                elapsed = time.monotonic() - start
+                print(f"  Waiting for the Alpha {situation}: "
+                      f"{elapsed:.1f} s, no listener.")
+                if elapsed >= timeout_s:
+                    raise ConnectionError(
+                        f"The Alpha did not rejoin the GPIB bus within "
+                        f"{timeout_s:.0f} s {situation}. Last error: "
+                        f"{exc}") from exc
+            time.sleep(RESET_RETRY_INTERVAL_S)
+
     def _reset_and_set_impedance_mode(self,
                                       timeout_s=RESET_READY_TIMEOUT_S):
         """*RST, wait until the Alpha answers again, then MODE=IMP.
 
-        *RST leaves no Novocontrol ack. While the Alpha reinitializes it is
-        not a listener and every write fails with ENOL, which put nothing on
-        the bus, so *IDN? is repeated until it is answered - the same
+        *RST leaves no Novocontrol ack. The first *IDN? goes out after
+        RESET_SETTLE_S and is repeated until it is answered - the same
         handshake JUMP uses after *RST (github.com/JMoVS/JUMP,
         MeasurementHardware.py, ALPHA.initialize_instrument), including its
-        extra 1 s settle before MODE=IMP. Any other error is raised at once.
+        extra 1 s settle before MODE=IMP.
         """
         inst = self.instrument
         inst.write("*RST")
         start = time.monotonic()
-        while True:
-            time.sleep(RESET_RETRY_INTERVAL_S)
-            try:
-                inst.query("*IDN?")
-                break
-            except GpibError as exc:
-                if exc.iberr != ENOL_CODE:
-                    raise
-                if time.monotonic() - start >= timeout_s:
-                    raise ConnectionError(
-                        f"The Alpha did not rejoin the GPIB bus within "
-                        f"{timeout_s:.0f} s after *RST. Last error: "
-                        f"{exc}") from exc
+        time.sleep(RESET_SETTLE_S)
+        self._query_idn_until_answered(timeout_s, "after *RST")
         print(f"  *RST complete; Alpha answering after "
               f"{time.monotonic() - start:.1f} s.")
         time.sleep(1.0)

@@ -100,12 +100,23 @@ DEFAULT_GPIB_ADDRESS = "GPIB0::10::INSTR"
 # listener: every write fails with VI_ERROR_NLISTENERS, NI-488.2's ENOL) and
 # only answers again some seconds later. Seen on hardware 22 Oct 2026: a
 # fixed 1 s sleep was too short and MODE=IMP failed. Commands are retried on
-# "no listeners" only, until this deadline. Same values as the GUI.
-RESET_READY_TIMEOUT_S = 30.0
+# "no listeners" and on timeout, until this deadline. Through 64-bit
+# Keysight VISA (23 Oct 2026) the first *IDN? after *RST hung for the whole
+# session timeout (VI_ERROR_TMO), so each try gets a short timeout and a
+# timed-out try is followed by a device clear. On one PC the Alpha answered 1.4 s
+# after *RST through NI-488.2 and 4.1 s through 64-bit VISA. Same values as
+# the GUI.
+RESET_SETTLE_S = 2.0
+RESET_READY_TIMEOUT_S = 60.0
 RESET_RETRY_INTERVAL_S = 0.5
+RESET_POLL_TIMEOUT_MS = 3000
+CONNECT_READY_TIMEOUT_S = 15.0
 # NLISTENERS: no listener at that address; the write put no byte on the bus,
 # so it is the one GPIB error that is always safe to retry.
+# TMO: the transfer did not complete in time; part of a command may have
+# reached the device, so it is retried only after a device clear.
 VI_ERROR_NLISTENERS = -1073807265
+VI_ERROR_TMO = -1073807339
 
 
 def acv_ceiling(freq_hz):
@@ -363,7 +374,8 @@ def open_alpha(rm, address):
         inst.read_termination = ""
         inst.write_termination = ""
         inst.send_end = True
-        idn = inst.query("*IDN?").strip()
+        idn = query_idn_until_answered(
+            inst, CONNECT_READY_TIMEOUT_S, "while connecting").strip()
         if not any(k in idn.upper() for k in ("ALPHA", "NOVOCONTROL")):
             raise ConnectionError(
                 f"{address} answered {idn!r}, which is not a Novocontrol "
@@ -390,31 +402,58 @@ def open_alpha(rm, address):
     return inst, idn, code
 
 
+def query_idn_until_answered(inst, timeout_s, situation):
+    """*IDN?, repeated while the Alpha is away reinitializing.
+
+    Retries VI_ERROR_NLISTENERS (nothing reached the bus) and VI_ERROR_TMO
+    (followed by a device clear), each try on a short timeout; the session
+    timeout is restored afterwards. Any other error is raised at once.
+    Copied from Frequency_Scan_AlphaAN_GUI.py (_query_idn_until_answered).
+    """
+    start = time.monotonic()
+    session_timeout = inst.timeout
+    inst.timeout = RESET_POLL_TIMEOUT_MS
+    try:
+        while True:
+            try:
+                return inst.query("*IDN?")
+            except Exception as exc:
+                code = visa_error_code(exc)
+                if code not in (VI_ERROR_NLISTENERS, VI_ERROR_TMO):
+                    raise
+                elapsed = time.monotonic() - start
+                kind = ("no listener" if code == VI_ERROR_NLISTENERS
+                        else "timeout")
+                print(f"  Waiting for the Alpha {situation}: "
+                      f"{elapsed:.1f} s, {kind}.")
+                if code == VI_ERROR_TMO:
+                    try:
+                        inst.clear()
+                    except Exception as clear_exc:
+                        print(f"  Device clear failed: {clear_exc}")
+                if elapsed >= timeout_s:
+                    raise ConnectionError(
+                        f"The Alpha did not rejoin the GPIB bus within "
+                        f"{timeout_s:.0f} s {situation}. Last error: "
+                        f"{exc}") from exc
+            time.sleep(RESET_RETRY_INTERVAL_S)
+    finally:
+        inst.timeout = session_timeout
+
+
 def reset_and_set_impedance_mode(inst, timeout_s=RESET_READY_TIMEOUT_S):
     """*RST, wait until the Alpha answers again, then MODE=IMP.
 
-    *RST leaves no Novocontrol ack. While the Alpha reinitializes it is not
-    a listener and every write fails with VI_ERROR_NLISTENERS, which put
-    nothing on the bus, so *IDN? is repeated until it is answered - the
-    same handshake JUMP uses after *RST, including its extra 1 s settle
-    before MODE=IMP. Any other error is raised at once. Copied from
-    Frequency_Scan_AlphaAN_GUI.py (_reset_and_set_impedance_mode).
+    *RST leaves no Novocontrol ack. The first *IDN? goes out after
+    RESET_SETTLE_S and is repeated until it is answered - the same
+    handshake JUMP uses after *RST, including its extra 1 s settle before
+    MODE=IMP. Copied from Frequency_Scan_AlphaAN_GUI.py
+    (_reset_and_set_impedance_mode).
     """
     inst.write("*RST")
     start = time.monotonic()
-    while True:
-        time.sleep(RESET_RETRY_INTERVAL_S)
-        try:
-            inst.query("*IDN?")
-            break
-        except Exception as exc:
-            if visa_error_code(exc) != VI_ERROR_NLISTENERS:
-                raise
-            if time.monotonic() - start >= timeout_s:
-                raise ConnectionError(
-                    f"The Alpha did not rejoin the GPIB bus within "
-                    f"{timeout_s:.0f} s after *RST. Last error: "
-                    f"{exc}") from exc
+    time.sleep(RESET_SETTLE_S)
+    query_idn_until_answered(inst, timeout_s, "after *RST")
     print(f"*RST complete; Alpha answering after "
           f"{time.monotonic() - start:.1f} s.")
     time.sleep(1.0)

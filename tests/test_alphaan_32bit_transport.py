@@ -247,6 +247,71 @@ def test_a_split_wait_returns_on_the_first_srq():
     assert waits == 1
 
 
+# ------------------------------------------------------- waiting after *RST
+
+class _ResettingAlpha:
+    """Fails *IDN? with ENOL `misses` times, as the Alpha does after *RST."""
+
+    def __init__(self, misses, iberr=2):
+        self.misses = misses
+        self.iberr = iberr
+        self.commands = []
+
+    def write(self, command):
+        self.commands.append(command)
+
+    def query(self, command):
+        self.commands.append(command)
+        if command == "*IDN?" and self.misses:
+            self.misses -= 1
+            raise alpha.GpibError("ENOL", iberr=self.iberr)
+        return "OK" if command != "*IDN?" else "ALPHA Analyzer"
+
+
+def _backend_with(inst):
+    backend = alpha.AlphaAN_Backend.__new__(alpha.AlphaAN_Backend)
+    backend.instrument = inst
+    return backend
+
+
+def test_reset_settles_then_waits_through_no_listener():
+    inst = _ResettingAlpha(misses=3)
+    sleeps = []
+    old_sleep = alpha.time.sleep
+    alpha.time.sleep = sleeps.append
+    try:
+        _backend_with(inst)._reset_and_set_impedance_mode()
+    finally:
+        alpha.time.sleep = old_sleep
+    assert inst.commands == ["*RST"] + ["*IDN?"] * 4 + ["MODE=IMP"]
+    assert sleeps[0] == alpha.RESET_SETTLE_S >= 2.0
+    assert alpha.RESET_READY_TIMEOUT_S >= 60.0
+
+
+def test_connect_idn_waits_for_an_alpha_still_resetting():
+    inst = _ResettingAlpha(misses=2)
+    old_sleep = alpha.time.sleep
+    alpha.time.sleep = lambda s: None
+    try:
+        idn = _backend_with(inst)._query_idn_until_answered(
+            alpha.CONNECT_READY_TIMEOUT_S, "while connecting")
+    finally:
+        alpha.time.sleep = old_sleep
+    assert idn == "ALPHA Analyzer"
+    assert inst.commands == ["*IDN?"] * 3
+
+
+def test_idn_wait_raises_any_other_error_at_once():
+    inst = _ResettingAlpha(misses=5, iberr=6)    # EABO, not ENOL
+    try:
+        _backend_with(inst)._query_idn_until_answered(15.0, "while connecting")
+    except alpha.GpibError as exc:
+        assert exc.iberr == 6
+    else:
+        raise AssertionError("a non-ENOL error was retried")
+    assert inst.commands == ["*IDN?"]
+
+
 # ------------------------------------------------------------- the editions
 
 def test_the_32bit_edition_never_imports_pyvisa():

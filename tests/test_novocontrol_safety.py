@@ -1027,11 +1027,42 @@ def test_cli_reset_waits_for_the_alpha_to_rejoin_before_mode_imp():
     assert fake.kind_of("MODE=IMP") == "query"   # its ack is read
 
 
-def test_cli_reset_raises_at_once_on_an_error_other_than_no_listener():
+def test_cli_reset_retries_a_timeout_after_a_device_clear():
+    """64-bit Keysight VISA, 23 Oct 2026: *IDN? after *RST timed out."""
+    class TimingOut(FakeAlpha):
+        def __init__(self):
+            super().__init__()
+            self.misses = 2
+            self.clears = 0
+            self.timeout = 60000
+
+        def clear(self):
+            self.clears += 1
+
+        def query(self, command):
+            if command == "*IDN?" and self.misses:
+                self.misses -= 1
+                self.traffic.append(("query", command))
+                raise _VisaNoListener(cli_ed.VI_ERROR_TMO)
+            return super().query(command)
+
+    fake = TimingOut()
+    old = _no_sleep(cli_ed)
+    try:
+        cli_ed.reset_and_set_impedance_mode(fake)
+    finally:
+        cli_ed.time.sleep = old
+    assert fake.commands.count("*IDN?") == 3, fake.commands
+    assert fake.commands[-1] == "MODE=IMP"
+    assert fake.clears == 2
+    assert fake.timeout == 60000
+
+
+def test_cli_reset_raises_at_once_on_an_unexpected_error():
     class Broken(FakeAlpha):
         def query(self, command):
             self.traffic.append(("query", command))
-            raise _VisaNoListener(-1073807339)     # VI_ERROR_TMO
+            raise _VisaNoListener(-1073807298)     # VI_ERROR_IO
 
     fake = Broken()
     old = _no_sleep(cli_ed)
@@ -1041,7 +1072,7 @@ def test_cli_reset_raises_at_once_on_an_error_other_than_no_listener():
         except _VisaNoListener:
             pass
         else:
-            raise AssertionError("a timeout was retried as no-listener")
+            raise AssertionError("an I/O error was retried")
     finally:
         cli_ed.time.sleep = old
     assert fake.commands == ["*RST", "*IDN?"], fake.commands
