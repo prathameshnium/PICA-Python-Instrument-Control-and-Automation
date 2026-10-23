@@ -3,8 +3,10 @@
 Ports of the two fixes proven on the BDS PC hardware on 22 Oct 2026 (32-bit
 edition, commit 4e3a6c5):
   * after *RST the Alpha leaves the bus for a while; every write fails with
-    "no listeners". *IDN? is repeated on that error ONLY until it answers,
-    then 1 s, then MODE=IMP. Any other error is raised at once.
+    "no listeners". *IDN? is repeated on that error until it answers,
+    then 1 s, then MODE=IMP. On a 64-bit VISA PC (23 Oct 2026) the same
+    wait showed up as a timeout; that is retried too, after a device clear,
+    on a short per-try timeout. Any other error is raised at once.
   * a board left not Controller-In-Charge by WinALPHA fails every transfer;
     one Interface Clear reclaims it. Never sent on a healthy board.
 Also: the scan prefers address 10 (the Alpha in WinALPHA) when no instrument
@@ -55,6 +57,8 @@ class FakeAlpha:
         self.commands = []
         self.closed = False
         self.timeout = 0
+        self.clears = 0
+        self.timeouts_seen = []
 
     def _answer(self, command):
         answer = self.answers.get(command, "OK")
@@ -69,7 +73,12 @@ class FakeAlpha:
 
     def query(self, command):
         self.commands.append(command)
+        if command == "*IDN?":
+            self.timeouts_seen.append(self.timeout)
         return self._answer(command)
+
+    def clear(self):
+        self.clears += 1
 
     def read(self):
         return "OK"
@@ -139,16 +148,45 @@ def test_reset_waits_through_no_listener_then_selects_impedance_mode():
     assert fake.commands == ["*RST", "*IDN?", "*IDN?", "*IDN?", "MODE=IMP"]
 
 
+def test_reset_retries_a_timeout_after_a_device_clear():
+    # 64-bit VISA PC, 23 Oct 2026: *IDN? after *RST hung in viWrite.
+    fake = FakeAlpha({"*IDN?": [VI_ERROR_TMO, VI_ERROR_TMO, ALPHA_IDN]})
+    fake.timeout = 60000
+    with patch.object(alpha.time, "sleep"):
+        _backend(fake)._reset_and_set_impedance_mode()
+    assert fake.commands == ["*RST", "*IDN?", "*IDN?", "*IDN?", "MODE=IMP"]
+    assert fake.clears == 2
+    assert fake.timeouts_seen == [alpha.RESET_POLL_TIMEOUT_MS] * 3
+    assert fake.timeout == 60000
+
+
+def test_reset_restores_the_session_timeout_when_it_gives_up():
+    fake = FakeAlpha({"*IDN?": [VI_ERROR_TMO] * 1000})
+    fake.timeout = 60000
+    clock = iter(range(0, 10000))
+    with patch.object(alpha.time, "sleep"), \
+            patch.object(alpha.time, "monotonic", lambda: next(clock)):
+        try:
+            _backend(fake)._reset_and_set_impedance_mode(timeout_s=5)
+        except ConnectionError as exc:
+            assert "did not rejoin" in str(exc)
+        else:
+            raise AssertionError("waited forever")
+    assert "MODE=IMP" not in fake.commands
+    assert fake.timeout == 60000
+
+
 def test_reset_does_not_retry_any_other_error():
-    fake = FakeAlpha({"*IDN?": [VI_ERROR_TMO, ALPHA_IDN]})
+    fake = FakeAlpha({"*IDN?": [NOT_CIC, ALPHA_IDN]})
     with patch.object(alpha.time, "sleep"):
         try:
             _backend(fake)._reset_and_set_impedance_mode()
         except FakeVisaError as exc:
-            assert exc.error_code == VI_ERROR_TMO
+            assert exc.error_code == NOT_CIC
         else:
-            raise AssertionError("a timeout was retried")
+            raise AssertionError("an unexpected error was retried")
     assert fake.commands == ["*RST", "*IDN?"]
+    assert fake.clears == 0
 
 
 def test_reset_gives_up_after_the_deadline_without_sending_mode():

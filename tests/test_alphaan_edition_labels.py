@@ -20,7 +20,8 @@ TITLE_32 = "- 32-bit (NI-488.2 GPIB)"
 HEADER_32 = "[32-bit edition, NI-488.2 GPIB]"
 
 # Command-line tools have no window to label.
-NOT_A_GUI = {"Alpha_GPIB_Diagnostic_32bit.py", "__init__.py"}
+NOT_A_GUI = {"Alpha_GPIB_Diagnostic_32bit.py",
+             "Alpha_VISA_Diagnostic_64bit.py", "__init__.py"}
 
 
 def _gui_files():
