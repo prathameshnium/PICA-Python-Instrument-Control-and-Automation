@@ -167,7 +167,7 @@ These modules drive the following hardware. The ranges are those of the instrume
 | **High-Resistance** | **Keithley 6517B** Electrometer + Lakeshore 350/340 | High bandgap materials, polymers, & ceramics. | 1 Ω - 10 PΩ |
 | **Capacitance Analysis** | **Keysight E4980A** + Lakeshore 350/340 | C-V Analysis and Magnetocapacitance characterisation. | 20 Hz - 2 MHz |
 | **Pyroelectric** | **K6517B** + Lakeshore 350/340 | Current vs Temp (detecting Curie temperature). | $10^{-15}$ A Resolution |
-| **Broadband Dielectric Spectroscopy** *(experimental)* | **Novocontrol Alpha-AN** + ZG4 interface | Frequency-domain dielectric & impedance spectroscopy with WinDETA-compatible exports. | 20 Hz - 10 MHz |
+| **Broadband Dielectric Spectroscopy** *(experimental)* | **Novocontrol Alpha-AN** + ZG4 interface | Frequency scans, C-V, temperature-step and temperature scans of dielectric & impedance spectra, with WinDETA-compatible exports. | 20 Hz - 10 MHz |
 | **AC Transport** *(experimental)* | **Keithley 6221** + SR830 lock-in or Keithley 197A | Four-probe AC I-V, frequency scan and R-T. | |
 | **Memristor Switching** *(v1.0.7)* | **Keithley 2400** | Switching I-V, retention and endurance of resistive-switching devices. | ±200 V source, compliance set per run |
 

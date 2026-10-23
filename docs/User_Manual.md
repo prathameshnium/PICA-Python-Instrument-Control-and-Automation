@@ -797,7 +797,8 @@ Capacitance-Voltage (C-V) characterization of a device or a sample using a Keysi
 ### 6.8 Broadband Dielectric Spectroscopy
 
 **Target Hardware:** Novocontrol Alpha-AN Impedance Analyzer with a ZG4 sample interface, over GPIB through VISA. *Status: experimental.*
-**Frequency Range:** choose one of two fixed logarithmic series, 115 points from 20 Hz to 1 MHz (default) or 40 points from 20 Hz to 10 MHz, or **Custom list** to type your own.
+**Frequency Range:** choose one of three fixed series, 115 points from 20 Hz to 1 MHz (default), 40 points from 20 Hz to 10 MHz, or the E4980A list (377 points, 40 Hz to 2 MHz), or **Custom list** to type your own.
+**Other Alpha-AN modules (experimental):** C-V, calibration (REF, load-short, open), temperature-step frequency scan (Lakeshore 350 / 340; same frequency list box, E4980A list by default), and dielectric temperature scans with T control (Lakeshore 350 / 340) or T sensing (Lakeshore 350 / 340, Cryo-con 34). All are under **Novocontrol Alpha-AN** in the launcher.
 **Editions:** the regular module goes through VISA and is labelled **64-bit (VISA)**; its twin for PCs with only a 32-bit `gpib-32.dll` is labelled **32-bit (NI-488.2 GPIB)**. The label is in the window title and header.
 
   *   **Scientific Objective:** Measures the complex permittivity (ε', ε''), electric modulus (M', M'') and AC conductivity (σ', σ'') of a dielectric sample at fixed temperature. Output is written in a **WinDETA-compatible** format so it opens directly in Novocontrol's WinFIT analysis tool, alongside a PICA `.dat` for the built-in Plotter.
@@ -1352,8 +1353,14 @@ PICA (Root Directory)/
         novocontrol/            <-- Broadband dielectric (Alpha-AN)
             Frequency_Scan_AlphaAN_32bit_GUI.py
             Frequency_Scan_AlphaAN_GUI.py
+            CV_AlphaAN_GUI.py
+            Correction_OpenShort_AlphaAN_GUI.py
+            Step_Frequency_Scan_AlphaAN_GUI.py         (+ _L340_)
+            Temprature_Scan_AlphaAN_GUI.py             (+ _L340_)
+            Temprature_Scan_Passive_AlphaAN_GUI.py     (+ _L340_, _CC34_)
             Instrument_Control/
                 AlphaAN_FreqScan_Instrument_Control.py
+                CV_AlphaAN_Simple_Instrument_Control.py
         pfeiffer/               <-- Pressure logging (TPG 361)
             Pressure_Log_TPG361_GUI.py
         tektronix/              <-- Function generator (AFG 3022B)
