@@ -259,6 +259,7 @@ import time
 import math
 import csv
 import queue
+import sys  # TerminalTee swaps sys.stdout / sys.stderr
 import threading
 import atexit
 import traceback
@@ -1542,6 +1543,8 @@ class CombinedGUI:
         self.setup_styles()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+        # Terminal output (print, warnings, tracebacks) also goes to the console.
+        install_terminal_log(self)
         # FRZ-1: single periodic redraw loop — runs for the app lifetime
         self.root.after(self.REDRAW_MS, self._redraw_tick)
         self.log("Alpha-AN + L350 GUI v1.0 initialized. 40 Hz – 2 MHz sweep, "
@@ -3592,6 +3595,117 @@ class CombinedGUI:
 # ============================================================
 # Entry point
 # ============================================================
+# ===============================================================================
+# TERMINAL -> PICA CONSOLE
+# Backend code reports with print() (e.g. "*RST failed; escalating to RSTH",
+# shutdown warnings, tracebacks). Those lines used to reach only the black
+# terminal window, so the PICA console could not show them. TerminalTee
+# copies every complete stdout/stderr line into a queue that the GUI drains
+# into its own console as "[terminal] ..."; the terminal still gets
+# everything. The same block is in every Alpha-AN GUI - keep them in step.
+# ===============================================================================
+
+TERMINAL_LOG_POLL_MS = 250
+TERMINAL_LOG_MAX_LINES_PER_POLL = 200
+
+
+class TerminalTee:
+    """File-like stand-in for sys.stdout / sys.stderr.
+
+    Forwards every write to the original stream (when there is one: under
+    pythonw there is none) and queues each complete line for the GUI
+    console. Writes from the thread that is draining the queue are not
+    queued, so the console can never echo itself."""
+
+    def __init__(self, original, line_queue):
+        self.original = original
+        self.line_queue = line_queue
+        self.muted_thread = None
+        self._buffer = ""
+        self._lock = threading.Lock()
+
+    def write(self, text):
+        if self.original is not None:
+            try:
+                self.original.write(text)
+            except Exception:
+                pass
+        if not text or threading.get_ident() == self.muted_thread:
+            return len(text or "")
+        with self._lock:
+            self._buffer += text
+            *lines, self._buffer = self._buffer.split("\n")
+        for line in lines:
+            line = line.rstrip()
+            if line:
+                self.line_queue.put(line)
+        return len(text)
+
+    def flush(self):
+        if self.original is not None:
+            try:
+                self.original.flush()
+            except Exception:
+                pass
+
+    def __getattr__(self, name):
+        # encoding, isatty, fileno ... come from the real stream.
+        return getattr(self.original, name)
+
+
+def install_terminal_log(gui):
+    """Copy terminal output into gui.log() until gui.root is destroyed.
+
+    Called once from the GUI's __init__. The queue is drained on the Tk
+    thread with a stored, cancellable after() id; the original streams are
+    put back when the root window goes. Returns the restore function."""
+    lines = queue.Queue()
+    saved = (sys.stdout, sys.stderr)
+    tees = (TerminalTee(saved[0], lines), TerminalTee(saved[1], lines))
+    sys.stdout, sys.stderr = tees
+    state = {'after_id': None}
+
+    def drain():
+        state['after_id'] = None
+        for tee in tees:
+            tee.muted_thread = threading.get_ident()
+        try:
+            for _ in range(TERMINAL_LOG_MAX_LINES_PER_POLL):
+                try:
+                    line = lines.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    gui.log(f"[terminal] {line}")
+                except Exception:
+                    break  # console not usable; the terminal still has it
+        finally:
+            for tee in tees:
+                tee.muted_thread = None
+        try:
+            state['after_id'] = gui.root.after(TERMINAL_LOG_POLL_MS, drain)
+        except Exception:
+            pass  # root already destroyed
+
+    def restore(event=None):
+        if event is not None and event.widget is not gui.root:
+            return  # <Destroy> also fires for every child widget
+        if state['after_id'] is not None:
+            try:
+                gui.root.after_cancel(state['after_id'])
+            except Exception:
+                pass
+            state['after_id'] = None
+        if sys.stdout is tees[0]:
+            sys.stdout = saved[0]
+        if sys.stderr is tees[1]:
+            sys.stderr = saved[1]
+
+    gui.root.bind("<Destroy>", restore, add="+")
+    state['after_id'] = gui.root.after(TERMINAL_LOG_POLL_MS, drain)
+    return restore
+
+
 def main():
     if not PYVISA_AVAILABLE:
         root = tk.Tk(); root.withdraw()
