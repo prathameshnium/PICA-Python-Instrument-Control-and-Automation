@@ -44,8 +44,9 @@ What changed from the E4980A module (the instrument swap forces all of it):
       A. REF calibration (step 3). ZRUNCAL=REF_INIT (acknowledged at once),
          then ZRUNCAL=REF written, completion by SRQ, then its "OK" ack is
          read. The SAMPLE MUST BE DISCONNECTED. About 30 s. The sequence is
-         a verbatim copy of Frequency_Scan_AlphaAN_GUI.py, including the
-         *RST + MODE=IMP + INTTYP? check in front of it. On success the
+         Frequency_Scan_AlphaAN_GUI.py's, including the *RST + MODE=IMP +
+         INTTYP? check in front of it; only the SRQ wait differs (sliced:
+         an immediate error ack is read at once, Cancel works). On success the
          time is written to ~/.pica/alphaan_cal.json in exactly the
          frequency-scan module's format ({"last_ref_cal": ISO-8601 UTC}),
          so every Alpha module shows the same calibration age.
@@ -158,6 +159,21 @@ LOAD_SHORT_LABELS = {"SL_SHORT": "SHORT standard",
 # the operator is present anyway). On timeout the task is aborted with MBK.
 # The elapsed time of every part is logged, so the real duration is learned.
 SRQ_TIMEOUT_SL_S = 3600.0
+
+# A calibration task's SRQ wait is cut into slices of this length. Between
+# slices the status byte is serial-polled (a poll is not a query: no command
+# byte reaches the analyzer) and the Cancel flag is checked, so an
+# immediate error ack (message available, no SRQ) is read at once instead of
+# hanging for SRQ_TIMEOUT_SL_S, and Cancel answers within one slice.
+CAL_WAIT_SLICE_S = 2.0
+# IEEE-488.2 status-byte bits looked at between slices.
+STB_TASK_DONE = 0x01     # Alpha: task finished (only checked after SRQ)
+STB_MAV = 0x10           # message available: a response is already waiting
+STB_RQS = 0x40           # service requested (SRQ raised)
+
+
+class CalibrationCancelled(RuntimeError):
+    """The operator pressed Cancel while a calibration task ran."""
 
 # Defaults for the open (empty-cell) measurement: the scan modules' own.
 DEFAULT_OPEN_ACV = 1.0
@@ -940,6 +956,76 @@ class AlphaAN_Backend:
                   f"(bit 0 not set).")
         return stb
 
+    def _wait_for_cal_task(self, timeout_s, context, stop_event=None):
+        """SRQ wait for a calibration task (REF, SL_SHORT, SL_100) that
+        cannot hang: the wait runs in CAL_WAIT_SLICE_S slices, and between
+        slices
+          * the status byte is serial-polled: RQS ends the wait like an
+            SRQ caught in a slice, and MAV (a response already waiting - e.g. an
+            immediate error ack to a refused ZRUNCAL, which may never raise
+            SRQ) ends it too, so the caller reads that ack at once;
+          * stop_event (the screen's Cancel) aborts the task with MBK and
+            raises CalibrationCancelled; the caller's error path then parks
+            the generator (ACV=0, ZCONSPL=0).
+        On the overall timeout it aborts and raises TimeoutError, as
+        _wait_for_srq does. Measurements keep _wait_for_srq (no polling
+        while a point integrates)."""
+        inst = self.instrument
+        deadline = time.monotonic() + timeout_s
+        # _task_may_be_running stays True on every return from here: the
+        # caller clears it only once the ack read() has returned, so a read
+        # that times out (MAV's meaning is unconfirmed on the Alpha) still
+        # goes through safe_state()'s MBK before ACV=0 / ZCONSPL=0.
+        while True:
+            if stop_event is not None and stop_event.is_set():
+                # Status byte FIRST: if the task finished just as Cancel was
+                # pressed, its ack is waiting - read it normally rather than
+                # let MBK's query consume it and put the acks out of step.
+                try:
+                    stb = inst.read_stb()
+                except Exception:
+                    stb = 0
+                if stb & (STB_RQS | STB_MAV):
+                    print(f"  {context}: finished as Cancel was pressed "
+                          f"(STB=0x{stb:02X}); reading its ack.")
+                    return stb
+                state = self.abort_and_diagnose()
+                raise CalibrationCancelled(
+                    f"{context} cancelled by the operator. Aborted (MBK). "
+                    f"ZTSTAT? reports: {state}.")
+            remaining = max(0.0, deadline - time.monotonic())
+            slice_ms = max(1, int(min(CAL_WAIT_SLICE_S, remaining) * 1000))
+            try:
+                inst.wait_for_srq(slice_ms)
+            except Exception:
+                pass          # no SRQ in this slice: look at the status byte
+            else:
+                stb = inst.read_stb()
+                if not stb & STB_TASK_DONE:
+                    print(f"  WARNING: SRQ during {context} with "
+                          f"STB=0x{stb:02X} (bit 0 not set).")
+                return stb
+            try:
+                stb = inst.read_stb()
+            except Exception as exc:
+                state = self.abort_and_diagnose()
+                raise TimeoutError(
+                    f"Status poll failed during {context}. Aborted (MBK). "
+                    f"ZTSTAT? reports: {state}. Underlying: {exc}")
+            # Bit 0 alone is NOT trusted here (it may be stale from the
+            # immediately-acknowledged *_INIT); RQS or MAV both mean there
+            # is an answer to read, so the caller's read() cannot hang.
+            if stb & (STB_RQS | STB_MAV):
+                if not stb & STB_RQS:
+                    print(f"  {context}: a response is waiting without SRQ "
+                          f"(STB=0x{stb:02X}); reading it now.")
+                return stb
+            if time.monotonic() >= deadline:
+                state = self.abort_and_diagnose()
+                raise TimeoutError(
+                    f"No SRQ within {timeout_s:.0f} s during {context}. "
+                    f"Aborted (MBK). ZTSTAT? reports: {state}.")
+
     def abort_and_diagnose(self):
         """Abort any running task, then read the task state ONCE.
 
@@ -964,7 +1050,8 @@ class AlphaAN_Backend:
 
     # --- calibration ----------------------------------------------------
 
-    def run_reference_calibration(self, timeout_s=SRQ_TIMEOUT_CAL_S):
+    def run_reference_calibration(self, timeout_s=SRQ_TIMEOUT_CAL_S,
+                                  stop_event=None):
         """Run ZRUNCAL REF. The SAMPLE MUST BE DISCONNECTED.
 
         REF calibrates the internal reference capacitors against each other
@@ -972,6 +1059,10 @@ class AlphaAN_Backend:
         converter calibration (~1 h, monthly maintenance, not done here).
 
         CONCHECK runs automatically ahead of REF - do NOT invoke it here.
+
+        Same sequence as Frequency_Scan_AlphaAN_GUI.py's copy, except the
+        SRQ wait: _wait_for_cal_task reads an immediate error ack at once
+        and honours stop_event (the screen's Cancel).
         """
         inst = self.instrument
 
@@ -992,10 +1083,12 @@ class AlphaAN_Backend:
         # to the buffer only when the task finishes, signalled by SRQ.
         self._exec("ZRUNCAL=REF_INIT")
 
+        inst.read_stb()        # clear stale status before the task starts
         self._task_may_be_running = True
         inst.write("ZRUNCAL=REF")
-        self._wait_for_srq(timeout_s, "REF calibration")
+        self._wait_for_cal_task(timeout_s, "REF calibration", stop_event)
         ack = inst.read().strip(" \t\r\n\x00\x10")
+        self._task_may_be_running = False   # the ack arrived: task over
         if ack != "OK":
             meaning = CMD_ERROR_MEANINGS.get(ack, "unrecognized response")
             raise RuntimeError(
@@ -1020,11 +1113,14 @@ class AlphaAN_Backend:
 
         self._exec("ZRUNCAL=SL_INIT")
 
-    def run_load_short_step(self, step, timeout_s=SRQ_TIMEOUT_SL_S):
+    def run_load_short_step(self, step, timeout_s=SRQ_TIMEOUT_SL_S,
+                            stop_event=None):
         """Run one load-short part: 'SL_SHORT' (short standard connected)
         or 'SL_100' (100 Ohm load standard connected), after
         begin_load_short_calibration. Like ZRUNCAL=REF: written directly,
-        completion by SRQ, then the task's 'OK'/error ack is read.
+        completion by SRQ, then the task's 'OK'/error ack is read. The
+        wait cannot hang for SRQ_TIMEOUT_SL_S on an immediate refusal
+        (MAV is polled) and stop_event cancels it (see _wait_for_cal_task).
         """
         if step not in LOAD_SHORT_STEPS:
             raise ValueError(f"Unknown load-short step {step!r}; "
@@ -1033,10 +1129,13 @@ class AlphaAN_Backend:
         if inst is None:
             raise ConnectionError("Instrument is not connected.")
 
+        inst.read_stb()        # clear stale status before the task starts
         self._task_may_be_running = True
         inst.write(f"ZRUNCAL={step}")
-        self._wait_for_srq(timeout_s, f"load-short calibration ({step})")
+        self._wait_for_cal_task(timeout_s, f"load-short calibration ({step})",
+                                stop_event)
         ack = inst.read().strip(" \t\r\n\x00\x10")
+        self._task_may_be_running = False   # the ack arrived: task over
         if ack != "OK":
             meaning = CMD_ERROR_MEANINGS.get(ack, "unrecognized response")
             raise RuntimeError(
@@ -1537,6 +1636,9 @@ class CalibrationGUI:
         self.btn_ref_go = ttk.Button(row, text="Continue: run REF now  ▶",
                                      style='Go.TButton', command=self._do_ref)
         self.btn_ref_go.pack(side='left', padx=(10, 0))
+        self.btn_ref_cancel = ttk.Button(row, text="Cancel", style='Danger.TButton',
+                                         command=self._cancel_cal, state='disabled')
+        self.btn_ref_cancel.pack(side='left', padx=(10, 0))
         ttk.Button(row, text="Skip", command=lambda: self._skip(self.STEP_REF)
                    ).pack(side='left', padx=(10, 0))
 
@@ -1559,6 +1661,9 @@ class CalibrationGUI:
         self.btn_sl_go = ttk.Button(row, text="", style='Go.TButton',
                                     command=self._do_load_short)
         self.btn_sl_go.pack(side='left')
+        self.btn_sl_cancel = ttk.Button(row, text="Cancel", style='Danger.TButton',
+                                        command=self._cancel_cal, state='disabled')
+        self.btn_sl_cancel.pack(side='left', padx=(10, 0))
         ttk.Button(row, text="Skip", command=lambda: self._skip(self.STEP_SL)
                    ).pack(side='left', padx=(10, 0))
 
@@ -1862,6 +1967,8 @@ class CalibrationGUI:
         elif kind == "idle":
             self.busy = False
             self.btn_open_stop.config(state='disabled')
+            self.btn_ref_cancel.config(state='disabled')
+            self.btn_sl_cancel.config(state='disabled')
             if self._release_pending:
                 self._release_pending = False
                 self._run_worker(self._worker_release)
@@ -2014,7 +2121,33 @@ class CalibrationGUI:
             icon="warning",
         ):
             return
+        self.stop_event.clear()
+        self.btn_ref_cancel.config(state='normal')
         self._run_worker(self._worker_ref)
+
+    def _cancel_cal(self):
+        """Cancel button of the REF and load-short screens: the running
+        task is aborted (MBK) within one wait slice and the generator is
+        parked (ACV=0, ZCONSPL=0). The step stays on screen to retry or
+        skip."""
+        if not self.busy:
+            return
+        self.stop_event.set()
+        self.log("Cancel requested: aborting the calibration task (MBK) and "
+                 "parking the analyzer…")
+
+    def _report_cancelled(self, what, progress_widget):
+        """Worker side of Cancel: park, then tell the operator (no dialog)."""
+        q = self.queue
+        try:
+            self.backend.safe_state()
+        except Exception:
+            pass
+        q.put(("progress", (progress_widget, f"{what} CANCELLED.")))
+        q.put(("log", f"{what} cancelled: task aborted (MBK), analyzer parked "
+                      "(ACV=0, ZCONSPL=0). Its stored data may be incomplete: "
+                      "run it again before relying on it, or Skip."))
+        q.put(("headline", (f"{what} cancelled. Run it again or Skip.", False)))
 
     def _worker_ref(self):
         q = self.queue
@@ -2025,7 +2158,12 @@ class CalibrationGUI:
                       "its stored REF calibration."))
         t0 = time.time()
         try:
-            self.backend.run_reference_calibration()
+            self.backend.run_reference_calibration(stop_event=self.stop_event)
+        except CalibrationCancelled:
+            if self._close_requested:
+                raise              # window closing: not a user Cancel
+            self._report_cancelled("REF calibration", self.progress_ref)
+            return
         except Exception:
             q.put(("progress", (self.progress_ref, "REF FAILED. See the log.")))
             raise
@@ -2064,6 +2202,8 @@ class CalibrationGUI:
             icon="warning",
         ):
             return
+        self.stop_event.clear()
+        self.btn_sl_cancel.config(state='normal')
         self._run_worker(self._worker_load_short, self.sl_phase)
 
     def _worker_load_short(self, phase):
@@ -2079,7 +2219,14 @@ class CalibrationGUI:
                       f"its stored load-short data ({label})."))
         t0 = time.time()
         try:
-            self.backend.run_load_short_step(step)
+            self.backend.run_load_short_step(step, stop_event=self.stop_event)
+        except CalibrationCancelled:
+            # Start the load-short over from the short part next time.
+            q.put(("slphase", 0))
+            if self._close_requested:
+                raise              # window closing: not a user Cancel
+            self._report_cancelled(f"Load-short ({label})", self.progress_sl)
+            return
         except Exception:
             # Start the load-short over from the short part next time.
             q.put(("slphase", 0))

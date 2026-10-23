@@ -158,8 +158,15 @@ def launch_gpib_scanner():
 # BACKEND: LAKESHORE 350  (passive-aware close)
 # ===============================================================================
 
+def is_model_350_idn(idn):
+    """True when an *IDN? reply names a Model 350 (spaces/case ignored)."""
+    return "MODEL350" in str(idn).upper().replace(' ', '')
+
+
 class Lakeshore350_Backend:
     """A class to control the Lakeshore Model 350 Temperature Controller."""
+
+    MODEL_TOKENS = ("MODEL350", "MODEL 350")
 
     def __init__(self, visa_address, passive_mode=False):
         self.instrument = None
@@ -167,8 +174,12 @@ class Lakeshore350_Backend:
         rm = pyvisa.ResourceManager()
         self.instrument = rm.open_resource(visa_address)
         self.instrument.timeout = 10000
-        print(f"Lakeshore Connected: "
-              f"{self.instrument.query('*IDN?').strip()}")
+        self.idn = self.instrument.query('*IDN?').strip()
+        print(f"Lakeshore Connected: {self.idn}")
+
+    def is_model_350(self):
+        idn = self.idn.upper().replace(' ', '')
+        return any(tok.replace(' ', '') in idn for tok in self.MODEL_TOKENS)
 
     def reset_and_clear(self):
         self.instrument.write('*RST')
@@ -1005,6 +1016,21 @@ class Combined_Backend:
         self.lakeshore = Lakeshore350_Backend(
             parameters['lakeshore_visa'],
             passive_mode=not parameters['zero_range'])
+        if not self.lakeshore.is_model_350():
+            # Raw close: Lakeshore350_Backend.close() may send RANGE.
+            idn = self.lakeshore.idn
+            # try/finally: a close() that raises must still drop the
+            # reference, or Start's error path would send RANGE to it.
+            try:
+                self.lakeshore.instrument.close()
+            except Exception as e:
+                print(f"  Lakeshore session close warning: {e}")
+            finally:
+                self.lakeshore = None
+            raise ConnectionError(
+                f"'{parameters['lakeshore_visa']}' answered '{idn}', which is "
+                "not a Lake Shore Model 350. Refusing to send RANGE to an "
+                "unknown instrument. Pick the right address.")
 
         # NOTE: no reset_and_clear(), no setup_heater(), no setup_ramp(),
         # no set_setpoint(). *RST is deliberately avoided because it would
@@ -1097,7 +1123,8 @@ class Combined_Backend:
 
     def _reopen_lakeshore_read_only(self):
         """Release the Lakeshore session without the heater-off that
-        Lakeshore350_Backend.close() may send, then open a fresh one."""
+        Lakeshore350_Backend.close() may send, open a fresh one and
+        re-check that it still answers as a Model 350."""
         old, self.lakeshore = self.lakeshore, None
         if old is not None and old.instrument is not None:
             try:
@@ -1105,9 +1132,19 @@ class Combined_Backend:
             except Exception as e:
                 print(f"  Lakeshore session close warning: {e}")
             old.instrument = None
-        self.lakeshore = Lakeshore350_Backend(
+        lakeshore = Lakeshore350_Backend(
             self.params['lakeshore_visa'],
             passive_mode=not self.params['zero_range'])
+        if not lakeshore.is_model_350():
+            idn = lakeshore.idn
+            try:
+                lakeshore.instrument.close()   # raw close: no RANGE
+            except Exception as e:
+                print(f"  Lakeshore session close warning: {e}")
+            raise ConnectionError(
+                f"'{self.params['lakeshore_visa']}' answered '{idn}' on "
+                "reconnect, which is not a Lake Shore Model 350.")
+        self.lakeshore = lakeshore
 
     def close_instruments(self):
         print("\n--- [Backend] Closing all instrument connections. ---")
@@ -1929,6 +1966,10 @@ class Integrated_CT_GUI:
             self.log("Previous run is still finishing; wait for it before "
                      "starting again.")
             return
+        # A worker that outlived Stop's queue drain may have left a partial
+        # CYCLE or an exception behind. It belongs to the previous run: a
+        # fresh queue keeps it out of this run's files and error handling.
+        self.data_queue = queue.Queue()
         try:
             # --- Parse frequencies ---
             self.frequencies = self._parse_frequencies()
@@ -2218,6 +2259,9 @@ class Integrated_CT_GUI:
             self.backend.close_instruments()
         except Exception as e:
             self.log(f"WARNING: error closing instruments: {e}")
+        # Points the worker measured after the pump stopped (Stop pressed
+        # mid-sweep) are still in the queue: save them before going idle.
+        self._drain_queue_at_stop()
         self._stopping = False
 
         if self._close_after_stop:
@@ -2339,6 +2383,44 @@ class Integrated_CT_GUI:
     # ==================================================================
     # QUEUE PROCESSING (main thread)
     # ==================================================================
+    def _drain_queue_at_stop(self):
+        """Main thread, at stop: the pump stops re-scheduling as soon as
+        the run flags drop, so a sweep the worker cut short at Stop (or
+        queued just before an error) would sit unread and be lost. Write
+        those points to disk now (same fsync'd path as every cycle), then
+        retry any rows still buffered from a disk hiccup. A late kill or
+        error is only logged: the stop is already in progress."""
+        while True:
+            try:
+                data = self.data_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                if isinstance(data, str) and data.startswith("LOG:"):
+                    self._handle_log_message(data[4:])
+                elif isinstance(data, str) and data == "KILL":
+                    self.log("!!! 400 K SAFETY KILL fired as the run "
+                             "stopped. Heater forced OFF. !!!")
+                elif isinstance(data, Exception):
+                    tb = getattr(data, 'pica_traceback', repr(data))
+                    self.log(f"RUNTIME ERROR (after stop): {tb}")
+                elif isinstance(data, tuple) and data[0] == 'CYCLE':
+                    _, cycle, elapsed = data
+                    self._process_cycle(cycle, elapsed)
+            except Exception:
+                self.log("GUI ERROR while saving the last sweep: "
+                         f"{traceback.format_exc()}")
+        try:
+            self._flush_pending_rows()
+        except Exception:
+            self.log("GUI ERROR while flushing buffered rows: "
+                     f"{traceback.format_exc()}")
+        if self._pending_rows:
+            self.log(f"WARNING: {len(self._pending_rows)} row(s) could not "
+                     "be written (disk / share unavailable). They stay in "
+                     "memory and are retried on the next run; closing the "
+                     "program loses them.")
+
     def _process_data_queue(self):
         terminal = None
         try:
@@ -2731,7 +2813,9 @@ class Integrated_CT_GUI:
             self.log(f"  {label}")
             upper = idn.upper()
 
-            if ctrl_label is None and ("LSCI" in upper or "MODEL350" in upper or "MODEL 350" in upper):
+            # Auto-select the Lakeshore 350 by model, never by the LSCI
+            # maker token alone: a 340 on the same bus also answers LSCI.
+            if ctrl_label is None and is_model_350_idn(idn):
                 ctrl_label = label
             if alpha_label is None and (
                     "NOVOCONTROL" in upper or "ALPHA" in upper):
@@ -2748,8 +2832,9 @@ class Integrated_CT_GUI:
             self.log("Lakeshore 350 auto-selected.")
         elif found:
             self.lakeshore_cb.set(found[0])
-            self.log("WARNING: No Lakeshore 350 found; "
-                     "defaulted to first device.")
+            self.log("WARNING: No Lakeshore 350 (MODEL350) found; "
+                     "defaulted to first device. Start will refuse a "
+                     "non-350 address.")
 
         if alpha_label:
             self.lcr_cb.set(alpha_label)

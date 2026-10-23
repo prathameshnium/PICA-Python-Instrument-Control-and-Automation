@@ -1643,27 +1643,38 @@ class Combined_Backend:
         """
         htr = self.cryocon.get_heater_output()
         points = []
-        for f in frequencies:
-            if stop_event is not None and stop_event.is_set():
-                break                     # abort mid-sweep, cleanly
-            # NaN on a sensor fault: the point keeps its LCR data.
-            temp = self.cryocon.read_temperature_tolerant()  # T for THIS point
-            if temp >= self.SAFETY_KILL_TEMP_K:
-                self.check_safety_kill(temp)
-                points.append(
-                    (temp, f, float('nan'), float('nan'), -1, f))
-                break
-            if delay > 0:                     # optional settle per point
-                if stop_event is not None:
-                    stop_event.wait(delay)
-                else:
-                    time.sleep(delay)
-            R, X, f_act, status, _ref = self.lcr.measure_point(f)
-            if status in STATUS_FATAL:
-                raise AlphaFatalStatusError(
-                    f"Alpha-AN status {status} at {f:.6g} Hz: "
-                    f"{status_message(status)}. Sweep aborted.")
-            points.append((temp, f, R, X, status, f_act))
+        try:
+            for f in frequencies:
+                if stop_event is not None and stop_event.is_set():
+                    break                     # abort mid-sweep, cleanly
+                # NaN on a sensor fault: the point keeps its LCR data.
+                # T for THIS point
+                temp = self.cryocon.read_temperature_tolerant()
+                if temp >= self.SAFETY_KILL_TEMP_K:
+                    self.check_safety_kill(temp)
+                    points.append(
+                        (temp, f, float('nan'), float('nan'), -1, f))
+                    break
+                if delay > 0:                     # optional settle per point
+                    if stop_event is not None:
+                        stop_event.wait(delay)
+                    else:
+                        time.sleep(delay)
+                R, X, f_act, status, _ref = self.lcr.measure_point(f)
+                if status in STATUS_FATAL:
+                    raise AlphaFatalStatusError(
+                        f"Alpha-AN status {status} at {f:.6g} Hz: "
+                        f"{status_message(status)}. Sweep aborted.")
+                points.append((temp, f, R, X, status, f_act))
+        except Exception as exc:
+            # Points already measured in this sweep are real data: hand
+            # them to the worker with the error so they are still saved
+            # (status 6, a refused command or a comm drop mid-sweep would
+            # otherwise discard the whole sweep).
+            if points:
+                exc.partial_cycle = {'heater': htr, 'points': points,
+                                     'wall_time': datetime.now()}
+            raise
         return {'heater': htr, 'points': points,
                 'wall_time': datetime.now()}
 
@@ -2528,6 +2539,10 @@ class Integrated_CT_GUI:
             self.log("Previous run is still finishing; wait for it before "
                      "starting again.")
             return
+        # A worker that outlived Stop's queue drain may have left a partial
+        # CYCLE or an exception behind. It belongs to the previous run: a
+        # fresh queue keeps it out of this run's files and error handling.
+        self.data_queue = queue.Queue()
         try:
             # --- Parse frequencies ---
             self.frequencies = self._parse_frequencies()
@@ -2834,6 +2849,9 @@ class Integrated_CT_GUI:
             self.backend.close_instruments()
         except Exception as e:
             self.log(f"WARNING: error closing instruments: {e}")
+        # Points the worker measured after the pump stopped (Stop pressed
+        # mid-sweep) are still in the queue: save them before going idle.
+        self._drain_queue_at_stop()
         self._stopping = False
 
         if self._close_after_stop:
@@ -2861,15 +2879,17 @@ class Integrated_CT_GUI:
                     cycle = self.backend.measure_frequency_sweep(
                         self.frequencies, params['delay'], self.stop_event)
                     comm_failures = 0
-                except RuntimeError:
+                except RuntimeError as e:
                     # The Alpha refused (non-OK ack, 'CR' = no load-short
                     # cal stored) or reported a hardware fault (status 6,
                     # AlphaFatalStatusError). A reconnect cannot fix any of
                     # them: end the run via the no-dialog error path.
+                    self._queue_partial_cycle(e)
                     raise
-                except Exception:
+                except Exception as e:
                     # Comm glitch (GPIB/VISA/instrument power blip):
                     # never give up — log, back off, reconnect, resume.
+                    self._queue_partial_cycle(e)
                     comm_failures += 1
                     self.data_queue.put(
                         f"LOG:COMM ERROR (failure #{comm_failures}): "
@@ -2901,6 +2921,18 @@ class Integrated_CT_GUI:
             # exception is live. Formatting it on the GUI thread printed
             # 'NoneType: None' and lost the fault.
             self.data_queue.put(('ERROR', e, traceback.format_exc()))
+
+    def _queue_partial_cycle(self, exc):
+        """Worker-thread helper: queue the points a sweep measured before
+        it raised, so they are written and plotted like a full sweep."""
+        cycle = getattr(exc, 'partial_cycle', None)
+        if not cycle or not cycle['points']:
+            return
+        self.data_queue.put(
+            f"LOG:Sweep interrupted after {len(cycle['points'])} point(s); "
+            "saving the points already measured.")
+        self.data_queue.put(
+            ('CYCLE', cycle, time.time() - self.start_time))
 
     def _reconnect_with_backoff(self, attempt):
         """Worker-thread helper: close and re-open both instruments,
@@ -2946,6 +2978,47 @@ class Integrated_CT_GUI:
     # ==================================================================
     # QUEUE PROCESSING (main thread)
     # ==================================================================
+    def _drain_queue_at_stop(self):
+        """Main thread, at stop: the pump stops re-scheduling as soon as
+        the run flags drop, so a sweep the worker cut short at Stop (or
+        queued just before an error) would sit unread and be lost. Write
+        those points to disk now (same fsync'd path as every cycle), then
+        retry any rows still buffered from a disk hiccup. A late kill or
+        error is only logged: the stop is already in progress."""
+        while True:
+            try:
+                data = self.data_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                if isinstance(data, str) and data.startswith("LOG:"):
+                    self._handle_log_message(data[4:])
+                elif isinstance(data, str) and data == "KILL":
+                    self.log("!!! 400 K SAFETY KILL fired as the run "
+                             "stopped. Cryocon STOP sent. !!!")
+                elif isinstance(data, tuple) and data[0] == 'ERROR':
+                    _, exc, tb_text = data
+                    self.log(f"RUNTIME ERROR (after stop): {exc}\n"
+                             f"WORKER TRACEBACK:\n{tb_text}")
+                elif isinstance(data, Exception):
+                    self.log(f"RUNTIME ERROR (after stop): {data!r}")
+                elif isinstance(data, tuple) and data[0] == 'CYCLE':
+                    _, cycle, elapsed = data
+                    self._process_cycle(cycle, elapsed)
+            except Exception:
+                self.log("GUI ERROR while saving the last sweep: "
+                         f"{traceback.format_exc()}")
+        try:
+            self._flush_pending_rows()
+        except Exception:
+            self.log("GUI ERROR while flushing buffered rows: "
+                     f"{traceback.format_exc()}")
+        if self._pending_rows:
+            self.log(f"WARNING: {len(self._pending_rows)} row(s) could not "
+                     "be written (disk / share unavailable). They stay in "
+                     "memory and are retried on the next run; closing the "
+                     "program loses them.")
+
     def _process_data_queue(self):
         terminal = None
         try:

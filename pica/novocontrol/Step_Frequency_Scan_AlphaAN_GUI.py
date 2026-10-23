@@ -430,6 +430,9 @@ class Lakeshore_Backend:
     def __init__(self):
         self.lakeshore = None
         self.last_visa = None    # HARD-2: remembered for reconnect()
+        # True once a session has been confirmed as a 350: shutdown() then
+        # knows a missing session means heater-off could not be sent.
+        self.was_connected = False
         self.rm = None
         if pyvisa:
             try:
@@ -437,17 +440,54 @@ class Lakeshore_Backend:
             except Exception as e:
                 print(f"VISA init failed: {e}")
 
-    def connect(self, visa_address):
+    def connect(self, visa_address, retry_stale_idn=False):
+        """Open the session and confirm a Model 350 before any write.
+
+        retry_stale_idn (reconnect only - the address was already
+        confirmed as a 350): a fresh session after a comm fault can read
+        the reply the interrupted query left behind, so a non-350 answer
+        gets a VISA device clear (as get_status does) and ONE more *IDN?
+        before it is refused. At Start a wrong answer is refused at once:
+        an unknown device gets nothing but *IDN?."""
         if not self.rm:
             raise ConnectionError("VISA Resource Manager unavailable.")
         self.last_visa = visa_address   # HARD-2: for reconnect()
-        self.lakeshore = self.rm.open_resource(visa_address)
-        self.lakeshore.timeout = 10000
+        inst = self.rm.open_resource(visa_address)
+        # *IDN? is the ONLY thing a wrong instrument ever receives: the
+        # model is checked before the first write (*CLS included), and the
+        # session becomes self.lakeshore only once confirmed, so neither a
+        # refused nor a failed handshake leaves shutdown() a session to
+        # send RAMP/RANGE to.
+        try:
+            inst.timeout = 10000
+            idn = inst.query("*IDN?").strip()
+            if retry_stale_idn and "MODEL350" not in idn.upper().replace(
+                    " ", ""):
+                print(f"  Lakeshore answered '{idn}' on reconnect - maybe "
+                      "a stale reply; device clear, then *IDN? once more.")
+                try:
+                    inst.clear()
+                except Exception as e:
+                    print(f"  Lakeshore device clear warning: {e}")
+                idn = inst.query("*IDN?").strip()
+        except Exception:
+            try:
+                inst.close()
+            except Exception:
+                pass
+            raise
+        if "MODEL350" not in idn.upper().replace(" ", ""):
+            try:
+                inst.close()
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"'{visa_address}' answered '{idn}', which is not a Lake "
+                "Shore Model 350. Refusing to send Lakeshore commands to "
+                "it. Pick the right address.")
+        self.lakeshore = inst
+        self.was_connected = True
         self.lakeshore.write("*CLS")  # do NOT *RST mid-run
-        idn = self.lakeshore.query("*IDN?").strip()
-        # Fix #12: warn (not fatal) if IDN doesn't look like a 350
-        if "350" not in idn:
-            print(f"WARNING: IDN does not contain '350': {idn}")
         return idn
 
     def reconnect(self):
@@ -461,7 +501,7 @@ class Lakeshore_Backend:
         except Exception:
             pass
         self.lakeshore = None
-        return self.connect(self.last_visa)
+        return self.connect(self.last_visa, retry_stale_idn=True)
 
     def set_heater_range(self, output, heater_range):
         try:
@@ -541,14 +581,25 @@ class Lakeshore_Backend:
                 print(f"stop_ramp warning: {e}")
 
     def shutdown(self):
-        if self.lakeshore:
-            try:
-                self.stop_ramp()
-                self.lakeshore.close()
-            except Exception as e:
-                print(f"Lakeshore shutdown warning: {e}")
-            finally:
-                self.lakeshore = None
+        """Ramp off, heater off, close. Never raises. Returns False when a
+        confirmed 350 was connected earlier but its session is gone (lost
+        in a comm recovery), so heater-off could NOT be sent - nothing is
+        sent to an unconfirmed device to make up for it."""
+        if not self.lakeshore:
+            if getattr(self, "was_connected", False):
+                print("WARNING: no Lakeshore session (lost during comm "
+                      "recovery): RAMP off / RANGE 0 could NOT be sent. "
+                      "Turn the heater off at the controller.")
+                return False
+            return True
+        try:
+            self.stop_ramp()
+            self.lakeshore.close()
+        except Exception as e:
+            print(f"Lakeshore shutdown warning: {e}")
+        finally:
+            self.lakeshore = None
+        return True
 
 
 # ===============================================================================
@@ -3009,7 +3060,18 @@ class CombinedGUI:
             except Exception as e:
                 print(f"Alpha-AN shutdown warning: {e}")
             try:
-                self.ls_backend.shutdown()
+                if self.ls_backend.shutdown() is False:
+                    # Session lost in a comm recovery: heater-off was NOT
+                    # sent. Log + status + beep only (unattended run).
+                    self._put_gui_msg("log",
+                        text="WARNING: the Lakeshore session was lost, so "
+                             "RAMP off / heater RANGE 0 could NOT be sent. "
+                             "The controller may still be ramping - turn "
+                             "its heater off at the front panel.")
+                    self._put_gui_msg("status",
+                        text="HEATER NOT TURNED OFF - check the Lakeshore",
+                        color=self.CLR_ACCENT_RED)
+                    self._put_gui_msg("beep", times=5)
             except Exception as e:
                 print(f"Lakeshore shutdown warning: {e}")
             self._close_data_file()
@@ -3450,6 +3512,13 @@ class CombinedGUI:
             except SoftLimitAbort:
                 raise    # ADV-4: graceful abort must reach the worker
             except RuntimeError:
+                # Overtemp kill and "Stopped during comm recovery" have
+                # already cleared is_running: just leave the sweep. With
+                # is_running still set this is an Alpha refusal re-raised
+                # by _comm_recover - the Alpha is half-configured, so the
+                # run must end through the worker's error path.
+                if self.is_running:
+                    raise
                 break
             done_pts += 1
             self._put_gui_msg("scan_point", freq=f_act, cp=vals[4], g=vals[2],

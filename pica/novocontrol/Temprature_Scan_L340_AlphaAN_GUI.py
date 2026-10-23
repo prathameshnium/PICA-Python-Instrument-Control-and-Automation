@@ -1148,8 +1148,14 @@ class Combined_Backend:
         self.lakeshore = Lakeshore340_Backend(parameters['lakeshore_visa'])
         if not self.lakeshore.is_model_340():
             idn = self.lakeshore.idn
-            self.lakeshore.instrument.close()
-            self.lakeshore = None
+            # try/finally: a close() that raises must still drop the
+            # reference, or Start's error path would send RANGE to it.
+            try:
+                self.lakeshore.instrument.close()
+            except Exception as e:
+                print(f"  Lakeshore session close warning: {e}")
+            finally:
+                self.lakeshore = None
             raise RuntimeError(
                 f"'{parameters['lakeshore_visa']}' answered '{idn}', which is "
                 "not a Lake Shore Model 340. Refusing to send 340-only "
@@ -1224,31 +1230,44 @@ class Combined_Backend:
         tstatus = []          # (RDGST? code, text) parallel to points
         last_valid_temp = None
         killed = False
-        for f in frequencies:
-            if stop_event is not None and stop_event.is_set():
-                break                     # abort mid-sweep, cleanly
-            temp = self.lakeshore.get_temperature(sensor)  # T for THIS point
-            rdg_code, rdg_text = self.lakeshore.get_reading_status(sensor)
+        try:
+            for f in frequencies:
+                if stop_event is not None and stop_event.is_set():
+                    break                     # abort mid-sweep, cleanly
+                # T for THIS point
+                temp = self.lakeshore.get_temperature(sensor)
+                rdg_code, rdg_text = self.lakeshore.get_reading_status(sensor)
 
-            # Issue #2: per-point safety kill check
-            if temp >= self.SAFETY_KILL_TEMP_K:
-                killed = self.check_safety_kill(temp)
-                points.append(
-                    (temp, f, float('nan'), float('nan'), -1, f))
+                # Issue #2: per-point safety kill check
+                if temp >= self.SAFETY_KILL_TEMP_K:
+                    killed = self.check_safety_kill(temp)
+                    points.append(
+                        (temp, f, float('nan'), float('nan'), -1, f))
+                    tstatus.append((rdg_code, rdg_text))
+                    break
+
+                if delay > 0 and stop_event is not None:
+                    stop_event.wait(delay)       # optional settle per point
+                R, X, f_act, status, _ref = self.lcr.measure_point(f)
+                if status in STATUS_FATAL:
+                    raise RuntimeError(
+                        f"Alpha-AN status {status} at {f:.6g} Hz: "
+                        f"{status_message(status)}. Sweep aborted.")
+                points.append((temp, f, R, X, status, f_act))
                 tstatus.append((rdg_code, rdg_text))
-                break
-
-            if delay > 0 and stop_event is not None:
-                stop_event.wait(delay)       # optional settle per point
-            R, X, f_act, status, _ref = self.lcr.measure_point(f)
-            if status in STATUS_FATAL:
-                raise RuntimeError(
-                    f"Alpha-AN status {status} at {f:.6g} Hz: "
-                    f"{status_message(status)}. Sweep aborted.")
-            points.append((temp, f, R, X, status, f_act))
-            tstatus.append((rdg_code, rdg_text))
-            if rdg_code == 0:
-                last_valid_temp = temp
+                if rdg_code == 0:
+                    last_valid_temp = temp
+        except Exception as exc:
+            # Points already measured in this sweep are real data: hand
+            # them to the worker with the error so they are still saved
+            # (status 6, a refused command or a comm drop mid-sweep would
+            # otherwise discard the whole sweep).
+            if points:
+                exc.partial_cycle = {
+                    'heater': htr, 'heater_status': htr_status,
+                    'points': points, 'tstatus': tstatus,
+                    'last_valid_temp': last_valid_temp, 'killed': killed}
+            raise
         return {'heater': htr, 'heater_status': htr_status,
                 'points': points, 'tstatus': tstatus,
                 'last_valid_temp': last_valid_temp, 'killed': killed}
@@ -2055,6 +2074,10 @@ class Integrated_CT_GUI:
             self.log("Previous run is still finishing; wait for it before "
                      "starting again.")
             return
+        # A worker that outlived Stop's queue drain may have left a partial
+        # CYCLE or an exception behind. It belongs to the previous run: a
+        # fresh queue keeps it out of this run's files and error handling.
+        self.data_queue = queue.Queue()
         try:
             # --- Parse frequencies ---
             self.frequencies = self._parse_frequencies()
@@ -2341,6 +2364,9 @@ class Integrated_CT_GUI:
             self.backend.close_instruments()
         except Exception as e:
             self.log(f"WARNING: error closing instruments: {e}")
+        # Points the worker measured after the pump stopped (Stop pressed
+        # mid-sweep) are still in the queue: save them before going idle.
+        self._drain_queue_at_stop()
         self._stopping = False
 
         if self._close_after_stop:
@@ -2481,11 +2507,52 @@ class Integrated_CT_GUI:
 
         except Exception as e:
             e.pica_traceback = traceback.format_exc()
+            # Points measured before the error go ahead of it, so the
+            # queue pump writes them before the error ends the run.
+            self._queue_partial_cycle(e)
             self.data_queue.put(e)
+
+    def _queue_partial_cycle(self, exc):
+        """Worker-thread helper: queue the points a sweep measured before
+        it raised, so they are written and plotted like a full sweep."""
+        cycle = getattr(exc, 'partial_cycle', None)
+        if not cycle or not cycle['points']:
+            return
+        self.data_queue.put(
+            f"LOG:Sweep interrupted after {len(cycle['points'])} point(s); "
+            "saving the points already measured.")
+        elapsed = time.time() - (self.start_time or time.time())
+        self.data_queue.put(('CYCLE', cycle, elapsed))
 
     # ==================================================================
     # QUEUE PROCESSING (main thread)
     # ==================================================================
+    def _drain_queue_at_stop(self):
+        """Main thread, at stop: the pump stops re-scheduling as soon as
+        the run flags drop, so a sweep the worker cut short at Stop (or
+        queued just before an error) would sit unread and be lost. Write
+        those points to disk now. End-of-run events are already being
+        handled by the stop in progress; a late error is only logged."""
+        while True:
+            try:
+                data = self.data_queue.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                if isinstance(data, str) and data.startswith("LOG:"):
+                    self._handle_log_message(data[4:])
+                elif isinstance(data, str) and data.startswith("BANNER:"):
+                    self.log(data[7:])
+                elif isinstance(data, Exception):
+                    tb = getattr(data, 'pica_traceback', repr(data))
+                    self.log(f"RUNTIME ERROR (after stop): {tb}")
+                elif isinstance(data, tuple) and data[0] == 'CYCLE':
+                    _, cycle, elapsed = data
+                    self._process_cycle(cycle, elapsed)
+            except Exception:
+                self.log("GUI ERROR while saving the last sweep: "
+                         f"{traceback.format_exc()}")
+
     def _process_data_queue(self):
         # Issue #4 Fix: Fully drain the queue before acting on terminal events
         terminal = None
@@ -2577,12 +2644,15 @@ class Integrated_CT_GUI:
             row_vals = [temp] + calc
             row_str = "\t".join("{:.6E}".format(v) for v in row_vals)
 
-            # Open, append, close for every single point: if the program
-            # crashes mid-experiment, no data already written is lost.
+            # Open, append, flush + fsync, close for every single point: if
+            # the program crashes or the power drops mid-experiment, no
+            # data already written is lost.
             if f in self.freq_filepaths:
                 with open(self.freq_filepaths[f], 'a',
                           encoding='utf-8') as fh:
                     fh.write(row_str + "\n")
+                    fh.flush()
+                    os.fsync(fh.fileno())
 
             # WinDETA file: T (deg C), eps', eps''. The safety-kill NaN
             # row is PICA-only - WinFIT cannot read 'nan'.
@@ -2593,6 +2663,8 @@ class Integrated_CT_GUI:
                     with open(self.windeta_filepaths[f], 'a',
                               encoding='cp1252', newline='\r\n') as fh:
                         fh.write(windeta_tscan_row(*vals) + "\n")
+                        fh.flush()
+                        os.fsync(fh.fileno())
 
     # ==================================================================
     # DATA STORAGE UPDATE (Appendix A.4: per-frequency keyed)

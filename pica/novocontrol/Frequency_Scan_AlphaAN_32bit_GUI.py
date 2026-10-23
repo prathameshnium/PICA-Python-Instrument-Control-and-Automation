@@ -1170,9 +1170,17 @@ class AlphaAN_Backend:
         inst.write_termination = ""
         inst.send_end = True
         self.instrument = inst
+        is_alpha = False
 
         try:
             idn = inst.query("*IDN?").strip()
+            # A wrong address must not get the Alpha shutdown sequence
+            # (ACV=0, ZCONSPL=0, *RST) sent to another instrument.
+            if not any(k in idn.upper() for k in ("ALPHA", "NOVOCONTROL")):
+                raise ConnectionError(
+                    f"{visa_addr} answered {idn!r}, which is not a "
+                    f"Novocontrol Alpha. Check the address.")
+            is_alpha = True
             # INTTYP? returns 'INTTYP=<code> <serial>'; the ZG4 is code 5,
             # NOT the literal string "ZG4".
             code = parse_inttyp(inst.query("INTTYP?"))
@@ -1187,7 +1195,16 @@ class AlphaAN_Backend:
             inst.read_stb()
         except Exception:
             # Never leave a half-open session behind on a failed handshake.
-            self.close_instrument()
+            # Only a confirmed Alpha gets the shutdown sequence; anything
+            # else is released (ibonl) without a single command byte.
+            if is_alpha:
+                self.close_instrument()
+            else:
+                try:
+                    inst.close()
+                except Exception:
+                    pass
+                self.instrument = None
             raise
 
         print(f"  Connected: {idn} | ZG4 interface code {code}")

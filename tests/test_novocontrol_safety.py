@@ -852,6 +852,228 @@ def test_connect_clears_stale_bus_status_before_the_first_srq_wait():
         assert fake.stb_reads >= 1, label
 
 
+# The E4991B shares the BDS bus at 17; picking it by mistake must not send it
+# the Alpha shutdown sequence (MBK, ACV=0, ZCONSPL=0, *RST).
+KEYSIGHT_IDN = "Keysight Technologies,E4991B,MY12345678,A.01.00"
+
+
+def test_connect_to_a_non_alpha_sends_nothing_but_idn_and_releases_it():
+    for label, module in GUI_EDITIONS:
+        fake = FakeAlpha(answers={"*IDN?": KEYSIGHT_IDN})
+        with _ConnectHarness(module, fake) as backend:
+            try:
+                backend.connect("GPIB0::17::INSTR")
+            except ConnectionError as exc:
+                assert "not a Novocontrol Alpha" in str(exc), (label, exc)
+            else:
+                raise AssertionError(f"{label}: a Keysight was accepted")
+            assert backend.instrument is None, label
+        assert fake.commands == ["*IDN?"], (label, fake.commands)
+        assert fake.closed is True, label
+
+
+def test_a_failure_before_identity_is_known_sends_no_shutdown():
+    """*IDN? timing out (nothing / something else at the address)."""
+    for label, module in GUI_EDITIONS:
+        class Silent(FakeAlpha):
+            def query(self, command):
+                self.traffic.append(("query", command))
+                raise IOError("timeout")
+
+        fake = Silent()
+        with _ConnectHarness(module, fake) as backend:
+            try:
+                backend.connect("GPIB0::17::INSTR")
+            except IOError:
+                pass
+            else:
+                raise AssertionError(f"{label}: a dead *IDN? connected")
+            assert backend.instrument is None, label
+        assert fake.commands == ["*IDN?"], (label, fake.commands)
+        assert fake.closed is True, label
+
+
+def test_a_confirmed_alpha_failing_the_handshake_is_still_parked():
+    """Once identity is confirmed, the shutdown sequence is the right one."""
+    for label, module in GUI_EDITIONS:
+        fake = FakeAlpha(answers={"*IDN?": "ALPHA Analyzer, Novocontrol "
+                                           "Technologies, 6.25",
+                                  "INTTYP?": "INTTYP=3 999"})
+        with _ConnectHarness(module, fake) as backend:
+            try:
+                backend.connect("GPIB0::10::INSTR")
+            except ConnectionError:
+                pass
+        assert "ACV=0" in fake.commands, (label, fake.commands)
+        assert "*RST" in fake.commands, (label, fake.commands)
+        assert fake.closed is True, label
+
+
+# ------------------------------------------- CLI: identity, reset, address
+
+class _CliRM:
+    def __init__(self, fake):
+        self.fake = fake
+        self.opened = []
+
+    def open_resource(self, address):
+        self.opened.append(address)
+        return self.fake
+
+
+def test_cli_open_alpha_refuses_a_keysight_without_sending_commands():
+    fake = FakeAlpha(answers={"*IDN?": KEYSIGHT_IDN})
+    try:
+        cli_ed.open_alpha(_CliRM(fake), "GPIB0::17::INSTR")
+    except ConnectionError as exc:
+        assert "not a Novocontrol Alpha" in str(exc), exc
+    else:
+        raise AssertionError("CLI accepted a Keysight as the Alpha")
+    assert fake.commands == ["*IDN?"], fake.commands
+    assert fake.closed is True
+
+
+def test_cli_open_alpha_parks_a_confirmed_alpha_on_a_bad_interface():
+    fake = FakeAlpha(answers={"*IDN?": "ALPHA Analyzer, Novocontrol",
+                              "INTTYP?": "INTTYP=3 999"})
+    try:
+        cli_ed.open_alpha(_CliRM(fake), "GPIB0::10::INSTR")
+    except ConnectionError as exc:
+        assert "ZG4" in str(exc), exc
+    else:
+        raise AssertionError("CLI accepted a non-ZG4 interface")
+    assert "ACV=0" in fake.commands and "*RST" in fake.commands, \
+        fake.commands
+    assert fake.closed is True
+
+
+def test_cli_open_alpha_success_touches_nothing_but_the_handshake():
+    fake = FakeAlpha(answers={"*IDN?": "ALPHA Analyzer, Novocontrol",
+                              "INTTYP?": "INTTYP=5 999"})
+    inst, idn, code = cli_ed.open_alpha(_CliRM(fake), "GPIB0::10::INSTR")
+    assert inst is fake and code == 5 and "ALPHA" in idn
+    assert fake.commands == ["*IDN?", "INTTYP?"], fake.commands
+    assert fake.closed is False
+    assert fake.stb_reads >= 1
+
+
+def test_cli_main_with_a_wrong_address_sends_nothing_but_idn(tmp_path=None):
+    import tempfile
+    fake = FakeAlpha(answers={"*IDN?": KEYSIGHT_IDN})
+    rm = _CliRM(fake)
+    out_dir = str(tmp_path) if tmp_path else tempfile.mkdtemp()
+    old_rm, old_argv = cli_ed.pyvisa.ResourceManager, sys.argv
+    cli_ed.pyvisa.ResourceManager = lambda *a, **k: rm
+    sys.argv = ["cli", "--gpib-address", "GPIB0::17::INSTR",
+                "--diameter", "10", "--thickness", "1", "--path", out_dir]
+    try:
+        try:
+            cli_ed.main()
+        except ConnectionError:
+            pass
+        else:
+            raise AssertionError("CLI ran a sweep on a Keysight")
+    finally:
+        cli_ed.pyvisa.ResourceManager, sys.argv = old_rm, old_argv
+    assert rm.opened == ["GPIB0::17::INSTR"]
+    assert fake.commands == ["*IDN?"], fake.commands
+    assert fake.closed is True
+
+
+def test_cli_default_address_is_the_alpha_at_10_not_5():
+    assert cli_ed.DEFAULT_GPIB_ADDRESS == "GPIB0::10::INSTR"
+    assert 'default="GPIB0::5' not in SOURCES["CLI"]
+
+
+class _VisaNoListener(Exception):
+    """Stands in for pyvisa's VisaIOError(VI_ERROR_NLISTENERS)."""
+
+    def __init__(self, code):
+        super().__init__(f"VISA error {code}")
+        self.error_code = code
+
+
+def _no_sleep(module):
+    old = module.time.sleep
+    module.time.sleep = lambda s: None
+    return old
+
+
+def test_cli_reset_waits_for_the_alpha_to_rejoin_before_mode_imp():
+    """The 22 Oct 2026 failure: MODE=IMP sent while the Alpha was off-bus."""
+    class Rejoining(FakeAlpha):
+        def __init__(self):
+            super().__init__()
+            self.misses = 3
+
+        def query(self, command):
+            if command == "*IDN?" and self.misses:
+                self.misses -= 1
+                self.traffic.append(("query", command))
+                raise _VisaNoListener(cli_ed.VI_ERROR_NLISTENERS)
+            return super().query(command)
+
+    fake = Rejoining()
+    old = _no_sleep(cli_ed)
+    try:
+        cli_ed.reset_and_set_impedance_mode(fake)
+    finally:
+        cli_ed.time.sleep = old
+    commands = fake.commands
+    assert commands[0] == "*RST", commands
+    assert fake.kind_of("*RST") == "write"
+    assert commands.count("*IDN?") == 4, commands
+    assert commands[-1] == "MODE=IMP", commands
+    assert fake.kind_of("MODE=IMP") == "query"   # its ack is read
+
+
+def test_cli_reset_raises_at_once_on_an_error_other_than_no_listener():
+    class Broken(FakeAlpha):
+        def query(self, command):
+            self.traffic.append(("query", command))
+            raise _VisaNoListener(-1073807339)     # VI_ERROR_TMO
+
+    fake = Broken()
+    old = _no_sleep(cli_ed)
+    try:
+        try:
+            cli_ed.reset_and_set_impedance_mode(fake)
+        except _VisaNoListener:
+            pass
+        else:
+            raise AssertionError("a timeout was retried as no-listener")
+    finally:
+        cli_ed.time.sleep = old
+    assert fake.commands == ["*RST", "*IDN?"], fake.commands
+
+
+def test_cli_reset_gives_up_after_the_deadline():
+    class NeverBack(FakeAlpha):
+        def query(self, command):
+            self.traffic.append(("query", command))
+            raise _VisaNoListener(cli_ed.VI_ERROR_NLISTENERS)
+
+    fake = NeverBack()
+    old = _no_sleep(cli_ed)
+    try:
+        try:
+            cli_ed.reset_and_set_impedance_mode(fake, timeout_s=0.0)
+        except ConnectionError as exc:
+            assert "did not rejoin" in str(exc), exc
+        else:
+            raise AssertionError("the reset wait never gave up")
+    finally:
+        cli_ed.time.sleep = old
+    assert "MODE=IMP" not in fake.commands
+
+
+def test_cli_main_no_longer_uses_a_fixed_sleep_after_rst():
+    source = SOURCES["CLI"]
+    main_src = source[source.index("def main():"):]
+    assert 'inst.write("*RST")' not in main_src
+    assert "reset_and_set_impedance_mode(inst)" in main_src
+
+
 # ----------------------------------------------------- setup ordering
 
 def test_initialisation_applies_the_settings_after_the_reset():

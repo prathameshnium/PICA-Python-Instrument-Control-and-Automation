@@ -2089,6 +2089,10 @@ class Integrated_CT_GUI:
             self.log("Previous run is still finishing; wait for it before "
                      "starting again.")
             return
+        # A worker that outlived Stop's queue drain may have left a partial
+        # CYCLE or an exception behind. It belongs to the previous run: a
+        # fresh queue keeps it out of this run's files and error handling.
+        self.data_queue = queue.Queue()
         try:
             # --- Parse frequencies ---
             self.frequencies = self._parse_frequencies()
@@ -2391,6 +2395,9 @@ class Integrated_CT_GUI:
             self.backend.close_instruments()
         except Exception as e:
             self.log(f"WARNING: error closing instruments: {e}")
+        # Points the worker measured after the pump stopped (Stop pressed
+        # mid-sweep) are still in the queue: save them before going idle.
+        self._drain_queue_at_stop()
         self._stopping = False
 
         if self._close_after_stop:
@@ -2513,6 +2520,44 @@ class Integrated_CT_GUI:
     # ==================================================================
     # QUEUE PROCESSING (main thread)
     # ==================================================================
+    def _drain_queue_at_stop(self):
+        """Main thread, at stop: the pump stops re-scheduling as soon as
+        the run flags drop, so a sweep the worker cut short at Stop (or
+        queued just before an error) would sit unread and be lost. Write
+        those points to disk now (same fsync'd path as every cycle), then
+        retry any rows still buffered from a disk hiccup. A late kill or
+        error is only logged: the stop is already in progress."""
+        while True:
+            try:
+                data = self.data_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                if isinstance(data, str) and data.startswith("LOG:"):
+                    self._handle_log_message(data[4:])
+                elif isinstance(data, str) and data == "KILL":
+                    self.log("!!! 400 K SAFETY KILL fired as the run "
+                             "stopped. Heater forced OFF. !!!")
+                elif isinstance(data, Exception):
+                    tb = getattr(data, 'pica_traceback', repr(data))
+                    self.log(f"RUNTIME ERROR (after stop): {tb}")
+                elif isinstance(data, tuple) and data[0] == 'CYCLE':
+                    _, cycle, elapsed = data
+                    self._process_cycle(cycle, elapsed)
+            except Exception:
+                self.log("GUI ERROR while saving the last sweep: "
+                         f"{traceback.format_exc()}")
+        try:
+            self._flush_pending_rows()
+        except Exception:
+            self.log("GUI ERROR while flushing buffered rows: "
+                     f"{traceback.format_exc()}")
+        if self._pending_rows:
+            self.log(f"WARNING: {len(self._pending_rows)} row(s) could not "
+                     "be written (disk / share unavailable). They stay in "
+                     "memory and are retried on the next run; closing the "
+                     "program loses them.")
+
     def _process_data_queue(self):
         terminal = None
         try:

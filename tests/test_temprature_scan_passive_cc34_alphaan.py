@@ -1164,6 +1164,124 @@ def test_hardening_and_headers_survived_the_port():
     assert SOURCE.count("Alpha-AN & Cryocon 34") == 2
 
 
+
+# --- review fixes (23 Oct 2026): refused Alpha, cut-short sweeps -------------
+
+def test_a_refused_alpha_address_gets_nothing_at_close_either():
+    fake = FakeAlpha({"*IDN?": "KEITHLEY INSTRUMENTS,MODEL 2400"})
+    bus = FakeBus(alpha=fake)
+    with patch_bus(bus):
+        backend = mod.AlphaAN_Backend()
+        try:
+            backend.connect(ALPHA_ADDR)
+        except ConnectionError:
+            pass
+        else:
+            raise AssertionError("a non-Alpha IDN was accepted")
+        backend.close_instrument()             # Start's error path
+    assert fake.commands == ["*IDN?"], fake.commands
+
+
+def _partial_sweep_error():
+    bus = FakeBus(alpha=FakeAlpha({"ZRE?": ["ZRE=1E5 -2E6 1000 2 1",
+                                            "ZRE=1E5 -2E6 10000 6 1"]}))
+    with patch_bus(bus):
+        backend = _started(bus)
+        try:
+            backend.measure_frequency_sweep([1e3, 1e4], 0.0)
+        except mod.AlphaFatalStatusError as exc:
+            return exc
+        finally:
+            backend.close_instruments()
+    raise AssertionError("status 6 must abort the sweep")
+
+
+def test_points_measured_before_a_fatal_status_are_kept():
+    err = _partial_sweep_error()
+    assert [p[1] for p in err.partial_cycle["points"]] == [1e3]
+    gui, calls = _worker_gui(err)
+    gui._measurement_worker()
+    kinds = [i[0] for i in _drain(gui.data_queue) if isinstance(i, tuple)]
+    assert kinds == ["CYCLE", "ERROR"], kinds
+    assert calls["reconnect"] == 0
+
+
+def test_points_measured_before_a_comm_drop_are_kept():
+    err = IOError("VI_ERROR_TMO")
+    err.partial_cycle = _partial_sweep_error().partial_cycle
+    gui, calls = _worker_gui(err)
+    gui._measurement_worker()
+    items = _drain(gui.data_queue)
+    cycles = [i for i in items if isinstance(i, tuple) and i[0] == "CYCLE"]
+    assert len(cycles) == 1 and len(cycles[0][1]["points"]) == 1
+    comm = [n for n, i in enumerate(items)
+            if isinstance(i, str) and "COMM ERROR" in i]
+    assert items.index(cycles[0]) < comm[0]    # saved before the reconnect
+    assert calls["reconnect"] == 1
+
+
+def test_a_sweep_cut_short_by_stop_is_written_to_the_files():
+    """The pump stops re-scheduling once Stop drops the run flags; the
+    worker's last (partial) sweep arrives after that and must still be
+    written before the run ends."""
+    valid = mod.STATUS_RESULT_VALID
+    closed = []
+    logged = []
+    button = types.SimpleNamespace(config=lambda **k: None)
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _files(tmp)
+        gui.log = logged.append
+        before = {f: open(p).read() for f, p in gui.freq_filepaths.items()}
+        gui._update_data_storage = lambda *a: None
+        gui._update_live_plots = lambda *a, **k: None
+        gui._set_keep_awake = lambda on: None
+        gui.data_queue = queue.Queue()
+        gui.data_queue.put(("CYCLE", {
+            "points": [(300.0, 1000.0, 1e5, -2e6, valid, 1000.0)],
+            "heater": 5.0, "wall_time": mod.datetime.now()}, 12.0))
+        gui.data_queue.put(("ERROR", OSError("late"), "Traceback: late"))
+        gui.start_button = gui.scan_button = button
+        gui.backend = types.SimpleNamespace(
+            close_instruments=lambda: closed.append(True))
+        gui._close_after_stop = False
+        gui._stopping = True
+        gui._finalize_stop(False)
+        after = {f: open(p).read() for f, p in gui.freq_filepaths.items()}
+        windeta = open(gui.windeta_filepaths[1000.0], "rb").read()
+        t_log = open(gui.t_log_path).read()
+    added = after[1000.0][len(before[1000.0]):].splitlines()
+    assert len(added) == 1 and added[0].startswith("3.000000E+02\t")
+    assert len(added[0].split("\t")) == 19
+    assert after[2000.0] == before[2000.0]
+    assert windeta.endswith(b"\r\n") and windeta.count(b"\r\n") == 5
+    assert "\t12.0\t300.0000\t5.00" in t_log
+    assert any("Traceback: late" in m for m in logged)
+    assert gui.data_queue.empty() and closed == [True]
+
+
+def test_start_drops_what_a_late_worker_left_in_the_queue():
+    # A worker that outlived Stop's drain left a partial CYCLE and an
+    # exception behind; neither belongs to the next run.
+    gui = object.__new__(mod.Integrated_CT_GUI)
+    gui.measurement_thread = None
+    gui.log = lambda msg: None
+    gui.data_queue = queue.Queue()
+    gui.data_queue.put(("CYCLE", {"points": [], "killed": False}, 1.0))
+    gui.data_queue.put(("ERROR", RuntimeError("late"), "traceback"))
+    gui.backend = types.SimpleNamespace(close_instruments=lambda: None)
+
+    def _fail():
+        raise ValueError("stop the start here")
+    gui._parse_frequencies = _fail
+    old = mod.messagebox
+    mod.messagebox = types.SimpleNamespace(showerror=lambda *a, **k: None)
+    try:
+        gui.start_measurement()
+    finally:
+        mod.messagebox = old
+    assert gui.data_queue.empty()
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in list(globals().items()):

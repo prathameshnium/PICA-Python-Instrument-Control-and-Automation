@@ -11,6 +11,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from alphaan_port_test_support import (  # noqa: E402
@@ -74,11 +75,16 @@ def test_ref_calibration_is_the_frequency_scan_sequence():
     assert not backend._task_may_be_running
 
 
-def test_ref_calibration_method_is_a_verbatim_copy():
+def test_ref_calibration_sends_the_frequency_scan_bytes():
+    # Was a verbatim-source check; the SRQ wait now differs (sliced,
+    # cancellable), so the bytes on the bus are compared instead.
     fscan, _ = load_port("Frequency_Scan_AlphaAN_GUI.py")
-    import inspect
-    assert (inspect.getsource(mod.AlphaAN_Backend.run_reference_calibration)
-            == inspect.getsource(fscan.AlphaAN_Backend.run_reference_calibration))
+    ours, fake_ours = connected_backend(mod)
+    theirs, fake_theirs = connected_backend(fscan)
+    with _NoSleep():                 # mod.time is the shared time module
+        ours.run_reference_calibration()
+        theirs.run_reference_calibration()
+    assert fake_ours.commands == fake_theirs.commands
 
 
 def test_ref_calibration_failure_ack_raises():
@@ -139,15 +145,151 @@ def test_load_short_failure_ack_raises():
         raise AssertionError("a non-OK load-short ack must raise")
 
 
+class _StbAlpha(FakeAlpha):
+    """FakeAlpha whose SRQ never comes and whose status byte is chosen;
+    `on_wait` runs at every SRQ wait slice."""
+
+    def __init__(self, stb=0x00, on_wait=None, **kw):
+        super().__init__(srq_raises=True, **kw)
+        self.stb = stb
+        self.on_wait = on_wait
+
+    def read_stb(self):
+        return self.stb
+
+    def wait_for_srq(self, timeout_ms=25000):
+        if self.on_wait:
+            self.on_wait()
+        return super().wait_for_srq(timeout_ms)
+
+
+def _waits(fake):
+    return [p for k, p in fake.traffic if k == "wait_for_srq"]
+
+
 def test_srq_timeout_aborts_the_calibration_with_mbk():
-    backend, fake = connected_backend(mod, FakeAlpha(srq_raises=True))
+    backend, fake = connected_backend(mod, _StbAlpha())
     try:
-        backend.run_load_short_step("SL_100")
+        backend.run_load_short_step("SL_100", timeout_s=0)
     except TimeoutError:
         pass
     else:
         raise AssertionError("an SRQ timeout must raise")
     assert "MBK" in fake.commands
+    assert ("read", None) not in fake.traffic
+
+
+def test_an_immediate_error_ack_is_read_at_once_not_after_an_hour():
+    # ZRUNCAL refused at once: the answer sits in the buffer (MAV) and no
+    # SRQ ever comes. One wait slice, then the ack is read and raised.
+    fake = _StbAlpha(stb=mod.STB_MAV, answers={"__read__": "IP"})
+    backend, _ = connected_backend(mod, fake)
+    t0 = time.monotonic()
+    try:
+        backend.run_load_short_step("SL_SHORT")       # default 3600 s budget
+    except RuntimeError as exc:
+        assert "IP" in str(exc) and "SL_SHORT" in str(exc)
+    else:
+        raise AssertionError("an immediate error ack must raise")
+    assert time.monotonic() - t0 < mod.CAL_WAIT_SLICE_S + 1.0
+    assert len(_waits(fake)) == 1
+    assert _waits(fake)[0] <= mod.CAL_WAIT_SLICE_S * 1000
+    assert "MBK" not in fake.commands                 # nothing to abort
+    assert not backend._task_may_be_running
+
+
+def test_an_immediate_error_ack_on_ref_is_read_at_once():
+    fake = _StbAlpha(stb=mod.STB_MAV, answers={"__read__": "EC"})
+    backend, _ = connected_backend(mod, fake)
+    with _NoSleep():
+        try:
+            backend.run_reference_calibration()
+        except RuntimeError as exc:
+            assert "EC" in str(exc)
+        else:
+            raise AssertionError("an immediate REF error ack must raise")
+    assert len(_waits(fake)) == 1
+
+
+def test_a_stale_task_bit_alone_does_not_end_the_wait():
+    # Bit 0 may be left over from the immediately-acked *_INIT; without
+    # RQS or MAV there is nothing to read, so the wait goes on (here: to
+    # its timeout) instead of a read() that would hang.
+    fake = _StbAlpha(stb=mod.STB_TASK_DONE)
+    backend, _ = connected_backend(mod, fake)
+    try:
+        backend.run_load_short_step("SL_SHORT", timeout_s=0)
+    except TimeoutError:
+        pass
+    else:
+        raise AssertionError("bit 0 alone must not count as finished")
+    assert ("read", None) not in fake.traffic
+
+
+def test_cancel_aborts_the_task_with_mbk_and_reads_nothing():
+    stop = threading.Event()
+    fake = _StbAlpha(on_wait=stop.set)
+    backend, _ = connected_backend(mod, fake)
+    try:
+        backend.run_load_short_step("SL_100", stop_event=stop)
+    except mod.CalibrationCancelled as exc:
+        assert "cancelled" in str(exc)
+    else:
+        raise AssertionError("Cancel must end the wait")
+    assert fake.commands[-3:] == ["ZRUNCAL=SL_100", "MBK", "ZTSTAT?"]
+    assert ("read", None) not in fake.traffic
+    assert len(_waits(fake)) == 1                     # within one slice
+    backend.safe_state()                              # the worker's park
+    assert fake.commands[-2:] == ["ACV=0", "ZCONSPL=0"]
+
+
+def test_cancel_works_on_the_ref_wait_too():
+    stop = threading.Event()
+    fake = _StbAlpha(on_wait=stop.set)
+    backend, _ = connected_backend(mod, fake)
+    with _NoSleep():
+        try:
+            backend.run_reference_calibration(stop_event=stop)
+        except mod.CalibrationCancelled:
+            pass
+        else:
+            raise AssertionError("Cancel must end the REF wait")
+    assert "MBK" in fake.commands
+
+
+class _ReadTimesOut(_StbAlpha):
+    """Status byte says a response waits, but read() times out."""
+
+    def read(self):
+        self.traffic.append(("read", None))
+        raise TimeoutError("VI_ERROR_TMO")
+
+
+def test_a_failed_ack_read_still_aborts_the_task_before_parking():
+    # Bit 4 meaning MAV is unconfirmed on the Alpha: if it ends the wait but
+    # nothing comes, the task may still run, so the park must MBK first.
+    fake = _ReadTimesOut(stb=mod.STB_MAV)
+    backend, _ = connected_backend(mod, fake)
+    try:
+        backend.run_load_short_step("SL_SHORT")
+    except TimeoutError:
+        pass
+    else:
+        raise AssertionError("a timed-out ack read must raise")
+    assert backend._task_may_be_running
+    backend.safe_state()
+    assert fake.commands[-3:] == ["MBK", "ACV=0", "ZCONSPL=0"]
+
+
+def test_a_task_that_finished_as_cancel_was_pressed_is_read_not_aborted():
+    stop = threading.Event()
+    stop.set()
+    fake = _StbAlpha(stb=mod.STB_RQS | mod.STB_TASK_DONE)
+    backend, _ = connected_backend(mod, fake)
+    backend.run_load_short_step("SL_100", stop_event=stop)   # no raise
+    assert "MBK" not in fake.commands
+    assert fake.traffic[-1] == ("read", None)
+    assert not backend._task_may_be_running
 
 
 def test_full_converter_calibration_is_never_sent():
@@ -359,9 +501,10 @@ def test_forced_close_during_ref_is_not_recorded_as_done():
     g._close_requested = True
 
     class _Backend:
-        def run_reference_calibration(self):
+        def run_reference_calibration(self, stop_event=None):
             pass
     g.backend = _Backend()
+    g.stop_event = threading.Event()
     written = []
     saved = mod.write_last_ref_cal
     mod.write_last_ref_cal = lambda *a, **k: written.append(1)
@@ -375,6 +518,63 @@ def test_forced_close_during_ref_is_not_recorded_as_done():
     finally:
         mod.write_last_ref_cal = saved
     assert written == []
+
+
+def _queued(g):
+    out = []
+    while not g.queue.empty():
+        out.append(g.queue.get_nowait())
+    return out
+
+
+def _cancel_stub():
+    import queue as _queue
+    s = _GuiStub()
+    g = s.gui
+    g.queue = _queue.Queue()
+    g.stop_event = threading.Event()
+    g.progress_sl = g.progress_ref = None
+    fake = _StbAlpha(on_wait=g.stop_event.set)
+    g.backend, _ = connected_backend(mod, fake)
+    return s, g, fake
+
+
+def test_cancel_during_load_short_parks_and_reports_without_an_error():
+    s, g, fake = _cancel_stub()
+    g._worker_load_short(1)                 # SL_100 part; must not raise
+    items = _queued(g)
+    kinds = [k for k, _ in items]
+    assert "error" not in kinds and "advance" not in kinds
+    assert ("slphase", 0) in items          # load-short starts over
+    assert any(k == "log" and "cancelled" in p for k, p in items)
+    assert any(k == "headline" and p[1] is False for k, p in items)
+    cmds = fake.commands
+    assert cmds.index("MBK") < cmds.index("ACV=0") < cmds.index("ZCONSPL=0")
+
+
+def test_cancel_during_ref_is_not_recorded_as_done():
+    s, g, fake = _cancel_stub()
+    written = []
+    saved = mod.write_last_ref_cal
+    mod.write_last_ref_cal = lambda *a, **k: written.append(1)
+    try:
+        with _NoSleep():
+            g._worker_ref()                 # must not raise
+    finally:
+        mod.write_last_ref_cal = saved
+    assert written == []
+    kinds = [k for k, _ in _queued(g)]
+    assert "advance" not in kinds and "refage" not in kinds
+    assert "ACV=0" in fake.commands
+
+
+def test_cancel_button_only_acts_while_a_step_runs():
+    s, g, _ = _cancel_stub()
+    g._cancel_cal()
+    assert not g.stop_event.is_set()
+    g.busy = True
+    g._cancel_cal()
+    assert g.stop_event.is_set() and any("Cancel" in m for m in s.logs)
 
 
 if __name__ == "__main__":

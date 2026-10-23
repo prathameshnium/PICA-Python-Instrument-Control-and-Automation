@@ -577,6 +577,171 @@ def test_start_is_refused_while_the_previous_worker_is_alive():
     assert any("still finishing" in ln for ln in lines)
 
 
+# --- an Alpha refusal inside the interleaved temperature log ends the run ---
+
+def _temp_log_raising(gui, exc, clear_running):
+    def _log(target, measuring_flag):
+        if clear_running:
+            gui.is_running = False
+        raise exc
+    gui._log_temperature_point = _log
+
+
+def test_an_alpha_refusal_during_the_temp_log_reaches_the_worker():
+    # _comm_recover re-raises the refusal with is_running still set: the
+    # sweep must not swallow it (the setpoint loop would carry on with a
+    # half-configured Alpha).
+    gui, fake = _gui()
+    _temp_log_raising(gui, RuntimeError("Command 'MTM=0.5' failed: 'IP'"),
+                      clear_running=False)
+    try:
+        gui._run_frequency_sweep(100.0, 0, 2)
+    except RuntimeError as exc:
+        assert "IP" in str(exc)
+    else:
+        raise AssertionError("the refusal was swallowed by the sweep")
+    assert fake.commands.count("MST") == 1          # no further point
+
+
+def test_overtemp_and_stop_during_recovery_still_just_end_the_sweep():
+    for msg in ("Hard overtemperature limit reached.",
+                "Stopped during comm recovery."):
+        gui, fake = _gui()
+        _temp_log_raising(gui, RuntimeError(msg), clear_running=True)
+        assert gui._run_frequency_sweep(100.0, 0, 2) == 0   # no raise
+        assert fake.commands.count("MST") == 1
+        assert gui.is_running is False
+
+
+def test_a_soft_limit_still_reaches_the_worker():
+    gui, _ = _gui(freqs=(1000.0,))
+    _temp_log_raising(gui, mod.SoftLimitAbort("max"), clear_running=False)
+    try:
+        gui._run_frequency_sweep(100.0, 0, 1)
+    except mod.SoftLimitAbort:
+        pass
+    else:
+        raise AssertionError("SoftLimitAbort must propagate")
+
+
+# --- Lakeshore 340 identity guard --------------------------------------------
+
+def _ls_backend(idn):
+    fake = FakeAlpha({"*IDN?": idn})       # any recording VISA stand-in
+    ls = mod.Lakeshore_Backend.__new__(mod.Lakeshore_Backend)
+    ls.lakeshore = None
+    ls.last_visa = None
+    ls.was_connected = False
+    ls.idn = ""
+    ls.rm = FakeRM(fake)
+    return ls, fake
+
+
+def test_lakeshore_connect_refuses_a_non_340_before_any_write():
+    for idn in ("LSCI,MODEL350,LSA1234,1.2",
+                "ALPHA Analyzer, Novocontrol Technologies, x",
+                "KEITHLEY INSTRUMENTS,MODEL 2400,1,C30"):
+        ls, fake = _ls_backend(idn)
+        try:
+            ls.connect("GPIB0::19::INSTR")
+        except RuntimeError as exc:
+            assert "not a Lake Shore Model 340" in str(exc)
+        else:
+            raise AssertionError(f"{idn} accepted as a 340")
+        assert fake.commands == ["*IDN?"] and fake.closed
+        assert ls.lakeshore is None
+        ls.shutdown()                       # the worker's finally
+        assert fake.commands == ["*IDN?"]   # still nothing written
+
+
+def test_lakeshore_connect_accepts_a_340_and_clears_after_the_check():
+    ls, fake = _ls_backend("LSCI,MODEL340,123456,061407")
+    assert ls.connect("GPIB0::19::INSTR") == "LSCI,MODEL340,123456,061407"
+    assert fake.commands == ["*IDN?", "*CLS"]
+    assert ls.lakeshore is fake and not fake.closed
+
+
+class _ClearingSession(FakeAlpha):
+    """Recording VISA stand-in that also records a VISA device clear."""
+
+    def clear(self):
+        self.traffic.append(("clear", None))
+
+
+def _reconnect_backend(idns):
+    """A backend that was connected to a 340 at the right address and
+    whose fresh session answers *IDN? with idns in turn."""
+    ls, _ = _ls_backend("unused")
+    fake = _ClearingSession({"*IDN?": list(idns)})
+    ls.rm = FakeRM(fake)
+    ls.last_visa = "GPIB0::19::INSTR"
+    ls.was_connected = True
+    return ls, fake
+
+
+def test_a_stale_idn_on_reconnect_gets_a_clear_and_one_more_ask():
+    ls, fake = _reconnect_backend(["+300.000", "LSCI,MODEL340,123456,061407"])
+    assert ls.reconnect() == "LSCI,MODEL340,123456,061407"
+    assert [k for k, _ in fake.traffic] == ["query", "clear", "query",
+                                            "write"]
+    assert fake.commands == ["*IDN?", "*IDN?", "*CLS"]
+    assert ls.lakeshore is fake
+
+
+def test_a_wrong_model_on_reconnect_is_still_refused_after_one_retry():
+    ls, fake = _reconnect_backend(["+300.000", "LSCI,MODEL350,LSA1234,1.2"])
+    try:
+        ls.reconnect()
+    except RuntimeError as exc:
+        assert "not a Lake Shore Model 340" in str(exc)
+    else:
+        raise AssertionError("a non-340 must be refused")
+    assert fake.commands == ["*IDN?", "*IDN?"] and fake.closed
+    assert ls.lakeshore is None
+
+
+def test_start_never_retries_or_clears_an_unknown_device():
+    ls, fake = _ls_backend("+300.000")
+    fake.clear = lambda: fake.traffic.append(("clear", None))
+    try:
+        ls.connect("GPIB0::19::INSTR")
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("a non-IDN answer at Start must be refused")
+    assert fake.traffic == [("query", "*IDN?")]
+
+
+def test_shutdown_after_a_lost_session_reports_instead_of_crashing():
+    ls, fake = _reconnect_backend(["LSCI,MODEL350,LSA1234,1.2", "LSCI,MODEL350,LSA1234,1.2"])
+    try:
+        ls.reconnect()
+    except RuntimeError:
+        pass
+    assert ls.lakeshore is None
+    assert ls.shutdown() is False           # no crash, heater-off not sent
+    assert fake.commands == ["*IDN?", "*IDN?"]
+    never, _ = _ls_backend("unused")
+    assert never.shutdown() is True         # never connected: nothing lost
+
+
+def test_the_worker_warns_when_heater_off_could_not_be_sent():
+    import types
+    gui = mod.CombinedGUI.__new__(mod.CombinedGUI)
+    gui.gui_queue = queue.Queue()
+    gui.params, gui.lcr_params = {}, {}  # the worker fails at once
+    gui.ls_backend = types.SimpleNamespace(shutdown=lambda: False)
+    gui.lcr_backend = types.SimpleNamespace(close_instrument=lambda: None)
+    gui._hardware_worker_loop()
+    msgs = []
+    while not gui.gui_queue.empty():
+        msgs.append(gui.gui_queue.get_nowait())
+    assert any(m["type"] == "log" and "could NOT be sent" in m["text"]
+               for m in msgs)
+    assert any(m["type"] == "beep" for m in msgs)
+    assert msgs[-1]["type"] == "worker_done"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

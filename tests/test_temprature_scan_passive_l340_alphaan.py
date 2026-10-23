@@ -796,6 +796,95 @@ def test_geometry_toggle_keeps_a_value_per_mode():
     assert labels == ["Electrode Diameter (mm):", "Electrode Area (mm²):"]
 
 
+# --- review fixes (23 Oct 2026): refused Alpha, cut-short sweeps -------------
+
+def test_a_refused_alpha_address_gets_nothing_at_close_either():
+    fake = FakeAlpha({"*IDN?": "LSCI,MODEL340,123456,061407"})
+    backend, _ = connected_backend(mod, fake)
+    backend.instrument = None
+    try:
+        backend.connect(L340_ADDR)
+    except ConnectionError:
+        pass
+    else:
+        raise AssertionError("a non-Alpha IDN must be refused")
+    backend.close_instrument()                 # Start's error path
+    assert fake.commands == ["*IDN?"], fake.commands
+
+
+def test_a_sweep_cut_short_by_stop_is_written_to_the_files():
+    """The pump stops re-scheduling once Stop drops the run flags; the
+    worker's last (partial) sweep arrives after that and must still be
+    written, fsync'd, before the run ends."""
+    valid = mod.STATUS_RESULT_VALID
+    closed = []
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _files(tmp)
+        before = {f: open(p).read() for f, p in gui.freq_filepaths.items()}
+        gui._update_data_storage = lambda *a: None
+        gui._update_live_plots = lambda *a, **k: None
+        gui._set_keep_awake = lambda on: None
+        gui.data_queue = queue.Queue()
+        gui.data_queue.put(("CYCLE", {
+            "points": [(300.0, 1000.0, 1e5, -2e6, valid, 1000.0)],
+            "heater": 5.0, "reading_status": [],
+            "last_reading_status": 0,
+            "wall_time": mod.datetime.now()}, 12.0))
+        gui.data_queue.put("KILL")
+        gui.start_button = gui.scan_button = _Recorder()
+        gui.heater_off_cb = gui.sensor_cb = _Recorder()
+        gui.backend = types.SimpleNamespace(
+            close_instruments=lambda: closed.append(True))
+        gui._close_after_stop = False
+        gui._stopping = True
+        synced = []
+        real_fsync = os.fsync
+        with patch.object(mod.os, "fsync",
+                          lambda fd: (synced.append(fd), real_fsync(fd))):
+            gui._finalize_stop(False)
+        after = {f: open(p).read() for f, p in gui.freq_filepaths.items()}
+        windeta = open(gui.windeta_filepaths[1000.0], "rb").read()
+        t_log = open(gui.t_log_path).read()
+    added = after[1000.0][len(before[1000.0]):].splitlines()
+    assert len(added) == 1 and added[0].startswith("3.000000E+02\t")
+    assert len(added[0].split("\t")) == 19
+    assert after[2000.0] == before[2000.0]
+    assert windeta.endswith(b"\r\n") and windeta.count(b"\r\n") == 5
+    assert "\t12.0\t300.0000\t5.00\t0" in t_log
+    assert len(synced) == 3                    # PICA, WinDETA, T-log
+    assert any("SAFETY KILL" in m for m in gui.logged)
+    assert gui.data_queue.empty() and closed == [True]
+
+
+def test_a_disk_hiccup_row_is_retried_once_more_at_stop():
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _files(tmp)
+        path = gui.freq_filepaths[1000.0]
+        gui._pending_rows.append((path, "buffered\n", False))
+        gui.data_queue = queue.Queue()
+        gui._drain_queue_at_stop()
+        text = open(path).read()
+    assert text.endswith("buffered\n") and not gui._pending_rows
+
+
+def test_start_drops_what_a_late_worker_left_in_the_queue():
+    # A worker that outlived Stop's drain left a partial CYCLE and an
+    # exception behind; neither belongs to the next run.
+    gui = _bare_gui()
+    gui.measurement_thread = None
+    gui.data_queue = queue.Queue()
+    gui.data_queue.put(("CYCLE", {"points": [], "killed": False}, 1.0))
+    gui.data_queue.put(RuntimeError("late error from the previous run"))
+    gui.backend = types.SimpleNamespace(close_instruments=lambda: None)
+
+    def _fail():
+        raise ValueError("stop the start here")
+    gui._parse_frequencies = _fail
+    with patch.object(mod, "messagebox", _Recorder()):
+        gui.start_measurement()
+    assert gui.data_queue.empty()
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

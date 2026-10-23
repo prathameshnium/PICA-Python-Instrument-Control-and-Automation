@@ -680,6 +680,239 @@ def test_points_measured_before_a_fatal_status_are_kept():
     assert "Traceback" in out[-1].pica_traceback
 
 
+# --- review fixes (23 Oct 2026): wrong address, cut-short sweeps -------------
+
+class _IdnPyvisa(FakePyvisa):
+    """FakePyvisa whose sessions answer *IDN? with the given strings."""
+
+    def __init__(self, *idns):
+        super().__init__()
+        self.idns = list(idns)
+
+    def ResourceManager(self):
+        outer = self
+
+        class _RM:
+            def open_resource(self, addr):
+                s = FakeL350Session(idn=outer.idns.pop(0))
+                outer.sessions.append(s)
+                return s
+        return _RM()
+
+
+def test_a_non_350_address_is_refused_before_any_write():
+    for zero_range in (True, False):
+        combined = mod.Combined_Backend()
+        combined.lcr, fake = connected_backend(mod)
+        combined.lcr.instrument = None
+        fake_visa = _IdnPyvisa("LSCI,MODEL340,123456,061407")
+        with patch.object(mod, "pyvisa", fake_visa):
+            try:
+                combined.initialize_instruments(
+                    {**PARAMS, "zero_range": zero_range})
+            except ConnectionError as exc:
+                assert "not a Lake Shore Model 350" in str(exc)
+            else:
+                raise AssertionError("a Model 340 must be refused")
+        combined.close_instruments()           # Start's error path
+        session = fake_visa.sessions[0]
+        assert session.traffic == [("query", "*IDN?")], session.traffic
+        assert session.closed and combined.lakeshore is None
+        assert fake.commands == []
+
+
+def test_reconnect_refuses_an_address_that_is_no_longer_a_350():
+    combined = mod.Combined_Backend()
+    combined.lcr, fake = connected_backend(mod)
+    fake_visa = _IdnPyvisa("LSCI,MODEL350,LSA1234,1.0",
+                           "ALPHA Analyzer, Novocontrol Technologies, x")
+    with patch.object(mod, "pyvisa", fake_visa):
+        combined.initialize_instruments(dict(PARAMS))
+        try:
+            combined.reconnect()
+        except ConnectionError as exc:      # retried by the backoff loop
+            assert "on reconnect" in str(exc)
+        else:
+            raise AssertionError("a non-350 must be refused on reconnect")
+    second = fake_visa.sessions[1]
+    assert second.traffic == [("query", "*IDN?")] and second.closed
+    assert combined.lakeshore is None
+    combined.close_instruments()
+    assert second.traffic == [("query", "*IDN?")]
+
+
+def test_scan_picks_the_350_by_model_never_a_340():
+    idns = {
+        "GPIB0::19::INSTR": "LSCI,MODEL340,222,1",
+        "GPIB0::12::INSTR": "LSCI,MODEL350,1,1\r\n",
+        "GPIB0::10::INSTR": "ALPHA Analyzer, Novocontrol Technologies, x",
+    }
+
+    class _Dev:
+        def __init__(self, res):
+            self.res = res
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def query(self, cmd):
+            return idns[self.res]
+
+    def scan():
+        rm = types.SimpleNamespace(list_resources=lambda: tuple(idns),
+                                   open_resource=_Dev)
+        combo = type("Combo", (dict,), {"set": lambda self, v:
+                                        self.__setitem__("chosen", v)})
+        logged = []
+        gui = types.SimpleNamespace(log=logged.append, lakeshore_cb=combo(),
+                                    lcr_cb=combo(), backend=None)
+        with patch.object(mod, "pyvisa",
+                          types.SimpleNamespace(ResourceManager=lambda: rm)), \
+                patch.object(mod, "PYVISA_AVAILABLE", True):
+            mod.Integrated_CT_GUI._scan_for_visa_instruments(gui)
+        return gui, logged
+
+    gui, _ = scan()
+    assert gui.lakeshore_cb["chosen"].startswith("GPIB0::12::INSTR")
+    assert gui.lcr_cb["chosen"].startswith("GPIB0::10::INSTR")
+    del idns["GPIB0::12::INSTR"]
+    gui, logged = scan()                        # only a 340 on the bus
+    assert any("Start will refuse" in m for m in logged)
+
+
+def test_a_refused_alpha_address_gets_nothing_at_close_either():
+    fake = FakeAlpha({"*IDN?": "LSCI,MODEL350,LSA1234,1.0"})
+    backend, _ = connected_backend(mod, fake)
+    backend.instrument = None
+    try:
+        backend.connect("GPIB0::12::INSTR")
+    except ConnectionError:
+        pass
+    else:
+        raise AssertionError("a non-Alpha IDN must be refused")
+    backend.close_instrument()                 # Start's error path
+    assert fake.commands == ["*IDN?"], fake.commands
+
+
+def test_a_sweep_cut_short_by_stop_is_written_to_the_files():
+    """The pump stops re-scheduling once Stop drops the run flags; the
+    worker's last (partial) sweep arrives after that and must still be
+    written, fsync'd, before the run ends."""
+    valid = mod.STATUS_RESULT_VALID
+    closed = []
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _files(tmp)
+        before = {f: open(p).read() for f, p in gui.freq_filepaths.items()}
+        gui._update_data_storage = lambda *a: None
+        gui._update_live_plots = lambda *a, **k: None
+        gui._set_keep_awake = lambda on: None
+        gui.data_queue = queue.Queue()
+        gui.data_queue.put(("CYCLE", {
+            "points": [(300.0, 1000.0, 1e5, -2e6, valid, 1000.0)],
+            "heater": 5.0, "wall_time": mod.datetime.now()}, 12.0))
+        gui.data_queue.put("KILL")
+        gui.start_button = gui.scan_button = _Recorder()
+        gui.backend = types.SimpleNamespace(
+            close_instruments=lambda: closed.append(True))
+        gui._close_after_stop = False
+        gui._stopping = True
+        synced = []
+        real_fsync = os.fsync
+        with patch.object(mod.os, "fsync",
+                          lambda fd: (synced.append(fd), real_fsync(fd))):
+            gui._finalize_stop(False)
+        after = {f: open(p).read() for f, p in gui.freq_filepaths.items()}
+        windeta = open(gui.windeta_filepaths[1000.0], "rb").read()
+        t_log = open(gui.t_log_path).read()
+    added = after[1000.0][len(before[1000.0]):].splitlines()
+    assert len(added) == 1 and added[0].startswith("3.000000E+02\t")
+    assert len(added[0].split("\t")) == 19
+    assert after[2000.0] == before[2000.0]
+    assert windeta.endswith(b"\r\n") and windeta.count(b"\r\n") == 5
+    assert "\t12.0\t300.0000\t5.00" in t_log
+    assert len(synced) == 3                    # PICA, WinDETA, T-log
+    assert any("SAFETY KILL" in m for m in gui.logged)
+    assert gui.data_queue.empty() and closed == [True]
+    assert gui._stopping is False
+
+
+def test_start_drops_what_a_late_worker_left_in_the_queue():
+    # A worker that outlived Stop's drain left a partial CYCLE and an
+    # exception behind; neither belongs to the next run.
+    gui = _bare_gui()
+    gui.measurement_thread = None
+    gui.data_queue = queue.Queue()
+    gui.data_queue.put(("CYCLE", {"points": [], "killed": False}, 1.0))
+    gui.data_queue.put(RuntimeError("late error from the previous run"))
+    gui.backend = types.SimpleNamespace(close_instruments=lambda: None)
+
+    def _fail():
+        raise ValueError("stop the start here")
+    gui._parse_frequencies = _fail
+    with patch.object(mod, "messagebox", _Recorder()):
+        gui.start_measurement()
+    assert gui.data_queue.empty()
+
+
+class _BadCloseSession(FakeL350Session):
+    def close(self):
+        raise OSError("VI_ERROR_CONN_LOST")
+
+
+class _BadClosePyvisa(_IdnPyvisa):
+    """_IdnPyvisa whose sessions raise on close()."""
+
+    def ResourceManager(self):
+        outer = self
+
+        class _RM:
+            def open_resource(self, addr):
+                s = _BadCloseSession(idn=outer.idns.pop(0))
+                outer.sessions.append(s)
+                return s
+        return _RM()
+
+
+def test_a_refused_lakeshore_is_dropped_even_if_its_close_raises():
+    combined = mod.Combined_Backend()
+    combined.lcr, fake = connected_backend(mod)
+    combined.lcr.instrument = None
+    fake_visa = _BadClosePyvisa("LSCI,MODEL340,123456,061407")
+    with patch.object(mod, "pyvisa", fake_visa):
+        try:
+            combined.initialize_instruments(dict(PARAMS))
+        except ConnectionError as exc:
+            assert "not a Lake Shore Model 350" in str(exc)
+        else:
+            raise AssertionError("a Model 340 must be refused")
+    assert combined.lakeshore is None
+    combined.close_instruments()               # Start's error path
+    assert fake_visa.sessions[0].traffic == [("query", "*IDN?")]
+    assert fake.commands == []
+
+
+def test_a_reconnect_refusal_survives_a_close_that_raises():
+    combined = mod.Combined_Backend()
+    combined.lcr, _fake = connected_backend(mod)
+    fake_visa = _IdnPyvisa("LSCI,MODEL350,LSA1234,1.0")
+    with patch.object(mod, "pyvisa", fake_visa):
+        combined.initialize_instruments(dict(PARAMS))
+    bad_visa = _BadClosePyvisa("ALPHA Analyzer, Novocontrol Technologies, x")
+    with patch.object(mod, "pyvisa", bad_visa):
+        try:
+            combined.reconnect()
+        except ConnectionError as exc:      # the refusal, not the OSError
+            assert "on reconnect" in str(exc)
+        else:
+            raise AssertionError("a non-350 must be refused on reconnect")
+    assert combined.lakeshore is None
+    combined.close_instruments()
+    assert bad_visa.sessions[0].traffic == [("query", "*IDN?")]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):

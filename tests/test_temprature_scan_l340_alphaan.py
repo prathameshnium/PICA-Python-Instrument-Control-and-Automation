@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import types
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from alphaan_port_test_support import (  # noqa: E402
@@ -591,6 +592,181 @@ def test_end_of_run_events_never_open_a_dialog():
         gui._handle_cutoff_event()
     assert dialogs.calls == []
     assert len(banners) == 2
+
+
+# --- review fixes (23 Oct 2026): wrong address, cut-short sweeps -------------
+
+class _L340Session:
+    """A recording VISA session behind Lakeshore340_Backend."""
+
+    def __init__(self, idn):
+        self.idn = idn
+        self.traffic = []
+        self.timeout = 0
+        self.closed = False
+
+    def write(self, cmd):
+        self.traffic.append(("write", cmd))
+
+    def query(self, cmd):
+        self.traffic.append(("query", cmd))
+        return self.idn if cmd == "*IDN?" else "0"
+
+    def close(self):
+        self.closed = True
+
+
+def test_a_non_340_address_is_refused_before_any_write():
+    session = _L340Session("LSCI,MODEL350,LSA1234,1.0")
+    fake = FakeAlpha()
+    combined = mod.Combined_Backend()
+    combined.lcr = _bare_alpha(fake)
+    rm = types.SimpleNamespace(open_resource=lambda addr: session)
+    with patch.object(mod, "pyvisa",
+                      types.SimpleNamespace(ResourceManager=lambda: rm)):
+        try:
+            combined.initialize_instruments(_params())
+        except RuntimeError as exc:
+            assert "not a Lake Shore Model 340" in str(exc)
+        else:
+            raise AssertionError("a Model 350 must be refused")
+    combined.close_instruments()               # Start's error path
+    assert session.traffic == [("query", "*IDN?")], session.traffic
+    assert session.closed and combined.lakeshore is None
+    assert fake.commands == []
+
+
+def test_a_refused_alpha_address_gets_nothing_at_close_either():
+    fake = FakeAlpha({"*IDN?": "LSCI,MODEL340,123456,061407"})
+    backend = _bare_alpha(fake)
+    try:
+        backend.connect("GPIB0::19::INSTR")
+    except ConnectionError:
+        pass
+    else:
+        raise AssertionError("a non-Alpha IDN must be refused")
+    backend.close_instrument()                 # Start's error path
+    assert fake.commands == ["*IDN?"], fake.commands
+
+
+def test_points_measured_before_an_error_are_saved_ahead_of_it():
+    fake = FakeAlpha({"ZRE?": ["ZRE=1E5 -2E6 1000 2 1",
+                               "ZRE=1E5 -2E6 2000 6 1"]})
+    combined = _combined(fake, temps=(300.0, 301.0))
+    try:
+        combined.measure_frequency_sweep([1000.0, 2000.0], 0)
+    except RuntimeError as exc:
+        err = exc
+    else:
+        raise AssertionError("status 6 must abort the sweep")
+    partial = err.partial_cycle
+    assert [p[1] for p in partial["points"]] == [1000.0]
+    assert partial["tstatus"] == [(0, "ok")]
+    assert partial["last_valid_temp"] == 300.0
+
+    def sweep(*a):
+        raise err
+    gui = _gui(backend=types.SimpleNamespace(
+                   params={"delay": 0, "end_temp": 400.0, "rate": 1.0,
+                           "sensor": "A"},
+                   lakeshore=FakeLakeshore340(temps=(300.0,)),
+                   measure_frequency_sweep=sweep),
+               is_stabilizing=False, is_running=True, start_time=None,
+               stop_event=threading.Event(), data_queue=queue.Queue(),
+               frequencies=[1000.0, 2000.0])
+    gui.backend.lakeshore.start_ramp = lambda *a: None
+    gui._measurement_worker()
+    order = []
+    gui._process_cycle = lambda cycle, elapsed: order.append(
+        ("cycle", len(cycle["points"])))
+    gui._handle_runtime_error = lambda e: order.append(("error", e))
+    gui._handle_log_message = lambda m: None
+    gui._process_data_queue()
+    assert order == [("cycle", 1), ("error", err)], order
+
+
+def test_a_sweep_cut_short_by_stop_is_written_to_the_files():
+    """The pump stops re-scheduling once Stop drops the run flags; the
+    worker's last (partial) sweep arrives after that and must still be
+    written, fsync'd, before the run ends."""
+    valid = mod.STATUS_RESULT_VALID
+    closed = []
+    button = types.SimpleNamespace(config=lambda **k: None)
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _files(tmp)
+        before = {f: open(p).read() for f, p in gui.freq_filepaths.items()}
+        gui.data_storage = {
+            "time": [], "temperature": [],
+            "cp": {f: {"T": [], "v": []} for f in gui.frequencies},
+            "g": {f: {"T": [], "v": []} for f in gui.frequencies}}
+        gui._update_live_plots = lambda *a, **k: None
+        gui.data_queue = queue.Queue()
+        gui.data_queue.put(("CYCLE", {
+            "points": [(300.0, 1000.0, 1e5, -2e6, valid, 1000.0)],
+            "tstatus": [(0, "ok")], "heater": 5.0, "killed": False}, 12.0))
+        gui.data_queue.put("BANNER:heater error")
+        gui.data_queue.put("COMPLETE")
+        gui.start_button = gui.scan_button = button
+        gui.backend = types.SimpleNamespace(
+            close_instruments=lambda: closed.append(True))
+        gui._close_after_stop = False
+        synced = []
+        real_fsync = os.fsync
+        with _NoDialogs() as dialogs, patch.object(
+                mod.os, "fsync",
+                lambda fd: (synced.append(fd), real_fsync(fd))):
+            gui._finalize_stop(False)
+        after = {f: open(p).read() for f, p in gui.freq_filepaths.items()}
+        windeta = open(gui.windeta_filepaths[1000.0], "rb").read()
+    added = after[1000.0][len(before[1000.0]):].splitlines()
+    assert len(added) == 1 and added[0].startswith("3.000000E+02\t")
+    assert len(added[0].split("\t")) == 19
+    assert after[2000.0] == before[2000.0]
+    assert windeta.endswith(b"\r\n") and windeta.count(b"\r\n") == 5
+    assert len(synced) == 2                       # PICA + WinDETA row
+    assert "heater error" in gui.logged
+    assert gui.data_queue.empty() and closed == [True]
+    assert dialogs.calls == []
+
+
+def test_start_drops_what_a_late_worker_left_in_the_queue():
+    # A worker that outlived Stop's drain left a partial CYCLE and an
+    # exception behind; neither belongs to the next run.
+    stale = queue.Queue()
+    stale.put(("CYCLE", {"points": [], "heater": 0.0, "killed": False}, 1.0))
+    stale.put(RuntimeError("late error from the previous run"))
+
+    def fail():
+        raise RuntimeError("stop the start here")
+    gui = _gui(measurement_thread=None, data_queue=stale,
+               _parse_frequencies=fail,
+               backend=types.SimpleNamespace(close_instruments=lambda: None))
+    with _NoDialogs():
+        gui.start_measurement()
+    assert gui.data_queue.empty()
+
+
+def test_a_refused_lakeshore_is_dropped_even_if_its_close_raises():
+    class _BadClose(_L340Session):
+        def close(self):
+            raise OSError("VI_ERROR_CONN_LOST")
+    session = _BadClose("LSCI,MODEL350,LSA1234,1.0")
+    fake = FakeAlpha()
+    combined = mod.Combined_Backend()
+    combined.lcr = _bare_alpha(fake)
+    rm = types.SimpleNamespace(open_resource=lambda addr: session)
+    with patch.object(mod, "pyvisa",
+                      types.SimpleNamespace(ResourceManager=lambda: rm)):
+        try:
+            combined.initialize_instruments(_params())
+        except RuntimeError as exc:
+            assert "not a Lake Shore Model 340" in str(exc)
+        else:
+            raise AssertionError("a Model 350 must be refused")
+    assert combined.lakeshore is None
+    combined.close_instruments()               # Start's error path
+    assert session.traffic == [("query", "*IDN?")], session.traffic
+
 
 if __name__ == "__main__":
     for name, fn in list(globals().items()):

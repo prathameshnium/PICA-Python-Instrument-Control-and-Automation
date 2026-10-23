@@ -31,7 +31,7 @@ Instrument: the lab system this script was written for, read from
 
 Example:
     python AlphaAN_FreqScan_Instrument_Control.py \
-        --gpib-address GPIB0::5::INSTR --diameter 10.0 --thickness 1.0 \
+        --gpib-address GPIB0::10::INSTR --diameter 10.0 --thickness 1.0 \
         --filename CoO_SiO2 --path ./data
 """
 
@@ -91,6 +91,21 @@ CMD_ERROR_MEANINGS = {
 
 EPS0_SI = 8.8541878128e-12   # F/m  - geometric capacitance C0
 EPS0_CM = 8.8541878128e-14   # F/cm - so sigma lands in S/cm
+
+# The Alpha's address on the BDS bus (WinALPHA auto-detect: "Address: 10").
+# The Keysight E4991B shares that bus at 17; address 5 is not the Alpha.
+DEFAULT_GPIB_ADDRESS = "GPIB0::10::INSTR"
+
+# After *RST the Alpha drops off the GPIB bus while it reinitializes (no
+# listener: every write fails with VI_ERROR_NLISTENERS, NI-488.2's ENOL) and
+# only answers again some seconds later. Seen on hardware 22 Oct 2026: a
+# fixed 1 s sleep was too short and MODE=IMP failed. Commands are retried on
+# "no listeners" only, until this deadline. Same values as the GUI.
+RESET_READY_TIMEOUT_S = 30.0
+RESET_RETRY_INTERVAL_S = 0.5
+# NLISTENERS: no listener at that address; the write put no byte on the bus,
+# so it is the one GPIB error that is always safe to retry.
+VI_ERROR_NLISTENERS = -1073807265
 
 
 def acv_ceiling(freq_hz):
@@ -325,6 +340,87 @@ def shutdown(inst):
             print(f"  Warning closing VISA session: {e}")
 
 
+def visa_error_code(exc):
+    """The VISA status code carried by a pyvisa VisaIOError, else None."""
+    code = getattr(exc, "error_code", None)
+    return int(code) if code is not None else None
+
+
+def open_alpha(rm, address):
+    """Open the session and confirm it is an Alpha with a ZG4.
+
+    Returns (inst, idn, code). Until *IDN? has identified a Novocontrol
+    Alpha, a failure releases the session WITHOUT sending a single command:
+    a wrong address (e.g. the E4991B at 17) must never receive the Alpha
+    shutdown sequence (MBK, ACV=0, ZCONSPL=0, *RST). Only a confirmed Alpha
+    that then fails the handshake goes through shutdown().
+    """
+    inst = rm.open_resource(address)
+    try:
+        inst.timeout = 60000
+        # The Alpha-AN terminates on EOI (plus an EOS byte) and accepts
+        # commands on EOI only -- no newline terminator.
+        inst.read_termination = ""
+        inst.write_termination = ""
+        inst.send_end = True
+        idn = inst.query("*IDN?").strip()
+        if not any(k in idn.upper() for k in ("ALPHA", "NOVOCONTROL")):
+            raise ConnectionError(
+                f"{address} answered {idn!r}, which is not a Novocontrol "
+                f"Alpha. Check the address.")
+    except Exception:
+        try:
+            inst.close()
+        except Exception:
+            pass
+        raise
+
+    try:
+        # INTTYP? reports a numeric interface code; the ZG4 is code 5.
+        code = parse_inttyp(inst.query("INTTYP?"))
+        if code != ZG4_INTERFACE_CODE:
+            raise ConnectionError(
+                f"Expected a ZG4 sample interface (INTTYP code "
+                f"{ZG4_INTERFACE_CODE}), got code {code}."
+            )
+        inst.read_stb()   # clear any stale status on the bus
+    except Exception:
+        shutdown(inst)
+        raise
+    return inst, idn, code
+
+
+def reset_and_set_impedance_mode(inst, timeout_s=RESET_READY_TIMEOUT_S):
+    """*RST, wait until the Alpha answers again, then MODE=IMP.
+
+    *RST leaves no Novocontrol ack. While the Alpha reinitializes it is not
+    a listener and every write fails with VI_ERROR_NLISTENERS, which put
+    nothing on the bus, so *IDN? is repeated until it is answered - the
+    same handshake JUMP uses after *RST, including its extra 1 s settle
+    before MODE=IMP. Any other error is raised at once. Copied from
+    Frequency_Scan_AlphaAN_GUI.py (_reset_and_set_impedance_mode).
+    """
+    inst.write("*RST")
+    start = time.monotonic()
+    while True:
+        time.sleep(RESET_RETRY_INTERVAL_S)
+        try:
+            inst.query("*IDN?")
+            break
+        except Exception as exc:
+            if visa_error_code(exc) != VI_ERROR_NLISTENERS:
+                raise
+            if time.monotonic() - start >= timeout_s:
+                raise ConnectionError(
+                    f"The Alpha did not rejoin the GPIB bus within "
+                    f"{timeout_s:.0f} s after *RST. Last error: "
+                    f"{exc}") from exc
+    print(f"*RST complete; Alpha answering after "
+          f"{time.monotonic() - start:.1f} s.")
+    time.sleep(1.0)
+    exec_cmd(inst, "MODE=IMP")
+
+
 def validate(acv, mtm, wire_mode, diameter, thickness):
     """Reject anything unsafe BEFORE a byte reaches the instrument."""
     max_acv = min(acv_ceiling(f) for f in FREQUENCIES_HZ)
@@ -350,7 +446,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Novocontrol Alpha-AN broadband frequency scan"
     )
-    parser.add_argument("--gpib-address", default="GPIB0::5::INSTR",
+    parser.add_argument("--gpib-address", default=DEFAULT_GPIB_ADDRESS,
                         help="VISA resource string of the Alpha-AN mainframe")
     parser.add_argument("--filename", default="AlphaAN_FreqScan",
                         help="Base name of the output file")
@@ -386,37 +482,23 @@ def main():
     inst = None
     try:
         rm = pyvisa.ResourceManager()
-        inst = rm.open_resource(args.gpib_address)
-        inst.timeout = 60000
-        # The Alpha-AN terminates on EOI (plus an EOS byte) and accepts
-        # commands on EOI only -- no newline terminator.
-        inst.read_termination = ""
-        inst.write_termination = ""
-        inst.send_end = True
-
-        idn = inst.query("*IDN?").strip()
-        # INTTYP? reports a numeric interface code; the ZG4 is code 5.
-        code = parse_inttyp(inst.query("INTTYP?"))
-        if code != ZG4_INTERFACE_CODE:
-            raise ConnectionError(
-                f"Expected a ZG4 sample interface (INTTYP code "
-                f"{ZG4_INTERFACE_CODE}), got code {code}."
-            )
-        inst.read_stb()   # clear any stale status on the bus
+        # open_alpha releases the session itself on any handshake failure
+        # (without a command byte unless the Alpha is confirmed), so inst
+        # stays None here and the handlers below send nothing.
+        inst, idn, code = open_alpha(rm, args.gpib_address)
         print(f"Connected: {idn} | ZG4 interface code {code}")
 
         # *RST preserves the stored calibration tables; it only resets
         # operating parameters. A scan therefore runs on the previous REF
         # calibration, by design. Run REF from the GUI when it is stale.
-        # *RST is IEEE-488.2 common: it leaves NO Novocontrol ack.
-        inst.write("*RST")
-        time.sleep(1.0)
+        # *RST is IEEE-488.2 common: it leaves NO Novocontrol ack, and the
+        # Alpha drops off the bus until it has reinitialized.
+        reset_and_set_impedance_mode(inst)
 
         # Settings AFTER the reset: *RST (and ZRUNCAL) reset ACV and MTM.
         # exec_cmd consumes each command's mandatory 'OK' acknowledgment,
         # which also fully synchronizes the bus (no settle sleeps needed).
         # ZREFMODE=-3 = auto reference mode, up to 3 caps (verified).
-        exec_cmd(inst, "MODE=IMP")
         exec_cmd(inst, "ZREFMODE=-3")
         exec_cmd(inst, "ZLLCOR=1")
         exec_cmd(inst, "ZSLCAL=1")
