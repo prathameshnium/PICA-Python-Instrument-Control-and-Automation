@@ -36,17 +36,17 @@ macOS has not been tested.
 
 ## Why Measurement Modules Are Self-Contained
 
-Reviewers and new contributors often notice that PICA's measurement modules repeat the same code: connection and reset, keep-awake, file writing, shutdown. This is a design decision, not an oversight, and this section explains it so that it is not reported as a defect.
+It is noticable that PICA's measurement modules repeat the same code: connection and reset, keep-awake, file writing, shutdown. This is a design decision, not an oversight, and this section explains it so that it is not reported as a defect.
 
-**The rule.** One measurement is one file. The GUI, the instrument commands, the protocol, the safety limits and the data writer for a measurement all live in that one `*_GUI.py` file. There are no shared base classes or helper modules for measurement code.
+**The rule.** One measurement is one self contained file. The GUI, the instrument commands, the protocol, the safety limits and the data writer for a measurement all live in that one `*_GUI.py` file. There are no shared base classes or helper modules for measurement code.
 
-**Safety.** A lab user must be able to open one file and see every command that reaches the instrument, every voltage or current cap, and what happens on Stop or error. A shared helper would hide part of that behind an import.
+**Safety.** A lab user must be able to open one file and see every command that reaches the instrument, every voltage or current cap, and what happens on Stop or error. A shared helper would hide part of that behind an import and abstractions.
 
-**Validated protocols stay validated.** A module that has been run on real hardware changes only when that file is edited. A fix for one instrument can never silently change another module's command sequence, compliance limit or shutdown path. With shared code, every refactor would re-open every protocol that depends on it.
+**Validated protocols stay validated.** A module that has been run on real hardware changes only when that file is edited. A fix for one instrument can never silently change another module's command sequence, compliance limit or shutdown path. With shared code, every refactor would re-open every protocol that depends on it and will need repeated instrument validations.
 
 **Process isolation needs it.** The launcher starts each module in its own process. A self-contained file is what makes that boundary real: a module can be run, tested, copied to another PC or reverted on its own.
 
-**What it costs, and how the cost is handled.** Duplicated common blocks exist and are expected. Sibling copies of the same logic (for example the Lake Shore 340, Lake Shore 350 and Cryo-con 34 variants of a module, or the common block shared by the three memristor modules) must be edited together, and each module has its own test file in `tests/` that drives the real module code against a mocked instrument, so drift between copies is caught there.
+**What this costs, and how the cost is handled.** Duplicated common blocks exist and are expected. Sibling copies of the same logic (for example the Lake Shore 340, Lake Shore 350 and Cryo-con 34 variants of a module, or the common block shared by the three memristor modules) must be edited together, and each module has its own test file in `tests/` that drives the real module code against a mocked instrument, so drift between copies is caught there.
 
 **What this means for review.** The same block appearing in many modules is the intended architecture. Suggestions to collect measurement code into shared modules are declined for the reasons above.
 
