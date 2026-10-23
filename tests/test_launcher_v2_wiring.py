@@ -180,6 +180,74 @@ def test_the_novocontrol_category_is_marked_experimental():
     raise AssertionError("no Broadband Dielectric category in the catalogue")
 
 
+def _quick_impedance():
+    return next(c for c in launcher.QUICK_CATALOG
+                if c["category"] == "Impedance Spectroscopy")
+
+
+def test_quick_impedance_is_three_analysers_by_frequency_range():
+    names = [m["name"] for m in _quick_impedance()["modules"]]
+    assert names == ["Broadband Dielectric Spectroscopy (3 µHz – 20 MHz)",
+                     "High-Frequency Impedance (1 MHz – 3 GHz)",
+                     "LCR Meter (20 Hz – 2 MHz)"]
+
+
+def test_quick_impedance_protocols_resolve_and_the_hf_one_is_planned():
+    paths = launcher.PICALauncherV2.SCRIPT_PATHS
+    bds, hf, lcr = _quick_impedance()["modules"]
+    assert hf["protocols"] == [] and "E4991B" in hf["desc"]
+    assert "Experimental" in bds["desc"]
+    assert all(p["key"].startswith("Alpha-AN") for p in bds["protocols"])
+    assert "Novocontrol Alpha-AN" in bds["instruments"]
+    assert "Keysight E4980A" in lcr["instruments"]
+    for module in (bds, lcr):
+        for proto in module["protocols"]:
+            assert proto["key"] in paths, proto["key"]
+
+
+def test_quick_select_dropdown_acts_like_the_combobox_it_replaced():
+    """WrapDropdown: two-line wrapping box, same calls as ttk.Combobox.
+
+    Built on a withdrawn root, so no window appears."""
+    import tkinter as tk
+    try:
+        root = tk.Tk()
+    except Exception as exc:
+        try:
+            import pytest
+            pytest.skip(f"no usable Tk: {exc}")
+        except ImportError:
+            print(f"SKIP: no usable Tk: {exc}")
+            return
+    root.withdraw()
+    try:
+        colours = dict.fromkeys(("field", "text", "dim", "faint", "accent",
+                                 "light", "border"), "#888888")
+        var = tk.StringVar()
+        dd = launcher.WrapDropdown(root, textvariable=var, state='disabled',
+                                   colours=colours)
+        # A never-mapped widget drops generated events, so record the call.
+        picked = []
+        dd.event_generate = lambda seq: picked.append((seq, dd.current()))
+        assert dd.current() == -1
+        assert dd._open() == "break" and dd._menu.index('end') is None
+
+        names = [m["name"] for m in _quick_impedance()["modules"]]
+        dd.config(state='readonly', values=names)
+        assert dd.cget('state') == 'readonly'
+        assert dd.cget('values') == tuple(names)
+        assert dd.current(0) == 0 and var.get() == names[0]
+        var.set('')
+        assert dd.current() == -1
+
+        dd._pick(2)
+        assert picked == [("<<ComboboxSelected>>", 2)] and dd.get() == names[2]
+        # The box is two text lines tall and wraps; nothing is truncated.
+        assert int(dd._label.cget('height')) == 2
+    finally:
+        root.destroy()
+
+
 # ----------------------------------------------------- File > Open Sequence
 
 def test_open_sequence_hands_the_file_to_the_sequence_visualizer():

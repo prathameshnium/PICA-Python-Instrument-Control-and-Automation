@@ -10,8 +10,8 @@ What is being pinned down:
     addresses cannot be confused;
   * a protected address is never opened at all -- not opened and timed out,
     not opened and closed, never opened;
-  * a Novocontrol mainframe is spoken to at most once, ever, and its address
-    is handed back so the caller can protect it permanently;
+  * the Novocontrol Alpha-AN and the Keysight E4991B are identified like
+    every other instrument (the Alpha is no longer auto-protected);
   * serial resources are never probed.
 
 Runnable as plain Python as well as under pytest.
@@ -328,59 +328,56 @@ def test_serial_ports_are_listed_but_never_spoken_to():
     assert "ASRL1::INSTR" in r["skipped"]
 
 
-# --------------------------------------------------------- Novocontrol
+# ---------------------------------------- Novocontrol and E4991B (BDS rack)
 
-def test_novocontrol_is_identified_once_and_handed_back_for_protection():
-    alpha = FakeInstrument(ALPHA)
-    bus = {
-        "GPIB0::5::INSTR": alpha,
-        "GPIB0::4::INSTR": FakeInstrument(K2400),
-    }
+# The replies WinAlpha's auto-detect logged on the BDS rack (serials dropped).
+ALPHA_REAL = "ALPHA Analyzer, Novocontrol Technologies, 6.25_200_40"
+E4991B = "Keysight Technologies,E4991B,MY00000000,A.01.03"
+
+
+def test_novocontrol_is_probed_and_listed_like_any_instrument():
+    alpha = FakeInstrument(ALPHA_REAL)
+    bus = {"GPIB0::10::INSTR": alpha, "GPIB0::4::INSTR": FakeInstrument(K2400)}
     rm = FakeResourceManager(bus)
     with _Patch(rm):
         r = launcher.scan_instruments()
-
-    assert r["novocontrol"] == "GPIB0::5::INSTR"
-    assert r["protect"] == {5}
-    # Exactly one thing was ever said to it, and it was a read-only query.
+    assert r["detected"]["Novocontrol Alpha-AN"] == "GPIB0::10::INSTR"
+    assert "GPIB0::10::INSTR" not in r["skipped"]
+    # Still only the one read-only query, and the session is closed.
     assert alpha.queries == ["*IDN?"]
     assert alpha.closed is True
 
 
-def test_novocontrol_is_never_listed_as_a_normal_instrument():
-    rm = FakeResourceManager({"GPIB0::5::INSTR": FakeInstrument(ALPHA)})
-    with _Patch(rm):
-        r = launcher.scan_instruments()
-    assert all(v is None for v in r["detected"].values())
-
-
-def test_every_novocontrol_marker_is_recognised():
-    for idn in ("NOVOCONTROL,ALPHA,1,1",
-                "Alpha-AN Impedance Analyzer",
-                "Novocontrol BDS 1200"):
-        rm = FakeResourceManager({"GPIB0::5::INSTR": FakeInstrument(idn)})
+def test_every_novocontrol_spelling_is_recognised():
+    for idn in (ALPHA_REAL, ALPHA, "NOVOCONTROL,ALPHA,1,1",
+                "Alpha-AN Impedance Analyzer", "Novocontrol BDS 1200"):
+        rm = FakeResourceManager({"GPIB0::10::INSTR": FakeInstrument(idn)})
         with _Patch(rm):
             r = launcher.scan_instruments()
-        assert r["novocontrol"] == "GPIB0::5::INSTR", idn
+        assert r["detected"]["Novocontrol Alpha-AN"] == "GPIB0::10::INSTR", idn
 
 
-def test_once_protected_the_novocontrol_is_not_probed_again():
-    """The learn-then-skip cycle: second scan opens nothing at that address."""
-    alpha = FakeInstrument(ALPHA)
-    bus = {"GPIB0::5::INSTR": alpha, "GPIB0::4::INSTR": FakeInstrument(K2400)}
+def test_a_second_scan_probes_the_novocontrol_again():
+    alpha = FakeInstrument(ALPHA_REAL)
+    bus = {"GPIB0::10::INSTR": alpha}
+    for _ in range(2):
+        with _Patch(FakeResourceManager(bus)):
+            launcher.scan_instruments()
+    assert alpha.queries == ["*IDN?", "*IDN?"]
 
-    rm1 = FakeResourceManager(bus)
-    with _Patch(rm1):
-        first = launcher.scan_instruments()
-    learned = first["protect"]
-    assert alpha.queries == ["*IDN?"]
 
-    rm2 = FakeResourceManager(bus)
-    with _Patch(rm2):
-        launcher.scan_instruments(skip_addresses=learned)
-    # Still exactly one query, from the first scan.
-    assert alpha.queries == ["*IDN?"]
-    assert "GPIB0::5::INSTR" not in rm2.opened
+def test_e4991b_is_known_and_not_confused_with_the_e4980a():
+    bus = {"GPIB0::17::INSTR": FakeInstrument(E4991B),
+           "GPIB0::24::INSTR": FakeInstrument(E4980)}
+    with _Patch(FakeResourceManager(bus)):
+        r = launcher.scan_instruments()
+    assert r["detected"]["Keysight E4991B"] == "GPIB0::17::INSTR"
+    assert r["detected"]["Keysight E4980A"] == "GPIB0::24::INSTR"
+    assert r["unknown"] == {}
+
+
+def test_no_instrument_is_protected_by_default():
+    assert launcher.NEVER_PROBED_INSTRUMENTS == []
 
 
 # ------------------------------------------------- protected-address file
@@ -512,7 +509,7 @@ def test_scan_result_always_has_the_keys_the_gui_reads():
     with _Patch(FakeResourceManager({})):
         r = launcher.scan_instruments()
     for key in ("available", "error", "resources", "skipped", "detected",
-                "novocontrol", "protect", "temperature", "temp_units",
+                "temperature", "temp_units",
                 "temp_source", "timestamp"):
         assert key in r, key
 

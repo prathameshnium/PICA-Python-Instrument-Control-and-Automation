@@ -22,13 +22,12 @@
                disturbed -- Reload therefore warns and asks for confirmation if
                any measurement launched from this window is still alive.
 
-               The Novocontrol Alpha-AN is spoken to AT MOST ONCE, ever. The
-               scan identifies instruments by the content of their *IDN? reply
-               rather than by address, so a re-addressed instrument is still
-               found; the first time an Alpha answers, its GPIB address is
-               written to launcher_protected_gpib.json and every later scan
-               skips it outright. Pre-seed that file (or SKIP_GPIB_ADDRESSES)
-               to protect it before the first scan.
+               The scan identifies instruments by the content of their *IDN?
+               reply rather than by address, so a re-addressed instrument is
+               still found. The Novocontrol Alpha-AN is probed like any other
+               instrument (it used to be identified once and then protected).
+               An address listed in launcher_protected_gpib.json or
+               SKIP_GPIB_ADDRESSES is never opened at all.
 
                Serial (ASRL) resources are never probed at all -- see
                PROBE_RESOURCE_PREFIXES.
@@ -148,6 +147,13 @@ KNOWN_INSTRUMENTS = [
     ("Keithley 2182",   ["MODEL 2182"]),
     ("Keithley 6517B",  ["MODEL 6517"]),
     ("Keysight E4980A", ["E4980"]),
+    # RF impedance analyser, 1 MHz - 3 GHz; GPIB 17 on the BDS rack, where
+    # WinAlpha found it as "Keysight Technologies,E4991B,<serial>,A.01.03".
+    ("Keysight E4991B", ["E4991"]),
+    # The Alpha answers "ALPHA Analyzer, Novocontrol Technologies, <fw>" (GPIB
+    # 10 on the BDS rack). It is probed like the rest: one *IDN? on a
+    # startup or Reload scan, never during a measurement.
+    ("Novocontrol Alpha-AN", ["NOVOCONTROL", "ALPHA-AN", "ALPHA ANALYZER"]),
     ("SR830 Lock-in",   ["SR830"]),
     ("Tektronix AFG3022B", ["AFG3022"]),
     # The 197A has no *IDN?: the 1973A/1972A card simply hands back whatever
@@ -193,28 +199,21 @@ def _idn_matches(head, pattern):
         return all(part.upper() in head for part in pattern)
     return pattern.upper() in head
 
-# A reply carrying any of these is a Novocontrol mainframe. It is recorded,
-# never talked to again, and written into the protected-address file so that
-# no later scan -- in this session or a future one -- probes it at all.
-NOVOCONTROL_IDN_MARKERS = ("NOVOCONTROL", "ALPHA-AN", "ALPHA-A", "BDS")
-NOVOCONTROL_CHIP = "Novocontrol Alpha-AN"
-
 # Instruments that must never be auto-probed. Each gets a permanently greyed
 # "(protected)" chip on the status strip: the launcher never sends them
-# anything, so it never has a state to report.
-NEVER_PROBED_INSTRUMENTS = [NOVOCONTROL_CHIP]
+# anything, so it never has a state to report. Empty since the Novocontrol
+# Alpha-AN joined KNOWN_INSTRUMENTS (Oct 2026).
+NEVER_PROBED_INSTRUMENTS = []
 
 # GPIB primary addresses that must be skipped during the scan even if VISA
 # lists them. Anything here is never opened and never written to. This is the
-# in-source override; PROTECTED_ADDRESS_FILE below is the persistent one the
-# launcher maintains itself.
+# in-source override; PROTECTED_ADDRESS_FILE below is the persistent one.
 SKIP_GPIB_ADDRESSES = set()
 
-# Persistent record of addresses that must not be probed. The launcher writes
-# the Novocontrol Alpha's address here the first (and only) time it identifies
-# it, so from then on the Alpha is skipped outright rather than being sent a
-# *IDN? it did not ask for. Hand-edit it to protect anything else:
+# Persistent, hand-edited list of addresses that must not be probed:
 #     {"skip_addresses": [5, 20]}
+# Older launchers wrote the Alpha's address here automatically. A lab PC
+# that still lists it keeps skipping the Alpha until the entry is removed.
 PROTECTED_ADDRESS_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "launcher_protected_gpib.json")
 
@@ -297,8 +296,7 @@ def save_protected_addresses(addresses, path=None):
         with open(path, 'w', encoding='utf-8') as fh:
             json.dump({
                 "_comment": "GPIB primary addresses the PICA launcher must "
-                            "never probe. The Novocontrol Alpha is added "
-                            "automatically the first time it is identified.",
+                            "never probe.",
                 "skip_addresses": sorted(int(a) for a in addresses),
             }, fh, indent=2)
         return True
@@ -573,10 +571,7 @@ def scan_instruments(skip_addresses=None, gauge=None, progress=None,
     are dropped before anything is probed; how many is in 'secondary_skipped'.
 
     Never probes an address listed in SKIP_GPIB_ADDRESSES, in the persistent
-    protected-address file, or in the caller-supplied 'skip_addresses'. If a
-    Novocontrol mainframe is nonetheless identified (because its address was
-    not yet known), its address comes back in 'protect' so the caller can
-    record it and never come back.
+    protected-address file, or in the caller-supplied 'skip_addresses'.
 
     'progress', if given, is called as progress(line, chip, done, total):
     once with line None and done 0 as soon as the bus is listed, then once per
@@ -631,8 +626,6 @@ def scan_instruments(skip_addresses=None, gauge=None, progress=None,
         # where a slow scan nearly always goes.
         'probe_s': {},
         'elapsed_s': None,
-        'novocontrol': None,
-        'protect': set(),
         'temperature': None,
         'temp_units': 'K',
         'temp_source': None,
@@ -714,21 +707,7 @@ def scan_instruments(skip_addresses=None, gauge=None, progress=None,
                 report(res, "—", "no reply")
                 continue
 
-            up = idn.upper()
             head = _idn_head(idn)
-
-            # Novocontrol first: identifying it is the last thing this
-            # launcher ever does to it. The address is handed back so the
-            # caller can protect it permanently. This one is matched against
-            # the WHOLE reply, not the identity head -- a false negative here
-            # means probing it again, so it errs toward matching.
-            if any(marker in up for marker in NOVOCONTROL_IDN_MARKERS):
-                result['novocontrol'] = res
-                if addr is not None:
-                    result['protect'].add(addr)
-                report(res, NOVOCONTROL_CHIP, idn)
-                continue
-
             matched = None
             for name, subs in KNOWN_INSTRUMENTS:
                 if any(_idn_matches(head, s) for s in subs):
@@ -1116,11 +1095,16 @@ CATALOG = [
 #   * PICA is the software. The rack it drives is the ITMS (Integrated
 #     Transport Measurement System, formerly ATMS), so descriptions say "the
 #     module" or "the ITMS rack" where they mean the hardware, never "PICA".
-#   * Temperature utilities, the Novocontrol Alpha-AN, the bench multimeter,
-#     the pressure log and the function generator are Advanced-only: they are
-#     not measurements a newcomer starts from. The Alpha-AN broadband scans
-#     are the ones to add here first, once the module has been through a full
-#     campaign; the temperature utilities stay in Advanced by choice.
+#   * Impedance Spectroscopy is split by analyser, not by measurement:
+#     broadband (Novocontrol Alpha-A, 3 µHz - 20 MHz), high frequency
+#     (Keysight E4991B, 1 MHz - 3 GHz) and LCR (Keysight E4980A, 20 Hz -
+#     2 MHz). The E4991B has no script yet, so its module carries no
+#     protocols and the protocol box stays disabled. The Alpha module says
+#     "Experimental" in its description, and like the rest of Quick Select
+#     lists only the Lakeshore 350 and Cryo-con 34 variants.
+#   * Temperature utilities, the bench multimeter, the pressure log and the
+#     function generator are Advanced-only: they are not measurements a
+#     newcomer starts from.
 #   * The three Keithley 2400 memristor modules (switching sweep, retention,
 #     endurance) are Advanced-only, under Mid Resistance; Ctrl+F finds them.
 #
@@ -1392,15 +1376,88 @@ QUICK_CATALOG = [
                 "and the complex impedance is measured. Capacitance, "
                 "dielectric permittivity and loss tangent follow from it. "
                 "Used for C-V analysis, magnetocapacitance and dielectric "
-                "anomalies at phase transitions.",
+                "anomalies at phase transitions. The three modules are the "
+                "three analysers, by frequency range: pick the one whose "
+                "range covers the relaxation you are after.",
+        # One module per analyser, lowest frequency range first, so the choice
+        # reads as "which band" rather than "which script". Within a module
+        # the protocols run fixed T first, then temperature scans, then PPMS.
         'modules': [
             {
-                'name': "Frequency / Bias Sweep (fixed T)",
+                'name': "Broadband Dielectric Spectroscopy (3 µHz – 20 MHz)",
+                'desc': "Novocontrol Alpha-A analyser with the ZG4 sample "
+                        "interface, 3 µHz to 20 MHz. The widest range in "
+                        "the lab, for slow relaxations and conductivity "
+                        "down to the lowest frequencies. Experimental: only "
+                        "the fixed-T frequency scan has been run on the "
+                        "hardware; the others are ports of the E4980A "
+                        "modules. Read the Novocontrol GPIB runbook before "
+                        "the first run.",
+                'instruments': ["Novocontrol Alpha-AN", "Lakeshore 350",
+                                "Cryocon 34"],
+                'protocols': [
+                    {'label': "Calibration (REF, load-short, open)",
+                     'key': "Alpha-AN Calibration", 'family': None,
+                     'desc': "Guided calibration of the Alpha before a "
+                             "campaign. Not a sample measurement."},
+                    {'label': "Frequency Scan (fixed T)",
+                     'key': "Alpha-AN Freq. Scan", 'family': None,
+                     'desc': "Frequency sweep at one temperature, recording "
+                             "impedance, permittivity and loss, saved in a "
+                             "WinDETA-compatible layout. The one Alpha "
+                             "protocol already run on the hardware."},
+                    {'label': "Frequency Scan (fixed T, 32-bit GPIB)",
+                     'key': "Alpha-AN Freq. Scan (32-bit)", 'family': None,
+                     'desc': "The same scan for the BDS PC, which drives the "
+                             "GPIB card through a 32-bit Python and no VISA."},
+                    {'label': "C-V Measurement",
+                     'key': "Alpha-AN C-V Measurement", 'family': None,
+                     'desc': "Capacitance against DC bias at a fixed "
+                             "frequency. Not yet run on the hardware."},
+                    {'label': "Dielectric Temp. Scan (T Control)",
+                     'key': "Alpha-AN Temp. Scan (T_Control)",
+                     'family': 'control',
+                     'desc': "Permittivity against temperature at a few fixed "
+                             "frequencies along a Lakeshore 350 ramp that "
+                             "the module drives."},
+                    {'label': "Dielectric Temp. Scan (T Sensing, L350)",
+                     'key': "Alpha-AN Temp. Scan (T_Sensing)",
+                     'family': 'sensing',
+                     'desc': "Permittivity against temperature while an "
+                             "external ramp warms or cools the sample. The "
+                             "Lakeshore 350 is only read."},
+                    {'label': "Dielectric Temp. Scan (T Sensing, CC34)",
+                     'key': "Alpha-AN Temp. Scan (T_Sensing, CC34)",
+                     'family': 'sensing',
+                     'desc': "The same passive scan with the Cryo-con 34 as "
+                             "the thermometer."},
+                    {'label': "Temp. Step Freq. Scan (T Control)",
+                     'key': "Alpha-AN Temp. Step Freq. Scan (T_Control)",
+                     'family': 'control',
+                     'desc': "Each Lakeshore 350 setpoint is held while a "
+                             "full Alpha frequency sweep is run, then the "
+                             "next setpoint is taken."},
+                ],
+            },
+            {
+                'name': "High-Frequency Impedance (1 MHz – 3 GHz)",
+                # Planned: no script yet, so no protocols, and Quick Select
+                # keeps the protocol box disabled for it.
+                'desc': "Keysight E4991B RF impedance / material analyser, "
+                        "1 MHz to 3 GHz, for the dielectric response above "
+                        "the reach of the other two. Not available yet: no "
+                        "PICA module has been written for it.",
+                'instruments': ["Keysight E4991B"],
+                'protocols': [],
+            },
+            {
+                'name': "LCR Meter (20 Hz – 2 MHz)",
                 'desc': "Keysight E4980A precision LCR meter, 20 Hz to "
-                        "2 MHz. The temperature is held, or simply not "
-                        "controlled, while the frequency or the DC bias is "
-                        "swept.",
-                'instruments': ["Keysight E4980A"],
+                        "2 MHz. The everyday dielectric bench: C-V, "
+                        "frequency scans, temperature scans and the PPMS "
+                        "sequences.",
+                'instruments': ["Keysight E4980A", "Lakeshore 350",
+                                "Cryocon 34"],
                 'protocols': [
                     {'label': "C-V Measurement", 'key': "LCR C-V Measurement",
                      'family': None,
@@ -1411,23 +1468,12 @@ QUICK_CATALOG = [
                      'key': "LCR Frequency Scan", 'family': None,
                      'desc': "Frequency sweep at one temperature, recording "
                              "capacitance, permittivity and loss."},
-                ],
-            },
-            {
-                'name': "Dielectric Temperature Scan",
-                # LCR bench: both temperature controllers are offered.
-                'desc': "Keysight E4980A read continuously while the "
-                        "temperature changes. Every point is stamped with the "
-                        "temperature it was actually taken at, not the one "
-                        "that was requested.",
-                'instruments': ["Keysight E4980A", "Lakeshore 350",
-                                "Cryocon 34"],
-                'protocols': [
                     {'label': "Dielectric Temp. Scan (T Control)",
                      'key': "LCR Temp. Scan (T_Control)", 'family': 'control',
                      'desc': "Setpoint by setpoint: the dielectric response "
                              "is measured once each Lakeshore 350 setpoint "
-                             "has settled."},
+                             "has settled. Every point is stamped with the "
+                             "temperature it was actually taken at."},
                     {'label': "Dielectric Temp. Scan (T Sensing, L350)",
                      'key': "LCR Temp. Scan (T_Sensing)", 'family': 'sensing',
                      'desc': "Permittivity against temperature while the "
@@ -1440,18 +1486,6 @@ QUICK_CATALOG = [
                              "the thermometer. This is the hardened version: "
                              "it reconnects by itself and writes every point "
                              "to disk as it goes."},
-                ],
-            },
-            {
-                'name': "Frequency Scan vs. Temperature",
-                'desc': "A full frequency sweep at each of a series of "
-                        "temperatures. Either the module holds each setpoint "
-                        "itself on the Lakeshore 350, or it waits for the "
-                        "plateaus of a Quantum Design PPMS sequence and never "
-                        "commands the temperature.",
-                'instruments': ["Keysight E4980A", "Lakeshore 350",
-                                "Cryocon 34"],
-                'protocols': [
                     {'label': "Temp. Step Freq. Scan (T Control)",
                      'key': "LCR Temp. Step Freq. Scan (T_Control)",
                      'family': 'control',
@@ -1564,6 +1598,134 @@ def _run_legacy_launcher():
     """Target for a spawned process: run the classic v1 launcher."""
     from pica.main import main as legacy_main
     legacy_main()
+
+
+class WrapDropdown(tk.Frame):
+    """A Quick Select dropdown whose text wraps instead of being cut off.
+
+    A ttk.Combobox shows one line, and its popup list is exactly as wide as
+    the box, so a long name such as "Broadband Dielectric Spectroscopy
+    (3 µHz – 20 MHz)" lost its tail in both places. Here the box is two lines
+    tall and wraps to its own width, and the list is a popup menu that sizes
+    itself to the longest entry.
+
+    It answers to the part of the Combobox interface the launcher uses --
+    current(), current(i), get(), config(state=..., values=...) and the
+    <<ComboboxSelected>> event -- so the selection handlers are unchanged.
+    state is 'readonly' (usable) or 'disabled'.
+    """
+
+    LINES = 2
+
+    def __init__(self, parent, textvariable, values=(), state='readonly',
+                 font=None, colours=None):
+        c = colours
+        super().__init__(parent, bg=c['field'], takefocus=1,
+                         highlightthickness=2, highlightcolor=c['accent'],
+                         highlightbackground=c['border'], cursor='hand2')
+        self._var = textvariable
+        self._values = list(values)
+        self._state = state
+        self._font = font
+        self._c = c
+        self._label = tk.Label(self, textvariable=textvariable, font=font,
+                               bg=c['field'], fg=c['text'], anchor='w',
+                               justify='left', height=self.LINES,
+                               padx=10, pady=4)
+        self._label.pack(side='left', fill='both', expand=True)
+        self._arrow = tk.Label(self, text="▾", font=font, bg=c['field'],
+                               fg=c['dim'], padx=8)
+        self._arrow.pack(side='right', fill='y')
+        # Wrap to whatever width the column gives the box.
+        self._wrap = 0
+        self._label.bind("<Configure>", self._rewrap)
+        # One menu per box, refilled on each open rather than rebuilt.
+        self._menu = tk.Menu(self, tearoff=0, font=font, bg=c['field'],
+                             fg=c['text'], activebackground=c['accent'],
+                             activeforeground=c['light'], relief='flat', bd=1)
+        # The whole box is the click target, and it lights up under the
+        # pointer so a click visibly lands.
+        for w in (self, self._label, self._arrow):
+            w.bind("<Button-1>", self._open)
+            w.bind("<Enter>", lambda e: self._hover(True))
+            w.bind("<Leave>", lambda e: self._hover(False))
+        for key in ("<Return>", "<space>", "<Down>", "<Alt-Down>"):
+            self.bind(key, self._open)
+        self._paint()
+
+    # --- the Combobox-compatible part -------------------------------------
+    def current(self, index=None):
+        if index is None:
+            try:
+                return self._values.index(self._var.get())
+            except ValueError:
+                return -1
+        self._var.set(self._values[index])
+        return index
+
+    def get(self):
+        return self._var.get()
+
+    def configure(self, cnf=None, **kw):
+        if 'values' in kw:
+            self._values = list(kw.pop('values'))
+        if 'state' in kw:
+            self._state = kw.pop('state')
+            self._paint()
+        if cnf or kw:
+            return super().configure(cnf, **kw)
+        return None
+
+    config = configure
+
+    def cget(self, key):
+        if key == 'values':
+            return tuple(self._values)
+        if key == 'state':
+            return self._state
+        return super().cget(key)
+
+    # --- internals ---------------------------------------------------------
+    def _paint(self):
+        on = self._state != 'disabled'
+        self._label.config(fg=self._c['text'] if on else self._c['faint'])
+        self._arrow.config(fg=self._c['dim'] if on else self._c['faint'])
+        cursor = 'hand2' if on else ''
+        for w in (self, self._label, self._arrow):
+            w.config(cursor=cursor)
+
+    def _rewrap(self, event):
+        wrap = max(60, event.width - 24)
+        if wrap != self._wrap:
+            self._wrap = wrap
+            self._label.config(wraplength=wrap)
+
+    def _hover(self, inside):
+        on = inside and self._state != 'disabled'
+        self.config(highlightbackground=self._c['accent'] if on
+                    else self._c['border'])
+
+    def _open(self, _event=None):
+        if self._state == 'disabled' or not self._values:
+            return "break"
+        self.focus_set()
+        menu = self._menu
+        menu.delete(0, 'end')
+        chosen = self.current()
+        for i, value in enumerate(self._values):
+            menu.add_command(label=("●  " if i == chosen else "    ") + value,
+                             command=lambda i=i: self._pick(i))
+        # Drops from the box's left edge, as wide as its longest entry.
+        x, y = self.winfo_rootx(), self.winfo_rooty() + self.winfo_height()
+        try:
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
+        return "break"
+
+    def _pick(self, index):
+        self.current(index)
+        self.event_generate("<<ComboboxSelected>>")
 
 
 class PICALauncherV2:
@@ -2164,9 +2326,11 @@ class PICALauncherV2:
             ttk.Label(legend, text="DOT KEY", style='StripCap.TLabel').pack(anchor='w')
         keyrow = tk.Frame(legend, bg=self.CLR_PANEL)
         keyrow.pack(anchor='w')
-        for glyph, colour, text in (("●", self.CLR_LIVE, "on"),
-                                    ("●", self.CLR_TEXT_FAINT, "off"),
-                                    ("○", self.CLR_TEXT_FAINT, "protected")):
+        keys = [("●", self.CLR_LIVE, "on"), ("●", self.CLR_TEXT_FAINT, "off")]
+        # No protected chip, no ring in the key.
+        if NEVER_PROBED_INSTRUMENTS:
+            keys.append(("○", self.CLR_TEXT_FAINT, "protected"))
+        for glyph, colour, text in keys:
             item = tk.Frame(keyrow, bg=self.CLR_PANEL)
             item.pack(side='left', padx=(0, 8))
             tk.Label(item, text=glyph, bg=self.CLR_PANEL, fg=colour,
@@ -3411,9 +3575,18 @@ class PICALauncherV2:
                  padx=(0 if column == 0 else 7, 0 if column == 2 else 7))
         tk.Label(col, text=caption, bg=self.CLR_PANEL, fg=self.CLR_TEXT_DIM,
                  font=self.FONT_LABEL).pack(anchor='w', pady=(0, 4))
-        combo = ttk.Combobox(col, textvariable=var, state=state,
-                             values=values, height=14, font=self.FONT_COMBO)
-        combo.pack(fill='x', ipady=3)
+        # Two lines tall and wrapping: some module names are longer than a
+        # third of the window (see WrapDropdown).
+        combo = WrapDropdown(col, textvariable=var, values=values, state=state,
+                             font=self.FONT_COMBO, colours={
+                                 'field': self.CLR_PANEL2,
+                                 'text': self.CLR_TEXT,
+                                 'dim': self.CLR_TEXT_DIM,
+                                 'faint': self.CLR_TEXT_FAINT,
+                                 'accent': self.CLR_ACCENT,
+                                 'light': self.CLR_TEXT_LIGHT,
+                                 'border': self.CLR_BORDER})
+        combo.pack(fill='x')
         combo.bind("<<ComboboxSelected>>", handler)
         return combo
 
@@ -3479,8 +3652,10 @@ class PICALauncherV2:
             return
         cat = QUICK_CATALOG[cat_idx]
         module = cat['modules'][mod_idx]
-        self.proto_combo.config(state='readonly',
-                                values=[p['label'] for p in module['protocols']])
+        # A planned module with no script yet keeps the protocol box shut.
+        self.proto_combo.config(
+            state='readonly' if module['protocols'] else 'disabled',
+            values=[p['label'] for p in module['protocols']])
         self.proto_var.set('')
         self._set_desc('module', module['name'], module['desc'])
         self._set_desc('protocol', None, None)
@@ -3733,8 +3908,6 @@ class PICALauncherV2:
                 by_resource = {res: name for name, res in r['detected'].items() if res}
                 by_resource.update({res: f"{name} (new)"
                                     for name, res in (r.get('unknown') or {}).items()})
-                if r.get('novocontrol'):
-                    by_resource[r['novocontrol']] = NOVOCONTROL_CHIP
                 skipped = set(r.get('skipped') or ())
                 widget.insert('end', scan_row('RESOURCE', 'IDENTIFIED AS', 'REPLY'))
                 widget.insert('end', "-" * 108 + "\n")
@@ -4133,11 +4306,6 @@ class PICALauncherV2:
             self.log(f"Scan error: {r['error']}")
             return
 
-        # A Novocontrol mainframe answered this scan, so its address was not
-        # yet in the protected list. Record it -- in memory and on disk -- so
-        # this launcher never sends it anything again.
-        self._record_protected(r)
-
         # Which chips blink is strip-independent, so it is decided once here
         # and each strip picks up whichever of those names it happens to show.
         detected = r['detected']
@@ -4196,35 +4364,6 @@ class PICALauncherV2:
                 self._render_strip(strip)
             except tk.TclError:
                 self._strips.remove(strip)
-
-    def _record_protected(self, r):
-        """Learn the Novocontrol's address from a scan and never probe it again.
-
-        The Alpha answers *IDN? like any IEEE-488.2 device, so it can be
-        identified once -- but it uses a command-ack protocol of its own and
-        unsolicited bus traffic during a measurement degrades point accuracy.
-        One identification, then permanent silence.
-        """
-        new = set(r.get('protect') or ())
-        if r.get('novocontrol'):
-            for strip in self._strips:
-                chip = strip['chips'].get(NOVOCONTROL_CHIP)
-                if chip:
-                    chip[1].config(text=f"{NOVOCONTROL_CHIP} (protected)",
-                                   fg=self.CLR_TEXT)
-            self.log(f"Novocontrol mainframe identified at "
-                     f"{r['novocontrol']} — it will not be probed again.")
-        new -= self._session_protected
-        if not new:
-            return
-        self._session_protected |= new
-        listed = ", ".join(str(a) for a in sorted(new))
-        if save_protected_addresses(self._session_protected):
-            self.log(f"GPIB address(es) {listed} added to the protected list "
-                     f"({os.path.basename(PROTECTED_ADDRESS_FILE)}).")
-        else:
-            self.log(f"GPIB address(es) {listed} protected for this session "
-                     f"(could not write {PROTECTED_ADDRESS_FILE}).")
 
     # ----------------------------------------------------------- launching
     def launch_script(self, script_key, argv=None):

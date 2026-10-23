@@ -552,9 +552,11 @@ deliberate rescan. The window is the launcher's own VISA scanner:
 
 * every known instrument as a chip with its light. The dot key reads
   **● on** (green, blinking: on the bus and answering), **● off** (grey: not
-  found on the last scan) and **○ protected** (hollow: never probed; the
-  Novocontrol Alpha-AN is permanently in this state, see the
-  [GPIB runbook](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/docs/Novocontrol_GPIB_Runbook.md) for why).
+  found on the last scan). The Novocontrol Alpha-AN and the Keysight E4991B
+  are probed like every other instrument (one `*IDN?` per scan). An address
+  hand-listed in `pica/launcher_protected_gpib.json` is never opened; older
+  launchers wrote the Alpha's address there automatically, so delete that
+  entry on a PC where the Alpha still shows as skipped.
 * an instrument that answers but matches nothing in the reference table gets
   a chip of its own, named from its `*IDN?` reply and marked **(new)** — so a
   newly racked instrument shows up without anyone editing PICA first.
@@ -1058,7 +1060,8 @@ PICA uses standard VISA resource strings. The addresses below are the ones on th
   * **Keithley 2400:** `GPIB1::24::INSTR`
   * **Keithley 6517B:** `GPIB1::27::INSTR`
   * **Keithley 2182:** address 7 (not seen on recent scans)
-  * **Novocontrol Alpha-AN:** `GPIB0::10` on the BDS PC (WinALPHA auto-detect; not SCPI; never probe it)
+  * **Novocontrol Alpha-AN:** `GPIB0::10` on the BDS PC (WinALPHA auto-detect; not SCPI; the launcher sends it only `*IDN?`)
+  * **Keysight E4991B:** `GPIB0::17` on the BDS PC (WinALPHA auto-detect)
 
 Free addresses, safest first: 26, 29, 25, 28, 2, 3, 4, 6. Avoid 1, 9, 10, 14, 15, 16, 18 and 22 (other makers' factory defaults, and 15 is an old Lakeshore address). Never assign 0, 21 or 30.
 
