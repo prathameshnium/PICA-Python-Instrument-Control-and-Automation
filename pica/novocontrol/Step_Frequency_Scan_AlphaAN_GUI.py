@@ -325,6 +325,26 @@ def launch_plotter_utility():
         messagebox.showerror("Launch Error", str(e))
 
 
+def launch_list_maker():
+    """Finds and launches the List Maker utility in a new process."""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        maker_path = os.path.join(
+            script_dir, "..", "utils", "List_Maker_GUI.py"
+        )
+        if not os.path.exists(maker_path):
+            messagebox.showerror(
+                "File Not Found",
+                f"List Maker not found at expected path:\n{maker_path}",
+            )
+            return
+        Process(target=run_script_process, args=(maker_path,)).start()
+    except Exception as e:
+        messagebox.showerror(
+            "Launch Error", f"Failed to launch List Maker: {e}"
+        )
+
+
 def launch_gpib_scanner():
     try:
         d = os.path.dirname(os.path.abspath(__file__))
@@ -973,6 +993,137 @@ def parse_zre(response):
     return zr, zi, f_actual, status, ref
 
 
+# ===============================================================================
+# FREQUENCY LISTS  (copied from novocontrol/Frequency_Scan_AlphaAN_GUI.py -
+# keep the two in step; only the default differs)
+# ===============================================================================
+
+# Frozen frequency series: 20 Hz, x1.1 per step, final point clamped to
+# exactly 1 MHz. 115 points. Generated once, deliberately NOT recomputed at
+# runtime and NOT user-editable, so every scan in the lab is directly
+# comparable point-for-point.
+FREQUENCIES_115PT_1MHZ = (
+    2.000000e+01, 2.200000e+01, 2.420000e+01, 2.662000e+01, 2.928200e+01,
+    3.221020e+01, 3.543122e+01, 3.897434e+01, 4.287178e+01, 4.715895e+01,
+    5.187485e+01, 5.706233e+01, 6.276857e+01, 6.904542e+01, 7.594997e+01,
+    8.354496e+01, 9.189946e+01, 1.010894e+02, 1.111983e+02, 1.223182e+02,
+    1.345500e+02, 1.480050e+02, 1.628055e+02, 1.790860e+02, 1.969947e+02,
+    2.166941e+02, 2.383635e+02, 2.621999e+02, 2.884199e+02, 3.172619e+02,
+    3.489880e+02, 3.838868e+02, 4.222755e+02, 4.645031e+02, 5.109534e+02,
+    5.620487e+02, 6.182536e+02, 6.800790e+02, 7.480869e+02, 8.228956e+02,
+    9.051851e+02, 9.957036e+02, 1.095274e+03, 1.204801e+03, 1.325282e+03,
+    1.457810e+03, 1.603591e+03, 1.763950e+03, 1.940345e+03, 2.134379e+03,
+    2.347817e+03, 2.582599e+03, 2.840859e+03, 3.124945e+03, 3.437439e+03,
+    3.781183e+03, 4.159301e+03, 4.575231e+03, 5.032754e+03, 5.536030e+03,
+    6.089633e+03, 6.698596e+03, 7.368456e+03, 8.105301e+03, 8.915831e+03,
+    9.807415e+03, 1.078816e+04, 1.186697e+04, 1.305367e+04, 1.435904e+04,
+    1.579494e+04, 1.737443e+04, 1.911188e+04, 2.102306e+04, 2.312537e+04,
+    2.543791e+04, 2.798170e+04, 3.077987e+04, 3.385785e+04, 3.724364e+04,
+    4.096800e+04, 4.506480e+04, 4.957129e+04, 5.452841e+04, 5.998126e+04,
+    6.597938e+04, 7.257732e+04, 7.983505e+04, 8.781856e+04, 9.660041e+04,
+    1.062605e+05, 1.168865e+05, 1.285751e+05, 1.414327e+05, 1.555759e+05,
+    1.711335e+05, 1.882469e+05, 2.070716e+05, 2.277787e+05, 2.505566e+05,
+    2.756122e+05, 3.031735e+05, 3.334908e+05, 3.668399e+05, 4.035239e+05,
+    4.438763e+05, 4.882639e+05, 5.370903e+05, 5.907993e+05, 6.498793e+05,
+    7.148672e+05, 7.863539e+05, 8.649893e+05, 9.514882e+05, 1.000000e+06,
+)
+
+# Second frozen series: the WinDETA measurement definition
+# (data_file_for_ref/mes_def_Fscan.txt, LIST ORDERING). 20 Hz, x1.4 per
+# step, 40 points, final point exactly 10 MHz. Transcribed verbatim from
+# the mes_def - deliberately NOT recomputed and NOT user-editable.
+FREQUENCIES_40PT_10MHZ = (
+    2.000000e+01, 2.800000e+01, 3.920000e+01, 5.488000e+01, 7.683200e+01,
+    1.075648e+02, 1.505907e+02, 2.108270e+02, 2.951578e+02, 4.132209e+02,
+    5.785093e+02, 8.099130e+02, 1.133878e+03, 1.587430e+03, 2.222401e+03,
+    3.111362e+03, 4.355907e+03, 6.098269e+03, 8.537577e+03, 1.195261e+04,
+    1.673365e+04, 2.342711e+04, 3.279796e+04, 4.591714e+04, 6.428399e+04,
+    8.999759e+04, 1.259966e+05, 1.763953e+05, 2.469534e+05, 3.457347e+05,
+    4.840286e+05, 6.776401e+05, 9.486961e+05, 1.328175e+06, 1.859444e+06,
+    2.603222e+06, 3.644511e+06, 5.102316e+06, 7.143242e+06, 1.000000e+07,
+)
+
+# Third frozen series: the list the Keysight E4980A modules sweep
+# (Frequency_Scan_E4980A_GUI), so an Alpha scan lines up point-for-point
+# with an LCR-meter scan. Linear inside each decade: 40-990 Hz in 10 Hz
+# steps, then 100 Hz, 1 kHz and 10 kHz steps, then 1-2 MHz in 100 kHz
+# steps. 377 points. Built from integer ranges, so every value is exact.
+FREQUENCIES_377PT_2MHZ = tuple(
+    float(f) for f in (
+        *range(40, 1000, 10),
+        *range(1000, 10000, 100),
+        *range(10000, 100000, 1000),
+        *range(100000, 1000000, 10000),
+        *range(1000000, 2000001, 100000),
+    )
+)
+
+# The only three scan recipes this program will run. Keys are the combobox
+# labels; the default is listed first. The default is the E4980A list this
+# module always swept, so a run started without touching the box measures
+# exactly the points it did before the list became selectable.
+FREQ_PRESETS = {
+    "377 pts, 40 Hz - 2 MHz (E4980A list)": FREQUENCIES_377PT_2MHZ,
+    "115 pts, 20 Hz - 1 MHz (x1.1)": FREQUENCIES_115PT_1MHZ,
+    "40 pts, 20 Hz - 10 MHz (x1.4)": FREQUENCIES_40PT_10MHZ,
+}
+DEFAULT_FREQ_PRESET = "377 pts, 40 Hz - 2 MHz (E4980A list)"
+
+# Guardrail: refuse to even import with a frequency the hardware cannot reach.
+for _name, _series in FREQ_PRESETS.items():
+    assert all(
+        FREQ_HW_MIN <= _f <= FREQ_HW_MAX for _f in _series
+    ), f"Preset {_name!r} contains a point outside the Alpha-AN range."
+
+# Last choice in the Frequency List box: a list the user types. Not a
+# preset, so it never goes through the guardrail above; every value is
+# checked by parse_frequency_list instead (and again by
+# validate_parameters before anything reaches the bus).
+CUSTOM_FREQ_LABEL = "Custom list (type your own below)"
+# Sanity cap only: at ~1 s per point this is already a 15+ minute sweep
+# at EVERY temperature step.
+CUSTOM_FREQ_MAX_POINTS = 1000
+
+
+def parse_frequency_list(text):
+    """User-typed frequency list (Hz) -> tuple of floats, in typed order.
+
+    Commas separate values; semicolons, spaces and new lines are accepted
+    too, so a list pasted from List Maker or a spreadsheet works as is.
+    Every value must lie inside the Alpha-AN generator span
+    FREQ_HW_MIN-FREQ_HW_MAX. Raises ValueError naming the first bad entry.
+    """
+    tokens = text.replace(",", " ").replace(";", " ").split()
+    if not tokens:
+        raise ValueError("Custom frequency list is empty.")
+    if len(tokens) > CUSTOM_FREQ_MAX_POINTS:
+        raise ValueError(
+            f"Custom frequency list has {len(tokens)} points; the limit is "
+            f"{CUSTOM_FREQ_MAX_POINTS}."
+        )
+    values = []
+    for tok in tokens:
+        try:
+            f = float(tok)
+        except ValueError:
+            raise ValueError(
+                f"Custom frequency list: '{tok}' is not a number. "
+                f"Use values in Hz such as 20, 1000, 1e6."
+            ) from None
+        if not math.isfinite(f):
+            raise ValueError(
+                f"Custom frequency list: '{tok}' is not a finite number."
+            )
+        if not (FREQ_HW_MIN <= f <= FREQ_HW_MAX):
+            raise ValueError(
+                f"Custom frequency list: {tok} Hz is outside the Alpha-AN "
+                f"range {FREQ_HW_MIN:g} Hz to {FREQ_HW_MAX:g} Hz."
+            )
+        values.append(f)
+    return tuple(values)
+
+
+
 def validate_alpha_parameters(frequencies, acv, mtm, wire_mode):
     """Reject anything unsafe BEFORE a single byte reaches the Alpha.
 
@@ -1484,15 +1635,9 @@ class CombinedGUI:
         self.save_dir = ""
         self.c0_farads = None   # set at Start from the geometry inputs
 
-        # Frequency array (unchanged: 40 Hz to 2 MHz; inside the Alpha's
-        # range and below 4 MHz, so the ZG4 ceiling is 3 Vrms throughout)
-        self.sweep_frequencies = np.concatenate([
-            np.arange(40, 1000, 10),
-            np.arange(1000, 10000, 100),
-            np.arange(10000, 100000, 1000),
-            np.arange(100000, 1000000, 10000),
-            np.arange(1000000, 2000001, 100000),
-        ])
+        # Frequency list: replaced at Start by the one chosen in the
+        # Frequency List box (default: the E4980A list, as before)
+        self.sweep_frequencies = FREQ_PRESETS[DEFAULT_FREQ_PRESET]
 
         # Plot data — main thread only (fix #1; CRIT-2 adds plot_heater)
         self.plot_t = []
@@ -1943,8 +2088,37 @@ class CombinedGUI:
         ttk.Checkbutton(ff, text="PICA format (.dat)", variable=self.fmt_pica_var).pack(side="left", padx=(8, 0))
         ttk.Checkbutton(ff, text="WinDETA format (.txt)", variable=self.fmt_windeta_var).pack(side="left", padx=(8, 0))
 
-        # Row 7: Start/Stop/Scan Buttons
-        bf = ttk.Frame(frame); bf.grid(row=7, column=0, columnspan=4, sticky="ew", pady=5, padx=5)
+        # Row 7: Frequency list. Three frozen recipes (never editable, so
+        # runs stay comparable point-for-point) plus a custom list the user
+        # types. The custom box and its List Maker button are greyed unless
+        # chosen. Read once at Start, locked during a run.
+        fl = ttk.Frame(frame); fl.grid(row=7, column=0, columnspan=4, sticky="ew", padx=5, pady=2)
+        fl.grid_columnconfigure(1, weight=1)
+        ttk.Label(fl, text="Frequency List:").grid(row=0, column=0, sticky="w")
+        self.freq_cb = ttk.Combobox(fl, state="readonly",
+                                    values=list(FREQ_PRESETS) + [CUSTOM_FREQ_LABEL])
+        self.freq_cb.set(DEFAULT_FREQ_PRESET)
+        self.freq_cb.grid(row=0, column=1, columnspan=2, sticky="ew", padx=(8, 0))
+        self.freq_cb.bind("<<ComboboxSelected>>", self._on_freq_list_change)
+        self.lbl_custom_freq = ttk.Label(
+            fl, text=f"Frequencies in Hz, comma-separated "
+                     f"({FREQ_HW_MIN:g} to {FREQ_HW_MAX:g} Hz):")
+        self.lbl_custom_freq.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.list_maker_button = ttk.Button(fl, text="List Maker", width=10,
+                                            command=launch_list_maker)
+        self.list_maker_button.grid(row=1, column=2, sticky="e", pady=(4, 0))
+        # width=1: let the grid size the box instead of 80 characters
+        self.custom_freq_text = tk.Text(fl, height=3, width=1, wrap="word",
+                                        font=self.FONT_CONSOLE, relief="solid", bd=1)
+        self.custom_freq_text.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(2, 0))
+        self.custom_freq_text.bind("<KeyRelease>", self._update_custom_freq_hint)
+        self.lbl_custom_hint = ttk.Label(fl, text="", justify="left",
+                                         wraplength=self.LEFT_PANEL_WIDTH - 60)
+        self.lbl_custom_hint.grid(row=3, column=0, columnspan=3, sticky="w")
+        self._on_freq_list_change()
+
+        # Row 8: Start/Stop/Scan Buttons
+        bf = ttk.Frame(frame); bf.grid(row=8, column=0, columnspan=4, sticky="ew", pady=5, padx=5)
         bf.grid_columnconfigure((0, 1, 2), weight=1)
         self.start_button = ttk.Button(bf, text="Start Sequence", style="Start.TButton", command=self.start_sequence)
         self.start_button.grid(row=0, column=0, sticky="ew", padx=2)
@@ -1959,12 +2133,59 @@ class CombinedGUI:
                                       command=self._skip_step)
         self.skip_button.grid(row=1, column=1, sticky="ew", padx=2, pady=(4, 0))
 
-        # Row 8: Browse Save Button
-        ttk.Button(frame, text="Browse Save…", command=self._browse_save).grid(row=8, column=0, columnspan=4, sticky="ew", padx=5, pady=(0, 5))
+        # Row 9: Browse Save Button
+        ttk.Button(frame, text="Browse Save…", command=self._browse_save).grid(row=9, column=0, columnspan=4, sticky="ew", padx=5, pady=(0, 5))
 
-        # Row 9: Save Directory Label
+        # Row 10: Save Directory Label
         self.save_dir_lbl = ttk.Label(frame, text="Save dir: (not set)", foreground=self.CLR_ACCENT_GOLD)
-        self.save_dir_lbl.grid(row=9, column=0, columnspan=4, sticky="w", padx=5)
+        self.save_dir_lbl.grid(row=10, column=0, columnspan=4, sticky="w", padx=5)
+
+    def _on_freq_list_change(self, _event=None):
+        """Grey the custom-list box and List Maker button unless chosen."""
+        if self.freq_cb.get() == CUSTOM_FREQ_LABEL:
+            self.custom_freq_text.config(state="normal", bg="white",
+                                         fg=self.CLR_TEXT_DARK)
+            self.lbl_custom_freq.config(foreground=self.CLR_TEXT_DARK)
+            self.list_maker_button.config(state="normal")
+            self.lbl_custom_hint.grid()
+            self._update_custom_freq_hint()
+        else:
+            self.custom_freq_text.config(state="disabled", bg="#D9D2CB",
+                                         fg="#8A837D")
+            self.lbl_custom_freq.config(foreground="#8A837D")
+            self.list_maker_button.config(state="disabled")
+            # An empty Label still draws as a blank strip, so hide it.
+            self.lbl_custom_hint.grid_remove()
+
+    def _update_custom_freq_hint(self, _event=None):
+        """Live readout under the custom box: point count and span, or
+        the reason the list would be refused at Start."""
+        if self.freq_cb.get() != CUSTOM_FREQ_LABEL:
+            return
+        text = self.custom_freq_text.get("1.0", "end")
+        if not text.strip():
+            self.lbl_custom_hint.config(
+                text="Type or paste a list, e.g. 20, 100, 1000, 1e4, 1e5",
+                foreground=self.CLR_TEXT_DARK)
+            return
+        try:
+            freqs = parse_frequency_list(text)
+        except ValueError as e:
+            self.lbl_custom_hint.config(text=str(e), foreground="#B00020")
+            return
+        self.lbl_custom_hint.config(
+            text=f"{len(freqs)} points, {min(freqs):g} Hz to "
+                 f"{max(freqs):g} Hz",
+            foreground=self.CLR_TEXT_DARK)
+
+    def _selected_frequencies(self):
+        """(label for the log, frequency tuple) for the chosen list."""
+        choice = self.freq_cb.get()
+        if choice == CUSTOM_FREQ_LABEL:
+            freqs = parse_frequency_list(
+                self.custom_freq_text.get("1.0", "end"))
+            return f"Custom list ({len(freqs)} pts)", freqs
+        return choice, FREQ_PRESETS[choice]
 
     def _on_geom_mode_change(self):
         """Relabel the geometry entry when the Diameter/Area toggle flips,
@@ -2660,6 +2881,7 @@ class CombinedGUI:
         return p
 
     def _validate_lcr_params(self):
+        freq_label, freqs = self._selected_frequencies()
         lcr_visa = self.lcr_cb.get()
         if "  ->  " in lcr_visa:
             lcr_visa = lcr_visa.split("  ->  ")[0].strip()
@@ -2688,8 +2910,11 @@ class CombinedGUI:
         # Every Alpha setting is checked here, at Start, before the worker
         # opens either instrument (ZG4 AC ceiling over the whole sweep).
         validate_alpha_parameters(
-            [float(f) for f in self.sweep_frequencies], p["acv"],
+            [float(f) for f in freqs], p["acv"],
             p["mtm"], p["wire_mode"])
+        p["freq_preset"] = freq_label
+        self.sweep_frequencies = freqs
+        self.log(f"Frequency list: {freq_label}")
         return p
 
     def set_ui_state(self, running: bool):
@@ -2721,6 +2946,13 @@ class CombinedGUI:
             e.config(state=st)
         self.ls_cb.config(state="readonly" if not running else "disabled")
         self.lcr_cb.config(state="readonly" if not running else "disabled")
+        # Frequency list is read once at Start: lock it during a run
+        self.freq_cb.config(state="disabled" if running else "readonly")
+        if running:
+            self.custom_freq_text.config(state="disabled")
+            self.list_maker_button.config(state="disabled")
+        else:
+            self._on_freq_list_change()
         # Fix #10: removed the no-op self.sort_var.set(self.sort_var.get())
 
     # ------------------------------------------------------------

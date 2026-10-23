@@ -18,7 +18,7 @@
                     column order, CRLF endings).
                  4. Mock-instrument dry run: a fake VISA session answers
                     *IDN?/INTTYP?/ZRE? so the full backend sweep runs
-                    end-to-end (both presets); output files and the GPIB
+                    end-to-end (every preset); output files and the GPIB
                     command log are then verified (no DCV/DCE ever,
                     generator parked on close).
 
@@ -220,9 +220,10 @@ def run_frequency_presets():
     )
 
     check(
-        "both presets registered in FREQ_PRESETS",
+        "all three presets registered in FREQ_PRESETS",
         set(fscan.FREQ_PRESETS.values())
-        == {fscan.FREQUENCIES_115PT_1MHZ, fscan.FREQUENCIES_40PT_10MHZ},
+        == {fscan.FREQUENCIES_115PT_1MHZ, fscan.FREQUENCIES_40PT_10MHZ,
+            fscan.FREQUENCIES_377PT_2MHZ},
     )
     check(
         "default preset is the 115-pt list",
@@ -578,7 +579,7 @@ def dry_run_preset(preset_name):
 
 
 def run_dry_run():
-    print("\n== 4. Mock-instrument end-to-end dry run (both presets) ==")
+    print("\n== 4. Mock-instrument end-to-end dry run (every preset) ==")
     for preset in fscan.FREQ_PRESETS:
         dry_run_preset(preset)
 

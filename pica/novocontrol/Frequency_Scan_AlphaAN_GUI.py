@@ -2,8 +2,9 @@
  PROGRAM:      Novocontrol Alpha-AN Broadband Dielectric Frequency Scan GUI
  PURPOSE:      Fixed-temperature broadband frequency scan on a Novocontrol
                Alpha-AN mainframe with a ZG4 sample interface, over direct
-               GPIB. Sweeps one of two frozen logarithmic series (20 Hz -
-               1 MHz or 20 Hz - 10 MHz) or a comma-separated list the user
+               GPIB. Sweeps one of three frozen series (20 Hz - 1 MHz,
+               20 Hz - 10 MHz, or the E4980A's 40 Hz - 2 MHz list) or a
+               comma-separated list the user
                types (each value checked against the 3e-5 Hz - 20 MHz
                generator span), converts the measured complex impedance to permittivity,
                electric modulus and AC conductivity, and writes a
@@ -349,11 +350,27 @@ FREQUENCIES_40PT_10MHZ = (
     2.603222e+06, 3.644511e+06, 5.102316e+06, 7.143242e+06, 1.000000e+07,
 )
 
-# The only two scan recipes this program will run. Keys are the combobox
+# Third frozen series: the list the Keysight E4980A modules sweep
+# (Frequency_Scan_E4980A_GUI), so an Alpha scan lines up point-for-point
+# with an LCR-meter scan. Linear inside each decade: 40-990 Hz in 10 Hz
+# steps, then 100 Hz, 1 kHz and 10 kHz steps, then 1-2 MHz in 100 kHz
+# steps. 377 points. Built from integer ranges, so every value is exact.
+FREQUENCIES_377PT_2MHZ = tuple(
+    float(f) for f in (
+        *range(40, 1000, 10),
+        *range(1000, 10000, 100),
+        *range(10000, 100000, 1000),
+        *range(100000, 1000000, 10000),
+        *range(1000000, 2000001, 100000),
+    )
+)
+
+# The only three scan recipes this program will run. Keys are the combobox
 # labels; the default preset is listed first.
 FREQ_PRESETS = {
     "115 pts, 20 Hz - 1 MHz (x1.1)": FREQUENCIES_115PT_1MHZ,
     "40 pts, 20 Hz - 10 MHz (x1.4)": FREQUENCIES_40PT_10MHZ,
+    "377 pts, 40 Hz - 2 MHz (E4980A list)": FREQUENCIES_377PT_2MHZ,
 }
 DEFAULT_FREQ_PRESET = "115 pts, 20 Hz - 1 MHz (x1.1)"
 
@@ -363,7 +380,7 @@ for _name, _series in FREQ_PRESETS.items():
         FREQ_HW_MIN <= _f <= FREQ_HW_MAX for _f in _series
     ), f"Preset {_name!r} contains a point outside the Alpha-AN range."
 
-# Third choice in the Frequency List box: a list the user types. Not a
+# Last choice in the Frequency List box: a list the user types. Not a
 # preset, so it never goes through the guardrail above; every value is
 # checked by parse_frequency_list instead (and again by
 # validate_parameters before anything reaches the bus).
@@ -1489,7 +1506,7 @@ class AlphaAN_FreqScan_GUI:
             self.entries[key].bind("<KeyRelease>", self._update_c0_label)
         self._update_c0_label()
 
-        # Two frozen scan recipes (never editable, so runs stay comparable
+        # Three frozen scan recipes (never editable, so runs stay comparable
         # point-for-point) plus a custom list the user types. The custom
         # box and its List Maker button are greyed unless chosen.
         Label(

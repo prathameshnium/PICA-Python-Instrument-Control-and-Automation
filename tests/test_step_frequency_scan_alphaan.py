@@ -26,7 +26,7 @@ class _Entry:
     def __init__(self, value):
         self.value = value
 
-    def get(self):
+    def get(self, *_args):
         return self.value
 
 
@@ -212,7 +212,10 @@ def _validate(**over):
     gui.geom_mode_var = _Entry(over.get("geom", "area"))
     gui.fmt_pica_var = _Entry(over.get("pica", True))
     gui.fmt_windeta_var = _Entry(over.get("windeta", True))
-    gui.sweep_frequencies = over.get("freqs", [40.0, 1e3, 2e6])
+    freqs = over.get("freqs", [40.0, 1e3, 2e6])
+    gui.freq_cb = _Entry(over.get("preset", mod.CUSTOM_FREQ_LABEL))
+    gui.custom_freq_text = _Entry(", ".join(str(f) for f in freqs) + "\n")
+    gui.log = lambda msg: None
     return gui, fake
 
 
@@ -225,6 +228,7 @@ def test_settings_are_validated_at_start_before_any_instrument_opens():
     for bad in ({"acv": "3.5"}, {"acv": "0"}, {"mtm": "0"},
                 {"wire": "5"}, {"delay": "-1"},
                 {"acv": "3.0", "freqs": [1e3, 5e6]},
+                {"freqs": ["1kHz"]}, {"freqs": [1e3, 3e7]},
                 {"thickness_mm": "0"}, {"geom": "diameter", "geom_value": "-2"},
                 {"pica": False, "windeta": False}):
         gui, fake = _validate(**bad)
@@ -629,6 +633,59 @@ def test_the_worker_warns_when_heater_off_could_not_be_sent():
                for m in msgs)
     assert any(m["type"] == "beep" for m in msgs)
     assert msgs[-1]["type"] == "worker_done"
+
+
+# --- frequency list (dropdown + custom list) ---------------------------------
+
+# The list this module hard-coded before the dropdown existed (and the one
+# the E4980A modules still sweep).
+_E4980A_LIST = tuple(float(f) for f in (
+    *range(40, 1000, 10), *range(1000, 10000, 100),
+    *range(10000, 100000, 1000), *range(100000, 1000000, 10000),
+    *range(1000000, 2000001, 100000)))
+
+
+def test_default_frequency_list_is_the_old_e4980a_list():
+    assert mod.DEFAULT_FREQ_PRESET == next(iter(mod.FREQ_PRESETS))
+    assert mod.FREQ_PRESETS[mod.DEFAULT_FREQ_PRESET] == _E4980A_LIST
+    assert len(_E4980A_LIST) == 377
+    assert mod.CUSTOM_FREQ_LABEL not in mod.FREQ_PRESETS
+    assert all(label.isascii() for label in mod.FREQ_PRESETS)
+
+
+def test_presets_match_the_frequency_scan_module():
+    fscan, _ = load_port("Frequency_Scan_AlphaAN_GUI.py")
+    assert set(mod.FREQ_PRESETS) == set(fscan.FREQ_PRESETS)
+    for label, freqs in fscan.FREQ_PRESETS.items():
+        assert mod.FREQ_PRESETS[label] == freqs, label
+
+
+def test_start_takes_the_chosen_preset():
+    for label, freqs in mod.FREQ_PRESETS.items():
+        gui, fake = _validate(preset=label)
+        p = gui._validate_lcr_params()
+        assert p["freq_preset"] == label
+        assert tuple(gui.sweep_frequencies) == freqs
+        assert fake.commands == []
+
+
+def test_start_takes_a_custom_list_in_typed_order():
+    gui, _ = _validate(freqs=[1e5, 20.0, 1e3])
+    p = gui._validate_lcr_params()
+    assert p["freq_preset"] == "Custom list (3 pts)"
+    assert tuple(gui.sweep_frequencies) == (1e5, 20.0, 1e3)
+
+
+def test_a_refused_custom_list_leaves_the_previous_list_alone():
+    gui, _ = _validate(freqs=["1kHz"])
+    gui.sweep_frequencies = mod.FREQ_PRESETS[mod.DEFAULT_FREQ_PRESET]
+    try:
+        gui._validate_lcr_params()
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("accepted a non-numeric frequency")
+    assert gui.sweep_frequencies == _E4980A_LIST
 
 
 if __name__ == "__main__":

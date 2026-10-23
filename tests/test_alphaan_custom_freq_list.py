@@ -155,6 +155,21 @@ def test_ref_note_explains_and_cancel_sends_nothing():
         assert not hasattr(gui, "cal_thread"), "Cancel must start nothing"
 
 
+def test_e4980a_preset_is_offered_but_115_pt_stays_default():
+    e4980a = tuple(float(f) for f in (
+        *range(40, 1000, 10), *range(1000, 10000, 100),
+        *range(10000, 100000, 1000), *range(100000, 1000000, 10000),
+        *range(1000000, 2000001, 100000)))
+    for alpha in MODULES.values():
+        label = "377 pts, 40 Hz - 2 MHz (E4980A list)"
+        assert alpha.FREQ_PRESETS[label] == e4980a
+        assert len(e4980a) == 377
+        assert alpha.DEFAULT_FREQ_PRESET == "115 pts, 20 Hz - 1 MHz (x1.1)"
+        assert next(iter(alpha.FREQ_PRESETS)) == alpha.DEFAULT_FREQ_PRESET
+        # Below 4 MHz throughout, so the full 3 Vrms stays allowed.
+        assert max(e4980a) < alpha.ACV_FREQ_MID_HZ
+
+
 if __name__ == "__main__":
     failures = 0
     for name, function in sorted(globals().items()):
