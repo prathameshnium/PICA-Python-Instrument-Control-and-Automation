@@ -137,7 +137,7 @@ PICA enables continuous operation across a full range of measurements, from ultr
 
 ## Design and Implementation
 
-PICA is built on a modular architecture characterised by self-contained modules, so adding a module cannot break the others.
+PICA is built on a modular architecture characterised by self-contained modules, so adding a module cannot break the others. Each measurement is one file with no shared measurement code; the reasoning is in [CONTRIBUTING.md](CONTRIBUTING.md#why-measurement-modules-are-self-contained).
 
 ### Process Isolation and Concurrency
 The launcher starts every measurement program in its own process with Python's standard `multiprocessing` library.
