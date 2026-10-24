@@ -373,7 +373,8 @@ IDN_SCAN_TIMEOUT_MS = 1200
 #      below. Handled by parse_cryocon_number(), which names the condition
 #      instead of raising a bare ValueError.
 #
-# Nothing in this block writes to the instrument. GPIB device clear is an
+# The hardening itself sends nothing but '*IDN?'; CryoconLink.write() below
+# exists only for this module's control commands. GPIB device clear is an
 # interface message rather than a SCPI command, but its effect is
 # device-dependent and the Cryo-con guide does not document it, so it stays
 # off unless ALLOW_DEVICE_CLEAR_ON_RETRY is turned on deliberately.
@@ -455,7 +456,8 @@ class CryoconLink:
     """One paced VISA session to a Cryo-con, opened with retries.
 
     Every method is a query unless the caller explicitly asks for write().
-    The monitor and the dielectric scan never call write().
+    In this module that caller is Cryocon34Backend._write(), which every
+    control command goes through.
     """
 
     def __init__(self, visa_address, timeout_ms=CRYOCON_TIMEOUT_MS,
@@ -2679,10 +2681,10 @@ class DirectControlGUI:
             self.log(f"Cryocon identified at {cryocon} and selected.")
             return
 
-        # Nothing identified itself as a Cryo-con. Offer the factory address
-        # as a hint only -- connect() checks *IDN? again and refuses anything
-        # that is not a Cryo-con, so this can never start driving a heater on
-        # the wrong instrument.
+        # Nothing identified itself as a Cryo-con. Offer the lab address hint
+        # (CRYOCON_ADDRESS_HINT, ::23::) only -- connect() checks *IDN? again
+        # and refuses anything that is not a Cryo-con, so this can never start
+        # driving a heater on the wrong instrument.
         hint = next(
             (r for r in resources if _is_gpib_address(r, CRYOCON_ADDRESS_HINT)), None)
         if hint:

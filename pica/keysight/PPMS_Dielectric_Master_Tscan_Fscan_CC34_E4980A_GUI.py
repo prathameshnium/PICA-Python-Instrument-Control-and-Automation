@@ -731,8 +731,9 @@ def build_protocol_phases(cfg):
             # COOL-1: standalone cooldown — the PPMS cools to base and
             # this program only waits through it. No field tag, no
             # warming Tscan (e.g. before a manual M(H) taken while
-            # heating). The wait ends exactly like every WAIT_BASE:
-            # detected warming, fallback ceiling, or Skip.
+            # heating). Unlike a measurement cooldown the wait ends ON
+            # TIME (its planned wait), or earlier on detected warming
+            # or Skip (see _phase_wait_base).
             phases.append({
                 "kind": "WAIT_BASE",
                 "label": f"Cooldown {i} (standalone)",
@@ -994,7 +995,7 @@ def validate_ppms_seq(text):
 #
 # Nothing in this block writes to the instrument.
 
-# Factory address, used only as a last-resort hint when nothing answers.
+# Lab address, used only as a last-resort hint when nothing answers.
 # The lab's Cryocon 34 was moved to IEEE address 23 on 3 Sep 2026: 12 is the
 # shared factory default of the Cryocon, the Lakeshore 340/350 and the 6221.
 # Board-independent hint ("::23::INSTR" matches GPIB0 or GPIB1); *IDN? decides.
@@ -1218,8 +1219,9 @@ class Probe_Thermometer_Backend:
 
     The interface is the one the Lakeshore backend presented - connect /
     reconnect / get_temperature / shutdown - so the worker thread below is
-    byte-for-byte the parent module's. verify_channel() is the single
-    addition, called once at Start.
+    the parent module's apart from the marked CC34 additions (CC34-2
+    channel check, CC34-8 invalid-read re-reads). verify_channel() is the
+    single backend addition, called once at Start.
     """
 
     def __init__(self):

@@ -797,9 +797,10 @@ ALLOWED_CRYOCON_COMMANDS = {
     # loops by NAME, HEATER being loop 1 and AOUT loop 2, which is how the
     # manual's own autotune and AOUT:MODE examples are written.
     #
-    # All queries, all in the opt-in "Loop addressing" probe table. They
-    # are here so the hypothesis can be TESTED against the instrument; none
-    # is used by a measurement module and none may be until it answers.
+    # All queries, first added for the opt-in "Loop addressing" probe table
+    # so the hypothesis could be TESTED. Settled 25 Sep 2026: loops ARE
+    # addressed by name, and T_Control and the CC34 heater read-back
+    # (HEATER:OUTPWR?) now use these.
     "HEATER:HTRREAD?", "HEATER:OUTPWR?", "HEATER:PMANUAL?",
     "HEATER:MAXPWR?", "HEATER:MAXSET?", "HEATER:TABLEIX?", "HEATER:NAME?",
     "HEATER:SETPT?", "HEATER:SOURCE?", "HEATER:TYPE?", "HEATER:RANGE?",

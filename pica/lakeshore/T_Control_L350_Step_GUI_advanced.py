@@ -31,7 +31,7 @@ ADAPTIVE RAMP RATE (new):
     proposed = |target - current| * Step Factor        (bigger step -> faster)
     cap      = low-T cap table looked up at min(current, target)
                (the coldest temperature the ramp traverses governs)
-    rate     = clamp(min(proposed, cap), Min Rate .. Max Rate)
+    rate     = min(max(proposed, Min Rate), cap, Max Rate)
     first setpoint of a run: rate *= First-Step Factor (overshoot is
     worst on the first point, so it is approached extra slowly)
 

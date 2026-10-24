@@ -96,7 +96,8 @@ except ImportError:
 #      connected normally. A timeout on the WRITE means the instrument stopped
 #      accepting bytes for a moment, not that it is absent or at another
 #      address, so the cure is to wait and ask again instead of giving up.
-#      Handled by CRYOCON_OPEN_SETTLE_S plus the retry loop in CryoconLink.
+#      Handled by CRYOCON_OPEN_SETTLE_S plus the retry loop in
+#      open_cryocon_session().
 #
 #   2. A reading query answered with a Cryo-con status string instead of a
 #      number and float() raised, which killed the worker thread. The front

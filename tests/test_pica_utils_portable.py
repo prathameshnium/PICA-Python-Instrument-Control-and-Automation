@@ -32,7 +32,7 @@ import pica_utils_portable as pup  # noqa: E402
 
 SPEC_FILE = os.path.join(project_root, 'PICA_Utils_Portable.spec')
 
-# The eight utilities the portable build is meant to carry.
+# The nine utilities the portable build is meant to carry.
 EXPECTED_KEYS = {
     'plotter', 'ppms-plotter', 'pe-plotter',
     'seq-visualizer', 'time-estimator',

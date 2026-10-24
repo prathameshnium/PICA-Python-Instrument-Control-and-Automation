@@ -807,8 +807,9 @@ class FakePyvisa:
 def test_connecting_to_something_that_is_not_a_cryocon_is_refused():
     """The Lakeshore 350 sits on the same bus; CALCUR must never reach it.
 
-    The lab's Cryocon is at GPIB0::12 and the Lakeshore 350 answers on
-    GPIB1::12, which is the Cryo-con's own factory address. Picking by
+    The lab's Cryocon was at GPIB0::12 (address 23 since 3 Sep 2026) and
+    the Lakeshore 350 answers on GPIB1::12, the Cryo-con's own factory
+    address. Picking by
     address alone would send a calibration curve to the Lakeshore.
     """
     instrument = FakeInstrument(idn="LSCI,MODEL350,LSA2FKB/#######,1.7")

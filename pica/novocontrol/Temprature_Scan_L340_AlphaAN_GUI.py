@@ -1832,7 +1832,7 @@ class Integrated_CT_GUI:
             row=r, column=0, padx=(10, 5), pady=(0, 10), sticky='ew')
         r += 1
 
-        # --- Lakeshore VISA | LCR VISA ---
+        # --- Lakeshore VISA | Alpha-AN VISA ---
         Label(frame, text="Lakeshore VISA:").grid(
             row=r, column=0, padx=padx_val, pady=pady_val, sticky='w')
         Label(frame, text="Alpha-AN VISA:").grid(

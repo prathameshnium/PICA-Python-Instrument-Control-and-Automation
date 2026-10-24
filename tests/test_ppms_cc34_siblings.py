@@ -18,9 +18,10 @@ here:
      (28-29 Aug 2026) must be solved here too, and must not creep back:
 
        a. The instrument is chosen by '*IDN?' identity, never by address.
-          The Cryocon sits at GPIB0::12 and the Lakeshore 350 answers on
-          GPIB1::12 - the Cryo-con's OWN factory address - so an address
-          pick would index a whole multi-day run by the wrong
+          The Cryocon was at GPIB0::12 (address 23 since 3 Sep 2026) and
+          the Lakeshore 350 answers on GPIB1::12 - the Cryo-con's OWN
+          factory address - so an address pick would index a whole
+          multi-day run by the wrong
           instrument's temperature.
        b. The first '*IDN?' is retried. On a Rev 3.03A unit it can die
           inside viWrite with VI_ERROR_TMO right after a bus scan.

@@ -39,7 +39,7 @@ def run_delta_measurement():
         print("Configuring Keithley 6221 for Delta Mode...")
         # Reset and clear status
         keithley_6221.write("*rst; status:preset; *cls")
-        keithley_6221.write("CURR:COMP 50")  # Reset and clear status
+        keithley_6221.write("CURR:COMP 50")  # Compliance voltage, 50 V
 
         time.sleep(1)
         # Set measurement unit to Volts
@@ -70,15 +70,14 @@ def run_delta_measurement():
 
             # The first item is Voltage
             voltage = data_points[0]
-            # Use the resistance calculated by the keithley_6221
+            # Resistance computed here as V / DELTA_CURRENT
             resistance = float(voltage / DELTA_CURRENT)
 
             voltages.append(voltage)  # Still good to log the raw voltage
 
             elapsed_time = time.time() - start_time
 
-            # Print the formatted output using the keithley_6221's resistance
-            # value
+            # Print the formatted output with the computed resistance
             print(
                 f"Time: {elapsed_time} s |Current:{DELTA_CURRENT} A | Voltage: {voltage} V | Resistance: {resistance} Ohms")
 

@@ -16,12 +16,12 @@
    4. Set the first field on the PPMS. Pick that field in the list (it is
       the CURRENT field). Press "Measure".
    5. The E4980A runs the 40 Hz - 2 MHz sweep. One file per field:
-          <sample>_T<nominal>K_H<field>Oe_<timestamp>.csv
+          <sample>_T<nominal>K_H<field>Oe_<timestamp>.txt
       Measured temperature at the start and the end of the sweep is in
       the header comment lines, together with everything else needed to
       read the file on its own.
    6. When the sweep finishes the CURRENT marker moves to the next field
-      (checkbox "advance automatically", on). Change the PPMS field, wait,
+      (checkbox "move the marker to the next field automatically", on). Change the PPMS field, wait,
       press "Measure" again. Repeat for every field, then change the
       temperature and start again from step 2.
 

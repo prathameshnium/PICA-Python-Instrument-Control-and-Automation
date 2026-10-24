@@ -135,7 +135,7 @@ programs do not import from each other).
              proposed = |target - current| * Step Factor
              cap      = low-T cap table at min(current, target)
                         (the coldest temperature traversed governs)
-             rate     = clamp(min(proposed, cap), Min Rate .. Max Rate)
+             rate     = min(max(proposed, Min Rate), cap, Max Rate)
          First setpoint of a run is slowed further by First-Step x
          (overshoot is worst there). Cap table is editable text,
          default "77:0.3, 100:0.5, else:5" — below 100 K never faster

@@ -316,7 +316,8 @@ def save_protected_addresses(addresses, path=None):
 # never enumerated by VISA at all.
 #
 # So the gauge is OPT-IN. Nothing here runs until somebody names its address
-# in Advanced Options (the gauge icon, or search "pressure"), and from then
+# in Advanced Options (the Gauge Address Setup row on the Vacuum Gauge
+# Logging card, or search "pressure"), and from then
 # on the scan speaks to that one resource and no other -- and never sends it
 # a *IDN?, even if it does show up in list_resources(). Both status strips already carry the PRESSURE
 # tile; this is what finally fills it.
@@ -2158,7 +2159,8 @@ class PICALauncherV2:
     # tile, same StripCap / StripStat / StripDim triple, filled from the same
     # one-shot scan result. Its gauge is serial and opt-in, so unlike every
     # other reading it stays blank until somebody names the port in
-    # Advanced Options > Pressure Gauge -- see PRESSURE_GAUGE_FILE.
+    # Advanced Options > Vacuum Gauge Logging > Gauge Address Setup -- see
+    # PRESSURE_GAUGE_FILE.
     def _all_chip_names(self):
         """Every instrument chip, in reference-table order."""
         return [n for n, _ in KNOWN_INSTRUMENTS] + NEVER_PROBED_INSTRUMENTS

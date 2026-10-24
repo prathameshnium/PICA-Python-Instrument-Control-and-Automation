@@ -634,14 +634,14 @@ CC34_DEEP_SECTIONS = [
 # became possible only when the name form was settled, because
 # HEATER:TYPE? and AOUT:TYPE? are what "the loops are engaged" is read from.
 
-# Read before and after. All queries. These are what "engaged" is read
-# from, so they are what a working STOP has to change.
 # The 400 K safety kill, spelled exactly as
 # Temprature_Scan_Passive_CC34_E4980A_GUI.py spells it. Named here rather
 # than written inline so the two cannot drift apart: a test that verifies a
 # different string from the one the measurement module sends is worthless.
 CC34_STOP_COMMAND = "STOP"
 
+# Read before and after. All queries. These are what "engaged" is read
+# from, so they are what a working STOP has to change.
 CC34_STOP_STATE_PROBES = [
     ("SYSTEM:LOOP?", "master loop enable - the clearest single indicator"),
     ("HEATER:TYPE?", "loop 1 control type; STOP should leave it Off"),
@@ -2540,9 +2540,10 @@ class DiagnosticsGUI:
     # -- teardown --
 
     def _on_closing(self):
-        """No confirmation dialog: this program writes nothing, so there
-        is nothing to lose but the on-screen copy of a log that has
-        already been saved to disk."""
+        """No confirmation dialog: the survey writes nothing (only the
+        opt-in STOP test does, and it logs its restore recipe before it
+        writes), so there is nothing to lose but the on-screen copy of a
+        log that has already been saved to disk."""
         self.stop_event.set()
         if self.after_id is not None:
             try:

@@ -629,8 +629,9 @@ def build_protocol_phases(cfg):
             # COOL-1: standalone cooldown — the PPMS cools to base and
             # this program only waits through it. No field tag, no
             # warming Tscan (e.g. before a manual M(H) taken while
-            # heating). The wait ends exactly like every WAIT_BASE:
-            # detected warming, fallback ceiling, or Skip.
+            # heating). Unlike a measurement cooldown the wait ends ON
+            # TIME (its planned wait), or earlier on detected warming
+            # or Skip (see _phase_wait_base).
             phases.append({
                 "kind": "WAIT_BASE",
                 "label": f"Cooldown {i} (standalone)",

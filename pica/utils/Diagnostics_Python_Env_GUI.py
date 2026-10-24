@@ -157,9 +157,9 @@ def version_at_least(found, minimum):
 def read_requirements_file():
     """Minimum versions from the project's own requirements.txt, if reachable.
 
-    Looks beside this file, two and three levels up. Returns {} when the file
-    is not there -- a frozen build or a loose copy of this script -- and the
-    built-in table is then the answer.
+    Looks beside this file, then one and two levels up. Returns (pins, path);
+    ({}, None) when the file is not there -- a frozen build or a loose copy
+    of this script -- and the built-in table is then the answer.
     """
     here = os.path.abspath(os.path.dirname(__file__))
     candidates = [

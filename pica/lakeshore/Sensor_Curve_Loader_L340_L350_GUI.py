@@ -2360,10 +2360,10 @@ class CurveLoaderBackend:
     def list_curves(self, first=None, last=None, progress=None):
         """CRVHDR? a range of curves and report what each one holds.
 
-        READ-ONLY: one query per curve and not a single write. The whole user
-        block is forty queries on a 340 and thirty-nine on a 350, a few
-        seconds either way; adding the twenty standard curves takes it to
-        sixty. Safe to run with a cryostat controlling.
+        READ-ONLY: queries only, not a single write. Each user curve costs a
+        CRVHDR? plus the MAP_PROBE_INDICES ladder of CRVPT? (one point when
+        the slot is occupied, up to ten when it is empty); standard curves
+        get the CRVHDR? only. Safe to run with a cryostat controlling.
 
         `first` and `last` default to the model's user block. Passing the
         query range instead maps the whole instrument, standard curves
@@ -2371,7 +2371,8 @@ class CurveLoaderBackend:
         such and are never offered as a target.
 
         Each entry is a dict with 'curve', the parsed header fields, 'empty',
-        'standard', and 'error' where the curve would not answer. An entry
+        'standard', 'state' (plus 'detail' for a user curve), and 'error'
+        where the curve would not answer. An entry
         that failed is kept rather than dropped, because a gap in the map is
         itself worth seeing.
         """

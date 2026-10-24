@@ -69,8 +69,8 @@ class PlotterAppGUI:
 
     try:
         # Robust path finding for assets. When running from source, `__file__` is
-        # inside the 'Utilities' directory. We navigate one level up ('..') to
-        # the project root to correctly locate the 'assets' folder. This
+        # inside pica/utils. We navigate one level up ('..') to the pica
+        # package folder to correctly locate its 'assets' folder. This
         # approach also works when the script is bundled.
         SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
         LOGO_FILE_PATH = os.path.join(

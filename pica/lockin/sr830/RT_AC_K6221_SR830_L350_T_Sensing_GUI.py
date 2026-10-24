@@ -1937,7 +1937,8 @@ class ACResistanceTSensingGUI:
         """The current comes off here, in the thread that put it on.
 
         Every exit path from the worker arrives here: finished, stopped, or
-        thrown. The heater, where there is one, goes off with it.
+        thrown. The Lakeshore 350 is NOT touched here: this module never
+        writes to it, so its heater keeps whatever state it had.
         """
         try:
             with self.io_lock:

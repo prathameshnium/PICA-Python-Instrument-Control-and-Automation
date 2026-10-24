@@ -110,7 +110,7 @@ Timing intelligence:
     ramp rate for the N-1 ramps between setpoints —
         rate = sum(|dT|) / (available - initial sleep - N x wait)
     then shows ramping / stabilizing / initial-delay / total and the
-    projected finish clock. Clamped to Max rate (default 12 K/min)
+    projected finish clock. Clamped to Max rate (default 8 K/min)
     with an achievable-end warning when the window is too tight.
 
 Architecture (inherited from Step_Frequency_Scan_E4980A_GUI.py v1.4):
@@ -898,7 +898,8 @@ class SustainedCondition:
 # (pattern of pica/lakeshore/T_Sensing_L340_GUI.py, inlined so this
 #  module stays self-contained; interface — connect / reconnect /
 #  get_temperature / shutdown — identical to the 350 parent so the
-#  worker thread below is byte-for-byte the parent module's)
+#  worker thread below is the parent module's except for the marked
+#  L340-2 / L340-3 additions)
 # ============================================================
 
 # The lab's Model 340 was moved to IEEE address 19 on 3 Sep 2026 so that it
@@ -3866,7 +3867,7 @@ class PPMSSyncGUI:
         return ok, metrics
 
     def _wait_for_stability(self, target):
-        """Phase 2: rolling-window stabilization detection.
+        """Phase 1: rolling-window stabilization detection.
         Returns (outcome, wait_s) with outcome in
         "stable" | "timeout" | "forced" | "stopped".
         wait_s excludes paused time."""

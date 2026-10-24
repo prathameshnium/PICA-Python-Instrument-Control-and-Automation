@@ -57,7 +57,7 @@ Timing intelligence:
     ramp rate for the N-1 ramps between setpoints —
         rate = sum(|dT|) / (available - initial sleep - N x wait)
     then shows ramping / stabilizing / initial-delay / total and the
-    projected finish clock. Clamped to Max rate (default 12 K/min)
+    projected finish clock. Clamped to Max rate (default 8 K/min)
     with an achievable-end warning when the window is too tight.
 
 Architecture (inherited from Step_Frequency_Scan_E4980A_GUI.py v1.4):
@@ -3605,7 +3605,7 @@ class PPMSSyncGUI:
         return ok, metrics
 
     def _wait_for_stability(self, target):
-        """Phase 2: rolling-window stabilization detection.
+        """Phase 1: rolling-window stabilization detection.
         Returns (outcome, wait_s) with outcome in
         "stable" | "timeout" | "forced" | "stopped".
         wait_s excludes paused time."""

@@ -1576,7 +1576,7 @@ class Integrated_CT_GUI:
             "<<ComboboxSelected>>", self._on_plot_freq_change)
         r += 1
 
-        # --- Lakeshore VISA | LCR VISA ---
+        # --- Lakeshore VISA | Alpha-AN VISA ---
         Label(frame, text="Lakeshore VISA:").grid(
             row=r, column=0, padx=padx_val, pady=pady_val, sticky='w')
         Label(frame, text="Alpha-AN VISA:").grid(

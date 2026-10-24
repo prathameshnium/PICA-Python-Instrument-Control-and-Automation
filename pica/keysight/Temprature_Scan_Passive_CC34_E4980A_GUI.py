@@ -293,7 +293,7 @@ CRYOCON_HEATER_QUERIES = (
     'LOOP {loop}:OUTPWR?',
 )
 
-# Factory address, used only as a last-resort hint. Identification is by
+# Lab address, used only as a last-resort hint. Identification is by
 # *IDN? content, so a re-addressed Cryocon is still found.
 # The lab's Cryocon 34 was moved to IEEE address 23 on 3 Sep 2026: 12 is the
 # shared factory default of the Cryocon, the Lakeshore 340/350 and the 6221.

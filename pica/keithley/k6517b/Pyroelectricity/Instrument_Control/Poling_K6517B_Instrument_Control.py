@@ -25,7 +25,7 @@ def main():
         print("Source enabled. Applying 100V for poling.")
         time.sleep(1)
 
-        # Wait for the poling duration, periodically checking current
+        # Wait for the poling duration (current is read once, at the end)
         print("Waiting for poling to complete (20s)... Press Ctrl+C to stop early.")
         for i in range(20):
             time.sleep(1)

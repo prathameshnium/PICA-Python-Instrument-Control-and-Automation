@@ -406,7 +406,8 @@ LOG_TEMPERATURE_FORMATS = (5,)
 # accept a resistance curve for it, but a Special input is whatever its
 # units, coefficient, excitation and range fields were set to, and it can
 # just as well be a voltage input. Nothing here can tell which, so it is
-# left out of both tuples below and reported as not decisive rather than
+# caught by NOT_DECISIVE_TYPES_340 (checked before the copied tuples)
+# and reported as not decisive rather than
 # flagged -- a warning that fires on every Special input would be noise.
 FORMAT_FAMILY_340 = {
     1: 'V',      # mV/K

@@ -161,7 +161,7 @@ programs do not import from each other).
              proposed = |target - current| * Step Factor
              cap      = low-T cap table at min(current, target)
                         (the coldest temperature traversed governs)
-             rate     = clamp(min(proposed, cap), Min Rate .. Max Rate)
+             rate     = min(max(proposed, Min Rate), cap, Max Rate)
          First setpoint of a run is slowed further by First-Step x
          (overshoot is worst there). Cap table is editable text,
          default "77:0.3, 100:0.5, else:5" — below 100 K never faster
@@ -704,7 +704,8 @@ class Lakeshore_Backend:
     def get_status(self, control_input="A", retries=2):
         """REL-1: retry transient VISA glitches so a single failed query
         at 3 a.m. does not abort an overnight run. Persistent failures
-        still raise (and the worker's except/finally shuts down safely).
+        still raise; the worker's _get_status_hardened() then enters the
+        retry-forever reconnect (HARD-2).
 
         Also reads RDGST? <input> and HTRST? (no argument) and leaves them
         in last_reading_status / last_heater_status as (code, text).

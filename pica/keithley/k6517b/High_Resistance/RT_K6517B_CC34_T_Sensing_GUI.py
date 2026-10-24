@@ -98,7 +98,7 @@ except ImportError:
 #      connected normally. A timeout on the WRITE means the instrument stopped
 #      accepting bytes for a moment, not that it is absent or at another
 #      address, so the cure is to wait and ask again instead of giving up.
-#      Handled by CRYOCON_OPEN_SETTLE_S plus the retry loop in CryoconLink.
+#      Handled by CRYOCON_OPEN_SETTLE_S plus the retry loop in open_cryocon_session().
 #
 #   2. A reading query answered with a Cryo-con status string instead of a
 #      number and float() raised, which killed the worker thread. The front
@@ -122,7 +122,7 @@ except ImportError:
 #
 # Nothing in this block writes to the instrument.
 
-# Factory address, used only as a last-resort hint when nothing answers.
+# Lab address, used only as a last-resort hint when nothing answers.
 # The lab's Cryocon 34 was moved to IEEE address 23 on 3 Sep 2026: 12 is the
 # shared factory default of the Cryocon, the Lakeshore 340/350 and the 6221.
 # Board-independent hint ("::23::INSTR" matches GPIB0 or GPIB1); *IDN? decides.

@@ -2381,7 +2381,8 @@ class ACResistanceCC34SensingGUI:
         """The current comes off here, in the thread that put it on.
 
         Every exit path from the worker arrives here: finished, stopped, or
-        thrown. The heater, where there is one, goes off with it.
+        thrown. The Cryocon is NOT touched here: this module never writes
+        to it, so its heater and loops keep whatever state they had.
         """
         try:
             with self.io_lock:

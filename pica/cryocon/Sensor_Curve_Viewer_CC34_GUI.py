@@ -91,7 +91,7 @@ INPUT <ch>:SENIX?   (p.187)
   scheme is in play rather than have this module pick one and be quietly
   wrong. When both go unanswered on the first channel they are dropped for
   the rest of the sweep - a timeout costs the full CRYOCON_TIMEOUT_MS, and
-  paying that eight more times for an answer already known is waste.
+  paying that six more times for an answer already known is waste.
 
 INPUT? <ch>
   One temperature reading, for context. A run of dashes means a sensor fault
@@ -2764,7 +2764,7 @@ class CurveViewerGUI:
                             job)
 
     def _show_types(self, lines, geometry):
-        """Put the type report on screen, in the Checks tab."""
+        """Put the type report on screen, in the Sensor types tab."""
         text = "\n".join(lines)
         if geometry:
             text += ("\n\nWHERE THE USER CURVES ARE ON THIS UNIT\n"

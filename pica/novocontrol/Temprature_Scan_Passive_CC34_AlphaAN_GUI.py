@@ -336,7 +336,7 @@ CRYOCON_HEATER_QUERIES = (
     'LOOP {loop}:OUTPWR?',
 )
 
-# Factory address, used only as a last-resort hint. Identification is by
+# Lab address, used only as a last-resort hint. Identification is by
 # *IDN? content, so a re-addressed Cryocon is still found.
 # The lab's Cryocon 34 was moved to IEEE address 23 on 3 Sep 2026: 12 is the
 # shared factory default of the Cryocon, the Lakeshore 340/350 and the 6221.
@@ -2215,10 +2215,9 @@ class Integrated_CT_GUI:
         r += 1
 
         # --- Cryocon sensor channel --------------------------------------
-        # Replaces the Lakeshore version's "Set Range to Zero" checkbox:
-        # this module never writes to the controller, so there is no range
-        # to zero. What it does need is which of the four inputs the sample
-        # sensor is on, since INPUT? reports in that channel's own units.
+        # New in the Cryocon version (the base's "Set Range to Zero" box
+        # became the STOP checkbox below): which of the four inputs the
+        # sample sensor is on, since INPUT? reports in that channel's own units.
         Label(frame, text="Cryocon Sensor Channel:").grid(
             row=r, column=0, padx=padx_val, pady=pady_val, sticky='w')
         r += 1

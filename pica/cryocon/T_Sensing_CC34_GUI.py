@@ -345,8 +345,8 @@ def is_cryocon_idn(idn):
 class CryoconLink:
     """One paced VISA session to a Cryo-con, opened with retries.
 
-    Every method is a query unless the caller explicitly asks for write().
-    The monitor and the dielectric scan never call write().
+    Every method is a query. This passive monitor's copy has no write()
+    method at all (see the note after query()).
     """
 
     def __init__(self, visa_address, timeout_ms=CRYOCON_TIMEOUT_MS,
@@ -1381,8 +1381,8 @@ class TempMonitorGUI:
                 return
 
             # Nothing identified itself as a Cryo-con. Fall back to the
-            # factory address as a hint only -- connect() checks *IDN? again
-            # and refuses anything that is not a Cryo-con.
+            # lab address hint (CRYOCON_ADDRESS_HINT, ::23::) only -- Start
+            # checks *IDN? again and refuses anything that is not a Cryo-con.
             hint = next(
                 (res for res in resources if _is_gpib_address(res, CRYOCON_ADDRESS_HINT)), None)
             if hint:

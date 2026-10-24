@@ -105,7 +105,7 @@ module now keeps two separate lists instead of one.
   - So a Cernox takes TWO commands, in this order:
         CALCUR <n>   with header type R8K10UA  (the curve itself)
         SENTYPE <n>:TYPE R8K10UA               (the input range and current)
-    run_full_sequence() does them in that order and verifies each. Both use
+    _run_full_sequence() does them in that order and verifies each. Both use
     the same name on this firmware; the manual's 'ACR' for the first is what
     the probe of 15 Sep watched being discarded. The index is NOT n+9 either
     -- see the Appendix A note further down; on this unit it is n+14, and
@@ -136,11 +136,11 @@ User curve slots and sensor index (p.220, Appendix A):
   - CALCUR addresses the USER number, 1-12.
   - INPUT <ch>:SENIX addresses the SENIX number, so user curve n is senix n+9.
   - "INPUT A:SENIX 20 would set input A to use User Curve B" (user 11).
-  - Firmware note: the Rev 3.03A unit in this lab also answers
-    INPUT <ch>:ISENIX and INPUT <ch>:USENIX, which Edition 4 does not list
-    (T_Control_CC34_DirectControl_GUI.py used those before v1.6; it now
-    sends SENIX). The two schemes number
-    differently, so this module does not guess. The channel-assignment step
+  - Firmware note: INPUT <ch>:ISENIX and INPUT <ch>:USENIX, which Edition 4
+    does not list, time out on the Rev 3.03A unit in this lab (diagnostics
+    survey, 17 Sep 2026; T_Control_CC34_DirectControl_GUI.py used them
+    before v1.6 and now sends SENIX). Where a firmware has them they number
+    differently from SENIX, so this module does not guess. The channel-assignment step
     queries first, sends SENIX, reads it back, and reports what happened; if
     the readback disagrees it stops rather than trying another spelling on
     its own.
@@ -484,10 +484,11 @@ CURVE_UNITS = ('LOGOHM', 'OHMS', 'VOLTS')
 # THE TWO SENSOR-TYPE VOCABULARIES
 # ---------------------------------------------------------------------------
 #
-# These are two different lists in the manual, for two different commands, and
-# they are NOT interchangeable. Sending a name from one list to the other is
-# what broke the 29 Aug 2026 transfer: R8K10UA went into a CALCUR header, the
-# firmware could not identify it, and it silently substituted a diode type.
+# These are two different lists in the manual, for two different commands.
+# The 29 Aug 2026 failure was first blamed on sending a name from one list to
+# the other; the v1.3 and v1.4 notes below record what the instrument really
+# does: that send went to a factory index, and this firmware takes the
+# R-name family (R8K10UA, SIDiode ...) in BOTH commands.
 #
 # fields: (full scale, unit of that full scale, what it is for)
 
@@ -600,7 +601,8 @@ SENSOR_TYPES.update(CALCUR_SENSOR_TYPES)
 DIODE_SUBSTITUTION_STRINGS = ('diode', 'sidiode', 'si diode', 'sidiod')
 
 # What the Cernox needs. Two commands, two vocabularies, in this order.
-#   sensor_type   goes in the CALCUR header       (manual p.173 list)
+#   sensor_type   goes in the CALCUR header       (CALCUR_VERIFIED_TYPES,
+#                                                  not the manual's p.173 list)
 #   sentype_type  goes in SENTYPE <senix>:TYPE    (manual p.187 list, Table 4)
 CERNOX_DEFAULTS = {
     'sensor_type': 'R8K10UA',
@@ -1895,9 +1897,11 @@ def compare_headers(expected, header):
     sent_type = str(expected.get('sensor_type', '')).strip()
     read_type = str(header.get('sensor_type', '')).strip()
     type_matched = sent_type.upper() == read_type.upper()
-    # The Rev 3.03A firmware echoes 'SiDiode' for a header that said
-    # 'Diode'. That is the same type in its own spelling, not the silent
-    # substitution, which only means something when a NON-diode was sent.
+    # A firmware that keeps a 'Diode' header may echo it as 'SiDiode' (the
+    # Rev 3.03A unit in this lab discards a 'Diode' header outright; see
+    # CALCUR_REJECTED_TYPES). That is the same type in its own spelling, not
+    # the silent substitution, which only means something when a NON-diode
+    # was sent.
     if (not type_matched and sent_type.lower() == 'diode'
             and read_type.lower() in DIODE_SUBSTITUTION_STRINGS):
         type_matched = True
@@ -2090,7 +2094,8 @@ def classify_verify(expected, header, comparison, baseline_header=None):
 #   2. A reading query answered with a Cryo-con status string instead of a
 #      number and float() raised, killing the worker thread.
 #
-# Nothing in this block writes to the instrument.
+# The hardening itself sends nothing but '*IDN?'. CryoconLink below also
+# carries write() and write_line(), which this module's curve transfer uses.
 
 CRYOCON_IDN_MARKERS = ("CRYOCON", "CRYO-CON")
 PROBE_RESOURCE_PREFIXES = ("GPIB", "USB", "TCPIP")
@@ -2300,8 +2305,10 @@ class CryoconLink:
 class CurveLoaderBackend:
     """Everything this module says to a Cryo-con Model 34.
 
-    Read-only except for send_curve(), set_sensor_name() and
-    assign_curve_to_channel(), each of which is driven by its own button.
+    Read-only except for send_curve(), set_sensor_name(), set_sensor_type()
+    and assign_curve_to_channel(), plus probe_calcur_type() and
+    cleanup_probe_slot(), which write through send_curve(). Each runs only
+    from an explicit button press.
     """
 
     INPUT_CHANNELS = ['A', 'B', 'C', 'D']
@@ -2769,11 +2776,12 @@ class CurveLoaderBackend:
     def get_channel_sensor_index(self, channel):
         """What sensor index a channel is using.
 
-        The Edition 4 manual documents INPUT <ch>:SENIX. The Rev 3.03A unit in
-        this lab also answers ISENIX and USENIX, which that manual does not
-        list, and the three number differently. All three are asked and all
-        three answers are returned, so the operator can see which scheme this
-        firmware is actually using instead of this module picking one.
+        The Edition 4 manual documents INPUT <ch>:SENIX. ISENIX and USENIX,
+        which that manual does not list, time out on the Rev 3.03A unit in
+        this lab (17 Sep 2026) but may exist on other firmware, and the three
+        number differently. All three are asked and all three answers are
+        returned, so the operator can see which scheme this firmware is
+        actually using instead of this module picking one.
         """
         answers = {}
         for key, command in (('SENIX', f"INPUT {channel}:SENIX?"),
@@ -4094,10 +4102,10 @@ class CurveLoaderGUI:
     def _apply_cernox_defaults(self):
         """The Cernox settings from the manual, in one press.
 
-        Two fields from two different pages: the CALCUR header type from the
-        curve-transfer page, and the input type from Table 4. They are not
-        the same name and putting one where the other belongs is what makes
-        the instrument store a diode instead.
+        Two fields for two different commands: the CALCUR header type and
+        the SENTYPE input type from Table 4. On this firmware both are
+        R8K10UA (see CERNOX_DEFAULTS); the manual's 'ACR' for the header is
+        discarded by the instrument.
         """
         self.type_var.set(CERNOX_DEFAULTS['sensor_type'])
         self.multiplier_var.set(CERNOX_DEFAULTS['multiplier'])
@@ -5731,7 +5739,7 @@ def _selftest_cases():
                                     read_texts=header['point_texts'])
         check(comparison['matched'], comparison['problems'])
 
-    # -- 9: a SENTYPE name in a CALCUR header warns, and does not block ------
+    # -- 9: a SENTYPE name in a CALCUR header now passes clean --------------
     def case_sentype_name_warns():
         # v1.2 made this an error on the strength of the manual. The 31 Aug
         # scan showed the firmware's own vocabulary IS the R-names, so v1.3

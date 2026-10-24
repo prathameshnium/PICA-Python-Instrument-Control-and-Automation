@@ -99,10 +99,10 @@ class FakeInstrument:
         if cmd.startswith("INPUT?"):
             return self.temps.get(cmd.split()[-1].strip(), "-------")
         if cmd.startswith("LOOP"):
-            # Model 34 manual: the only documented heater read-back is
-            # HEATER:OUTPWR? on this unit (log_25_09_26, five runs): the
-            # loops are addressed by name and the documented HTRREAD?
-            # times out. An unknown mnemonic gets no reply at all.
+            # The Model 34 manual documents only LOOP <n>:HTRREAD?, but on
+            # this unit (log_25_09_26, five runs) the loops are addressed
+            # by name: HTRREAD? times out and HEATER:OUTPWR? answers. An
+            # unknown mnemonic gets no reply at all.
             if cmd == "HEATER:OUTPWR?":
                 return "0.0"
             raise FakeVisaTimeout()

@@ -64,7 +64,7 @@ Timing intelligence:
     ramp rate for the N-1 ramps between setpoints —
         rate = sum(|dT|) / (available - initial sleep - N x wait)
     then shows ramping / stabilizing / initial-delay / total and the
-    projected finish clock. Clamped to Max rate (default 12 K/min)
+    projected finish clock. Clamped to Max rate (default 8 K/min)
     with an achievable-end warning when the window is too tight.
 
 Architecture (inherited from Step_Frequency_Scan_E4980A_GUI.py v1.4):
@@ -933,7 +933,7 @@ class SustainedCondition:
 #
 # Nothing in this block writes to the instrument.
 
-# Factory address, used only as a last-resort hint when nothing answers.
+# Lab address, used only as a last-resort hint when nothing answers.
 # The lab's Cryocon 34 was moved to IEEE address 23 on 3 Sep 2026: 12 is the
 # shared factory default of the Cryocon, the Lakeshore 340/350 and the 6221.
 # Board-independent hint ("::23::INSTR" matches GPIB0 or GPIB1); *IDN? decides.
@@ -1157,8 +1157,9 @@ class Probe_Thermometer_Backend:
 
     The interface is the one the Lakeshore backend presented - connect /
     reconnect / get_temperature / shutdown - so the worker thread below is
-    byte-for-byte the parent module's. verify_channel() is the single
-    addition, called once at Start.
+    the parent module's apart from the marked CC34 additions (CC34-2
+    channel check, CC34-8 invalid-read re-reads). verify_channel() is the
+    single backend addition, called once at Start.
     """
 
     def __init__(self):
@@ -4054,7 +4055,7 @@ class PPMSSyncGUI:
         return ok, metrics
 
     def _wait_for_stability(self, target):
-        """Phase 2: rolling-window stabilization detection.
+        """Phase 1: rolling-window stabilization detection.
         Returns (outcome, wait_s) with outcome in
         "stable" | "timeout" | "forced" | "stopped".
         wait_s excludes paused time."""

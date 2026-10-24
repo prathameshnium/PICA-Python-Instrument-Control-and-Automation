@@ -724,8 +724,9 @@ def build_protocol_phases(cfg):
             # COOL-1: standalone cooldown — the PPMS cools to base and
             # this program only waits through it. No field tag, no
             # warming Tscan (e.g. before a manual M(H) taken while
-            # heating). The wait ends exactly like every WAIT_BASE:
-            # detected warming, fallback ceiling, or Skip.
+            # heating). Unlike a measurement cooldown the wait ends ON
+            # TIME (its planned wait), or earlier on detected warming
+            # or Skip (see _phase_wait_base).
             phases.append({
                 "kind": "WAIT_BASE",
                 "label": f"Cooldown {i} (standalone)",
@@ -956,7 +957,8 @@ def validate_ppms_seq(text):
 # (pattern of pica/lakeshore/T_Sensing_L340_GUI.py, inlined so this
 #  module stays self-contained; interface — connect / reconnect /
 #  get_temperature / shutdown — identical to the 350 parent so the
-#  worker thread below is byte-for-byte the parent module's)
+#  worker thread below is the parent module's except for the marked
+#  L340-2 / L340-3 additions)
 # ============================================================
 
 # The lab's Model 340 was moved to IEEE address 19 on 3 Sep 2026 so that it
