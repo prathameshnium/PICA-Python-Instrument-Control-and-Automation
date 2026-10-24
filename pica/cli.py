@@ -118,6 +118,7 @@ ALL_GUI_MODULES = [
     "pica.tektronix.Function_Gen_AFG3022B_GUI",
     # utils
     "pica.utils.Diagnostics_Comms_Interfaces_GUI",
+    "pica.utils.Diagnostics_Connected_Devices_GUI",
     "pica.utils.Diagnostics_Python_Env_GUI",
     "pica.utils.Diagnostics_System_Info_GUI",
     "pica.utils.GPIB_Scanner_32bit_GUI",

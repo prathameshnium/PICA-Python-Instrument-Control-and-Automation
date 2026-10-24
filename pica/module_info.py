@@ -469,6 +469,15 @@ _add("Communication Interface Diagnostics",
      "none (finds interfaces, identifies nothing)",
      "which sections to run")
 
+_add("Connected Device Diagnostics",
+     "For a device that does not show up: whether Windows sees it right now, "
+     "whether it has a driver, the Device Manager error code if not, and the "
+     "COM port it made. Also lists installed third-party drivers (FTDI, NI, "
+     "Keysight) and LAN neighbours already known, and a second run says what "
+     "was plugged in or out in between. Nothing is opened or sent.",
+     "none (asks Windows; touches no device)",
+     "which sections to run; run once before and once after plugging in")
+
 _add("Alpha-AN Diagnostics",
      "One-shot log for the Novocontrol Alpha-AN through VISA: Python and "
      "VISA details, running GPIB programs, the VISA resource list, and "

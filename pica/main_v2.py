@@ -823,6 +823,14 @@ def scan_instruments(skip_addresses=None, gauge=None, progress=None,
 # on the other end. Identification stays with the Instrument Status
 # window and the Full VISA / GPIB Scanner.
 #
+# "Connected Devices and Drivers" is for the device that does not show up
+# anywhere. Per device it says whether Windows sees it right now, whether it
+# has a driver, the Device Manager error code if not, and the COM port it
+# made; it lists installed third-party driver packages and the LAN
+# neighbours already in the ARP cache, and a second run says what was
+# plugged in or out in between. Windows' query calls only: nothing is
+# opened, sent, rescanned or installed.
+#
 # Each entry: (menu label, SCRIPT_PATHS key).
 DIAGNOSTIC_TOOLS = [
     ("Cryocon 34 Diagnostics (read-only survey)…", "Cryocon Diagnostics"),
@@ -832,6 +840,8 @@ DIAGNOSTIC_TOOLS = [
      "System and Driver Diagnostics"),
     ("Communication Interfaces (GPIB, USB, serial, LAN)…",
      "Communication Interface Diagnostics"),
+    ("Connected Devices and Drivers (USB, COM, LAN, error codes)…",
+     "Connected Device Diagnostics"),
     ("Novocontrol Alpha-AN Diagnostics (VISA, read-only checks)…",
      "Alpha-AN Diagnostics"),
 ]

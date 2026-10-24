@@ -264,6 +264,11 @@ class PICALauncherApp:
         # USB-GPIB adapters, serial ports, USB controllers, network. It finds
         # interfaces; the Instrument Status window identifies instruments.
         "Communication Interface Diagnostics": resource_path("utils/Diagnostics_Comms_Interfaces_GUI.py"),
+        # One step further down: each DEVICE -- connected now or not, its
+        # driver, Device Manager error codes, the COM port it made, and the
+        # LAN neighbours already in the ARP cache. For "I plugged it in and
+        # nothing can see it". Query calls only; nothing is opened or sent.
+        "Connected Device Diagnostics": resource_path("utils/Diagnostics_Connected_Devices_GUI.py"),
         # Novocontrol Alpha-AN over VISA: Python and VISA details, the
         # resource list, and *IDN? / INTTYP? on the analyzer. Queries only;
         # the *RST timing test stays in Alpha_VISA_Diagnostic_64bit.py.
