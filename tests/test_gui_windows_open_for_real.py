@@ -102,14 +102,24 @@ def _rel(path):
     return path.relative_to(REPO_ROOT).as_posix()
 
 
+def _console_tool_keys():
+    """Launcher keys in main_v2.CONSOLE_TOOLS: console scripts, not windows."""
+    text = (PICA_ROOT / "main_v2.py").read_text(encoding="utf-8")
+    m = re.search(r"^CONSOLE_TOOLS\s*=\s*\{([^}]*)\}", text, re.M)
+    return set(re.findall(r"""["']([^"']+)["']""", m.group(1))) if m else set()
+
+
 def _launcher_registered_scripts():
-    """Every .py the launchers point at via resource_path("...py")."""
+    """Every .py the launchers point at via resource_path("...py"), except
+    the console tools (they print to a console and never open a window)."""
+    console = _console_tool_keys()
     found = set()
     for launcher in ("main.py", "main_v2.py"):
         text = (PICA_ROOT / launcher).read_text(encoding="utf-8")
-        for rel in re.findall(r"""resource_path\(\s*["']([^"']+\.py)["']\s*\)""", text):
+        for key, rel in re.findall(
+                r"""["']([^"']+)["']\s*:\s*resource_path\(\s*["']([^"']+\.py)["']\s*\)""", text):
             path = PICA_ROOT / rel
-            if path.is_file():
+            if key not in console and path.is_file():
                 found.add(path)
     return found
 
