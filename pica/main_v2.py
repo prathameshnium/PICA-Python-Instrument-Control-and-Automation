@@ -835,11 +835,6 @@ DIAGNOSTIC_TOOLS = [
      "Alpha-AN Diagnostics"),
 ]
 
-# Programs that print to a console instead of opening a window. Launched like
-# a GUI module they would run with no visible output, so they get a console
-# window of their own that stays open after they finish (Windows).
-CONSOLE_TOOLS = {"Alpha-AN Diagnostics"}
-
 
 # -----------------------------------------------------------------------------
 #  Measurement catalogue (mirrors the module suites; maps to SCRIPT_PATHS keys)
@@ -4383,21 +4378,6 @@ class PICALauncherV2:
         if not os.path.exists(abs_path):
             self.log(f"ERROR: Script not found: {abs_path}")
             messagebox.showerror("File Not Found", f"Script not found:\n\n{abs_path}")
-            return
-        if (script_key in CONSOLE_TOOLS and platform.system() == "Windows"
-                and not getattr(sys, 'frozen', False)):
-            # cmd /k keeps the window open once the script ends, so its
-            # output can be read; the script's log file has the same text.
-            # The whole command is wrapped in one extra pair of quotes: cmd
-            # strips the outermost pair, which keeps paths with spaces intact.
-            command = f'cmd /k ""{sys.executable}" "{abs_path}""'
-            try:
-                subprocess.Popen(command, cwd=os.path.dirname(abs_path),
-                                 creationflags=getattr(subprocess, 'CREATE_NEW_CONSOLE', 0))
-                self.log(f"Opened '{os.path.basename(abs_path)}' in a console window.")
-            except Exception as e:
-                self.log(f"ERROR: Failed to launch. {e}")
-                messagebox.showerror("Launch Error", f"Could not launch the module:\n\n{e}")
             return
         try:
             proc = Process(target=run_script_process, args=(abs_path, argv or []))

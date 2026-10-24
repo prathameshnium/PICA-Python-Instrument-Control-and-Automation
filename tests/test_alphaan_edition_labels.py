@@ -47,7 +47,7 @@ def _labels(path):
 
 def test_every_alpha_gui_names_its_edition_in_title_and_header():
     files = _gui_files()
-    assert len(files) == 11, files
+    assert len(files) == 12, files
     for name in files:
         title, header = ((TITLE_32, HEADER_32) if "32bit" in name
                          else (TITLE_64, HEADER_64))

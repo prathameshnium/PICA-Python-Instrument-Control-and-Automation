@@ -472,12 +472,13 @@ _add("Communication Interface Diagnostics",
 _add("Alpha-AN Diagnostics",
      "One-shot log for the Novocontrol Alpha-AN through VISA: Python and "
      "VISA details, running GPIB programs, the VISA resource list, and "
-     "*IDN? / INTTYP? on the analyzer at GPIB0::10. Opens in its own "
-     "console window and writes AlphaVisaDiag_<date>_<time>.log.",
+     "*IDN? / INTTYP? on the analyzer, with the answer in one sentence "
+     "above the log. Save Log As... writes it to a file.",
      "Novocontrol Alpha-AN analyser (VISA)",
-     "nothing; close WinALPHA / WinDETA first",
-     "From the menu it only asks questions. The *RST timing test runs only "
-     "with --reset-test on the command line.")
+     "the VISA address (default GPIB0::10::INSTR); close WinALPHA / WinDETA "
+     "first",
+     "Only asks questions. The *RST timing test is the command-line "
+     "Alpha_VISA_Diagnostic_64bit.py --reset-test.")
 
 # ---- Keysight E4980A LCR meter ---------------------------------------------
 _LCR = "Keysight E4980A precision LCR meter"

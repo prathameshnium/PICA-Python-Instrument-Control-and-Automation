@@ -265,11 +265,9 @@ class PICALauncherApp:
         # interfaces; the Instrument Status window identifies instruments.
         "Communication Interface Diagnostics": resource_path("utils/Diagnostics_Comms_Interfaces_GUI.py"),
         # Novocontrol Alpha-AN over VISA: Python and VISA details, the
-        # resource list, and *IDN? / INTTYP? on the analyzer, logged to
-        # AlphaVisaDiag_<date>_<time>.log. A console script, not a GUI;
-        # launched without arguments it runs only these read-only checks
-        # (the *RST timing test needs --reset-test on the command line).
-        "Alpha-AN Diagnostics": resource_path("novocontrol/Alpha_VISA_Diagnostic_64bit.py"),
+        # resource list, and *IDN? / INTTYP? on the analyzer. Queries only;
+        # the *RST timing test stays in Alpha_VISA_Diagnostic_64bit.py.
+        "Alpha-AN Diagnostics": resource_path("novocontrol/Diagnostics_AlphaAN_GUI.py"),
         "Lakeshore Sensor Curve Viewer": resource_path("lakeshore/Sensor_Curve_Viewer_L350_GUI.py"),
         "LCR C-V Measurement": resource_path("keysight/CV_KE4980A_GUI.py"),
         # Guided OPEN/SHORT correction of the E4980A (Advanced Options only).
