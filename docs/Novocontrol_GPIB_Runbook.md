@@ -19,8 +19,8 @@ explainable after the fact. All PICA tooling therefore follows these rules:
 - **Every state-changing write asks for confirmation** (anything not ending
   in `?`), in both the GUI and the lifeline terminal. Queries send freely.
 - **DCV/DCE and RSTH are blocked outright** in both tools: DCV/DCE set the
-  DC bias (PICA's Alpha-AN modules do not use DC bias; `pica/novocontrol`
-  never sends them) and RSTH is a hard reset.
+  DC bias (only the Alpha-AN C-V module, `CV_AlphaAN_GUI.py`, applies DC
+  bias; a console never does) and RSTH is a hard reset.
 - **One program on the bus.** Never run WinDETA (or NI MAX's communicator)
   and a PICA tool at the same time.
 
@@ -34,15 +34,15 @@ explainable after the fact. All PICA tooling therefore follows these rules:
 3. GUI: `python pica/utils/SCPI_Console_GUI.py` → the log names the active
    VISA backend (NI or Keysight, whichever is registered as primary) →
    **Refresh** lists addresses only. Select the `GPIB0::N::INSTR` entry or
-   type it (the Alpha's address is in WinDETA's device settings; 5 is used
-   as the example below, i.e. `GPIB0::5::INSTR`). **Term auto-sets to EOI** for GPIB
+   type it (the Alpha's address is in WinDETA's device settings; 10 is used
+   as the example below, i.e. `GPIB0::10::INSTR`). **Term auto-sets to EOI** for GPIB
    addresses → **Connect**.
 4. `*IDN?` should return `NOVOCONTROL … Alpha`. Then try `INTTYP?` — the ZG4
    interface reports code 5. Both are read-only.
 5. If the GUI cannot connect, drop to the lifeline (stdlib-only, bypasses
    pyvisa and talks to the NI-488.2 DLL directly):
 
-       python pica/utils/GPIB_Lifeline_CLI.py --address 5
+       python pica/utils/GPIB_Lifeline_CLI.py --address 10
 
    `--address` is **required** — there is no bus sweep; the tool sends a
    single `*IDN?` to that one address and opens an interactive terminal.
@@ -51,7 +51,7 @@ explainable after the fact. All PICA tooling therefore follows these rules:
 ## Troubleshooting
 
 - **Refresh lists no GPIB resources** → type the address manually
-  (`GPIB0::5::INSTR`) and press Connect anyway; listing depends on the VISA
+  (`GPIB0::10::INSTR`) and press Connect anyway; listing depends on the VISA
   resource database, not the instrument.
 - **`*IDN?` times out (ENOL / no listener)** → check Alpha power, cable
   seating, the address in WinDETA's device settings, and that no other GPIB
@@ -113,7 +113,7 @@ Python. They report which they are, and a 64-bit interpreter that finds a
 
 2. **Then talk to the one address the census found.**
 
-       py -3.10-32 pica\utils\GPIB_Lifeline_CLI.py --address 5
+       py -3.10-32 pica\utils\GPIB_Lifeline_CLI.py --address 10
 
    Single read-only `*IDN?`, then the interactive terminal with the usual
    safety rules. For the Alpha, silence to `*IDN?` is not a fault: try

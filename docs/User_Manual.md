@@ -232,7 +232,7 @@ pica-gui
 ```
 
 **Differences from Windows:**
-- **Sleep during overnight runs.** On Windows, the long unattended programs (the E4980A temperature, frequency and PPMS scans, the Cryo-con 34 R-T modules and the pressure logger) stop the PC from sleeping during a run; other modules do not. On Linux none can, so block sleep yourself, for example by launching PICA through `systemd-inhibit`:
+- **Sleep during overnight runs.** On Windows, the long unattended programs (the E4980A temperature, frequency and PPMS scans, the Alpha-AN temperature and temperature-step frequency scans, the Cryo-con 34 R-T modules and the pressure logger) stop the PC from sleeping during a run; other modules do not. On Linux none can, so block sleep yourself, for example by launching PICA through `systemd-inhibit`:
   ```bash
   systemd-inhibit --what=idle:sleep --why="PICA measurement" pica-gui
   ```
@@ -264,7 +264,7 @@ pica-gui
     grid in an **Advanced Options** window (`Ctrl+Shift+A`, or the View
     menu). Advanced Options lists every module unfiltered, including those
     Quick Select leaves out (the Lakeshore 340 variants and most Cryo-con 34
-    ones, the temperature utilities, the Novocontrol Alpha-AN, the bench
+    ones, the temperature utilities, the bench
     multimeter, the pressure log, the function generator, the Keithley 2400
     memristor modules and the diagnostic tools). See
     [Launcher v2](#55-launcher-v2-quick-select-and-advanced-options).
@@ -446,7 +446,7 @@ fields that program's form will ask for — the same list the hover card and
 the Ctrl+F search show, from the same entry in `pica/module_info.py`.
 
 The **Cryo-con 34** appears in Quick Select under the LCR meter, the
-electrometer and the two AC benches (lock-in and DMM), where its protocols sit
+Alpha-AN, the electrometer and the two AC benches (lock-in and DMM), where its protocols sit
 next to the Lakeshore 350 ones. The delta-mode and Keithley 2400 modules are
 Lakeshore 350 only here; their Cryo-con twins still exist and are in Advanced
 Options.
@@ -460,7 +460,7 @@ Options.
 grid: every module PICA ships, grouped by measurement range and instrument,
 with the folder shortcut on each card. Nothing here is filtered or
 range-limited — this is the expert route, and the one to use for the
-temperature utilities, the Novocontrol Alpha-AN, the bench multimeter, the
+temperature utilities, the bench multimeter, the
 pressure log, the function generator and the memristor modules, which Quick
 Select does not list. The window opens maximised and reflows its
 cards into up to four columns, so a wide screen shows more of them before you
@@ -491,7 +491,7 @@ full name — instruments first, so *Keithley 2400 — I-V Sweep* and *Keithley
 match beside the list. `↑` `↓` move through the list, `Enter` launches, `Esc`
 or a click outside closes it and puts you back where you were; what you typed
 is kept for the next `Ctrl+F`. Every program PICA can start is searchable:
-all the measurement modules, the four diagnostic tools and every PICA Util.
+all the measurement modules, the five diagnostic tools and every PICA Util.
 The search is fuzzy and looks at everything: full names, categories,
 instrument names, the Quick Select descriptions and the fields each program
 asks for. So
@@ -896,9 +896,9 @@ utility to find the real one.
 
 **Target Hardware:** Keithley 6221 AC/DC current source, paired either with an
 SRS SR830 DSP lock-in amplifier or with a Keithley 197A bench DMM. Optional
-thermometry from a Lakeshore 350 or a Cryo-con 34.
+thermometry from a Lakeshore 350, a Lakeshore 340 or a Cryo-con 34.
 
-Ten modules in two matched sets of five. Each set covers the same four-probe
+Fourteen modules in two matched sets of seven. Each set covers the same four-probe
 AC measurement in the same four situations, so a measurement can be moved
 between the two detectors without changing anything else:
 
@@ -908,6 +908,8 @@ between the two detectors without changing anything else:
 | AC frequency scan (fixed *I*) | `Frequency_Scan_K6221_SR830_GUI.py` | `Frequency_Scan_K6221_K197A_GUI.py` |
 | R–T, this module drives the ramp | `RT_AC_K6221_SR830_L350_T_Control_GUI.py` | `RT_AC_K6221_K197A_L350_T_Control_GUI.py` |
 | R–T, passive (Lakeshore 350) | `RT_AC_K6221_SR830_L350_T_Sensing_GUI.py` | `RT_AC_K6221_K197A_L350_T_Sensing_GUI.py` |
+| R–T, this module drives the ramp (Lakeshore 340) | `RT_AC_K6221_SR830_L340_T_Control_GUI.py` | `RT_AC_K6221_K197A_L340_T_Control_GUI.py` |
+| R–T, passive (Lakeshore 340) | `RT_AC_K6221_SR830_L340_T_Sensing_GUI.py` | `RT_AC_K6221_K197A_L340_T_Sensing_GUI.py` |
 | R–T, passive (Cryo-con 34) | `RT_AC_K6221_SR830_CC34_T_Sensing_GUI.py` | `RT_AC_K6221_K197A_CC34_T_Sensing_GUI.py` |
 
 The SR830 set lives in `pica/lockin/sr830/`, beside the existing
@@ -925,7 +927,7 @@ I_rms = I_peak / sqrt(2)
 
 Dividing an RMS voltage by a peak current gives a resistance wrong by exactly
 `sqrt(2) = 1.414` — large enough to matter, small enough to look plausible.
-That factor is pinned by the test suite in every one of the ten modules.
+That factor is pinned by the test suite in the ten Lakeshore 350 and Cryo-con modules.
 
 **With the SR830 (phase sensitive).** `R = X / I_rms`, the in-phase
 and therefore resistive part; the magnitude `sqrt(X^2 + Y^2) / I_rms`
@@ -963,7 +965,7 @@ visible in the module:
     against the printed interface manual.
 
 **Temperature.** The T-Control modules stabilise at the start temperature, arm
-`SETP` and `RAMP` on the Lakeshore 350, open the heater and log along the
+`SETP` and `RAMP` on the Lakeshore 350 or 340, open the heater and log along the
 ramp, with a safety cutoff beyond the end temperature. The heater is put back
 to off when the run ends, is stopped, or throws — in the same thread that
 opened it, on every exit path, exactly as the current is. The T-Sensing
@@ -1260,16 +1262,20 @@ PICA (Root Directory)/
     docs/
         Instruments_Manuals_Lists.md
         Novocontrol_GPIB_Runbook.md
+        Research_Impact.md
         User_Manual.md
         conf.py
         index.md
         requirements.txt
+        robots.txt
     examples/
         Low_R_Test_10ohm_20251218_163101_IV.dat
         examples.md
     paper/
         paper.bib
         paper.md
+    publications/
+        index.html
     pica/
         cli.py
         main.py                 <-- Legacy launcher (superseded by main_v2.py)
@@ -1401,6 +1407,9 @@ PICA (Root Directory)/
                 Instrument_Control/
                     Comms_SR830_Instrument_Control.py
         novocontrol/            <-- Broadband dielectric (Alpha-AN)
+            Alpha_GPIB_Diagnostic_32bit.py
+            Alpha_VISA_Diagnostic_64bit.py
+            Diagnostics_AlphaAN_GUI.py
             Frequency_Scan_AlphaAN_32bit_GUI.py
             Frequency_Scan_AlphaAN_GUI.py
             CV_AlphaAN_GUI.py
@@ -1439,5 +1448,5 @@ PICA (Root Directory)/
             parser.py
     tests/                      <-- Automated test suite (pytest, mocked VISA)
         conftest.py
-        test_*.py               (81 files)
+        test_*.py               (103 files)
 ```

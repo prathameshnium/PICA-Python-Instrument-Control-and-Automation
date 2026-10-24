@@ -211,6 +211,7 @@ Beyond the measurement modules, PICA ships a growing set of standalone laborator
 * **VISA Instrument Scanner** — queries the GPIB/USB/Ethernet bus (`*IDN?`) to map connected instrument addresses.
 * **PICA Plotter Utility** — multi-file data plotting for comparison and analysis during or after measurements.
 * **SCPI Console** *(v1.0.6)* — interactive terminal for sending raw SCPI commands to any VISA instrument.
+* **Diagnostic Tools** — read-only checks of the Python environment, system drivers, communication interfaces, the Cryo-con 34 and the Novocontrol Alpha-AN, from the Launcher v2 Tools menu.
 * **PPMS helper utilities** *(v1.0.6)* — plotter, sequence visualizer, and time estimator for Quantum Design PPMS workflows.
 * **Calculators & helpers** — List Maker, Quick Calc, unit converter, MD-ratio calculator, PID simulator, Time Utility and the read-only Memristor Analysis *(v1.0.7)*.
 
@@ -360,7 +361,7 @@ pica-gui
 ```
 
 **Differences from Windows:**
-- **Sleep during overnight runs.** On Windows, the long unattended programs (the E4980A temperature, frequency and PPMS scans, the Cryo-con 34 R-T modules and the pressure logger) stop the PC from sleeping during a run; other modules do not. On Linux none can, so block sleep yourself, for example by launching PICA through `systemd-inhibit`:
+- **Sleep during overnight runs.** On Windows, the long unattended programs (the E4980A temperature, frequency and PPMS scans, the Alpha-AN temperature-step and temperature-sensing scans, the Cryo-con 34 R-T modules and the pressure logger) stop the PC from sleeping during a run; other modules do not. On Linux none can, so block sleep yourself, for example by launching PICA through `systemd-inhibit`:
   ```bash
   systemd-inhibit --what=idle:sleep --why="PICA measurement" pica-gui
   ```
@@ -416,7 +417,8 @@ pica-gui
 
     - the Cryo-con 34 and Lakeshore 340 twins of most programs
     - the standalone temperature utilities
-    - the Novocontrol Alpha-AN and the bench multimeter
+    - the bench multimeter, the pressure log and the function generator
+    - the three Keithley 2400 memristor modules
 
     Rest the pointer on a module row and a card shows what it measures, which
     instruments it opens and what it will ask for.

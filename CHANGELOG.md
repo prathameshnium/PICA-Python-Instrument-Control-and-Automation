@@ -9,6 +9,7 @@ All notable changes to PICA are documented here. The format follows [Keep a Chan
 - **Alpha-AN frequency scan**: third preset, the E4980A list (377 pts, 40 Hz - 2 MHz); 115 pts stays the default.
 - **Alpha-AN modules (experimental)**: C-V, calibration (REF, load-short, open), temperature-step frequency scan (Lakeshore 350 / 340), dielectric temperature scan with T control (Lakeshore 350 / 340) and T sensing (Lakeshore 350 / 340, Cryo-con 34).
 - **Alpha-AN temperature-step frequency scan**: frequency list dropdown (E4980A list by default, 115 pts, 40 pts or a custom list).
+- **Alpha-AN Diagnostics (read-only)**: one-button VISA check (Python bitness, programs holding the bus, VISA resources, `*IDN?` and `INTTYP?` at the given address) in the Diagnostic Tools.
 
 ### Changed
 - **Alpha-AN frequency scan**: window shows the edition (32-bit or 64-bit); REF calibration explains itself before starting.
