@@ -104,6 +104,7 @@ ALL_GUI_MODULES = [
     "pica.novocontrol.Frequency_Scan_AlphaAN_32bit_GUI",
     "pica.novocontrol.Correction_OpenShort_AlphaAN_GUI",
     "pica.novocontrol.CV_AlphaAN_GUI",
+    "pica.novocontrol.Diagnostics_AlphaAN_GUI",
     "pica.novocontrol.Step_Frequency_Scan_AlphaAN_GUI",
     "pica.novocontrol.Step_Frequency_Scan_L340_AlphaAN_GUI",
     "pica.novocontrol.Temprature_Scan_AlphaAN_GUI",

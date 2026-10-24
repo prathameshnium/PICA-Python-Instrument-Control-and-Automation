@@ -19,8 +19,10 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from alphaan_port_test_support import NOVO_DIR, load_port  # noqa: E402
 
+# The read-only diagnostics tool has no PICA console, so it carries no block.
 GUI_FILES = sorted(f for f in os.listdir(NOVO_DIR)
-                   if "AlphaAN" in f and f.endswith("GUI.py"))
+                   if "AlphaAN" in f and f.endswith("GUI.py")
+                   and not f.startswith("Diagnostics_"))
 BLOCK_NAMES = ("TERMINAL_LOG_POLL_MS", "TERMINAL_LOG_MAX_LINES_PER_POLL",
                "TerminalTee", "install_terminal_log")
 
