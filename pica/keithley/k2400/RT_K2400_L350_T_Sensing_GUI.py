@@ -1,6 +1,7 @@
 """
 Module: RT_K2400_L350_T_Sensing_GUI.py
-Purpose: GUI module for RT K2400 L350 T Sensing GUI v4.
+Purpose: GUI module for RT K2400 L350 T Sensing GUI.
+Legacy tag: v4 (old file-series number; current version is PROGRAM_VERSION)
 """
 
 import tkinter as tk

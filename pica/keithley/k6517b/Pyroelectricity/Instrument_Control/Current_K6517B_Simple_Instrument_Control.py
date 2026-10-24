@@ -1,6 +1,7 @@
 """
-Module: Current_K6517B_Simple_Backend_v10.py
-Purpose: GUI module for Current K6517B Simple Backend v10.
+Module: Current_K6517B_Simple_Instrument_Control.py
+Purpose: Command-line script for Current K6517B Simple Instrument Control.
+Legacy name: Current_K6517B_Simple_Backend_v10.py (old file-series tag v10)
 """
 
 import time

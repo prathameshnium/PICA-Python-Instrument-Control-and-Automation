@@ -18,7 +18,7 @@ Purpose: GUI module for T Sensing CC34 GUI v1.1.
              than one second later inside the logging loop.
 
          Cryocon Model 34 equivalent of T_Sensing_L350_GUI.py. Logs
-         temperature vs. time from Cryocon input channel A with the same
+         temperature vs. time from a selectable Cryocon input channel (A-D) with the same
          plot, console, CSV and file-handling logic as the Lakeshore
          version.
 
@@ -230,7 +230,8 @@ CRYOCON_READ_RETRY_S = 0.3          # pause between those tries
 # Input channels on a Model 34.
 CRYOCON_INPUT_CHANNELS = ('A', 'B', 'C', 'D')
 
-# Factory address, used only as a last-resort hint. Identification is by
+# Lab address hint (not the factory 12), used only as a last-resort hint.
+# Identification is by
 # *IDN? content, so a re-addressed Cryocon is still found.
 # The lab's Cryocon 34 was moved to IEEE address 23 on 3 Sep 2026: 12 is the
 # shared factory default of the Cryocon, the Lakeshore 340/350 and the 6221.

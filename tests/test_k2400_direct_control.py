@@ -129,7 +129,7 @@ def make_backend(idn=IDN_2400, **kwargs):
 # ---------------------------------------------------------------------------
 
 def test_power_limit_rejects_high_voltage_at_high_current():
-    """210 V at 1 A is 210 W. The 2400 can deliver 22 W."""
+    """200 V at 1 A is 200 W. The 2400 can deliver 22 W."""
     limits = Limits('2400')
     limits.unlocked = True          # even with the ceiling lifted
     try:

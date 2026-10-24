@@ -32,7 +32,7 @@ Instrument: the lab system this script was written for, read from
 Example:
     python AlphaAN_FreqScan_Instrument_Control.py \
         --gpib-address GPIB0::10::INSTR --diameter 10.0 --thickness 1.0 \
-        --filename CoO_SiO2 --path ./data
+        --filename sample01 --path ./data
 """
 
 import argparse

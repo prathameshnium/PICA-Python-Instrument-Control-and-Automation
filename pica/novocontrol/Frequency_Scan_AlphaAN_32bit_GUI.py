@@ -41,7 +41,7 @@
                SAFETY: this module never uses DC bias. DCV/DCE are never
                transmitted (the analyzer does have DC bias - see
                INSTRUMENT). Every exit path drives the generator to a
-               safe state before releasing the VISA session.
+               safe state before releasing the GPIB handle.
 
  INSTRUMENT:   The lab system this module was written for, read from
                WinALPHA's auto-detect on 22 Oct 2026:
@@ -1055,7 +1055,7 @@ def validate_parameters(params):
         raise ValueError("Frequency list is empty.")
 
     acv = params["acv"]
-    # The ZG4 ceiling is frequency-dependent (3 Vrms <=10 MHz, 1 Vrms above),
+    # The ZG4 ceiling is frequency-dependent (3/2/1 Vrms, see acv_ceiling),
     # so the binding limit is the lowest ceiling over the whole sweep.
     max_acv = min(acv_ceiling(f) for f in frequencies)
     if not (0.0 < acv <= max_acv):

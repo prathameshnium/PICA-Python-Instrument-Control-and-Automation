@@ -11,7 +11,7 @@ Purpose:            Guided calibration of the Novocontrol Alpha-AN with a
                     console record and file set; the E4980A's open/short
                     correction is replaced by what the Alpha actually does
                     (see "What changed" below).
-Author:             Prathamesh Deshmukh (PICA); AI-assisted implementation.
+Author:             Prathamesh Deshmukh (PICA).
 Version:            V: 1.0 (Alpha-AN port, 22 Oct 2026). Not yet run on the
                     hardware.
 

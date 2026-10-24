@@ -1,6 +1,7 @@
 """
 Module: GPIB_Instrument_Scanner_GUI.py
-Purpose: GUI module for GPIB Instrument Scanner GUI v4.
+Purpose: GUI module for the GPIB/VISA Instrument Scanner.
+Legacy tag: v4 (old file-series number; current version is PROGRAM_VERSION)
 """
 
 # -------------------------------------------------------------------------------
@@ -491,7 +492,7 @@ class GPIB_Instrument_Scanner_GUI:
         """
         This is the backend function that runs in a separate thread.
         It performs the VISA scan and puts results into the thread-safe queue.
-        This is the logic from your original 'gpib_interface_test.py' script.
+        This is the logic of GPIB_VISA_InterfaceTest_Simple_Instrument_Control.py.
         """
         if not _load_pyvisa():
             self.result_queue.put("ERROR: PyVISA is not available.\n")

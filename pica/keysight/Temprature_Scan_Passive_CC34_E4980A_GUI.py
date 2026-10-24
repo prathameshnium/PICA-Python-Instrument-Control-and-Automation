@@ -3,7 +3,6 @@ Module:             Temprature_Scan_Passive_CC34_E4980A_GUI.py
 Purpose:             GUI module for Temperature-Dependent Dielectric
                      Measurement (Keysight E4980A + Cryocon Model 34).
 Original Authors:    Prathamesh Deshmukh (template programs)
-Integrated by:       AI-assisted merge per design specification
 Version:             V: 1.8  (v1.3 multi-day hardening: 400 K kill
                      switch, retry-forever comm recovery, fsync-per-point
                      writes, timestamped T-log, bounded console, optional
@@ -655,9 +654,9 @@ class Cryocon34_Backend:
     def probe_heater_command(self, loop=CRYOCON_HEATER_LOOP):
         """Settle, once and at Start, how this unit reports heater output.
 
-        The documented Model 34 query is 'LOOP <n>:HTRREAD?'. 'OUTPWR?'
-        is in neither the Model 34 nor the 24C manual and is tried only
-        as a second guess (see CRYOCON_HEATER_QUERIES). An unrecognised
+        The documented Model 34 query is 'LOOP <n>:HTRREAD?', but the lab
+        unit answers only the undocumented 'HEATER:OUTPWR?', so that form
+        is tried first and the rest follow (see CRYOCON_HEATER_QUERIES). An unrecognised
         command does not come back with an error string on a Cryo-con,
         it comes back as a VISA timeout, which is indistinguishable from
         a dead bus at the call site - so the guessing is confined to
@@ -1450,10 +1449,9 @@ class Integrated_CT_GUI:
         r += 1
 
         # --- Cryocon sensor channel --------------------------------------
-        # Replaces the Lakeshore version's "Set Range to Zero" checkbox:
-        # this module never writes to the controller, so there is no range
-        # to zero. What it does need is which of the four inputs the sample
-        # sensor is on, since INPUT? reports in that channel's own units.
+        # New in the Cryocon version (the base's "Set Range to Zero" box
+        # became the STOP checkbox below): which of the four inputs the
+        # sample sensor is on, since INPUT? reports in that channel's own units.
         Label(frame, text="Cryocon Sensor Channel:").grid(
             row=r, column=0, padx=padx_val, pady=pady_val, sticky='w')
         r += 1

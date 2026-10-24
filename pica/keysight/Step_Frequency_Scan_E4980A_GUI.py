@@ -1,5 +1,5 @@
 """
-Module: Combined_TFreq_GUI.py
+Module: Step_Frequency_Scan_E4980A_GUI.py
 Purpose: Combined Lakeshore 350 temperature control + Keysight E4980A
          frequency sweep GUI.
 Note: despite the filename (Step_Frequency_Scan…), this program performs

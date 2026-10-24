@@ -1,6 +1,7 @@
 """
 Module: RT_K6517B_L350_T_Sensing_GUI.py
-Purpose: GUI module for RT K6517B L350 T Sensing GUI v14.
+Purpose: GUI module for RT K6517B L350 T Sensing GUI.
+Legacy tag: v14 (old file-series number; current version is PROGRAM_VERSION)
 """
 
 # --- Packages for Front end ---
@@ -203,7 +204,7 @@ class Combined_Backend:
             self.keithley.shutdown()
             print("  Keithley connection closed and source OFF.")
         if self.lakeshore:
-            self.lakeshore.close()  # This already turns the heater off
+            self.lakeshore.close()  # Heater state is not touched at close.
             print("  Lakeshore connection closed and heater OFF.")
 
 # -------------------------------------------------------------------------------

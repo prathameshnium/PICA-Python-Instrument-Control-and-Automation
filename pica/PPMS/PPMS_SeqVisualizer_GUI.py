@@ -1,5 +1,5 @@
 """
-Module: SeqVisualizer_GUI.py
+Module: PPMS_SeqVisualizer_GUI.py
 Purpose: PPMS sequence (.seq) protocol visualizer - PICA suite style.
 """
 

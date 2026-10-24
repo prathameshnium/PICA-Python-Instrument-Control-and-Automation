@@ -30,7 +30,7 @@ v3.0 (05 Oct 2026) - sweep types, verified logic, hardened run path
 #               as a nanovoltmeter.
 # Author:       Prathamesh Deshmukh
 # Created:      04/10/2025
-# Version:      1.0
+# Version:      3.0
 # -------------------------------------------------------------------------------
 
 # --- GUI and Plotting Packages ---

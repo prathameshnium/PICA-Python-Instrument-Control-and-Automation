@@ -484,7 +484,8 @@ def test_the_passive_scan_reads_the_heater_like_the_base_read_htr():
     cryo = FakeCryocon(heater="12.5%")
     backend = _passive_backend(cryo)
     assert backend.get_heater_output() == 12.5
-    # One probe, then the settled command; both are the documented one.
+    # One probe, then the settled command; both are the one the lab unit
+    # answers (HEATER:OUTPWR?), not the manual's documented form.
     assert cryo.queries == ["HEATER:OUTPWR?", "HEATER:OUTPWR?"]
     assert cryo.writes == []
     cryo.queries.clear()

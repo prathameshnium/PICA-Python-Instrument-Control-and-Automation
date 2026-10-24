@@ -38,7 +38,7 @@ from datetime import datetime
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 DEFAULT_ADDRESS = "GPIB0::10::INSTR"
-QUERY_TIMEOUT_MS = 10000          # same as Frequency_Scan_AlphaAN_GUI.py
+QUERY_TIMEOUT_MS = 10000          # per query; the scan modules use 60 s
 
 VI_ERROR_TMO = -1073807339
 VI_ERROR_NLISTENERS = -1073807265
@@ -140,7 +140,7 @@ def run_checks(address, emit, visa=None):
         except Exception as exc:
             emit(f"open_resource failed: {describe(exc)}")
             return False, f"Could not open {address}. Check the address."
-        # Same session settings as Frequency_Scan_AlphaAN_GUI.py.
+        # Same terminations as Frequency_Scan_AlphaAN_GUI.py (shorter timeout).
         inst.timeout = QUERY_TIMEOUT_MS
         inst.read_termination = ""
         inst.write_termination = ""

@@ -1,6 +1,7 @@
 """
-Module: Pyroelectric_K6517B_Working_Backend_v10.py
-Purpose: GUI module for Pyroelectric K6517B Working Backend v10.
+Module: Pyroelectric_K6517B_Working_Instrument_Control.py
+Purpose: Command-line script for Pyroelectric K6517B Working Instrument Control.
+Legacy name: Pyroelectric_K6517B_Working_Backend_v10.py (old file-series tag v10)
 """
 
 import pyvisa

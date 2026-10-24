@@ -503,7 +503,8 @@ CC34_BURST_N = 10
 # firmware's spelling.
 #
 # It matters a great deal: every setpoint, PID, range and heater command
-# in T_Control_CC34_DirectControl_GUI.py is written 'LOOP <n>:'.
+# in T_Control_CC34_DirectControl_GUI.py was written 'LOOP <n>:' (it has
+# addressed the loops by name since its v1.4).
 #
 # The section short-circuits. It asks 'HEATER:SETPT?' first; if that
 # answers, it sweeps the HEATER/AOUT family and skips the LOOP spelling

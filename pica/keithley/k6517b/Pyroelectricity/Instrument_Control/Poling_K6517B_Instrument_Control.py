@@ -1,6 +1,7 @@
 """
-Module: Poling_K6517B_Backend_v10.py
-Purpose: GUI module for Poling K6517B Backend v10.
+Module: Poling_K6517B_Instrument_Control.py
+Purpose: Command-line script for Poling K6517B Instrument Control.
+Legacy name: Poling_K6517B_Backend_v10.py (old file-series tag v10)
 """
 
 import time

@@ -48,7 +48,7 @@ Commands used on the Lake Shore (Model 340 User's Manual, Chapter 9):
 #               This version does not control temperature.
 # Author:       Prathamesh Deshmukh
 # Created:      05/10/2025
-# Version:      1.1
+# Version:      1.3
 # -------------------------------------------------------------------------------
 
 # --- GUI and Plotting Packages ---

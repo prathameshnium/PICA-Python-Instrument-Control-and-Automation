@@ -1,6 +1,7 @@
 """
 Module: Delta_RT_K6221_K2182_CC34_Sensing_GUI.py
-Purpose: GUI module for Delta RT K6221 K2182 CC34 Sensing GUI v1.
+Purpose: GUI module for Delta RT K6221 K2182 CC34 Sensing GUI.
+Legacy tag: v1 (old file-series number; current version is PROGRAM_VERSION)
 
          Cryocon Model 34 equivalent of
          Delta_RT_K6221_K2182_L350_Sensing_GUI.py. Measurement logic is
@@ -107,7 +108,7 @@ except ImportError:
 #
 # Nothing in this block writes to the instrument.
 
-# Factory address, used only as a last-resort hint when nothing answers.
+# Lab address, used only as a last-resort hint when nothing answers.
 # The lab's Cryocon 34 was moved to IEEE address 23 on 3 Sep 2026: 12 is the
 # shared factory default of the Cryocon, the Lakeshore 340/350 and the 6221.
 # Board-independent hint ("::23::INSTR" matches GPIB0 or GPIB1); *IDN? decides.
@@ -1694,9 +1695,9 @@ class MeasurementAppGUI:
                     self.log(f"  {res}  ->  {identities.get(res, 'no reply')}")
 
                 # Pick the Cryocon by what it says it is, not by where it
-                # sits. It moved to GPIB0::12 and the Lakeshore 350 now
-                # answers on GPIB1::12, which is the Cryocon's own factory
-                # address -- selecting by address would log the wrong
+                # sits. It now sits at address 23, and 12 (the Cryocon's own
+                # factory address) is shared with the Lakeshores and the
+                # 6221 -- selecting by address would log the wrong
                 # instrument's temperature against every resistance point.
                 cryocon = next(
                     (r for r in result

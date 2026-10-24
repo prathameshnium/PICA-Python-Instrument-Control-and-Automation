@@ -6,7 +6,7 @@
 ===============================================================================
  A single-window launcher for the PICA utilities that need no instrument,
  no GPIB/VISA layer and no lab PC: the plotting tools, the two PPMS planning
- tools and the three calculators.
+ tools and the four calculators.
 
  It is meant to be frozen into one standalone .exe (see
  PICA_Utils_Portable.spec and .github/workflows/build_portable_utils.yml), so
@@ -56,10 +56,10 @@ ICON_FILE = os.path.join(BUNDLE_DIR, 'pica', 'assets', 'LOGO', 'PICA_LOGO.ico')
 # -----------------------------------------------------------------------------
 #  Tool registry
 # -----------------------------------------------------------------------------
-# key -> (button label, module path, class name). The module is imported only
+# Each group: (group title, [(key, button label), ...]). The module is imported only
 # in the child process that actually runs the tool, so the launcher window
 # opens instantly instead of paying matplotlib's import cost up front.
-# These imports are written out statically in `run_tool` so PyInstaller's
+# These imports are written out statically in `load_app_class` so PyInstaller's
 # analysis can see them.
 TOOL_GROUPS = [
     ("Plotting", [
@@ -227,7 +227,7 @@ class PortableUtilsLauncher:
     def launch(self, key, label):
         cmd = self._self_command() + ['--tool', key]
         try:
-            # DETACHED_PROCESS keeps a stray console from flashing up when the
+            # CREATE_NO_WINDOW keeps a stray console from flashing up when the
             # launcher itself was started from a terminal.
             flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
             subprocess.Popen(cmd, close_fds=True, creationflags=flags)

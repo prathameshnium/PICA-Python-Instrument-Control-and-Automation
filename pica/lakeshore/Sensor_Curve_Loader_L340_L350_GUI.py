@@ -197,7 +197,7 @@ page 1) states "Temperature Range: 4.00K to 325K" and everything outside it
 is measured but not certified. Below 3.5913 K there is no data at all, and
 no software can invent it.
 
-v1.0, 1 Sep 2026.
+v1.1 (v1.0, 1 Sep 2026).
 """
 
 import tkinter as tk

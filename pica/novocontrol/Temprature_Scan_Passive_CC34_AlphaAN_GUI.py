@@ -697,9 +697,9 @@ class Cryocon34_Backend:
     def probe_heater_command(self, loop=CRYOCON_HEATER_LOOP):
         """Settle, once and at Start, how this unit reports heater output.
 
-        The documented Model 34 query is 'LOOP <n>:HTRREAD?'. 'OUTPWR?'
-        is in neither the Model 34 nor the 24C manual and is tried only
-        as a second guess (see CRYOCON_HEATER_QUERIES). An unrecognised
+        The documented Model 34 query is 'LOOP <n>:HTRREAD?', but the lab
+        unit answers only the undocumented 'HEATER:OUTPWR?', so that form
+        is tried first and the rest follow (see CRYOCON_HEATER_QUERIES). An unrecognised
         command does not come back with an error string on a Cryo-con,
         it comes back as a VISA timeout, which is indistinguishable from
         a dead bus at the call site - so the guessing is confined to

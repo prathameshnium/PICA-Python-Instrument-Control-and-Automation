@@ -138,7 +138,8 @@ User curve slots and sensor index (p.220, Appendix A):
   - "INPUT A:SENIX 20 would set input A to use User Curve B" (user 11).
   - Firmware note: the Rev 3.03A unit in this lab also answers
     INPUT <ch>:ISENIX and INPUT <ch>:USENIX, which Edition 4 does not list
-    (T_Control_CC34_DirectControl_GUI.py uses those). The two schemes number
+    (T_Control_CC34_DirectControl_GUI.py used those before v1.6; it now
+    sends SENIX). The two schemes number
     differently, so this module does not guess. The channel-assignment step
     queries first, sends SENIX, reads it back, and reports what happened; if
     the readback disagrees it stops rather than trying another spelling on
@@ -2423,7 +2424,7 @@ class CurveLoaderBackend:
         # v1.2: the number after CALCUR is no longer assumed to be 1-12. On
         # this firmware it may be a Master Sensor Table index, which runs
         # higher, so the range check is against the table rather than the
-        # user-curve count. The caller works out the number; refuse_factory
+        # user-curve count. The caller works out the number; _target_is_protected()
         # is what stops it being a protected slot.
         if not (0 <= index <= MASTER_TABLE_SCAN_MAX):
             raise ValueError(

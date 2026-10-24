@@ -964,7 +964,7 @@ CATALOG = [
             ("Temperature Monitor (L350)", "Lakeshore Temp Monitor", "sensing"),
             ("Direct Control (L340)", "Lakeshore 340 Direct Control", "control"),
             ("Temperature Monitor (L340)", "Lakeshore 340 Temp Monitor", "sensing"),
-            # The two viewers are read-only: they ask the instrument what
+            # The viewers are read-only: they ask the instrument what
             # curves it holds and can send nothing but queries.
             ("Sensor Curve Loader (L340 / L350)",
              "Lakeshore Sensor Curve Loader", "control"),
@@ -1565,7 +1565,7 @@ QUICK_CATALOG = [
     },
 ]
 
-# The two temperature controllers, which are what distinguishes one protocol
+# The temperature controllers, which are what distinguishes one protocol
 # from the next within a module: an I-V sweep uses neither, a T Control scan
 # drives the Lakeshore, a T Sensing scan reads whichever one its script names.
 TEMPERATURE_CHIPS = ("Lakeshore 350", "Lakeshore 340", "Cryocon 34")
@@ -1807,8 +1807,8 @@ class PICALauncherV2:
     # Card grid reflows with the window: a maximised 1920 px screen fits four
     # columns, a 1440 px one three, a restored window two, a narrow one a
     # single column. The fourth column is what keeps the taller cards off the
-    # scrollbar on a wide monitor -- with eleven cards, going from three
-    # columns to four takes a column from four cards deep to three.
+    # scrollbar on a wide monitor -- with fourteen cards, going from three
+    # columns to four takes a column from five cards deep to four.
     MAX_CARD_COLS = 4
     CARD_MIN_WIDTH = 380
     CARD_HEADER_ROWS = 4        # a card's title band, in module-row heights
@@ -1867,9 +1867,9 @@ class PICALauncherV2:
         self._adv_win = None
         self._status_win = None
         self._utils_win = None
-        # Instruments the current Quick Select choice needs. The strip no
-        # longer shows chips, so this is what tints them in the Instrument
-        # Status window instead of filtering a list nobody is looking at.
+        # Instruments the current Quick Select choice needs: the chips on the
+        # Quick Select strip, and the ones tinted in the Instrument Status
+        # window.
         self._needed_instruments = set()
         # Every line the launcher has logged, and every console view currently
         # showing them. The log outlives any one view: a console opened after
@@ -1900,9 +1900,9 @@ class PICALauncherV2:
         # The one hover card that may be open, and its pending timer.
         self._hover_win = None
         self._hover_after = None
-        # Addresses this session has learned must not be probed again. Seeded
-        # from the persistent file so a Novocontrol identified on a previous
-        # run is skipped from the very first scan of this one.
+        # Addresses that must not be probed, read from the persistent
+        # hand-edited file (PROTECTED_ADDRESS_FILE) so they are skipped from
+        # the very first scan.
         self._session_protected = load_protected_addresses()
         # Instrument Status toggle; off by default, read at each scan's start.
         self._skip_secondary = tk.BooleanVar(master=self.root, value=False)
@@ -1964,7 +1964,7 @@ class PICALauncherV2:
         style.configure('Mono.TLabel', background=self.CLR_PANEL, foreground=self.CLR_TEXT_DIM,
                         font=self.FONT_MONO)
         # Rail identity lines (institute, credits) read at full base size --
-        # Dim.TLabel is the 10 pt style used for status-strip captions.
+        # Dim.TLabel is the smaller FONT_SMALL (base - 2) style.
         style.configure('Info.TLabel', background=self.CLR_PANEL, foreground=self.CLR_TEXT,
                         font=self.FONT_INFO)
         style.configure('Institute.TLabel', background=self.CLR_PANEL, foreground=self.CLR_TEXT,
@@ -2147,11 +2147,12 @@ class PICALauncherV2:
     # sits at the BOTTOM rather than the top because the eye starts at the
     # chooser above it -- the strip is reference material, not a heading.
     #
-    # Up to two strips are alive at once (Quick Select and Advanced Options),
-    # so each one registers itself in self._strips and every scan result is
-    # rendered into all of them. Quick Select rebuilds its chips whenever the
-    # selection changes, so it only ever shows the instruments that the chosen
-    # measurement actually needs; Advanced Options always shows all of them.
+    # Several strips can be alive at once (Quick Select, Advanced Options and
+    # the Instrument Status window), so each one registers itself in
+    # self._strips and every scan result is rendered into all of them. Quick
+    # Select rebuilds its chips whenever the selection changes, so it only
+    # ever shows the instruments that the chosen measurement actually needs;
+    # the Instrument Status window shows all of them.
     #
     # The pressure tile sits immediately to the right of the temperature
     # tile, same StripCap / StripStat / StripDim triple, filled from the same
@@ -2163,7 +2164,8 @@ class PICALauncherV2:
         return [n for n, _ in KNOWN_INSTRUMENTS] + NEVER_PROBED_INSTRUMENTS
 
     def _build_statusbar(self):
-        """The Quick Select strip: readings and a button, no chips."""
+        """The Quick Select strip: readings, a button, and the chips the
+        current selection needs."""
         self.quick_strip = self._build_status_strip(self.root, None,
                                                     console_button=True,
                                                     selection_chips=True)
@@ -2175,9 +2177,9 @@ class PICALauncherV2:
         `chip_names` is the list of instruments to show as chips, or None for
         a strip that carries the Instrument Status button instead. Quick
         Select uses the button: a newcomer reading that screen is choosing a
-        measurement, not auditing the bus, and eleven chips under the question
-        answered a question nobody had asked yet. Advanced Options keeps the
-        chips, because that is where the bus is what you came to look at.
+        measurement, not auditing the bus, and every chip under the question
+        answered a question nobody had asked yet. Advanced Options uses the
+        button too; the full chip list lives in the Instrument Status window.
         """
         bar = tk.Frame(parent, bg=self.CLR_PANEL, highlightthickness=1,
                        highlightbackground=self.CLR_BORDER)
@@ -2439,8 +2441,8 @@ class PICALauncherV2:
     def _render_strip(self, strip):
         """Paint the most recent scan result into one strip or window.
 
-        Every part is optional: a Quick Select strip has no chips and no link
-        tile, and the Instrument Status window has no temperature tile.
+        Every part is optional: a Quick Select strip has no link tile, and
+        the Instrument Status window has no temperature tile.
         """
         r = self._last_scan
         if r is None:
@@ -3941,8 +3943,7 @@ class PICALauncherV2:
     # This was the "Browse All Modules" tab. It is now a window of its own,
     # opened from Tools / View or with Ctrl+Shift+A, and it is unfiltered on
     # purpose: the full card grid with every module and its range exactly as
-    # before, and every instrument chip on the strip whether or not the module
-    # in front of you uses it. Quick Select is the guided route for a new user;
+    # before. Quick Select is the guided route for a new user;
     # this is the one for someone who already knows the module name.
     def open_advanced(self):
         if self._adv_win is not None and self._adv_win.winfo_exists():

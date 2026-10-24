@@ -1,6 +1,7 @@
 """
 Module: RT_K6517B_CC34_T_Sensing_GUI.py
-Purpose: GUI module for RT K6517B CC34 T Sensing GUI v1.
+Purpose: GUI module for RT K6517B CC34 T Sensing GUI.
+Legacy tag: v1 (old file-series number; current version is PROGRAM_VERSION)
 
          Cryocon Model 34 equivalent of RT_K6517B_L350_T_Sensing_GUI.py.
          Measurement logic is unchanged: the Keithley 6517B sources a bias
@@ -1829,9 +1830,9 @@ class Integrated_RT_GUI:
                 self.keithley_cb['values'] = resources
 
                 # Pick the Cryocon by what it says it is, not by where it
-                # sits. It moved to GPIB0::12 and the Lakeshore 350 now
-                # answers on GPIB1::12, which is the Cryocon's own factory
-                # address -- selecting by address would log the wrong
+                # sits. It has moved more than once (now address 23) and
+                # the Lakeshore 350 answers on GPIB1::12, the Cryocon's
+                # own factory address -- selecting by address would log the wrong
                 # instrument's temperature against every resistance point.
                 identities = identify_resources(rm, resources)
                 for res in resources:

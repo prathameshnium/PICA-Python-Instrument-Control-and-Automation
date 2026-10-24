@@ -339,7 +339,8 @@ CRYOCON_IDN_MARKERS = ("CRYOCON", "CRYO-CON")
 # as an instrument, and a *IDN? at one of those blocks for the whole timeout.
 PROBE_RESOURCE_PREFIXES = ("GPIB", "USB", "TCPIP")
 
-# Factory address, used only as a last-resort hint. Identification is by
+# Lab address hint (not the factory 12), used only as a last-resort hint.
+# Identification is by
 # *IDN? content, so a re-addressed Cryocon is still found.
 # The lab's Cryocon 34 was moved to IEEE address 23 on 3 Sep 2026: 12 is the
 # shared factory default of the Cryocon, the Lakeshore 340/350 and the 6221.
@@ -873,8 +874,8 @@ class Cryocon34Backend:
     def set_setpoint_immediate(self, loop, value):
         """
         Set the setpoint with no ramping.
-        Sends LOOP <n>:TYPE PID (leaving ramp mode if it was active) then
-        LOOP <n>:SETPT <value>.
+        Sends <loop>:TYPE PID (leaving ramp mode if it was active) then
+        <loop>:SETPT <value>, where <loop> is _loop() (HEATER/AOUT or LOOP <n>).
         """
         loop = self._check_loop(loop)
         if not (0 <= value <= 1000):
@@ -886,7 +887,7 @@ class Cryocon34Backend:
     def set_setpoint_with_ramp(self, loop, value, rate_per_min):
         """
         Set the setpoint with a controlled ramp.
-        Sends LOOP <n>:RATE <rate>, LOOP <n>:TYPE RampP, then SETPT.
+        Sends <loop>:RATE <rate>, <loop>:TYPE RampP, then SETPT (prefix from _loop()).
         Rate is in display units per minute, 0 to 100.
         """
         loop = self._check_loop(loop)

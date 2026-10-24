@@ -5,7 +5,6 @@ Purpose:             GUI module for Temperature-Dependent Dielectric
                      Port of Temprature_Scan_E4980A_GUI.py (Lakeshore 350)
                      to the Model 340 command set.
 Original Authors:    Prathamesh Deshmukh (template programs)
-Integrated by:       AI-assisted merge per design specification
 Version:             V: 1.1
 
 What is different from the Model 350 version, and why

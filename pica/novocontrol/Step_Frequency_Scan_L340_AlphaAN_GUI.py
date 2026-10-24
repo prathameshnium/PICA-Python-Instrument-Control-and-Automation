@@ -29,10 +29,10 @@ What changed in the Alpha-AN port, and why
     (R, X, status) from :FETC?. The 18 derived columns are computed with
     f_actual, and the Frequency column (and the Cp/G plot) holds f_actual,
     the frequency the Alpha really produced. Status 2 = valid; any other
-    status is logged with its meaning and the row is kept (as the source
-    did for a non-zero E4980A status); status 6 (signal source
+    status is logged with its meaning and the point is discarded (not
+    written, not plotted); status 6 (signal source
     disconnected) aborts the run.
-  * HARD-2 reconnect: the Alpha is closed (safe state + *RST) and re-opened
+  * HARD-2 reconnect: the Alpha is safe-stated and released (no *RST) and re-opened
     with connect + initialize_instrument from the stored settings. No DC
     bias is re-ramped - there is none. An error the Alpha itself answered
     (a non-OK ack, 'CR') is not a link loss and aborts the run instead of
@@ -1826,7 +1826,7 @@ class AlphaAN_Backend:
             self._exec_tolerant(cmd)
 
     def reconnect(self):
-        """HARD-2: close (safe state + *RST) and re-open from the stored
+        """HARD-2: safe-state and release (no *RST), re-open from the stored
         settings: connect (IDN + ZG4 check) then initialize_instrument
         (MODE=IMP, references, wire mode, ACV, MTM). Works after an
         instrument power-cycle. No DC bias is involved - DCV/DCE are never

@@ -24,8 +24,9 @@
                    *_mon columns are kept for the file format but are NaN.
                  - No bus-error retry: the Alpha is driven under the lab's
                    gentle-GPIB rule (one attempt per operation; the only
-                   recoveries are the backend's two: *IDN? on ENOL after
-                   *RST, one Interface Clear on ECIC). A bus error ends the
+                   recoveries are the backend's two: *IDN? retried on ENOL
+                   or timeout (with a device clear) after *RST and at
+                   connect, one Interface Clear on ECIC). A bus error ends the
                    run with the bias ramped to 0 V and switched off.
                Not yet run on the hardware.
 

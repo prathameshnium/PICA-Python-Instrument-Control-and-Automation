@@ -12,7 +12,7 @@
                    which instruments it talks to and which fields it will ask
                    for, so a newcomer can tell the protocols apart before
                    launching one;
-                 * the search box on the toolbar, which matches a query
+                 * the Ctrl+F search panel, which matches a query
                    against the module names, the catalogue descriptions, the
                    instrument names and these three lines.
 

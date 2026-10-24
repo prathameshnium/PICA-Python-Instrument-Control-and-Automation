@@ -1,5 +1,5 @@
 """
-Module: PE_Plotter_GUI.py
+Module: PE_plotter.py
 Purpose: PE Hysteresis Plotter Utility (Part of PICA suite).
 """
 

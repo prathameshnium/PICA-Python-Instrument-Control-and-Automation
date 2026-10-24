@@ -205,8 +205,8 @@ class PyroelectricBackend:
             self.rm = None
 
     def initialize_instruments(self, parameters):
-        """Connects, resets, and performs initial configuration of
-        instruments."""
+        """Connects and performs initial configuration of instruments
+        (no *RST is sent to either)."""
         print("\n--- [Backend] Initializing Instruments ---")
         self.params = parameters
         if not self.rm:

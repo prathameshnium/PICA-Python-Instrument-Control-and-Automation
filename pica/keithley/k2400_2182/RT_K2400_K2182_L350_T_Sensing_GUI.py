@@ -1,6 +1,7 @@
 """
 Module: RT_K2400_K2182_L350_T_Sensing_GUI.py
-Purpose: GUI module for RT K2400 2182 L350 T Sensing GUI v2.
+Purpose: GUI module for RT K2400 2182 L350 T Sensing GUI.
+Legacy tag: v2 (old file-series number; current version is PROGRAM_VERSION)
 """
 
 # -------------------------------------------------------------------------------
@@ -9,7 +10,7 @@ Purpose: GUI module for RT K2400 2182 L350 T Sensing GUI v2.
 #               This version does not control temperature.
 # Author:       Prathamesh Deshmukh
 # Created:      05/10/2025
-# Version:      1.1
+# Version:      1.3
 # -------------------------------------------------------------------------------
 
 # --- GUI and Plotting Packages ---

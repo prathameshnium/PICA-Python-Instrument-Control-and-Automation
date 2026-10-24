@@ -1,6 +1,7 @@
 """
 Module: Pyroelectric_K6517B_L350_GUI.py
-Purpose: GUI module for Pyroelectric K6517B L350 GUI v4.
+Purpose: GUI module for Pyroelectric K6517B L350 GUI.
+Legacy tag: v4 (old file-series number; current version is PROGRAM_VERSION)
 """
 
 # --- Packages for Front end ---

@@ -115,7 +115,7 @@ except ImportError:
 #
 # Nothing in this block writes to the instrument.
 
-# Factory address, used only as a last-resort hint when nothing answers.
+# Lab address, used only as a last-resort hint when nothing answers.
 # The lab's Cryocon 34 was moved to IEEE address 23 on 3 Sep 2026: 12 is the
 # shared factory default of the Cryocon, the Lakeshore 340/350 and the 6221.
 # Board-independent hint ("::23::INSTR" matches GPIB0 or GPIB1); *IDN? decides.
@@ -1300,8 +1300,8 @@ class VT_GUI_Passive:
                 (r for r in resources if _is_gpib_address(r, "::24::")), None)
 
             # Pick the Cryocon by what it says it is, not by where it sits.
-            # It moved to GPIB0::12 and the Lakeshore 350 now answers on
-            # GPIB1::12, which is the Cryocon's own factory address.
+            # It now sits at address 23, and 12 (the Cryocon's own factory
+            # address) is shared with the Lakeshores and the 6221.
             identities = identify_resources(self.backend.rm, resources)
             for r in resources:
                 self.log(f"  {r}  ->  {identities.get(r, 'no reply')}")

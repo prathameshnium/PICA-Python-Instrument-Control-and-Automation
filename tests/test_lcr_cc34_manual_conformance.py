@@ -22,8 +22,9 @@ WHY THIS FILE EXISTS, separately from test_lcr_cc34_commands.py:
 
     So the fake here is the other way round: STRICT_MODEL_34 is a
     whitelist taken from the manual, and the fake Cryo-con times out on
-    anything that is not on it. A command the manual does not document
-    fails the test instead of passing it.
+    anything that is not on it (or in INSTRUMENT_VERIFIED, the commands
+    measured on the lab unit). A command in neither table fails the test
+    instead of passing it.
 
 The E4980A side is covered the same way in test_lcr_cc34_commands.py,
 against the E4980A User's Guide Chapter 10.
@@ -189,7 +190,8 @@ class FakeVisaTimeout(IOError):
 
 
 class StrictCryocon:
-    """A Model 34 that answers ONLY what its manual documents.
+    """A Model 34 that answers ONLY what its manual documents, plus the
+    INSTRUMENT_VERIFIED commands measured on the lab unit.
 
     `extra` adds mnemonics this particular firmware also happens to
     answer, so a unit that knows the older OUTPWR? can be simulated

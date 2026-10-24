@@ -113,7 +113,7 @@ def open_alpha(rm, address):
     except Exception as e:
         log(f"STOP: open_resource failed: {describe(e)}")
         return None
-    # Same session settings as Frequency_Scan_AlphaAN_GUI.py.
+    # Same terminations as Frequency_Scan_AlphaAN_GUI.py (shorter timeout).
     inst.timeout = 10000
     inst.read_termination = ""
     inst.write_termination = ""

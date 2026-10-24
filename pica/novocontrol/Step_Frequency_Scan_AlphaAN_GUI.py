@@ -18,8 +18,8 @@ every exit). What changed with the instrument:
   - Each point is (Zs', Zs'', f_actual, status) from ZRE?. The
     Frequency column holds f_actual and the 18-parameter conversion uses
     it; the column layout is unchanged. Status 2 = valid; other statuses
-    keep the row and are logged; status 6 (signal source disconnected)
-    aborts the run.
+    are logged and the point is discarded; status 6 (signal source
+    disconnected) aborts the run.
   - HARD-2 reconnect re-opens the Alpha with connect + initialize_instrument
     (*RST, MODE=IMP, ZG4 check, ACV/MTM/FRS). No bias is ever ramped.
   - An Alpha refusal (non-OK ack, 'CR') aborts the run instead of entering

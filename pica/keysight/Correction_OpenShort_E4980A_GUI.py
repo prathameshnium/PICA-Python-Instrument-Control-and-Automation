@@ -4,7 +4,7 @@ Purpose:            Guided OPEN / SHORT correction of the Keysight E4980A
                     LCR meter: inspect what the meter holds, back it up,
                     redo the correction one screen at a time, verify the
                     residuals, and keep a full record of every command.
-Author:             Prathamesh Deshmukh (PICA); AI-assisted implementation
+Author:             Prathamesh Deshmukh (PICA),
                     from the design brief of 2026-09-09.
 Version:            V: 1.0
 

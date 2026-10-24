@@ -1,6 +1,7 @@
 """
 Module: T_Sensing_L350_GUI.py
-Purpose: GUI module for T Sensing L350 GUI v4.
+Purpose: GUI module for T Sensing L350 GUI v2.0.
+Legacy tag: v4 (old file-series number; current version is PROGRAM_VERSION)
 """
 
 # --- Packages for Front end ---

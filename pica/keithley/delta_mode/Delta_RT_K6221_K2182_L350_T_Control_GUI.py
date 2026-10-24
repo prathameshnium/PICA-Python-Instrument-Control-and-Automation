@@ -1,6 +1,7 @@
 """
 Module: Delta_RT_K6221_K2182_L350_T_Control_GUI.py
-Purpose: GUI module for Delta RT K6221 K2182 L350 T Control GUI v5.
+Purpose: GUI module for Delta RT K6221 K2182 L350 T Control GUI.
+Legacy tag: v5 (old file-series number; current version is PROGRAM_VERSION)
 """
 
 import tkinter as tk

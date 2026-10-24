@@ -422,9 +422,9 @@ def test_a_firmware_that_only_knows_the_documented_form_is_still_read():
 
 
 def test_the_lab_unit_gets_nan_and_no_further_bus_traffic():
-    """THE regression. On the lab controller neither mnemonic answers, so
-    the per-point read must stop asking instead of timing out on every
-    point of the run."""
+    """THE regression. On a controller where no candidate answers, the
+    per-point read must stop asking instead of timing out on every point
+    of the run."""
     module = MODULES["k6517b"]
     bus = FakeBus(cryocon_heater_query=None)
     with patch_bus(module, bus):

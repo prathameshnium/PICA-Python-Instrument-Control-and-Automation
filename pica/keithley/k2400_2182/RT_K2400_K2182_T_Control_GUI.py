@@ -1,6 +1,7 @@
 """
 Module: RT_K2400_K2182_T_Control_GUI.py
-Purpose: GUI module for RT K2400 K2182 T Control GUI v3.
+Purpose: GUI module for RT K2400 K2182 T Control GUI.
+Legacy tag: v3 (old file-series number; current version is PROGRAM_VERSION)
 """
 
 # -------------------------------------------------------------------------------

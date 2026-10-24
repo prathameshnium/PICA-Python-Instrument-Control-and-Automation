@@ -107,7 +107,7 @@ TERMINATIONS = {
     "\\r\\n (CRLF)": "\r\n",
     "\\r (CR)": "\r",
     "None": None,
-    "EOI": "EOI",  # Special case for End-Of-Instruction termination
+    "EOI": "EOI",  # Special case for End-Or-Identify (EOI line) termination
 }
 
 

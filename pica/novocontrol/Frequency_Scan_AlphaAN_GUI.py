@@ -636,7 +636,7 @@ def validate_parameters(params):
         raise ValueError("Frequency list is empty.")
 
     acv = params["acv"]
-    # The ZG4 ceiling is frequency-dependent (3 Vrms <=10 MHz, 1 Vrms above),
+    # The ZG4 ceiling is frequency-dependent (3/2/1 Vrms, see acv_ceiling),
     # so the binding limit is the lowest ceiling over the whole sweep.
     max_acv = min(acv_ceiling(f) for f in frequencies)
     if not (0.0 < acv <= max_acv):

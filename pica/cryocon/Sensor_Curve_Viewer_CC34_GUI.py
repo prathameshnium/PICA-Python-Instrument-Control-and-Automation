@@ -121,7 +121,7 @@ Three files, all optional, all to a path chosen in a save dialog:
   .csv   The slot list: every Master Sensor Table entry the scan reached.
 
 Author: Prathamesh Deshmukh
-Version: 1.0  (1 Sep 2026)
+Version: 1.1  (1.0: 1 Sep 2026)
 """
 
 import os

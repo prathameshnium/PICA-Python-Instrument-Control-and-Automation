@@ -1,6 +1,7 @@
 """
 Module: PlotterUtil_GUI.py
-Purpose: GUI module for PlotterUtil GUI v3.
+Purpose: GUI module for the PICA Plotter Utility.
+Legacy tag: v3 (old file-series number; current version is PROGRAM_VERSION)
 """
 
 # -------------------------------------------------------------------------------

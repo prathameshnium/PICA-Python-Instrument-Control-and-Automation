@@ -1,9 +1,8 @@
 """
-Module:             CT_E4980A_L350_T_Control_GUI.py
+Module:             Temprature_Scan_E4980A_GUI.py
 Purpose:             GUI module for Temperature-Dependent Dielectric
                      Measurement (Keysight E4980A + Lakeshore 350).
 Original Authors:    Prathamesh Deshmukh (template programs)
-Integrated by:       AI-assisted merge per design specification
 Version:             V: 1.1
 """
 

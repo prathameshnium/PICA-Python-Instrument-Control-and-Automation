@@ -1,5 +1,5 @@
 """
-Module: V_Bias_K6517B_GUI.py
+Module: Polling_K6517B_GUI.py
 Purpose: GUI module for applying a constant DC voltage bias (Polling)
          using the Keithley 6517B. No measurement or plotting.
 """
@@ -54,7 +54,7 @@ def launch_gpib_scanner():
     """Finds and launches the GPIB scanner utility in a new process."""
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        # Go up 3 levels: High_Resistance -> k6517b -> keithley -> pica
+        # Go up 3 levels: Pyroelectricity -> k6517b -> keithley -> pica
         scanner_path = os.path.join(
             script_dir,
             "..", "..", "..", "utils", "GPIB_Instrument_Scanner_GUI.py")

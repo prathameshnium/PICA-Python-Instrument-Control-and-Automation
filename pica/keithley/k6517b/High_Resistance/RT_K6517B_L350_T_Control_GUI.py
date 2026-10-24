@@ -1,6 +1,7 @@
 """
 Module: RT_K6517B_L350_T_Control_GUI.py
-Purpose: GUI module for RT K6517B L350 T Control GUI v13.
+Purpose: GUI module for RT K6517B L350 T Control GUI.
+Legacy tag: v13 (old file-series number; current version is PROGRAM_VERSION)
 """
 
 # -------------------------------------------------------------------------------

@@ -179,7 +179,7 @@ class PICALauncherApp:
     LOGO_SIZE = 140
 
     SCRIPT_PATHS = {
-        # Based on Updates.md, using the latest versions of scripts.
+        # Based on CHANGELOG.md, using the latest versions of scripts.
         "Delta Mode I-V Sweep": resource_path("keithley/delta_mode/IV_K6221_DC_Sweep_GUI.py"),
         "Delta Mode R-T": resource_path("keithley/delta_mode/Delta_RT_K6221_K2182_L350_T_Control_GUI.py"),
         "Delta Mode R-T (T_Sensing)": resource_path("keithley/delta_mode/Delta_RT_K6221_K2182_L350_Sensing_GUI.py"),
