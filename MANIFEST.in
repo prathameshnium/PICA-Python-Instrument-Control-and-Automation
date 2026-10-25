@@ -6,6 +6,12 @@ recursive-include pica/assets *
 # README/User Manual screenshots: shown on GitHub and the docs site only, no
 # program loads them, so they stay out of the sdist and wheel.
 prune pica/assets/Images/screenshots
+# Logos the programs never load (README, docs site and portable build read
+# them from the repository). Shipped: UGC_DAE_CSR_NBG.jpeg (every GUI header)
+# and PICA_LOGO_ICON.ico (kept for a future window icon).
+exclude pica/assets/LOGO/PICA_LOGO.png pica/assets/LOGO/PICA_LOGO_NBG.png
+exclude pica/assets/LOGO/PICA_LOGO.ico pica/assets/LOGO/PICA_LOGO_ICON.png
+exclude pica/assets/LOGO/UGC_DAE_CSR.ico pica/assets/LOGO/UGC_DAE_CSR.jpeg
 recursive-include pica *.py
 recursive-include tests *.py
 prune tests/__pycache__
