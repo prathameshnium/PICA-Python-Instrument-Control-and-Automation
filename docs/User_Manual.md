@@ -112,7 +112,7 @@ The 32-bit Novocontrol Alpha-AN frequency scan and the 32-bit GPIB scanner call 
 
 #### Software Dependencies
 1.  **Python 3.10+** (tested on 3.10 to 3.13).
-2.  **Dependencies:** installed automatically by `pip install pica-suite` (NumPy, pandas, Matplotlib, SciPy, PyVISA, PyVISA-py, PyMeasure, Pillow, psutil, zeroconf).
+2.  **Dependencies:** installed automatically by `pip install pica-suite` (NumPy, pandas, Matplotlib, PyVISA, PyVISA-py, PyMeasure, Pillow, psutil, zeroconf).
 
 :::{warning}
 **A VISA Backend is Required:** [`PyVISA`](https://github.com/pyvisa/pyvisa) is a Python wrapper, not a driver. For PICA to communicate with hardware, you **must** install a VISA backend on your system first. If you attempt to run the software on a clean machine without a VISA implementation, it will fail to find the instruments. This is the most common failure point for new instrument control setups.

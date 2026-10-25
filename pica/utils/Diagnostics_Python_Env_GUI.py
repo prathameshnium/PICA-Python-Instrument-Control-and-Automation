@@ -75,8 +75,6 @@ REQUIRED_PACKAGES = [
      "instrument drivers used by the Keithley modules"),
     ("pyvisa-py", "pyvisa_py", "0.5.3",
      "pure-Python VISA backend (fallback when NI-VISA is absent)"),
-    ("scipy", "scipy", None,
-     "fits and interpolation in the analysis utilities"),
     ("Pillow", "PIL", "10.3.0",
      "the logo and image handling in the launchers"),
     ("psutil", "psutil", "5.9.8",
@@ -93,6 +91,8 @@ OPTIONAL_PACKAGES = [
      "RS-232 / USB-serial instruments (Pfeiffer TPG 361 over FTDI)"),
     ("pytest", "pytest", None,
      "running the test suite in tests/"),
+    ("scipy", "scipy", None,
+     "not used by PICA yet; kept for future fits and interpolation"),
 ]
 
 # Deep sections, all optional, all read-only.
