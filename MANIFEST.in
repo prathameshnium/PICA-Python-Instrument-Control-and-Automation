@@ -3,6 +3,9 @@
 include README.md LICENSE CHANGELOG.md CONTRIBUTING.md CITATION.cff
 include docs/User_Manual.md docs/Instruments_Manuals_Lists.md
 recursive-include pica/assets *
+# README/User Manual screenshots: shown on GitHub and the docs site only, no
+# program loads them, so they stay out of the sdist and wheel.
+prune pica/assets/Images/screenshots
 recursive-include pica *.py
 recursive-include tests *.py
 prune tests/__pycache__
