@@ -8,6 +8,16 @@ or a pull request adding your paper here, and please [cite PICA](https://doi.org
 
 ---
 
+## User facility
+
+PICA was developed at the
+[UGC-DAE Consortium for Scientific Research, Mumbai Centre](https://www.csr.res.in/Mumbai_Centre),
+where it runs the **Electrical Transport** user facility: the ITMS, a home-built
+setup listed on the centre's
+[user facility portal](https://www.csruserportal.com/Intro/csrMumbaiFacilities).
+
+---
+
 ## Summary
 
 | Category                                            | Count |

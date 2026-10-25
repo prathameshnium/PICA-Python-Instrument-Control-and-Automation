@@ -1206,6 +1206,8 @@ The procedure for adding a new instrument module to PICA is described in the [CO
 - **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.csr.res.in/Faculty/profile/889/893/Dr.SudipMukherjee)
 - **Affiliation:** [UGC DAE Consortium for Scientific Research, Mumbai Centre](https://www.csr.res.in/Mumbai_Centre), Bhabha Atomic Research Centre, Mumbai, 400 085, Maharashtra, India
 
+*Note: at the centre, PICA runs the home-built electrical transport setup (the ITMS) listed on the [CSR Mumbai user facility portal](https://www.csruserportal.com/Intro/csrMumbaiFacilities).*
+
 ### Funding
 Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).
 
