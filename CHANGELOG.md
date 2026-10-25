@@ -12,6 +12,7 @@ All notable changes to PICA are documented here. The format follows [Keep a Chan
 - **Alpha-AN Diagnostics (read-only)**: one-button VISA check (Python bitness, programs holding the bus, VISA resources, `*IDN?` and `INTTYP?` at the given address) in the Diagnostic Tools.
 
 ### Changed
+- **Smaller install**: scipy is no longer a required dependency (PICA never imported it), and the README screenshots and unused logos no longer ship in the package.
 - **Alpha-AN frequency scan**: window shows the edition (32-bit or 64-bit); REF calibration explains itself before starting.
 
 ## [1.0.7] - 2026-10-17

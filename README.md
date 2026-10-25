@@ -254,6 +254,13 @@ To upgrade to the latest version (currently **v1.0.7**):
 pip install --upgrade pica-suite
 ```
 
+> **Tip: faster install.** [uv](https://docs.astral.sh/uv/) (a ~15 MB download, installed once per PC) installs the same packages several times faster than pip and reuses its cache for every new venv:
+> ```bash
+> pip install uv
+> uv pip install pica-suite
+> ```
+> Plain `pip` works the same; uv is optional.
+
 ### Option 2: Install from Source
 
 1.  **Clone the Repository**
