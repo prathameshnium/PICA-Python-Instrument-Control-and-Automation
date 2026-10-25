@@ -73,14 +73,10 @@ jobs:
   # display is needed. Coverage is reported from the Linux job only. Every
   # Python the package claims (pyproject classifiers) is run, so a version-
   # specific break on the lab platform is caught before it reaches a lab PC.
-  # 3.14 and 3.15 run here first; add their pyproject classifiers once these
-  # jobs pass. 3.15 is new (Oct 2026) and some dependencies may not ship
-  # wheels for it yet, so its failure does not fail the run.
   test-windows:
     name: Test (Windows, Python ${{ matrix.python-version }})
     runs-on: windows-latest
     timeout-minutes: 30
-    continue-on-error: ${{ matrix.python-version == '3.15' }}
     strategy:
       fail-fast: false
       matrix:
