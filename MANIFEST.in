@@ -12,6 +12,9 @@ prune pica/assets/Images/screenshots
 exclude pica/assets/LOGO/PICA_LOGO.png pica/assets/LOGO/PICA_LOGO_NBG.png
 exclude pica/assets/LOGO/PICA_LOGO.ico pica/assets/LOGO/PICA_LOGO_ICON.png
 exclude pica/assets/LOGO/UGC_DAE_CSR.ico pica/assets/LOGO/UGC_DAE_CSR.jpeg
+# Full-resolution master of the GUI logo; the shipped UGC_DAE_CSR_NBG.jpeg is
+# a 280 px copy of it (a PNG despite the name, kept for the existing paths).
+exclude pica/assets/LOGO/UGC_DAE_CSR_NBG_Full_Size.jpeg
 recursive-include pica *.py
 recursive-include tests *.py
 prune tests/__pycache__
