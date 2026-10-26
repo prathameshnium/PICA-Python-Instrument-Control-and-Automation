@@ -113,8 +113,8 @@ def _visa():
         pyvisa = _pyvisa
     return pyvisa
 
-# Pillow (~0.15 s) is only needed for the logo: looked up here, imported by
-# _logo_photo once the window is on screen.
+# Pillow is only a fallback for the logo, used when a pre-scaled PNG is
+# missing: looked up here, imported by _logo_photo only if needed.
 PIL_AVAILABLE = importlib.util.find_spec("PIL") is not None
 
 
@@ -1870,6 +1870,14 @@ class PICALauncherV2:
         self.root.title(f"PICA Launcher — v{self.PROGRAM_VERSION}")
         self.root.geometry("1280x820")
         self.root.configure(bg=self.CLR_APP)
+        # Mapped fully transparent and shown in one step once the layout has
+        # settled and the logo is in (_reveal), so startup is not a run of
+        # panels, reflowing text and a late logo popping in.
+        self._revealed = False
+        try:
+            self.root.attributes('-alpha', 0.0)
+        except tk.TclError:
+            self._revealed = True     # no alpha on this platform: show as built
         try:
             self.root.state('zoomed')
         except tk.TclError:
@@ -1960,6 +1968,19 @@ class PICALauncherV2:
         # already shows. Advanced Options opens it, and it is in the Tools
         # menu and on the toolbar.
         self.root.after(600, self._open_startup_status)
+        # Backstop for _reveal: shown even if the logo canvas is never exposed.
+        self.root.after(1500, self._reveal)
+
+    def _reveal(self):
+        """Make the launcher visible, once, after its first layout."""
+        if self._revealed:
+            return
+        self._revealed = True
+        self.root.update_idletasks()
+        try:
+            self.root.attributes('-alpha', 1.0)
+        except tk.TclError:
+            pass
 
     def _open_startup_status(self):
         """Show the Instrument Status window once, just after startup."""
@@ -3316,6 +3337,7 @@ class PICALauncherV2:
         def _first_paint(_event):
             self.logo_canvas.unbind('<Expose>', bind_id)
             self.root.after_idle(self._load_logo)
+            self.root.after_idle(self._reveal)
         bind_id = self.logo_canvas.bind('<Expose>', _first_paint)
 
         # Wraps to the rail width rather than at hardcoded newlines, so the
@@ -3359,6 +3381,15 @@ class PICALauncherV2:
         cache = self.__dict__.setdefault('_logo_cache', {})
         if size in cache:
             return cache[size]     # scaled once, reused on every open
+        # Pre-scaled copies (made with the Pillow resize below) load straight
+        # into Tk, which keeps Pillow's ~0.5 s import off startup.
+        prescaled = self.LOGO_FILE.replace('.jpeg', f'_{size}.png')
+        if os.path.exists(prescaled):
+            try:
+                cache[size] = tk.PhotoImage(file=prescaled, master=self.root)
+                return cache[size]
+            except tk.TclError:
+                pass               # unreadable: fall back to Pillow
         if not (PIL_AVAILABLE and os.path.exists(self.LOGO_FILE)):
             self.log("Logo not loaded: PIL unavailable or file missing.")
             return None
@@ -3821,6 +3852,7 @@ class PICALauncherV2:
             return
 
         win = Toplevel(self.root)
+        win.withdraw()        # built hidden, shown complete at the end
         win.title("PICA — Instrument Status")
         win.configure(bg=self.CLR_APP)
         # Wider than tall: six chip columns and the widest resource strings in
@@ -3926,6 +3958,8 @@ class PICALauncherV2:
         self._status_strip = strip
         self._set_strip_chips(strip, self._chip_names_with_unknown())
         self._mark_strip_scanning(strip)
+        win.update_idletasks()
+        win.deiconify()
         self.log("Instrument Status window opened.")
 
     def _close_instrument_status(self):
@@ -4745,9 +4779,10 @@ class PICALauncherV2:
             seg.pack(side='left')
             seg.bind('<Button-1>', lambda _e, v=value: self._skip_secondary.set(v))
             segments[value] = seg
-        note = tk.Label(box, text="", bg=self.CLR_APP, fg=self.CLR_TEXT_FAINT,
-                        font=self.FONT_STRIP)
-        note.pack(side='left', padx=(8, 0))
+        # Always shown, so the switch never shifts when it is clicked.
+        tk.Label(box, text="from next Reload", bg=self.CLR_APP,
+                 fg=self.CLR_TEXT_FAINT, font=self.FONT_STRIP).pack(
+            side='left', padx=(8, 0))
 
         def paint(*_):
             on = self._skip_secondary.get()
@@ -4755,13 +4790,11 @@ class PICALauncherV2:
                 chosen = value == on
                 seg.config(bg=self.CLR_ACCENT if chosen else self.CLR_PANEL,
                            fg=self.CLR_TEXT_LIGHT if chosen else self.CLR_TEXT_DIM)
-            note.config(text="from next Reload")
 
         trace = self._skip_secondary.trace_add('write', paint)
         box.bind('<Destroy>', lambda e: e.widget is box and
                  self._skip_secondary.trace_remove('write', trace))
         paint()
-        note.config(text="")      # nothing changed yet
         return box
 
     def _open_address_book(self):

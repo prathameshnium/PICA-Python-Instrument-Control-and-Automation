@@ -15,40 +15,17 @@ Legacy tag: v3 (old file-series number; current version is PROGRAM_VERSION)
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext, Canvas
 import os
-import csv
 import traceback
 from datetime import datetime
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-import matplotlib as mpl
 import numpy as np
 
 # --- Multi-instance support ---
 import sys
-from multiprocessing import Process
-import multiprocessing
-import subprocess
+import subprocess  # starts "Open New Plotter Window" directly, no middle process
 
-try:
-    from PIL import Image, ImageTk
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
-
-def run_script_process(script_path):
-    """
-    Wrapper function to execute a script in a new process.
-    This becomes the target for the new, isolated process.
-    `script_path` can be a list (e.g., ['python', 'script.py']) or a string (path to .exe).
-    """
-    try:
-        # This command works for both .py files (e.g., ['python', 'script.py'])
-        # and .exe files (e.g., ['path/to/program.exe']).
-        subprocess.run(script_path, check=True)
-    except Exception as e:
-        print(f"--- Sub-process Error in {os.path.basename(script_path)} ---")
-        print(e)
-        print("-------------------------")
+# matplotlib (~2 s to import, most of the start-up time) and Pillow (logo
+# only) are imported by _build_plot_area once the window is on screen, so the
+# window appears in under a second instead of after the import.
 
 
 class PlotterAppGUI:
@@ -83,6 +60,9 @@ class PlotterAppGUI:
         # Fallback for environments where `__file__` might not be defined.
         LOGO_FILE_PATH = "../assets/LOGO/UGC_DAE_CSR_NBG.jpeg"
 
+    # Set by _build_plot_area; None until matplotlib is loaded
+    figure = ax_main = canvas = None
+
     def __init__(self, root):
         self.root = root
         self.root.title(f"PICA Plotter Utility v{self.PROGRAM_VERSION}")
@@ -110,6 +90,7 @@ class PlotterAppGUI:
         self.create_widgets()
         self.log(
             "Welcome to the PICA Plotter Utility. Please select a file to begin.")
+        self.root.after(1, self._build_plot_area)
 
     def setup_styles(self):
         # ... (style configuration remains the same)
@@ -177,14 +158,6 @@ class PlotterAppGUI:
             'TCheckbutton', background=[
                 ('active', self.CLR_FRAME_BG)], indicatorcolor=[
                 ('selected', self.CLR_ACCENT_GREEN), ('!selected', self.CLR_FG)])
-        mpl.rcParams.update({
-            'font.family': 'Segoe UI', 'font.size': 11,
-            'axes.titlesize': 15, 'axes.labelsize': 13,
-            'figure.facecolor': self.CLR_BG, 'axes.facecolor': '#F4EFEA',
-            'axes.edgecolor': self.CLR_FG, 'axes.labelcolor': self.CLR_FG,
-            'xtick.color': self.CLR_FG, 'ytick.color': self.CLR_FG,
-            'text.color': self.CLR_FG,
-        })
 
     def create_widgets(self):
         header = tk.Frame(self.root, bg=self.CLR_HEADER)
@@ -216,15 +189,7 @@ class PlotterAppGUI:
             bg=self.CLR_HEADER,
             highlightthickness=0)
         logo_canvas.pack(side='left', pady=10)
-        if PIL_AVAILABLE and os.path.exists(self.LOGO_FILE_PATH):
-            try:
-                img = Image.open(
-                    self.LOGO_FILE_PATH).resize(
-                    (60, 60), Image.Resampling.LANCZOS)
-                self.logo_image = ImageTk.PhotoImage(img)
-                logo_canvas.create_image(30, 30, image=self.logo_image)
-            except Exception as e:
-                self.log(f"Warning: Could not load logo. {e}")
+        self._logo_canvas = logo_canvas  # filled by _load_logo
         institute_frame = tk.Frame(center_header_frame, bg=self.CLR_HEADER)
         institute_frame.pack(side='left', padx=15)
         ttk.Label(
@@ -493,18 +458,84 @@ class PlotterAppGUI:
 
     def _create_right_panel(self, parent):
         panel = ttk.Frame(parent)
-        container = ttk.LabelFrame(panel, text='Plot')
-        container.pack(fill='both', expand=True)
+        self._plot_container = ttk.LabelFrame(panel, text='Plot')
+        self._plot_container.pack(fill='both', expand=True)
+        self._plot_placeholder = ttk.Label(
+            self._plot_container, text="Loading the plotting engine...",
+            anchor='center', background=self.CLR_BG)
+        self._plot_placeholder.pack(fill='both', expand=True, padx=5, pady=5)
+        return panel
 
-        self.figure = Figure(dpi=100)
-        self.ax_main = self.figure.add_subplot(111)
-        self.ax_main.set_title(
+    def _load_logo(self):
+        """Draws the institute logo (Pillow: Tk 8.6 cannot read JPEG)."""
+        if not os.path.exists(self.LOGO_FILE_PATH):
+            return
+        try:
+            from PIL import Image, ImageTk
+            img = Image.open(
+                self.LOGO_FILE_PATH).resize(
+                (60, 60), Image.Resampling.LANCZOS)
+            self.logo_image = ImageTk.PhotoImage(img)
+            self._logo_canvas.create_image(30, 30, image=self.logo_image)
+        except ImportError:
+            pass  # no Pillow: no logo, as before
+        except Exception as e:
+            self.log(f"Warning: Could not load logo. {e}")
+
+    def _build_plot_area(self):
+        """Imports matplotlib and puts the figure in the Plot frame.
+
+        Runs from the event loop just after start-up: the window is painted
+        first, then the ~2 s matplotlib import runs. Files added before this
+        finishes (command-line preload) are plotted at the end.
+        """
+        try:
+            self.root.update()  # paint the window before the import blocks
+            if not self.root.winfo_exists():
+                return
+        except tk.TclError:
+            return  # window closed already
+        try:
+            self._create_plot_canvas()
+        except Exception:
+            # Before, this failed at import and stopped the module; now the
+            # window is up, so say so there (no dialog: may be unattended)
+            self.log(f"Plotting engine failed to load: {traceback.format_exc()}")
+            if self._plot_placeholder.winfo_exists():
+                self._plot_placeholder.configure(
+                    text="Plotting engine failed to load - see Console")
+            return
+        self._load_logo()  # Pillow's Image module is loaded by matplotlib now
+        if self.file_ui_elements:
+            self.plot_data()  # files added while matplotlib was loading
+
+    def _create_plot_canvas(self):
+        """The matplotlib figure, canvas and toolbar of the Plot frame."""
+        import matplotlib as mpl
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_tkagg import (
+            FigureCanvasTkAgg, NavigationToolbar2Tk)
+        mpl.rcParams.update({
+            'font.family': 'Segoe UI', 'font.size': 11,
+            'axes.titlesize': 15, 'axes.labelsize': 13,
+            'figure.facecolor': self.CLR_BG, 'axes.facecolor': '#F4EFEA',
+            'axes.edgecolor': self.CLR_FG, 'axes.labelcolor': self.CLR_FG,
+            'xtick.color': self.CLR_FG, 'ytick.color': self.CLR_FG,
+            'text.color': self.CLR_FG,
+        })
+        container = self._plot_container
+        self._plot_placeholder.destroy()
+
+        figure = Figure(dpi=100)
+        ax_main = figure.add_subplot(111)
+        ax_main.set_title(
             "Select a file and columns to plot",
             fontweight='bold')
-        self.ax_main.set_xlabel("X-Axis")
-        self.ax_main.set_ylabel("Y-Axis")
-        self.ax_main.grid(True, linestyle='--', alpha=0.6)
-        self.figure.tight_layout()
+        ax_main.set_xlabel("X-Axis")
+        ax_main.set_ylabel("Y-Axis")
+        ax_main.grid(True, linestyle='--', alpha=0.6)
+        figure.tight_layout()
+        self.figure, self.ax_main = figure, ax_main
 
         self.canvas = FigureCanvasTkAgg(self.figure, container)
         self.canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=5)
@@ -520,8 +551,6 @@ class PlotterAppGUI:
         for button in toolbar.winfo_children():
             button.config(background=self.CLR_FRAME_BG)
         toolbar.update()
-
-        return panel
 
     def log(self, message):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -596,8 +625,11 @@ class PlotterAppGUI:
                 args = [sys.executable]
             else:
                 # We are running in a normal Python environment.
-                args = [sys.executable, __file__]
-            Process(target=run_script_process, args=(args,)).start()
+                args = [sys.executable, os.path.abspath(__file__)]
+            # Started directly: a multiprocessing.Process wrapper first
+            # re-imported this module (matplotlib, ~2 s) in a middle process
+            # that then only waited on this one
+            subprocess.Popen(args)
         except Exception as e:
             messagebox.showerror(
                 "Launch Error",
@@ -813,6 +845,7 @@ class PlotterAppGUI:
         file_info['delimiter'] = delim
         file_info['data'] = {h: data_array[:, j] for j, h in enumerate(headers)}
         file_info['loaded_override'] = override
+        file_info['_grow'] = None  # live-update append buffer, built on first append
         file_info.update(snap)
 
     @staticmethod
@@ -1076,24 +1109,19 @@ class PlotterAppGUI:
                 return  # only part of a line so far; wait for its newline
 
             headers = file_info['headers']
+            # The unterminated last line parsed at load time is re-read whole
+            # now, so its (possibly cut-short) row goes
             dropped = file_info.pop('tail_row', False)
-            if dropped:
-                # The unterminated last line parsed at load time is re-read
-                # whole now, so its (possibly cut-short) row goes
-                for header in headers:
-                    file_info['data'][header] = file_info['data'][header][:-1]
             rows = self._parse_appended_lines(new_lines, headers, file_info.get('delimiter'))
-            if rows:
-                block = np.array(rows, dtype=float)
-                for j, header in enumerate(headers):
-                    file_info['data'][header] = np.concatenate(
-                        (file_info['data'][header], block[:, j]))
+            if rows or dropped:
+                self._append_rows(file_info, rows, dropped)
             file_info['size'] = new_offset
 
             if rows or dropped:
                 if rows:
                     self.log(f"Appended {len(rows)} new data points.")
-                self._refresh_plot()
+                # A dropped row can shrink the data range: rescale over everything
+                self._refresh_plot(None if dropped else len(rows))
 
         except Exception:
             self.log(f"Error appending data: {traceback.format_exc()}")
@@ -1102,6 +1130,34 @@ class PlotterAppGUI:
         finally:
             # Always restart the watcher after an append operation.
             self.start_file_watcher(log_message=False)
+
+    @staticmethod
+    def _append_rows(file_info, rows, drop_last=False):
+        """Appends parsed rows to the cached columns, first dropping the last
+        cached row when drop_last is set.
+
+        The columns are views into one (n_columns, capacity) buffer that grows
+        by half when full, so a tick copies only the new rows instead of
+        re-concatenating every column (O(n) per tick). Each data[h] stays an
+        ordinary 1-D float array holding exactly the rows read.
+        """
+        headers = file_info['headers']
+        data = file_info['data']
+        n = len(data[headers[0]])
+        if drop_last and n:
+            n -= 1
+        block = np.array(rows, dtype=float).reshape(-1, len(headers))
+        k = block.shape[0]
+        buf = file_info.get('_grow')
+        if (buf is None or buf.shape[0] != len(headers)
+                or data[headers[0]].base is not buf or n + k > buf.shape[1]):
+            new = np.empty((len(headers), max(n + k, n + n // 2) + 1024))
+            for j, h in enumerate(headers):
+                new[j, :n] = data[h][:n]
+            buf = file_info['_grow'] = new
+        buf[:, n:n + k] = block.T
+        for j, h in enumerate(headers):
+            data[h] = buf[j, :n + k]
 
     @staticmethod
     def _read_appended_lines(filepath, offset, encoding):
@@ -1159,12 +1215,14 @@ class PlotterAppGUI:
         return (x_col, y_col, tuple(selected_filepaths), bool(self.x_log_var.get()),
                 bool(self.y_log_var.get()), len(self.file_ui_elements))
 
-    def _refresh_plot(self):
+    def _refresh_plot(self, n_new=None):
         """Redraws the active file's line in place after a live-update append.
 
         Same files, columns and scales as the last full plot: only the line
         data changes, so the legend, labels and title are kept and the axes
         rescale as a full replot would. Anything else falls back to plot_data.
+        n_new is how many rows were appended at the end: the data limits then
+        grow by those rows alone. None rescales over all the data.
         """
         fp = self.active_filepath
         if not self._plot_lines or self._plot_signature() != self._plot_sig:
@@ -1185,7 +1243,16 @@ class PlotterAppGUI:
             return
         line.set_data(raw_x[finite_mask], raw_y[finite_mask])
         line.set_markevery(self._markevery(int(finite_mask.sum())))
-        self.ax_main.relim()
+        if n_new is None:
+            self.ax_main.relim()
+        else:
+            # The limits already cover the old rows: add the new ones only,
+            # O(new rows) instead of O(all rows)
+            new_mask = finite_mask[len(finite_mask) - n_new:]
+            if new_mask.any():
+                self.ax_main.update_datalim(np.column_stack(
+                    (raw_x[len(raw_x) - n_new:][new_mask],
+                     raw_y[len(raw_y) - n_new:][new_mask])))
         self.ax_main.set_autoscale_on(True)  # a full replot reset the view too
         self.ax_main.autoscale_view()
         self.canvas.draw_idle()
@@ -1196,6 +1263,8 @@ class PlotterAppGUI:
         return max(1, n_points // 200)
 
     def plot_data(self, event=None):
+        if self.canvas is None:
+            return  # still loading matplotlib; _build_plot_area plots then
         x_col, y_col, selected_filepaths = self._get_plot_parameters()
         self._clear_and_setup_plot()
 
@@ -1440,6 +1509,7 @@ class PlotterAppGUI:
 if __name__ == '__main__':
     # This is ESSENTIAL for multiprocessing to work in a bundled executable
     # and to prevent pickling errors with 'spawn' start method on Windows.
+    import multiprocessing  # only needed here, for the bundled .exe
     multiprocessing.freeze_support()
 
     root = tk.Tk()
