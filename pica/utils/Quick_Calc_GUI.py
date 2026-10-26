@@ -24,6 +24,8 @@
                functions are there (sin, cos, tan, asin, ..., ln, log, log10,
                exp, sqrt, abs, factorial), with the constants pi, e, tau and
                inf. Trigonometry is in radians unless DEG is selected.
+               Brackets are coloured by depth, the pair at the cursor is
+               lit up, and a bracket with no partner shows in red.
 
  SAFETY:       Lines are parsed, not executed: only arithmetic, names,
                calls of the listed functions (and user functions), and
@@ -36,6 +38,7 @@ import base64
 import io
 import math
 import re
+import threading  # loads matplotlib behind the open window (2 s otherwise)
 import tkinter as tk
 from fractions import Fraction
 from tkinter import ttk
@@ -492,6 +495,7 @@ def line_latex(kind, name, params, tree):
 #  Rendering mathtext to a Tk image
 # =============================================================================
 _IMAGE_CACHE = {}
+_RENDER_LOCK = threading.Lock()
 
 
 def render_math(latex, size=15, color=CLR_TEXT, background=CLR_PANEL2):
@@ -500,6 +504,20 @@ def render_math(latex, size=15, color=CLR_TEXT, background=CLR_PANEL2):
     key = (latex, size, color, background)
     if key in _IMAGE_CACHE:
         return _IMAGE_CACHE[key]
+    with _RENDER_LOCK:
+        if key in _IMAGE_CACHE:     # drawn while this call waited
+            return _IMAGE_CACHE[key]
+        return _render_locked(latex, size, color, background, key)
+
+
+def warm_up_renderer():
+    """Import matplotlib and build its mathtext parser on a worker thread, so
+    the first line typed does not freeze the window for ~2 s. A render asked
+    for meanwhile simply waits on the lock."""
+    threading.Thread(target=render_math, args=(r"\frac{1}{2}",), daemon=True).start()
+
+
+def _render_locked(latex, size, color, background, key):
     data = None
     try:
         from matplotlib.figure import Figure
@@ -522,6 +540,105 @@ def render_math(latex, size=15, color=CLR_TEXT, background=CLR_PANEL2):
 # =============================================================================
 #  The window
 # =============================================================================
+def match_brackets(text):
+    """Pair up the round brackets of a line.
+
+    Returns (depth, partner, unmatched): depth[i] is the nesting level of the
+    bracket at index i (0 = outermost), partner[i] the index of the bracket
+    that closes or opens it, and unmatched the indices with no partner.
+    """
+    depth, partner, stack, unmatched = {}, {}, [], set()
+    for i, c in enumerate(text):
+        if c == '(':
+            stack.append(i)
+        elif c == ')':
+            if stack:
+                j = stack.pop()
+                depth[i] = depth[j] = len(stack)
+                partner[i], partner[j] = j, i
+            else:
+                unmatched.add(i)
+    unmatched.update(stack)
+    return depth, partner, unmatched
+
+
+# One colour per nesting level, cycling; readable on the cream panel.
+BRACKET_COLOURS = ('#2E6DB4', '#3A8A3F', '#9B4FB0', '#C2700A', '#1F8A8A')
+CLR_BRACKET_BAD = '#D32F2F'
+
+
+class _LineEntry(tk.Text):
+    """A one-line Text that answers to the tk.Entry calls the app makes
+    (get, insert, delete, icursor, index with character offsets), so its
+    brackets can be coloured -- an Entry has only one text colour."""
+
+    def __init__(self, parent, **kw):
+        super().__init__(parent, height=1, wrap='none', undo=False, **kw)
+        for k, colour in enumerate(BRACKET_COLOURS):
+            self.tag_configure(f'b{k}', foreground=colour)
+        self.tag_configure('bad', foreground=CLR_TEXT_LIGHT, background=CLR_BRACKET_BAD)
+        self.tag_configure('pair', background=CLR_ACCENT_SOFT, font=('Consolas', 13, 'bold'))
+        self.tag_raise('bad')
+        self.bind('<<Modified>>', self._on_modified)
+        for seq in ('<KeyRelease>', '<ButtonRelease-1>', '<FocusIn>', '<FocusOut>'):
+            self.bind(seq, lambda _e: self.paint_brackets(), add='+')
+        self.bind('<Tab>', lambda _e: (self.tk_focusNext().focus_set(), 'break')[1])
+
+    @staticmethod
+    def _idx(index):
+        if isinstance(index, int):
+            return f'1.0+{index}c'
+        return 'end-1c' if index == 'end' else index
+
+    def get(self, first=None, last=None):
+        if first is None:
+            return super().get('1.0', 'end-1c')
+        return super().get(self._idx(first), self._idx(last) if last is not None else None)
+
+    def insert(self, index, chars, *args):
+        super().insert(self._idx(index), chars, *args)
+
+    def delete(self, first, last=None):
+        super().delete(self._idx(first), self._idx(last) if last is not None else None)
+
+    def icursor(self, index):
+        self.mark_set('insert', self._idx(index))
+
+    def index(self, index):
+        return int(super().index(self._idx(index)).split('.')[1])
+
+    def _on_modified(self, _e=None):
+        if not self.edit_modified():
+            return
+        self.edit_modified(False)
+        # One line only: a paste or Ctrl+O must not add a second.
+        text = self.get()
+        if '\n' in text:
+            pos = self.index('insert')
+            self.delete(0, 'end')
+            super().insert('1.0', text.replace('\n', ' ').rstrip())
+            self.icursor(min(pos, len(self.get())))
+        self.paint_brackets()
+
+    def paint_brackets(self):
+        for tag in self.tag_names():
+            if tag != 'sel':
+                self.tag_remove(tag, '1.0', 'end')
+        depth, partner, unmatched = match_brackets(self.get())
+        for i, d in depth.items():
+            self.tag_add(f'b{d % len(BRACKET_COLOURS)}', self._idx(i))
+        for i in unmatched:
+            self.tag_add('bad', self._idx(i))
+        # Light up the pair next to the cursor while editing.
+        if self.focus_get() is self:
+            pos = self.index('insert')
+            for i in (pos - 1, pos):
+                if i in partner:
+                    self.tag_add('pair', self._idx(i))
+                    self.tag_add('pair', self._idx(partner[i]))
+                    break
+
+
 class _Row:
     """One worksheet line: number, input, typeset preview and result."""
 
@@ -532,13 +649,13 @@ class _Row:
         self.num = tk.Label(self.frame, text="", width=3, bg=CLR_PANEL,
                             fg=CLR_TEXT_DIM, font=('Segoe UI', 10, 'bold'))
         self.num.pack(side='left', fill='y')
-        self.remove = tk.Label(self.frame, text="✕", bg=CLR_PANEL2, fg=CLR_TEXT_DIM,
+        self.remove = tk.Label(self.frame, text="×", bg=CLR_PANEL2, fg=CLR_TEXT_DIM,
                                font=('Segoe UI', 11), cursor='hand2', padx=8)
         self.remove.pack(side='right', fill='y')
         self.remove.bind("<Button-1>", lambda _e: app.delete_row(self))
         body = tk.Frame(self.frame, bg=CLR_PANEL2)
         body.pack(side='left', fill='both', expand=True, padx=(10, 4), pady=6)
-        self.entry = tk.Entry(body, font=('Consolas', 13), bg=CLR_PANEL2, fg=CLR_TEXT,
+        self.entry = _LineEntry(body, font=('Consolas', 13), bg=CLR_PANEL2, fg=CLR_TEXT,
                               relief='flat', bd=0, insertbackground=CLR_ACCENT,
                               highlightthickness=0)
         self.entry.pack(fill='x')
@@ -554,6 +671,7 @@ class _Row:
                                 font=('Consolas', 10))
         self.decimal.pack(side='right', padx=(0, 10))
         self._images = []
+        self._shown = None
         self.value = None
 
         e = self.entry
@@ -563,6 +681,8 @@ class _Row:
         e.bind("<Up>", lambda _e: app.move_focus(self, -1))
         e.bind("<Down>", lambda _e: app.move_focus(self, +1))
         e.bind("<BackSpace>", lambda _e: app.backspace(self))
+        # Also replaces <KeyRelease> for this key, so it reschedules the update.
+        e.bind("<KeyRelease-BackSpace>", lambda _e: app.backspace_released())
         e.bind("<FocusIn>", lambda _e: app.set_active(self))
         for w in (self.frame, body, out, self.math, self.result):
             w.bind("<Button-1>", lambda _e: self.entry.focus_set())
@@ -583,8 +703,14 @@ class _Row:
         return img
 
     def show(self, res):
-        self._images = []
         self.value = res['value']
+        # Every keystroke re-evaluates the whole sheet; leave lines whose
+        # preview and result are unchanged alone instead of re-imaging them.
+        shown = (res['latex'], res['error'], repr(res['value']))
+        if shown == self._shown:
+            return
+        self._shown = shown
+        self._images = []
         # Typeset preview of what was typed.
         img = self._image(res['latex'], 15, CLR_TEXT) if res['latex'] else None
         if img is not None:
@@ -632,11 +758,14 @@ class PICAQuickCalcApp:
         self.rows = []
         self.active = None
         self._pending = None
+        self._bs_held = False       # BackSpace is down (key auto-repeat)
+        self._bs_ate_row = False    # this press already removed a row
         self.degrees = tk.BooleanVar(value=False)
         self._build()
         self.add_row()
         self.rows[0].entry.focus_set()
         self.update_all()
+        warm_up_renderer()
 
     # ------------------------------------------------------------ layout
     def _build(self):
@@ -765,13 +894,27 @@ class PICAQuickCalcApp:
         self.update_all()
 
     def backspace(self, row):
+        # Holding BackSpace auto-repeats. Only a fresh press may remove an
+        # empty row, and once it has, the rest of that hold is swallowed so
+        # it cannot run on into the line above.
+        repeat, self._bs_held = self._bs_held, True
+        if repeat:
+            if self._bs_ate_row or row.entry.get() == "":
+                return 'break'
+            return None
         if row.entry.get() == "" and len(self.rows) > 1:
+            self._bs_ate_row = True
             self.delete_row(row)
             target = self.active.entry if self.active else None
             if target is not None:
                 target.icursor('end')
             return 'break'
         return None
+
+    def backspace_released(self):
+        self._bs_held = False
+        self._bs_ate_row = False
+        self.schedule_update()
 
     def move_focus(self, row, step):
         i = self.rows.index(row) + step
