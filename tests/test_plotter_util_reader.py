@@ -143,11 +143,15 @@ def test_plotter_reads_both_alpha_freqscan_output_formats():
         gui = fscan_test.make_headless_gui(d)
         gui._open_output_files(fscan_test.base_params())
         for k in range(3):
-            gui._write_row([20.0 * 1.4 ** k, 1e3, 2e2, 1e-4, 2e-5, 3e4, 4e5, 5e-6, -6e-7])
-        for path, first in ((gui.txt_filepath, "Freq. [Hz]"), (gui.dat_filepath, "Frequency")):
+            gui._write_row([20.0 * 1.4 ** k, 1e3, 2e2, 1e-4, 2e-5, 3e4, 4e5, 5e-6, -6e-7],
+                           [0.2, -89.9, 1e-9, 3e-5])
+        # WinDETA: Tan(Delta) after Eps'', Phi last (11); PICA adds Cp, G (13)
+        for path, first, n in ((gui.txt_filepath, "Freq. [Hz]", 11),
+                               (gui.dat_filepath, "Frequency", 13)):
             headers, _, data = reader._read_data_from_file(path)
-            assert headers[0] == first and len(headers) == 9, path
-            assert data.shape == (3, 9) and data[2, 0] == 39.2 and data[0, 8] == -6e-7, path
+            assert headers[0] == first and len(headers) == n, path
+            assert data.shape == (3, n) and data[2, 0] == 39.2, path
+            assert data[0, 3] == 0.2 and data[0, 9] == -6e-7 and data[0, 10] == -89.9, path
 
 
 def test_plotter_reads_both_alpha_tscan_output_formats():

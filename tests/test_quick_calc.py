@@ -135,6 +135,14 @@ def test_every_typeset_line_renders():
         assert qc.render_math(res['latex']) is not None, res['latex']
 
 
+def test_brackets_are_paired_by_depth():
+    depth, partner, unmatched = qc.match_brackets("(a+(b))*(c")
+    assert depth == {0: 0, 6: 0, 3: 1, 5: 1}
+    assert partner[0] == 6 and partner[3] == 5
+    assert unmatched == {8}
+    assert qc.match_brackets(")(")[2] == {0, 1}
+
+
 # --------------------------------------------------------------- window
 # Run in a fresh interpreter: other tests in this suite replace
 # sys.modules['tkinter'] with mocks while they run, so a real Tk window in
@@ -166,6 +174,18 @@ app.set_active(app.rows[1])
 app.rows[1].entry.delete(0, "end")
 app.insert("()/()", 4)
 assert app.rows[1].entry.index("insert") == 1
+# Brackets are coloured by depth; a lone one is flagged.
+e = app.rows[1].entry
+e.delete(0, "end")
+e.insert(0, "(1+(2))*(3")
+root.update()
+assert e.get() == "(1+(2))*(3"
+assert "b0" in e.tag_names("1.0") and "b1" in e.tag_names("1.3")
+assert "bad" in e.tag_names("1.8")
+# The input stays one line, even when a newline is pasted in.
+e.insert("end", "\n+1")
+root.update()
+assert "\n" not in e.get(), repr(e.get())
 app.clear_all()
 assert len(app.rows) == 1 and app.rows[0].entry.get() == ""
 root.destroy()

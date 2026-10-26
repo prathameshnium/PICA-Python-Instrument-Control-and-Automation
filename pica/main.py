@@ -51,11 +51,10 @@ PLOTTER_PATH = os.path.join(_UTILS_DIR, "PlotterUtil_GUI.py")
 UTILS_AVAILABLE = (os.path.exists(GPIB_SCANNER_PATH)
                    and os.path.exists(PLOTTER_PATH))
 
-try:
-    from PIL import Image, ImageTk
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
+# Pillow costs ~0.15 s to import and only the logo needs it, so it is looked
+# up here and imported by _load_logo, after the window is up. This file is
+# also re-imported by every spawned module process, which never draws a logo.
+PIL_AVAILABLE = importlib.util.find_spec("PIL") is not None
 
 # Only the flag is needed here; the scripts import pyvisa themselves. Looking
 # it up instead of importing it saves ~0.7 s at every launch.
@@ -617,6 +616,7 @@ class PICALauncherApp:
             return
 
         try:
+            from PIL import Image, ImageTk
             img = Image.open(self.LOGO_FILE)
             img.thumbnail((self.LOGO_SIZE, self.LOGO_SIZE),
                           Image.Resampling.LANCZOS)

@@ -322,31 +322,47 @@ def run_header_format():
                 lines[1] == ref_fixed.rstrip(),
                 f"{lines[1]!r} vs {ref_fixed.rstrip()!r}",
             )
+            # Our header = the reference's nine columns with Tan(Delta)
+            # inserted after Eps'' and Phi appended.
+            ours = lines[2].split("\t")
             check(
-                "column header matches the .dat reference (Zp before Sig)",
-                lines[2] == ref_header.rstrip(),
+                "column header matches the .dat reference (Zp before Sig) "
+                "plus Tan(Delta) and Phi",
+                "\t".join(ours[:3] + ours[4:10]) == ref_header.rstrip()
+                and ours[3] == " Tan(Delta)" and ours[10] == " Phi [Deg]",
                 f"{lines[2]!r}",
             )
         else:
             print(f"  [SKIP] .dat byte-comparison checks: {REFS_MISSING_MSG}")
         check(
             "WINDETA_HEADER has Zp before Sig",
-            fscan.WINDETA_HEADER.split("\t")[5].strip().startswith("Zp'"),
+            fscan.WINDETA_HEADER.split("\t")[6].strip().startswith("Zp'"),
         )
         check(
             "PICA_HEADER order mirrors WINDETA_HEADER (Zp before Sig)",
-            fscan.PICA_HEADER.split("\t")[5:7] == ["Zp'", "Zp''"],
+            fscan.PICA_HEADER.split("\t")[6:8] == ["Zp'", "Zp''"],
         )
 
-        # A written row must be 9 x %.5e in tuple order.
+        # A written row: 11 x %.5e (WinDETA) and 13 (PICA, + Cp, G).
         row = fscan.impedance_to_dielectric(1e5, -1e6, 20.0, gui.c0_farads)
-        gui._write_row(row)
+        extra = fscan.loss_phase_cp_g(1e5, -1e6, 20.0)
+        gui._write_row(row, extra)
+        win_row, pica_row = fscan.file_rows(row, extra)
         data_line = Path(gui.txt_filepath).read_text(
             encoding="utf-8"
         ).splitlines()[3]
         check(
-            "data row is 9 tab-separated %.5e values",
-            data_line == "\t".join(f"{v:.5e}" for v in row),
+            "WinDETA data row is 11 tab-separated %.5e values",
+            len(win_row) == 11
+            and data_line == "\t".join(f"{v:.5e}" for v in win_row),
+        )
+        dat_line = Path(gui.dat_filepath).read_text(
+            encoding="utf-8"
+        ).splitlines()[-1]
+        check(
+            "PICA data row is the WinDETA row plus Cp and G (13 values)",
+            len(pica_row) == 13 and pica_row[:11] == win_row
+            and dat_line == "\t".join(f"{v:.5e}" for v in pica_row),
         )
 
         # Area-mode geometry line lands in the PICA .dat header.
@@ -375,7 +391,7 @@ def run_header_format():
         only_pica = base_params()
         only_pica["save_windeta"] = False
         gui._open_output_files(only_pica)
-        gui._write_row([1.0] * 9)
+        gui._write_row([1.0] * 9, [1.0] * 4)
         check(
             "unticked WinDETA format writes no .txt",
             gui.txt_filepath == ""
@@ -502,9 +518,9 @@ def dry_run_preset(preset_name):
         while not gui.data_queue.empty():
             kind, payload = gui.data_queue.get_nowait()
             if kind == "POINT":
-                _idx, row, _ref = payload
+                _idx, row, extra, _ref = payload
                 rows.append(row)
-                gui._write_row(row)
+                gui._write_row(row, extra)
             elif kind == "DONE":
                 done = True
             elif kind == "ERROR":

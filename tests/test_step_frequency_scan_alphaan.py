@@ -267,7 +267,10 @@ def test_windeta_file_per_step_matches_the_frequency_scan_layout():
 
 def test_the_dielectric_conversion_is_the_frequency_scan_one():
     fscan, _ = load_port("Frequency_Scan_AlphaAN_GUI.py")
-    assert mod.WINDETA_HEADER == fscan.WINDETA_HEADER
+    # Fscan added Tan(Delta) (col 4) and Phi (last) on 27 Oct 2026; the
+    # step scans keep the nine legacy columns until they are ported.
+    cols = fscan.WINDETA_HEADER.split("	")
+    assert mod.WINDETA_HEADER == "	".join(cols[:3] + cols[4:10])
     for zr, zi, f, c0 in ((1e5, -2e6, 1e3, 1e-12), (3.0, 40.0, 1e6, 5e-13)):
         assert (mod.impedance_to_dielectric(zr, zi, f, c0)
                 == fscan.impedance_to_dielectric(zr, zi, f, c0))

@@ -349,9 +349,33 @@ def test_the_new_entries_have_keyboard_accelerators():
 # --------------------------------------------------- v1 parity: the toolbar
 
 def test_the_v1_icon_toolbar_is_present_in_v2():
+    # Same two buttons as v1, drawn from the Segoe MDL2 Assets icon font
+    # instead of v1's emoji (see test_v2_draws_no_emoji for why).
     for icon in ("📈", "📟"):
         assert icon in V1_SOURCE, f"{icon} missing from the v1 launcher"
-        assert icon in V2_SOURCE, f"{icon} missing from the v2 launcher"
+    for name in ("plotter", "scanner"):
+        assert f"text=self._icon('{name}'), width=3" in V2_SOURCE, \
+            f"{name} toolbar button missing from the v2 launcher"
+
+
+def test_every_v2_icon_has_a_bmp_fallback():
+    # PUA icons need Segoe MDL2 Assets; without it the plainer Segoe UI
+    # Symbol character is drawn. Neither may be above U+FFFF.
+    icons = launcher.PICALauncherV2.ICONS
+    for name, (icon, fallback) in icons.items():
+        assert 0xE000 <= ord(icon) <= 0xF8FF, f"{name}: {icon!r} not an MDL2 icon"
+        assert len(fallback) == 1 and ord(fallback) <= 0xFFFF, \
+            f"{name}: fallback {fallback!r} is not a single BMP character"
+    used = set(re.findall(r"self\._icon\('(\w+)'\)", V2_SOURCE))
+    assert used <= set(icons), f"unknown icon names: {used - set(icons)}"
+
+
+def test_v2_draws_no_emoji():
+    # Tk 8.6 on Windows cannot find a character above U+FFFF in any font
+    # and scans every installed font trying: ~1 s at startup on the lab PC
+    # for the first such glyph. The launcher must not use one.
+    emoji = [c for c in V2_SOURCE if ord(c) > 0xFFFF]
+    assert not emoji, f"non-BMP characters in the v2 launcher: {set(emoji)}"
 
 
 def test_the_toolbar_buttons_are_wired_to_the_same_two_utilities():

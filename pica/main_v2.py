@@ -113,11 +113,9 @@ def _visa():
         pyvisa = _pyvisa
     return pyvisa
 
-try:
-    from PIL import Image, ImageTk
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
+# Pillow (~0.15 s) is only needed for the logo: looked up here, imported by
+# _logo_photo once the window is on screen.
+PIL_AVAILABLE = importlib.util.find_spec("PIL") is not None
 
 
 # -----------------------------------------------------------------------------
@@ -1778,6 +1776,24 @@ class PICALauncherV2:
     FONT_SIZE_BASE = PICALauncherApp.FONT_SIZE_BASE + 2      # 12 -> 14
     FONT_BASE = ('Segoe UI', FONT_SIZE_BASE)
     FONT_SMALL = ('Segoe UI', FONT_SIZE_BASE - 2)
+    # Buttons that carry a symbol use Segoe UI Symbol: it holds the Latin
+    # letters too, and a glyph missing from the widget's own font sends Tk
+    # through every installed font looking for it (~0.3 s for the first
+    # one on the lab PC). A character above U+FFFF -- an emoji -- is never
+    # found that way and costs ~1 s, so the launcher uses none.
+    SYMBOL_FAMILY = 'Segoe UI Symbol'
+    # Icon-only buttons draw from Windows' own icon font (Windows 10 and
+    # later): clear pictures, every one a single BMP code point, so they cost
+    # no font search. Where the font is missing the second, plainer Segoe UI
+    # Symbol character is drawn instead. Buttons with a label carry words
+    # only: in the icon font Tk draws the label smaller and off its baseline.
+    ICON_FAMILY = 'Segoe MDL2 Assets'
+    ICONS = {
+        'plotter': ('', '∿'),   # area chart
+        'scanner': ('', '⌁'),   # devices
+        'search': ('', '⌕'),    # magnifier
+        'folder': ('', '▤'),    # open folder
+    }
     FONT_LABEL = ('Segoe UI', FONT_SIZE_BASE - 3, 'bold')
     FONT_WORDMARK = ('Segoe UI', FONT_SIZE_BASE + 10, 'bold')  # v1 FONT_TITLE
     FONT_TITLE = ('Segoe UI', FONT_SIZE_BASE + 6, 'bold')    # v1 FONT_INSTITUTE
@@ -1920,6 +1936,10 @@ class PICALauncherV2:
         # Instrument Status toggle; off by default, read at each scan's start.
         self._skip_secondary = tk.BooleanVar(master=self.root, value=False)
 
+        # One cheap lookup (~5 ms): is the icon font installed?
+        self._icon_font_ok = self.ICON_FAMILY in font.families(self.root)
+        self._icon_family = (self.ICON_FAMILY if self._icon_font_ok
+                             else self.SYMBOL_FAMILY)
         self._setup_styles()
         self._build_menubar()
         self._build_statusbar()
@@ -1949,6 +1969,11 @@ class PICALauncherV2:
         self.open_instrument_status()
 
     # ---------------------------------------------------------------- styling
+    def _icon(self, name):
+        """The character for one of ICONS, in whichever font is installed."""
+        icon, fallback = self.ICONS[name]
+        return icon if self._icon_font_ok else fallback
+
     def _setup_styles(self):
         style = ttk.Style(self.root)
         style.theme_use('clam')
@@ -2005,13 +2030,19 @@ class PICALauncherV2:
                   foreground=[('active', self.CLR_TEXT_LIGHT)])
 
         # Auxiliary / secondary button (outlined)
-        style.configure('Aux.TButton', font=self.FONT_SMALL, foreground=self.CLR_TEXT_DIM,
+        style.configure('Aux.TButton', font=(self.SYMBOL_FAMILY, self.FONT_SIZE_BASE - 2), foreground=self.CLR_TEXT_DIM,
                         background=self.CLR_PANEL, borderwidth=1, padding=(10, 7))
         style.map('Aux.TButton', foreground=[('active', self.CLR_ACCENT)],
                   background=[('active', self.CLR_ACCENT_SOFT)])
+        # Same button showing only an icon
+        style.configure('AuxIcon.TButton', font=(self._icon_family, self.FONT_SIZE_BASE - 2),
+                        foreground=self.CLR_TEXT_DIM, background=self.CLR_PANEL,
+                        borderwidth=1, padding=(10, 7))
+        style.map('AuxIcon.TButton', foreground=[('active', self.CLR_ACCENT)],
+                  background=[('active', self.CLR_ACCENT_SOFT)])
 
         # Icon button for the top-right toolbar (v1 'Icon.TButton')
-        style.configure('Icon.TButton', font=('Segoe UI', self.FONT_SIZE_BASE),
+        style.configure('Icon.TButton', font=(self._icon_family, self.FONT_SIZE_BASE),
                         foreground=self.CLR_TEXT, background=self.CLR_PANEL,
                         borderwidth=0, focusthickness=0, focuscolor=self.CLR_PANEL,
                         padding=(4, 2))
@@ -2251,7 +2282,7 @@ class PICALauncherV2:
                 # than a panel: the log matters when something has gone wrong,
                 # and until then it is a wall of text on the screen a newcomer
                 # is trying to read. Advanced Options has one open inline.
-                ttk.Button(inner, text="🗒 Console", style='Aux.TButton',
+                ttk.Button(inner, text="Console", style='Aux.TButton',
                            command=self.open_console).pack(side='right',
                                                            padx=(12, 0))
             if console:
@@ -2592,13 +2623,13 @@ class PICALauncherV2:
         toolbar = ttk.Frame(parent)
         toolbar.grid(row=0, column=0, sticky='e', pady=(0, 4))
 
-        plotter_button = ttk.Button(toolbar, text="📈", width=3,
+        plotter_button = ttk.Button(toolbar, text=self._icon('plotter'), width=3,
                                     style='Icon.TButton',
                                     command=launch_plotter_utility)
         plotter_button.pack(side='right', padx=(2, 0))
         self._add_tooltip(plotter_button, "Plotter Utility")
 
-        gpib_button = ttk.Button(toolbar, text="📟", width=3,
+        gpib_button = ttk.Button(toolbar, text=self._icon('scanner'), width=3,
                                  style='Icon.TButton',
                                  command=self._launch_gpib_scanner)
         gpib_button.pack(side='right', padx=(0, 2))
@@ -2764,8 +2795,8 @@ class PICALauncherV2:
         box = tk.Frame(frame, bg=self.CLR_PANEL2, highlightthickness=1,
                        highlightbackground=self.CLR_BORDER)
         box.pack(fill='x', padx=14, pady=(0, 8))
-        tk.Label(box, text="🔍", bg=self.CLR_PANEL2, fg=self.CLR_TEXT_DIM,
-                 font=self.FONT_INFO).pack(side='left', padx=(8, 4))
+        tk.Label(box, text=self._icon('search'), bg=self.CLR_PANEL2, fg=self.CLR_TEXT_DIM,
+                 font=(self._icon_family, self.FONT_SIZE_BASE)).pack(side='left', padx=(8, 4))
         var = tk.StringVar()
         entry = tk.Entry(box, textvariable=var, relief='flat',
                          bg=self.CLR_PANEL2, fg=self.CLR_TEXT,
@@ -3279,7 +3310,13 @@ class PICALauncherV2:
         self.logo_canvas = tk.Canvas(pad, width=self.LOGO_SIZE, height=self.LOGO_SIZE,
                                      bg=self.CLR_PANEL, highlightthickness=0)
         self.logo_canvas.pack(anchor='center', pady=(0, 12))
-        self.root.after(60, self._load_logo)
+        # Loaded once the canvas has first been painted, not on a timer: the
+        # window takes ~0.4 s to map maximised, and a timer fires inside that
+        # gap and holds back the first paint by the cost of loading Pillow.
+        def _first_paint(_event):
+            self.logo_canvas.unbind('<Expose>', bind_id)
+            self.root.after_idle(self._load_logo)
+        bind_id = self.logo_canvas.bind('<Expose>', _first_paint)
 
         # Wraps to the rail width rather than at hardcoded newlines, so the
         # institute name can carry a larger size without overflowing.
@@ -3326,6 +3363,7 @@ class PICALauncherV2:
             self.log("Logo not loaded: PIL unavailable or file missing.")
             return None
         try:
+            from PIL import Image, ImageTk
             img = Image.open(self.LOGO_FILE)
             img.thumbnail((size, size), Image.Resampling.LANCZOS)
             # Explicit master: without it the image is registered with
@@ -3475,7 +3513,7 @@ class PICALauncherV2:
                  font=self.FONT_CARD_TITLE, anchor='w', justify='left',
                  wraplength=wrap).pack(side='left', anchor='w')
         first_key = cat['modules'][0][1]
-        ttk.Button(top, text="📁", style='Aux.TButton', width=3,
+        ttk.Button(top, text=self._icon('folder'), style='AuxIcon.TButton', width=3,
                    command=lambda k=first_key: self.open_script_folder(k)).pack(side='right')
 
         meta = tk.Frame(head, bg=self.CLR_PANEL)
@@ -3580,7 +3618,7 @@ class PICALauncherV2:
                                      style='Launch.TButton', state='disabled',
                                      command=self._launch_selected)
         self.launch_btn.pack(side='left', fill='x', expand=True)
-        self.folder_btn = ttk.Button(actions, text="📁 Folder", style='Aux.TButton',
+        self.folder_btn = ttk.Button(actions, text="Folder", style='Aux.TButton',
                                      state='disabled', command=self._folder_selected)
         self.folder_btn.pack(side='left', padx=(8, 0))
 
@@ -3802,9 +3840,9 @@ class PICALauncherV2:
         strip['reload_btn'] = ttk.Button(head, text="⟳ Reload", style='Aux.TButton',
                                          command=self.start_scan)
         strip['reload_btn'].pack(side='right')
-        ttk.Button(head, text="📟 Full VISA / GPIB Scanner", style='Aux.TButton',
+        ttk.Button(head, text="Full VISA / GPIB Scanner", style='Aux.TButton',
                    command=self._launch_gpib_scanner).pack(side='right', padx=(0, 8))
-        ttk.Button(head, text="📖 Address Book", style='Aux.TButton',
+        ttk.Button(head, text="Address Book", style='Aux.TButton',
                    command=self._open_address_book).pack(side='right', padx=(0, 8))
 
         tk.Label(win, text="One read-only pass over the bus, taken at startup and "
@@ -4016,12 +4054,12 @@ class PICALauncherV2:
         # so they sit in the far corner.
         adv_tools = tk.Frame(head, bg=self.CLR_APP)
         adv_tools.pack(side='right', fill='y', padx=(14, 0))
-        adv_plotter = ttk.Button(adv_tools, text="📈", width=3,
+        adv_plotter = ttk.Button(adv_tools, text=self._icon('plotter'), width=3,
                                  style='Icon.TButton',
                                  command=launch_plotter_utility)
         adv_plotter.pack(side='right', padx=(2, 0))
         self._add_tooltip(adv_plotter, "Plotter Utility")
-        adv_scanner = ttk.Button(adv_tools, text="📟", width=3,
+        adv_scanner = ttk.Button(adv_tools, text=self._icon('scanner'), width=3,
                                  style='Icon.TButton',
                                  command=self._launch_gpib_scanner)
         adv_scanner.pack(side='right', padx=(0, 2))
