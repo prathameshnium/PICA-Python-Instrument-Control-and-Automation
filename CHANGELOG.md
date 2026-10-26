@@ -14,6 +14,12 @@ All notable changes to PICA are documented here. The format follows [Keep a Chan
 ### Changed
 - **Smaller install**: scipy is no longer a required dependency (PICA never imported it), and the README screenshots and unused logos no longer ship in the package.
 - **Alpha-AN frequency scan**: window shows the edition (32-bit or 64-bit); REF calibration explains itself before starting.
+- **Launcher**: `pica-gui` and `python run_pica.py` now open launcher v2 as Advanced Options alone (every module on one screen, with the Instrument Status window). A Home button brings up Quick Select; closing Advanced Options quits; the standalone VISA/GPIB scanner is no longer auto-opened at startup. `python run_pica_v2.py` and `python -m pica.main_v2` still open on Quick Select.
+- **Classic launcher**: outdated, kept as the legacy launcher page (View > Legacy Launcher (v1, outdated), `legacy_stuff/run_pica_legacy.py` or `python -m pica.main`).
+
+### Fixed
+- **Classic launcher layout**: module grid no longer runs off the right edge, and the info panel no longer takes half the screen.
+- **Launcher**: Advanced Options opened from Quick Select waits for the launcher's own bus scan before auto-opening the standalone scanner, so two processes never scan the bus at once.
 
 ## [1.0.7] - 2026-10-17
 

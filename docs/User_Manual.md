@@ -249,7 +249,16 @@ pica-gui
     pica-gui
     ```
 
-    The PICA Launcher provides a centralized dashboard for all measurement suites. While each module can be launched directly from its card, the launcher also provides a quick way to access the underlying scripts for editing. For developer convenience, each measurement suite card includes a folder button in the top-right corner. Clicking this provides a shortcut to the module's Python scripts, allowing for rapid modifications.
+    It opens on **Advanced Options**, the full card grid: every module PICA
+    ships, grouped by measurement range and instrument, with the
+    **Instrument Status** window beside it. Closing Advanced Options quits
+    PICA. Each module can be launched directly from its card, and for
+    developer convenience each card has a folder button in its top-right
+    corner, a shortcut to the module's Python scripts for rapid
+    modifications. The **Home** button (house icon, top right of the window)
+    brings up **Quick Select**, the guided route. From a source checkout,
+    `python run_pica.py` does the same as `pica-gui`. See
+    [Launcher v2](#55-launcher-v2-quick-select-and-advanced-options).
 
     > You can also run any of the individual GUI measurement modules independently. This is useful for quickly accessing a specific measurement without opening the main launcher. To do this, simply run the Python script for the desired module.
     > For example:
@@ -257,23 +266,21 @@ pica-gui
     > python -m pica.keithley.k6517b.High_Resistance.IV_K6517B_GUI
     > ```
 
-2.  **Launcher v2 (in testing)**
-    A second launcher ships alongside the classic one. It opens on the
-    **Quick Select** screen — three dropdowns (category, module, protocol)
-    that narrow a measurement down in plain language — and keeps the full card
-    grid in an **Advanced Options** window (`Ctrl+Shift+A`, or the View
-    menu). Advanced Options lists every module unfiltered, including those
-    Quick Select leaves out (the Lakeshore 340 variants and most Cryo-con 34
-    ones, the temperature utilities, the bench
-    multimeter, the pressure log, the function generator, the Keithley 2400
-    memristor modules and the diagnostic tools). See
-    [Launcher v2](#55-launcher-v2-quick-select-and-advanced-options).
+2.  **Opening on Quick Select**
+    **Quick Select** is three dropdowns (category, module, protocol) that
+    narrow a measurement down in plain language. It leaves some modules out
+    (the Lakeshore 340 variants and most Cryo-con 34 ones, the temperature
+    utilities, the bench multimeter, the pressure log, the function
+    generator, the Keithley 2400 memristor modules and the diagnostic tools);
+    Advanced Options lists them all. To open the launcher on Quick Select
+    instead of Advanced Options:
     ```bash
     python -m pica.main_v2
     ```
     This works after `pip install pica-suite`. From a source checkout,
-    `python run_pica_v2.py` does the same. `pica-gui` always opens the
-    classic launcher.
+    `python run_pica_v2.py` does the same.
+    The classic launcher is outdated and kept as the legacy launcher page:
+    View > Legacy Launcher (v1, outdated), or `python legacy_stuff/run_pica_legacy.py`.
 
 3.  **Command Line Interface (CLI)**
     For headless operation, without the GUI.
@@ -322,9 +329,9 @@ pip install pica-suite
 pica-gui
 ```
 
-The launcher lists every measurement module grouped by instrument. To try the newer launcher instead, run `python -m pica.main_v2`. It opens on **Quick Select**, where you choose a measurement in three steps (category, module, protocol).
+The launcher opens on **Advanced Options**, which lists every measurement module grouped by instrument. The **Home** button (top right) brings up **Quick Select**, where you choose a measurement in three steps (category, module, protocol).
 
-**2. Open a measurement module.** Click any module card, for example **K2400 I-V**. The module opens in its own window and shows its settings form, live plot area and console. Fill in the form to see what a run asks for. Starting a run needs a connected instrument, so stop at the form.
+**2. Open a measurement module.** Click any module on a card, for example **K2400 I-V**. The module opens in its own window and shows its settings form, live plot area and console. Fill in the form to see what a run asks for. Starting a run needs a connected instrument, so stop at the form.
 
 **3. Look for instruments.** Open the **VISA/GPIB scanner** from the launcher's top-right toolbar. With nothing connected it finds no instruments; on a lab PC it lists every instrument on the bus.
 
@@ -358,9 +365,9 @@ python -B -m pytest -p no:cacheprovider
 
 *File Reference: `pica/utils/GPIB_Instrument_Scanner_GUI.py`*
 
-Launched automatically at startup by the classic launcher (`pica-gui`), and accessible from the modules, this utility scans for connected hardware. It uses `ResourceManager.list_resources()` to find devices and sends a standard `*IDN?` query to verify communication. This allows users to verify their hardware configuration before starting any experiment. The VISA scanner also includes an address guide (a reference table kept in the script, which a lab can edit to match its rack).
+Reachable from the launcher's toolbar and Tools menu and from the modules, this utility scans for connected hardware. It uses `ResourceManager.list_resources()` to find devices and sends a standard `*IDN?` query to verify communication. This allows users to verify their hardware configuration before starting any experiment. The VISA scanner also includes an address guide (a reference table kept in the script, which a lab can edit to match its rack).
 
-In the classic launcher (`pica-gui`), the VISA/GPIB scanner opens automatically about half a second after startup; launcher v2 instead opens it with Advanced Options (§5.5). This design choice is motivated by the fact that initiating a measurement without first verifying the instrument connection is highly likely to fail and may result in non-informative error messages, such as a VISA connection timeout.
+The launcher (`pica-gui`) does not open it at startup: its own Instrument Status window already scans the bus, and a second process scanning at the same time is avoided. Advanced Options opened from Quick Select does open it about 1.5 s later, once the launcher's own scan has finished (§5.5). The outdated classic launcher (`python legacy_stuff/run_pica_legacy.py`) still opens it about half a second after startup. Checking the bus first is motivated by the fact that initiating a measurement without first verifying the instrument connection is highly likely to fail and may result in non-informative error messages, such as a VISA connection timeout.
 
 :::{figure} Images/screenshots/01_GPIB_Scanner.png
 :alt: GPIB Scanner
@@ -403,10 +410,12 @@ At the right end of the header bar, at the top of the window, two icon buttons o
 
 ### 5.5 Launcher v2: Quick Select and Advanced Options
 
-*File Reference: `pica/main_v2.py` (run with `python -m pica.main_v2`, or `python run_pica_v2.py` from a source checkout)*
+*File Reference: `pica/main_v2.py` (run with `pica-gui`, or `python run_pica.py` from a source checkout, to open on Advanced Options; `python -m pica.main_v2` or `python run_pica_v2.py` to open on Quick Select)*
 
-Launcher v2 is a second dashboard, developed alongside the classic launcher
-(`pica-gui`), which it does not replace. It exists because PICA has two kinds
+Launcher v2 is PICA's launcher (`pica-gui`). It replaces the classic
+launcher (`pica/main.py`), which is outdated and kept as the legacy launcher
+page (View > Legacy Launcher (v1, outdated), or
+`python legacy_stuff/run_pica_legacy.py`). It exists because PICA has two kinds
 of user who want opposite things from it: someone meeting the instrument rack
 for the first time wants to be asked what they are measuring, and someone who
 runs the rack every day wants every module on one screen. v2 gives each a
@@ -465,7 +474,11 @@ pressure log, the function generator and the memristor modules, which Quick
 Select does not list. The window opens maximised and reflows its
 cards into up to four columns, so a wide screen shows more of them before you
 scroll; its bottom strip is the compact one, with the Instrument Status button
-in place of the chips.
+in place of the chips. A **Home** button (house icon, beside the scanner
+and plotter icons in its top-right corner) brings the Quick Select window to
+the front. `pica-gui` and `python run_pica.py` open the launcher as this
+window alone: Quick Select stays hidden until Home brings it up, closing
+Advanced Options quits PICA, and the standalone scanner is not opened.
 
 **Hover cards (Advanced Options).** Rest the pointer on any module row for
 about a second and a card opens beside it. It is headed by the program's
@@ -511,7 +524,8 @@ written at startup, and every open view updates together.
 **View menu.** Every window the launcher can show is in one place: Main
 Window, Advanced Options (`Ctrl+Shift+A`), Search Modules (`Ctrl+F`) and
 Console, followed by the two other ways into PICA, the text-menu **PICA CLI**
-(opened in a terminal window) and the **Legacy Launcher (v1)**.
+(opened in a terminal window) and the **Legacy Launcher (v1, outdated)**,
+the classic launcher (also `python legacy_stuff/run_pica_legacy.py`).
 
 **PICA Utils (`Ctrl+U`, or Tools → PICA Utils…).** Every standalone utility
 in one window, grouped as Plotting, PPMS Utilities, Communication and
@@ -571,8 +585,10 @@ deliberate rescan. The window is the launcher's own VISA scanner:
   (§5.1), unchanged, for its address guide (the SCPI Console, in the Tools
   menu, is the place to send commands by hand). It is not opened at startup,
   because it repeats, in a second process and a second pass over the bus,
-  what this window already shows. It does open about 1.5 s after Advanced
-  Options is opened, and it is in the Tools menu and on the toolbar.
+  what this window already shows. When Advanced Options is opened from
+  Quick Select it does open about 1.5 s later (waiting for the launcher's
+  own scan to finish), but not when `pica-gui` or `run_pica.py` start in
+  Advanced Options. It is in the Tools menu and on the toolbar.
 
 :::{important}
 The strip is filled by a single read-only scan at startup, and again only when
@@ -1096,9 +1112,10 @@ PICA is used through its GUI, not as a function library. There is no importable 
 
 | Call | What it does |
 | :--- | :--- |
-| `pica-gui` or `python -m pica.main` | The launcher (`pica.main:main`). Opens the Tk window that lists every module grouped by instrument. |
-| `python -m pica.main_v2` | The Quick Select launcher (`pica.main_v2:main`): category, module, protocol in three steps. |
-| `pica-cli` | A text menu (`pica.cli:main`) that runs a module as a subprocess with optional arguments. Kept for legacy headless use; the GUI launchers are the maintained path. |
+| `pica-gui` | The launcher (`pica.main_v2:main_advanced`), opened as Advanced Options alone: every module grouped by instrument. Home brings up Quick Select; closing Advanced Options quits. From a source checkout, `python run_pica.py` does the same. |
+| `python -m pica.main_v2` | The same launcher (`pica.main_v2:main`) opened on Quick Select (category, module, protocol in three steps). From a source checkout, `python run_pica_v2.py`. |
+| `python -m pica.main` or `python legacy_stuff/run_pica_legacy.py` | The outdated classic launcher (`pica.main:main`), kept as the legacy launcher page (also View > Legacy Launcher in the launcher). Lists every module grouped by instrument. |
+| `pica-cli` | A text menu (`pica.cli:main`) that runs a module as a subprocess with optional arguments. Kept for legacy headless use; the GUI launcher (`pica-gui`) is the maintained path. |
 | `python pica/<family>/<...>/<Module>_GUI.py` | Runs one module directly. Every module is its own program and imports nothing from `pica`. |
 | `pica.__version__` | The release number. It lives only in `pica/__init__.py`; `pyproject.toml` reads it from there. |
 
@@ -1117,7 +1134,7 @@ if __name__ == "__main__":  # required on Windows, where child processes re-impo
 
 Two dictionaries describe every module without opening it. They are the closest thing PICA has to API metadata.
 
-* `pica.main.PICALauncherApp.SCRIPT_PATHS` maps a module name to the absolute path of its file.
+* `pica.main.PICALauncherApp.SCRIPT_PATHS` maps a module name to the absolute path of its file. It lives in the outdated classic launcher's module but is the registry launcher v2 uses too.
 * `pica.module_info.MODULE_INFO` maps the same name to a dict with `what` (what the module measures and how), `instruments` (which instruments it drives), `inputs` (the settings its form asks for) and, for some modules, `note`.
 
 ```python
@@ -1220,8 +1237,9 @@ This project is licensed under the MIT License - see the [LICENSE](https://githu
 For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.7; test files and assets abridged).
 
 :::{note}
-Adding a new module to the main launcher into the GUI requires modifying `pica/main.py`.
-For launcher v2, add the same module to `CATALOG` in `pica/main_v2.py` so it
+To add a new module to the launcher, register its file in `SCRIPT_PATHS` in
+`pica/main.py` (the registry the launcher shares with the outdated classic
+launcher), then add it to `CATALOG` in `pica/main_v2.py` so it
 appears in Advanced Options, and to `QUICK_CATALOG` in the same file if it also
 belongs on the Quick Select screen. Then describe it in `pica/module_info.py`
 (three lines: what it measures, which instruments it opens, what it asks for)
@@ -1249,8 +1267,10 @@ PICA (Root Directory)/
     pyproject.toml
     requirements-dev.txt
     requirements.txt
-    run_pica.py
-    run_pica_v2.py
+    run_pica.py             <-- Launcher, opens on Advanced Options (as pica-gui)
+    run_pica_v2.py          <-- Launcher, opens on Quick Select
+    legacy_stuff/
+        run_pica_legacy.py  <-- Classic launcher (outdated)
     setup.py
     .github/
         workflows/
@@ -1280,8 +1300,8 @@ PICA (Root Directory)/
         index.html
     pica/
         cli.py
-        main.py                 <-- Legacy launcher (superseded by main_v2.py)
-        main_v2.py
+        main.py                 <-- Classic launcher (outdated); SCRIPT_PATHS used by main_v2
+        main_v2.py              <-- Launcher (pica-gui)
         module_info.py          <-- Per-program descriptions, full names + fuzzy search (hover cards, Ctrl+F)
         assets/                 <-- Images, logos, icons
         PPMS/                   <-- PPMS helper utilities

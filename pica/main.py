@@ -4,10 +4,13 @@
 
  PURPOSE:      A graphical dashboard for launching PICA measurement scripts.
 
- STATUS:       Legacy. Superseded by launcher v2 (pica/main_v2.py, run with
-               `python run_pica_v2.py`). Kept because main_v2 imports its
-               shared helpers from here and the `pica-gui` entry point still
-               opens it. New modules go into CATALOG in main_v2.py.
+ STATUS:       OUTDATED. Replaced by launcher v2 (pica/main_v2.py), which
+               `pica-gui`, run_pica.py and run_pica_v2.py all open now.
+               Kept because main_v2 imports its shared helpers from here
+               (SCRIPT_PATHS among them); open it with View > Legacy
+               Launcher, legacy_stuff/run_pica_legacy.py or
+               python -m pica.main. A new module needs a SCRIPT_PATHS entry
+               here plus a CATALOG (and QUICK_CATALOG) entry in main_v2.py.
 
  AUTHOR:       Prathamesh Deshmukh
  GUIDED BY:    Dr. Sudip Mukherjee
@@ -71,6 +74,9 @@ def run_script_process(script_path, argv=None):
     'argv' is an optional list of command-line arguments (e.g. data files to
     pre-load); it is placed in sys.argv exactly as a shell invocation would.
     """
+    # PICA icon on the module's windows (shared helper, Tk-free to import).
+    from pica.spawn_target import use_pica_icon
+    use_pica_icon()
     try:
         os.chdir(os.path.dirname(script_path))
         sys.argv = [script_path] + list(argv or [])
@@ -333,7 +339,8 @@ class PICALauncherApp:
     def __init__(self, root):
         """Constructor to initialize the main application window."""
         self.root = root
-        self.root.title(f"PICA Launcher - v{self.PROGRAM_VERSION}")
+        self.root.title(
+            f"PICA Launcher (Legacy, outdated) - v{self.PROGRAM_VERSION}")
         self.root.geometry("1100x750")
         try:
             self.root.state('zoomed')
@@ -488,6 +495,9 @@ class PICALauncherApp:
             info_frame,
             text="UGC-DAE Consortium for Scientific Research, Mumbai Centre",
             font=self.FONT_INSTITUTE,
+            # Wrapped like the description below: on one line it set the
+            # whole info panel ~880 px wide and squeezed the module grid.
+            wraplength=360,
             justify='center',
             anchor='center').pack(
             pady=(0, 15))
@@ -605,6 +615,9 @@ class PICALauncherApp:
             wrap='word',
             bd=0,
             relief='flat',
+            # Tk's default 80 characters set the info panel ~740 px wide;
+            # 40 asks for the panel's own width, and fill stretches it.
+            width=40,
             height=7)
         self.console_widget.pack(fill='both', expand=True)
         return info_frame
@@ -750,7 +763,11 @@ class PICALauncherApp:
             canvas.unbind_all("<Button-4>")
             canvas.unbind_all("<Button-5>")
 
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        # Tagged 'frame' so the <Configure> handler below can fit it to the
+        # canvas width; untagged, the grid kept its natural width and its
+        # right-hand column ran off the edge of the window.
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw",
+                             tags='frame')
         canvas.configure(yscrollcommand=scrollbar.set)
 
         # Bind scrolling only while the pointer is over this panel, so it
@@ -767,6 +784,11 @@ class PICALauncherApp:
             canvas.configure(scrollregion=canvas.bbox("all"))
 
         canvas.bind("<Configure>", _configure_scrollable_frame)
+        # The grid's height changes as it is laid out and re-wrapped, after
+        # the canvas last resized: keep the scroll range in step with it.
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
 
         # --- Container for the two columns inside the scrollable frame ---
         scrollable_frame.grid_columnconfigure(
@@ -778,6 +800,11 @@ class PICALauncherApp:
             row=0, column=1, sticky='new', padx=(
                 5, 5), pady=(
                 0, 15))
+        # The left_col / right_col below are only a starting hint: each
+        # suite goes to whichever column is shorter so far (counted in rows,
+        # see _create_suite_frame). Hard-wired, the left column held three
+        # suites and the right one the other ~80 rows.
+        self._suite_columns = [[left_col, 0], [right_col, 0]]
 
         # --- Left Column Suites ---
         self._create_suite_frame(left_col,
@@ -1014,6 +1041,14 @@ class PICALauncherApp:
             buttons,
             experimental=False):
         """Helper to create a measurement suite frame, reducing code duplication."""
+        columns = getattr(self, '_suite_columns', None)
+        if columns:
+            # Balance the two columns: a suite is its header (title, badge
+            # row and a wrapped instrument line, ~3 rows) plus one row per
+            # button, so the row count stands in for its height.
+            target = min(columns, key=lambda c: c[1])
+            parent = target[0]
+            target[1] += 3 + len(buttons) + (1 if experimental else 0)
         frame = ttk.LabelFrame(parent, text=title, style='TLabelframe')
         frame.pack(fill='x', expand=True, pady=5)
         frame.columnconfigure(0, weight=1)
@@ -1449,6 +1484,8 @@ class PICALauncherApp:
 
 def main():
     """Initializes and runs the main application."""
+    from pica.spawn_target import use_pica_icon
+    use_pica_icon()
     root = tk.Tk()
     PICALauncherApp(root)
     root.mainloop()

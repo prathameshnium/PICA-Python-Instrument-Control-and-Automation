@@ -6,13 +6,22 @@
                The main window is the Quick Select view: category -> module
                -> protocol, three dropdowns and a plain-language description
                of each choice. Everything PICA can launch lives in the
-               Advanced Options window (Tools menu, or Ctrl+Shift+A), which
+               Advanced Options window (View menu, or Ctrl+Shift+A), which
                keeps the full card grid and the whole instrument list.
                Both windows carry a status strip along the bottom edge: a
                temperature reading, a pressure placeholder, and -- on Quick
                Select -- a button that opens the Instrument Status window,
                where the per-instrument lights and the raw VISA/GPIB scan
                table live.
+
+ STATUS:       The PICA launcher. `pica-gui` and run_pica.py open it as
+               Advanced Options alone (main_advanced / start_in_advanced):
+               the Quick Select window stays hidden until the Home button
+               brings it up, closing Advanced Options quits, and the
+               standalone scanner is not auto-opened. run_pica_v2.py and
+               `python -m pica.main_v2` open it on Quick Select. The classic
+               launcher (pica/main.py) is outdated, kept as View > Legacy
+               Launcher and legacy_stuff/run_pica_legacy.py.
 
  STATUS SAFETY (important):
                The launcher talks to the instruments ONLY at startup and when
@@ -86,7 +95,7 @@ from pica.main import (
 )
 # The spawn target comes from a Tk-free module so a launched program does not
 # import tkinter, PIL and pica.main just to unpickle it (pica/spawn_target.py).
-from pica.spawn_target import run_script_process
+from pica.spawn_target import run_script_process, use_pica_icon
 # What each program measures, which instruments it opens and what it asks
 # for -- the text behind the hover card in Advanced Options and the corpus
 # the Ctrl+F search ranks. Tk-free, so it is tested on its own.
@@ -1793,6 +1802,7 @@ class PICALauncherV2:
         'scanner': ('', '⌁'),   # devices
         'search': ('', '⌕'),    # magnifier
         'folder': ('', '▤'),    # open folder
+        'home': ('', '⌂'),    # house
     }
     FONT_LABEL = ('Segoe UI', FONT_SIZE_BASE - 3, 'bold')
     FONT_WORDMARK = ('Segoe UI', FONT_SIZE_BASE + 10, 'bold')  # v1 FONT_TITLE
@@ -1838,8 +1848,11 @@ class PICALauncherV2:
     # single column. The fourth column is what keeps the taller cards off the
     # scrollbar on a wide monitor -- with fourteen cards, going from three
     # columns to four takes a column from five cards deep to four.
+    # 460, not 380: at 380 a 1366 px screen got three ~420 px columns, too
+    # narrow for the longest module rows (buttons cannot wrap, so the
+    # Diagnostic Tools rows were cut). 1366 now gets two.
     MAX_CARD_COLS = 4
-    CARD_MIN_WIDTH = 380
+    CARD_MIN_WIDTH = 460
     CARD_HEADER_ROWS = 4        # a card's title band, in module-row heights
     # Hover card in Advanced Options: how long the pointer rests on a module
     # row before the card opens (a pass across the grid must not throw up a
@@ -1902,6 +1915,9 @@ class PICALauncherV2:
         self._strips = []
         self._last_scan = None
         self._adv_win = None
+        # Set by start_in_advanced(): the main window stays hidden and
+        # Advanced Options is the whole launcher (pica-gui, run_pica.py).
+        self._advanced_start = False
         self._status_win = None
         self._utils_win = None
         # Instruments the current Quick Select choice needs: the chips on the
@@ -2179,7 +2195,7 @@ class PICALauncherV2:
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
         # View: every window the launcher can show, and the other two ways
-        # in to PICA (the terminal CLI and the classic v1 launcher).
+        # in to PICA (the terminal CLI and the outdated classic v1 launcher).
         view_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
         view_menu.add_command(label="Main Window", command=self._focus_main)
         view_menu.add_command(label="Advanced Options…", accelerator="Ctrl+Shift+A",
@@ -2189,7 +2205,8 @@ class PICALauncherV2:
         view_menu.add_command(label="Console", command=self.open_console)
         view_menu.add_separator()
         view_menu.add_command(label="PICA CLI (Terminal)", command=self.open_cli)
-        view_menu.add_command(label="Legacy Launcher (v1)", command=self.open_legacy_launcher)
+        view_menu.add_command(label="Legacy Launcher (v1, outdated)",
+                              command=self.open_legacy_launcher)
         menubar.add_cascade(label="View", menu=view_menu)
 
         help_menu = tk.Menu(menubar, tearoff=0, font=self.FONT_MENU)
@@ -2626,6 +2643,38 @@ class PICALauncherV2:
         # name of its own -- it stopped being one view among several when
         # Browse All Modules became the Advanced Options window (Ctrl+Shift+A).
         self._build_quick(right)
+
+    def start_in_advanced(self):
+        """Open as Advanced Options alone, the main window hidden.
+
+        pica-gui and run_pica.py start here. The Quick Select window stays
+        withdrawn until Home brings it up, closing Advanced Options while it
+        is still hidden quits PICA, and the standalone VISA/GPIB scanner is
+        not auto-opened (the Instrument Status window already shows the bus).
+        """
+        self._advanced_start = True
+        self.root.withdraw()
+        # After the startup Instrument Status window (600 ms), so Advanced
+        # Options lands on top of it.
+        self.root.after(700, self.open_advanced)
+
+    def _main_hidden(self):
+        try:
+            return self.root.state() == 'withdrawn'
+        except tk.TclError:
+            return False
+
+    def _dialog_master(self):
+        """The window a dialog is made transient to.
+
+        On Windows a window transient to a withdrawn master is not shown, so
+        while the main window is hidden (start_in_advanced) dialogs belong to
+        Advanced Options instead.
+        """
+        if (self._main_hidden() and self._adv_win is not None
+                and self._adv_win.winfo_exists()):
+            return self._adv_win
+        return self.root
 
     def _focus_main(self):
         """Bring the main (Quick Select) window back to the front."""
@@ -3532,6 +3581,26 @@ class PICALauncherV2:
         self._render_cards()
         self.log("Module list refreshed.")
 
+    def _fit_row_label(self, text, width):
+        """Break a module row's label onto more lines, at spaces, if it is
+        wider than `width` px. ttk buttons cannot wrap, so a row too long
+        for its column was cut off at the card's edge. `width` is the title
+        wrap plus the 90 px it leaves for the folder button, less the row's
+        strip, padding and the card's insets."""
+        measure = font.Font(font=self.FONT_MOD).measure
+        if measure(text) <= width:
+            return text
+        lines, line = [], ""
+        for word in text.split(" "):
+            trial = f"{line} {word}" if line else word
+            if line and measure(trial) > width:
+                lines.append(line)
+                line = word
+            else:
+                line = trial
+        lines.append(line)
+        return "\n".join(lines)
+
     def _make_card(self, parent, cat, wrap=320):
         card = tk.Frame(parent, bg=self.CLR_PANEL, highlightthickness=1,
                         highlightbackground=self.CLR_BORDER)
@@ -3552,11 +3621,25 @@ class PICALauncherV2:
         badge = tk.Label(meta, text=cat['type'].upper(), bg=self.CLR_ACCENT,
                          fg=self.CLR_TEXT_DARK, font=self.FONT_LABEL, padx=6, pady=2)
         badge.pack(side='left')
-        tk.Label(meta, text=cat['instruments'], bg=self.CLR_PANEL, fg=self.CLR_TEXT_DIM,
-                 font=self.FONT_CARD_META).pack(side='left', padx=(8, 0))
+        # Badges first, so a long instrument line can never squeeze them:
+        # packed after it, EXPERIMENTAL was cut down to an "M".
         if cat.get('experimental'):
             tk.Label(meta, text="EXPERIMENTAL", bg=self.CLR_WARN, fg=self.CLR_TEXT_LIGHT,
                      font=self.FONT_LABEL, padx=6, pady=2).pack(side='left', padx=(8, 0))
+        # The instrument line sits beside the badges when it fits, and on its
+        # own wrapped line under them when it does not. A one-line label that
+        # did not fit was clipped at both ends ("221 · K2182 · ... or Cryocon").
+        meta.update_idletasks()
+        text_w = font.Font(font=self.FONT_CARD_META).measure(cat['instruments'])
+        if meta.winfo_reqwidth() + 8 + text_w <= wrap:
+            tk.Label(meta, text=cat['instruments'], bg=self.CLR_PANEL,
+                     fg=self.CLR_TEXT_DIM, font=self.FONT_CARD_META
+                     ).pack(side='left', padx=(8, 0))
+        else:
+            tk.Label(head, text=cat['instruments'], bg=self.CLR_PANEL,
+                     fg=self.CLR_TEXT_DIM, font=self.FONT_CARD_META,
+                     anchor='w', justify='left', wraplength=wrap
+                     ).pack(fill='x', pady=(4, 0))
 
         tk.Frame(card, bg=self.CLR_BORDER, height=1).pack(fill='x', padx=0, pady=(6, 0))
 
@@ -3576,7 +3659,8 @@ class PICALauncherV2:
             row.pack(fill='x')
             strip = tk.Frame(row, bg=family_colors.get(family, self.CLR_PANEL2), width=5)
             strip.pack(side='left', fill='y')
-            button = ttk.Button(row, text=label, style='Mod.TButton',
+            button = ttk.Button(row, text=self._fit_row_label(label, wrap + 30),
+                                style='Mod.TButton',
                                 command=lambda k=key, a=action: a(k))
             button._pica_key = key      # which program this row launches
             button.pack(side='left', fill='x', expand=True)
@@ -4061,24 +4145,34 @@ class PICALauncherV2:
         head.pack(fill='x', padx=18, pady=(12, 0))
 
         brand = tk.Frame(head, bg=self.CLR_APP)
-        brand.pack(side='left', fill='y')
+        # Packed after the title block and the icons (below), so on a narrow
+        # window the institute name wraps instead of squeezing the title.
         self._adv_logo_image = self._logo_photo(self.ADV_LOGO_SIZE)
         if self._adv_logo_image is not None:
             tk.Label(brand, image=self._adv_logo_image, bg=self.CLR_APP
                      ).pack(side='left', padx=(0, 14))
         words = tk.Frame(brand, bg=self.CLR_APP)
-        words.pack(side='left', fill='y')
+        words.pack(side='left', fill='both', expand=True)
         # Two-line stack centred on the logo: inner frame packed with
         # expand=True so the lines sit in the middle of the logo's height.
         lines = tk.Frame(words, bg=self.CLR_APP)
-        lines.pack(expand=True)
-        tk.Label(lines, text="UGC-DAE Consortium for Scientific Research",
-                 bg=self.CLR_APP, fg=self.CLR_TEXT,
-                 font=self.FONT_CARD).pack(anchor='w')
-        tk.Label(lines, text="Mumbai Centre  |  PICA — Python Instrument "
-                             "Control & Automation",
-                 bg=self.CLR_APP, fg=self.CLR_TEXT_DIM,
-                 font=self.FONT_BASE).pack(anchor='w')
+        lines.pack(expand=True, anchor='w')
+        brand_lines = [
+            tk.Label(lines, text="UGC-DAE Consortium for Scientific Research",
+                     bg=self.CLR_APP, fg=self.CLR_TEXT, font=self.FONT_CARD,
+                     justify='left'),
+            tk.Label(lines, text="Mumbai Centre  |  PICA — Python Instrument "
+                                 "Control & Automation",
+                     bg=self.CLR_APP, fg=self.CLR_TEXT_DIM, font=self.FONT_BASE,
+                     justify='left')]
+        for label in brand_lines:
+            label.pack(anchor='w')
+
+        def _wrap_brand(event):
+            for label in brand_lines:
+                if str(label.cget('wraplength')) != str(max(120, event.width)):
+                    label.configure(wraplength=max(120, event.width))
+        words.bind('<Configure>', _wrap_brand)
 
         # The same two icon buttons the main window carries in its top-right
         # corner, in the same order with the same tooltips: the Plotter and
@@ -4098,6 +4192,13 @@ class PICALauncherV2:
                                  command=self._launch_gpib_scanner)
         adv_scanner.pack(side='right', padx=(0, 2))
         self._add_tooltip(adv_scanner, "VISA/GPIB Scanner")
+        # Home: back to the main window (Quick Select). This window opens
+        # maximised over it, so without a button the way home was the View
+        # menu or the taskbar. Leftmost of the three, apart from the tools.
+        adv_home = ttk.Button(adv_tools, text=self._icon('home'), width=3,
+                              style='Icon.TButton', command=self._focus_main)
+        adv_home.pack(side='right', padx=(0, 10))
+        self._add_tooltip(adv_home, "Home (Quick Select)")
         # The pressure gauge address is a row on the Vacuum Gauge Logging
         # card (its 'settings' entry in CATALOG), not an icon up here. Also
         # found by the search ("pressure", "tpg").
@@ -4107,14 +4208,20 @@ class PICALauncherV2:
         tk.Label(title_blk, text="Advanced Options", bg=self.CLR_APP,
                  fg=self.CLR_ACCENT, font=self.FONT_TITLE).pack(anchor='e')
         self._build_family_legend(title_blk).pack(anchor='e', pady=(2, 0))
+        brand.pack(side='left', fill='both', expand=True)
 
         tk.Frame(win, bg=self.CLR_BORDER, height=1).pack(fill='x', padx=18,
                                                          pady=(10, 6))
-        tk.Label(win,
-                 text="Every module PICA ships, grouped by measurement range and "
-                      "instrument. Quick Select in the main window is the guided route.",
-                 bg=self.CLR_APP, fg=self.CLR_TEXT_DIM,
-                 font=self.FONT_SMALL).pack(anchor='w', padx=18)
+        intro = tk.Label(win,
+                         text="Every module PICA ships, grouped by measurement range and "
+                              "instrument. Quick Select in the main window is the guided route.",
+                         bg=self.CLR_APP, fg=self.CLR_TEXT_DIM, font=self.FONT_SMALL,
+                         anchor='w', justify='left')
+        intro.pack(fill='x', padx=18)
+        # Wraps to the window on a narrow screen instead of running off it.
+        intro.bind('<Configure>', lambda e: intro.configure(
+            wraplength=max(200, e.width)) if str(intro.cget('wraplength'))
+            != str(max(200, e.width)) else None)
 
         # Strip first: packed to the bottom edge before the card grid claims
         # the rest of the height. It is the compact strip -- readings and the
@@ -4214,6 +4321,10 @@ class PICALauncherV2:
         finally:
             if win is not None:
                 self._destroy_window(win)
+            # Started as Advanced Options alone and the main window was
+            # never brought up: this window was the launcher, so quit.
+            if self._advanced_start and self._main_hidden():
+                self.root.destroy()
 
     def _destroy_window(self, win):
         """Destroy a Toplevel; fall back to Tcl if the Python walk raises."""
@@ -4577,7 +4688,7 @@ class PICALauncherV2:
         win = tk.Toplevel(self.root)
         win.title("PICA — Pressure Gauge")
         win.configure(bg=self.CLR_APP)
-        win.transient(self.root)
+        win.transient(self._dialog_master())
         win.resizable(False, False)
 
         pad = tk.Frame(win, bg=self.CLR_APP)
@@ -4820,6 +4931,14 @@ class PICALauncherV2:
         """
         if self._adv_win is None:
             return      # Advanced Options was closed before it was due
+        if getattr(self, '_advanced_start', False):
+            return      # pica-gui / run_pica.py: Instrument Status covers it
+        if getattr(self, '_scanning', False):
+            # The launcher's own bus pass is still running -- at startup
+            # through run_pica.py, which opens Advanced Options straight
+            # away. Never put a second process on the bus at the same time.
+            self.root.after(1000, self._auto_launch_gpib_scanner)
+            return
         if not PYVISA_AVAILABLE:
             self.log("VISA/GPIB scanner not auto-opened: pyvisa is not "
                      "installed.")
@@ -4866,7 +4985,7 @@ class PICALauncherV2:
         self._utils_win = win
         win.title("PICA Utils")
         win.configure(bg=self.CLR_APP)
-        win.transient(self.root)
+        win.transient(self._dialog_master())
         win.resizable(False, False)
         win.bind("<Escape>", lambda _e: win.destroy())
         win.bind("<Destroy>", lambda e: setattr(self, '_utils_win', None)
@@ -4962,7 +5081,7 @@ class PICALauncherV2:
         win.title(f"PICA — {title}")
         win.configure(bg=self.CLR_APP)
         win.geometry("900x680")
-        win.transient(self.root)
+        win.transient(self._dialog_master())
         win.bind("<Escape>", lambda _e: win.destroy())
 
         head = tk.Frame(win, bg=self.CLR_ACCENT)
@@ -5206,7 +5325,7 @@ class PICALauncherV2:
         win = Toplevel(self.root)
         win.title(title)
         win.configure(bg=self.CLR_APP)
-        win.transient(self.root)
+        win.transient(self._dialog_master())
         win.resizable(False, False)
         win.bind("<Escape>", lambda _e: win.destroy())
         head = tk.Frame(win, bg=self.CLR_ACCENT)
@@ -5362,10 +5481,30 @@ class PICALauncherV2:
         self._console_win = None
 
 
-def main():
+def main(advanced=False):
+    """Run launcher v2 on Quick Select (python -m pica.main_v2,
+    run_pica_v2.py). advanced=True opens Advanced Options alone, the main
+    window hidden until Home brings it up (see start_in_advanced)."""
+    # pica-gui (a console script) calls this directly, skipping the
+    # __main__ block below: force spawn here too, so a launched module never
+    # forks a process that already holds a Tk interpreter (Linux defaults
+    # to fork; Windows already spawns).
+    try:
+        multiprocessing.set_start_method('spawn', force=True)
+    except RuntimeError:
+        pass
+    use_pica_icon()
     root = tk.Tk()
-    PICALauncherV2(root)
+    app = PICALauncherV2(root)
+    if advanced:
+        app.start_in_advanced()
     root.mainloop()
+
+
+
+def main_advanced():
+    """The pica-gui entry point: launcher v2 as Advanced Options alone."""
+    main(advanced=True)
 
 
 if __name__ == '__main__':

@@ -14,7 +14,7 @@ as you can; the sections marked (required) are the ones we cannot work without.
 
 - Measurement module: [the script file name, e.g. `RT_K2400_L350_T_Control_GUI.py`, or the launcher label, e.g. "K2400 R-T"; for a launcher or utility problem, name that instead]
 - Instruments the module uses: [e.g. Keithley 2400 + Lakeshore 350]
-- How it was started: [Launcher v1 `pica-gui` / Launcher v2 `run_pica_v2.py` / the script directly]
+- How it was started: [Launcher `pica-gui` or `run_pica.py` (Advanced Options) / `run_pica_v2.py` (Quick Select) / legacy launcher / the script directly]
 - Stage reached: [install / launcher opens / module window opens / instrument found / measurement started / measurement finished]
 
 ## What happened (required)

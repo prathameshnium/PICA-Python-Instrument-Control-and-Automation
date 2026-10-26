@@ -7,9 +7,15 @@ recursive-include pica/assets *
 # program loads them, so they stay out of the sdist and wheel.
 prune pica/assets/Images/screenshots
 # Logos the programs never load (README, docs site and portable build read
-# them from the repository). Shipped: UGC_DAE_CSR_NBG.jpeg (every GUI header),
-# its pre-scaled UGC_DAE_CSR_NBG_140.png / _64.png (launcher, loaded without
-# Pillow) and PICA_LOGO_ICON.ico (kept for a future window icon).
+# them from the repository) are excluded below. Shipped, because they are in
+# use:
+#   UGC_DAE_CSR_NBG.jpeg            every GUI header
+#   UGC_DAE_CSR_NBG_140.png / _64   launcher, pre-scaled, loaded without Pillow
+#   PICA_LOGO_ICON.ico              IN USE: the title-bar and taskbar icon of
+#                                   every PICA window (launchers and launched
+#                                   modules), set by use_pica_icon() in
+#                                   pica/spawn_target.py. Built from
+#                                   PICA_LOGO_NBG.png, 16-256 px.
 exclude pica/assets/LOGO/PICA_LOGO.png pica/assets/LOGO/PICA_LOGO_NBG.png
 exclude pica/assets/LOGO/PICA_LOGO.ico pica/assets/LOGO/PICA_LOGO_ICON.png
 exclude pica/assets/LOGO/UGC_DAE_CSR.ico pica/assets/LOGO/UGC_DAE_CSR.jpeg

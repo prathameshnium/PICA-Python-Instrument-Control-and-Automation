@@ -58,12 +58,12 @@ The suite performs automated protocols including:
 <p align="center">
   <img src="pica/assets/Images/screenshots/00_PICA_Launcher.png" alt="PICA Launcher — Python GUI dashboard for laboratory instrument control and measurement automation" width="800">
   <br>
-  <em>PICA Launcher v2. Quick Select picks a category, a module and a protocol, then launches that program; the status strip shows the temperature, the pressure (when a gauge is configured) and the result of the bus scan, read at startup and on Reload. This is Launcher v2 (<code>python -m pica.main_v2</code>); the 2.1.0 in its title is the launcher's own version, not the package version.</em>
+  <em>PICA Launcher v2. Quick Select picks a category, a module and a protocol, then launches that program; the status strip shows the temperature, the pressure (when a gauge is configured) and the result of the bus scan, read at startup and on Reload. This is Launcher v2 (<code>python run_pica_v2.py</code> or <code>python -m pica.main_v2</code>; <code>pica-gui</code> opens straight into Advanced Options, below); the 2.1.0 in its title is the launcher's own version, not the package version.</em>
 </p>
 <p align="center">
   <img src="pica/assets/Images/screenshots/00b_PICA_Launcher_Advanced.png" alt="PICA Launcher Advanced Options — full catalogue of measurement modules grouped by resistance range and instrument" width="800">
   <br>
-  <em>Advanced Options (Ctrl+Shift+A): every module PICA ships, grouped by measurement range and instrument, for when you already know which program you want. Hovering a row opens a card describing the measurement, its instruments and its inputs; Ctrl+F opens a search that finds any module by a few letters.</em>
+  <em>Advanced Options, the window <code>pica-gui</code> and <code>python run_pica.py</code> open (also Ctrl+Shift+A; the Home button brings up Quick Select): every module PICA ships, grouped by measurement range and instrument, for when you already know which program you want. Hovering a row opens a card describing the measurement, its instruments and its inputs; Ctrl+F opens a search that finds any module by a few letters.</em>
 </p>
 
 > **More details here:**
@@ -82,7 +82,7 @@ The suite performs automated protocols including:
 - [Demonstration of PICA (Screencast)](#demonstration-of-pica-screencast)
 - [Getting Started](#getting-started)
   - [Installing on Linux](#option-3-installing-on-linux)
-- [Running the Software](#running-the-software) (incl. Launcher v2 Quick Select and Advanced Options)
+- [Running the Software](#running-the-software) (Advanced Options, Quick Select and the legacy launcher)
 - [System Requirements & Compatibility](#system-requirements--compatibility)
 - [Running Tests Locally](#running-tests-locally)
 - [Project History](#project-history)
@@ -385,32 +385,31 @@ pica-gui
     ```bash
     pica-gui
     ```
+    It opens on **Advanced Options**: every module PICA ships on one screen,
+    grouped by measurement range and instrument, with the **Instrument Status**
+    window beside it (every instrument with its light, anything new on the bus
+    named from its `*IDN?` reply, and the VISA/GPIB scan table). Closing
+    Advanced Options quits PICA. The **Home** button (house icon, top right)
+    brings up **Quick Select**, the guided route: category, module and
+    protocol, each explained in plain language.
+
+    From a source checkout without installing, `python run_pica.py` does the
+    same. To open on Quick Select instead, run `python run_pica_v2.py` (or
+    `python -m pica.main_v2` after `pip install pica-suite`).
+
     > You can also run any of the individual GUI measurement modules independently. This is useful for quickly accessing a specific measurement without opening the main launcher. To do this, simply run the Python script for the desired module.
     > For example:
     > ```bash
     > python -m pica.keithley.k6517b.High_Resistance.IV_K6517B_GUI
     > ```
 
-2.  **Launcher v2 (in testing)**
-    A second launcher that opens on a **Quick Select** screen — category,
-    module and protocol, each explained in plain language — and keeps the full
-    module grid in an **Advanced Options** window (`Ctrl+Shift+A`). The status
-    strip carries the temperature and a button opening **Instrument Status**:
-    every instrument with its light, anything new on the bus named from its
-    `*IDN?` reply, and the VISA/GPIB scan table.
-    ```bash
-    python -m pica.main_v2
-    ```
-    This works after `pip install pica-suite`. From a source checkout,
-    `python run_pica_v2.py` does the same. `pica-gui` always opens the
-    classic launcher.
-
-    > **Which launcher?** The classic launcher (`pica-gui`) is the canonical one.
-    > Launcher v2 is in testing. The two small scripts in the repository root,
-    > `run_pica.py` (classic) and `run_pica_v2.py` (v2), only start the launchers
-    > from a source checkout without installing. `setup.py` and
-    > `PICA_Utils_Portable.spec` are build files (packaging and the portable
-    > utilities `.exe`), not entry points.
+    > **Which launcher?** This one (Launcher v2) is the canonical launcher.
+    > The classic launcher (`pica/main.py`) is outdated and kept as the legacy
+    > launcher page: View > Legacy Launcher (v1, outdated), or
+    > `python legacy_stuff/run_pica_legacy.py`. `run_pica.py` and
+    > `run_pica_v2.py` in the repository root only start the launcher from a
+    > source checkout. `setup.py` and `PICA_Utils_Portable.spec` are build
+    > files (packaging and the portable utilities `.exe`), not entry points.
 
     **Find any program fast: Advanced Options and Search**
 
@@ -435,7 +434,7 @@ pica-gui
     even a misspelt `resistence`. Results list instruments first
     (*Keithley 2400 — I-V Sweep*); press `Enter` to launch.
 
-3.  **Command Line Interface (CLI)**
+2.  **Command Line Interface (CLI)**
     For headless operation, without the GUI.
     ```bash
     pica-cli
@@ -461,7 +460,7 @@ pica-gui
 
 ## Example Usage: Running a Measurement
 
-Upon launching PICA (`pica-gui`), select your desired measurement module from the main dashboard. Each module opens as a single window divided into two panels:
+Upon launching PICA (`pica-gui`), click your measurement module in Advanced Options (or pick it in Quick Select). Each module opens as a single window divided into two panels:
 
 1.  **Configuration (Control Panel - Left):**
     * **Setup:** Widen this panel first to view all experimental parameters.

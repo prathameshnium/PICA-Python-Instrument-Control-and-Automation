@@ -36,7 +36,7 @@ Then launch the GUI:
 pica-gui
 ```
 
-or open Launcher v2 (Quick Select, search, hover cards) with `python -m pica.main_v2`.
+It opens on Advanced Options, every module on one screen (the Home button brings up Quick Select). To open on Quick Select instead, run `python -m pica.main_v2`. The outdated classic launcher is still reachable from View > Legacy Launcher (v1, outdated).
 
 **Platforms:** Windows 10/11 is fully supported and used daily with real instruments. On Linux, installation, the test suite and every GUI are verified; measurements against real instruments are not yet verified. macOS has not been tested.
 

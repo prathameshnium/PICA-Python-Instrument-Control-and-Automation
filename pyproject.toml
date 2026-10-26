@@ -79,5 +79,5 @@ pythonpath = [
 ]
 
 [project.scripts]
-pica-gui = "pica.main:main"
+pica-gui = "pica.main_v2:main_advanced"
 pica-cli = "pica.cli:main"
