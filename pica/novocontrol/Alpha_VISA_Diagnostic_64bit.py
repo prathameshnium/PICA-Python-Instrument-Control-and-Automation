@@ -18,9 +18,11 @@ every *IDN? try afterwards - elapsed time and VISA error - until the Alpha
 answers or --wait seconds pass. It never sends ACV, DCV or MST.
 
 Everything is printed and written to AlphaVisaDiag_<date>_<time>.log next
-to this file. Send that log back.
+to this file (or in the working / home folder if this one is read-only).
+Send that log back.
 '''
 import argparse
+import math
 import os
 import platform
 import struct
@@ -42,10 +44,24 @@ ERROR_NAMES = {VI_ERROR_TMO: "TMO (timeout)",
 
 
 def log(text=""):
+    global LOG_PATH
     line = f"[{datetime.now():%H:%M:%S.%f}"[:-3] + f"] {text}"
     print(line, flush=True)
-    with open(LOG_PATH, "a", encoding="utf-8") as fh:
-        fh.write(line + "\n")
+    # A read-only script folder must not stop the run: fall back to the
+    # working folder, then the home folder, then console only.
+    if not LOG_PATH:
+        return
+    name = os.path.basename(LOG_PATH)
+    for path in (LOG_PATH, os.path.join(os.getcwd(), name),
+                 os.path.join(os.path.expanduser("~"), name)):
+        try:
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+        except OSError:
+            continue
+        LOG_PATH = path
+        return
+    LOG_PATH = ""
 
 
 def section(title):
@@ -107,17 +123,19 @@ def open_visa():
 
 
 def open_alpha(rm, address):
+    """Returns (session or None, True if *IDN? names an Alpha)."""
     section(f"3. ALPHA IDENTITY at {address} (read-only queries)")
     try:
         inst = rm.open_resource(address)
     except Exception as e:
         log(f"STOP: open_resource failed: {describe(e)}")
-        return None
+        return None, False
     # Same terminations as Frequency_Scan_AlphaAN_GUI.py (shorter timeout).
     inst.timeout = 10000
     inst.read_termination = ""
     inst.write_termination = ""
     inst.send_end = True
+    idn = None
     for cmd in ("*IDN?", "INTTYP?"):
         t = time.monotonic()
         try:
@@ -126,12 +144,18 @@ def open_alpha(rm, address):
         except Exception as e:
             log(f"  {cmd:8} FAILED after {time.monotonic() - t:.2f} s: "
                 f"{describe(e)}")
-            return inst
+            return inst, False
+        if idn is None:
+            idn = r.strip()
     try:
         log(f"  status byte: 0x{inst.read_stb():02X}")
     except Exception as e:
         log(f"  read_stb failed: {describe(e)}")
-    return inst
+    if "ALPHA" not in idn.upper():
+        # e.g. the E4991B at GPIB0::17: never send *RST to it.
+        log(f"STOP: device at {address} is not an Alpha (IDN={idn!r})")
+        return inst, False
+    return inst, True
 
 
 def reset_test(inst, wait_s, poll_s, use_clear):
@@ -184,15 +208,21 @@ def main():
 
     log(f"Alpha-AN VISA diagnostic, log: {LOG_PATH}")
     log(f"Arguments: {vars(a)}")
+    for opt, value in (("--wait", a.wait), ("--poll-timeout", a.poll_timeout)):
+        if not (math.isfinite(value) and value > 0):
+            log(f"STOP: {opt} must be a number above 0 (got {value!r}).")
+            return 1
     check_environment()
     rm = open_visa()
     if rm is None:
         return 1
-    inst = open_alpha(rm, a.address)
+    inst, is_alpha = open_alpha(rm, a.address)
     if inst is None:
         return 1
     try:
-        if a.reset_test:
+        if a.reset_test and not is_alpha:
+            log("*RST timing test skipped: no Alpha identified.")
+        elif a.reset_test:
             reset_test(inst, a.wait, a.poll_timeout, not a.no_clear)
     finally:
         try:
@@ -205,4 +235,10 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        code = main()
+    except Exception:
+        import traceback
+        log("UNEXPECTED ERROR:\n" + traceback.format_exc())
+        code = 1
+    sys.exit(code)

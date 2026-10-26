@@ -23,7 +23,7 @@ import types
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from alphaan_port_test_support import (  # noqa: E402
-    connected_backend, run_common_backend_checks)
+    FakeVisaError, connected_backend, run_common_backend_checks)
 from cv_alphaan_test_support import (  # noqa: E402
     FakeCVAlpha, GUI_PATH, MODULES, SCRIPT_PATH, base_params, bias_commands,
     column, gui, install_pyvisa, last_index, log_lines, make_link,
@@ -567,8 +567,21 @@ def test_a_good_run_reports_the_bias_confirmed_off():
 # -- the window, without a Tk root (stub widgets) ------------------------------------------
 
 class _Widget:
+    """Stub widget: remembers its config (state, text) and a value."""
+
+    def __init__(self, value=""):
+        self.value = value
+        self.state = None
+        self.texts = []
+
     def config(self, **kw):
-        pass
+        if "state" in kw:
+            self.state = kw["state"]
+        if "text" in kw:
+            self.texts.append(kw["text"])
+
+    def get(self):
+        return self.value
 
 
 class _Root:
@@ -609,8 +622,16 @@ def _window(**attrs):
     w.log = w.logs.append
     w.alarms = []
     w._show_alarm = w.alarms.append
-    for name in ("lbl_current_freq", "start_button", "stop_button", "scan_button"):
+    for name in ("lbl_current_freq", "start_button", "stop_button", "scan_button",
+                 "browse_button", "cycle_check", "lcr_combobox"):
         setattr(w, name, _Widget())
+    w.wire_combobox = _Widget("2")
+    w.shape_combobox = _Widget(gui.SHAPE_POS_FIRST)
+    w.var_cycle = _Widget(False)
+    w.entries = {k: _Widget(v) for k, v in (
+        ("sample_name", "Sample_A"), ("v_start", "-1"), ("v_stop", "1"), ("v_step", "0.5"),
+        ("ac_bias", "1"), ("freq_list", "1000"), ("delay", "0"), ("mtm", "0.5"),
+        ("n_cycles", "1"), ("ladder", ""), ("ladder_pause", "0"))}
     w.data_queue = queue.Queue()
     w.stop_event = threading.Event()
     w.is_running = False
@@ -646,10 +667,21 @@ def test_window_stop_waits_the_full_window_without_touching_the_link():
         assert spy.calls == [] and w.root.after_calls == [200]      # polling, link untouched
         w._poll_worker_stopped("")
         assert spy.calls == []
-        # only once the window has run out does the window thread step in
+        # Changed 27 Oct 2026: past the window the worker may still be in
+        # its shutdown (each command waiting out a 60 s timeout). The
+        # window warns with the banner and keeps its hands off the link.
         w._stop_deadline = time.time() - 1.0
         w._poll_worker_stopped("")
+        w._poll_worker_stopped("")
+        assert spy.calls == [] and w.alarms == [gui.STOP_OVERDUE_TEXT]
+        assert "messagebox" not in inspect.getsource(gui.LCR_Freq_GUI._poll_worker_stopped)
+        # once the worker has exited with the session still open, the
+        # window does the bias-off itself, and the overdue banner clears
+        release.set()
+        t.join(5)
+        w._poll_worker_stopped("")
         assert spy.calls == ["force_zero_bias", "close"] and w._bias_confirmed is True
+        assert w._overdue_alarm is False and w.lbl_current_freq.texts[-1] == "Measuring: STOPPED"
     finally:
         release.set()
         t.join(5)
@@ -688,6 +720,171 @@ def test_window_reports_bias_off_only_when_confirmed():
     w = _window(_stopping=True, link=_SpyLink(ok=False))
     w._poll_worker_stopped("")
     assert w._bias_confirmed is False and w.alarms == [gui.BIAS_OFF_FAILED_TEXT]
+
+
+# -- window bug hunt, 27 Oct 2026 --------------------------------------------------------------
+
+def test_window_final_label_says_how_the_run_ended():
+    """DONE / ERROR used to be overwritten by DISCHARGING, STOPPING... and
+    finally an unconditional STOPPED."""
+    cases = (
+        ([("status", "DONE")], "complete", "Measuring: DONE"),
+        ([("error", "boom")], "error: boom", "Measuring: ERROR (see console)"),
+        ([], "stop_button", "Measuring: STOPPED by user"),
+    )
+    for before, reason, final in cases:
+        w = _window(is_running=True)
+        for msg in before + [("status", "DISCHARGING"), ("bias", True, "ok"), ("done", reason)]:
+            w.data_queue.put(msg)
+        if reason == "stop_button":
+            w.stop_sweep()                       # the user's Stop, then the worker's "done"
+        else:
+            w._drain_queue()                     # "done" itself ends the run
+        assert w.lbl_current_freq.texts[-1] == final, (reason, w.lbl_current_freq.texts)
+        assert not w._stopping and w.alarms == []
+    w = _window(_stopping=True)                  # no "done" from the worker at all
+    w._finalize_stop("")
+    assert w.lbl_current_freq.texts[-1] == "Measuring: STOPPED"
+    # Start clears the previous run's end label and reason
+    src = inspect.getsource(gui.LCR_Freq_GUI.start_sweep)
+    assert 'text="Measuring: -- Hz"' in src and "self._end_reason = None" in src
+
+
+def test_window_locks_every_input_during_a_run_and_restores_the_greying():
+    w = _window()
+    w._set_inputs_locked(True)
+    widgets = list(w.entries.values()) + [w.wire_combobox, w.lcr_combobox, w.shape_combobox,
+                                          w.cycle_check, w.browse_button]
+    assert all(x.state == "disabled" for x in widgets)
+    w._stopping = True
+    w._finalize_stop("")
+    assert w.wire_combobox.state == w.lcr_combobox.state == "readonly"
+    assert w.cycle_check.state == w.browse_button.state == "normal"
+    off = gui.disabled_fields(False, gui.SHAPE_POS_FIRST)          # linear mode
+    for key, entry in w.entries.items():
+        assert entry.state == ("disabled" if key in off else "normal"), key
+    assert w.shape_combobox.state == "disabled"
+    assert "_set_inputs_locked(True)" in inspect.getsource(gui.LCR_Freq_GUI.start_sweep)
+
+
+def test_window_input_errors_name_the_box_and_refuse_non_finite_values():
+    folder = _tmp()
+    saved = gui.PYVISA_AVAILABLE
+    gui.PYVISA_AVAILABLE = True
+    try:
+        def collect(cycle=False, shape=gui.SHAPE_POS_FIRST, folder=folder, **boxes):
+            w = _window(file_location_path=folder)
+            w.lcr_combobox.value = "GPIB0::10::INSTR  ->  ALPHA"
+            w.var_cycle.value = cycle
+            w.shape_combobox.value = shape
+            for key, text in boxes.items():
+                w.entries[key].value = text
+            return w._collect_params()
+
+        p = collect()
+        assert p["freqs"] == [1000.0] and p["delay"] == 0.0
+        for boxes, needle in (
+                (dict(delay="inf"), "Delay per step (s)"), (dict(delay="nan"), "Delay per step (s)"),
+                (dict(ac_bias=""), "AC Level (Vrms)"), (dict(mtm="-"), "Integration Time, MTM (s)"),
+                (dict(v_step="inf"), "V Step (V)"), (dict(v_step="nan"), "V Step (V)"),
+                (dict(v_start=""), "V Start (V)"), (dict(v_stop="inf"), "V Stop (V)"),
+                (dict(freq_list="1000, abc"), "Frequencies (Hz): 'abc'"),
+                (dict(sample_name="Sample\tA"), "control characters")):
+            msg = str(_expect(ValueError, lambda: collect(**boxes)))
+            assert needle in msg, (boxes, msg)
+        # a ladder pause of inf would be an endless pause at 0 V
+        msg = str(_expect(ValueError, lambda: collect(cycle=True, shape=gui.SHAPE_LADDER,
+                                                      ladder="0.5, 1", ladder_pause="inf")))
+        assert "Pause between ladder entries (s)" in msg
+        # greyed boxes may stay blank: V Start in cycle mode, the pause off-ladder
+        assert collect(cycle=True, v_start="")["v_max"] == 1.0
+        assert collect(ladder_pause="")["ladder_pause"] == 0.0
+        # the save folder must exist before the safety dialog
+        gone = os.path.join(folder, "unplugged_usb")
+        msg = str(_expect(ValueError, lambda: collect(folder=gone)))
+        assert "Save Location" in msg and "not found" in msg
+    finally:
+        gui.PYVISA_AVAILABLE = saved
+
+
+class _WheelTarget:
+    def __init__(self, path, cls="Frame"):
+        self.path, self.cls = path, cls
+
+    def __str__(self):
+        return self.path
+
+    def winfo_class(self):
+        return self.cls
+
+
+class _WheelCanvas(_WheelTarget):
+    def __init__(self, path):
+        super().__init__(path, "Canvas")
+        self.scrolls, self.bound = [], []
+
+    def yview_scroll(self, n, what):
+        self.scrolls.append((n, what))
+
+    def bind_all(self, seq, fn, add=None):
+        self.bound.append(seq)
+
+
+def test_window_mouse_wheel_scrolls_the_parameter_panel():
+    w = _window()
+    canvas = _WheelCanvas(".!panedwindow.!frame.!canvas")
+    w.left_canvas = canvas
+    w._bind_panel_wheel(canvas)
+    assert canvas.bound == ["<MouseWheel>", "<Button-4>", "<Button-5>"]
+    ev = types.SimpleNamespace
+    inside = _WheelTarget(".!panedwindow.!frame.!canvas.!frame.!labelframe.!entry", "Entry")
+    w._on_panel_wheel(ev(widget=inside, delta=120, num="??"))       # Windows: up one notch
+    w._on_panel_wheel(ev(widget=inside, delta=-240, num="??"))
+    w._on_panel_wheel(ev(widget=inside, delta=0, num=5))            # X11: down
+    w._on_panel_wheel(ev(widget=canvas, delta=60, num="??"))        # half a notch still moves
+    assert canvas.scrolls == [(-1, "units"), (2, "units"), (1, "units"), (-1, "units")]
+    for other in (_WheelTarget(".!panedwindow.!frame2.!canvas"),           # the plots
+                  _WheelTarget(".!panedwindow.!frame.!canvas2"),
+                  _WheelTarget(".!panedwindow.!frame.!canvas.!frame.!labelframe.!text", "Text")):
+        w._on_panel_wheel(ev(widget=other, delta=120, num="??"))
+    assert len(canvas.scrolls) == 4
+    assert "_bind_panel_wheel(left_canvas)" in inspect.getsource(gui.LCR_Freq_GUI.create_widgets)
+
+
+def test_window_log_axis_leaves_gaps_for_non_positive_values():
+    from matplotlib.figure import Figure
+    w = _window(y_scale_var=_Widget("log"), _decade_ylims={}, sweep_index=4,
+                progress_bar={}, canvas=types.SimpleNamespace(draw_idle=lambda: None))
+    fig = Figure()
+    w.ax_cp, w.ax_g = fig.add_subplot(2, 1, 1), fig.add_subplot(2, 1, 2)
+    w.line_cp, = w.ax_cp.plot([], [])
+    w.line_g, = w.ax_g.plot([], [])
+    w.data_storage = {"volt": [-1.0, 0.0, 1.0, 2.0], "cp": [1e-9, 2e-9, 3e-9, 4e-9],
+                      "g": [1e-6, -2e-7, 0.0, 1e-4]}
+    w._update_sweep_plot()
+    g = list(w.line_g.get_ydata())
+    assert g[0] == 1e-6 and g[3] == 1e-4 and math.isnan(g[1]) and math.isnan(g[2])
+    assert w.ax_g.get_yscale() == "log"
+    assert w.data_storage["g"] == [1e-6, -2e-7, 0.0, 1e-4]          # stored data untouched
+    # linear: every value drawn as measured
+    w.y_scale_var.value = "linear"
+    w._on_y_scale_change()
+    assert list(w.line_g.get_ydata()) == [1e-6, -2e-7, 0.0, 1e-4]
+    assert w.ax_g.get_yscale() == "linear"
+
+
+def test_window_labels_and_scale_bar_use_the_panel_colours():
+    src = inspect.getsource(gui.LCR_Freq_GUI)
+    entry_src = inspect.getsource(gui.LCR_Freq_GUI._add_entry)
+    assert "bg=self.CLR_BG_DARK" in entry_src and "fg=self.CLR_FG_LIGHT" in entry_src
+    frame_src = inspect.getsource(gui.LCR_Freq_GUI.create_input_frame)
+    for text in ("ZG4 Wire Mode (FRS):", "Alpha-AN VISA:", "Loop shape (cycle mode):"):
+        i = frame_src.index(text)
+        assert "bg=self.CLR_BG_DARK" in frame_src[i:i + 120], text
+    graph_src = inspect.getsource(gui.LCR_Freq_GUI.create_graph_frame)
+    for style in ("Graph.TFrame", "Graph.TLabel", "Graph.TRadiobutton"):
+        assert style in graph_src and style in inspect.getsource(gui.LCR_Freq_GUI.setup_styles)
+    assert "CLR_GRAPH_BG" in src
 
 
 # -- the script's Ctrl-C path ----------------------------------------------------------------
@@ -782,6 +979,201 @@ def test_script_ctrl_c_with_a_hung_worker_forces_the_bias_off_and_exits_non_zero
     while not worker.end_reason and time.time() < deadline:
         time.sleep(0.05)
     assert worker.end_reason, "worker never finished"
+
+
+# -- CV-2, 27 Oct 2026: Stop during a point's SRQ wait and the *RST rejoin ----------
+
+class _NeverDonePoint(FakeCVAlpha):
+    """The point never completes: every SRQ wait really waits its timeout,
+    then fails with VI_ERROR_TMO, as pyvisa does. The task keeps running
+    (bias commands answer MR) until MBK."""
+
+    def __init__(self, mod, **kw):
+        super().__init__(mr_when_running=True, **kw)
+        self.mod = mod
+        self.srq_started = threading.Event()
+        self.slices = []
+
+    def wait_for_srq(self, timeout_ms=25000):
+        self.traffic.append(("wait_for_srq", timeout_ms))
+        self.slices.append(timeout_ms)
+        self.srq_started.set()
+        time.sleep(timeout_ms / 1000.0)
+        raise FakeVisaError(self.mod.VI_ERROR_TMO)
+
+
+class _AwayAfterReset(FakeCVAlpha):
+    """Answers *IDN? at connect, but never rejoins the bus after *RST."""
+
+    def __init__(self, mod, **kw):
+        super().__init__(**kw)
+        self.mod = mod
+        self.reset_seen = False
+        self.away = threading.Event()
+
+    def write(self, command):
+        super().write(command)
+        if command == "*RST":
+            self.reset_seen = True
+
+    def query(self, command):
+        if command == "*IDN?" and self.reset_seen:
+            self.traffic.append(("query", command))
+            self.away.set()
+            time.sleep(0.05)
+            raise FakeVisaError(self.mod.VI_ERROR_NLISTENERS)
+        return super().query(command)
+
+
+def _run_and_stop_when(mod, fake, started, **extra):
+    """Run the worker in a thread, press Stop once `started` is set; returns
+    (worker, seconds from Stop to the worker's exit)."""
+    folder = _tmp()
+    p = mod.validate_params(base_params(folder, **extra))
+    stop = threading.Event()
+    link = make_link(mod, fake)
+    worker = mod.CVWorker(p, link, stop, queue.Queue(), sleep=lambda s: None)
+    t = threading.Thread(target=worker.run, daemon=True)
+    t.start()
+    assert started.wait(10), "the wait under test never began"
+    time.sleep(0.3)
+    pressed = time.perf_counter()
+    stop.set()
+    t.join(10)
+    assert not t.is_alive(), "worker ignored Stop"
+    return worker, time.perf_counter() - pressed
+
+
+def test_stop_during_a_long_srq_wait_aborts_the_point_and_still_discharges():
+    for mod in MODULES:
+        fake = _NeverDonePoint(mod)
+        # 0.01 Hz: a 460 s point budget that used to block Stop
+        worker, took = _run_and_stop_when(mod, fake, fake.srq_started, freq_list="0.01")
+        assert took < 2.5, (mod.__name__, took)
+        assert worker.end_reason == "stop_button" and worker.bias_confirmed is True
+        cmds = fake.commands
+        mst, mbk = cmds.index("MST"), cmds.index("MBK")
+        assert mst < mbk < last_index(cmds, "DCE=0"), cmds
+        assert all(s == int(mod.SRQ_SLICE_S * 1000) for s in fake.slices), fake.slices
+        _assert_bias_off_before_safe_state(fake)
+
+
+def test_stop_during_the_reset_rejoin_wait_ends_promptly():
+    for mod in MODULES:
+        fake = _AwayAfterReset(mod)
+        worker, took = _run_and_stop_when(mod, fake, fake.away)
+        assert took < 2.0, (mod.__name__, took)
+        assert worker.end_reason == "stop_button" and worker.bias_confirmed is True
+        assert "MODE=IMP" not in fake.commands and fake.closed
+
+
+class _DeafAfterReset(_AwayAfterReset):
+    """After *RST every transfer but the rejoin *IDN? hangs like 64-bit
+    Keysight VISA does (here 1 s, then a timeout), so any shutdown command
+    sent to the resetting Alpha shows up in the Stop-to-exit time."""
+
+    HANG_S = 1.0
+
+    def _hang(self):
+        time.sleep(self.HANG_S)
+        raise FakeVisaError(self.mod.VI_ERROR_TMO)
+
+    def write(self, command):
+        if self.reset_seen:
+            self.traffic.append(("write", command))
+            self._hang()
+        super().write(command)
+
+    def query(self, command):
+        if self.reset_seen and command != "*IDN?":
+            self.traffic.append(("query", command))
+            self._hang()
+        return super().query(command)
+
+
+def test_stop_during_the_reset_rejoin_sends_nothing_after_rst():
+    for mod in MODULES:
+        fake = _DeafAfterReset(mod)
+        worker, took = _run_and_stop_when(mod, fake, fake.away)
+        assert took < 0.8, (mod.__name__, took)
+        assert worker.end_reason == "stop_button" and worker.bias_confirmed is True
+        assert fake.closed and worker.link.backend is None
+        sent = [(k, c) for k, c in fake.traffic if k in ("write", "query")]
+        rst = sent.index(("write", "*RST"))
+        after = sent[rst + 1:]
+        assert after and all(x == ("query", "*IDN?") for x in after), after
+
+
+def test_close_while_resetting_skips_commands_unless_bias_was_touched():
+    for mod in MODULES:
+        backend, fake = connected_backend(mod, FakeCVAlpha())
+        backend._alpha_rebooting, backend._bias_touched = True, False
+        assert backend.close_instrument() is True
+        assert fake.commands == [] and fake.closed and backend.instrument is None
+        assert mod.AlphaANLink.force_zero_bias(types.SimpleNamespace(
+            backend=backend, sleep=lambda s: None, bias_confirmed_off=True))
+
+        # Bias ever touched: the full discharge runs regardless of the flag.
+        backend, fake = connected_backend(mod, FakeCVAlpha())
+        backend._alpha_rebooting = True
+        backend._bias_touched, backend._bias_level = True, 0.0
+        assert backend.close_instrument() is True
+        assert "DCE=0" in fake.commands and "*RST" in fake.commands
+
+
+def test_stop_while_connecting_is_a_stop_not_a_bus_error():
+    for mod in MODULES:
+        fake = FakeCVAlpha()
+        fake.answers["*IDN?"] = FakeVisaError(mod.VI_ERROR_NLISTENERS)
+
+        def query(command, _orig=fake.query, _fake=fake):
+            if command == "*IDN?":
+                _fake.traffic.append(("query", command))
+                raise _fake.answers["*IDN?"]
+            return _orig(command)
+        fake.query = query
+        link = make_link(mod, fake)
+        link.stop_event = threading.Event()
+        link.stop_event.set()
+        _expect(mod.StopRequested, link.open)
+        assert link.backend is None
+
+
+def test_sliced_srq_wait_keeps_the_point_budget_and_a_normal_point_completes():
+    for mod in MODULES:
+        backend, fake = connected_backend(mod, FakeCVAlpha(srq_raises=True))
+        backend.stop_event = threading.Event()
+        exc = _expect(TimeoutError, lambda: backend._wait_for_srq(5.0, "a point"))
+        assert "Aborted (MBK)" in str(exc)
+        waits = [t for k, t in fake.traffic if k == "wait_for_srq"]
+        assert waits == [1000] * 5, waits             # 5 s budget, 1 s slices
+
+        class Broken(FakeCVAlpha):
+            def wait_for_srq(self, timeout_ms=25000):
+                self.traffic.append(("wait_for_srq", timeout_ms))
+                raise FakeVisaError(-1073807298)      # not a timeout: no retry
+        backend, fake = connected_backend(mod, Broken())
+        backend.stop_event = threading.Event()
+        _expect(TimeoutError, lambda: backend._wait_for_srq(5.0, "a point"))
+        assert [k for k, _ in fake.traffic].count("wait_for_srq") == 1
+
+        backend, fake = connected_backend(mod, FakeCVAlpha())
+        backend._bias_touched, backend._bias_level = False, 0.0
+        backend.stop_event = threading.Event()
+        backend.params = {"mtm": 0.5}
+        zr, zi, f_act, status, _ref = backend.measure_point(1000.0)
+        assert status == mod.STATUS_RESULT_VALID and "MBK" not in fake.commands
+        assert [t for k, t in fake.traffic if k == "wait_for_srq"] == [1000]
+
+
+def test_pause_is_stop_aware_only_with_a_stop_event():
+    for mod in MODULES:
+        backend, _ = connected_backend(mod)
+        backend._pause(2.0)                           # no event: plain sleep
+        backend.stop_event = threading.Event()
+        backend._pause(2.0)
+        backend.stop_event.set()
+        _expect(mod.StopRequested, lambda: backend._pause(2.0))
 
 
 if __name__ == "__main__":

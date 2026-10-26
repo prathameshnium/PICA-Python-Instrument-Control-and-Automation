@@ -1,7 +1,7 @@
 """
 Purpose: Entry-point testing.
 
-Task Tests the main PICALauncherApp, mocking heavy dependencies like Pillow (images) and fonts to ensure the main menu launches correctly.
+Task Tests the legacy (v1, outdated) PICALauncherApp in pica/main.py, still reachable from View > Legacy Launcher, mocking heavy dependencies like Pillow (images) and fonts to ensure it launches correctly.
 """
 import pytest
 import os

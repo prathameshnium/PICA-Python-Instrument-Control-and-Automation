@@ -282,9 +282,10 @@ def test_a_failed_ack_read_still_aborts_the_task_before_parking():
 
 
 def test_a_task_that_finished_as_cancel_was_pressed_is_read_not_aborted():
+    # Cancel lands during the wait (a Cancel before the ZRUNCAL write now
+    # stops before the task is sent at all).
     stop = threading.Event()
-    stop.set()
-    fake = _StbAlpha(stb=mod.STB_RQS | mod.STB_TASK_DONE)
+    fake = _StbAlpha(stb=mod.STB_RQS | mod.STB_TASK_DONE, on_wait=stop.set)
     backend, _ = connected_backend(mod, fake)
     backend.run_load_short_step("SL_100", stop_event=stop)   # no raise
     assert "MBK" not in fake.commands
@@ -439,6 +440,7 @@ class _GuiStub:
         g = self.gui
         g.busy = False
         g.sl_phase = 0
+        g.sl_dirty = False
         g._close_requested = False
         g.log = self.logs.append
         g._advance = lambda step, outcome: self.advanced.append((step, outcome))
@@ -575,6 +577,448 @@ def test_cancel_button_only_acts_while_a_step_runs():
     g.busy = True
     g._cancel_cal()
     assert g.stop_event.is_set() and any("Cancel" in m for m in s.logs)
+
+
+# ---------------------------------------------------------------- review fixes
+
+class _Btn:
+    def __init__(self):
+        self.state = None
+
+    def config(self, **kw):
+        self.state = kw.get("state", self.state)
+
+
+class _Var:
+    def __init__(self, value):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+
+class _Worker:
+    def __init__(self, alive=True):
+        self.alive = alive
+
+    def is_alive(self):
+        return self.alive
+
+
+class _CloseRoot:
+    def __init__(self):
+        self.after_calls, self.destroyed, self.cancelled = [], False, []
+
+    def after(self, ms, fn):
+        self.after_calls.append((ms, fn))
+        return f"after#{len(self.after_calls)}"
+
+    def after_cancel(self, after_id):
+        self.cancelled.append(after_id)
+
+    def destroy(self):
+        self.destroyed = True
+
+    def bell(self):
+        pass
+
+
+class _CloseBackend:
+    def __init__(self):
+        self.closed = 0
+
+    def close_instrument(self):
+        self.closed += 1
+
+
+def _close_stub(busy=True, alive=True):
+    s = _GuiStub()
+    g = s.gui
+    g.root = _CloseRoot()
+    g.backend = _CloseBackend()
+    g.busy = busy
+    g.worker = _Worker(alive)
+    g.stop_event = threading.Event()
+    g._close_warned = False
+    g._release_pending = False
+    g._poll_id = "poll#1"
+    g._close_after_id = None
+    g._close_deadline = 0.0
+    return s, g
+
+
+def test_forced_close_waits_for_the_worker_before_touching_the_analyzer():
+    # F1: the Tk thread must not share the VISA session with a live worker.
+    s, g = _close_stub()
+    g._on_closing()                                  # first click: warning
+    assert not g.stop_event.is_set() and not g._close_requested
+    g._on_closing()                                  # second click: force
+    assert g.stop_event.is_set() and g._close_requested
+    assert g.backend.closed == 0 and not g.root.destroyed
+    assert g.root.after_calls                        # polling the worker
+    g._on_closing()                                  # third click: ignored
+    g.worker.alive = False                           # worker parked and quit
+    g._finish_close()
+    assert g.backend.closed == 1 and g.root.destroyed
+    assert "poll#1" in g.root.cancelled
+
+
+def test_forced_close_gives_up_after_the_bound_without_sharing_the_session():
+    s, g = _close_stub()
+    g._close_warned = True
+    g._on_closing()
+    g._close_deadline = time.monotonic() - 1.0       # bound expired
+    g._finish_close()
+    assert g.backend.closed == 0 and g.root.destroyed
+
+
+def test_idle_close_parks_at_once():
+    s, g = _close_stub(busy=False, alive=False)
+    g._on_closing()
+    assert g.backend.closed == 1 and g.root.destroyed
+
+
+def test_cancel_before_the_task_command_sends_no_zruncal():
+    # F2: Cancel during the *RST/INTTYP preamble must not start the task.
+    for call in ("ref", "sl_init", "sl_step"):
+        stop = threading.Event()
+        stop.set()
+        backend, fake = connected_backend(mod)
+        with _NoSleep():
+            try:
+                if call == "ref":
+                    backend.run_reference_calibration(stop_event=stop)
+                elif call == "sl_init":
+                    backend.begin_load_short_calibration(stop_event=stop)
+                else:
+                    backend.run_load_short_step("SL_SHORT", stop_event=stop)
+            except mod.CalibrationCancelled as exc:
+                assert exc.before_start, call
+            else:
+                raise AssertionError(f"{call}: cancel was ignored")
+        assert not any(c.startswith("ZRUNCAL") for c in fake.commands), call
+        assert not backend._task_may_be_running
+
+
+def test_cancel_between_ref_init_and_ref_does_not_start_ref():
+    stop = threading.Event()
+    fake = FakeAlpha()
+    real_query = fake.query
+
+    def query(cmd):
+        out = real_query(cmd)
+        if cmd == "ZRUNCAL=REF_INIT":
+            stop.set()
+        return out
+    fake.query = query
+    backend, _ = connected_backend(mod, fake)
+    with _NoSleep():
+        try:
+            backend.run_reference_calibration(stop_event=stop)
+        except mod.CalibrationCancelled:
+            pass
+        else:
+            raise AssertionError("cancel after REF_INIT was ignored")
+    assert "ZRUNCAL=REF" not in fake.commands
+
+
+def test_load_short_cancelled_in_the_preamble_reports_data_unchanged():
+    s, g, fake = _cancel_stub()
+    g.stop_event.set()
+    g.sl_dirty = False
+    with _NoSleep():
+        g._worker_load_short(0)                     # must not raise
+    items = _queued(g)
+    assert ("sldirty", True) not in items
+    assert any(k == "log" and "unchanged" in p for k, p in items)
+    assert not any(c.startswith("ZRUNCAL") for c in fake.commands)
+
+
+def test_close_warning_alone_does_not_fail_a_good_ref():
+    # F3: one click on X (then waiting) must not turn success into failure.
+    s, g = _close_stub()
+    import queue as _queue
+    g.queue = _queue.Queue()
+    g.progress_ref = None
+    g._on_closing()                                  # warning only
+
+    class _Backend:
+        def run_reference_calibration(self, stop_event=None):
+            pass
+    g.backend = _Backend()
+    written = []
+    saved = mod.write_last_ref_cal
+    mod.write_last_ref_cal = lambda *a, **k: written.append(1) or "2026-10-27T10:00:00"
+    try:
+        g._worker_ref()                              # must not raise
+    finally:
+        mod.write_last_ref_cal = saved
+    assert written == [1]
+    assert "advance" in [k for k, _ in _queued(g)]
+
+
+def _sl_queue_apply(g, items):
+    for k, p in items:
+        if k == "sldirty":
+            g.sl_dirty = p
+        elif k == "slphase":
+            g.sl_phase = p
+
+
+def test_failed_short_part_is_skipped_as_incomplete():
+    # F4: sl_phase is reset to 0 after a failure, but the data is dirty.
+    import queue as _queue
+    s = _GuiStub()
+    g = s.gui
+    g.queue = _queue.Queue()
+    g.stop_event = threading.Event()
+    g.progress_sl = None
+    g.sl_dirty = False
+    g.backend, _ = connected_backend(mod, FakeAlpha({"__read__": "CR"}))
+    with _NoSleep():
+        try:
+            g._worker_load_short(0)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("a CR ack must fail the part")
+    _sl_queue_apply(g, _queued(g))
+    assert g.sl_phase == 0 and g.sl_dirty
+    g._skip(g.STEP_SL)
+    (step, outcome), = s.advanced
+    assert outcome.startswith("INCOMPLETE")
+
+
+def test_failed_100_ohm_part_is_skipped_as_incomplete():
+    import queue as _queue
+    s = _GuiStub()
+    g = s.gui
+    g.queue = _queue.Queue()
+    g.stop_event = threading.Event()
+    g.progress_sl = None
+    g.sl_dirty = True                                # short part stored
+    g.sl_phase = 1
+    g.backend, _ = connected_backend(mod, FakeAlpha({"__read__": "CR"}))
+    try:
+        g._worker_load_short(1)
+    except RuntimeError:
+        pass
+    _sl_queue_apply(g, _queued(g))
+    assert g.sl_phase == 0
+    g._skip(g.STEP_SL)
+    assert s.advanced[0][1].startswith("INCOMPLETE")
+
+
+def test_completed_load_short_clears_the_dirty_flag():
+    import queue as _queue
+    s = _GuiStub()
+    g = s.gui
+    g.queue = _queue.Queue()
+    g.stop_event = threading.Event()
+    g.progress_sl = None
+    g.sl_dirty = True
+    g.backend, _ = connected_backend(mod)
+    g._worker_load_short(1)
+    _sl_queue_apply(g, _queued(g))
+    assert not g.sl_dirty
+
+
+def _finish_stub(results):
+    s = _GuiStub()
+    g = s.gui
+    heads = []
+    g._set_headline = lambda text, ok=None: heads.append((text, ok))
+    g._set_text = lambda w, t: None
+    g._show_step = lambda i: None
+    g._run_worker = lambda *a: None
+    g.done_text = None
+    g.results = dict(results)
+    d = tempfile.mkdtemp()
+    g.paths = {k: os.path.join(d, k + ".txt") for k in ("open", "log", "console")}
+    with _TempHome():
+        g._finish()
+    return heads
+
+
+def test_finish_keeps_warnings_red():
+    # F5
+    for outcome in ("INCOMPLETE: started, 100 Ohm load part not stored",
+                    "50 points, median C_open = 1 pF (stopped)",
+                    "50 points, median C_open = 1 pF, 3 not valid (Status column)"):
+        (text, ok), = _finish_stub({"Load-short": outcome})
+        assert ok is False and "warnings" in text, outcome
+    (text, ok), = _finish_stub({"REF": "done, last REF calibration: just now",
+                                "Load-short": "skipped"})
+    assert ok is True
+
+
+def test_open_error_keeps_the_points_already_measured():
+    # F6
+    import queue as _queue
+    s = _GuiStub()
+    g = s.gui
+    g.queue = _queue.Queue()
+    g.stop_event = threading.Event()
+    g.progress_open = None
+    g.open_rows = []
+    g.idn = "ALPHA"
+    d = tempfile.mkdtemp()
+    g.paths = {"open": os.path.join(d, "x_open_Zopen.txt")}
+    fake = FakeAlpha({"ZRE?": ["ZRE=1E9 -1.0E8 1000.0 2 1",
+                               "ZRE=1E9 -1.0E8 2000.0 2 1",
+                               "ZRE=1 -1 3000.0 6 1"]})
+    g.backend, _ = connected_backend(mod, fake)
+    params = {"frequencies": [1e3, 2e3, 3e3], "acv": 1.0, "mtm": 0.5,
+              "wire_mode": "2"}
+    with _NoSleep(), _TempHome():
+        try:
+            g._worker_open(params, "bench", "300")
+        except RuntimeError as exc:
+            assert "status 6" in str(exc)
+        else:
+            raise AssertionError("status 6 must still fail the step")
+    meta, rows = mod.parse_open_file(open(g.paths["open"], encoding="utf-8").read())
+    assert len(rows) == 2
+    assert meta["complete"].startswith("no, error after 2 of 3")
+    items = _queued(g)
+    assert any(k == "progress" and "FAILED" in p[1] for k, p in items)
+    assert "advance" not in [k for k, _ in items]
+    assert fake.commands[-2:] == ["ACV=0", "ZCONSPL=0"]   # parked
+
+
+def test_plan_and_browse_are_refused_while_busy():
+    # F7
+    s = _GuiStub()
+    g = s.gui
+    g.busy = True
+    g.connected = True
+    g.plan = [g.STEP_REF]
+    g.do_ref_var = g.do_sl_var = g.do_open_var = _Var(True)
+    g._go_plan()
+    assert g.plan == [g.STEP_REF]
+    saved = mod.filedialog.askdirectory
+    mod.filedialog.askdirectory = lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("folder dialog opened while busy"))
+    try:
+        g._browse()
+    finally:
+        mod.filedialog.askdirectory = saved
+    assert sum("Busy" in m for m in s.logs) == 2
+
+
+def test_idle_re_enables_the_ref_back_button():
+    s = _GuiStub()
+    g = s.gui
+    for b in ("btn_open_stop", "btn_ref_cancel", "btn_sl_cancel", "btn_ref_back"):
+        setattr(g, b, _Btn())
+    g.btn_ref_back.state = 'disabled'
+    g._release_pending = False
+    g._close_warned = True
+    g.busy = True
+    g._handle_queue_item("idle", None)
+    assert g.btn_ref_back.state == 'normal' and not g._close_warned
+    source = open(PATH, encoding="utf-8").read()
+    body = source.split("def _do_ref(self):", 1)[1].split("def _cancel_cal", 1)[0]
+    assert "self.btn_ref_back.config(state='disabled')" in body
+
+
+def _plan_stub(acv="1", mtm="0.5", temp="300"):
+    s = _GuiStub()
+    g = s.gui
+    g.connected = True
+    g.plan = []
+    g.do_ref_var = g.do_sl_var = _Var(False)
+    g.do_open_var = _Var(True)
+    g.acv_var, g.mtm_var, g.temp_var = _Var(acv), _Var(mtm), _Var(temp)
+    g.wire_var = _Var("2")
+    g._selected_open_freqs = lambda: [1e3, 2e3]
+    g._show_step = lambda i: None
+    g._go_plan()
+    return s, g
+
+
+def test_input_errors_name_the_box_and_temperature_must_be_finite():
+    # F8
+    for kw, word in ((dict(acv="1,0"), "AC level"), (dict(mtm="abc"), "MTM"),
+                     (dict(temp="abc"), "Temperature"),
+                     (dict(temp="nan"), "Temperature"),
+                     (dict(temp="inf"), "Temperature")):
+        s, g = _plan_stub(**kw)
+        assert g.plan == [], kw
+        assert any(word in m for m in s.logs), (kw, s.logs)
+    s, g = _plan_stub()
+    assert g.plan == [g.STEP_OPEN]
+
+
+def test_connect_with_a_vanished_or_unwritable_folder_is_reported():
+    # F9
+    s = _GuiStub()
+    g = s.gui
+    heads, started = [], []
+    g._set_headline = lambda text, ok=None: heads.append(ok)
+    g._run_worker = lambda *a: started.append(a)
+    g._console_buffer = []
+    g.paths = {}
+    g.dest_folder = os.path.join(tempfile.mkdtemp(), "gone")
+    g._do_connect()
+    assert g.paths == {} and heads == [False] and started == []
+    g.dest_folder = tempfile.mkdtemp()
+
+    def refuse(path, text):
+        raise PermissionError(13, "read-only", path)
+    g._durable_write = refuse
+    g._do_connect()
+    assert g.paths == {} and heads == [False, False] and started == []
+    assert any(g.dest_folder in m for m in s.logs)
+
+
+class _CountingStb(_StbAlpha):
+    def read_stb(self):
+        self.traffic.append(("read_stb", None))
+        return self.stb
+
+
+def test_stop_aborts_an_open_point_within_one_slice():
+    # F10: nothing is sent or polled between slices; Stop ends the point.
+    stop = threading.Event()
+    n = {"waits": 0}
+
+    def on_wait():
+        n["waits"] += 1
+        if n["waits"] == 3:
+            stop.set()
+    fake = _CountingStb(on_wait=on_wait)
+    backend, _ = connected_backend(mod, fake)
+    backend.params = {"mtm": 0.5}
+    try:
+        backend.measure_point(1e-3, stop_event=stop)  # ~4000 s budget
+    except mod.CalibrationCancelled:
+        pass
+    else:
+        raise AssertionError("Stop must end the point")
+    tail = [k for k, _ in _calls_after(fake, "MST")]
+    assert tail[:4] == ["write", "wait_for_srq", "wait_for_srq", "wait_for_srq"]
+    assert all(w <= mod.CAL_WAIT_SLICE_S * 1000 for w in _waits(fake))
+    assert fake.commands[-2:] == ["MBK", "ZTSTAT?"]
+
+
+def test_stop_during_a_point_drops_it_and_keeps_the_rest():
+    stop = threading.Event()
+    fake = FakeAlpha()
+    backend, _ = connected_backend(mod, fake)
+    calls = {"n": 0}
+    real_wait = fake.wait_for_srq
+
+    def wait(timeout_ms=25000):
+        calls["n"] += 1
+        if calls["n"] == 2:              # second point: Stop, no SRQ
+            stop.set()
+            raise TimeoutError("no SRQ")
+        return real_wait(timeout_ms)
+    fake.wait_for_srq = wait
+    rows = mod.measure_open_cell(backend, [1e3, 2e3, 3e3], stop_event=stop)
+    assert len(rows) == 1 and "MBK" in fake.commands
+    assert fake.commands.count("MST") == 2
 
 
 if __name__ == "__main__":

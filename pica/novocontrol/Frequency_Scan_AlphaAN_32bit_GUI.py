@@ -822,6 +822,72 @@ CUSTOM_FREQ_LABEL = "Custom list (type your own below)"
 # Sanity cap only: at ~1 s per point this is already a 15+ minute sweep.
 CUSTOM_FREQ_MAX_POINTS = 1000
 
+# Second-to-last choice: WinDETA's "Measurement Points by Steps" dialog,
+# logarithmic division. Start, End and Factor in, list out.
+LOG_FREQ_LABEL = "Start / End / Factor (WinDETA-style)"
+LOG_FREQ_DEFAULTS = ("20", "3e6", "1.4")   # today's WinDETA Fscan list
+# What the Frequency List box shows at start-up (DEFAULT_FREQ_PRESET stays
+# the default among the frozen presets).
+DEFAULT_FREQ_CHOICE = LOG_FREQ_LABEL
+# The hint lists every point up to this many; click it for the rest.
+HINT_FULL_LIST_MAX = 60
+
+
+def build_log_frequency_list(start, end, factor):
+    """WinDETA logarithmic value list: start, start*factor, start*factor^2 ...
+    while short of End, then End itself as the last point (WinDETA help:
+    the multiplier is constant 'except the last point').
+
+    Each point is start*factor^k rounded to 7 significant digits, the
+    precision WinDETA stores. This reproduces the mes_def list exactly
+    (20 Hz x1.4 to 3 MHz: 37 points, ...2.603222e6, 3e6) and both frozen
+    presets above. start > end gives a descending list (divide by factor).
+    Raises ValueError with a readable reason.
+    """
+    for name, v in (("Start", start), ("End", end), ("Factor", factor)):
+        if not math.isfinite(v):
+            raise ValueError(f"{name} is not a finite number.")
+    for name, v in (("Start", start), ("End", end)):
+        if not (FREQ_HW_MIN <= v <= FREQ_HW_MAX):
+            raise ValueError(
+                f"{name} {v:g} Hz is outside the Alpha-AN range "
+                f"{FREQ_HW_MIN:g} Hz to {FREQ_HW_MAX:g} Hz."
+            )
+    if factor <= 1.0:
+        raise ValueError("Factor must be greater than 1 (e.g. 1.4).")
+    if start == end:
+        raise ValueError("Start and End are the same frequency.")
+    step = factor if end > start else 1.0 / factor
+    rising = end > start
+    values = []
+    k = 0
+    while True:
+        f = float(f"{start * step ** k:.6e}")
+        # Stop once the next point reaches End (1e-9 slack: no duplicate
+        # End when the series lands on it exactly, e.g. 20 Hz x10 to 2 MHz).
+        if (f >= end * (1 - 1e-9)) if rising else (f <= end * (1 + 1e-9)):
+            break
+        if values and f == values[-1]:
+            raise ValueError(
+                f"Factor {factor:g} is too close to 1: points repeat at "
+                f"7-digit resolution. Use a larger factor."
+            )
+        values.append(f)
+        k += 1
+        if len(values) >= CUSTOM_FREQ_MAX_POINTS:
+            raise ValueError(
+                f"Factor {factor:g} gives more than "
+                f"{CUSTOM_FREQ_MAX_POINTS} points; use a larger factor."
+            )
+    values.append(float(end))
+    return tuple(values)
+
+
+def log_list_label(freqs, factor):
+    """Header/log label in the preset style, e.g. '37 pts, 20 Hz - 3 MHz'."""
+    return (f"{len(freqs)} pts, {freqs[0]:g} Hz - {freqs[-1]:g} Hz "
+            f"(x{factor:g})")
+
 
 def parse_frequency_list(text):
     """User-typed frequency list (Hz) -> tuple of floats, in typed order.
@@ -861,19 +927,24 @@ def parse_frequency_list(text):
     return tuple(values)
 
 
-# WinDETA column header. Order and names are FIXED - WinFIT parses this
-# positionally. Do not add, remove or reorder columns. Zp comes BEFORE Sig,
-# matching the WinDETA export paired with the mes_def
-# (data_file_for_ref/Fscan_data_Novo_Windeta.dat).
+# WinDETA column header. WinFIT parses this positionally, so keep the
+# order. Zp comes BEFORE Sig, matching the WinDETA export paired with the
+# mes_def (data_file_for_ref/Fscan_data_Novo_Windeta.dat). Tan(Delta)
+# follows Eps'' and the phase angle closes the row (user layout, 27 Oct
+# 2026; names from WinDETA's variable list).
 WINDETA_HEADER = (
-    " Freq. [Hz]\t Eps'    \t Eps''   \t Modulus'  \t Modulus''  \t"
-    " Zp' [Ohms]\t Zp'' [Ohms]\t Sig' [S/cm]\t Sig'' [S/cm]"
+    " Freq. [Hz]\t Eps'    \t Eps''   \t Tan(Delta)\t Modulus'  \t"
+    " Modulus''  \t Zp' [Ohms]\t Zp'' [Ohms]\t Sig' [S/cm]\t Sig'' [S/cm]\t"
+    " Phi [Deg]"
 )
 
-# Same nine quantities, PICA-style header for the built-in Plotter.
+# PICA .dat header: the LCR-meter layout of the Step Fscan modules
+# (DATA_HEADER there) minus T_set(K) - this sweep has no temperature.
+# Frequency + the 18 derived_columns values, in that order (user layout,
+# 27 Oct 2026). The dielectric quantities live in the WinDETA .txt.
 PICA_HEADER = (
-    "Frequency\tEps'\tEps''\tModulus'\tModulus''\t"
-    "Zp'\tZp''\tSig'\tSig''"
+    "Frequency\tQ\tD\tG(1/Rp)\tB\tCp\tLp\tCs\tLs\tlZl\ttheta\tchi\t"
+    "R(Rs)\ttheta(deg.)\tRp\t1/lZl\tOmega\tCp''\tCs''"
 )
 
 
@@ -949,6 +1020,8 @@ def dat_metadata_lines(params, c0_farads, cal_age_str, when):
         f"# 4 Wire Front State                   : {wires}",
         "# Driven HI / LO Shield                : Off / Off (DRS=0 0)",
         f"# Integration time                     : {params['mtm']} s (MTM)",
+        "# Columns: 19, LCR layout of the Step Fscan (no T_set): "
+        "D = G/B = -R/X, theta = phase of Z (rad, then deg), SI units",
     ]
 
 
@@ -1043,6 +1116,77 @@ def impedance_to_dielectric(zr, zi, f_actual, c0):
     zp2 = -z_mag_sq / zi_safe   # 1/B = parallel reactance
 
     return (f_actual, eps1, eps2, m1, m2, zp1, zp2, sig1, sig2)
+
+
+def loss_phase_cp_g(zr, zi, f_actual):
+    """The extra WinDETA .txt columns plus Cp, G: (tan_delta, phi_deg, Cp, G).
+
+        tan(delta) = eps''/eps' = -R/X     (WinDETA 'Tan(Delta)')
+        phi        = atan2(X, R) in deg    (phase of Z, negative for a
+                                            capacitor; WinDETA showed
+                                            +13.394 deg at 3 MHz, inductive)
+        Cp = B/w = -X / (w*|Z|^2)          parallel capacitance, F
+        G  = R / |Z|^2                     parallel conductance, S
+
+    Geometry-independent: Cp = eps'*C0 and G = 1/Zp'. Only tan_delta and
+    phi are written (.txt); the .dat takes Cp and G from derived_columns.
+    """
+    omega = 2.0 * math.pi * f_actual
+    omega_safe = omega if omega != 0 else 1e-20
+    z_mag_sq = zr ** 2 + zi ** 2
+    z_mag_sq_safe = z_mag_sq if z_mag_sq != 0 else 1e-20
+    zi_safe = zi if zi != 0 else 1e-20
+
+    tan_d = -zr / zi_safe
+    phi_deg = math.degrees(math.atan2(zi, zr))
+    cp = -zi / (omega_safe * z_mag_sq_safe)
+    g = zr / z_mag_sq_safe
+    return (tan_d, phi_deg, cp, g)
+
+
+def derived_columns(f, R, X):
+    """The 18 derived values from measured R (series) and X (reactance),
+    in PICA_HEADER order after Frequency. Copied from the Step Fscan's
+    calculate_impedance_parameters (legacy LabVIEW convention); math.pi /
+    math.sqrt give the same doubles as np.pi / np.sqrt, so no numpy."""
+    omega = 2 * math.pi * f
+    omega_safe = omega if omega != 0 else 1e-20
+    Z_mag = math.sqrt(R**2 + X**2)
+    Z_mag_safe = Z_mag if Z_mag != 0 else 1e-20
+    Z_mag_sq = Z_mag_safe ** 2
+    G = R / Z_mag_sq
+    B = -X / Z_mag_sq
+    G_safe = G if G != 0 else 1e-20
+    B_safe = B if B != 0 else 1e-20
+    X_safe = X if X != 0 else 1e-20
+    Rp = 1.0 / G_safe
+    Cp = B / omega_safe
+    Cs = -1.0 / (omega_safe * X_safe)
+    Ls = X / omega_safe
+    Lp = -1.0 / (omega_safe * B_safe)
+    Ls = abs(Ls); Lp = abs(Lp)  # legacy convention
+    D = G_safe / B_safe
+    D_safe = D if D != 0 else 1e-20
+    Q = 1.0 / D_safe
+    theta_rad = math.atan2(X, R)
+    theta_deg = math.degrees(theta_rad)
+    Y_mag = 1.0 / Z_mag_safe
+    Cp_dp = G / omega_safe
+    # Cs'' = D*Cs (series-model loss) - the legacy LabVIEW convention;
+    # differs from Cp'' by (1 + D^2) in general.
+    Cs_dp = D * Cs
+    return [Q, D, G, B, Cp, Lp, Cs, Ls, Z_mag, theta_rad, X, R,
+            theta_deg, Rp, Y_mag, omega, Cp_dp, Cs_dp]
+
+
+def file_rows(row, extra, derived):
+    """(WinDETA row, PICA row) from impedance_to_dielectric's 9-tuple,
+    loss_phase_cp_g's 4-tuple and derived_columns' 18 values, in
+    WINDETA_HEADER (11) / PICA_HEADER (19) order. Both rows start with
+    the same actual frequency row[0]."""
+    tan_d, phi_deg = extra[0], extra[1]
+    windeta = tuple(row[:3]) + (tan_d,) + tuple(row[3:]) + (phi_deg,)
+    return windeta, (row[0],) + tuple(derived)
 
 
 def validate_parameters(params):
@@ -1582,9 +1726,9 @@ class AlphaAN_FreqScan_GUI:
         self.is_calibrating = False
         self._stopping = False          # re-entrancy guard for stop_sweep
         self._close_after_stop = False  # destroy window once worker exits
-        # End-of-run pop-up, held until the instrument is parked so an open
-        # dialog can never delay the teardown or its log line.
-        self._end_dialog = None
+        # How the last run ended ("DONE" / "ERROR"); None = stopped by user.
+        self._end_status = None
+        self.n_discarded = 0
         self.backend = AlphaAN_Backend()
         self.file_location_path = ""
         self.txt_filepath = ""
@@ -1600,7 +1744,7 @@ class AlphaAN_FreqScan_GUI:
         # Forced cleanup: close the backend on crash/exit.
         atexit.register(self.backend.close_instrument)
 
-        self.data_storage = {"freq": [], "eps1": [], "eps2": []}
+        self.data_storage = {"freq": [], "eps1": [], "tand": []}
         self.logo_image = None
         self.sweep_index = 0
         self.sweep_frequencies = FREQ_PRESETS[DEFAULT_FREQ_PRESET]
@@ -1621,6 +1765,10 @@ class AlphaAN_FreqScan_GUI:
     def setup_styles(self):
         style = ttk.Style(self.root)
         style.theme_use("clam")
+        # Plain tk Labels default to the system grey; match the panel.
+        # (A Label that passes its own bg keeps it.)
+        self.root.option_add("*Label.background", self.CLR_BG_DARK)
+        self.root.option_add("*Label.foreground", self.CLR_FG_LIGHT)
         style.configure("TFrame", background=self.CLR_BG_DARK)
         style.configure("TPanedWindow", background=self.CLR_BG_DARK)
         style.configure(
@@ -1753,6 +1901,17 @@ class AlphaAN_FreqScan_GUI:
         )
         self.left_scrollable_frame = scrollable_frame
 
+        # Mouse wheel scrolls the parameter panel while the pointer is over
+        # it; text boxes (console, custom list) keep their own wheel.
+        def _wheel(e):
+            if isinstance(e.widget, tk.Text):
+                return
+            if scrollable_frame.winfo_reqheight() > canvas.winfo_height():
+                canvas.yview_scroll(int(-e.delta / 120), "units")
+        canvas.bind("<Enter>",
+                    lambda e: canvas.bind_all("<MouseWheel>", _wheel))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
@@ -1761,6 +1920,13 @@ class AlphaAN_FreqScan_GUI:
 
         input_frame = self.create_input_frame(scrollable_frame)
         input_frame.pack(fill="x", expand=True, padx=10, pady=5)
+
+        # A wheel over a dropdown must never change its choice (Tk's
+        # Combobox steps through its values on the wheel); scroll the
+        # panel instead and stop the Combobox's own binding.
+        for box in (self.freq_combobox, self.wire_combobox,
+                    self.visa_combobox):
+            box.bind("<MouseWheel>", lambda e: (_wheel(e), "break")[1])
 
         console_frame = self.create_console_frame(scrollable_frame)
         console_frame.pack(fill="both", expand=True, padx=10, pady=5)
@@ -1837,13 +2003,18 @@ class AlphaAN_FreqScan_GUI:
         padx = 10
 
         def _vfloat(P):
+            # A number, or one on its way: "5e" and "5e-" lead to "5e-1".
             if P in ("", "-", ".", "-."):
                 return True
-            try:
-                float(P)
-                return True
-            except ValueError:
-                return False
+            if any(ch not in "0123456789.eE+-" for ch in P):
+                return False  # also keeps out "inf" / "nan"
+            for candidate in (P, P + "0"):
+                try:
+                    float(candidate)
+                    return True
+                except ValueError:
+                    pass
+            return False
 
         self._vfloat_cmd = (frame.register(_vfloat), "%P")
 
@@ -1870,8 +2041,9 @@ class AlphaAN_FreqScan_GUI:
         # as an electrode AREA (irregular electrodes), in mm / mm^2 as
         # WinDETA. Each mode keeps its own value, so flipping the toggle
         # never turns an area into a diameter: defaults D = 1 mm,
-        # A = 1 mm^2, d = 1 mm.
-        self.geom_mode_var = tk.StringVar(value="area")
+        # A = 1 mm^2, d = 1 mm. Diameter is the default mode (WinDETA's
+        # round plate electrode).
+        self.geom_mode_var = tk.StringVar(value="diameter")
         self._geom_values = {"area": "1.0", "diameter": "1.0"}
         geom_radio_frame = ttk.Frame(frame)
         geom_radio_frame.grid(
@@ -1880,17 +2052,19 @@ class AlphaAN_FreqScan_GUI:
         Label(
             geom_radio_frame, text="Geometry input:", font=self.FONT_BASE
         ).pack(side="left")
-        ttk.Radiobutton(
-            geom_radio_frame, text="Area (mm²)", value="area",
-            variable=self.geom_mode_var, command=self._on_geom_mode_change,
-        ).pack(side="left", padx=(10, 0))
-        ttk.Radiobutton(
-            geom_radio_frame, text="Diameter (mm)", value="diameter",
-            variable=self.geom_mode_var, command=self._on_geom_mode_change,
-        ).pack(side="left", padx=(10, 0))
+        self.geom_radios = []
+        for text, value in (("Area (mm²)", "area"),
+                            ("Diameter (mm)", "diameter")):
+            radio = ttk.Radiobutton(
+                geom_radio_frame, text=text, value=value,
+                variable=self.geom_mode_var,
+                command=self._on_geom_mode_change,
+            )
+            radio.pack(side="left", padx=(10, 0))
+            self.geom_radios.append(radio)
 
         self.lbl_geom = self._add_entry(
-            frame, "Electrode Area (mm²)", "geom_value", 8, 0,
+            frame, "Electrode Diameter (mm)", "geom_value", 8, 0,
             default="1.0",
         )
         self._add_entry(
@@ -1929,8 +2103,10 @@ class AlphaAN_FreqScan_GUI:
         self._update_c0_label()
 
         # Three frozen scan recipes (never editable, so runs stay comparable
-        # point-for-point) plus a custom list the user types. The custom
-        # box and its List Maker button are greyed unless chosen.
+        # point-for-point), a WinDETA-style Start/End/Factor list, and a
+        # custom list the user types. The custom box and its List Maker
+        # button are greyed, and the Start/End/Factor row hidden, unless
+        # chosen.
         Label(
             frame, text="Frequency List:", font=self.FONT_BASE
         ).grid(
@@ -1944,9 +2120,9 @@ class AlphaAN_FreqScan_GUI:
         freq_frame.grid_columnconfigure(0, weight=1)
         self.freq_combobox = ttk.Combobox(
             freq_frame, font=self.FONT_BASE, state="readonly",
-            values=list(FREQ_PRESETS) + [CUSTOM_FREQ_LABEL],
+            values=[LOG_FREQ_LABEL] + list(FREQ_PRESETS) + [CUSTOM_FREQ_LABEL],
         )
-        self.freq_combobox.set(DEFAULT_FREQ_PRESET)
+        self.freq_combobox.set(DEFAULT_FREQ_CHOICE)
         self.freq_combobox.grid(row=0, column=0, columnspan=2, sticky="ew")
         self.freq_combobox.bind(
             "<<ComboboxSelected>>", self._on_freq_list_change
@@ -1957,27 +2133,63 @@ class AlphaAN_FreqScan_GUI:
             text=f"Frequencies in Hz, comma-separated "
                  f"({FREQ_HW_MIN:g} to {FREQ_HW_MAX:g} Hz):",
         )
-        self.lbl_custom_freq.grid(row=1, column=0, pady=(4, 0), sticky="w")
+        self.lbl_custom_freq.grid(row=2, column=0, pady=(4, 0), sticky="w")
         self.list_maker_button = ttk.Button(
             freq_frame, text="List Maker", width=10,
             command=launch_list_maker,
         )
-        self.list_maker_button.grid(row=1, column=1, pady=(4, 0), sticky="e")
+        self.list_maker_button.grid(row=2, column=1, pady=(4, 0), sticky="e")
         self.custom_freq_text = tk.Text(
             freq_frame, height=3, wrap="word", font=self.FONT_CONSOLE,
             relief="solid", bd=1,
         )
         self.custom_freq_text.grid(
-            row=2, column=0, columnspan=2, pady=(2, 0), sticky="ew"
+            row=3, column=0, columnspan=2, pady=(2, 0), sticky="ew"
         )
         self.custom_freq_text.bind(
             "<KeyRelease>", self._update_custom_freq_hint
         )
+        # WinDETA "Measurement Points by Steps": Start, End, Factor.
+        # Always shown, greyed unless the WinDETA-style list is chosen.
+        self.log_freq_frame = ttk.Frame(freq_frame)
+        self.log_freq_frame.grid(
+            row=1, column=0, columnspan=2, pady=(4, 0), sticky="ew"
+        )
+        self.log_freq_entries = {}
+        self.log_freq_labels = []
+        for col, (key, text, default) in enumerate(zip(
+            ("start", "end", "factor"),
+            ("Start [Hz]", "End [Hz]", "Factor"),
+            LOG_FREQ_DEFAULTS,
+        )):
+            self.log_freq_frame.grid_columnconfigure(col, weight=1)
+            label = Label(
+                self.log_freq_frame, text=text, font=("Segoe UI", 9)
+            )
+            label.grid(row=0, column=col, sticky="w")
+            self.log_freq_labels.append(label)
+            entry = ttk.Entry(self.log_freq_frame, width=9,
+                              font=self.FONT_BASE)
+            entry.insert(0, default)
+            entry.grid(row=1, column=col, padx=(0, 4), sticky="ew")
+            entry.bind("<KeyRelease>", self._update_custom_freq_hint)
+            self.log_freq_entries[key] = entry
+
+        # Full panel width (wraplength follows the frame); a click toggles
+        # between the short and the complete point list.
+        self.hint_show_all = False
         self.lbl_custom_hint = Label(
             freq_frame, text="", font=("Segoe UI", 9), anchor="w",
             justify="left", wraplength=self.LEFT_PANEL_WIDTH - 60,
+            cursor="hand2",
         )
-        self.lbl_custom_hint.grid(row=3, column=0, columnspan=2, sticky="w")
+        self.lbl_custom_hint.grid(row=4, column=0, columnspan=2, sticky="ew")
+        self.lbl_custom_hint.bind("<Button-1>", self._toggle_hint_list)
+        freq_frame.bind(
+            "<Configure>",
+            lambda e: self.lbl_custom_hint.config(
+                wraplength=max(e.width - 8, 100)),
+        )
         self._on_freq_list_change()
 
         Label(
@@ -2003,12 +2215,21 @@ class AlphaAN_FreqScan_GUI:
             command=self._browse_file_location,
         ).grid(row=17, column=1, padx=padx, pady=5, sticky="ew")
 
+        # Where the files go; red until a folder is chosen.
+        self.lbl_save_loc = ttk.Label(
+            frame, text="Save to: (not set - use Browse Save Loc...)",
+            font=("Segoe UI", 9), foreground="#B00020",
+        )
+        self.lbl_save_loc.grid(
+            row=18, column=0, columnspan=2, padx=padx, sticky="w"
+        )
+
         # Output formats. Both on by default; at least one is required.
         self.fmt_pica_var = tk.BooleanVar(value=True)
         self.fmt_windeta_var = tk.BooleanVar(value=True)
         fmt_frame = ttk.Frame(frame)
         fmt_frame.grid(
-            row=18, column=0, columnspan=2, padx=padx, pady=(2, 0), sticky="w"
+            row=19, column=0, columnspan=2, padx=padx, pady=(2, 0), sticky="w"
         )
         Label(fmt_frame, text="Save as:", font=self.FONT_BASE).pack(side="left")
         ttk.Checkbutton(
@@ -2026,7 +2247,7 @@ class AlphaAN_FreqScan_GUI:
             command=self.run_reference_calibration,
         )
         self.cal_button.grid(
-            row=19, column=0, columnspan=2, padx=padx, pady=(10, 2),
+            row=20, column=0, columnspan=2, padx=padx, pady=(10, 2),
             sticky="ew",
         )
 
@@ -2035,7 +2256,7 @@ class AlphaAN_FreqScan_GUI:
             foreground=self.CLR_TEXT_DARK,
         )
         self.lbl_cal_age.grid(
-            row=20, column=0, columnspan=2, padx=padx, sticky="w"
+            row=21, column=0, columnspan=2, padx=padx, sticky="w"
         )
 
         self.start_button = ttk.Button(
@@ -2043,14 +2264,14 @@ class AlphaAN_FreqScan_GUI:
             style="Start.TButton",
         )
         self.start_button.grid(
-            row=21, column=0, padx=(padx, 5), pady=15, sticky="ew"
+            row=22, column=0, padx=(padx, 5), pady=15, sticky="ew"
         )
         self.stop_button = ttk.Button(
             frame, text="Stop", command=self.stop_sweep,
             style="Stop.TButton", state="disabled",
         )
         self.stop_button.grid(
-            row=21, column=1, padx=(5, padx), pady=15, sticky="ew"
+            row=22, column=1, padx=(5, padx), pady=15, sticky="ew"
         )
 
         self.lbl_status = ttk.Label(
@@ -2058,14 +2279,14 @@ class AlphaAN_FreqScan_GUI:
             font=("Segoe UI", 12, "bold"),
             foreground=self.CLR_ACCENT_RED,
         )
-        self.lbl_status.grid(row=22, column=0, columnspan=2, pady=5)
+        self.lbl_status.grid(row=23, column=0, columnspan=2, pady=5)
 
         self.progress_bar = ttk.Progressbar(
             frame, orient="horizontal", mode="determinate",
             style="green.Horizontal.TProgressbar",
         )
         self.progress_bar.grid(
-            row=23, column=0, columnspan=2, padx=padx, pady=(5, 10),
+            row=24, column=0, columnspan=2, padx=padx, pady=(5, 10),
             sticky="ew",
         )
 
@@ -2100,28 +2321,33 @@ class AlphaAN_FreqScan_GUI:
         return frame
 
     def create_graph_frame(self, parent):
-        self.figure = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
+        # Constrained layout re-fits the margins on every resize, so the
+        # axis labels are never clipped at narrow widths.
+        self.figure = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG,
+                             layout="constrained")
 
         self.ax_eps1 = self.figure.add_subplot(2, 1, 1)
         self.line_eps1, = self.ax_eps1.plot(
             [], [], color="#C00000", marker="o", markersize=3, linestyle="-"
         )
-        self.ax_eps1.set_ylabel("Permittivity, eps'")
+        self.ax_eps1.set_ylabel("Permittivity, ε′")
         self.ax_eps1.set_xscale("log")
         self.ax_eps1.grid(True, linestyle="--", alpha=0.7)
 
-        self.ax_eps2 = self.figure.add_subplot(2, 1, 2)
-        self.line_eps2, = self.ax_eps2.plot(
+        # Bottom panel: loss factor tan(delta) = eps''/eps', as WinDETA plots.
+        self.ax_tand = self.figure.add_subplot(2, 1, 2)
+        self.line_tand, = self.ax_tand.plot(
             [], [], color="#2A6B3A", marker="s", markersize=3, linestyle="-"
         )
-        self.ax_eps2.set_xlabel("Frequency (Hz)")
-        self.ax_eps2.set_ylabel("Dielectric Loss, eps''")
-        self.ax_eps2.set_xscale("log")
-        self.ax_eps2.grid(True, linestyle="--", alpha=0.7)
+        self.ax_tand.set_xlabel("Frequency (Hz)")
+        self.ax_tand.set_ylabel("Loss factor, tan δ")
+        self.ax_tand.set_xscale("log")
+        self.ax_tand.grid(True, linestyle="--", alpha=0.7)
 
-        self.figure.subplots_adjust(
-            left=0.10, right=0.98, top=0.98, bottom=0.07, hspace=0.15
-        )
+        # Empty axes before a run: the Alpha-AN span, no fake y ticks.
+        for ax in (self.ax_eps1, self.ax_tand):
+            ax.set_xlim(10, 1e7)
+            ax.set_yticks([])
 
         ttk.Checkbutton(
             parent,
@@ -2145,10 +2371,14 @@ class AlphaAN_FreqScan_GUI:
         [10^floor(log10(min_pos)), 10^ceil(log10(max_pos))]; expand only,
         whole decades at a time, so the scale never jitters per point.
         Linear fallback if no positive finite data."""
-        pos = [v for v in values if isinstance(v, (int, float))
-               and math.isfinite(v) and v > 0]
-        if not pos:
+        finite = [v for v in values if isinstance(v, (int, float))
+                  and math.isfinite(v)]
+        pos = [v for v in finite if v > 0]
+        # A zero/negative point (e.g. tan delta < 0 for an inductive
+        # sample) would vanish on a log axis, so show it linear instead.
+        if not pos or len(pos) < len(finite):
             ax.set_yscale('linear')
+            ax.set_autoscaley_on(True)
             ax.relim()
             ax.autoscale_view(scaley=True)
             self._decade_ylims.pop(key, None)
@@ -2207,14 +2437,51 @@ class AlphaAN_FreqScan_GUI:
         return compute_c0(geom_value, thickness_mm)
 
     def _update_c0_label(self, _event=None):
+        # The worker reads self.c0_farads for every point, so it is only
+        # (re)set while idle; start_sweep fixes it for the run.
+        idle = not (self.is_running or self._stopping)
         try:
             g = float(self.entries["geom_value"].get())
             t = float(self.entries["thickness_mm"].get())
-            self.c0_farads = self._compute_c0_from_inputs(g, t)
-            self.lbl_c0.config(text=f"C0 = {self.c0_farads:.5e} F")
+            c0 = self._compute_c0_from_inputs(g, t)
+            if idle:
+                self.c0_farads = c0
+            self.lbl_c0.config(text=f"C0 = {c0:.5e} F")
         except (ValueError, ZeroDivisionError):
-            self.c0_farads = None
+            if idle:
+                self.c0_farads = None
             self.lbl_c0.config(text="C0 = -- (check geometry)")
+
+    def _set_inputs_enabled(self, enabled):
+        """Lock every parameter widget during a run so the screen always
+        shows what is being measured; unlock afterwards."""
+        state = "normal" if enabled else "disabled"
+        for entry in self.entries.values():
+            entry.config(state=state)
+        for radio in self.geom_radios:
+            radio.config(state=state)
+        for box in (self.freq_combobox, self.wire_combobox,
+                    self.visa_combobox):
+            box.config(state="readonly" if enabled else "disabled")
+        self.custom_freq_text.config(state=state)
+        if enabled:
+            self._on_freq_list_change()  # restores Start/End/Factor greying
+        else:
+            for entry in self.log_freq_entries.values():
+                entry.config(state="disabled")
+
+    def _entry_float(self, key, name):
+        """Float from an entry, or a ValueError that names the box."""
+        text = self.entries[key].get().strip()
+        try:
+            return float(text)
+        except ValueError:
+            self.entries[key].focus_set()
+            raise ValueError(f'{name}: "{text}" is not a number.') from None
+
+    def _set_status(self, text, color=None):
+        self.lbl_status.config(text=text,
+                               foreground=color or self.CLR_ACCENT_RED)
 
     # --- VISA helpers ----------------------------------------------------
 
@@ -2290,30 +2557,88 @@ class AlphaAN_FreqScan_GUI:
             self.log(f"ERROR during scan: {e}")
 
     def _on_freq_list_change(self, _event=None):
-        """Grey the custom-list box and List Maker button unless chosen."""
-        custom = self.freq_combobox.get() == CUSTOM_FREQ_LABEL
-        if custom:
-            self.custom_freq_text.config(
-                state="normal", bg="white", fg=self.CLR_TEXT_DARK
-            )
-            self.lbl_custom_freq.config(fg=self.CLR_TEXT_DARK)
-            self.list_maker_button.config(state="normal")
+        """Show the custom-list box and List Maker only for the custom
+        list; grey the Start/End/Factor row unless that list is chosen."""
+        choice = self.freq_combobox.get()
+        custom = choice == CUSTOM_FREQ_LABEL
+        log_mode = choice == LOG_FREQ_LABEL
+        self.hint_show_all = False  # every switch starts with the short list
+
+        for entry in self.log_freq_entries.values():
+            entry.config(state="normal" if log_mode else "disabled")
+        for label in self.log_freq_labels:
+            label.config(fg=self.CLR_TEXT_DARK if log_mode else "#8A837D")
+
+        for widget in (self.lbl_custom_freq, self.list_maker_button,
+                       self.custom_freq_text):
+            if custom:
+                widget.grid()
+            else:
+                widget.grid_remove()
+
+        if custom or log_mode:
             self.lbl_custom_hint.grid()
             self._update_custom_freq_hint()
         else:
-            self.custom_freq_text.config(
-                state="disabled", bg="#D9D2CB", fg="#8A837D"
-            )
-            self.lbl_custom_freq.config(fg="#8A837D")
-            self.list_maker_button.config(state="disabled")
             # An empty Label still draws as a blank strip, so hide it.
             self.lbl_custom_hint.grid_remove()
 
+    def _log_list_from_entries(self):
+        """(frequencies, factor) from the Start/End/Factor boxes.
+        Raises ValueError with a readable reason."""
+        numbers = {}
+        for key, name in (("start", "Start"), ("end", "End"),
+                          ("factor", "Factor")):
+            text = self.log_freq_entries[key].get().strip()
+            try:
+                numbers[key] = float(text)
+            except ValueError:
+                raise ValueError(
+                    f"{name}: '{text}' is not a number (e.g. 20, 3e6, 1.4)."
+                ) from None
+        freqs = build_log_frequency_list(
+            numbers["start"], numbers["end"], numbers["factor"]
+        )
+        return freqs, numbers["factor"]
+
+    def _point_list_text(self, freqs):
+        """'N points: ...' for the hint: every point up to
+        HINT_FULL_LIST_MAX, else the first 40 and last 10 unless the user
+        clicked for the whole list."""
+        fmt = [f"{f:.4g}" for f in freqs]
+        if len(fmt) <= HINT_FULL_LIST_MAX:
+            return f"{len(fmt)} points: {', '.join(fmt)} Hz"
+        if self.hint_show_all:
+            return (f"{len(fmt)} points: {', '.join(fmt)} Hz "
+                    f"(click to shorten)")
+        return (f"{len(fmt)} points: {', '.join(fmt[:40])}, ... "
+                f"{', '.join(fmt[-10:])} Hz (click to show all)")
+
+    def _toggle_hint_list(self, _event=None):
+        # Only a long Start/End/Factor list has anything to expand.
+        if str(self.lbl_custom_hint.cget("cursor")) != "hand2":
+            return
+        self.hint_show_all = not self.hint_show_all
+        self._update_custom_freq_hint()
+
     def _update_custom_freq_hint(self, _event=None):
-        """Live readout under the custom box: point count and span, or
-        the reason the list would be refused at Start."""
+        """Live readout under the custom box or the Start/End/Factor row:
+        point count and span, or the reason the list would be refused."""
+        if self.freq_combobox.get() == LOG_FREQ_LABEL:
+            try:
+                freqs, _factor = self._log_list_from_entries()
+            except ValueError as e:
+                self.lbl_custom_hint.config(text=str(e), fg="#B00020",
+                                            cursor="")
+                return
+            self.lbl_custom_hint.config(
+                text=self._point_list_text(freqs), fg=self.CLR_TEXT_DARK,
+                cursor="hand2" if len(freqs) > HINT_FULL_LIST_MAX else "",
+            )
+            return
         if self.freq_combobox.get() != CUSTOM_FREQ_LABEL:
             return
+        self.lbl_custom_hint.config(cursor="")
         text = self.custom_freq_text.get("1.0", "end")
         if not text.strip():
             self.lbl_custom_hint.config(
@@ -2340,11 +2665,17 @@ class AlphaAN_FreqScan_GUI:
                 self.custom_freq_text.get("1.0", "end")
             )
             return f"Custom list ({len(freqs)} pts)", freqs
+        if choice == LOG_FREQ_LABEL:
+            freqs, factor = self._log_list_from_entries()
+            return log_list_label(freqs, factor), freqs
         return choice, FREQ_PRESETS[choice]
 
     def _browse_file_location(self):
         path = filedialog.askdirectory()
         if path:
+            shown = path if len(path) <= 55 else "..." + path[-52:]
+            self.lbl_save_loc.config(text=f"Save to: {shown}",
+                                     foreground=self.CLR_TEXT_DARK)
             self.file_location_path = path
             self.log(f"Save location set to: {path}")
 
@@ -2467,17 +2798,23 @@ class AlphaAN_FreqScan_GUI:
         try:
             if self.is_calibrating:
                 raise RuntimeError("A calibration is still running.")
+            if self.worker_thread is not None and self.worker_thread.is_alive():
+                raise RuntimeError(
+                    "The previous sweep is still shutting down; try again "
+                    "in a moment."
+                )
 
             geom_mode = self.geom_mode_var.get()
             freq_label, frequencies = self._selected_frequencies()
             params = {
                 "sample_name": self.entries["sample_name"].get().strip(),
                 "comment": self.entries["comment"].get().strip(),
-                "acv": float(self.entries["acv"].get()),
-                "mtm": float(self.entries["mtm"].get()),
+                "acv": self._entry_float("acv", "AC Voltage"),
+                "mtm": self._entry_float("mtm", "Integration Time"),
                 "geometry_mode": geom_mode,
-                "thickness_mm": float(self.entries["thickness_mm"].get()),
-                "delay": float(self.entries["delay"].get()),
+                "thickness_mm": self._entry_float(
+                    "thickness_mm", "Sample Thickness"),
+                "delay": self._entry_float("delay", "Initial Delay"),
                 "wire_mode": self.wire_combobox.get(),
                 "visa": self._selected_visa_address(),
                 "freq_preset": freq_label,
@@ -2485,16 +2822,31 @@ class AlphaAN_FreqScan_GUI:
                 "save_pica": self.fmt_pica_var.get(),
                 "save_windeta": self.fmt_windeta_var.get(),
             }
-            geom_value = float(self.entries["geom_value"].get())
+            geom_value = self._entry_float(
+                "geom_value",
+                "Electrode Area" if geom_mode == "area"
+                else "Electrode Diameter",
+            )
             if geom_mode == "area":
                 params["area_mm2"] = geom_value
             else:
                 params["diameter_mm"] = geom_value
-            if not all([params["sample_name"], params["visa"],
-                        self.file_location_path]):
+            missing = [name for name, value in (
+                ("Sample Name", params["sample_name"]),
+                ("VISA address", params["visa"]),
+                ("Save Location", self.file_location_path),
+            ) if not value]
+            if missing:
+                raise ValueError("Missing: " + ", ".join(missing) + ".")
+            # The sample name becomes part of the file name.
+            if any(ch in params["sample_name"] for ch in '\\/:*?"<>|'):
                 raise ValueError(
-                    "Sample Name, VISA address, and Save Location "
-                    "are required."
+                    'Sample Name cannot contain \\ / : * ? " < > |'
+                )
+            if not os.path.isdir(self.file_location_path):
+                raise ValueError(
+                    "Save Location no longer exists - choose it again "
+                    "with Browse Save Loc..."
                 )
             if not (params["save_pica"] or params["save_windeta"]):
                 raise ValueError(
@@ -2512,6 +2864,14 @@ class AlphaAN_FreqScan_GUI:
             self.lbl_cal_age.config(text=self.cal_age_str)
             self.log(self.cal_age_str)
 
+            # Connect + *RST take seconds on this thread: show it, and
+            # lock the buttons so a second click cannot queue up.
+            for button in (self.start_button, self.cal_button,
+                           self.scan_button):
+                button.config(state="disabled")
+            self._set_status("Connecting to the Alpha-AN...")
+            self.root.update_idletasks()
+
             self.backend.connect(params["visa"])
             self.backend.initialize_instrument(params)
 
@@ -2523,11 +2883,17 @@ class AlphaAN_FreqScan_GUI:
                 self.cal_button.config(state="disabled")
                 self.scan_button.config(state="disabled")
                 self.stop_button.config(state="normal")
+                self._set_inputs_enabled(False)
+                self._end_status = None
+                self.n_discarded = 0
+                # Anything a previous, stopped run left behind.
+                while not self.data_queue.empty():
+                    self.data_queue.get_nowait()
 
                 for key in self.data_storage:
                     self.data_storage[key].clear()
                 self.line_eps1.set_data([], [])
-                self.line_eps2.set_data([], [])
+                self.line_tand.set_data([], [])
                 self._decade_ylims.clear()
                 self.canvas.draw()
 
@@ -2537,6 +2903,11 @@ class AlphaAN_FreqScan_GUI:
                 self.progress_bar["maximum"] = len(self.sweep_frequencies)
 
                 self.sweep_delay = params["delay"]
+                self._set_status(
+                    f"Initial delay {self.sweep_delay:g} s..."
+                    if self.sweep_delay > 0
+                    else "Measuring: waiting for first point..."
+                )
                 self.log(
                     f"Starting frequency sweep: {params['freq_preset']}, "
                     f"C0 = {self.c0_farads:.5e} F"
@@ -2554,8 +2925,18 @@ class AlphaAN_FreqScan_GUI:
                 raise sweep_err
 
         except Exception as e:
-            self.log(f"ERROR during startup: {traceback.format_exc()}")
+            if isinstance(e, ValueError):
+                self.log(f"ERROR during startup: {e}")  # input mistake
+            else:
+                self.log(f"ERROR during startup: {traceback.format_exc()}")
             self.backend.close_instrument()
+            if not self.is_running:
+                for button in (self.start_button, self.cal_button,
+                               self.scan_button):
+                    button.config(state="normal")
+                self._set_inputs_enabled(True)
+                self._set_status("Measuring: -- Hz")
+            # Before any run starts, so a dialog cannot stall a sweep.
             messagebox.showerror(
                 "Initialization Error", f"Could not start sweep.\n\n{e}"
             )
@@ -2616,8 +2997,9 @@ class AlphaAN_FreqScan_GUI:
         safe state HERE, before the error reaches the GUI.
         """
         try:
-            if self.sweep_delay > 0:
-                time.sleep(self.sweep_delay)
+            # Interruptible: Stop during the initial delay ends the run now.
+            if self.sweep_delay > 0 and self.stop_event.wait(self.sweep_delay):
+                return
 
             for i, target_f in enumerate(self.sweep_frequencies):
                 if self.stop_event.is_set():
@@ -2635,14 +3017,18 @@ class AlphaAN_FreqScan_GUI:
                             f"f={target_f:.6g} Hz: {status_message(status)} "
                             f"(status {status})."
                         )
-                    self.data_queue.put(("FLAG", (target_f, status)))
+                    self.data_queue.put(("FLAG", (i, target_f, status)))
                     continue
+                if self.stop_event.is_set():
+                    break  # measured after Stop: not part of this run
 
                 # Convert with the ACTUAL frequency the analyzer used.
                 row = impedance_to_dielectric(
                     zr, zi, f_actual, self.c0_farads
                 )
-                self.data_queue.put(("POINT", (i, row, ref)))
+                extra = loss_phase_cp_g(zr, zi, f_actual)
+                derived = derived_columns(f_actual, zr, zi)
+                self.data_queue.put(("POINT", (i, row, extra, derived, ref)))
 
             if not self.stop_event.is_set():
                 self.data_queue.put(("DONE", None))
@@ -2668,17 +3054,20 @@ class AlphaAN_FreqScan_GUI:
                     self._handle_sweep_error(exc, tb)
                     return
                 if kind == "FLAG":
-                    f, status = payload
+                    idx, f, status = payload
+                    self.sweep_index = idx + 1
+                    self.n_discarded += 1
+                    self.progress_bar["value"] = self.sweep_index
                     self.log(
                         f"WARNING: f = {f:,.6g} Hz -> {status_message(status)} "
                         f"(status {status}). Point discarded."
                     )
                     continue
 
-                idx, row, ref = payload
+                idx, row, extra, derived, ref = payload
                 self.sweep_index = idx + 1
                 self.lbl_status.config(text=f"Measuring: {row[0]:,.6g} Hz")
-                self._process_sweep_point(row, ref)
+                self._process_sweep_point(row, extra, derived, ref)
                 self._update_sweep_plot()
         except queue.Empty:
             pass
@@ -2686,29 +3075,31 @@ class AlphaAN_FreqScan_GUI:
         if self.is_running:
             self.root.after(100, self._poll_queue)
 
-    def _process_sweep_point(self, row, ref):
+    def _process_sweep_point(self, row, extra, derived, ref):
         f_actual, eps1, eps2 = row[0], row[1], row[2]
         self.log(
             f"f: {f_actual:,.6g} Hz | eps': {eps1:.4e} | "
             f"eps'': {eps2:.4e} | ref: {ref}"
         )
-        self._write_row(row)
+        self._write_row(row, extra, derived)
 
         self.data_storage["freq"].append(f_actual)
         self.data_storage["eps1"].append(eps1)
-        self.data_storage["eps2"].append(eps2)
+        self.data_storage["tand"].append(extra[0])
 
-    def _write_row(self, row):
+    def _write_row(self, row, extra, derived):
         """Append one point to every enabled output file and flush.
 
-        Single source of truth for the row, formatted twice, so the WinDETA
-        file and the PICA file can never disagree. Write-on-acquisition: a
-        crash or abort still leaves every acquired point on disk.
+        file_rows builds both rows from the same point (same actual
+        frequency): WinDETA's 11 columns and the PICA 19-column LCR row.
+        Write-on-acquisition: a crash or abort still leaves every acquired
+        point on disk.
         """
-        line = "\t".join(f"{v:.5e}" for v in row)
-        for path in (self.txt_filepath, self.dat_filepath):
+        for path, values in zip((self.txt_filepath, self.dat_filepath),
+                                file_rows(row, extra, derived)):
             if not path:
                 continue
+            line = "\t".join(f"{v:.5e}" for v in values)
             with open(path, "a", encoding="utf-8", newline="\r\n") as fh:
                 fh.write(line + "\n")
                 fh.flush()
@@ -2717,20 +3108,25 @@ class AlphaAN_FreqScan_GUI:
         self.line_eps1.set_data(
             self.data_storage["freq"], self.data_storage["eps1"]
         )
-        self.line_eps2.set_data(
-            self.data_storage["freq"], self.data_storage["eps2"]
+        self.line_tand.set_data(
+            self.data_storage["freq"], self.data_storage["tand"]
         )
 
         for ax, key, data in (
             (self.ax_eps1, "eps1", self.data_storage["eps1"]),
-            (self.ax_eps2, "eps2", self.data_storage["eps2"]),
+            (self.ax_tand, "tand", self.data_storage["tand"]),
         ):
+            if data:
+                ax.yaxis.set_major_locator(mpl.ticker.AutoLocator())
+            ax.set_autoscalex_on(True)
             ax.relim()
             ax.autoscale_view(scalex=True, scaley=False)
             if self.log_y_var.get():
                 self._decade_autoscale_y(ax, data, key)
             else:
+                # set_ylim() in the log branch switched autoscale off.
                 ax.set_yscale('linear')
+                ax.set_autoscaley_on(True)
                 ax.autoscale_view(scaley=True)
 
         self.canvas.draw_idle()
@@ -2752,7 +3148,7 @@ class AlphaAN_FreqScan_GUI:
         self._stopping = True
         self.is_running = False
         self.stop_event.set()
-        self.lbl_status.config(text="Measuring: STOPPING…")
+        self._set_status("Measuring: STOPPING…")
         self.stop_button.config(state="disabled")
 
         if reason:
@@ -2790,49 +3186,41 @@ class AlphaAN_FreqScan_GUI:
         except Exception as e:
             self.log(f"WARNING: error closing instrument: {e}")
 
-        self.lbl_status.config(text="Measuring: STOPPED")
+        # No pop-ups at the end of a run (it may be unattended): the status
+        # line, the console and a beep say how it ended.
+        if self._end_status == "DONE":
+            text = "Measuring: DONE"
+            if self.n_discarded:
+                text += f" ({self.n_discarded} points discarded)"
+            self._set_status(text, "#2A6B3A")
+            self.progress_bar["value"] = self.progress_bar["maximum"]
+        elif self._end_status == "ERROR":
+            self._set_status("Measuring: ERROR - see console")
+        else:
+            self._set_status("Measuring: STOPPED")
+        self._end_status = None
         self.start_button.config(state="normal")
         self.scan_button.config(state="normal")
         self.cal_button.config(state="normal")
+        self._set_inputs_enabled(True)
         self._stopping = False
 
         if self._close_after_stop:
             self.root.destroy()
             return
-
-        if self._end_dialog is not None:
-            self._show_end_dialog()
-        elif not reason:
-            messagebox.showinfo(
-                "Info", "Sweep stopped and instrument disconnected."
-            )
-
-    def _show_end_dialog(self):
-        show, title, text = self._end_dialog
-        self._end_dialog = None
-        show(title, text)
+        self.root.bell()
 
     def _handle_sweep_completion(self):
-        self.lbl_status.config(text="Measuring: DONE")
+        self._end_status = "DONE"
         self.log("Sweep finished successfully.")
-        self._end_dialog = (
-            messagebox.showinfo, "Finished", "Frequency sweep is complete."
-        )
+        if self.n_discarded:
+            self.log(f"{self.n_discarded} point(s) were discarded.")
         self.stop_sweep("Sweep naturally complete.")
-        if not self._stopping and self._end_dialog is not None:
-            self._show_end_dialog()  # no stop was pending; show it now
 
     def _handle_sweep_error(self, exception, tb=None):
+        self._end_status = "ERROR"
         self.log(f"RUNTIME ERROR: {exception}\n{tb or ''}")
-        self._end_dialog = (
-            messagebox.showerror,
-            "Runtime Error",
-            f"An error occurred during the sweep:\n\n{exception}\n\n"
-            "See console for the full traceback.",
-        )
         self.stop_sweep("A critical hardware or measurement error occurred.")
-        if not self._stopping and self._end_dialog is not None:
-            self._show_end_dialog()  # no stop was pending; show it now
 
     def _on_closing(self):
         if self.is_running:

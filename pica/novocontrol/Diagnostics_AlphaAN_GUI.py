@@ -51,6 +51,15 @@ ERROR_NAMES = {VI_ERROR_TMO: "TMO (timeout)",
 GPIB_PROCESS_HINTS = ("winalpha", "windeta", "wingeta", "nimax", "ni max",
                       "keysight", "agilent", "labview")
 
+# Every PICA Alpha window title has "Alpha-AN" and "64-bit" / "32-bit" in it.
+# Another one open may be mid ack exchange with the Alpha, so the queries
+# wait until it is closed.
+ALPHA_WINDOW_HINTS = ("alpha-an", "-bit")
+
+# Closing during a check waits this long for the worker to close its
+# session (two query timeouts and some margin), then closes anyway.
+CLOSE_WAIT_S = 2 * QUERY_TIMEOUT_MS / 1000 + 5
+
 SEPARATOR = "-" * 70
 
 
@@ -77,17 +86,55 @@ def gpib_processes():
     """Names of running programs that may hold the bus (Windows only)."""
     if os.name != "nt":
         return None
+    # No console flash under pythonw; tasklist writes in the OEM code page,
+    # and one odd process name must not hide the whole list.
     out = subprocess.run(["tasklist", "/fo", "csv", "/nh"],
-                         capture_output=True, text=True, timeout=20).stdout
+                         capture_output=True, encoding="oem",
+                         errors="replace", timeout=20,
+                         creationflags=getattr(subprocess,
+                                               "CREATE_NO_WINDOW", 0)).stdout
     return sorted({row.split('","')[0].strip('"')
                    for row in out.splitlines()
                    if any(k in row.lower() for k in GPIB_PROCESS_HINTS)})
 
 
-def run_checks(address, emit, visa=None):
+def is_pica_alpha_window(title):
+    """True for the title of a PICA Alpha-AN module window."""
+    title = title.lower()
+    return all(k in title for k in ALPHA_WINDOW_HINTS)
+
+
+def other_alpha_windows():
+    """Titles of PICA Alpha-AN windows owned by other processes (Windows)."""
+    if os.name != "nt":
+        return None
+    import ctypes                       # Windows window list, stdlib only
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    own_pid = os.getpid()
+    titles = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def visit(hwnd, _lparam):
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length and user32.IsWindowVisible(hwnd):
+            buf = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buf, length + 1)
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value != own_pid and is_pica_alpha_window(buf.value):
+                titles.append(buf.value)
+        return True
+
+    user32.EnumWindows(visit, 0)
+    return sorted(set(titles))
+
+
+def run_checks(address, emit, visa=None, find_windows=None):
     """Run every check, emitting log lines. Returns (ok, headline).
 
-    `visa` is the pyvisa module; tests pass a fake one.
+    `visa` is the pyvisa module and `find_windows` lists other Alpha-AN
+    windows; tests pass fakes.
     """
     emit(SEPARATOR)
     emit("1. THIS PC")
@@ -102,6 +149,19 @@ def run_checks(address, emit, visa=None):
                  + (", ".join(hits) if hits else "none"))
     except Exception as exc:
         emit(f"Could not list running programs: {exc}")
+    try:
+        others = (find_windows or other_alpha_windows)()
+    except Exception as exc:
+        others = None
+        emit(f"Could not list open windows: {exc}")
+    if others is not None:
+        emit("Other PICA Alpha-AN windows: "
+             + (", ".join(others) if others else "none"))
+    if others:
+        emit("Nothing was sent to the Alpha: another Alpha-AN window may be "
+             "talking to it.")
+        return False, ("Another Alpha-AN window is open. Close it, then "
+                       "press Run Check again.")
 
     emit("")
     emit(SEPARATOR)
@@ -159,10 +219,7 @@ def run_checks(address, emit, visa=None):
                         if getattr(exc, "error_code", None) == VI_ERROR_TMO
                         else "")
                 return False, f"The Alpha did not answer {cmd}.{busy}"
-        try:
-            emit(f"  status byte: 0x{inst.read_stb():02X}")
-        except Exception as exc:
-            emit(f"  read_stb failed: {describe(exc)}")
+        # No read_stb(): a serial poll is not a "?" query and clears RQS.
         return True, f"The Alpha answered: {answers['*IDN?']}"
     finally:
         for handle in (inst, rm):
@@ -212,6 +269,7 @@ class AlphaANDiagnosticsGUI:
         self.queue = queue.Queue()
         self.worker = None
         self.after_id = None
+        self.close_deadline = None
         self.lines = []
 
         self.setup_styles()
@@ -286,6 +344,7 @@ class AlphaANDiagnosticsGUI:
                                   font=self.FONT_HEADLINE,
                                   wraplength=920, justify='left')
         self.headline.pack(fill='x', padx=14, pady=(6, 2))
+        self.headline.bind('<Configure>', self._fit_headline)
 
         self.progress = ttk.Progressbar(self.root, mode='determinate')
         self.progress.pack(fill='x', padx=12)
@@ -298,6 +357,10 @@ class AlphaANDiagnosticsGUI:
             highlightbackground=self.CLR_ACCENT_GOLD)
         self.console.pack(fill='both', expand=True, padx=12, pady=(6, 12))
         self.console.config(state='disabled')
+
+    def _fit_headline(self, event):
+        """Wrap the headline at its own width, so a narrow window keeps it."""
+        self.headline.config(wraplength=max(200, event.width - 4))
 
     def _log_line(self, text):
         self.lines.append(text)
@@ -383,12 +446,23 @@ class AlphaANDiagnosticsGUI:
         self.root.clipboard_append("\n".join(self.lines))
 
     def _on_closing(self):
+        """Close; during a check, first let the worker close its session."""
         if self.after_id is not None:
             try:
                 self.root.after_cancel(self.after_id)
             except Exception:
                 pass
             self.after_id = None
+        if self.worker is not None and self.worker.is_alive():
+            if self.close_deadline is None:
+                self.close_deadline = time.monotonic() + CLOSE_WAIT_S
+                self.run_btn.config(state='disabled')
+                self.save_btn.config(state='disabled')
+                self.headline_var.set("Finishing the check before closing...")
+            if time.monotonic() < self.close_deadline:
+                self.after_id = self.root.after(self.POLL_MS,
+                                                self._on_closing)
+                return
         self.root.destroy()
 
 

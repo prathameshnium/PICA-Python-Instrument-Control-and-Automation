@@ -50,6 +50,8 @@ DERIVED_FILES = [  # modules with the 18 LCR-style columns (Q, D, G, B, Cp ...)
     "Step_Frequency_Scan_AlphaAN_GUI.py",
     "Step_Frequency_Scan_L340_AlphaAN_GUI.py",
     "CV_AlphaAN_GUI.py",
+    "Frequency_Scan_AlphaAN_GUI.py",        # PICA .dat, no T_set column
+    "Frequency_Scan_AlphaAN_32bit_GUI.py",
 ]
 DERIVED_ORDER = ("Q", "D", "G", "B", "Cp", "Lp", "Cs", "Ls", "|Z|", "theta",
                  "chi", "Rs", "theta_deg", "Rp", "1/|Z|", "omega", "Cp''", "Cs''")
@@ -229,8 +231,16 @@ def test_every_column_of_the_pica_and_windeta_files_holds_the_right_quantity():
         "Tan(Delta)": e2 / e1,
         # phase of Z = -(phase of Y), Y = G + jB
         "Phi [Deg]": -math.degrees(math.atan2(w * cp, 1 / rp)),
-        "Cp [F]": cp, "G [S]": 1 / rp,
     }
+    # the 19-column PICA .dat, from the same circuit (Z = Rp || Cp)
+    z = 1 / complex(1 / rp, w * cp)
+    expected.update({
+        "Q": w * rp * cp, "D": 1 / (w * rp * cp), "G(1/Rp)": 1 / rp, "B": w * cp,
+        "Cp": cp, "Lp": 1 / (w * w * cp), "Cs": -1 / (w * z.imag), "Ls": abs(z.imag) / w,
+        "lZl": abs(z), "theta": cmath.phase(z), "chi": z.imag, "R(Rs)": z.real,
+        "theta(deg.)": math.degrees(cmath.phase(z)), "Rp": rp, "1/lZl": 1 / abs(z),
+        "Omega": w, "Cp''": 1 / (w * rp), "Cs''": -1 / (w * z.imag) / (w * rp * cp),
+    })
     windeta_names = {"Freq. [Hz]": "Frequency", "Zp' [Ohms]": "Zp'", "Zp'' [Ohms]": "Zp''",
                      "Sig' [S/cm]": "Sig'", "Sig'' [S/cm]": "Sig''"}
     with tempfile.TemporaryDirectory() as d:
@@ -241,8 +251,9 @@ def test_every_column_of_the_pica_and_windeta_files_holds_the_right_quantity():
         gui._open_output_files(params)
         R, X = _parallel_rc(f, rp, cp)
         gui._write_row(fscan_test.fscan.impedance_to_dielectric(R, X, f, C0),
-                       fscan_test.fscan.loss_phase_cp_g(R, X, f))
-        for path, n_cols in ((gui.dat_filepath, 13), (gui.txt_filepath, 11)):
+                       fscan_test.fscan.loss_phase_cp_g(R, X, f),
+                       fscan_test.fscan.derived_columns(f, R, X))
+        for path, n_cols in ((gui.dat_filepath, 19), (gui.txt_filepath, 11)):
             with open(path, encoding="utf-8") as fh:
                 lines = [ln.rstrip("\r\n") for ln in fh if not ln.startswith("#")]
             header = [h.strip() for h in lines[-2].split("\t")]
@@ -256,8 +267,32 @@ def test_every_column_of_the_pica_and_windeta_files_holds_the_right_quantity():
 
 # --- frequency scan: tan(delta), phase, Cp, G ---------------------------------
 
+FSCAN_FILES = DIELECTRIC_FILES[:2]     # the 64-bit and 32-bit editions
+
+
 def _fscan():
-    return _module(*DIELECTRIC_FILES[0])
+    return _module(*FSCAN_FILES[0])
+
+
+def test_both_fscan_editions_share_the_new_columns_and_list_builder():
+    # The 32-bit edition carries its own copy of every Fscan formula; the
+    # tests below drive the 64-bit one, so pin the copy to it value for value.
+    ref, other = (_module(*f) for f in FSCAN_FILES)
+    for name in ("PICA_HEADER", "WINDETA_HEADER", "LOG_FREQ_LABEL",
+                 "LOG_FREQ_DEFAULTS", "DEFAULT_FREQ_CHOICE", "HINT_FULL_LIST_MAX"):
+        assert getattr(other, name) == getattr(ref, name), name
+    for name, z_of_w in SIMULATED_CIRCUITS.items():
+        for f in SIM_FREQS:
+            z = z_of_w(2 * math.pi * f)
+            got, want = (m.loss_phase_cp_g(z.real, z.imag, f) for m in (other, ref))
+            assert got == want, (name, f)
+            row = ref.impedance_to_dielectric(z.real, z.imag, f, C0)
+            derived = ref.derived_columns(f, z.real, z.imag)
+            assert other.derived_columns(f, z.real, z.imag) == derived, (name, f)
+            assert other.file_rows(row, want, derived) == ref.file_rows(
+                row, want, derived), (name, f)
+    for args in ((20, 3e6, 1.4), (20, 1e7, 1.4), (20, 1e6, 1.1), (3e6, 1e6, 1.4)):
+        assert other.build_log_frequency_list(*args) == ref.build_log_frequency_list(*args)
 
 
 def test_cp_and_g_recover_a_parallel_rc_circuit():
@@ -317,37 +352,39 @@ def test_bottom_plot_draws_tan_delta_not_eps2():
     # The real _process_sweep_point/_update_sweep_plot on a headless GUI
     # with a real matplotlib figure: the plotted y data must be eps''/eps'.
     from matplotlib.figure import Figure
-    fscan = _fscan()
-    gui = object.__new__(fscan.AlphaAN_FreqScan_GUI)
-    gui.data_storage = {"freq": [], "eps1": [], "tand": []}
-    gui.log = lambda msg: None
-    gui._write_row = lambda row, extra: None
-    fig = Figure()
-    gui.ax_eps1, gui.ax_tand = fig.add_subplot(2, 1, 1), fig.add_subplot(2, 1, 2)
-    gui.line_eps1, = gui.ax_eps1.plot([], [])
-    gui.line_tand, = gui.ax_tand.plot([], [])
-    gui.canvas = type("C", (), {"draw_idle": lambda self: None})()
-    gui.progress_bar = {}
-    gui.log_y_var = type("V", (), {"get": lambda self: True})()
-    gui._decade_ylims = {}
-    gui.sweep_index = 0
-    want_eps1, want_tand = [], []
-    for f in FREQS:
-        R, X = _parallel_rc(f, 2e5, 33e-12)
-        row = fscan.impedance_to_dielectric(R, X, f, C0)
-        gui._process_sweep_point(row, fscan.loss_phase_cp_g(R, X, f), 1)
-        want_eps1.append(row[1])
-        want_tand.append(row[2] / row[1])
-    gui._update_sweep_plot()
-    assert list(gui.line_tand.get_xdata()) == list(FREQS)
-    for got, want in zip(gui.line_tand.get_ydata(), want_tand):
-        assert _close(got, want)
-    for got, want in zip(gui.line_eps1.get_ydata(), want_eps1):
-        assert _close(got, want)
-    # create_graph_frame needs a Tk parent, so check its label line instead.
-    with open(os.path.join(HERE, "..", "pica", "novocontrol", DIELECTRIC_FILES[0][0]),
-              encoding="utf-8") as fh:
-        assert 'self.ax_tand.set_ylabel("Loss factor, tan δ")' in fh.read()
+    for file_name, sub in FSCAN_FILES:
+        fscan = _module(file_name, sub)
+        gui = object.__new__(fscan.AlphaAN_FreqScan_GUI)
+        gui.data_storage = {"freq": [], "eps1": [], "tand": []}
+        gui.log = lambda msg: None
+        gui._write_row = lambda row, extra, derived: None
+        fig = Figure()
+        gui.ax_eps1, gui.ax_tand = fig.add_subplot(2, 1, 1), fig.add_subplot(2, 1, 2)
+        gui.line_eps1, = gui.ax_eps1.plot([], [])
+        gui.line_tand, = gui.ax_tand.plot([], [])
+        gui.canvas = type("C", (), {"draw_idle": lambda self: None})()
+        gui.progress_bar = {}
+        gui.log_y_var = type("V", (), {"get": lambda self: True})()
+        gui._decade_ylims = {}
+        gui.sweep_index = 0
+        want_eps1, want_tand = [], []
+        for f in FREQS:
+            R, X = _parallel_rc(f, 2e5, 33e-12)
+            row = fscan.impedance_to_dielectric(R, X, f, C0)
+            gui._process_sweep_point(row, fscan.loss_phase_cp_g(R, X, f),
+                                     fscan.derived_columns(f, R, X), 1)
+            want_eps1.append(row[1])
+            want_tand.append(row[2] / row[1])
+        gui._update_sweep_plot()
+        assert list(gui.line_tand.get_xdata()) == list(FREQS)
+        for got, want in zip(gui.line_tand.get_ydata(), want_tand):
+            assert _close(got, want)
+        for got, want in zip(gui.line_eps1.get_ydata(), want_eps1):
+            assert _close(got, want)
+        # create_graph_frame needs a Tk parent, so check its label line instead.
+        with open(os.path.join(HERE, "..", "pica", "novocontrol", file_name),
+                  encoding="utf-8") as fh:
+            assert 'self.ax_tand.set_ylabel("Loss factor, tan δ")' in fh.read()
 
 
 def _par(*zs):
@@ -412,18 +449,22 @@ def test_tan_delta_phase_cp_and_g_of_simulated_circuits():
 
 
 def _all_columns(fscan, z, f):
-    """Every file quantity for one point, by PICA_HEADER name."""
+    """Every file quantity for one point, by header name: the WinDETA .txt
+    (11) and the PICA .dat (19), with 'G' as a short name for G(1/Rp)."""
     row = fscan.impedance_to_dielectric(z.real, z.imag, f, C0)
     extra = fscan.loss_phase_cp_g(z.real, z.imag, f)
-    _, pica = fscan.file_rows(row, extra)
-    names = [h.split(" [")[0] for h in fscan.PICA_HEADER.split("\t")]
-    return dict(zip(names, pica))
+    windeta, pica = fscan.file_rows(row, extra, fscan.derived_columns(f, z.real, z.imag))
+    names = [h.strip().split(" [")[0] for h in fscan.WINDETA_HEADER.split("\t")]
+    cols = dict(zip(names, windeta))
+    cols.update(zip(fscan.PICA_HEADER.split("\t"), pica))
+    cols["G"] = cols["G(1/Rp)"]
+    return cols
 
 
 def test_any_column_pair_gives_back_z_and_every_other_column():
     # Back and forth: rebuild the series impedance Z from each independent
     # pair of output columns with textbook inversions, then recompute all
-    # 13 columns from that Z. Every route must land on the same sample.
+    # 29 file columns (.txt and .dat) from that Z. Every route must land on the same sample.
     fscan = _fscan()
     eps0_cm = EPS0 / 100.0
     routes = {
@@ -468,6 +509,39 @@ def test_any_column_pair_gives_back_z_and_every_other_column():
                 again = _all_columns(fscan, z_back, f)
                 for key, value in cols.items():
                     assert _close(again[key], value, rel=1e-7), (*where, key)
+
+
+def test_dat_d_and_theta_deg_match_txt_tan_delta_and_phi():
+    # The two files of one point must tell the same loss and phase:
+    # .dat D = G/B = -R/X and .txt Tan(Delta) = -R/X (both = eps''/eps');
+    # .dat theta(deg.) and .txt Phi [Deg] are both atan2(X, R) in degrees.
+    # Same sign convention: capacitive D > 0, phase < 0; inductive both flip.
+    for file_name, sub in FSCAN_FILES:
+        fscan = _module(file_name, sub)
+        n_cap = n_ind = 0
+        for name, z_of_w in SIMULATED_CIRCUITS.items():
+            for f in SIM_FREQS:
+                z = z_of_w(2 * math.pi * f)
+                row = fscan.impedance_to_dielectric(z.real, z.imag, f, C0)
+                extra = fscan.loss_phase_cp_g(z.real, z.imag, f)
+                txt, dat = fscan.file_rows(
+                    row, extra, fscan.derived_columns(f, z.real, z.imag))
+                cols = _all_columns(fscan, z, f)
+                where = (file_name, name, f)
+                assert txt[0] == dat[0] == f, where
+                assert dat[13] == txt[10] == cols["Phi"], where   # identical maths
+                d, tan_d = dat[2], txt[3]
+                if z.real:
+                    assert _close(d, tan_d, rel=1e-12), where
+                    assert (d > 0) == (z.imag < 0), where
+                    n_cap += z.imag < 0
+                    n_ind += z.imag > 0
+                else:
+                    # R == 0 exactly (pure C, pure L): Tan(Delta) is 0 but D
+                    # keeps the module-wide 1e-20 zero guard, G_safe / B.
+                    assert tan_d == 0.0, where
+                    assert d != 0.0 and abs(d) < 1e-12, where
+        assert n_cap > 0 and n_ind > 0, file_name   # both sign branches seen
 
 
 if __name__ == "__main__":

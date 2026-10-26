@@ -915,6 +915,12 @@ RESET_RETRY_INTERVAL_S = 0.5
 RESET_POLL_TIMEOUT_MS = 3000
 CONNECT_READY_TIMEOUT_S = 15.0
 
+
+class StopRequested(Exception):
+    """Stop was pressed while the instruments were being connected or
+    initialised. Raised by the stop-aware waits so the worker unwinds
+    before any measurement is started."""
+
 # VISA status codes, as pyvisa reports them in VisaIOError.error_code.
 # NLISTENERS: no listener at that address; the write put no byte on the bus,
 # so it is the one GPIB error that is always safe to retry.
@@ -940,10 +946,12 @@ WIRE_MODES = ("2", "3", "4")
 
 # WinDETA Tscan export: one file per fixed frequency, laid out exactly like
 # data_file_for_ref/Sample_Tscan.TXT - title line, geometry line, fixed
-# value(s) line, this column header, then T / eps' / eps'' rows. WinDETA
-# writes the temperature in deg C and the file in cp1252 with CRLF. Never
-# add lines or columns to it.
-WINDETA_TSCAN_HEADER = " Temp. [°C]\t Eps'    \t Eps''   "
+# value(s) line, this column header, then T / eps' / eps'' / tan(delta) /
+# phi rows. WinDETA writes the temperature in deg C and the file in cp1252
+# with CRLF. Tan(Delta) and Phi [Deg] are spelt as in the GUI frequency
+# scan's WINDETA_HEADER (user request, 27 Oct 2026). Never add lines to it.
+WINDETA_TSCAN_HEADER = (" Temp. [°C]\t Eps'    \t Eps''   \t Tan(Delta)\t"
+                        " Phi [Deg]")
 KELVIN_OFFSET = 273.15
 
 
@@ -996,6 +1004,31 @@ def calculate_eps(f_actual, zr, zi, c0):
     return -zi / denom, zr / denom
 
 
+def loss_phase_cp_g(zr, zi, f_actual):
+    """Loss tangent, phase, Cp and G from Zs = zr + j*zi, exactly as the
+    GUI frequency scan computes them: (tan_delta, phi_deg, Cp, G).
+
+        tan(delta) = eps''/eps' = -R/X     (WinDETA 'Tan(Delta)')
+        phi        = atan2(X, R) in deg    (phase of Z, negative for a
+                                            capacitor)
+        Cp = B/w = -X / (w*|Z|^2)          parallel capacitance, F
+        G  = R / |Z|^2                     parallel conductance, S
+
+    Only tan_delta and phi go to the WinDETA Tscan file.
+    """
+    omega = 2.0 * math.pi * f_actual
+    omega_safe = omega if omega != 0 else 1e-20
+    z_mag_sq = zr ** 2 + zi ** 2
+    z_mag_sq_safe = z_mag_sq if z_mag_sq != 0 else 1e-20
+    zi_safe = zi if zi != 0 else 1e-20
+
+    tan_d = -zr / zi_safe
+    phi_deg = math.degrees(math.atan2(zi, zr))
+    cp = -zi / (omega_safe * z_mag_sq_safe)
+    g = zr / z_mag_sq_safe
+    return (tan_d, phi_deg, cp, g)
+
+
 def windeta_tscan_header_lines(params, freq_hz, when):
     """The three header lines of a WinDETA Tscan export plus its column
     header (Sample_Tscan.TXT). The title is the sample name, dated like
@@ -1019,10 +1052,12 @@ def windeta_tscan_header_lines(params, freq_hz, when):
     ]
 
 
-def windeta_tscan_row(temp_k, eps1, eps2):
-    """One WinDETA Tscan data row: T in deg C, then eps' and eps''."""
+def windeta_tscan_row(temp_k, eps1, eps2, tan_d, phi_deg):
+    """One WinDETA Tscan data row: T in deg C, then eps', eps'',
+    tan(delta) and phi (deg)."""
     return "\t".join(f"{v:.5e}"
-                     for v in (temp_k - KELVIN_OFFSET, eps1, eps2))
+                     for v in (temp_k - KELVIN_OFFSET, eps1, eps2,
+                               tan_d, phi_deg))
 
 
 def dat_metadata_lines(params, c0_farads, freq_hz, when):
@@ -1076,16 +1111,57 @@ def dat_metadata_lines(params, c0_farads, freq_hz, when):
 
 
 def validate_output_settings(params):
-    """Geometry and output-format checks, run before any instrument opens."""
+    """Geometry and output-format checks, run before any instrument opens.
+    NaN and inf are refused too: 'nan <= 0' is False, and a NaN C0 would
+    silently drop every WinDETA row of the run."""
     if params["geometry_mode"] == "area":
-        if params["area_mm2"] <= 0 or params["thickness_mm"] <= 0:
-            raise ValueError("Area and thickness must both be positive.")
+        geom, box = params["area_mm2"], "Electrode Area (mm^2)"
     else:
-        if params["diameter_mm"] <= 0 or params["thickness_mm"] <= 0:
-            raise ValueError("Diameter and thickness must both be positive.")
+        geom, box = params["diameter_mm"], "Electrode Diameter (mm)"
+    if not (math.isfinite(geom) and geom > 0):
+        raise ValueError(f"{box} must be a positive number (got {geom}).")
+    thick = params["thickness_mm"]
+    if not (math.isfinite(thick) and thick > 0):
+        raise ValueError(
+            f"Sample Thickness (mm) must be a positive number (got {thick}).")
     if not (params["save_pica"] or params["save_windeta"]):
         raise ValueError(
             "Tick at least one output format (PICA or WinDETA).")
+
+
+# Longest settle per frequency accepted at Start. Past threading.TIMEOUT_MAX
+# stop_event.wait() raises OverflowError, which the worker would take for a
+# comm error and reconnect (Alpha *RST) forever.
+MAX_DELAY_PER_FREQ_S = 3600.0
+# Characters Windows refuses in a file name (':' would even "work": it
+# writes to an NTFS alternate data stream that Explorer does not show).
+INVALID_FILENAME_CHARS = '<>:"/\\|?*'
+
+
+def validate_save_target(folder, sample_name, save_windeta):
+    """Save folder and Sample Name checks, run before any instrument opens,
+    so a missing folder or an unusable name never costs a *RST of the
+    Alpha (or a STOP on the Cryocon) and never leaves half-made files."""
+    if not os.path.isdir(folder):
+        raise ValueError(
+            f"Destination folder '{folder}' does not exist (deleted or "
+            "unplugged?). Browse to it again.")
+    bad = sorted({c for c in sample_name
+                  if c in INVALID_FILENAME_CHARS or ord(c) < 32})
+    if bad:
+        raise ValueError(
+            f"Sample Name: {' '.join(repr(c) for c in bad)} cannot be used "
+            "in a Windows file name.")
+    if sample_name != sample_name.rstrip(" ."):
+        raise ValueError("Sample Name: must not end with a dot or a space.")
+    if save_windeta:
+        try:
+            sample_name.encode("cp1252")
+        except UnicodeEncodeError:
+            raise ValueError(
+                "Sample Name: contains a character the WinDETA file "
+                "(cp1252) cannot store. Use plain letters, or untick "
+                "WinDETA format.") from None
 
 
 def acv_ceiling(freq_hz):
@@ -1198,6 +1274,13 @@ class AlphaAN_Backend:
         # True between MST/ZRUNCAL and the corresponding SRQ. Tells the
         # shutdown path whether an MBK abort is actually needed.
         self._task_may_be_running = False
+        # The GUI's stop_event while a worker connects/initialises: the
+        # *RST rejoin and connect retry waits end early when it is set.
+        self.stop_event = None
+        # True from the moment *RST is written until the rejoin *IDN? is
+        # answered. A Stop during that wait leaves it True, and the shutdown
+        # path then sends the Alpha nothing (see close_instrument).
+        self._alpha_rebooting = False
         if pyvisa:
             try:
                 self.rm = pyvisa.ResourceManager()
@@ -1248,6 +1331,8 @@ class AlphaAN_Backend:
                             f"Close WinALPHA / WinDETA and any other GPIB "
                             f"program, then try again.") from exc2
                     raise
+            # This session's *IDN? was answered: the Alpha is not rebooting.
+            self._alpha_rebooting = False
             # A wrong address must not get the Alpha shutdown sequence
             # (ACV=0, ZCONSPL=0, *RST) sent to another instrument.
             if not any(k in idn.upper() for k in ("ALPHA", "NOVOCONTROL")):
@@ -1360,9 +1445,23 @@ class AlphaAN_Backend:
                             f"The Alpha did not rejoin the GPIB bus within "
                             f"{timeout_s:.0f} s {situation}. Last error: "
                             f"{exc}") from exc
-                time.sleep(RESET_RETRY_INTERVAL_S)
+                self._pause(RESET_RETRY_INTERVAL_S)
         finally:
             inst.timeout = session_timeout
+
+    def _pause(self, seconds):
+        """Stop-aware sleep for the connect and *RST waits.
+
+        Without a stop_event it is a plain time.sleep. With one it waits on
+        the event, which returns the moment Stop sets it, and then raises
+        StopRequested so connect / initialise unwind at once. Never used on
+        the shutdown path (close_instrument must finish after a Stop).
+        """
+        event = getattr(self, 'stop_event', None)
+        if event is None:
+            time.sleep(seconds)
+        elif event.wait(seconds):
+            raise StopRequested("Stop pressed while waiting for the Alpha.")
 
     def _reset_and_set_impedance_mode(self,
                                       timeout_s=RESET_READY_TIMEOUT_S):
@@ -1375,13 +1474,22 @@ class AlphaAN_Backend:
         extra 1 s settle before MODE=IMP.
         """
         inst = self.instrument
-        inst.write("*RST")
+        # Set before the write: from here until the rejoin *IDN? is
+        # answered the Alpha may be off the bus, and a Stop that ends the
+        # wait below (StopRequested) leaves the flag set on purpose.
+        self._alpha_rebooting = True
+        try:
+            inst.write("*RST")
+        except Exception:
+            self._alpha_rebooting = False   # the *RST never went out
+            raise
         start = time.monotonic()
-        time.sleep(RESET_SETTLE_S)
+        self._pause(RESET_SETTLE_S)
         self._query_idn_until_answered(timeout_s, "after *RST")
+        self._alpha_rebooting = False
         print(f"  *RST complete; Alpha answering after "
               f"{time.monotonic() - start:.1f} s.")
-        time.sleep(1.0)
+        self._pause(1.0)
         self._exec("MODE=IMP")
 
     def _exec_tolerant(self, cmd):
@@ -1543,6 +1651,10 @@ class AlphaAN_Backend:
         inst = self.instrument
         if inst is None:
             return
+        if getattr(self, "_alpha_rebooting", False):
+            # Still rebooting after *RST: a write would hang until the
+            # session timeout. A fresh *RST leaves the generator off.
+            return
         if self._task_may_be_running:
             if self._exec_tolerant("MBK"):
                 self._task_may_be_running = False
@@ -1575,6 +1687,27 @@ class AlphaAN_Backend:
         """Safe-state, reset, release the session. Never leaves output live."""
         print("--- [Backend] Closing Alpha-AN connection. ---")
         if not self.instrument:
+            return
+        if getattr(self, "_alpha_rebooting", False):
+            # Stop pressed during the *RST rejoin wait (StopRequested left
+            # the flag set). The Alpha may not be a listener yet, and
+            # through 64-bit Keysight VISA every write would hang until the
+            # 60 s session timeout on the Tk thread. Send nothing: a fresh
+            # *RST leaves the generator off (ACV=0, DCE=0), and DC bias
+            # cannot be on - this module never sends DCV/DCE, and the run
+            # applies ACV only after initialise completes. Just release
+            # the session.
+            print("  Alpha still resetting after *RST - closing the session "
+                  "without shutdown commands (a fresh *RST leaves the "
+                  "generator off)")
+            try:
+                self.instrument.close()
+                print("  Alpha-AN connection closed.")
+            except Exception as e:
+                print(f"  Warning closing VISA session: {e}")
+            finally:
+                self.instrument = None
+                self._task_may_be_running = False
             return
         try:
             self.safe_state()
@@ -1627,9 +1760,30 @@ class Combined_Backend:
         self.lcr = AlphaAN_Backend()
         self.params = {}
         self.log = log if callable(log) else (lambda msg: print(msg))
+        self.stop_event = None
 
-    def initialize_instruments(self, parameters):
+    def _check_stop(self):
+        """Raise StopRequested once Stop is pressed during initialise."""
+        event = getattr(self, 'stop_event', None)
+        if event is not None and event.is_set():
+            raise StopRequested(
+                "Stop pressed while connecting; nothing was started.")
+
+    def initialize_instruments(self, parameters, reconnecting=False,
+                               stop_event=None):
+        """Open and set up both instruments. Runs on the worker thread.
+
+        reconnecting=True (the worker's mid-run reconnect) never sends
+        the Start-time STOP: by then something else may have re-engaged
+        CONTROL on purpose, and nobody is watching.
+
+        stop_event (the GUI's) is checked between steps and handed to the
+        Alpha backend so its *RST / connect waits end early: a Stop here
+        raises StopRequested. Nothing in here starts a measurement, and
+        the Cryocon is only read (plus the opt-in Start-time STOP)."""
         self.params = parameters
+        self.stop_event = stop_event
+        self.lcr.stop_event = stop_event
         print("\n--- [Backend] Initializing Instruments (PASSIVE mode) ---")
         # Every Alpha setting is checked before a byte reaches either bus.
         # AlphaAN_Backend.initialize_instrument expects keys:
@@ -1637,26 +1791,35 @@ class Combined_Backend:
         validate_alpha_parameters(
             parameters['frequencies'], parameters['acv'],
             parameters['mtm'], parameters['wire_mode'])
+        self._check_stop()
         self.cryocon = Cryocon34_Backend(
             parameters['cryocon_visa'],
             channel=parameters['channel'],
             log=self.log)
+        self._check_stop()
 
         # NOTE: no reset_and_clear(), no setup_heater(), no setup_ramp(),
         # no set_setpoint() - and no *RST at all (a Cryocon *RST is a ~15 s
         # hardware reset). The base's 'RANGE 1,0 at Start' becomes STOP
         # here, and only when the box is ticked (OFF by default).
         self.cryocon.verify_channel()
-        if parameters.get('stop_loops', False):
+        self._check_stop()
+        if parameters.get('stop_loops', False) and not reconnecting:
             # STOP => all control loops disengaged, heaters off
             # (Cryocon 34 manual). Fully passive from here on.
             self.cryocon.stop_control_loops()
             print("  Cryocon control loops disengaged (STOP). Fully passive.")
+        elif reconnecting:
+            print("  Reconnect: Cryocon control loops left as they are "
+                  "(STOP is sent only at Start).")
         else:
             print("  Cryocon control loops left UNTOUCHED per user request.")
 
+        self._check_stop()
         self.lcr.connect(parameters['lcr_visa'])
+        self._check_stop()
         self.lcr.initialize_instrument(parameters)
+        self._check_stop()
 
     def check_safety_kill(self, temperature_k):
         """Hardcoded kill switch: disengage the control loops (STOP) at or
@@ -1697,6 +1860,14 @@ class Combined_Backend:
             for f in frequencies:
                 if stop_event is not None and stop_event.is_set():
                     break                     # abort mid-sweep, cleanly
+                # Optional settle per point, BEFORE the T read so the
+                # reading belongs to the point measured right after it.
+                if delay > 0:
+                    if stop_event is not None:
+                        if stop_event.wait(delay):
+                            break         # Stop during the settle: no point
+                    else:
+                        time.sleep(delay)
                 # NaN on a sensor fault: the point keeps its LCR data.
                 # T for THIS point
                 temp = self.cryocon.read_temperature_tolerant()
@@ -1705,11 +1876,6 @@ class Combined_Backend:
                     points.append(
                         (temp, f, float('nan'), float('nan'), -1, f))
                     break
-                if delay > 0:                     # optional settle per point
-                    if stop_event is not None:
-                        stop_event.wait(delay)
-                    else:
-                        time.sleep(delay)
                 R, X, f_act, status, _ref = self.lcr.measure_point(f)
                 if status in STATUS_FATAL:
                     raise AlphaFatalStatusError(
@@ -1749,7 +1915,11 @@ class Combined_Backend:
                     self.cryocon.close()
         except Exception as e:
             print(f"  Pre-reconnect cleanup warning: {e}")
-        self.initialize_instruments(self.params)
+        # The run's stop_event stays in force, so a Stop during the
+        # reconnect's *RST rejoin ends it early as well.
+        self.initialize_instruments(
+            self.params, reconnecting=True,
+            stop_event=getattr(self, 'stop_event', None))
 
     def close_instruments(self):
         print("\n--- [Backend] Closing all instrument connections. ---")
@@ -1821,6 +1991,8 @@ class Integrated_CT_GUI:
     CLR_ACCENT_RED  = '#BA6B5E'
     CLR_CONSOLE_BG  = '#E5DCD3'
     CLR_GRAPH_BG    = '#F4EFEA'
+
+    lbl_status = None   # status banner, made by create_input_frame
     FONT_SIZE_BASE  = 11
     FONT_BASE       = ('Segoe UI', FONT_SIZE_BASE)
     FONT_SUB_LABEL  = ('Segoe UI', FONT_SIZE_BASE - 2)
@@ -1832,6 +2004,8 @@ class Integrated_CT_GUI:
     # ------------------------------------------------------------------
     def __init__(self, root):
         self.root = root
+        # log() writes to Tk widgets only on this thread (see log()).
+        self._tk_thread = threading.current_thread()
         self.root.title(
             "Alpha-AN & Cryocon 34: Dielectric vs. Temperature (Passive T-Monitor) - 64-bit (VISA)")
         self.root.geometry("1600x980")
@@ -1840,7 +2014,9 @@ class Integrated_CT_GUI:
 
         # --- State flags ---
         self.is_running = False
-        self.is_stabilizing = False   # retained but always False (legacy)
+        # No stabilization in a passive run: True only while the worker
+        # connects/initialises, so Stop and window-close work then too.
+        self.is_stabilizing = False
         self._stopping = False          # re-entrancy guard for stop
         self._close_after_stop = False  # destroy window once worker exits
         self.start_time = None
@@ -1889,6 +2065,12 @@ class Integrated_CT_GUI:
         self.data_queue = queue.Queue()
         self.measurement_thread = None
         self.stop_event = threading.Event()
+        # Set by the Tk thread once the output files exist after CONNECTED;
+        # the worker waits for it before the first sweep.
+        self._files_ready = threading.Event()
+        # A connect/initialise failure, shown in a dialog once the stop
+        # it triggers has finished (the user is at Start for it).
+        self._startup_error = None
 
         # --- Build the GUI ---
         self.setup_styles()
@@ -1903,11 +2085,19 @@ class Integrated_CT_GUI:
     def setup_styles(self):
         style = ttk.Style(self.root)
         style.theme_use('clam')
+        # Plain tk Labels default to the system grey; match the panel.
+        # (A Label that passes its own bg keeps it.)
+        self.root.option_add("*Label.background", self.CLR_BG_DARK)
+        self.root.option_add("*Label.foreground", self.CLR_FG_LIGHT)
         style.configure('TFrame', background=self.CLR_BG_DARK)
         style.configure('TPanedWindow', background=self.CLR_BG_DARK)
         style.configure('TLabel', background=self.CLR_BG_DARK,
                         foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
         style.configure('TCheckbutton', background=self.CLR_BG_DARK,
+                        foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
+        style.configure('TRadiobutton', background=self.CLR_BG_DARK,
+                        foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
+        style.configure('Graph.TRadiobutton', background=self.CLR_GRAPH_BG,
                         foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
         style.configure('TLabelframe', background=self.CLR_BG_DARK,
                         bordercolor=self.CLR_HEADER, borderwidth=1)
@@ -1983,6 +2173,17 @@ class Integrated_CT_GUI:
             lambda e: canvas.itemconfigure(window_id, width=e.width))
         self.left_scrollable_frame = scrollable_frame
 
+        # Mouse wheel scrolls the parameter panel while the pointer is over
+        # it; text boxes (console, frequency list) keep their own wheel.
+        def _wheel(e):
+            if isinstance(e.widget, tk.Text):
+                return
+            if scrollable_frame.winfo_reqheight() > canvas.winfo_height():
+                canvas.yview_scroll(int(-e.delta / 120), "units")
+        canvas.bind("<Enter>",
+                    lambda e: canvas.bind_all("<MouseWheel>", _wheel))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
@@ -1990,6 +2191,12 @@ class Integrated_CT_GUI:
             fill='x', padx=10, pady=5)
         self.create_input_frame(scrollable_frame).pack(
             fill='x', padx=10, pady=5)
+        # A wheel over a dropdown must never change its choice (Tk's
+        # Combobox steps through its values on the wheel); scroll the
+        # panel instead and stop the Combobox's own binding.
+        for box in (self.wire_combobox, self.channel_cb, self.plot_freq_cb,
+                    self.cryocon_cb, self.lcr_cb):
+            box.bind("<MouseWheel>", lambda e: (_wheel(e), "break")[1])
         self.create_console_frame(scrollable_frame).pack(
             fill='both', expand=True, padx=10, pady=5)
 
@@ -2180,14 +2387,15 @@ class Integrated_CT_GUI:
             row=r, column=0, columnspan=2, padx=padx_val,
             pady=pady_val, sticky='w')
         Label(geom_radio_frame, text="Geometry input:").pack(side='left')
-        ttk.Radiobutton(
-            geom_radio_frame, text="Area (mm²)", value="area",
-            variable=self.geom_mode_var,
-            command=self._on_geom_mode_change).pack(side='left', padx=(10, 0))
-        ttk.Radiobutton(
-            geom_radio_frame, text="Diameter (mm)", value="diameter",
-            variable=self.geom_mode_var,
-            command=self._on_geom_mode_change).pack(side='left', padx=(10, 0))
+        self.geom_radios = []
+        for text, value in (("Area (mm²)", "area"),
+                            ("Diameter (mm)", "diameter")):
+            radio = ttk.Radiobutton(
+                geom_radio_frame, text=text, value=value,
+                variable=self.geom_mode_var,
+                command=self._on_geom_mode_change)
+            radio.pack(side='left', padx=(10, 0))
+            self.geom_radios.append(radio)
         r += 1
         self.lbl_geom = Label(frame, text="Electrode Area (mm²):")
         self.lbl_geom.grid(
@@ -2233,10 +2441,11 @@ class Integrated_CT_GUI:
         #     Zero"; RANGE 1,0 -> STOP). OFF by default here: the Cryocon
         #     may be driving the cryostat for another program. ---
         self.var_stop_loops = tk.BooleanVar(value=False)   # OFF by default
-        ttk.Checkbutton(
+        self.stop_loops_check = ttk.Checkbutton(
             frame,
             text="Disengage Cryocon control loops at Start (STOP; heaters OFF)",
-            variable=self.var_stop_loops).grid(
+            variable=self.var_stop_loops)
+        self.stop_loops_check.grid(
             row=r, column=0, columnspan=2, padx=padx_val, pady=2,
             sticky='w')
         r += 1
@@ -2319,12 +2528,12 @@ class Integrated_CT_GUI:
             row=r, column=0, columnspan=2, padx=padx_val,
             pady=(4, 0), sticky='w')
         Label(fmt_frame, text="Save as:").pack(side='left')
-        ttk.Checkbutton(
-            fmt_frame, text="PICA format (.dat)",
-            variable=self.fmt_pica_var).pack(side='left', padx=(10, 0))
-        ttk.Checkbutton(
-            fmt_frame, text="WinDETA format (.txt)",
-            variable=self.fmt_windeta_var).pack(side='left', padx=(10, 0))
+        self.fmt_checks = []
+        for text, var in (("PICA format (.dat)", self.fmt_pica_var),
+                          ("WinDETA format (.txt)", self.fmt_windeta_var)):
+            check = ttk.Checkbutton(fmt_frame, text=text, variable=var)
+            check.pack(side='left', padx=(10, 0))
+            self.fmt_checks.append(check)
         r += 1
 
         # --- Start | Stop ---
@@ -2340,6 +2549,14 @@ class Integrated_CT_GUI:
             style='Stop.TButton', state='disabled')
         self.stop_button.grid(
             row=r, column=1, padx=padx_val, pady=(10, 10), sticky='ew')
+        r += 1
+
+        # Status banner: how the last run ended stays visible after an
+        # unattended run (the console is trimmed and keeps scrolling).
+        self.lbl_status = ttk.Label(
+            frame, text="IDLE", font=("Segoe UI", 12, "bold"),
+            foreground=self.CLR_FG_LIGHT)
+        self.lbl_status.grid(row=r, column=0, columnspan=2, pady=(0, 8))
 
         return frame
 
@@ -2377,6 +2594,7 @@ class Integrated_CT_GUI:
         for text, val in (("Auto", "auto"), ("Log", "log"),
                           ("Linear", "linear")):
             ttk.Radiobutton(scale_bar, text=text, value=val,
+                            style='Graph.TRadiobutton',
                             variable=self.y_scale_var,
                             command=self._on_y_scale_change).pack(
                 side='left', padx=(8, 0))
@@ -2520,7 +2738,11 @@ class Integrated_CT_GUI:
             tok = tok.strip()
             if not tok:
                 continue
-            f = float(tok)
+            try:
+                f = float(tok)
+            except ValueError:
+                raise ValueError(
+                    f"Frequencies: '{tok}' is not a number.") from None
             if not (FREQ_HW_MIN <= f <= FREQ_HW_MAX):
                 raise ValueError(
                     f"Frequency {f} Hz outside the Alpha-AN range "
@@ -2534,6 +2756,16 @@ class Integrated_CT_GUI:
     # LOGGING
     # ==================================================================
     def log(self, message):
+        # Combined_Backend gets this method as its log, and connect /
+        # initialise run on the worker (Cryocon 'connected', channel check,
+        # STOP, link retries). Tk widgets must only be touched from the Tk
+        # thread, so a call from any other thread is handed to the data
+        # pump as a LOG: message and written by _process_data_queue (or
+        # _drain_queue_at_stop) on the Tk thread.
+        tk_thread = getattr(self, '_tk_thread', None) or threading.main_thread()
+        if threading.current_thread() is not tk_thread:
+            self.data_queue.put(f"LOG:{message}")
+            return
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.console_widget.config(state='normal')
         self.console_widget.insert('end', f"[{timestamp}] {message}\n")
@@ -2581,6 +2813,44 @@ class Integrated_CT_GUI:
     def _handle_log_message(self, message):
         self.log(message)
 
+    def _set_status(self, text, color=None):
+        """Status banner (IDLE / RUNNING / STOPPED / ERROR / SAFETY KILL).
+        Repainted at once, so it also shows while Start is connecting."""
+        if self.lbl_status is None:
+            return
+        self.lbl_status.config(text=text,
+                               foreground=color or self.CLR_ACCENT_RED)
+        try:
+            self.lbl_status.update_idletasks()
+        except tk.TclError:
+            pass
+
+    def _entry_float(self, key, name):
+        """Finite float from an entry, or a ValueError that names the box."""
+        text = self.entries[key].get().strip()
+        try:
+            value = float(text)
+        except ValueError:
+            raise ValueError(f"{name}: '{text}' is not a number.") from None
+        if not math.isfinite(value):
+            raise ValueError(f"{name}: '{text}' is not a finite number.")
+        return value
+
+    def _set_inputs_enabled(self, enabled):
+        """Lock every parameter widget during a run so the screen always
+        shows what is being recorded; unlock afterwards. The live-plot
+        controls (plot frequency, thinning, Y scale) stay usable."""
+        state = 'normal' if enabled else 'disabled'
+        for entry in self.entries.values():
+            entry.config(state=state)
+        self.freq_text.config(state=state)
+        for widget in (self.geom_radios + self.fmt_checks
+                       + [self.stop_loops_check, self.file_button]):
+            widget.config(state=state)
+        for box in (self.wire_combobox, self.channel_cb,
+                    self.cryocon_cb, self.lcr_cb):
+            box.config(state='readonly' if enabled else 'disabled')
+
     # ==================================================================
     # START / STOP
     # ==================================================================
@@ -2594,6 +2864,8 @@ class Integrated_CT_GUI:
         # CYCLE or an exception behind. It belongs to the previous run: a
         # fresh queue keeps it out of this run's files and error handling.
         self.data_queue = queue.Queue()
+        self._set_status("Starting...", self.CLR_FG_LIGHT)
+        locked = False
         try:
             # --- Parse frequencies ---
             self.frequencies = self._parse_frequencies()
@@ -2603,9 +2875,12 @@ class Integrated_CT_GUI:
                 'sample_name':   self.entries["Sample Name"].get(),
                 'channel':       self.channel_cb.get(),
                 'stop_loops':    self.var_stop_loops.get(),
-                'acv':           float(self.entries["AC Bias"].get()),
-                'mtm':           float(self.entries["MTM"].get()),
-                'delay':         float(self.entries["Delay"].get()),
+                'acv':           self._entry_float(
+                                      "AC Bias", "AC Voltage (Vrms)"),
+                'mtm':           self._entry_float(
+                                      "MTM", "Integration Time (s)"),
+                'delay':         self._entry_float(
+                                      "Delay", "Delay per Freq (s)"),
                 'wire_mode':     self.wire_combobox.get(),
                 'frequencies':   list(self.frequencies),
                 'cryocon_visa':  self._extract_visa(
@@ -2613,11 +2888,15 @@ class Integrated_CT_GUI:
                 'lcr_visa':      self._extract_visa(
                                       self.lcr_cb.get()),
                 'geometry_mode': self.geom_mode_var.get(),
-                'thickness_mm':  float(self.entries["Thickness"].get()),
+                'thickness_mm':  self._entry_float(
+                                      "Thickness", "Sample Thickness (mm)"),
                 'save_pica':     self.fmt_pica_var.get(),
                 'save_windeta':  self.fmt_windeta_var.get(),
             }
-            geom_value = float(self.entries["Geometry"].get())
+            geom_value = self._entry_float(
+                "Geometry", "Electrode Area (mm^2)"
+                if params['geometry_mode'] == "area"
+                else "Electrode Diameter (mm)")
             if params['geometry_mode'] == "area":
                 params['area_mm2'] = geom_value
             else:
@@ -2639,63 +2918,76 @@ class Integrated_CT_GUI:
                     "Sample Name, both VISA addresses, and a destination "
                     "folder are required.")
 
-            if params['delay'] < 0:
-                raise ValueError("Delay per Freq cannot be negative.")
+            if not (0.0 <= params['delay'] <= MAX_DELAY_PER_FREQ_S):
+                raise ValueError(
+                    "Delay per Freq (s) must be between 0 and "
+                    f"{MAX_DELAY_PER_FREQ_S:.0f} s.")
             validate_output_settings(params)
+            validate_save_target(self.file_location_path,
+                                 params['sample_name'],
+                                 params['save_windeta'])
             self.c0_farads = c0_from_params(params)
 
-            # --- Initialize hardware ---
-            self.backend.initialize_instruments(params)
-            self.log(f"Backend initialized for sample: "
-                     f"{params['sample_name']}")
-
-            # --- Appendix A.2: create one file per frequency ---
-            self._create_per_frequency_files(params)
-            n_files = len(self.freq_filepaths) + len(self.windeta_filepaths)
-            self.log(
-                f"Number of frequencies entered: {len(self.frequencies)}. "
-                f"{n_files} output files created in "
-                f"{self.file_location_path} (C0 = {self.c0_farads:.5e} F)")
-
-            # --- Appendix A.4: populate plot-frequency dropdown ---
-            self._populate_plot_freq_dropdown()
-
-            # --- Reset state ---
-            self.is_stabilizing, self.is_running = False, True
-            self.start_button.config(state='disabled')
-            self.stop_button.config(state='normal')
-            self.scan_button.config(state='disabled')
-
+            # --- Reset plot state (Tk only, before anything is locked) ---
             self.data_storage['time'] = []
             self.data_storage['temperature'] = []
             self.data_storage['cp'] = {
                 f: {'T': [], 'v': []} for f in self.frequencies}
             self.data_storage['g'] = {
                 f: {'T': [], 'v': []} for f in self.frequencies}
+            # Rows the last run could not write carry their own (old-run)
+            # paths: one more try now, and a count of any that are lost.
+            if self._pending_rows:
+                self._flush_pending_rows()
+                if self._pending_rows:
+                    self.log(f"WARNING: {len(self._pending_rows)} row(s) "
+                             "from the previous run still could not be "
+                             "written and are dropped.")
             self._pending_rows.clear()
             self._write_error_logged = False
             self._decade_ylims.clear()  # fresh dataset re-snaps decades
 
             for line in (self.line_main, self.line_sub1, self.line_sub2):
                 line.set_data([], [])
-            self.ax_main.set_title(
-                f"Cp vs. T @ {freq_tag(self.plot_freq)} Hz", fontweight='bold')
             self.canvas.draw()
 
+            # --- Reset state ---
+            # Connect and initialise run on the worker (the Alpha *RST
+            # rejoin alone can take ~75 s): the window stays live and Stop
+            # works. is_stabilizing covers the connect phase for Stop /
+            # close; _on_connected switches to is_running.
+            self._run_params = params
+            self._startup_error = None
+            self.is_stabilizing, self.is_running = True, False
             self.stop_event.clear()
-            self._set_keep_awake(True)   # multi-day run: no system sleep
-            self.log("Starting passive temperature-sensing measurement...")
+            self._files_ready.clear()
+            self.start_button.config(state='disabled')
+            self.stop_button.config(state='normal')
+            self.scan_button.config(state='disabled')
+            self._set_inputs_enabled(False)
+            locked = True
+            self._set_status("CONNECTING... (Stop is available)",
+                             self.CLR_FG_LIGHT)
+            self.log("Connecting to the instruments...")
 
             # --- Launch worker thread ---
             self.measurement_thread = threading.Thread(
-                target=self._measurement_worker, daemon=True)
+                target=self._run_worker, args=(params,), daemon=True)
             self.measurement_thread.start()
             self.root.after(100, self._process_data_queue)
 
         except Exception as e:
             self.log(f"ERROR during startup: {traceback.format_exc()}")
-            # A failure after connect (e.g. a refused MTM=) must not leave
-            # the Alpha configured with ACV live, or the sessions open.
+            self._set_status("Start failed - see console")
+            self.is_stabilizing = self.is_running = False
+            if locked:   # failed after the run state was set up
+                self._set_inputs_enabled(True)
+                self.start_button.config(state='normal')
+                self.scan_button.config(state='normal')
+                self.stop_button.config(state='disabled')
+            # No worker is alive here (checked above), so closing from the
+            # Tk thread is safe. Connect/initialise failures arrive later
+            # through CONNECT_FAILED; this only guards Start's own steps.
             try:
                 self.backend.close_instruments()
             except Exception as close_err:
@@ -2759,13 +3051,20 @@ class Integrated_CT_GUI:
                 for f in self.frequencies
             }
 
+        def t_log_for(sample_name):
+            return os.path.join(self.file_location_path,
+                                f"{sample_name}_T-log.txt")
+
         sample_name = params['sample_name']
         pica = paths_for(sample_name, "_pica_format.dat",
                          params['save_pica'])
         windeta = paths_for(sample_name, "_windeta_format.txt",
                             params['save_windeta'])
+        # The T-log counts too: it is opened with 'w', and a run with the
+        # same name but other frequencies/formats would truncate it.
         if any(os.path.exists(p)
-               for p in list(pica.values()) + list(windeta.values())):
+               for p in list(pica.values()) + list(windeta.values())
+               + [t_log_for(sample_name)]):
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             sample_name = f"{sample_name}_{ts}"
             pica = paths_for(sample_name, "_pica_format.dat",
@@ -2797,8 +3096,7 @@ class Integrated_CT_GUI:
 
         # Timestamped temperature log (separate file so the legacy
         # 19-column per-frequency format stays untouched).
-        self.t_log_path = os.path.join(
-            self.file_location_path, f"{sample_name}_T-log.txt")
+        self.t_log_path = t_log_for(sample_name)
         # Name the heater query that this controller actually answered
         # at Start (probe_heater_command), so the file says what was
         # read rather than what the program hoped to read.
@@ -2867,6 +3165,7 @@ class Integrated_CT_GUI:
         self.stop_button.config(state='disabled')
         if from_user:
             self.log("Stop requested; waiting for worker to finish...")
+            self._set_status("STOPPING...", self.CLR_FG_LIGHT)
 
         # The worker only sees stop_event between points, so give it the
         # longest single point plus margin (as Frequency_Scan_AlphaAN does)
@@ -2896,6 +3195,7 @@ class Integrated_CT_GUI:
         self._set_keep_awake(False)  # allow system sleep again
         self.start_button.config(state='normal')
         self.scan_button.config(state='normal')
+        self._set_inputs_enabled(True)
         try:
             self.backend.close_instruments()
         except Exception as e:
@@ -2906,10 +3206,26 @@ class Integrated_CT_GUI:
         self._stopping = False
 
         if self._close_after_stop:
-            self.root.destroy()
+            # The stop may have timed out with the worker still inside a
+            # reconnect: wait (bounded) for it to leave its VISA I/O and
+            # close what it reopened before the process goes.
+            self._destroy_when_worker_gone()
+            return
+
+        # Connect/initialise failed: the user is at Start for that, so the
+        # old Start dialog is kept - shown here, on the Tk thread, after
+        # the sessions are closed and the inputs unlocked.
+        startup_error = getattr(self, '_startup_error', None)
+        if startup_error is not None:
+            self._startup_error = None
+            messagebox.showerror(
+                "Initialization Error",
+                f"Could not start measurement.\n{startup_error}")
             return
 
         if from_user:
+            # An unattended ending (ERROR / SAFETY KILL) keeps its banner.
+            self._set_status("STOPPED", self.CLR_FG_LIGHT)
             self.log("Measurement stopped and instruments disconnected.")
             messagebox.showinfo(
                 "Info", "Measurement stopped and instruments disconnected.")
@@ -2918,6 +3234,37 @@ class Integrated_CT_GUI:
     # WORKER THREAD  (Passive monitoring — no stabilization, no ramp,
     #                 no direction assumption; comm errors retry forever)
     # ==================================================================
+    def _run_worker(self, params):
+        """Worker thread target: connect + initialise, then the run.
+
+        Only this thread touches the VISA sessions while it is alive.
+        Connect/initialise happen here so the Tk thread never blocks on
+        them (the Alpha *RST rejoin alone can take ~75 s). Queue messages:
+          'CONNECTED'                 -> Tk creates the files, then sets
+                                         _files_ready
+          ('CONNECT_FAILED', exc)     -> Tk ends the run with ERROR
+        A Stop during this phase returns before any sweep; the normal stop
+        path then closes whatever was opened.
+        """
+        try:
+            self.backend.initialize_instruments(
+                params, stop_event=self.stop_event)
+        except Exception as e:
+            if isinstance(e, StopRequested) or self.stop_event.is_set():
+                self.data_queue.put(
+                    "LOG:Stopped while connecting; no measurement was "
+                    "started.")
+                return
+            e.pica_traceback = traceback.format_exc()
+            self.data_queue.put(('CONNECT_FAILED', e))
+            return
+        self.data_queue.put('CONNECTED')
+        # No sweep (no ACV on the sample) until the Tk thread has the files.
+        while not self._files_ready.is_set():
+            if self.stop_event.wait(0.1):
+                return
+        self._measurement_worker()
+
     def _measurement_worker(self):
         params = self.backend.params
         try:
@@ -2985,6 +3332,23 @@ class Integrated_CT_GUI:
         self.data_queue.put(
             ('CYCLE', cycle, time.time() - self.start_time))
 
+    def _kill_check_while_reconnecting(self):
+        """Worker-thread helper: keep the 400 K kill switch alive through
+        a long Alpha outage. Reads T (query only) whenever the Cryocon
+        session is open; True (and 'KILL' queued) if the kill fired."""
+        cryo = getattr(self.backend, 'cryocon', None)
+        link = getattr(cryo, 'link', None)
+        if link is None or not link.is_connected:
+            return False
+        try:
+            temp = cryo.read_temperature_tolerant()
+        except Exception:
+            return False          # the reconnect below deals with the bus
+        if temp == temp and self.backend.check_safety_kill(temp):
+            self.data_queue.put("KILL")
+            return True
+        return False
+
     def _reconnect_with_backoff(self, attempt):
         """Worker-thread helper: close and re-open both instruments,
         escalating the wait between tries (5 -> 10 -> 30 -> 60 s cap).
@@ -3000,6 +3364,8 @@ class Integrated_CT_GUI:
             while time.time() < deadline:
                 if self.stop_event.wait(1.0):
                     return False
+            if self._kill_check_while_reconnecting():
+                return False
             try:
                 self.backend.reconnect()
             except RuntimeError:
@@ -3053,6 +3419,9 @@ class Integrated_CT_GUI:
                              f"WORKER TRACEBACK:\n{tb_text}")
                 elif isinstance(data, Exception):
                     self.log(f"RUNTIME ERROR (after stop): {data!r}")
+                elif isinstance(data, tuple) and data[0] == 'CONNECT_FAILED':
+                    tb = getattr(data[1], 'pica_traceback', repr(data[1]))
+                    self.log(f"ERROR during startup (after stop): {tb}")
                 elif isinstance(data, tuple) and data[0] == 'CYCLE':
                     _, cycle, elapsed = data
                     self._process_cycle(cycle, elapsed)
@@ -3067,8 +3436,8 @@ class Integrated_CT_GUI:
         if self._pending_rows:
             self.log(f"WARNING: {len(self._pending_rows)} row(s) could not "
                      "be written (disk / share unavailable). They stay in "
-                     "memory and are retried on the next run; closing the "
-                     "program loses them.")
+                     "memory and are tried once more at the next Start; "
+                     "closing the program loses them.")
 
     def _process_data_queue(self):
         terminal = None
@@ -3081,6 +3450,21 @@ class Integrated_CT_GUI:
                         self._handle_log_message(data[4:])
                     elif isinstance(data, str) and data == "KILL":
                         terminal = "KILL"          # defer; keep draining
+                    elif isinstance(data, str) and data == "CONNECTED":
+                        try:
+                            self._on_connected()
+                        except Exception as exc:
+                            # No files, no run: end it through the error
+                            # path (the worker is waiting on _files_ready).
+                            self.log("WORKER TRACEBACK:\n"
+                                     f"{traceback.format_exc()}")
+                            terminal = exc
+                    elif (isinstance(data, tuple)
+                          and data[0] == 'CONNECT_FAILED'):
+                        # The stop it starts drops the run flags, so the
+                        # finally below does not re-schedule the pump.
+                        self._handle_connect_failure(data[1])
+                        return
                     elif isinstance(data, tuple) and data[0] == 'ERROR':
                         _, exc, tb_text = data
                         self.log(f"WORKER TRACEBACK:\n{tb_text}")
@@ -3207,12 +3591,13 @@ class Integrated_CT_GUI:
             if f in self.freq_filepaths:
                 self._write_or_buffer(self.freq_filepaths[f], row_str + "\n")
 
-            # WinDETA file: T (deg C), eps', eps''. The safety-kill NaN
+            # WinDETA file: T (deg C), eps' ... phi. The safety-kill NaN
             # row is PICA-only - WinFIT cannot read 'nan'. Same durable
             # write / buffer-and-retry path as the PICA row.
             if f in self.windeta_filepaths:
                 eps1, eps2 = calculate_eps(f_act, R, X, self.c0_farads)
-                vals = (temp, eps1, eps2)
+                tan_d, phi_deg = loss_phase_cp_g(R, X, f_act)[:2]
+                vals = (temp, eps1, eps2, tan_d, phi_deg)
                 if all(math.isfinite(v) for v in vals):
                     self._write_or_buffer(self.windeta_filepaths[f],
                                           windeta_tscan_row(*vals) + "\n",
@@ -3280,7 +3665,8 @@ class Integrated_CT_GUI:
         linear: plain relim/autoscale_view.
         auto:   log when the positive data spans >= 1 decade, else
                 linear, so narrow-span data is not squashed onto a
-                single decade band. Data only accumulates during a
+                single decade band. Any finite value <= 0 (negative Cp
+                or G) forces linear, since log would hide those points. Data only accumulates during a
                 sweep, so the span is monotone and auto cannot flicker
                 back from log to linear mid-sweep.
         Falls back to linear whenever there is no positive finite data.
@@ -3290,8 +3676,12 @@ class Integrated_CT_GUI:
                and math.isfinite(v) and v > 0]
         use_log = bool(pos) and mode != 'linear'
         if use_log and mode == 'auto':
-            span = math.log10(max(pos)) - math.log10(min(pos))
-            use_log = span >= 1.0  # at least one full decade of data
+            if any(isinstance(v, (int, float)) and math.isfinite(v)
+                   and v <= 0 for v in values):
+                use_log = False
+            else:
+                span = math.log10(max(pos)) - math.log10(min(pos))
+                use_log = span >= 1.0  # at least one full decade of data
         if not use_log:
             ax.set_yscale('linear')
             ax.relim()
@@ -3373,6 +3763,10 @@ class Integrated_CT_GUI:
             if xhi > xlo:
                 pad = (xhi - xlo) * 0.05
                 self.ax_main.set_xlim(xlo - pad, xhi + pad)
+            else:
+                # One temperature so far (first sweep, or T held still):
+                # centre on it, or the last run's x-range would hide it.
+                self.ax_main.set_xlim(xlo - 1.0, xhi + 1.0)
 
     # ==================================================================
     # EVENT HANDLERS
@@ -3386,6 +3780,7 @@ class Integrated_CT_GUI:
                  "Cryocon STOP sent, control loops disengaged !!!")
         self._update_live_plots(force=True)
         self.stop_measurement(False)
+        self._set_status(f"SAFETY KILL ({kill_t:.0f} K) - see console")
         self.log(f"Temperature reached {kill_t:.0f} K. Cryocon loops "
                  "disengaged (STOP) and measurement stopped. Data is on "
                  "disk. Check the controller before re-engaging CONTROL.")
@@ -3399,9 +3794,60 @@ class Integrated_CT_GUI:
         # live); format_exc() here would only print 'NoneType: None'.
         self.log(f"RUNTIME ERROR: {type(exception).__name__}: {exception}")
         self.stop_measurement(False)
+        self._set_status("ERROR - see console")
         self.log(f"A critical error occurred: {exception}. Measurement "
                  "stopped; all written data is on disk.")
         self._beep(times=3)
+
+    # ------------------------------------------------------------------
+    def _on_connected(self):
+        """Tk thread, on 'CONNECTED': the worker has both instruments set
+        up. Create the output files, then let the worker start the run.
+        An error here ends the run through the pump's error path."""
+        if self.stop_event.is_set() or not self.is_stabilizing:
+            return                       # Stop won the race: no files
+        params = self._run_params
+        self.log(f"Backend initialized for sample: "
+                 f"{params['sample_name']}")
+
+        # --- Appendix A.2: create one file per frequency ---
+        self._create_per_frequency_files(params)
+        n_files = len(self.freq_filepaths) + len(self.windeta_filepaths)
+        self.log(
+            f"Number of frequencies entered: {len(self.frequencies)}. "
+            f"{n_files} output files created in "
+            f"{self.file_location_path} (C0 = {self.c0_farads:.5e} F)")
+
+        # --- Appendix A.4: populate plot-frequency dropdown ---
+        self._populate_plot_freq_dropdown()
+        self.ax_main.set_title(
+            f"Cp vs. T @ {freq_tag(self.plot_freq)} Hz", fontweight='bold')
+        self.canvas.draw()
+
+        # Passive: no stabilization phase, the run starts at once.
+        self.is_stabilizing, self.is_running = False, True
+        self._set_keep_awake(True)   # multi-day run: no system sleep
+        self.log("Starting passive temperature-sensing measurement...")
+        self._set_status("RUNNING", self.CLR_FG_LIGHT)
+        self._files_ready.set()
+
+    # ------------------------------------------------------------------
+    def _handle_connect_failure(self, exception):
+        """Tk thread, on CONNECT_FAILED: end the run cleanly. The stop
+        path waits for the worker, closes what was opened, unlocks the
+        inputs and re-enables Start; _finalize_stop then shows the Start
+        dialog the user expects."""
+        tb = getattr(exception, 'pica_traceback', repr(exception))
+        self.log(f"ERROR during startup: {tb}")
+        self.log(f"Could not connect/initialise the instruments: "
+                 f"{exception}")
+        self._set_status(f"ERROR - could not start: {exception}. "
+                         "See console.")
+        self._beep(times=3)
+        # Last: the worker has usually exited already, so the stop (and
+        # its dialog) can finish inside this call.
+        self._startup_error = exception
+        self.stop_measurement(False)
 
     # ==================================================================
     # VISA SCAN (identity-aware, for BOTH instruments)
@@ -3536,8 +3982,38 @@ class Integrated_CT_GUI:
         elif self._stopping:
             # Stop already in progress — just close once it finishes.
             self._close_after_stop = True
+        elif (self.measurement_thread is not None
+              and self.measurement_thread.is_alive()):
+            # Stop timed out with the worker still inside a reconnect: let
+            # it leave its instrument I/O before the process goes away.
+            if not self._close_after_stop:
+                self._close_after_stop = True
+                self.log("Waiting for the worker to finish before "
+                         "closing...")
+                self._close_when_worker_exits(
+                    time.time() + self.CLOSE_WAIT_S)
         else:
             self.root.destroy()
+
+    CLOSE_WAIT_S = 90.0   # > Alpha connect (15 s) + *RST rejoin (60 s)
+
+    def _destroy_when_worker_gone(self):
+        """Destroy the window only once the worker has exited (bounded by
+        CLOSE_WAIT_S), closing the sessions afterwards. Same behaviour as
+        Temprature_Scan_Passive_AlphaAN_GUI's helper of this name."""
+        self._close_when_worker_exits(time.time() + self.CLOSE_WAIT_S)
+
+    def _close_when_worker_exits(self, deadline):
+        t = self.measurement_thread
+        if t is not None and t.is_alive() and time.time() < deadline:
+            self.root.after(
+                200, lambda: self._close_when_worker_exits(deadline))
+            return
+        try:
+            self.backend.close_instruments()
+        except Exception as e:
+            self.log(f"WARNING: error closing instruments: {e}")
+        self.root.destroy()
 
 
 # ===============================================================================

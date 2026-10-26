@@ -519,11 +519,13 @@ WINDETA_HEADER = (
     " Phi [Deg]"
 )
 
-# Same columns, PICA-style header for the built-in Plotter, plus the
-# parallel capacitance and conductance for the user's own formulas.
+# PICA .dat header: the LCR-meter layout of the Step Fscan modules
+# (DATA_HEADER there) minus T_set(K) - this sweep has no temperature.
+# Frequency + the 18 derived_columns values, in that order (user layout,
+# 27 Oct 2026). The dielectric quantities live in the WinDETA .txt.
 PICA_HEADER = (
-    "Frequency\tEps'\tEps''\tTan(Delta)\tModulus'\tModulus''\t"
-    "Zp'\tZp''\tSig'\tSig''\tPhi [Deg]\tCp [F]\tG [S]"
+    "Frequency\tQ\tD\tG(1/Rp)\tB\tCp\tLp\tCs\tLs\tlZl\ttheta\tchi\t"
+    "R(Rs)\ttheta(deg.)\tRp\t1/lZl\tOmega\tCp''\tCs''"
 )
 
 
@@ -599,8 +601,8 @@ def dat_metadata_lines(params, c0_farads, cal_age_str, when):
         f"# 4 Wire Front State                   : {wires}",
         "# Driven HI / LO Shield                : Off / Off (DRS=0 0)",
         f"# Integration time                     : {params['mtm']} s (MTM)",
-        "# Columns: Tan(Delta) = Eps''/Eps', Phi = phase of Z (deg), "
-        "Cp = parallel capacitance (F), G = parallel conductance (S)",
+        "# Columns: 19, LCR layout of the Step Fscan (no T_set): "
+        "D = G/B = -R/X, theta = phase of Z (rad, then deg), SI units",
     ]
 
 
@@ -698,7 +700,7 @@ def impedance_to_dielectric(zr, zi, f_actual, c0):
 
 
 def loss_phase_cp_g(zr, zi, f_actual):
-    """The extra file columns: (tan_delta, phi_deg, Cp, G).
+    """The extra WinDETA .txt columns plus Cp, G: (tan_delta, phi_deg, Cp, G).
 
         tan(delta) = eps''/eps' = -R/X     (WinDETA 'Tan(Delta)')
         phi        = atan2(X, R) in deg    (phase of Z, negative for a
@@ -707,7 +709,8 @@ def loss_phase_cp_g(zr, zi, f_actual):
         Cp = B/w = -X / (w*|Z|^2)          parallel capacitance, F
         G  = R / |Z|^2                     parallel conductance, S
 
-    Geometry-independent: Cp = eps'*C0 and G = 1/Zp'.
+    Geometry-independent: Cp = eps'*C0 and G = 1/Zp'. Only tan_delta and
+    phi are written (.txt); the .dat takes Cp and G from derived_columns.
     """
     omega = 2.0 * math.pi * f_actual
     omega_safe = omega if omega != 0 else 1e-20
@@ -722,12 +725,49 @@ def loss_phase_cp_g(zr, zi, f_actual):
     return (tan_d, phi_deg, cp, g)
 
 
-def file_rows(row, extra):
-    """(WinDETA row, PICA row) from impedance_to_dielectric's 9-tuple and
-    loss_phase_cp_g's 4-tuple, in WINDETA_HEADER / PICA_HEADER order."""
-    tan_d, phi_deg, cp, g = extra
+def derived_columns(f, R, X):
+    """The 18 derived values from measured R (series) and X (reactance),
+    in PICA_HEADER order after Frequency. Copied from the Step Fscan's
+    calculate_impedance_parameters (legacy LabVIEW convention); math.pi /
+    math.sqrt give the same doubles as np.pi / np.sqrt, so no numpy."""
+    omega = 2 * math.pi * f
+    omega_safe = omega if omega != 0 else 1e-20
+    Z_mag = math.sqrt(R**2 + X**2)
+    Z_mag_safe = Z_mag if Z_mag != 0 else 1e-20
+    Z_mag_sq = Z_mag_safe ** 2
+    G = R / Z_mag_sq
+    B = -X / Z_mag_sq
+    G_safe = G if G != 0 else 1e-20
+    B_safe = B if B != 0 else 1e-20
+    X_safe = X if X != 0 else 1e-20
+    Rp = 1.0 / G_safe
+    Cp = B / omega_safe
+    Cs = -1.0 / (omega_safe * X_safe)
+    Ls = X / omega_safe
+    Lp = -1.0 / (omega_safe * B_safe)
+    Ls = abs(Ls); Lp = abs(Lp)  # legacy convention
+    D = G_safe / B_safe
+    D_safe = D if D != 0 else 1e-20
+    Q = 1.0 / D_safe
+    theta_rad = math.atan2(X, R)
+    theta_deg = math.degrees(theta_rad)
+    Y_mag = 1.0 / Z_mag_safe
+    Cp_dp = G / omega_safe
+    # Cs'' = D*Cs (series-model loss) - the legacy LabVIEW convention;
+    # differs from Cp'' by (1 + D^2) in general.
+    Cs_dp = D * Cs
+    return [Q, D, G, B, Cp, Lp, Cs, Ls, Z_mag, theta_rad, X, R,
+            theta_deg, Rp, Y_mag, omega, Cp_dp, Cs_dp]
+
+
+def file_rows(row, extra, derived):
+    """(WinDETA row, PICA row) from impedance_to_dielectric's 9-tuple,
+    loss_phase_cp_g's 4-tuple and derived_columns' 18 values, in
+    WINDETA_HEADER (11) / PICA_HEADER (19) order. Both rows start with
+    the same actual frequency row[0]."""
+    tan_d, phi_deg = extra[0], extra[1]
     windeta = tuple(row[:3]) + (tan_d,) + tuple(row[3:]) + (phi_deg,)
-    return windeta, windeta + (cp, g)
+    return windeta, (row[0],) + tuple(derived)
 
 
 def validate_parameters(params):
@@ -2635,7 +2675,8 @@ class AlphaAN_FreqScan_GUI:
                     zr, zi, f_actual, self.c0_farads
                 )
                 extra = loss_phase_cp_g(zr, zi, f_actual)
-                self.data_queue.put(("POINT", (i, row, extra, ref)))
+                derived = derived_columns(f_actual, zr, zi)
+                self.data_queue.put(("POINT", (i, row, extra, derived, ref)))
 
             if not self.stop_event.is_set():
                 self.data_queue.put(("DONE", None))
@@ -2671,10 +2712,10 @@ class AlphaAN_FreqScan_GUI:
                     )
                     continue
 
-                idx, row, extra, ref = payload
+                idx, row, extra, derived, ref = payload
                 self.sweep_index = idx + 1
                 self.lbl_status.config(text=f"Measuring: {row[0]:,.6g} Hz")
-                self._process_sweep_point(row, extra, ref)
+                self._process_sweep_point(row, extra, derived, ref)
                 self._update_sweep_plot()
         except queue.Empty:
             pass
@@ -2682,28 +2723,28 @@ class AlphaAN_FreqScan_GUI:
         if self.is_running:
             self.root.after(100, self._poll_queue)
 
-    def _process_sweep_point(self, row, extra, ref):
+    def _process_sweep_point(self, row, extra, derived, ref):
         f_actual, eps1, eps2 = row[0], row[1], row[2]
         self.log(
             f"f: {f_actual:,.6g} Hz | eps': {eps1:.4e} | "
             f"eps'': {eps2:.4e} | ref: {ref}"
         )
-        self._write_row(row, extra)
+        self._write_row(row, extra, derived)
 
         self.data_storage["freq"].append(f_actual)
         self.data_storage["eps1"].append(eps1)
         self.data_storage["tand"].append(extra[0])
 
-    def _write_row(self, row, extra):
+    def _write_row(self, row, extra, derived):
         """Append one point to every enabled output file and flush.
 
-        Single source of truth for the row: the PICA row is the WinDETA
-        row plus Cp and G, so the shared columns can never disagree.
+        file_rows builds both rows from the same point (same actual
+        frequency): WinDETA's 11 columns and the PICA 19-column LCR row.
         Write-on-acquisition: a crash or abort still leaves every acquired
         point on disk.
         """
         for path, values in zip((self.txt_filepath, self.dat_filepath),
-                                file_rows(row, extra)):
+                                file_rows(row, extra, derived)):
             if not path:
                 continue
             line = "\t".join(f"{v:.5e}" for v in values)

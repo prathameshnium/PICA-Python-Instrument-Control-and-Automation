@@ -885,7 +885,8 @@ def test_the_scanner_is_not_started_for_a_closed_advanced_window(app):
 def test_the_view_menu_holds_every_window_and_entry_point(app):
     view = _menu_labels(_cascade(app, app.root, "View"))
     for label in ("Main Window", "Advanced Options…", "Search Modules…",
-                  "Console", "PICA CLI (Terminal)", "Legacy Launcher (v1)"):
+                  "Console", "PICA CLI (Terminal)",
+                  "Legacy Launcher (v1, outdated)"):
         assert label in view, label
     tools = _menu_labels(_cascade(app, app.root, "Tools"))
     for moved in ("Advanced Options…", "Search Modules…",
@@ -893,6 +894,41 @@ def test_the_view_menu_holds_every_window_and_entry_point(app):
         assert moved not in tools, moved
     assert "Open Legacy Launcher (v1)" not in _menu_labels(
         _cascade(app, app.root, "File"))
+
+
+# ------------------------------------- pica-gui / run_pica.py: Advanced alone
+def test_start_in_advanced_hides_the_main_window(app):
+    app.start_in_advanced()
+    _pump(app.root, 900)            # past the 700 ms open_advanced timer
+    assert app.root.state() == 'withdrawn'
+    assert app._adv_win is not None and app._adv_win.winfo_exists()
+    # A dialog opened now must not belong to the hidden main window, or
+    # Windows never shows it.
+    assert app._dialog_master() is app._adv_win
+    app._close_advanced()
+
+
+def test_home_brings_the_hidden_main_window_up(app):
+    app.start_in_advanced()
+    _pump(app.root, 900)
+    win = app._adv_win
+    app._focus_main()               # what the Home button runs
+    _pump(app.root, 30)
+    assert app.root.state() != 'withdrawn'
+    assert app._dialog_master() is app.root
+    # Main window now on screen: closing Advanced Options must not quit.
+    app._close_advanced()
+    _pump(app.root, 30)
+    assert app.root.winfo_exists()
+    assert not win.winfo_exists()
+
+
+def test_closing_advanced_while_the_main_window_is_hidden_quits(app):
+    app.start_in_advanced()
+    _pump(app.root, 900)
+    root = app.root
+    app._close_advanced()
+    assert not root.winfo_exists()
 
 
 def test_ctrl_u_opens_one_pica_utils_window(app):
@@ -949,7 +985,7 @@ def test_pressure_gauge_is_a_named_row_on_the_vacuum_card(app, monkeypatch):
     assert win is not None
     from tkinter import ttk
     # No icon for it anywhere: the only buttons left with a bare symbol are
-    # the header's Plotter and scanner and each card's folder.
+    # the header's Home, Plotter and scanner and each card's folder.
     icons = []
 
     def walk(w):

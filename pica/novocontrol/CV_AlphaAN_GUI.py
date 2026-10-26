@@ -108,7 +108,8 @@ V_ABS_MAX = 20.0        # Hardcoded DC bias ceiling. NEVER raise this.
                         # (The Alpha-A technical data gives +/-40 V with
                         # mainframe option B; this unit's maximum is not yet
                         # confirmed. 20 V is the lab's standing C-V cap, the
-                        # same as the E4980A C-V module.)
+                        # same as the E4980A C-V module; tested to +/-20 V
+                        # on this Alpha, Oct 2026, as WinDETA also allows.)
 # The AC ceiling is the ZG4's frequency-dependent one (acv_ceiling(),
 # validate_alpha_parameters() in the backend block below).
 
@@ -712,12 +713,15 @@ def point_timeout_s(freq_hz, mtm_s):
 def stop_wait_s(freqs, mtm_s):
     """How long a Stop may take before the window gives up on the worker.
 
-    The worker sees Stop only between points and ramps, so it may first
-    finish the longest single point (or a full -20 -> +20 V bias ramp), then
-    ramps the bias down and closes the link. Every window shorter than this
-    lets the window thread touch the VISA session while the worker still
-    uses it. (Covers the *RST rejoin wait too: SRQ_TIMEOUT_MEASURE_S, the
-    floor of point_timeout_s, is longer than RESET_READY_TIMEOUT_S.)
+    The worker sees Stop within about SRQ_SLICE_S during a point and
+    within STOP_POLL_S during the *RST rejoin wait, but a bias ramp (up to
+    -20 -> +20 V) or one *IDN? try still runs to its end; then the running
+    point is aborted (MBK), the bias ramped down and the link closed. This
+    window is far longer than that on purpose: it still allows the longest
+    single point, so the STOP OVERDUE banner only appears when the Alpha
+    has really stopped answering. Every window shorter than the real
+    shutdown lets the window thread touch the VISA session while the
+    worker still uses it.
     """
     worst = max((point_timeout_s(f, mtm_s) for f in freqs),
                 default=SRQ_TIMEOUT_MEASURE_S)
@@ -742,6 +746,13 @@ RESET_READY_TIMEOUT_S = 60.0
 RESET_RETRY_INTERVAL_S = 0.5
 RESET_POLL_TIMEOUT_MS = 3000
 CONNECT_READY_TIMEOUT_S = 15.0
+# Stop during a point or a rejoin wait (CV-2, 27 Oct 2026): a point's SRQ
+# wait (460 s at 0.01 Hz, hours at 1e-4 Hz) is waited in SRQ_SLICE_S slices
+# and the settle/retry sleeps in STOP_POLL_S slices, with the Stop flag
+# checked between slices. Waiting for SRQ is a local driver wait: no byte
+# goes on the bus, so the slices cannot disturb the measurement.
+SRQ_SLICE_S = 1.0
+STOP_POLL_S = 0.1
 
 # VISA status codes, as pyvisa reports them in VisaIOError.error_code.
 # NLISTENERS: no listener at that address; the write put no byte on the bus,
@@ -873,6 +884,9 @@ class AlphaAN_Backend:
         self.instrument = None
         self.params = {}
         self.rm = None
+        # threading.Event set by Stop (AlphaANLink.open hands it over). None
+        # = the backend used on its own: plain sleeps, one SRQ wait.
+        self.stop_event = None
         # True between MST/ZRUNCAL and the corresponding SRQ. Tells the
         # shutdown path whether an MBK abort is actually needed.
         self._task_may_be_running = False
@@ -883,6 +897,12 @@ class AlphaAN_Backend:
         # back is used: its syntax is unverified).
         self._bias_touched = False
         self._bias_level = 0.0
+        # True from the *RST write in _reset_and_set_impedance_mode until
+        # the rejoin *IDN? is answered. Stays True when Stop ends the rejoin
+        # wait: the Alpha is then still off the bus, and close_instrument
+        # sends it nothing (on 64-bit Keysight VISA every command would hang
+        # for the full session timeout).
+        self._alpha_rebooting = False
         if pyvisa:
             try:
                 self.rm = pyvisa.ResourceManager()
@@ -1045,7 +1065,7 @@ class AlphaAN_Backend:
                             f"The Alpha did not rejoin the GPIB bus within "
                             f"{timeout_s:.0f} s {situation}. Last error: "
                             f"{exc}") from exc
-                time.sleep(RESET_RETRY_INTERVAL_S)
+                self._pause(RESET_RETRY_INTERVAL_S)
         finally:
             inst.timeout = session_timeout
 
@@ -1060,14 +1080,42 @@ class AlphaAN_Backend:
         extra 1 s settle before MODE=IMP.
         """
         inst = self.instrument
-        inst.write("*RST")
+        # Set before the write: the Alpha may drop off the bus the moment
+        # *RST lands. Cleared only once *IDN? is answered again, so a Stop
+        # (StopRequested) out of the waits below leaves it True.
+        self._alpha_rebooting = True
+        try:
+            inst.write("*RST")
+        except Exception:
+            # The *RST never went out: the Alpha is not resetting.
+            self._alpha_rebooting = False
+            raise
         start = time.monotonic()
-        time.sleep(RESET_SETTLE_S)
+        self._pause(RESET_SETTLE_S)
         self._query_idn_until_answered(timeout_s, "after *RST")
+        self._alpha_rebooting = False
         print(f"  *RST complete; Alpha answering after "
               f"{time.monotonic() - start:.1f} s.")
-        time.sleep(1.0)
+        self._pause(1.0)
         self._exec("MODE=IMP")
+
+    def _pause(self, seconds):
+        """time.sleep(seconds), cut short by Stop: StopRequested is raised
+        within STOP_POLL_S of the Stop flag being set. Without a stop event
+        (the backend used on its own) it is one plain sleep."""
+        stop = getattr(self, "stop_event", None)
+        if stop is None:
+            time.sleep(seconds)
+            return
+        left = float(seconds)
+        while True:
+            if stop.is_set():
+                raise StopRequested()
+            if left <= 0:
+                return
+            step = min(STOP_POLL_S, left)
+            time.sleep(step)
+            left -= step
 
     def _exec_tolerant(self, cmd):
         """_exec for shutdown paths: never raises, reports success."""
@@ -1092,8 +1140,19 @@ class AlphaAN_Backend:
         query ZTSTAT? (legitimate once the measurement is stopped).
         """
         inst = self.instrument
+        stop = getattr(self, "stop_event", None)
         try:
-            inst.wait_for_srq(int(timeout_s * 1000))
+            if stop is None:
+                inst.wait_for_srq(int(timeout_s * 1000))
+            else:
+                self._wait_for_srq_sliced(timeout_s, stop)
+        except StopRequested:
+            # Stop pressed mid-point: abort it (MBK) so the bias commands
+            # of the discharge are not refused, then end the run.
+            state = self.abort_and_diagnose()
+            print(f"  Stop during {context}: aborted (MBK). "
+                  f"ZTSTAT? reports: {state}.")
+            raise
         except Exception as exc:
             state = self.abort_and_diagnose()
             raise TimeoutError(
@@ -1108,6 +1167,28 @@ class AlphaAN_Backend:
             print(f"  WARNING: SRQ during {context} with STB=0x{stb:02X} "
                   f"(bit 0 not set).")
         return stb
+
+    def _wait_for_srq_sliced(self, timeout_s, stop):
+        """The SRQ wait in SRQ_SLICE_S slices, Stop checked between them.
+        The overall budget is timeout_s, as for one long wait. Only a timed
+        out slice is waited again; any other error is raised. Raises
+        StopRequested on Stop and TimeoutError when the budget is spent."""
+        inst = self.instrument
+        left = float(timeout_s)
+        while True:
+            if stop.is_set():
+                raise StopRequested()
+            if left <= 0:
+                raise TimeoutError("no SRQ")
+            step = min(SRQ_SLICE_S, left)
+            try:
+                inst.wait_for_srq(max(1, int(step * 1000)))
+                return
+            except Exception as exc:
+                if not (isinstance(exc, TimeoutError)
+                        or visa_error_code(exc) == VI_ERROR_TMO):
+                    raise
+            left -= step
 
     def abort_and_diagnose(self):
         """Abort any running task, then read the task state ONCE.
@@ -1314,6 +1395,16 @@ class AlphaAN_Backend:
 
     # --- shutdown --------------------------------------------------------
 
+    def _still_resetting(self):
+        """True when the Alpha is still away after a *RST (Stop ended the
+        rejoin wait) and no DC bias command was ever sent. Shutdown then
+        sends nothing: the fresh *RST already leaves the generator off, and
+        the bias is only switched on after the rejoin, so it cannot be on.
+        If the bias was ever touched this is False and the full discharge
+        runs regardless."""
+        return (getattr(self, "_alpha_rebooting", False)
+                and not getattr(self, "_bias_touched", False))
+
     def safe_state(self):
         """Drive the generator to a safe state. Never raises.
 
@@ -1325,7 +1416,7 @@ class AlphaAN_Backend:
         prevent the ACV=0 that actually matters.
         """
         inst = self.instrument
-        if inst is None:
+        if inst is None or self._still_resetting():
             return
         if self._task_may_be_running:
             if self._exec_tolerant("MBK"):
@@ -1341,6 +1432,22 @@ class AlphaAN_Backend:
         print("--- [Backend] Closing Alpha-AN connection. ---")
         if not self.instrument:
             return not getattr(self, "_bias_touched", False)
+        if self._still_resetting():
+            # Stop came during the *RST rejoin wait: the Alpha is not a
+            # listener yet. No MBK/ACV/ZCONSPL/*RST/RSTH/bias command - just
+            # release the session. Bias was never touched (asserted by
+            # _still_resetting), so it cannot be on.
+            print("  Alpha still resetting after *RST - closing the session "
+                  "without shutdown commands (a fresh *RST leaves the "
+                  "generator off)")
+            try:
+                self.instrument.close()
+                print("  Alpha-AN connection closed.")
+            except Exception as e:
+                print(f"  Warning closing VISA session: {e}")
+            finally:
+                self.instrument = None
+            return True
         try:
             # DC bias to 0 V and off FIRST, then the generator safe state.
             # A bias command is refused (MR) while a task runs; if the first
@@ -1391,6 +1498,9 @@ class AlphaANLink:
         self.backend = None
         self.idn = ""
         self.interface_code = None
+        # Stop event of the run (CVWorker.run sets it); handed to the
+        # backend so its SRQ and rejoin waits end promptly on Stop.
+        self.stop_event = None
         self.config = None
         self.freq = None            # frequency of the next measure_point()
         # False once a bias-off could not be confirmed; stays False after
@@ -1408,8 +1518,11 @@ class AlphaANLink:
         if pyvisa is None:
             raise BusError("PyVISA is not installed.")
         backend = AlphaAN_Backend()
+        backend.stop_event = self.stop_event
         try:
             self.idn, self.interface_code = backend.connect(self.address)
+        except StopRequested:
+            raise
         except Exception as exc:
             raise BusError(f"open {self.address}: {exc}")
         self.backend = backend
@@ -1706,6 +1819,7 @@ class CVWorker:
             validate_alpha_parameters(p["freqs"], p["ac_bias"], p["mtm"], p["wire_mode"])
             check_bias_cap(p["waveform"])
             self.status("CONNECTING")
+            self.link.stop_event = self.stop_event
             self.once(self.link.open, "open")
             self.once(self.link.identify, "identify")
             self.log(f"Connected: {self.link.idn} | ZG4 interface code {self.link.interface_code}")
@@ -1816,6 +1930,12 @@ class CVWorker:
 # FRONTEND CLASS - The Main GUI Application
 # ===============================================================================
 
+STOP_OVERDUE_TEXT = (
+    "STOP OVERDUE: the run is still shutting down the Alpha (it may not be "
+    "answering). The DC bias is NOT yet confirmed 0 V and off: do not touch "
+    "the sample. This line clears once the bias-off is confirmed.")
+
+
 class LCR_Freq_GUI:
     """The main GUI application class for CV measurements."""
 
@@ -1863,6 +1983,8 @@ class LCR_Freq_GUI:
         self.link = None
         self.worker = None
         self._bias_confirmed = None     # last run's bias-off result
+        self._end_reason = None         # worker's end reason (final label)
+        self._overdue_alarm = False     # STOP_OVERDUE_TEXT banner shown
         self.alarm_banner = None        # red BIAS_OFF_FAILED line (no dialog)
         self.file_location_path = ""
         self.data_filepath = ""
@@ -1978,6 +2100,13 @@ class LCR_Freq_GUI:
             "green.Horizontal.TProgressbar",
             background=self.CLR_ACCENT_GREEN,
         )
+        # Y-scale strip above the plots: the graph panel's own background,
+        # not the parameter panel's (TFrame) or clam's default grey.
+        for name in ("Graph.TFrame", "Graph.TLabel", "Graph.TRadiobutton"):
+            style.configure(name, background=self.CLR_GRAPH_BG,
+                            foreground=self.CLR_FG_LIGHT)
+        style.map("Graph.TRadiobutton",
+                  background=[("active", self.CLR_GRAPH_BG)])
 
         mpl.rcParams.update(
             {
@@ -2078,6 +2207,10 @@ class LCR_Freq_GUI:
         # the pointer unnoticed. 15 Oct 2026.
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             self.root.unbind_class("TCombobox", seq)
+        # ... but over the parameter panel the wheel scrolls the panel
+        # (Start/Stop and the console sit below the fold at 1300x850).
+        self.left_canvas = left_canvas
+        self._bind_panel_wheel(left_canvas)
         scrollbar.pack(side="right", fill="y")
 
         info_frame = self.create_info_frame(scrollable_frame)
@@ -2095,6 +2228,34 @@ class LCR_Freq_GUI:
         # the widgets.
         self._sash_attempts = 0
         self.root.after(50, self._set_initial_sash)
+
+    _WHEEL_SEQS = ("<MouseWheel>", "<Button-4>", "<Button-5>")
+
+    def _bind_panel_wheel(self, canvas):
+        """One application-wide wheel binding; _on_panel_wheel acts only
+        when the pointer is over the panel (Enter/Leave on the canvas also
+        fire when the pointer moves onto one of its child widgets)."""
+        for seq in self._WHEEL_SEQS:
+            canvas.bind_all(seq, self._on_panel_wheel, add="+")
+
+    def _on_panel_wheel(self, event):
+        canvas = self.left_canvas
+        widget = getattr(event, "widget", None)
+        path, top = str(widget), str(canvas)
+        if path != top and not path.startswith(top + "."):
+            return                      # plots, dialogs: not the panel
+        try:
+            if widget.winfo_class() == "Text":
+                return                  # the console scrolls itself
+        except Exception:
+            pass
+        if getattr(event, "num", None) in (4, 5):        # X11
+            step = -1 if event.num == 4 else 1
+        else:                                            # Windows / macOS
+            delta = getattr(event, "delta", 0) or 0
+            step = -int(delta / 120) or (-1 if delta > 0 else 1 if delta < 0 else 0)
+        if step:
+            canvas.yview_scroll(step, "units")
 
     def _set_initial_sash(self):
         """Set left-pane width; verify and retry (sashpos fails silently
@@ -2256,7 +2417,8 @@ class LCR_Freq_GUI:
         # Row 11-12: ZG4 wire mode (FRS). ALC, open/short correction and
         # cable length have no Alpha equivalent and are not offered.
         Label(
-            frame, text="ZG4 Wire Mode (FRS):", font=self.FONT_BASE
+            frame, text="ZG4 Wire Mode (FRS):", font=self.FONT_BASE,
+            bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT,
         ).grid(row=11, column=0, padx=padx, pady=pady, sticky="w")
         self.wire_combobox = ttk.Combobox(
             frame,
@@ -2271,7 +2433,8 @@ class LCR_Freq_GUI:
 
         # Row 14-15: Alpha-AN VISA
         Label(
-            frame, text="Alpha-AN VISA:", font=self.FONT_BASE
+            frame, text="Alpha-AN VISA:", font=self.FONT_BASE,
+            bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT,
         ).grid(
             row=14, column=0, columnspan=2, padx=padx, pady=(10, 2), sticky="w"
         )
@@ -2288,21 +2451,23 @@ class LCR_Freq_GUI:
         )
         self.scan_button.grid(row=16, column=0, padx=padx, pady=5, sticky="ew")
 
-        ttk.Button(
+        self.browse_button = ttk.Button(
             frame,
             text="Browse Save Loc...",
             command=self._browse_file_location,
-        ).grid(row=16, column=1, padx=padx, pady=5, sticky="ew")
+        )
+        self.browse_button.grid(row=16, column=1, padx=padx, pady=5, sticky="ew")
 
         # Row 17-18: Cycle-mode controls (CV cycle feature).
         # Cycle amplitude comes from V Stop; V Start is disabled in this mode.
         self.var_cycle = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
+        self.cycle_check = ttk.Checkbutton(
             frame,
             text="Cycle mode (amplitude = |V Stop|)",
             variable=self.var_cycle,
             command=self._on_cycle_mode_toggle,
-        ).grid(row=17, column=0, padx=padx, pady=2, sticky="w")
+        )
+        self.cycle_check.grid(row=17, column=0, padx=padx, pady=2, sticky="w")
 
         self._add_entry(
             frame, "No. of Cycles", "n_cycles", 17, 1, default="1"
@@ -2310,7 +2475,8 @@ class LCR_Freq_GUI:
 
         # Row 19-20: Loop shape (cycle mode only)
         Label(
-            frame, text="Loop shape (cycle mode):", font=self.FONT_BASE
+            frame, text="Loop shape (cycle mode):", font=self.FONT_BASE,
+            bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT,
         ).grid(row=19, column=0, columnspan=2, padx=padx, pady=(2, 0), sticky="w")
         self.shape_combobox = ttk.Combobox(
             frame, font=self.FONT_BASE, state="readonly", values=list(SHAPES)
@@ -2472,12 +2638,13 @@ class LCR_Freq_GUI:
             left=0.08, right=0.98, top=0.98, bottom=0.07, hspace=0.15
         )
 
-        scale_bar = ttk.Frame(parent)
+        scale_bar = ttk.Frame(parent, style="Graph.TFrame")
         scale_bar.pack(anchor="w", padx=5, pady=(5, 0))
-        ttk.Label(scale_bar, text="Y scale:").pack(side="left")
+        ttk.Label(scale_bar, text="Y scale:", style="Graph.TLabel").pack(side="left")
         for text, val in (("Auto", "auto"), ("Log", "log"),
                           ("Linear", "linear")):
             ttk.Radiobutton(scale_bar, text=text, value=val,
+                            style="Graph.TRadiobutton",
                             variable=self.y_scale_var,
                             command=self._on_y_scale_change).pack(
                 side="left", padx=(8, 0))
@@ -2543,7 +2710,8 @@ class LCR_Freq_GUI:
         self, parent, text, dict_key, r, c, colspan=1, default=""
     ):
         Label(
-            parent, text=f"{text}:", font=self.FONT_BASE
+            parent, text=f"{text}:", font=self.FONT_BASE,
+            bg=self.CLR_BG_DARK, fg=self.CLR_FG_LIGHT,
         ).grid(row=r, column=c, padx=10, pady=(2, 0), sticky="w")
         entry = Entry(parent, font=self.FONT_BASE)
         entry.grid(
@@ -2562,34 +2730,85 @@ class LCR_Freq_GUI:
         return derived_columns(f, R, X)
 
     # -- Start / Stop -----------------------------------------------------------
+    # Window labels of the numeric boxes, for error messages that name the box.
+    ENTRY_LABELS = {
+        "v_start": "V Start (V)", "v_stop": "V Stop (V)", "v_step": "V Step (V)",
+        "ac_bias": "AC Level (Vrms)", "delay": "Delay per step (s)",
+        "mtm": "Integration Time, MTM (s)",
+        "ladder_pause": "Pause between ladder entries (s)",
+    }
+
+    def _number(self, key):
+        """One numeric box as a finite float; ValueError names the box
+        (an empty box, '-', or a pasted 'inf'/'nan' never reaches the run)."""
+        text = self.entries[key].get().strip()
+        label = self.ENTRY_LABELS[key]
+        try:
+            value = float(text)
+        except ValueError:
+            raise ValueError(f"{label}: '{text}' is not a number.")
+        if not math.isfinite(value):
+            raise ValueError(f"{label}: '{text}' must be a finite number.")
+        return value
+
     def _collect_params(self):
         """Raw window values -> validated params dict (raises ValueError)."""
         if not PYVISA_AVAILABLE:
             raise ValueError("PyVISA is not installed.")
         visa_addr = self.lcr_combobox.get().split("  ->  ")[0]
         cycle_mode = self.var_cycle.get()
+        shape = self.shape_combobox.get()
+        ignored = disabled_fields(cycle_mode, shape)
         raw = {
             "sample_name": self.entries["sample_name"].get().strip(),
-            "ac_bias": float(self.entries["ac_bias"].get()),
+            "ac_bias": self._number("ac_bias"),
             "v_start": self.entries["v_start"].get(),
             "v_stop": self.entries["v_stop"].get(),
-            "v_step": float(self.entries["v_step"].get()),
+            "v_step": self._number("v_step"),
             "n_cycles": self.entries["n_cycles"].get(),
             "cycle_mode": cycle_mode,
-            "shape": self.shape_combobox.get(),
+            "shape": shape,
             "ladder": self.entries["ladder"].get(),
             "ladder_pause": self.entries["ladder_pause"].get(),
             "freq_list": self.entries["freq_list"].get(),
-            "delay": float(self.entries["delay"].get()),
-            "mtm": float(self.entries["mtm"].get()),
+            "delay": self._number("delay"),
+            "mtm": self._number("mtm"),
             "wire_mode": self.wire_combobox.get(),
             "lcr_visa": visa_addr,
             "folder": self.file_location_path,
         }
+        # Boxes the mode uses are checked here with their window label; a
+        # greyed box may stay blank (validate_params counts it as 0).
+        for key in ("v_start", "v_stop"):
+            if key not in ignored:
+                raw[key] = self._number(key)
+        if "ladder_pause" not in ignored and raw["ladder_pause"].strip():
+            raw["ladder_pause"] = self._number("ladder_pause")
+        for tok in raw["freq_list"].split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            try:
+                f = float(tok)
+            except ValueError:
+                raise ValueError(f"Frequencies (Hz): '{tok}' is not a number.")
+            if not math.isfinite(f):
+                raise ValueError(f"Frequencies (Hz): '{tok}' must be a finite number.")
         if not all([raw["sample_name"], raw["lcr_visa"], raw["folder"]]):
             raise ValueError(
                 "Sample Name, VISA address, and Save Location are required."
             )
+        # A tab or other control character pasted into the name would only
+        # fail at the first file write, after the safety dialog.
+        if any(ord(ch) < 32 for ch in raw["sample_name"]):
+            raise ValueError("Sample Name must not contain tabs or other "
+                             "control characters (used in file names).")
+        # A folder that has gone (USB stick out, network share renamed)
+        # is refused here, not reported as a runtime error after Start.
+        if not os.path.isdir(raw["folder"]):
+            raise ValueError(f"Save Location: folder not found: {raw['folder']}")
+        if not os.access(raw["folder"], os.W_OK):
+            raise ValueError(f"Save Location: folder is not writable: {raw['folder']}")
         return validate_params(raw)
 
     def start_sweep(self):
@@ -2648,9 +2867,13 @@ class LCR_Freq_GUI:
         self.sweep_delay = params["delay"]
 
         self.is_running = True
+        self._end_reason = None         # set by the worker's "done"
+        self._overdue_alarm = False
         self.start_button.config(state="disabled")
         self.stop_button.config(state="normal")
         self.scan_button.config(state="disabled")
+        self._set_inputs_locked(True)
+        self.lbl_current_freq.config(text="Measuring: -- Hz")
 
         for key in self.data_storage:
             self.data_storage[key].clear()
@@ -2677,6 +2900,21 @@ class LCR_Freq_GUI:
         self.worker_thread = threading.Thread(target=self.worker.run, daemon=True)
         self.worker_thread.start()
         self.root.after(100, self._poll_queue)
+
+    def _set_inputs_locked(self, locked):
+        """Every input greyed during a run (the worker took its params at
+        Start, so an edit could only make the window disagree with the file
+        headers); released at the end with the mode-dependent greying
+        re-applied."""
+        state = "disabled" if locked else "normal"
+        for entry in self.entries.values():
+            entry.config(state=state)
+        for box in (self.wire_combobox, self.lcr_combobox, self.shape_combobox):
+            box.config(state="disabled" if locked else "readonly")
+        self.cycle_check.config(state=state)
+        self.browse_button.config(state=state)
+        if not locked:
+            self._on_cycle_mode_toggle()
 
     def stop_sweep(self, reason=""):
         """Signal the worker to stop, then finish cleanup asynchronously.
@@ -2715,14 +2953,22 @@ class LCR_Freq_GUI:
             self.root.after(200, lambda: self._poll_worker_stopped(reason))
             return
         if t is not None and t.is_alive():
+            # Overdue (e.g. the Alpha stopped answering: every shutdown
+            # command then waits out the 60 s session timeout, several
+            # minutes in all). The window still never touches the link while
+            # the worker uses it - a second thread on the same VISA session
+            # desyncs the acks and would freeze this window inside a 60 s
+            # query. Warn (banner, no dialog) and keep waiting.
             if not getattr(self, "_forced_zero", False):
                 self._forced_zero = True
+                self._overdue_alarm = True
                 self.log(
-                    "WARNING: worker did not exit within timeout; "
-                    "forcing bias to 0 V and closing the instrument anyway. "
-                    "Start stays disabled until the worker has exited."
+                    "WARNING: the worker has not finished its shutdown "
+                    "within the expected time (the Alpha may not be "
+                    "answering). Still waiting for it to ramp the DC bias "
+                    "to 0 V; Start stays disabled until it has exited."
                 )
-                self._force_bias_off_from_window()
+                self._show_alarm(STOP_OVERDUE_TEXT)
             self.root.after(1000, lambda: self._poll_worker_stopped(reason))
             return
         self._forced_zero = False
@@ -2743,11 +2989,26 @@ class LCR_Freq_GUI:
 
     def _finalize_stop(self, reason):
         self._drain_queue()
-        self.lbl_current_freq.config(text="Measuring: STOPPED")
+        # The last word on the label: how the run ended (the worker's
+        # DISCHARGING and the window's STOPPING... came after it).
+        end = getattr(self, "_end_reason", None)
+        if end == "complete":
+            final = "DONE"
+        elif end == "stop_button":
+            final = "STOPPED by user"
+        elif end:
+            final = "ERROR (see console)"
+        else:
+            final = "STOPPED"
+        self.lbl_current_freq.config(text=f"Measuring: {final}")
         self.start_button.config(state="normal")
         self.scan_button.config(state="normal")
+        self._set_inputs_locked(False)
         self._stopping = False
         if self._bias_confirmed:
+            if getattr(self, "_overdue_alarm", False):
+                self._overdue_alarm = False
+                self._hide_alarm()
             self.log("Instrument disconnected (bias 0 V, off).")
         else:
             self.log("Instrument disconnected, but the DC bias was NOT "
@@ -2938,19 +3199,28 @@ class LCR_Freq_GUI:
             self.data_storage["volt"], self.data_storage["g"]
         )
 
-        for ax, key, data in (
-            (self.ax_cp, "cp", self.data_storage["cp"]),
-            (self.ax_g, "g", self.data_storage["g"]),
+        for ax, line, key, data in (
+            (self.ax_cp, self.line_cp, "cp", self.data_storage["cp"]),
+            (self.ax_g, self.line_g, "g", self.data_storage["g"]),
         ):
             ax.relim()
             ax.autoscale_view(scalex=True, scaley=False)
-            self._apply_y_scale(ax, data, key)
+            if self._apply_y_scale(ax, data, key):
+                # Log axis: a zero or negative G (noisy Zs' near 0) or Cp
+                # (inductive) cannot be drawn and would show as a drop off
+                # the bottom of the plot; leave a gap instead. Display only:
+                # data_storage and the file keep every value.
+                line.set_data(
+                    self.data_storage["volt"],
+                    [v if isinstance(v, (int, float)) and math.isfinite(v) and v > 0
+                     else float("nan") for v in data])
 
         self.canvas.draw_idle()
         self.progress_bar["value"] = self.sweep_index
 
     # Unattended rule: nothing modal during or after a run. Log, label, beep.
     def _handle_sweep_completion(self, reason):
+        self._end_reason = reason       # _finalize_stop's final label
         if reason == "complete":
             self.lbl_current_freq.config(text="Measuring: DONE")
             self.log("CV sweep finished successfully.")

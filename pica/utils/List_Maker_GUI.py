@@ -41,8 +41,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 
 import numpy as np
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+# matplotlib is imported in PICAListMakerApp._build_plot(), not here: it takes
+# about 1.6 s to load, so the window opens first and the plot follows.
 
 PROGRAM_VERSION = "1.0"
 
@@ -528,6 +528,8 @@ class PICAListMakerApp:
         self._after_id = None
         self._plot_source = "make"     # 'make' | 'check'
         self._check_values = []
+        self.figure = self.ax = self.canvas = None   # made by _build_plot()
+        self._drawn_key = None                       # what the plot shows now
 
         self.setup_styles()
         self.create_widgets()
@@ -538,7 +540,28 @@ class PICAListMakerApp:
                     self.sci_var, self.sep_var, self.logy_var):
             var.trace_add("write", self._schedule_recompute)
 
-        self.root.after(50, self.recompute)
+        self.root.after(50, self._first_fill)
+
+    def _first_fill(self):
+        """Fill in the list, then give the window a moment to paint before
+        loading matplotlib (which blocks for about 1.6 s)."""
+        self.recompute()
+        self.root.after(50, self._build_plot)
+
+    def _build_plot(self):
+        """Load matplotlib and put the plot in. Runs once, after the window is up."""
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        self._plot_placeholder.destroy()
+        self.figure = Figure(figsize=(6, 3.4), dpi=100, facecolor=self.CLR_FRAME_BG)
+        self.ax = self.figure.add_subplot(111)
+        self.ax.set_facecolor(self.CLR_INPUT_BG)
+        self.canvas = FigureCanvasTkAgg(self.figure, master=self.plot_frame)
+        self.canvas.get_tk_widget().grid(row=1, column=0, sticky='nsew')
+        if self._plot_source == "check":
+            self._plot(self._check_values, "Pasted list")
+        else:
+            self._plot(self.values, "Your list")
 
     # ------------------------------------------------------------------
     def setup_styles(self):
@@ -613,11 +636,9 @@ class PICAListMakerApp:
         self.plot_note_var = tk.StringVar(value="")
         ttk.Label(plot_bar, textvariable=self.plot_note_var, style='Small.TLabel').pack(side='left', padx=12)
 
-        self.figure = Figure(figsize=(6, 3.4), dpi=100, facecolor=self.CLR_FRAME_BG)
-        self.ax = self.figure.add_subplot(111)
-        self.ax.set_facecolor(self.CLR_INPUT_BG)
-        self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
-        self.canvas.get_tk_widget().grid(row=1, column=0, sticky='nsew')
+        self.plot_frame = plot_frame
+        self._plot_placeholder = ttk.Label(plot_frame, text="Loading plot...", style='Sub.TLabel', anchor='center')
+        self._plot_placeholder.grid(row=1, column=0, sticky='nsew')
 
         out_frame = ttk.LabelFrame(right, text="Your list")
         out_frame.grid(row=1, column=0, sticky='nsew')
@@ -816,6 +837,13 @@ class PICAListMakerApp:
     #  Plot
     # ------------------------------------------------------------------
     def _plot(self, vals, title):
+        if self.ax is None:      # matplotlib not loaded yet; _build_plot() draws
+            return
+        # A redraw costs about 150 ms. Changing decimals, separator or
+        # scientific rebuilds the text but not the picture, so skip it then.
+        key = (tuple(vals), title, self.logy_var.get(), tuple(self.figure.get_size_inches()))
+        if key == self._drawn_key:
+            return
         self.ax.clear()
         self.ax.set_facecolor(self.CLR_INPUT_BG)
         self.ax.grid(True, alpha=0.3)
@@ -838,6 +866,7 @@ class PICAListMakerApp:
         except Exception:
             pass
         self.canvas.draw_idle()
+        self._drawn_key = key
 
     def _on_tab_changed(self, _event=None):
         try:

@@ -397,9 +397,9 @@ def test_the_gpib_scanner_and_plotter_are_still_in_the_tools_menu():
     assert 'label="Plotter Utility"' in V2_SOURCE
 
 
-# ------------------------------------------- v1 parity: scanner auto-launch
+# ------------------------------- scanner auto-launch (with Advanced Options)
 
-def test_the_scanner_auto_launches_at_startup():
+def test_the_scanner_auto_launches_with_advanced_options():
     assert hasattr(launcher.PICALauncherV2, "_auto_launch_gpib_scanner")
     # The delay is a drawing courtesy, not a contract: assert the
     # scheduling, not the number of milliseconds.
@@ -487,6 +487,16 @@ def test_spawn_target_imports_no_tkinter_or_pil():
     assert r.returncode == 0, r.stdout + r.stderr
 
 
+def test_every_launch_path_gives_windows_the_pica_icon():
+    """Launched modules, the utilities (v1 run_script_process) and both
+    launchers set the PICA icon; the icon file must exist where it looks."""
+    import pica.spawn_target as st
+    assert os.path.exists(st.PICA_ICON), st.PICA_ICON
+    assert "use_pica_icon()" in open(st.__file__, encoding="utf-8").read()
+    assert V1_SOURCE.count("use_pica_icon()") >= 2      # run_script_process + main
+    assert "use_pica_icon()" in V2_SOURCE
+
+
 def test_spawn_target_runs_script_with_argv_in_its_own_folder(tmp_path=None):
     import subprocess
     import tempfile
@@ -502,17 +512,40 @@ def test_spawn_target_runs_script_with_argv_in_its_own_folder(tmp_path=None):
     assert r.stdout.strip() == "True ['a.txt', 'b.txt'] __main__", r.stdout + r.stderr
 
 
-def test_run_pica_v2_imports_the_launcher_only_under_main_guard():
-    """With 'spawn' every launched module re-runs run_pica_v2.py as
+def test_run_scripts_import_the_launcher_only_under_main_guard():
+    """With 'spawn' every launched module re-runs the run_pica script as
     __mp_main__; a top-level launcher import made each one load it."""
-    tree = ast.parse(open(os.path.join(REPO_ROOT, "run_pica_v2.py"),
-                          encoding="utf-8").read())
-    for node in tree.body:
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            names = [a.name for a in node.names]
-            mod = getattr(node, "module", None) or ""
-            assert "pica" not in mod and not any("pica" in n for n in names), \
-                "run_pica_v2.py imports %s at top level" % (mod or names)
+    for script in ("run_pica.py", "run_pica_v2.py",
+                   os.path.join("legacy_stuff", "run_pica_legacy.py")):
+        tree = ast.parse(open(os.path.join(REPO_ROOT, script),
+                              encoding="utf-8").read())
+        for node in tree.body:
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                names = [a.name for a in node.names]
+                mod = getattr(node, "module", None) or ""
+                assert "pica" not in mod and not any("pica" in n for n in names), \
+                    "%s imports %s at top level" % (script, mod or names)
+
+
+def test_advanced_start_does_not_auto_open_the_scanner():
+    """pica-gui / run_pica.py open Advanced Options alone, without the
+    standalone scanner (Instrument Status already shows the bus)."""
+    app = StubLauncher()
+    app._adv_win = object()
+    app._advanced_start = True
+    started = []
+    old = launcher.launch_gpib_scanner
+    launcher.launch_gpib_scanner = lambda: started.append(1)
+    try:
+        launcher.PICALauncherV2._auto_launch_gpib_scanner(app)
+    finally:
+        launcher.launch_gpib_scanner = old
+    assert started == []
+
+
+def test_the_home_button_is_wired_to_the_main_window():
+    assert '"Home (Quick Select)"' in V2_SOURCE
+    assert "command=self._focus_main" in V2_SOURCE
 
 
 if __name__ == "__main__":

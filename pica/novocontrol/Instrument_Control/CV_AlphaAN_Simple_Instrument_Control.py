@@ -604,12 +604,15 @@ def point_timeout_s(freq_hz, mtm_s):
 def stop_wait_s(freqs, mtm_s):
     """How long a Stop may take before the window gives up on the worker.
 
-    The worker sees Stop only between points and ramps, so it may first
-    finish the longest single point (or a full -20 -> +20 V bias ramp), then
-    ramps the bias down and closes the link. Every window shorter than this
-    lets the window thread touch the VISA session while the worker still
-    uses it. (Covers the *RST rejoin wait too: SRQ_TIMEOUT_MEASURE_S, the
-    floor of point_timeout_s, is longer than RESET_READY_TIMEOUT_S.)
+    The worker sees Stop within about SRQ_SLICE_S during a point and
+    within STOP_POLL_S during the *RST rejoin wait, but a bias ramp (up to
+    -20 -> +20 V) or one *IDN? try still runs to its end; then the running
+    point is aborted (MBK), the bias ramped down and the link closed. This
+    window is far longer than that on purpose: it still allows the longest
+    single point, so the STOP OVERDUE banner only appears when the Alpha
+    has really stopped answering. Every window shorter than the real
+    shutdown lets the window thread touch the VISA session while the
+    worker still uses it.
     """
     worst = max((point_timeout_s(f, mtm_s) for f in freqs),
                 default=SRQ_TIMEOUT_MEASURE_S)
@@ -634,6 +637,13 @@ RESET_READY_TIMEOUT_S = 60.0
 RESET_RETRY_INTERVAL_S = 0.5
 RESET_POLL_TIMEOUT_MS = 3000
 CONNECT_READY_TIMEOUT_S = 15.0
+# Stop during a point or a rejoin wait (CV-2, 27 Oct 2026): a point's SRQ
+# wait (460 s at 0.01 Hz, hours at 1e-4 Hz) is waited in SRQ_SLICE_S slices
+# and the settle/retry sleeps in STOP_POLL_S slices, with the Stop flag
+# checked between slices. Waiting for SRQ is a local driver wait: no byte
+# goes on the bus, so the slices cannot disturb the measurement.
+SRQ_SLICE_S = 1.0
+STOP_POLL_S = 0.1
 
 # VISA status codes, as pyvisa reports them in VisaIOError.error_code.
 # NLISTENERS: no listener at that address; the write put no byte on the bus,
@@ -765,6 +775,9 @@ class AlphaAN_Backend:
         self.instrument = None
         self.params = {}
         self.rm = None
+        # threading.Event set by Stop (AlphaANLink.open hands it over). None
+        # = the backend used on its own: plain sleeps, one SRQ wait.
+        self.stop_event = None
         # True between MST/ZRUNCAL and the corresponding SRQ. Tells the
         # shutdown path whether an MBK abort is actually needed.
         self._task_may_be_running = False
@@ -775,6 +788,12 @@ class AlphaAN_Backend:
         # back is used: its syntax is unverified).
         self._bias_touched = False
         self._bias_level = 0.0
+        # True from the *RST write in _reset_and_set_impedance_mode until
+        # the rejoin *IDN? is answered. Stays True when Stop ends the rejoin
+        # wait: the Alpha is then still off the bus, and close_instrument
+        # sends it nothing (on 64-bit Keysight VISA every command would hang
+        # for the full session timeout).
+        self._alpha_rebooting = False
         if pyvisa:
             try:
                 self.rm = pyvisa.ResourceManager()
@@ -937,7 +956,7 @@ class AlphaAN_Backend:
                             f"The Alpha did not rejoin the GPIB bus within "
                             f"{timeout_s:.0f} s {situation}. Last error: "
                             f"{exc}") from exc
-                time.sleep(RESET_RETRY_INTERVAL_S)
+                self._pause(RESET_RETRY_INTERVAL_S)
         finally:
             inst.timeout = session_timeout
 
@@ -952,14 +971,42 @@ class AlphaAN_Backend:
         extra 1 s settle before MODE=IMP.
         """
         inst = self.instrument
-        inst.write("*RST")
+        # Set before the write: the Alpha may drop off the bus the moment
+        # *RST lands. Cleared only once *IDN? is answered again, so a Stop
+        # (StopRequested) out of the waits below leaves it True.
+        self._alpha_rebooting = True
+        try:
+            inst.write("*RST")
+        except Exception:
+            # The *RST never went out: the Alpha is not resetting.
+            self._alpha_rebooting = False
+            raise
         start = time.monotonic()
-        time.sleep(RESET_SETTLE_S)
+        self._pause(RESET_SETTLE_S)
         self._query_idn_until_answered(timeout_s, "after *RST")
+        self._alpha_rebooting = False
         print(f"  *RST complete; Alpha answering after "
               f"{time.monotonic() - start:.1f} s.")
-        time.sleep(1.0)
+        self._pause(1.0)
         self._exec("MODE=IMP")
+
+    def _pause(self, seconds):
+        """time.sleep(seconds), cut short by Stop: StopRequested is raised
+        within STOP_POLL_S of the Stop flag being set. Without a stop event
+        (the backend used on its own) it is one plain sleep."""
+        stop = getattr(self, "stop_event", None)
+        if stop is None:
+            time.sleep(seconds)
+            return
+        left = float(seconds)
+        while True:
+            if stop.is_set():
+                raise StopRequested()
+            if left <= 0:
+                return
+            step = min(STOP_POLL_S, left)
+            time.sleep(step)
+            left -= step
 
     def _exec_tolerant(self, cmd):
         """_exec for shutdown paths: never raises, reports success."""
@@ -984,8 +1031,19 @@ class AlphaAN_Backend:
         query ZTSTAT? (legitimate once the measurement is stopped).
         """
         inst = self.instrument
+        stop = getattr(self, "stop_event", None)
         try:
-            inst.wait_for_srq(int(timeout_s * 1000))
+            if stop is None:
+                inst.wait_for_srq(int(timeout_s * 1000))
+            else:
+                self._wait_for_srq_sliced(timeout_s, stop)
+        except StopRequested:
+            # Stop pressed mid-point: abort it (MBK) so the bias commands
+            # of the discharge are not refused, then end the run.
+            state = self.abort_and_diagnose()
+            print(f"  Stop during {context}: aborted (MBK). "
+                  f"ZTSTAT? reports: {state}.")
+            raise
         except Exception as exc:
             state = self.abort_and_diagnose()
             raise TimeoutError(
@@ -1000,6 +1058,28 @@ class AlphaAN_Backend:
             print(f"  WARNING: SRQ during {context} with STB=0x{stb:02X} "
                   f"(bit 0 not set).")
         return stb
+
+    def _wait_for_srq_sliced(self, timeout_s, stop):
+        """The SRQ wait in SRQ_SLICE_S slices, Stop checked between them.
+        The overall budget is timeout_s, as for one long wait. Only a timed
+        out slice is waited again; any other error is raised. Raises
+        StopRequested on Stop and TimeoutError when the budget is spent."""
+        inst = self.instrument
+        left = float(timeout_s)
+        while True:
+            if stop.is_set():
+                raise StopRequested()
+            if left <= 0:
+                raise TimeoutError("no SRQ")
+            step = min(SRQ_SLICE_S, left)
+            try:
+                inst.wait_for_srq(max(1, int(step * 1000)))
+                return
+            except Exception as exc:
+                if not (isinstance(exc, TimeoutError)
+                        or visa_error_code(exc) == VI_ERROR_TMO):
+                    raise
+            left -= step
 
     def abort_and_diagnose(self):
         """Abort any running task, then read the task state ONCE.
@@ -1206,6 +1286,16 @@ class AlphaAN_Backend:
 
     # --- shutdown --------------------------------------------------------
 
+    def _still_resetting(self):
+        """True when the Alpha is still away after a *RST (Stop ended the
+        rejoin wait) and no DC bias command was ever sent. Shutdown then
+        sends nothing: the fresh *RST already leaves the generator off, and
+        the bias is only switched on after the rejoin, so it cannot be on.
+        If the bias was ever touched this is False and the full discharge
+        runs regardless."""
+        return (getattr(self, "_alpha_rebooting", False)
+                and not getattr(self, "_bias_touched", False))
+
     def safe_state(self):
         """Drive the generator to a safe state. Never raises.
 
@@ -1217,7 +1307,7 @@ class AlphaAN_Backend:
         prevent the ACV=0 that actually matters.
         """
         inst = self.instrument
-        if inst is None:
+        if inst is None or self._still_resetting():
             return
         if self._task_may_be_running:
             if self._exec_tolerant("MBK"):
@@ -1233,6 +1323,22 @@ class AlphaAN_Backend:
         print("--- [Backend] Closing Alpha-AN connection. ---")
         if not self.instrument:
             return not getattr(self, "_bias_touched", False)
+        if self._still_resetting():
+            # Stop came during the *RST rejoin wait: the Alpha is not a
+            # listener yet. No MBK/ACV/ZCONSPL/*RST/RSTH/bias command - just
+            # release the session. Bias was never touched (asserted by
+            # _still_resetting), so it cannot be on.
+            print("  Alpha still resetting after *RST - closing the session "
+                  "without shutdown commands (a fresh *RST leaves the "
+                  "generator off)")
+            try:
+                self.instrument.close()
+                print("  Alpha-AN connection closed.")
+            except Exception as e:
+                print(f"  Warning closing VISA session: {e}")
+            finally:
+                self.instrument = None
+            return True
         try:
             # DC bias to 0 V and off FIRST, then the generator safe state.
             # A bias command is refused (MR) while a task runs; if the first
@@ -1283,6 +1389,9 @@ class AlphaANLink:
         self.backend = None
         self.idn = ""
         self.interface_code = None
+        # Stop event of the run (CVWorker.run sets it); handed to the
+        # backend so its SRQ and rejoin waits end promptly on Stop.
+        self.stop_event = None
         self.config = None
         self.freq = None            # frequency of the next measure_point()
         # False once a bias-off could not be confirmed; stays False after
@@ -1300,8 +1409,11 @@ class AlphaANLink:
         if pyvisa is None:
             raise BusError("PyVISA is not installed.")
         backend = AlphaAN_Backend()
+        backend.stop_event = self.stop_event
         try:
             self.idn, self.interface_code = backend.connect(self.address)
+        except StopRequested:
+            raise
         except Exception as exc:
             raise BusError(f"open {self.address}: {exc}")
         self.backend = backend
@@ -1599,6 +1711,7 @@ class CVWorker:
             validate_alpha_parameters(p["freqs"], p["ac_bias"], p["mtm"], p["wire_mode"])
             check_bias_cap(p["waveform"])
             self.status("CONNECTING")
+            self.link.stop_event = self.stop_event
             self.once(self.link.open, "open")
             self.once(self.link.identify, "identify")
             self.log(f"Connected: {self.link.idn} | ZG4 interface code {self.link.interface_code}")

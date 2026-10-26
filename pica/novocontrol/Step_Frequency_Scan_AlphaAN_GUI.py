@@ -25,6 +25,12 @@ every exit). What changed with the instrument:
   - An Alpha refusal (non-OK ack, 'CR') aborts the run instead of entering
     the retry-forever reconnect: a reset cannot fix it.
 Version: V: 1.0 (Alpha-AN port, 22 Oct 2026). Not yet run on the hardware.
+         27 Oct 2026 (from Frequency_Scan_AlphaAN_GUI.py): the WinDETA .txt
+         has 11 columns (Tan(Delta) after Eps'', Phi [Deg] last); the PICA
+         .dat keeps its 20 LCR-style columns. Frequency List gains the
+         WinDETA Start / End / Factor list (default 20 Hz - 3 MHz x1.4);
+         geometry defaults to Diameter; the spectrum panels plot eps' and
+         tan(delta) instead of Cp and G.
 
 SAFETY:  This module never uses DC bias. DCV/DCE are never transmitted
          (the analyzer does have DC bias - see INSTRUMENT).
@@ -763,12 +769,15 @@ WIRE_MODES = ("2", "3", "4")
 
 
 # WinDETA column header, copied from Frequency_Scan_AlphaAN_GUI.py. Order and
-# names are FIXED - WinFIT parses this positionally. Do not add, remove or
-# reorder columns. Zp comes BEFORE Sig, matching the WinDETA export paired
-# with the mes_def (data_file_for_ref/Fscan_data_Novo_Windeta.dat).
+# names are FIXED - WinFIT parses this positionally. Zp comes BEFORE Sig,
+# matching the WinDETA export paired with the mes_def
+# (data_file_for_ref/Fscan_data_Novo_Windeta.dat). Tan(Delta) follows Eps''
+# and the phase angle closes the row (user layout, 27 Oct 2026; names from
+# WinDETA's variable list).
 WINDETA_HEADER = (
-    " Freq. [Hz]\t Eps'    \t Eps''   \t Modulus'  \t Modulus''  \t"
-    " Zp' [Ohms]\t Zp'' [Ohms]\t Sig' [S/cm]\t Sig'' [S/cm]"
+    " Freq. [Hz]\t Eps'    \t Eps''   \t Tan(Delta)\t Modulus'  \t"
+    " Modulus''  \t Zp' [Ohms]\t Zp'' [Ohms]\t Sig' [S/cm]\t Sig'' [S/cm]\t"
+    " Phi [Deg]"
 )
 
 
@@ -850,6 +859,40 @@ def impedance_to_dielectric(zr, zi, f_actual, c0):
     return (f_actual, eps1, eps2, m1, m2, zp1, zp2, sig1, sig2)
 
 
+def loss_phase_cp_g(zr, zi, f_actual):
+    """The extra file columns: (tan_delta, phi_deg, Cp, G), copied from
+    Frequency_Scan_AlphaAN_GUI.py.
+
+        tan(delta) = eps''/eps' = -R/X     (WinDETA 'Tan(Delta)')
+        phi        = atan2(X, R) in deg    (phase of Z, negative for a
+                                            capacitor)
+        Cp = B/w = -X / (w*|Z|^2)          parallel capacitance, F
+        G  = R / |Z|^2                     parallel conductance, S
+
+    Geometry-independent: Cp = eps'*C0 and G = 1/Zp'.
+    """
+    omega = 2.0 * math.pi * f_actual
+    omega_safe = omega if omega != 0 else 1e-20
+    z_mag_sq = zr ** 2 + zi ** 2
+    z_mag_sq_safe = z_mag_sq if z_mag_sq != 0 else 1e-20
+    zi_safe = zi if zi != 0 else 1e-20
+
+    tan_d = -zr / zi_safe
+    phi_deg = math.degrees(math.atan2(zi, zr))
+    cp = -zi / (omega_safe * z_mag_sq_safe)
+    g = zr / z_mag_sq_safe
+    return (tan_d, phi_deg, cp, g)
+
+
+def windeta_row(row, extra):
+    """WinDETA .txt row (11 values, WINDETA_HEADER order) from
+    impedance_to_dielectric's 9-tuple and loss_phase_cp_g's 4-tuple:
+    Tan(Delta) after Eps'', Phi last. The WinDETA half of the Fscan's
+    file_rows - the PICA .dat here keeps its own LCR-style columns."""
+    tan_d, phi_deg, _cp, _g = extra
+    return tuple(row[:3]) + (tan_d,) + tuple(row[3:]) + (phi_deg,)
+
+
 def windeta_header_lines(params, target_temp, when):
     """The three header lines of the WinDETA frequency-scan export, as the
     frequency scan module writes them. Line 1 is the WinDETA comment
@@ -926,6 +969,20 @@ def validate_output_settings(params):
     if not (params["save_pica"] or params["save_windeta"]):
         raise ValueError(
             "Tick at least one output format (PICA or WinDETA).")
+
+
+def entry_number(text, name):
+    """float from a box's text, or a ValueError that names the box.
+    NaN and inf are refused too: 'nan' passes every '< 0' range check
+    and only fails hours later (time.sleep(nan), an all-NaN C0)."""
+    text = str(text).strip()
+    try:
+        value = float(text)
+    except ValueError:
+        raise ValueError(f"{name}: '{text}' is not a number.") from None
+    if not math.isfinite(value):
+        raise ValueError(f"{name}: '{text}' is not a finite number.")
+    return value
 
 
 def append_line_durably(path, line, encoding="utf-8", newline=None):
@@ -1098,6 +1155,72 @@ CUSTOM_FREQ_LABEL = "Custom list (type your own below)"
 # Sanity cap only: at ~1 s per point this is already a 15+ minute sweep
 # at EVERY temperature step.
 CUSTOM_FREQ_MAX_POINTS = 1000
+
+# First choice: WinDETA's "Measurement Points by Steps" dialog, logarithmic
+# division. Start, End and Factor in, list out.
+LOG_FREQ_LABEL = "Start / End / Factor (WinDETA-style)"
+LOG_FREQ_DEFAULTS = ("20", "3e6", "1.4")   # today's WinDETA Fscan list
+# What the Frequency List box shows at start-up (DEFAULT_FREQ_PRESET stays
+# the default among the frozen presets).
+DEFAULT_FREQ_CHOICE = LOG_FREQ_LABEL
+# The hint lists every point up to this many; click it for the rest.
+HINT_FULL_LIST_MAX = 60
+
+
+def build_log_frequency_list(start, end, factor):
+    """WinDETA logarithmic value list: start, start*factor, start*factor^2 ...
+    while short of End, then End itself as the last point (WinDETA help:
+    the multiplier is constant 'except the last point').
+
+    Each point is start*factor^k rounded to 7 significant digits, the
+    precision WinDETA stores. This reproduces the mes_def list exactly
+    (20 Hz x1.4 to 3 MHz: 37 points, ...2.603222e6, 3e6) and both frozen
+    x1.1 / x1.4 presets above. start > end gives a descending list (divide
+    by factor). Raises ValueError with a readable reason.
+    """
+    for name, v in (("Start", start), ("End", end), ("Factor", factor)):
+        if not math.isfinite(v):
+            raise ValueError(f"{name} is not a finite number.")
+    for name, v in (("Start", start), ("End", end)):
+        if not (FREQ_HW_MIN <= v <= FREQ_HW_MAX):
+            raise ValueError(
+                f"{name} {v:g} Hz is outside the Alpha-AN range "
+                f"{FREQ_HW_MIN:g} Hz to {FREQ_HW_MAX:g} Hz."
+            )
+    if factor <= 1.0:
+        raise ValueError("Factor must be greater than 1 (e.g. 1.4).")
+    if start == end:
+        raise ValueError("Start and End are the same frequency.")
+    step = factor if end > start else 1.0 / factor
+    rising = end > start
+    values = []
+    k = 0
+    while True:
+        f = float(f"{start * step ** k:.6e}")
+        # Stop once the next point reaches End (1e-9 slack: no duplicate
+        # End when the series lands on it exactly, e.g. 20 Hz x10 to 2 MHz).
+        if (f >= end * (1 - 1e-9)) if rising else (f <= end * (1 + 1e-9)):
+            break
+        if values and f == values[-1]:
+            raise ValueError(
+                f"Factor {factor:g} is too close to 1: points repeat at "
+                f"7-digit resolution. Use a larger factor."
+            )
+        values.append(f)
+        k += 1
+        if len(values) >= CUSTOM_FREQ_MAX_POINTS:
+            raise ValueError(
+                f"Factor {factor:g} gives more than "
+                f"{CUSTOM_FREQ_MAX_POINTS} points; use a larger factor."
+            )
+    values.append(float(end))
+    return tuple(values)
+
+
+def log_list_label(freqs, factor):
+    """Header/log label in the preset style, e.g. '37 pts, 20 Hz - 3 MHz'."""
+    return (f"{len(freqs)} pts, {freqs[0]:g} Hz - {freqs[-1]:g} Hz "
+            f"(x{factor:g})")
 
 
 def parse_frequency_list(text):
@@ -1685,8 +1808,9 @@ class CombinedGUI:
         self.c0_farads = None   # set at Start from the geometry inputs
 
         # Frequency list: replaced at Start by the one chosen in the
-        # Frequency List box (default: the E4980A list, as before)
-        self.sweep_frequencies = FREQ_PRESETS[DEFAULT_FREQ_PRESET]
+        # Frequency List box (default: the Start/End/Factor defaults)
+        self.sweep_frequencies = build_log_frequency_list(
+            *(float(v) for v in LOG_FREQ_DEFAULTS))
 
         # Plot data — main thread only (fix #1; CRIT-2 adds plot_heater)
         self.plot_t = []
@@ -1696,8 +1820,8 @@ class CombinedGUI:
         self.meas_t = []
         self.meas_temp = []
         self.scan_f = []
-        self.scan_cp = []
-        self.scan_g = []
+        self.scan_eps1 = []
+        self.scan_tand = []
 
         # FRZ-1: dirty flags — redraw happens only in _redraw_tick
         self._temp_plot_dirty = False
@@ -1718,9 +1842,12 @@ class CombinedGUI:
         self.y_scale_var = tk.StringVar(value="auto")
         self._decade_ylims = {}
 
-        # UI-4: scan label state — ("measuring"|"done", T_set) or None.
-        # Rendered as the Cp axis title by _redraw_tick.
+        # UI-4: scan label state — ("measuring"|"done"|"partial", T_set)
+        # or None. Rendered as the eps' axis title by _redraw_tick.
         self._scan_info = None
+        # S1: set when the worker posts a final banner (COMPLETE, ERROR,
+        # SAFETY ABORT ...) so worker_done does not overwrite it with IDLE.
+        self._final_status = False
 
         # REL-2: worker-side phase marker (worker thread only writes it;
         # used to defer live ramp-rate updates during final approach)
@@ -1741,8 +1868,12 @@ class CombinedGUI:
         install_terminal_log(self)
         # FRZ-1: single periodic redraw loop — runs for the app lifetime
         self.root.after(self.REDRAW_MS, self._redraw_tick)
-        self.log("Alpha-AN + L350 GUI v1.0 initialized. 40 Hz – 2 MHz sweep, "
-                 "340 K kill switch active.")
+        # S13: name the default list, not the old 40 Hz - 2 MHz one
+        self.log(f"Alpha-AN + L350 GUI v{self.PROGRAM_VERSION} initialized. "
+                 "Default sweep: "
+                 + log_list_label(self.sweep_frequencies,
+                                  float(LOG_FREQ_DEFAULTS[2]))
+                 + ", 340 K kill switch active.")
         self.log("Stabilization: two-stage approach + rolling-window "
                  "(tolerance AND drift) criterion.")
         self.log("Ramp: adaptive or fixed (radio buttons); the low-T cap "
@@ -1759,6 +1890,12 @@ class CombinedGUI:
         style.configure(".", background=self.CLR_BG_DARK,
                         foreground=self.CLR_FG_LIGHT, font=self.FONT_BASE)
         style.configure("TFrame", background=self.CLR_BG_DARK)
+        # Frames inside a LabelFrame take the panel colour, so their
+        # labels / checks / radios do not sit on a dark strip.
+        style.configure("Panel.TFrame", background=self.CLR_FRAME_BG)
+        # The right-panel 'Y scale:' bar sits on the dark TFrame background
+        style.configure("Bar.TLabel", background=self.CLR_BG_DARK)
+        style.configure("Bar.TRadiobutton", background=self.CLR_BG_DARK)
         style.configure("TPanedWindow", background=self.CLR_BG_DARK)
         style.configure("TLabel", background=self.CLR_FRAME_BG,
                         foreground=self.CLR_FG_LIGHT)
@@ -1867,6 +2004,17 @@ class CombinedGUI:
                     lambda e: canvas.itemconfigure(window_id, width=e.width))
         self.left_scrollable_frame = sf
 
+        # S11: mouse wheel scrolls the settings panel while the pointer
+        # is over it; Text and Listbox boxes keep their own wheel.
+        def _wheel(e):
+            if isinstance(e.widget, (tk.Text, tk.Listbox)):
+                return
+            if sf.winfo_reqheight() > canvas.winfo_height():
+                canvas.yview_scroll(int(-e.delta / 120), "units")
+        canvas.bind("<Enter>",
+                    lambda e: canvas.bind_all("<MouseWheel>", _wheel))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
         canvas.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
         sf.grid_columnconfigure(0, weight=1)
@@ -1880,6 +2028,15 @@ class CombinedGUI:
         self._create_lcr_settings_panel(sf, 5)
         self._create_pid_panel(sf, 6)
         self._create_console_panel(sf, 7)
+
+        # S11: a wheel over a dropdown must never change its choice (the
+        # Combobox steps through its values on the wheel): scroll instead.
+        boxes = list(sf.winfo_children())
+        while boxes:
+            w = boxes.pop()
+            boxes.extend(w.winfo_children())
+            if isinstance(w, ttk.Combobox):
+                w.bind("<MouseWheel>", lambda e: (_wheel(e), "break")[1])
 
     def _create_info_panel(self, parent, row):
         frame = ttk.LabelFrame(parent, text="Information")
@@ -1911,7 +2068,7 @@ class CombinedGUI:
         for i in range(4):
             frame.grid_columnconfigure(i, weight=1)
 
-        lf = ttk.Frame(frame)
+        lf = ttk.Frame(frame, style="Panel.TFrame")
         lf.grid(row=0, column=0, columnspan=4, sticky="nsew", padx=10, pady=5)
         sb = ttk.Scrollbar(lf, orient="vertical")
         self.listbox = tk.Listbox(lf, height=6, selectmode=tk.EXTENDED,
@@ -2110,20 +2267,23 @@ class CombinedGUI:
         # Row 4: Geometry, Area (mm²) or Diameter (mm) as WinDETA, plus the
         # live C0. Each mode keeps its own value, so flipping the toggle
         # never turns an area into a diameter: defaults D = 1 mm,
-        # A = 1 mm², d = 1 mm.
-        self.geom_mode_var = tk.StringVar(value="area")
+        # A = 1 mm², d = 1 mm. Diameter is the default mode.
+        self.geom_mode_var = tk.StringVar(value="diameter")
         self._geom_values = {"area": "1.0", "diameter": "1.0"}
-        gf = ttk.Frame(frame); gf.grid(row=4, column=0, columnspan=4, sticky="w", padx=5, pady=2)
+        gf = ttk.Frame(frame, style="Panel.TFrame"); gf.grid(row=4, column=0, columnspan=4, sticky="w", padx=5, pady=2)
         ttk.Label(gf, text="Geometry:").pack(side="left")
-        ttk.Radiobutton(gf, text="Area (mm²)", value="area", variable=self.geom_mode_var,
-                        command=self._on_geom_mode_change).pack(side="left", padx=(8, 0))
-        ttk.Radiobutton(gf, text="Diameter (mm)", value="diameter", variable=self.geom_mode_var,
-                        command=self._on_geom_mode_change).pack(side="left", padx=(8, 0))
+        # References kept so set_ui_state can lock them during a run (S10)
+        self.rb_geom_area = ttk.Radiobutton(gf, text="Area (mm²)", value="area", variable=self.geom_mode_var,
+                                            command=self._on_geom_mode_change)
+        self.rb_geom_area.pack(side="left", padx=(8, 0))
+        self.rb_geom_diam = ttk.Radiobutton(gf, text="Diameter (mm)", value="diameter", variable=self.geom_mode_var,
+                                            command=self._on_geom_mode_change)
+        self.rb_geom_diam.pack(side="left", padx=(8, 0))
         self.lbl_c0 = ttk.Label(gf, text="C0 = --")
         self.lbl_c0.pack(side="left", padx=(12, 0))
 
         # Row 5: Geometry value and thickness
-        self.lbl_geom = self._add_lcr_entry(frame, "Area (mm²):", "geom_value", 5, 0, 1, "1.0")
+        self.lbl_geom = self._add_lcr_entry(frame, "Diameter (mm):", "geom_value", 5, 0, 1, "1.0")
         self._add_lcr_entry(frame, "Thickness (mm):", "thickness_mm", 5, 2, 1, "1.0")
         for key in ("geom_value", "thickness_mm"):
             self.lcr_entries[key].bind("<KeyRelease>", self._update_c0_label)
@@ -2132,42 +2292,73 @@ class CombinedGUI:
         # Row 6: Output formats. Both on by default; at least one required.
         self.fmt_pica_var = tk.BooleanVar(value=True)
         self.fmt_windeta_var = tk.BooleanVar(value=True)
-        ff = ttk.Frame(frame); ff.grid(row=6, column=0, columnspan=4, sticky="w", padx=5, pady=2)
+        ff = ttk.Frame(frame, style="Panel.TFrame"); ff.grid(row=6, column=0, columnspan=4, sticky="w", padx=5, pady=2)
         ttk.Label(ff, text="Save as:").pack(side="left")
-        ttk.Checkbutton(ff, text="PICA format (.dat)", variable=self.fmt_pica_var).pack(side="left", padx=(8, 0))
-        ttk.Checkbutton(ff, text="WinDETA format (.txt)", variable=self.fmt_windeta_var).pack(side="left", padx=(8, 0))
+        self.cb_fmt_pica = ttk.Checkbutton(ff, text="PICA format (.dat)", variable=self.fmt_pica_var)
+        self.cb_fmt_pica.pack(side="left", padx=(8, 0))
+        self.cb_fmt_windeta = ttk.Checkbutton(ff, text="WinDETA format (.txt)", variable=self.fmt_windeta_var)
+        self.cb_fmt_windeta.pack(side="left", padx=(8, 0))
 
-        # Row 7: Frequency list. Three frozen recipes (never editable, so
-        # runs stay comparable point-for-point) plus a custom list the user
-        # types. The custom box and its List Maker button are greyed unless
-        # chosen. Read once at Start, locked during a run.
-        fl = ttk.Frame(frame); fl.grid(row=7, column=0, columnspan=4, sticky="ew", padx=5, pady=2)
+        # Row 7: Frequency list. A WinDETA-style Start/End/Factor list (the
+        # default), three frozen recipes (never editable, so runs stay
+        # comparable point-for-point) and a custom list the user types.
+        # The Start/End/Factor row is always shown, greyed unless chosen;
+        # the custom box and its List Maker button appear only for the
+        # custom list. Read once at Start, locked during a run.
+        fl = ttk.Frame(frame, style="Panel.TFrame"); fl.grid(row=7, column=0, columnspan=4, sticky="ew", padx=5, pady=2)
         fl.grid_columnconfigure(1, weight=1)
         ttk.Label(fl, text="Frequency List:").grid(row=0, column=0, sticky="w")
-        self.freq_cb = ttk.Combobox(fl, state="readonly",
-                                    values=list(FREQ_PRESETS) + [CUSTOM_FREQ_LABEL])
-        self.freq_cb.set(DEFAULT_FREQ_PRESET)
+        self.freq_cb = ttk.Combobox(
+            fl, state="readonly",
+            values=[LOG_FREQ_LABEL] + list(FREQ_PRESETS) + [CUSTOM_FREQ_LABEL])
+        self.freq_cb.set(DEFAULT_FREQ_CHOICE)
         self.freq_cb.grid(row=0, column=1, columnspan=2, sticky="ew", padx=(8, 0))
         self.freq_cb.bind("<<ComboboxSelected>>", self._on_freq_list_change)
+        # WinDETA "Measurement Points by Steps": Start, End, Factor.
+        self.log_freq_frame = ttk.Frame(fl, style="Panel.TFrame")
+        self.log_freq_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+        self.log_freq_entries = {}
+        self.log_freq_labels = []
+        for col, (key, text, default) in enumerate(zip(
+                ("start", "end", "factor"),
+                ("Start [Hz]", "End [Hz]", "Factor"),
+                LOG_FREQ_DEFAULTS)):
+            self.log_freq_frame.grid_columnconfigure(col, weight=1)
+            label = ttk.Label(self.log_freq_frame, text=text)
+            label.grid(row=0, column=col, sticky="w")
+            self.log_freq_labels.append(label)
+            entry = ttk.Entry(self.log_freq_frame, width=9, font=self.FONT_BASE)
+            entry.insert(0, default)
+            entry.grid(row=1, column=col, padx=(0, 4), sticky="ew")
+            entry.bind("<KeyRelease>", self._update_custom_freq_hint)
+            self.log_freq_entries[key] = entry
         self.lbl_custom_freq = ttk.Label(
             fl, text=f"Frequencies in Hz, comma-separated "
                      f"({FREQ_HW_MIN:g} to {FREQ_HW_MAX:g} Hz):")
-        self.lbl_custom_freq.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.lbl_custom_freq.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
         self.list_maker_button = ttk.Button(fl, text="List Maker", width=10,
                                             command=launch_list_maker)
-        self.list_maker_button.grid(row=1, column=2, sticky="e", pady=(4, 0))
+        self.list_maker_button.grid(row=2, column=2, sticky="e", pady=(4, 0))
         # width=1: let the grid size the box instead of 80 characters
         self.custom_freq_text = tk.Text(fl, height=3, width=1, wrap="word",
                                         font=self.FONT_CONSOLE, relief="solid", bd=1)
-        self.custom_freq_text.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(2, 0))
+        self.custom_freq_text.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(2, 0))
         self.custom_freq_text.bind("<KeyRelease>", self._update_custom_freq_hint)
-        self.lbl_custom_hint = ttk.Label(fl, text="", justify="left",
-                                         wraplength=self.LEFT_PANEL_WIDTH - 60)
-        self.lbl_custom_hint.grid(row=3, column=0, columnspan=3, sticky="w")
+        # Full panel width (wraplength follows the frame); a click toggles
+        # between the short and the complete point list.
+        self.hint_show_all = False
+        self.lbl_custom_hint = ttk.Label(fl, text="", justify="left", anchor="w",
+                                         wraplength=self.LEFT_PANEL_WIDTH - 60,
+                                         cursor="hand2")
+        self.lbl_custom_hint.grid(row=4, column=0, columnspan=3, sticky="ew")
+        self.lbl_custom_hint.bind("<Button-1>", self._toggle_hint_list)
+        fl.bind("<Configure>",
+                lambda e: self.lbl_custom_hint.config(
+                    wraplength=max(e.width - 8, 100)))
         self._on_freq_list_change()
 
         # Row 8: Start/Stop/Scan Buttons
-        bf = ttk.Frame(frame); bf.grid(row=8, column=0, columnspan=4, sticky="ew", pady=5, padx=5)
+        bf = ttk.Frame(frame, style="Panel.TFrame"); bf.grid(row=8, column=0, columnspan=4, sticky="ew", pady=5, padx=5)
         bf.grid_columnconfigure((0, 1, 2), weight=1)
         self.start_button = ttk.Button(bf, text="Start Sequence", style="Start.TButton", command=self.start_sequence)
         self.start_button.grid(row=0, column=0, sticky="ew", padx=2)
@@ -2183,34 +2374,99 @@ class CombinedGUI:
         self.skip_button.grid(row=1, column=1, sticky="ew", padx=2, pady=(4, 0))
 
         # Row 9: Browse Save Button
-        ttk.Button(frame, text="Browse Save…", command=self._browse_save).grid(row=9, column=0, columnspan=4, sticky="ew", padx=5, pady=(0, 5))
+        self.browse_button = ttk.Button(frame, text="Browse Save…", command=self._browse_save)
+        self.browse_button.grid(row=9, column=0, columnspan=4, sticky="ew", padx=5, pady=(0, 5))
 
         # Row 10: Save Directory Label
         self.save_dir_lbl = ttk.Label(frame, text="Save dir: (not set)", foreground=self.CLR_ACCENT_GOLD)
         self.save_dir_lbl.grid(row=10, column=0, columnspan=4, sticky="w", padx=5)
 
     def _on_freq_list_change(self, _event=None):
-        """Grey the custom-list box and List Maker button unless chosen."""
-        if self.freq_cb.get() == CUSTOM_FREQ_LABEL:
+        """Show the custom-list box and List Maker only for the custom
+        list; grey the Start/End/Factor row unless that list is chosen."""
+        choice = self.freq_cb.get()
+        custom = choice == CUSTOM_FREQ_LABEL
+        log_mode = choice == LOG_FREQ_LABEL
+        self.hint_show_all = False  # every switch starts with the short list
+
+        for entry in self.log_freq_entries.values():
+            entry.config(state="normal" if log_mode else "disabled")
+        for label in self.log_freq_labels:
+            label.config(foreground=self.CLR_TEXT_DARK if log_mode else "#8A837D")
+
+        if custom:
             self.custom_freq_text.config(state="normal", bg="white",
                                          fg=self.CLR_TEXT_DARK)
-            self.lbl_custom_freq.config(foreground=self.CLR_TEXT_DARK)
             self.list_maker_button.config(state="normal")
+        for widget in (self.lbl_custom_freq, self.list_maker_button,
+                       self.custom_freq_text):
+            if custom:
+                widget.grid()
+            else:
+                widget.grid_remove()
+
+        if custom or log_mode:
             self.lbl_custom_hint.grid()
             self._update_custom_freq_hint()
         else:
-            self.custom_freq_text.config(state="disabled", bg="#D9D2CB",
-                                         fg="#8A837D")
-            self.lbl_custom_freq.config(foreground="#8A837D")
-            self.list_maker_button.config(state="disabled")
             # An empty Label still draws as a blank strip, so hide it.
             self.lbl_custom_hint.grid_remove()
 
+    def _log_list_from_entries(self):
+        """(frequencies, factor) from the Start/End/Factor boxes.
+        Raises ValueError with a readable reason."""
+        numbers = {}
+        for key, name in (("start", "Start"), ("end", "End"),
+                          ("factor", "Factor")):
+            text = self.log_freq_entries[key].get().strip()
+            try:
+                numbers[key] = float(text)
+            except ValueError:
+                raise ValueError(
+                    f"{name}: '{text}' is not a number (e.g. 20, 3e6, 1.4)."
+                ) from None
+        freqs = build_log_frequency_list(
+            numbers["start"], numbers["end"], numbers["factor"])
+        return freqs, numbers["factor"]
+
+    def _point_list_text(self, freqs):
+        """'N points: ...' for the hint: every point up to
+        HINT_FULL_LIST_MAX, else the first 40 and last 10 unless the user
+        clicked for the whole list."""
+        fmt = [f"{f:.4g}" for f in freqs]
+        if len(fmt) <= HINT_FULL_LIST_MAX:
+            return f"{len(fmt)} points: {', '.join(fmt)} Hz"
+        if self.hint_show_all:
+            return (f"{len(fmt)} points: {', '.join(fmt)} Hz "
+                    f"(click to shorten)")
+        return (f"{len(fmt)} points: {', '.join(fmt[:40])}, ... "
+                f"{', '.join(fmt[-10:])} Hz (click to show all)")
+
+    def _toggle_hint_list(self, _event=None):
+        # Only a long Start/End/Factor list has anything to expand.
+        if str(self.lbl_custom_hint.cget("cursor")) != "hand2":
+            return
+        self.hint_show_all = not self.hint_show_all
+        self._update_custom_freq_hint()
+
     def _update_custom_freq_hint(self, _event=None):
-        """Live readout under the custom box: point count and span, or
-        the reason the list would be refused at Start."""
+        """Live readout under the custom box or the Start/End/Factor row:
+        point count and span, or the reason the list would be refused."""
+        if self.freq_cb.get() == LOG_FREQ_LABEL:
+            try:
+                freqs, _factor = self._log_list_from_entries()
+            except ValueError as e:
+                self.lbl_custom_hint.config(text=str(e), foreground="#B00020",
+                                            cursor="")
+                return
+            self.lbl_custom_hint.config(
+                text=self._point_list_text(freqs),
+                foreground=self.CLR_TEXT_DARK,
+                cursor="hand2" if len(freqs) > HINT_FULL_LIST_MAX else "")
+            return
         if self.freq_cb.get() != CUSTOM_FREQ_LABEL:
             return
+        self.lbl_custom_hint.config(cursor="")
         text = self.custom_freq_text.get("1.0", "end")
         if not text.strip():
             self.lbl_custom_hint.config(
@@ -2234,6 +2490,9 @@ class CombinedGUI:
             freqs = parse_frequency_list(
                 self.custom_freq_text.get("1.0", "end"))
             return f"Custom list ({len(freqs)} pts)", freqs
+        if choice == LOG_FREQ_LABEL:
+            freqs, factor = self._log_list_from_entries()
+            return log_list_label(freqs, factor), freqs
         return choice, FREQ_PRESETS[choice]
 
     def _on_geom_mode_change(self):
@@ -2274,7 +2533,7 @@ class CombinedGUI:
         self.pid_p_entry = self._mk_entry(frame, "P:", "50.0", 1, 0)
         self.pid_i_entry = self._mk_entry(frame, "I:", "30.0", 1, 2)
         self.pid_d_entry = self._mk_entry(frame, "D:", "0.0", 2, 0)
-        bf = ttk.Frame(frame); bf.grid(row=3, column=0, columnspan=6, sticky="ew", pady=5)
+        bf = ttk.Frame(frame, style="Panel.TFrame"); bf.grid(row=3, column=0, columnspan=6, sticky="ew", pady=5)
         bf.grid_columnconfigure((0, 1), weight=1)
         ttk.Button(bf, text="Send PID", command=self._send_pid).grid(row=0, column=0, sticky="ew", padx=5)
         ttk.Button(bf, text="Read PID", command=self._read_pid).grid(row=0, column=1, sticky="ew", padx=5)
@@ -2311,13 +2570,14 @@ class CombinedGUI:
 
     def _build_plots(self, parent):
         """UI-3: one figure, 2x2 grid. Left column: Temperature and
-        Heater % vs time (shared x). Right column: Cp and G vs
-        frequency (shared log x)."""
+        Heater % vs time (shared x). Right column: permittivity eps' and
+        loss factor tan(delta) vs frequency (shared log x), as the
+        frequency scan module plots them."""
         self.fig = Figure(dpi=100, facecolor=self.CLR_GRAPH_BG)
         self.ax_temp = self.fig.add_subplot(221)
         self.ax_heater = self.fig.add_subplot(223, sharex=self.ax_temp)
-        self.ax_cp = self.fig.add_subplot(222)
-        self.ax_g = self.fig.add_subplot(224, sharex=self.ax_cp)
+        self.ax_eps1 = self.fig.add_subplot(222)
+        self.ax_tand = self.fig.add_subplot(224, sharex=self.ax_eps1)
 
         self.line_target, = self.ax_temp.plot([], [], color=self.CLR_ACCENT_GREEN, ls="--", label="Target")
         self.line_temp, = self.ax_temp.plot([], [], color=self.CLR_ACCENT_RED, marker="o", ms=3, ls="-", label="Temp")
@@ -2330,24 +2590,25 @@ class CombinedGUI:
         self.ax_heater.set_xlabel("Time (s)"); self.ax_heater.set_ylabel("Heater (%)")
         self.ax_heater.grid(True, ls="--", alpha=0.6)
 
-        self.line_cp, = self.ax_cp.plot([], [], color="#C00000", marker="o", ms=3, ls="-")
-        self.ax_cp.set_ylabel("Cp (F)"); self.ax_cp.set_xscale("log")
-        self.ax_cp.grid(True, ls="--", alpha=0.7)
-        self.ax_cp.tick_params(axis="x", which="both", labelbottom=False)
-        self.line_g, = self.ax_g.plot([], [], color=self.CLR_MEAS, marker="s", ms=3, ls="-")
-        self.ax_g.set_xlabel("Frequency (Hz)"); self.ax_g.set_ylabel("G (S)")
-        self.ax_g.set_xscale("log"); self.ax_g.grid(True, ls="--", alpha=0.7)
+        self.line_eps1, = self.ax_eps1.plot([], [], color="#C00000", marker="o", ms=3, ls="-")
+        self.ax_eps1.set_ylabel("Permittivity, ε′"); self.ax_eps1.set_xscale("log")
+        self.ax_eps1.grid(True, ls="--", alpha=0.7)
+        self.ax_eps1.tick_params(axis="x", which="both", labelbottom=False)
+        self.line_tand, = self.ax_tand.plot([], [], color=self.CLR_MEAS, marker="s", ms=3, ls="-")
+        self.ax_tand.set_xlabel("Frequency (Hz)"); self.ax_tand.set_ylabel("Loss factor, tan δ")
+        self.ax_tand.set_xscale("log"); self.ax_tand.grid(True, ls="--", alpha=0.7)
 
-        # top leaves room for the UI-4 scan-temperature title on ax_cp
+        # top leaves room for the UI-4 scan-temperature title on ax_eps1
         self.fig.subplots_adjust(left=0.09, right=0.98, top=0.93,
                                  bottom=0.08, hspace=0.15, wspace=0.28)
 
         scale_bar = ttk.Frame(parent)
         scale_bar.pack(side="top", anchor="w", padx=5, pady=(5, 0))
-        ttk.Label(scale_bar, text="Y scale:").pack(side="left")
+        ttk.Label(scale_bar, text="Y scale:", style="Bar.TLabel").pack(side="left")
         for text, val in (("Auto", "auto"), ("Log", "log"),
                           ("Linear", "linear")):
             ttk.Radiobutton(scale_bar, text=text, value=val,
+                            style="Bar.TRadiobutton",
                             variable=self.y_scale_var,
                             command=self._on_y_scale_change).pack(
                 side="left", padx=(8, 0))
@@ -2378,12 +2639,15 @@ class CombinedGUI:
                 single decade band. Data only accumulates during a
                 sweep, so the span is monotone and auto cannot flicker
                 back from log to linear mid-sweep.
-        Falls back to linear whenever there is no positive finite data.
-        Returns True when a log scale was applied."""
+        Falls back to linear whenever there is no positive finite data,
+        or when any point is zero/negative (e.g. tan delta < 0 for an
+        inductive sample would vanish on a log axis), as the frequency
+        scan module does. Returns True when a log scale was applied."""
         mode = self.y_scale_var.get()
-        pos = [v for v in values if isinstance(v, (int, float))
-               and math.isfinite(v) and v > 0]
-        use_log = bool(pos) and mode != 'linear'
+        finite = [v for v in values if isinstance(v, (int, float))
+                  and math.isfinite(v)]
+        pos = [v for v in finite if v > 0]
+        use_log = bool(pos) and len(pos) == len(finite) and mode != 'linear'
         if use_log and mode == 'auto':
             span = math.log10(max(pos)) - math.log10(min(pos))
             use_log = span >= 1.0  # at least one full decade of data
@@ -2452,22 +2716,25 @@ class CombinedGUI:
                 need_draw = True
             if self._freq_plot_dirty:
                 self._freq_plot_dirty = False
-                self.line_cp.set_data(self.scan_f, self.scan_cp)
-                self.line_g.set_data(self.scan_f, self.scan_g)
-                for ax, key, data in ((self.ax_cp, "cp", self.scan_cp),
-                                      (self.ax_g, "g", self.scan_g)):
+                self.line_eps1.set_data(self.scan_f, self.scan_eps1)
+                self.line_tand.set_data(self.scan_f, self.scan_tand)
+                for ax, key, data in ((self.ax_eps1, "eps1", self.scan_eps1),
+                                      (self.ax_tand, "tand", self.scan_tand)):
                     ax.relim(); ax.autoscale_view(scalex=True, scaley=False)
                     self._apply_y_scale(ax, data, key)
                 # UI-4: measurement-temperature label on the spectrum
                 if self._scan_info is None:
-                    self.ax_cp.set_title("")
+                    self.ax_eps1.set_title("")
                 else:
                     state, t_set = self._scan_info
                     if state == "measuring":
-                        self.ax_cp.set_title(
+                        self.ax_eps1.set_title(
                             f"Measuring at {t_set:.2f} K …", fontsize=10)
+                    elif state == "partial":
+                        self.ax_eps1.set_title(
+                            f"Stopped: {t_set:.2f} K (partial)", fontsize=10)
                     else:
-                        self.ax_cp.set_title(
+                        self.ax_eps1.set_title(
                             f"Last scan: {t_set:.2f} K "
                             f"(held until next scan)", fontsize=10)
                 need_draw = True
@@ -2649,9 +2916,10 @@ class CombinedGUI:
         try:
             for k, w in self.entries.items():
                 if w["lock"] is not None and not w["locked"]:
-                    updates[k] = float(w["entry"].get())
-        except ValueError:
-            messagebox.showerror("Invalid Input", "Unlocked params must be numeric.")
+                    updates[k] = entry_number(w["entry"].get(),
+                                              self.LS_BOX_NAMES.get(k, k))
+        except ValueError as e:
+            messagebox.showerror("Invalid Input", str(e))
             return
         try:
             caps, default_cap = parse_ramp_table(self.ramp_table_var.get())
@@ -2659,6 +2927,17 @@ class CombinedGUI:
             updates["ramp_default_cap"] = default_cap
         except ValueError as e:
             messagebox.showerror("Ramp Table Error", str(e))
+            return
+        # The worker merges these straight into its params: run the Start
+        # range checks on the merged set first (a negative Poll Delay
+        # would otherwise end the run or spin the stabilize loop).
+        try:
+            merged = dict(self.params)
+            merged.update(updates)
+            self._check_ls_params(merged)
+        except ValueError as e:
+            messagebox.showerror("Invalid Input",
+                                 f"{e}\n\nLive update not applied.")
             return
         self.cmd_queue.put(("params", updates))
         shown = {k: v for k, v in updates.items() if k != "ramp_caps"}
@@ -2781,9 +3060,18 @@ class CombinedGUI:
             messagebox.showwarning("Empty Sequence", "Add at least one setpoint."); return
         if not self.save_dir:
             messagebox.showwarning("No Save Dir", "Choose a save directory first."); return
+        # S3: a renamed folder or unplugged stick fails here, not after
+        # both instruments are connected and reset.
+        if not os.path.isdir(self.save_dir):
+            messagebox.showwarning(
+                "No Save Dir", "The save directory no longer exists - "
+                "choose it again with Browse Save..."); return
         try:
             self.params = self._validate_ls_params()
             self.lcr_params = self._validate_lcr_params()
+            # The worker writes every file of this run here, even if the
+            # folder label changes later.
+            self.lcr_params["save_dir"] = self.save_dir
             self.setpoint_floats = [float(x) for x in setpoints]
             # ADV-4: every setpoint must respect the soft limit
             too_hot = [t for t in self.setpoint_floats
@@ -2820,6 +3108,9 @@ class CombinedGUI:
             messagebox.showerror("Config Error", str(e)); return
 
         self.set_ui_state(running=True)
+        # The worker's first banner comes only after both instruments are
+        # connected and initialized (up to a minute): show Start took.
+        self._update_status_ui("CONNECTING…", self.CLR_STABLE_WAIT)
         self.is_running = True
         self._worker_phase = None
         self._paused = False
@@ -2831,11 +3122,11 @@ class CombinedGUI:
         # Clear plot data (CRIT-2: include plot_heater)
         for L in (self.plot_t, self.plot_temp, self.plot_target, self.plot_heater,
                   self.meas_t, self.meas_temp,
-                  self.scan_f, self.scan_cp, self.scan_g):
+                  self.scan_f, self.scan_eps1, self.scan_tand):
             L.clear()
         self.line_temp.set_data([], []); self.line_target.set_data([], [])
         self.scat_meas.set_data([], []); self.line_heater.set_data([], [])
-        self.line_cp.set_data([], []); self.line_g.set_data([], [])
+        self.line_eps1.set_data([], []); self.line_tand.set_data([], [])
         if self.band_patch is not None:            # ADV-5: clear old band
             try:
                 self.band_patch.remove()
@@ -2845,7 +3136,8 @@ class CombinedGUI:
         self._band_params = None
         self._band_dirty = False
         self._scan_info = None            # UI-4: drop the held spectrum label
-        self.ax_cp.set_title("")
+        self._final_status = False        # S1: new run, no final banner yet
+        self.ax_eps1.set_title("")
         self.canvas_plots.draw_idle()
         self._decade_ylims.clear()
         self._temp_plot_dirty = False
@@ -2881,29 +3173,49 @@ class CombinedGUI:
         ls_visa = self.ls_cb.get()
         if "  ->  " in ls_visa:
             ls_visa = ls_visa.split("  ->  ")[0].strip()
+        def num(key):
+            # S8: a bad box is named in the error; NaN/inf refused
+            return entry_number(self.entries[key]["entry"].get(),
+                                self.LS_BOX_NAMES.get(key, key))
         p = {
-            "tol": float(self.entries["tol"]["entry"].get()),
-            "soak": float(self.entries["soak"]["entry"].get()),
-            "rate": float(self.entries["rate"]["entry"].get()),
-            "delay": float(self.entries["delay"]["entry"].get()),
-            "app_band": float(self.entries["app_band"]["entry"].get()),
-            "app_rate": float(self.entries["app_rate"]["entry"].get()),
-            "drift": float(self.entries["drift"]["entry"].get()),
-            "stab_timeout": float(self.entries["stab_timeout"]["entry"].get()),
+            "tol": num("tol"),
+            "soak": num("soak"),
+            "rate": num("rate"),
+            "delay": num("delay"),
+            "app_band": num("app_band"),
+            "app_rate": num("app_rate"),
+            "drift": num("drift"),
+            "stab_timeout": num("stab_timeout"),
             "heater_range": self.heater_range_var.get().split()[0],  # single split here
             "ls_visa": ls_visa,
             # ADV-1/2/4: adaptive ramp + approach mode + soft limit
-            "max_temp": float(self.entries["max_temp"]["entry"].get()),
-            "step_factor": float(self.entries["step_factor"]["entry"].get()),
-            "first_factor": float(self.entries["first_factor"]["entry"].get()),
-            "min_rate": float(self.entries["min_rate"]["entry"].get()),
-            "max_rate": float(self.entries["max_rate"]["entry"].get()),
+            "max_temp": num("max_temp"),
+            "step_factor": num("step_factor"),
+            "first_factor": num("first_factor"),
+            "min_rate": num("min_rate"),
+            "max_rate": num("max_rate"),
             "adaptive": self.ramp_mode_var.get() == "adaptive",
             "auto_pid": self.var_auto_pid.get(),
             "approach_side": self.APPROACH_MODES.get(self.approach_var.get(), None),
         }
         p["ramp_caps"], p["ramp_default_cap"] = \
             parse_ramp_table(self.ramp_table_var.get())
+        self._check_ls_params(p)
+        return p
+
+    # Box labels for the temperature entries (error messages name them)
+    LS_BOX_NAMES = {
+        "tol": "Tolerance", "soak": "Window", "rate": "Fixed Rate",
+        "delay": "Poll Delay", "app_band": "Approach Band",
+        "app_rate": "Approach Rate", "drift": "Drift Lim",
+        "stab_timeout": "Timeout", "max_temp": "Max Temp",
+        "step_factor": "Step Factor", "first_factor": "First-Step x",
+        "min_rate": "Min Rate", "max_rate": "Max Rate",
+    }
+
+    def _check_ls_params(self, p):
+        """Range checks on the temperature parameters, run at Start and
+        again on every Apply Live Updates (merged with the run's params)."""
         if not p["ls_visa"]: raise ValueError("Select Lakeshore VISA.")
         if p["rate"] <= 0: raise ValueError("Fixed rate must be positive.")
         if p["tol"] <= 0: raise ValueError("Tolerance must be positive.")
@@ -2927,31 +3239,45 @@ class CombinedGUI:
             raise ValueError(
                 f"Max Temp must be in (0, "
                 f"{Lakeshore_Backend.HARD_TEMP_LIMIT_K:g}] K.")
-        return p
 
     def _validate_lcr_params(self):
         freq_label, freqs = self._selected_frequencies()
         lcr_visa = self.lcr_cb.get()
         if "  ->  " in lcr_visa:
             lcr_visa = lcr_visa.split("  ->  ")[0].strip()
+        def num(key, name):
+            # S8: a bad box is named in the error; NaN/inf refused
+            return entry_number(self.lcr_entries[key].get(), name)
         p = {
             "sample_name": self.lcr_entries["sample_name"].get().strip() or "Sample",
-            "acv": float(self.lcr_entries["acv"].get()),
-            "mtm": float(self.lcr_entries["mtm"].get()),
-            "delay": float(self.lcr_entries["delay"].get()),
+            "acv": num("acv", "AC Voltage"),
+            "mtm": num("mtm", "Integration"),
+            "delay": num("delay", "Freq Delay"),
             "wire_mode": self.wire_cb.get(),
             "lcr_visa": lcr_visa,
             "geometry_mode": self.geom_mode_var.get(),
-            "thickness_mm": float(self.lcr_entries["thickness_mm"].get()),
+            "thickness_mm": num("thickness_mm", "Thickness"),
             "save_pica": self.fmt_pica_var.get(),
             "save_windeta": self.fmt_windeta_var.get(),
             "temp_controller": "Lakeshore 350",
         }
-        geom_value = float(self.lcr_entries["geom_value"].get())
+        geom_value = num("geom_value", "Area" if p["geometry_mode"] == "area"
+                         else "Diameter")
         if p["geometry_mode"] == "area":
             p["area_mm2"] = geom_value
         else:
             p["diameter_mm"] = geom_value
+        # S3: the sample name becomes part of every file name
+        if any(ch in p["sample_name"] for ch in '\\/:*?"<>|'):
+            raise ValueError(
+                'Sample Name cannot contain \\ / : * ? " < > |')
+        # S2: it is also written into the file headers (WinDETA .txt is
+        # cp1252, the .dat header ASCII-only): refuse it here, not at
+        # the first sweep hours later.
+        if not p["sample_name"].isascii():
+            raise ValueError(
+                "Sample Name: use plain ASCII letters (no Greek letters, "
+                "arrows or micro signs) - it goes into the file headers.")
         if not p["lcr_visa"]: raise ValueError("Select Alpha-AN VISA.")
         if p["delay"] < 0: raise ValueError("Freq Delay cannot be negative.")
         validate_output_settings(p)
@@ -2995,11 +3321,24 @@ class CombinedGUI:
             e.config(state=st)
         self.ls_cb.config(state="readonly" if not running else "disabled")
         self.lcr_cb.config(state="readonly" if not running else "disabled")
+        # S10: Alpha-AN settings, geometry and formats are read once at
+        # Start (c0_farads included): lock them so the C0 readout and the
+        # boxes never show values the run is not using.
+        for e in self.lcr_entries.values():
+            e.config(state=st)
+        # The save folder is snapshotted at Start too (L340A-04).
+        for w in (self.rb_geom_area, self.rb_geom_diam,
+                  self.cb_fmt_pica, self.cb_fmt_windeta,
+                  self.browse_button):
+            w.config(state=st)
+        self.wire_cb.config(state="disabled" if running else "readonly")
         # Frequency list is read once at Start: lock it during a run
         self.freq_cb.config(state="disabled" if running else "readonly")
         if running:
             self.custom_freq_text.config(state="disabled")
             self.list_maker_button.config(state="disabled")
+            for entry in self.log_freq_entries.values():
+                entry.config(state="disabled")
         else:
             self._on_freq_list_change()
         # Fix #10: removed the no-op self.sort_var.set(self.sort_var.get())
@@ -3024,6 +3363,10 @@ class CombinedGUI:
                     self.log(m["text"])
                 elif t == "status":
                     self._update_status_ui(m["text"], m["color"])
+                    # S1: COMPLETE / ERROR / ABORT banners must survive
+                    # worker_done (the no-modal policy relies on them).
+                    if m.get("final"):
+                        self._final_status = True
                 elif t == "beep":
                     # FRZ-3: beep executes on the Tk thread. HARD-4: the
                     # worker may ask for several (alarm-grade events).
@@ -3047,7 +3390,7 @@ class CombinedGUI:
                     self.pause_button.config(
                         text="Resume" if m["paused"] else "Pause")
                 elif t == "scan_reset":
-                    self.scan_f.clear(); self.scan_cp.clear(); self.scan_g.clear()
+                    self.scan_f.clear(); self.scan_eps1.clear(); self.scan_tand.clear()
                     self._decade_ylims.clear()  # new spectrum re-snaps decades
                     # UI-4: label the incoming spectrum with its temperature
                     target = m.get("target")
@@ -3060,9 +3403,12 @@ class CombinedGUI:
                     self._freq_plot_dirty = True
                 elif t == "scan_point":
                     self.scan_f.append(m["freq"])
-                    self.scan_cp.append(m["cp"])
-                    self.scan_g.append(m["g"])
+                    self.scan_eps1.append(m["eps1"])
+                    self.scan_tand.append(m["tand"])
                     self._freq_plot_dirty = True
+                    self._pending_progress = m["progress"]
+                elif t == "progress":
+                    # S5: discarded / skipped points move the bar too
                     self._pending_progress = m["progress"]
                 elif t == "pid_read_result":
                     p, i, d = m["values"]
@@ -3072,6 +3418,8 @@ class CombinedGUI:
                     self.pid_preset_var.set("Custom")
                 elif t == "sequence_complete":
                     self.set_ui_state(running=False)
+                    self._pending_progress = None
+                    self.progress["value"] = self.progress["maximum"]
                     # HARD-4: unattended policy — no modal on completion.
                     # The worker already set the COMPLETE banner; log +
                     # triple beep announce it audibly instead.
@@ -3080,7 +3428,16 @@ class CombinedGUI:
                 elif t == "worker_done":
                     self.set_ui_state(running=False)
                     self._set_keep_awake(False)  # HARD-1: sleep allowed again
-                    self._update_status_ui("IDLE", self.CLR_HEADER)
+                    # S1: keep the worker's final banner; IDLE only
+                    # replaces a transient one (STOPPING..., RAMPING ...).
+                    if not self._final_status:
+                        self._update_status_ui("IDLE", self.CLR_HEADER)
+                    # S7: a sweep cut short by Stop or an error must not
+                    # keep its 'Measuring at ...' title.
+                    if self._scan_info is not None \
+                            and self._scan_info[0] == "measuring":
+                        self._scan_info = ("partial", self._scan_info[1])
+                        self._freq_plot_dirty = True
                     return  # worker is gone; stop polling
         except queue.Empty:
             pass
@@ -3187,6 +3544,10 @@ class CombinedGUI:
             self._put_gui_msg("log",
                 text=f"✅ Reconnected after {attempt} attempt(s) "
                      f"(Lakeshore: {idn}). Resuming sequence.")
+            # S6: clear the COMM LOST banner (callers with a phase banner
+            # re-post it on their next update).
+            self._put_gui_msg("status", text="RECONNECTED - resuming",
+                              color=self.CLR_STABLE_WAIT)
             return True
         return False
 
@@ -3218,6 +3579,10 @@ class CombinedGUI:
             self._put_gui_msg("log", text="Connecting to Lakeshore 350…")
             idn = self.ls_backend.connect(self.params["ls_visa"])
             self._put_gui_msg("log", text=f"Lakeshore: {idn}")
+            # S4: honour a Stop pressed during the connect/*RST waits
+            # before anything is opened or the heater is programmed.
+            if self._process_cmd_queue():
+                return
 
             # --- Connect & configure Alpha-AN ---
             self._put_gui_msg("log", text="Connecting to Novocontrol Alpha-AN…")
@@ -3225,11 +3590,13 @@ class CombinedGUI:
             self._put_gui_msg("log", text=f"Alpha-AN: {idn_a}")
             self.lcr_backend.initialize_instrument(self.lcr_params)
             self._put_gui_msg("log", text="Alpha-AN initialized (ZG4).")
+            if self._process_cmd_queue():   # S4
+                return
 
             # --- Open combined temperature log (§3c) ---
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             tlog_path = os.path.join(
-                self.save_dir,
+                self.lcr_params["save_dir"],
                 f"{self.lcr_params['sample_name']}_{stamp}_TempLog.csv",
             )
             self.data_file = open(tlog_path, "w", newline="",
@@ -3245,7 +3612,7 @@ class CombinedGUI:
 
             # ADV-6: per-setpoint stabilization summary
             sum_path = os.path.join(
-                self.save_dir,
+                self.lcr_params["save_dir"],
                 f"{self.lcr_params['sample_name']}_{stamp}_StabSummary.csv",
             )
             self.summary_file = open(sum_path, "w", newline="",
@@ -3262,7 +3629,8 @@ class CombinedGUI:
             done_pts = 0
 
             for i, target in enumerate(self.setpoint_floats):
-                if not self.is_running:
+                # S4: Stop is seen before configure_ramp turns the heater on
+                if self._process_cmd_queue() or not self.is_running:
                     break
                 self._put_gui_msg("log",
                     text=f"--- Step {i+1}/{len(self.setpoint_floats)}: target {target} K ---")
@@ -3297,6 +3665,9 @@ class CombinedGUI:
                 if result == "skipped":
                     self._put_gui_msg("log",
                         text=f"⏭ Setpoint {target} K skipped — no sweep taken.")
+                    # S5: its points count as done so the bar reaches 100 %
+                    done_pts += len(self.sweep_frequencies)
+                    self._put_gui_msg("progress", progress=done_pts)
                     continue
                 if result == "timeout":
                     self._put_gui_msg("log",
@@ -3322,7 +3693,8 @@ class CombinedGUI:
 
             if self.is_running:
                 self._put_gui_msg("log", text="Sequence complete.")
-                self._put_gui_msg("status", text="COMPLETE", color=self.CLR_ACCENT_GREEN)
+                self._put_gui_msg("status", text="COMPLETE",
+                                  color=self.CLR_ACCENT_GREEN, final=True)
                 self._put_gui_msg("sequence_complete")
 
         except SoftLimitAbort as e:
@@ -3330,12 +3702,13 @@ class CombinedGUI:
             self._put_gui_msg("log",
                 text=f"SAFETY ABORT: {e} Ramp stopped, heater off.")
             self._put_gui_msg("status", text="SAFETY ABORT (MAX TEMP)",
-                              color=self.CLR_ACCENT_RED)
+                              color=self.CLR_ACCENT_RED, final=True)
             self._put_gui_msg("beep", times=5)   # HARD-4: alarm, no modal
         except Exception as e:
             self._put_gui_msg("log",
                 text=f"CRITICAL: {e}\n{traceback.format_exc()}")
-            self._put_gui_msg("status", text="ERROR", color=self.CLR_ACCENT_RED)
+            self._put_gui_msg("status", text="ERROR", color=self.CLR_ACCENT_RED,
+                              final=True)
             self._put_gui_msg("beep", times=3)   # HARD-4: alarm, no modal
         finally:
             # §3f: crash-safe shutdown
@@ -3354,7 +3727,7 @@ class CombinedGUI:
                              "its heater off at the front panel.")
                     self._put_gui_msg("status",
                         text="HEATER NOT TURNED OFF - check the Lakeshore",
-                        color=self.CLR_ACCENT_RED)
+                        color=self.CLR_ACCENT_RED, final=True)
                     self._put_gui_msg("beep", times=5)
             except Exception as e:
                 print(f"Lakeshore shutdown warning: {e}")
@@ -3458,9 +3831,10 @@ class CombinedGUI:
             self._put_gui_msg("log",
                 text=f"Stage 1: ramp ({ramp_rate:g} K/min) to pre-target "
                      f"{pre_target:.2f} K ({p['app_band']} K short of {target} K).")
-            self._put_gui_msg("status",
-                text=f"RAMPING TO {target} K (pre: {pre_target:.1f} K)",
-                color=self.CLR_ACCENT_RED)
+            phase_status = (f"RAMPING TO {target} K (pre: {pre_target:.1f} K)",
+                            self.CLR_ACCENT_RED)
+            self._put_gui_msg("status", text=phase_status[0],
+                              color=phase_status[1])
         else:
             self._worker_phase = "FINAL_APPROACH"
             self._current_rate = app_rate
@@ -3469,8 +3843,9 @@ class CombinedGUI:
             self._put_gui_msg("log",
                 text=f"Already within approach band — slow approach "
                      f"({app_rate:g} K/min) to {target} K.")
-            self._put_gui_msg("status",
-                text=f"APPROACHING {target} K", color=self.CLR_STABLE_WAIT)
+            phase_status = (f"APPROACHING {target} K", self.CLR_STABLE_WAIT)
+            self._put_gui_msg("status", text=phase_status[0],
+                              color=phase_status[1])
 
         # Direction of travel toward the pre-target (may differ from the
         # overall direction when approach_side forces an overshoot).
@@ -3480,6 +3855,7 @@ class CombinedGUI:
         step_start = time.time()
         paused_s = 0.0            # pause time excluded from the timeout
         last_status = 0.0
+        was_paused = False        # S6: re-post the phase banner on Resume
 
         try:
             while self.is_running:
@@ -3500,8 +3876,16 @@ class CombinedGUI:
                     self._put_gui_msg("status",
                         text=f"PAUSED (holding, target {target} K)",
                         color=self.CLR_ACCENT_GOLD)
-                    time.sleep(p["delay"])
+                    was_paused = True
+                    self._wait_responsive(p["delay"])   # S9
                     continue
+                if was_paused:
+                    # S6: the PAUSED banner would otherwise stay up for the
+                    # whole PRE_RAMP (it has no periodic status update).
+                    was_paused = False
+                    last_status = 0.0
+                    self._put_gui_msg("status", text=phase_status[0],
+                                      color=phase_status[1])
 
                 if self._worker_phase == "PRE_RAMP":
                     reached = (temp >= pre_target - p["tol"]) if pre_heating \
@@ -3522,8 +3906,10 @@ class CombinedGUI:
                         self._put_gui_msg("log",
                             text=f"Pre-target reached ({temp:.3f} K). Stage 2: "
                                  f"slow approach ({app_rate:g} K/min) to {target} K.")
-                        self._put_gui_msg("status",
-                            text=f"APPROACHING {target} K", color=self.CLR_STABLE_WAIT)
+                        phase_status = (f"APPROACHING {target} K",
+                                        self.CLR_STABLE_WAIT)
+                        self._put_gui_msg("status", text=phase_status[0],
+                                          color=phase_status[1])
                 else:
                     # FINAL_APPROACH / STABILIZING: rolling-window criterion.
                     window.append((now, temp))
@@ -3551,7 +3937,7 @@ class CombinedGUI:
                         (now - step_start - paused_s) > p["stab_timeout"] * 60.0:
                     return "timeout", time.time() - step_start
 
-                time.sleep(p["delay"])
+                self._wait_responsive(p["delay"])   # S9: Stop/Skip stay live
         finally:
             self._worker_phase = None
         return "stopped", time.time() - step_start
@@ -3559,6 +3945,19 @@ class CombinedGUI:
     # ------------------------------------------------------------
     # Worker-side helpers
     # ------------------------------------------------------------
+    def _wait_responsive(self, seconds):
+        """S9: sleep in short slices, handling the command queue, so Stop
+        and Skip are seen within ~0.2 s instead of after a long Poll /
+        Freq Delay. Returns True if Stop or Skip arrived."""
+        deadline = time.time() + seconds
+        while True:
+            if self._process_cmd_queue() or not self.is_running                     or self._skip_requested:
+                return True
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                return False
+            time.sleep(min(0.2, remaining))
+
     def _process_cmd_queue(self):
         """Returns True if a stop was requested."""
         try:
@@ -3659,7 +4058,8 @@ class CombinedGUI:
         if self.ls_backend.check_overtemp(temp):
             self._put_gui_msg("log",
                 text=f"!!! KILL SWITCH: {temp:.2f} K >= 340 K. Heater OFF. Aborting.")
-            self._put_gui_msg("status", text="OVERTEMP ABORT", color=self.CLR_ACCENT_RED)
+            self._put_gui_msg("status", text="OVERTEMP ABORT",
+                              color=self.CLR_ACCENT_RED, final=True)
             self.is_running = False
             raise RuntimeError("Hard overtemperature limit reached.")
         if temp >= self.params["max_temp"]:
@@ -3688,7 +4088,7 @@ class CombinedGUI:
         # MAJ-3: timestamp prevents silent overwrite on re-run.
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         base = os.path.join(
-            self.save_dir,
+            self.lcr_params["save_dir"],
             f"{self.lcr_params['sample_name']}_{target_temp:.2f}K_"
             f"{stamp}_FreqScan")
         # The suffix names the format; an unticked format gets no file.
@@ -3731,9 +4131,14 @@ class CombinedGUI:
                 self._skip_requested = False
                 self._put_gui_msg("log",
                     text="⏭ Remaining sweep skipped by user.")
+                # S5: the skipped points count as done (bar reaches 100 %)
+                done_pts += len(self.sweep_frequencies) - idx
+                self._put_gui_msg("progress", progress=done_pts)
                 break
             # ADV-3: pause holds between frequency points
+            was_paused = False
             while self._paused and self.is_running:
+                was_paused = True
                 self._put_gui_msg("status",
                     text=f"PAUSED (sweep at {target_temp} K)",
                     color=self.CLR_ACCENT_GOLD)
@@ -3742,8 +4147,15 @@ class CombinedGUI:
                 time.sleep(1.0)
             if not self.is_running:
                 break
+            if was_paused:
+                # S6: Resume puts the measuring banner back
+                self._put_gui_msg("status",
+                    text=f"MEASURING AT {target_temp} K",
+                    color=self.CLR_ACCENT_GREEN)
             if self.lcr_params["delay"] > 0:
-                time.sleep(self.lcr_params["delay"])   # optional settle
+                # optional settle; S9: Stop/Skip are seen during it
+                if self._wait_responsive(self.lcr_params["delay"]):
+                    continue   # the loop top handles Stop / Skip
             try:
                 R, X, f_act, status, _ref = self.lcr_backend.measure_point(
                     float(freq))
@@ -3757,6 +4169,10 @@ class CombinedGUI:
                 # (was: log + abandon the rest of the sweep).
                 if self._comm_recover(
                         f"Alpha-AN measurement @ {freq_tag(freq)} Hz", e):
+                    # S6: back to the measuring banner after RECONNECTED
+                    self._put_gui_msg("status",
+                        text=f"MEASURING AT {target_temp} K",
+                        color=self.CLR_ACCENT_GREEN)
                     continue
                 break   # stop requested during recovery
             # Status 6 = signal source disconnected (hardware fault):
@@ -3775,11 +4191,17 @@ class CombinedGUI:
                          f"{freq_tag(freq)} Hz "
                          f"({status_message(status)}) — Point discarded.")
                 done_pts += 1
+                self._put_gui_msg("progress", progress=done_pts)   # S5
                 idx += 1
                 continue
             # Convert with the frequency the generator really produced.
             vals = self.calculate_impedance_parameters(f_act, R, X)
             row = [f_act] + vals + [target_temp]
+            # Plotted point: eps' and tan(delta) = eps''/eps', from the
+            # same conversion the WinDETA file uses.
+            diel = impedance_to_dielectric(R, X, f_act, self.c0_farads)
+            eps1, eps2 = diel[1], diel[2]
+            tand = eps2 / (eps1 if eps1 != 0 else 1e-20)
             # HARD-3: every point is fsynced, in each ticked format.
             if pica_path:
                 append_line_durably(
@@ -3787,8 +4209,8 @@ class CombinedGUI:
             if windeta_path:
                 append_line_durably(
                     windeta_path,
-                    "\t".join(f"{v:.5e}" for v in impedance_to_dielectric(
-                        R, X, f_act, self.c0_farads)),
+                    "\t".join(f"{v:.5e}" for v in windeta_row(
+                        diel, loss_phase_cp_g(R, X, f_act))),
                     encoding="cp1252", newline="\r\n")
             # Interleaved temperature log (flag=1) — §3c/§3d
             try:
@@ -3805,7 +4227,7 @@ class CombinedGUI:
                     raise
                 break
             done_pts += 1
-            self._put_gui_msg("scan_point", freq=f_act, cp=vals[4], g=vals[2],
+            self._put_gui_msg("scan_point", freq=f_act, eps1=eps1, tand=tand,
                               progress=done_pts)
             idx += 1   # HARD-2: advance only after a completed point
         self._worker_phase = None
@@ -3847,16 +4269,32 @@ class CombinedGUI:
                 # while a slow VISA read drains (was a hard freeze of
                 # up to 10 s here). _atexit_shutdown remains the
                 # backstop for instrument cleanup after destroy.
-                # The worker only sees Stop between points: give it the
-                # slowest single point plus margin before closing.
-                mtm = self.lcr_params.get('mtm', 0.0)
-                worst = max((point_timeout_s(f, mtm)
-                             for f in self.sweep_frequencies),
-                            default=SRQ_TIMEOUT_MEASURE_S)
-                self._close_deadline = time.time() + worst + 15.0
+                self._close_deadline = time.time() + self._close_wait_s()
                 self._poll_worker_exit_then_destroy()
+        elif self.worker_thread is not None and self.worker_thread.is_alive():
+            # Stop already pressed: the worker is still in its finally
+            # block (Alpha *RST + rejoin wait, Lakeshore RAMP off / RANGE 0).
+            # Destroying now would let _atexit_shutdown talk to the same
+            # sessions at the same time, so wait for it as above.
+            self.log("Waiting for the instruments to shut down before "
+                     "closing…")
+            self._close_deadline = time.time() + self._close_wait_s()
+            self._poll_worker_exit_then_destroy()
         else:
             self.root.destroy()
+
+    def _close_wait_s(self):
+        """How long a close waits for the worker. It only sees Stop
+        between points (and every 0.2 s of a Freq Delay): the slowest
+        single point, the Freq Delay, the Alpha *RST rejoin wait in its
+        shutdown, plus margin."""
+        lcr = getattr(self, "lcr_params", None) or {}
+        mtm = lcr.get('mtm', 0.0)
+        worst = max((point_timeout_s(f, mtm)
+                     for f in self.sweep_frequencies),
+                    default=SRQ_TIMEOUT_MEASURE_S)
+        return (worst + lcr.get('delay', 0.0) + RESET_SETTLE_S
+                + RESET_READY_TIMEOUT_S + 15.0)
 
     def _poll_worker_exit_then_destroy(self):
         t = self.worker_thread

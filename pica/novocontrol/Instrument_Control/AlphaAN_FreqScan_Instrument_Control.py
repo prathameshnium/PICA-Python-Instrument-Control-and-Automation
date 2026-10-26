@@ -2,8 +2,9 @@
 Module: Novocontrol Alpha-AN Frequency Scan (headless)
 Purpose: Command-line broadband dielectric frequency scan on a Novocontrol
          Alpha-AN mainframe with a ZG4 sample interface, over direct GPIB.
-         Sweeps a frozen 20 Hz - 1 MHz logarithmic series at fixed
-         temperature and writes a WinDETA-compatible file.
+         Sweeps a WinDETA-style Start/End/Factor logarithmic list (default
+         20 Hz x1.4 to 3 MHz) at fixed temperature and writes an 11-column
+         WinDETA-compatible file (Tan(Delta) and Phi included).
 
          Commands are Novocontrol proprietary (not SCPI), taken from the
          Alpha-AN Impedance Analyzer manual.
@@ -170,40 +171,76 @@ def parse_inttyp(response):
 
 # Zp BEFORE Sig, matching the WinDETA export paired with the mes_def
 # (../data_file_for_ref/Fscan_data_Novo_Windeta.dat) and the GUI program.
+# Tan(Delta) follows Eps'' and the phase angle closes the row: the same
+# 11-column layout as Frequency_Scan_AlphaAN_GUI.py.
 WINDETA_HEADER = (
-    " Freq. [Hz]\t Eps'    \t Eps''   \t Modulus'  \t Modulus''  \t"
-    " Zp' [Ohms]\t Zp'' [Ohms]\t Sig' [S/cm]\t Sig'' [S/cm]"
+    " Freq. [Hz]\t Eps'    \t Eps''   \t Tan(Delta)\t Modulus'  \t"
+    " Modulus''  \t Zp' [Ohms]\t Zp'' [Ohms]\t Sig' [S/cm]\t Sig'' [S/cm]\t"
+    " Phi [Deg]"
 )
 
-# 20 Hz, x1.1 per step, final point clamped to exactly 1 MHz. 115 points.
-# Frozen literal, deliberately NOT recomputed at runtime, and identical to the
-# tuple in Frequency_Scan_AlphaAN_GUI.py -- so a GUI scan and a CLI scan
-# request exactly the same grid and stay directly comparable point-for-point.
-FREQUENCIES_HZ = (
-    2.000000e+01, 2.200000e+01, 2.420000e+01, 2.662000e+01, 2.928200e+01,
-    3.221020e+01, 3.543122e+01, 3.897434e+01, 4.287178e+01, 4.715895e+01,
-    5.187485e+01, 5.706233e+01, 6.276857e+01, 6.904542e+01, 7.594997e+01,
-    8.354496e+01, 9.189946e+01, 1.010894e+02, 1.111983e+02, 1.223182e+02,
-    1.345500e+02, 1.480050e+02, 1.628055e+02, 1.790860e+02, 1.969947e+02,
-    2.166941e+02, 2.383635e+02, 2.621999e+02, 2.884199e+02, 3.172619e+02,
-    3.489880e+02, 3.838868e+02, 4.222755e+02, 4.645031e+02, 5.109534e+02,
-    5.620487e+02, 6.182536e+02, 6.800790e+02, 7.480869e+02, 8.228956e+02,
-    9.051851e+02, 9.957036e+02, 1.095274e+03, 1.204801e+03, 1.325282e+03,
-    1.457810e+03, 1.603591e+03, 1.763950e+03, 1.940345e+03, 2.134379e+03,
-    2.347817e+03, 2.582599e+03, 2.840859e+03, 3.124945e+03, 3.437439e+03,
-    3.781183e+03, 4.159301e+03, 4.575231e+03, 5.032754e+03, 5.536030e+03,
-    6.089633e+03, 6.698596e+03, 7.368456e+03, 8.105301e+03, 8.915831e+03,
-    9.807415e+03, 1.078816e+04, 1.186697e+04, 1.305367e+04, 1.435904e+04,
-    1.579494e+04, 1.737443e+04, 1.911188e+04, 2.102306e+04, 2.312537e+04,
-    2.543791e+04, 2.798170e+04, 3.077987e+04, 3.385785e+04, 3.724364e+04,
-    4.096800e+04, 4.506480e+04, 4.957129e+04, 5.452841e+04, 5.998126e+04,
-    6.597938e+04, 7.257732e+04, 7.983505e+04, 8.781856e+04, 9.660041e+04,
-    1.062605e+05, 1.168865e+05, 1.285751e+05, 1.414327e+05, 1.555759e+05,
-    1.711335e+05, 1.882469e+05, 2.070716e+05, 2.277787e+05, 2.505566e+05,
-    2.756122e+05, 3.031735e+05, 3.334908e+05, 3.668399e+05, 4.035239e+05,
-    4.438763e+05, 4.882639e+05, 5.370903e+05, 5.907993e+05, 6.498793e+05,
-    7.148672e+05, 7.863539e+05, 8.649893e+05, 9.514882e+05, 1.000000e+06,
-)
+# WinDETA "Measurement Points by Steps", logarithmic division: Start, End
+# and Factor in, list out. Same defaults as the GUI Fscan (today's WinDETA
+# Fscan list: 20 Hz x1.4 to 3 MHz, 37 points). Override with --start,
+# --end and --factor.
+START_HZ = 20.0
+END_HZ = 3e6
+FACTOR = 1.4
+# Sanity cap only: at ~1 s per point this is already a 15+ minute sweep.
+FREQ_MAX_POINTS = 1000
+
+
+def build_log_frequency_list(start, end, factor):
+    """WinDETA logarithmic value list: start, start*factor, start*factor^2 ...
+    while short of End, then End itself as the last point (WinDETA help:
+    the multiplier is constant 'except the last point').
+
+    Each point is start*factor^k rounded to 7 significant digits, the
+    precision WinDETA stores. start > end gives a descending list (divide
+    by factor). Raises ValueError with a readable reason. Copied from
+    Frequency_Scan_AlphaAN_GUI.py.
+    """
+    for name, v in (("Start", start), ("End", end), ("Factor", factor)):
+        if not math.isfinite(v):
+            raise ValueError(f"{name} is not a finite number.")
+    for name, v in (("Start", start), ("End", end)):
+        if not (FREQ_HW_MIN <= v <= FREQ_HW_MAX):
+            raise ValueError(
+                f"{name} {v:g} Hz is outside the Alpha-AN range "
+                f"{FREQ_HW_MIN:g} Hz to {FREQ_HW_MAX:g} Hz."
+            )
+    if factor <= 1.0:
+        raise ValueError("Factor must be greater than 1 (e.g. 1.4).")
+    if start == end:
+        raise ValueError("Start and End are the same frequency.")
+    step = factor if end > start else 1.0 / factor
+    rising = end > start
+    values = []
+    k = 0
+    while True:
+        f = float(f"{start * step ** k:.6e}")
+        # Stop once the next point reaches End (1e-9 slack: no duplicate
+        # End when the series lands on it exactly, e.g. 20 Hz x10 to 2 MHz).
+        if (f >= end * (1 - 1e-9)) if rising else (f <= end * (1 + 1e-9)):
+            break
+        if values and f == values[-1]:
+            raise ValueError(
+                f"Factor {factor:g} is too close to 1: points repeat at "
+                f"7-digit resolution. Use a larger factor."
+            )
+        values.append(f)
+        k += 1
+        if len(values) >= FREQ_MAX_POINTS:
+            raise ValueError(
+                f"Factor {factor:g} gives more than "
+                f"{FREQ_MAX_POINTS} points; use a larger factor."
+            )
+    values.append(float(end))
+    return tuple(values)
+
+
+# The default sweep, built once from the constants above.
+FREQUENCIES_HZ = build_log_frequency_list(START_HZ, END_HZ, FACTOR)
 assert all(FREQ_HW_MIN <= f <= FREQ_HW_MAX for f in FREQUENCIES_HZ)
 
 
@@ -276,6 +313,39 @@ def impedance_to_dielectric(zr, zi, f_actual, c0):
     zp2 = -z_mag_sq / zi_safe
 
     return (f_actual, eps1, eps2, m1, m2, zp1, zp2, sig1, sig2)
+
+
+def loss_phase_cp_g(zr, zi, f_actual):
+    """The extra WinDETA columns plus Cp, G: (tan_delta, phi_deg, Cp, G).
+
+        tan(delta) = eps''/eps' = -R/X     (WinDETA 'Tan(Delta)')
+        phi        = atan2(X, R) in deg    (phase of Z, negative for a
+                                            capacitor)
+        Cp = B/w = -X / (w*|Z|^2)          parallel capacitance, F
+        G  = R / |Z|^2                     parallel conductance, S
+
+    Geometry-independent. Only tan_delta and phi are written here. Copied
+    from Frequency_Scan_AlphaAN_GUI.py.
+    """
+    omega = 2.0 * math.pi * f_actual
+    omega_safe = omega if omega != 0 else 1e-20
+    z_mag_sq = zr ** 2 + zi ** 2
+    z_mag_sq_safe = z_mag_sq if z_mag_sq != 0 else 1e-20
+    zi_safe = zi if zi != 0 else 1e-20
+
+    tan_d = -zr / zi_safe
+    phi_deg = math.degrees(math.atan2(zi, zr))
+    cp = -zi / (omega_safe * z_mag_sq_safe)
+    g = zr / z_mag_sq_safe
+    return (tan_d, phi_deg, cp, g)
+
+
+def windeta_row(row, extra):
+    """impedance_to_dielectric's 9-tuple + loss_phase_cp_g's 4-tuple -> the
+    11 values in WINDETA_HEADER order (Tan(Delta) after Eps'', Phi last).
+    Same order as file_rows in Frequency_Scan_AlphaAN_GUI.py."""
+    tan_d, phi_deg = extra[0], extra[1]
+    return tuple(row[:3]) + (tan_d,) + tuple(row[3:]) + (phi_deg,)
 
 
 def abort_and_diagnose(inst):
@@ -460,9 +530,12 @@ def reset_and_set_impedance_mode(inst, timeout_s=RESET_READY_TIMEOUT_S):
     exec_cmd(inst, "MODE=IMP")
 
 
-def validate(acv, mtm, wire_mode, diameter, thickness):
+def validate(acv, mtm, wire_mode, diameter, thickness,
+             frequencies=FREQUENCIES_HZ):
     """Reject anything unsafe BEFORE a byte reaches the instrument."""
-    max_acv = min(acv_ceiling(f) for f in FREQUENCIES_HZ)
+    if not frequencies:
+        raise ValueError("Frequency list is empty.")
+    max_acv = min(acv_ceiling(f) for f in frequencies)
     if not (0.0 < acv <= max_acv):
         raise ValueError(
             f"AC voltage {acv} Vrms outside 0 < V <= {max_acv} Vrms "
@@ -476,7 +549,7 @@ def validate(acv, mtm, wire_mode, diameter, thickness):
         raise ValueError("Wire mode must be 2, 3 or 4.")
     if diameter <= 0 or thickness <= 0:
         raise ValueError("Diameter and thickness must both be positive.")
-    for f in FREQUENCIES_HZ:
+    for f in frequencies:
         if not (FREQ_HW_MIN <= f <= FREQ_HW_MAX):
             raise ValueError(f"Frequency {f} Hz outside the Alpha-AN range.")
 
@@ -504,10 +577,19 @@ def main():
                         help="Sample thickness in mm")
     parser.add_argument("--delay", type=float, default=1.0,
                         help="Initial settling delay in seconds")
+    parser.add_argument("--start", type=float, default=START_HZ,
+                        help="First frequency in Hz (WinDETA Start)")
+    parser.add_argument("--end", type=float, default=END_HZ,
+                        help="Last frequency in Hz (WinDETA End)")
+    parser.add_argument("--factor", type=float, default=FACTOR,
+                        help="Multiplier between points (WinDETA Factor)")
     args = parser.parse_args()
 
+    freqs = build_log_frequency_list(args.start, args.end, args.factor)
     validate(args.acv, args.mtm, args.wire_mode, args.diameter,
-             args.thickness)
+             args.thickness, freqs)
+    print(f"{len(freqs)} points, {freqs[0]:g} Hz - {freqs[-1]:g} Hz "
+          f"(x{args.factor:g})")
     c0 = compute_c0(args.diameter, args.thickness)
     print(f"C0 = {c0:.5e} F")
 
@@ -564,7 +646,7 @@ def main():
             time.sleep(args.delay)
 
         n_flagged = 0
-        for i, freq in enumerate(FREQUENCIES_HZ, 1):
+        for i, freq in enumerate(freqs, 1):
             exec_cmd(inst, f"GFR={freq:.6e}")
             inst.read_stb()   # clear stale status before triggering
             # MST leaves NO buffered ack: completion is SRQ + ZRE?.
@@ -580,19 +662,21 @@ def main():
                         f"(status {status})."
                     )
                 n_flagged += 1
-                print(f"[{i:3d}/{len(FREQUENCIES_HZ)}] {freq:12.4g} Hz "
+                print(f"[{i:3d}/{len(freqs)}] {freq:12.4g} Hz "
                       f"-> {status_message(status)} (status {status}), "
                       f"discarded")
                 continue
 
             # Convert with the ACTUAL frequency the analyzer used.
-            row = impedance_to_dielectric(zr, zi, f_actual, c0)
+            row = windeta_row(impedance_to_dielectric(zr, zi, f_actual, c0),
+                              loss_phase_cp_g(zr, zi, f_actual))
             with open(out_path, "a", encoding="utf-8", newline="\r\n") as fh:
                 fh.write("\t".join(f"{v:.5e}" for v in row) + "\n")
                 fh.flush()
 
-            print(f"[{i:3d}/{len(FREQUENCIES_HZ)}] {f_actual:12.4g} Hz "
-                  f"| eps' {row[1]:.4e} | eps'' {row[2]:.4e}")
+            print(f"[{i:3d}/{len(freqs)}] {f_actual:12.4g} Hz "
+                  f"| eps' {row[1]:.4e} | eps'' {row[2]:.4e} "
+                  f"| tan d {row[3]:.4e}")
 
         print(f"\nSweep complete. {n_flagged} point(s) discarded.")
         print(f"Data written to: {out_path}")

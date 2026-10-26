@@ -10,6 +10,9 @@ Purpose: Verify the pure list logic of pica/utils/List_Maker_GUI.py
     quadrants, turning-point repeat on and off, cycle counts.
   - format_values / parse_list round trip.
   - analyze_list: recognises what base_list produced, even after rounding.
+  - speed: importing the module leaves matplotlib unloaded; the window
+    (opt-in, PICA_REAL_WINDOWS=1) builds the plot afterwards and skips a
+    redraw when only the text format changed.
 
 Runnable as plain python too:
     python tests/test_list_maker.py
@@ -18,6 +21,8 @@ Runnable as plain python too:
 import math
 import os
 import sys
+
+import pytest
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
@@ -271,6 +276,68 @@ def test_analyze_recognises_each_spacing():
     assert m.analyze_list([3, 3, 3])['spacing'] == 'constant'
     assert m.analyze_list([1, 2, 7, 8])['spacing'] == 'irregular'
     assert m.analyze_list([])['count'] == 0 and m.analyze_list([4])['spacing'] == 'n/a'
+
+
+# -----------------------------------------------------------------------------
+#  Startup and redraw speed (window opens before matplotlib loads; a format-only
+#  change does not redraw the plot)
+# -----------------------------------------------------------------------------
+def test_importing_the_module_does_not_load_matplotlib():
+    import subprocess
+    code = ("import sys; sys.path.insert(0, sys.argv[1]); "
+            "import pica.utils.List_Maker_GUI; print('matplotlib' in sys.modules)")
+    proc = subprocess.run([sys.executable, "-c", code, project_root],
+                          capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    assert proc.stdout.strip() == "False", "matplotlib is loaded at import again"
+
+
+_WINDOW_SCRIPT = r"""
+import sys
+import tkinter as tk
+sys.path.insert(0, sys.argv[1])
+from pica.utils import List_Maker_GUI as m
+try:
+    root = tk.Tk()
+except Exception as e:
+    print("NO-TK", e)
+    sys.exit(0)
+root.withdraw()
+app = m.PICAListMakerApp(root)
+root.update()
+assert app.ax is None and app._plot_placeholder.winfo_exists()
+app.recompute()                       # before the plot exists: no error
+app._build_plot()
+assert app.ax is not None and not app._plot_placeholder.winfo_exists()
+assert app._drawn_key is not None, "plot not drawn once built"
+
+draws = []
+real_draw = app.canvas.draw_idle
+app.canvas.draw_idle = lambda: (draws.append(1), real_draw())
+app.recompute()
+assert draws == [], "same list redrawn"
+app.decimals_var.set("2"); app.sep_var.set("newline"); app.sci_var.set(True)
+app.recompute()
+assert draws == [], "format-only change redrew the plot"
+app.points_var.set("31"); app.recompute()
+assert len(draws) == 1, "new list not drawn"
+app.logy_var.set(True); app.recompute()
+assert len(draws) == 2 and app.ax.get_yscale() == "log", "log y not drawn"
+app._plot(app.values, "Pasted list")
+assert len(draws) == 3, "new title not drawn"
+root.destroy()
+print("OK")
+"""
+
+
+@pytest.mark.real_windows
+def test_window_opens_before_the_plot_and_skips_needless_redraws():
+    import subprocess
+    proc = subprocess.run([sys.executable, "-c", _WINDOW_SCRIPT, project_root],
+                          capture_output=True, text=True, timeout=120)
+    if proc.stdout.startswith("NO-TK"):
+        pytest.skip(f"no usable Tk: {proc.stdout.strip()}")
+    assert proc.returncode == 0 and "OK" in proc.stdout, proc.stderr[-2000:]
 
 
 if __name__ == '__main__':

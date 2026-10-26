@@ -397,8 +397,10 @@ def test_a_non_positive_sample_geometry_is_refused():
 
 
 def _grid(module):
-    """The 115-point, 20 Hz - 1 MHz sweep, whatever the edition calls it."""
-    return getattr(module, "FREQUENCIES_115PT_1MHZ", None)         or module.FREQUENCIES_HZ
+    """The 115-point, 20 Hz - 1 MHz sweep: a GUI preset, or the CLI's
+    Start/End/Factor builder at 20 Hz / 1 MHz / x1.1."""
+    return (getattr(module, "FREQUENCIES_115PT_1MHZ", None)
+            or module.build_log_frequency_list(20.0, 1e6, 1.1))
 
 
 def _good_params(module):
@@ -633,8 +635,12 @@ def test_parse_inttyp_reads_the_numeric_interface_code():
 
 def test_every_edition_sweeps_exactly_the_same_default_grid():
     """A GUI scan and a CLI scan must stay comparable point-for-point."""
-    assert _grid(visa_ed) == cli_ed.FREQUENCIES_HZ
-    assert _grid(bit32_ed) == cli_ed.FREQUENCIES_HZ
+    assert _grid(visa_ed) == _grid(cli_ed)
+    assert _grid(bit32_ed) == _grid(cli_ed)
+    # and the CLI's default list is the GUIs' default Start/End/Factor one
+    for gui in (visa_ed, bit32_ed):
+        assert cli_ed.FREQUENCIES_HZ == gui.build_log_frequency_list(
+            *map(float, gui.LOG_FREQ_DEFAULTS))
 
 
 def test_both_guis_offer_exactly_the_same_presets():

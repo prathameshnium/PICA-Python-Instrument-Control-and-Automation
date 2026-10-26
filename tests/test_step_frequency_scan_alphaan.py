@@ -43,6 +43,7 @@ def _gui(fake=None, freqs=(1000.0, 2000.0), save_dir=None):
                       "temp_controller": "Lakeshore 350"}
     gui.c0_farads = mod.c0_from_params(gui.lcr_params)
     gui.save_dir = save_dir or tempfile.mkdtemp(prefix="pica_stepfscan_")
+    gui.lcr_params["save_dir"] = gui.save_dir   # snapshotted at Start
     gui.sweep_frequencies = list(freqs)
     gui.is_running = True
     gui._paused = False
@@ -259,21 +260,28 @@ def test_windeta_file_per_step_matches_the_frequency_scan_layout():
     assert lines[1] == "Fixed value(s) :  AC Volt  [Vrms]=1.0000e+00"
     assert lines[2] == mod.WINDETA_HEADER and lines[-1] == ""
     rows = [[float(v) for v in ln.split("\t")] for ln in lines[3:-1]]
-    assert len(rows) == 2 and all(len(r) == 9 for r in rows)
-    want = mod.impedance_to_dielectric(1e5, -2e6, 1001.5, gui.c0_farads)
+    assert len(rows) == 2 and all(len(r) == 11 for r in rows)
+    want = mod.windeta_row(
+        mod.impedance_to_dielectric(1e5, -2e6, 1001.5, gui.c0_farads),
+        mod.loss_phase_cp_g(1e5, -2e6, 1001.5))
     assert all(math.isclose(a, b, rel_tol=1e-5)
                for a, b in zip(rows[0], want))
 
 
 def test_the_dielectric_conversion_is_the_frequency_scan_one():
     fscan, _ = load_port("Frequency_Scan_AlphaAN_GUI.py")
-    # Fscan added Tan(Delta) (col 4) and Phi (last) on 27 Oct 2026; the
-    # step scans keep the nine legacy columns until they are ported.
-    cols = fscan.WINDETA_HEADER.split("	")
-    assert mod.WINDETA_HEADER == "	".join(cols[:3] + cols[4:10])
+    # Same 11 WinDETA columns as the Fscan (Tan(Delta) col 4, Phi last).
+    assert mod.WINDETA_HEADER == fscan.WINDETA_HEADER
     for zr, zi, f, c0 in ((1e5, -2e6, 1e3, 1e-12), (3.0, 40.0, 1e6, 5e-13)):
         assert (mod.impedance_to_dielectric(zr, zi, f, c0)
                 == fscan.impedance_to_dielectric(zr, zi, f, c0))
+        assert (mod.loss_phase_cp_g(zr, zi, f)
+                == fscan.loss_phase_cp_g(zr, zi, f))
+        row = mod.impedance_to_dielectric(zr, zi, f, c0)
+        extra = mod.loss_phase_cp_g(zr, zi, f)
+        # Fscan file_rows' WinDETA half: Tan(Delta) after Eps'', Phi last.
+        assert mod.windeta_row(row, extra) == \
+            tuple(row[:3]) + (extra[0],) + tuple(row[3:]) + (extra[1],)
     assert mod.compute_c0_from_area(7.0, 0.5) == \
         fscan.compute_c0_from_area(7.0, 0.5)
 
@@ -690,6 +698,463 @@ def test_a_refused_custom_list_leaves_the_previous_list_alone():
         raise AssertionError("accepted a non-numeric frequency")
     assert gui.sweep_frequencies == _E4980A_LIST
 
+
+# --- 27 Oct 2026 review fixes (S1 - S13) -------------------------------------
+
+def _drain(gui):
+    msgs = []
+    while not gui.gui_queue.empty():
+        msgs.append(gui.gui_queue.get_nowait())
+    return msgs
+
+
+def _queue_gui(*msgs):
+    """A CombinedGUI whose _process_gui_queue can run headless."""
+    gui = mod.CombinedGUI.__new__(mod.CombinedGUI)
+    gui.gui_queue = queue.Queue()
+    for m in msgs:
+        gui.gui_queue.put(m)
+    gui.MAX_MSGS_PER_CYCLE = 100
+    gui.worker_thread = None
+    gui.log = lambda msg: None
+    gui.statuses = []
+    gui._update_status_ui = lambda text, color: gui.statuses.append(text)
+    gui.set_ui_state = lambda running: None
+    gui._set_keep_awake = lambda on: None
+    gui._beep = lambda times=1: None
+    gui._final_status = False
+    gui._scan_info = None
+    gui._freq_plot_dirty = False
+    gui._pending_progress = None
+    return gui
+
+
+def test_s1_worker_done_keeps_the_final_banner():
+    for text in ("SAFETY ABORT (MAX TEMP)", "COMPLETE", "ERROR",
+                 "HEATER NOT TURNED OFF - check the Lakeshore"):
+        gui = _queue_gui({"type": "status", "text": text, "color": "red",
+                          "final": True}, {"type": "worker_done"})
+        gui._process_gui_queue()
+        assert gui.statuses == [text], gui.statuses
+    # A transient banner (Stop pressed) still ends as IDLE.
+    gui = _queue_gui({"type": "status", "text": "STOPPING", "color": "r"},
+                     {"type": "worker_done"})
+    gui._process_gui_queue()
+    assert gui.statuses == ["STOPPING", "IDLE"]
+
+
+def test_s1_the_worker_marks_its_error_banner_final():
+    import types
+    gui = mod.CombinedGUI.__new__(mod.CombinedGUI)
+    gui.gui_queue = queue.Queue()
+    gui.params, gui.lcr_params = {}, {}  # the worker fails at once
+    gui.ls_backend = types.SimpleNamespace(shutdown=lambda: True)
+    gui.lcr_backend = types.SimpleNamespace(close_instrument=lambda: None)
+    gui._hardware_worker_loop()
+    status = [m for m in _drain(gui) if m["type"] == "status"]
+    assert status[-1]["text"] == "ERROR" and status[-1]["final"] is True
+
+
+def test_s7_a_cut_sweep_loses_its_measuring_title():
+    gui = _queue_gui({"type": "worker_done"})
+    gui._scan_info = ("measuring", 150.0)
+    gui._process_gui_queue()
+    assert gui._scan_info == ("partial", 150.0) and gui._freq_plot_dirty
+    gui = _queue_gui({"type": "worker_done"})
+    gui._scan_info = ("done", 150.0)              # a finished scan is held
+    gui._process_gui_queue()
+    assert gui._scan_info == ("done", 150.0)
+
+
+def test_s2_s3_s8_bad_boxes_are_refused_at_start_and_named():
+    for over, word in (({"sample_name": "BaTiO3-α"}, "Sample Name"),
+                       ({"sample_name": "S→T"}, "Sample Name"),
+                       ({"sample_name": "S1:heated"}, "Sample Name"),
+                       ({"sample_name": "a/b"}, "Sample Name"),
+                       ({"mtm": "0,5"}, "Integration"),
+                       ({"acv": "abc"}, "AC Voltage"),
+                       ({"delay": "nan"}, "Freq Delay"),
+                       ({"thickness_mm": "nan"}, "Thickness"),
+                       ({"geom_value": "inf"}, "Area")):
+        gui, fake = _validate(**over)
+        try:
+            gui._validate_lcr_params()
+        except ValueError as exc:
+            assert word in str(exc), (over, str(exc))
+        else:
+            raise AssertionError(f"accepted {over}")
+        assert fake.commands == [] and gui.lcr_backend.rm.opened == []
+
+
+def _ls_validate(**over):
+    gui = mod.CombinedGUI.__new__(mod.CombinedGUI)
+    values = {"tol": "0.5", "soak": "120", "rate": "2.0", "delay": "1",
+              "app_band": "3.0", "app_rate": "2.0", "drift": "0.10",
+              "stab_timeout": "0", "max_temp": "320", "step_factor": "0.2",
+              "first_factor": "0.5", "min_rate": "0.1", "max_rate": "5.0"}
+    values.update(over)
+    gui.entries = {k: {"entry": _Entry(v)} for k, v in values.items()}
+    gui.ls_cb = _Entry("GPIB0::12::INSTR")
+    gui.heater_range_var = _Entry("3 (High)")
+    gui.ramp_mode_var = _Entry("adaptive")
+    gui.var_auto_pid = _Entry(True)
+    gui.approach_var = _Entry("")
+    gui.ramp_table_var = _Entry("77:0.3, 100:0.5, else:5")
+    return gui
+
+
+def test_s8_lakeshore_boxes_are_named_and_nan_refused():
+    assert _ls_validate()._validate_ls_params()["delay"] == 1.0
+    for key, text, word in (("tol", "abc", "Tolerance"),
+                            ("delay", "nan", "Poll Delay"),
+                            ("max_temp", "inf", "Max Temp")):
+        try:
+            _ls_validate(**{key: text})._validate_ls_params()
+        except ValueError as exc:
+            assert word in str(exc) and text in str(exc), str(exc)
+        else:
+            raise AssertionError(f"accepted {key}={text}")
+
+
+def test_s3_a_vanished_save_folder_is_refused_before_validation():
+    gui = mod.CombinedGUI.__new__(mod.CombinedGUI)
+    gui.worker_thread = None
+    gui.listbox = type("LB", (), {"get": lambda self, *a: ["100"]})()
+    gui.save_dir = os.path.join(tempfile.gettempdir(),
+                                "pica_no_such_dir_s3", "gone")
+
+    def _no_validation():
+        raise AssertionError("validation must not run")
+    gui._validate_ls_params = _no_validation
+    warnings = []
+    saved = mod.messagebox.showwarning
+    mod.messagebox.showwarning = lambda *a, **k: warnings.append(a)
+    try:
+        gui.start_sequence()
+    finally:
+        mod.messagebox.showwarning = saved
+    assert warnings and "no longer exists" in warnings[0][1]
+
+
+class _WorkerLs:
+    def __init__(self):
+        self.ramps = []
+
+    def connect(self, visa):
+        return "LSCI,MODEL350"
+
+    def configure_ramp(self, *args):
+        self.ramps.append(args)
+
+    def shutdown(self):
+        return True
+
+
+class _WorkerLcr:
+    def __init__(self, on_init=None):
+        self.connected = False
+        self.on_init = on_init
+
+    def connect(self, visa):
+        self.connected = True
+        return "ALPHA", 0
+
+    def initialize_instrument(self, p):
+        if self.on_init:
+            self.on_init()
+
+    def close_instrument(self):
+        pass
+
+
+def _worker_gui(save_dir):
+    gui = mod.CombinedGUI.__new__(mod.CombinedGUI)
+    gui.gui_queue = queue.Queue()
+    gui.cmd_queue = queue.Queue()
+    gui.is_running = True
+    gui._paused = False
+    gui._skip_requested = False
+    gui.params = {"ls_visa": "GPIB0::12::INSTR"}
+    gui.lcr_params = {"lcr_visa": "GPIB0::10::INSTR", "sample_name": "S",
+                      "save_dir": save_dir}
+    gui.save_dir = save_dir
+    gui.setpoint_floats = [100.0]
+    gui.sweep_frequencies = [1000.0]
+    gui.ls_backend = _WorkerLs()
+    return gui
+
+
+def test_s4_stop_during_connect_or_init_never_programs_the_heater():
+    tmp = tempfile.mkdtemp(prefix="pica_stepfscan_s4_")
+    try:
+        # Stop pressed while the Lakeshore was connecting.
+        gui = _worker_gui(tmp)
+        gui.lcr_backend = _WorkerLcr()
+        gui.cmd_queue.put(("stop",))
+        gui._hardware_worker_loop()
+        assert not gui.lcr_backend.connected
+        assert gui.ls_backend.ramps == [] and os.listdir(tmp) == []
+        assert _drain(gui)[-1]["type"] == "worker_done"
+        # Stop pressed during the Alpha *RST / initialize waits.
+        gui = _worker_gui(tmp)
+        gui.lcr_backend = _WorkerLcr(
+            on_init=lambda: gui.cmd_queue.put(("stop",)))
+        gui._hardware_worker_loop()
+        assert gui.lcr_backend.connected
+        assert gui.ls_backend.ramps == [] and os.listdir(tmp) == []
+        assert gui.is_running is False
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_s5_discarded_and_skipped_points_move_the_progress_bar():
+    fake = FakeAlpha({"ZRE?": "ZRE=1E5 -2E6 1000 3 1"})
+    gui, _ = _gui(fake, freqs=(1000.0,))
+    try:
+        assert gui._run_frequency_sweep(100.0, 4, 5) == 5
+        assert [m["progress"] for m in _drain(gui)
+                if m["type"] == "progress"] == [5]
+    finally:
+        shutil.rmtree(gui.save_dir, ignore_errors=True)
+    gui, fake = _gui(freqs=(1000.0, 2000.0, 3000.0))
+    gui._skip_requested = True
+    try:
+        assert gui._run_frequency_sweep(100.0, 3, 6) == 6
+        assert [m["progress"] for m in _drain(gui)
+                if m["type"] == "progress"] == [6]
+        assert "MST" not in fake.commands
+    finally:
+        shutil.rmtree(gui.save_dir, ignore_errors=True)
+    gui = _queue_gui({"type": "progress", "progress": 7})
+    gui._process_gui_queue()
+    assert gui._pending_progress == 7
+
+
+def test_s6_resume_and_reconnect_restore_the_measuring_banner():
+    gui, _ = _gui(freqs=(1000.0,))
+    gui._paused = True
+    calls = []
+
+    def _resume():
+        # call 1 is the loop-top check; Resume arrives inside the pause
+        calls.append(1)
+        if len(calls) >= 2:
+            gui._paused = False
+        return False
+    gui._process_cmd_queue = _resume
+    try:
+        gui._run_frequency_sweep(150.0, 0, 1)
+        texts = [m["text"] for m in _drain(gui) if m["type"] == "status"]
+        assert texts[0].startswith("PAUSED")
+        assert texts[-1] == "MEASURING AT 150.0 K"
+    finally:
+        shutil.rmtree(gui.save_dir, ignore_errors=True)
+    # Reconnect: _comm_recover leaves a neutral banner, not COMM LOST.
+    gui = _recover_gui(_FakeLcr())
+    assert _with_clock(lambda: gui._comm_recover("test", OSError("x")))
+    texts = [m["text"] for m in _drain(gui) if m["type"] == "status"]
+    assert texts[0].startswith("COMM LOST")
+    assert texts[-1] == "RECONNECTED - resuming"
+
+
+def test_s9_stop_is_seen_during_a_long_freq_delay():
+    import time as _time
+    gui, fake = _gui(freqs=(1000.0, 2000.0))
+    gui.lcr_params["delay"] = 30.0
+    calls = []
+
+    def _stop_on_second_call():
+        calls.append(1)
+        if len(calls) >= 2:
+            gui.is_running = False
+            return True
+        return False
+    gui._process_cmd_queue = _stop_on_second_call
+    t0 = _time.time()
+    try:
+        assert gui._run_frequency_sweep(100.0, 0, 2) == 0
+        assert _time.time() - t0 < 5.0
+        assert "MST" not in fake.commands      # nothing measured
+    finally:
+        shutil.rmtree(gui.save_dir, ignore_errors=True)
+    # Skip during the wait returns at once too.
+    gui, _ = _gui()
+    gui._skip_requested = True
+    t0 = _time.time()
+    assert gui._wait_responsive(30.0) is True
+    assert _time.time() - t0 < 1.0
+    shutil.rmtree(gui.save_dir, ignore_errors=True)
+
+
+class _Widget:
+    def __init__(self):
+        self.state = None
+
+    def config(self, **kw):
+        if "state" in kw:
+            self.state = kw["state"]
+
+
+def test_s10_alpha_settings_are_locked_during_a_run():
+    gui = mod.CombinedGUI.__new__(mod.CombinedGUI)
+    for name in ("start_button", "stop_button", "pause_button",
+                 "skip_button", "approach_cb", "rb_adaptive", "rb_fixed",
+                 "ramp_table_entry", "entry_start", "entry_end",
+                 "entry_step", "entry_manual", "ls_cb", "lcr_cb", "freq_cb",
+                 "custom_freq_text", "list_maker_button", "rb_geom_area",
+                 "rb_geom_diam", "cb_fmt_pica", "cb_fmt_windeta",
+                 "browse_button", "wire_cb"):
+        setattr(gui, name, _Widget())
+    gui.entries = {}
+    gui.log_freq_entries = {}
+    gui.lcr_entries = {k: _Widget() for k in (
+        "sample_name", "acv", "mtm", "delay", "geom_value", "thickness_mm")}
+    gui._on_ramp_mode_changed = lambda: None
+    gui._on_freq_list_change = lambda: None
+    locked = list(gui.lcr_entries.values()) + [
+        gui.rb_geom_area, gui.rb_geom_diam, gui.cb_fmt_pica,
+        gui.cb_fmt_windeta, gui.browse_button, gui.wire_cb]
+    gui.set_ui_state(running=True)
+    assert all(w.state == "disabled" for w in locked)
+    gui.set_ui_state(running=False)
+    assert all(w.state == "normal" for w in locked[:-1])
+    assert gui.wire_cb.state == "readonly"
+
+
+def test_s11_s13_wheel_scrolling_and_the_startup_line():
+    with open(PATH, encoding="utf-8") as fh:
+        src = fh.read()
+    assert 'canvas.bind_all("<MouseWheel>", _wheel)' in src
+    assert 'canvas.unbind_all("<MouseWheel>")' in src
+    # The init line names the default list, not the old E4980A one.
+    assert "40 Hz – 2 MHz sweep" not in src
+    assert "Default sweep: " in src
+    freqs = mod.build_log_frequency_list(
+        *(float(v) for v in mod.LOG_FREQ_DEFAULTS))
+    label = mod.log_list_label(freqs, float(mod.LOG_FREQ_DEFAULTS[2]))
+    assert label.startswith(f"{len(freqs)} pts, 20 Hz - "), label
+
+
+# --- cross-port of the L340 sibling's review fixes (L340A-*) -----------------
+
+def test_l340a_03_live_updates_run_the_start_range_checks():
+    gui = _ls_validate()
+    gui.is_running = True
+    gui.params = gui._validate_ls_params()
+    gui.cmd_queue = queue.Queue()
+    gui.log = lambda msg: None
+    for w in gui.entries.values():
+        w["lock"], w["locked"] = object(), True
+    gui.entries["delay"]["locked"] = False
+    errors = []
+    saved = mod.messagebox.showerror
+    mod.messagebox.showerror = lambda *a, **k: errors.append(a)
+    try:
+        for bad in ("-1", "0", "nan", "abc"):
+            gui.entries["delay"]["entry"] = _Entry(bad)
+            gui._send_live_updates()
+            assert gui.cmd_queue.empty(), bad
+            assert "Poll Delay" in errors[-1][1] or "Poll delay" in \
+                errors[-1][1], errors[-1]
+        gui.entries["delay"]["entry"] = _Entry("2")
+        n = len(errors)
+        gui._send_live_updates()
+        assert len(errors) == n
+        kind, updates = gui.cmd_queue.get_nowait()
+        assert kind == "params" and updates["delay"] == 2.0
+    finally:
+        mod.messagebox.showerror = saved
+
+
+def test_l340a_04_the_worker_writes_to_the_folder_chosen_at_start():
+    gui, _ = _gui(freqs=(1000.0,))
+    start_dir = gui.save_dir
+    gui.save_dir = tempfile.mkdtemp(prefix="pica_stepfscan_moved_")
+    try:
+        gui._run_frequency_sweep(100.0, 0, 1)
+        assert os.listdir(gui.save_dir) == []
+        assert any(n.endswith("_pica_format.dat")
+                   for n in os.listdir(start_dir))
+    finally:
+        shutil.rmtree(start_dir, ignore_errors=True)
+        shutil.rmtree(gui.save_dir, ignore_errors=True)
+    with open(PATH, encoding="utf-8") as fh:
+        src = fh.read()
+    assert 'self.lcr_params["save_dir"] = self.save_dir' in src
+    assert "self.save_dir," not in src   # no file path from the live label
+
+
+class _Thread:
+    def __init__(self, alive):
+        self.alive = alive
+
+    def is_alive(self):
+        return self.alive
+
+
+class _Root:
+    def __init__(self):
+        self.destroyed = False
+        self.afters = []
+
+    def destroy(self):
+        self.destroyed = True
+
+    def after(self, ms, fn):
+        self.afters.append(fn)
+
+
+def test_l340a_08_close_after_stop_waits_for_the_worker():
+    gui = mod.CombinedGUI.__new__(mod.CombinedGUI)
+    gui.is_running = False                 # Stop already handled
+    gui.worker_thread = _Thread(True)      # ...but still shutting down
+    gui.root = _Root()
+    gui.log = lambda msg: None
+    gui.lcr_params = {"mtm": 0.5, "delay": 30.0}
+    gui.sweep_frequencies = [1000.0]
+    asked = []
+    saved = mod.messagebox.askyesno
+    mod.messagebox.askyesno = lambda *a, **k: asked.append(a) or True
+    try:
+        gui._on_closing()
+    finally:
+        mod.messagebox.askyesno = saved
+    assert asked == [] and not gui.root.destroyed and gui.root.afters
+    assert gui._close_wait_s() >= (30.0 + mod.RESET_SETTLE_S
+                                   + mod.RESET_READY_TIMEOUT_S)
+    gui.worker_thread.alive = False
+    gui.root.afters[-1]()
+    assert gui.root.destroyed
+    # No worker at all: close at once.
+    gui.worker_thread = None
+    gui.root = _Root()
+    gui._on_closing()
+    assert gui.root.destroyed
+
+
+def test_l340a_10_sequence_complete_fills_the_progress_bar():
+    gui = _queue_gui({"type": "sequence_complete"})
+    gui.progress = {"value": 3, "maximum": 10}
+    gui._pending_progress = 3
+    gui._process_gui_queue()
+    assert gui.progress["value"] == 10 and gui._pending_progress is None
+
+
+def test_l340a_12_13_15_panel_frames_banner_and_startup_version():
+    with open(PATH, encoding="utf-8") as fh:
+        src = fh.read()
+    assert 'style.configure("Panel.TFrame", background=self.CLR_FRAME_BG)' \
+        in src
+    for frame in ("gf", "ff", "fl", "bf", "lf"):
+        assert f'{frame} = ttk.Frame(frame)' not in src, frame
+    assert 'ttk.Frame(fl, style="Panel.TFrame")' in src
+    assert 'style="Bar.TLabel"' in src and 'style="Bar.TRadiobutton"' in src
+    start = src[src.index("    def start_sequence(self):"):
+                src.index("    def stop_sequence(")]
+    assert start.index('"CONNECTING') > start.index(
+        "self.set_ui_state(running=True)")
+    assert "GUI v{self.PROGRAM_VERSION} initialized" in src
+    assert "GUI v1.0 initialized" not in src
 
 if __name__ == "__main__":
     for name, fn in list(globals().items()):

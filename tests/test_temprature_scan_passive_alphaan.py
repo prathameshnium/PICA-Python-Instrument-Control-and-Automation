@@ -292,6 +292,9 @@ def _bare_gui():
     gui = mod.Integrated_CT_GUI.__new__(mod.Integrated_CT_GUI)
     gui.logged = []
     gui.log = gui.logged.append
+    gui.statuses = []
+    gui.lbl_status = types.SimpleNamespace(
+        config=lambda **k: gui.statuses.append(k["text"]))
     return gui
 
 
@@ -471,13 +474,48 @@ def test_windeta_files_follow_the_sample_tscan_layout():
                         b"Area[mm^2] 0.000e+00")
     assert lines[2] == (b"Fixed value(s) :  Freq. [Hz]=1.000e+03  "
                         b"AC Volt  [Vrms]=5.000e-01")
-    assert lines[3] == b" Temp. [\xb0C]\t Eps'    \t Eps''   "   # cp1252
+    assert lines[3] == (b" Temp. [\xb0C]\t Eps'    \t Eps''   \t"
+                        b" Tan(Delta)\t Phi [Deg]")              # cp1252
     if os.path.exists(ref):
-        assert lines[3] == open(ref, "rb").read().split(b"\r\n")[3]
+        # The reference has T / eps' / eps'' only; Tan(Delta) and Phi are
+        # appended after it, spelt as in the GUI Fscan WinDETA file.
+        ref_header = open(ref, "rb").read().split(b"\r\n")[3]
+        assert lines[3].startswith(ref_header + b"\t")
     assert lines[0].startswith(b"S, ") and lines[4:] == [
-        b"1.50000e+02\t1.30000e+01\t2.00000e+00", b""]
+        b"1.50000e+02\t1.30000e+01\t2.00000e+00\t1.53846e-01\t-8.12538e+01",
+        b""]
     assert empty.count(b"\r\n") == 4      # the NaN kill row is PICA-only
     assert kill.splitlines()[-1].startswith("4.240000E+02\t")  # kept
+
+
+def test_windeta_file_reads_back_tan_delta_and_phi_for_a_parallel_rc():
+    """One point of a parallel RC (Rp || Cp), read back BY HEADER NAME:
+    Tan(Delta) = 1/(w Rp Cp) and Phi is negative (capacitive)."""
+    rp, cp, f = 1e6, 100e-12, 1000.0
+    w = 2 * math.pi * f
+    z = 1 / (1 / rp + 1j * w * cp)
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _files(tmp, frequencies=[f])
+        c0 = gui.c0_farads
+        gui._save_cycle_to_files({"points": [
+            (300.0, f, z.real, z.imag, mod.STATUS_RESULT_VALID, f)]})
+        raw = open(gui.windeta_filepaths[f], "rb").read()
+    lines = raw.decode("cp1252").split("\r\n")
+    names = [n.strip() for n in lines[3].split("\t")]
+    assert names == ["Temp. [\u00b0C]", "Eps'", "Eps''", "Tan(Delta)",
+                     "Phi [Deg]"]
+    row = dict(zip(names, (float(v) for v in lines[4].split("\t"))))
+    assert len(lines[4].split("\t")) == 5 and lines[5:] == [""]
+    assert math.isclose(row["Temp. [\u00b0C]"], 300.0 - 273.15,
+                        rel_tol=1e-5)
+    assert math.isclose(row["Eps'"], cp / c0, rel_tol=1e-5)
+    assert math.isclose(row["Eps''"], 1 / (w * rp * c0), rel_tol=1e-5)
+    assert math.isclose(row["Tan(Delta)"], 1 / (w * rp * cp), rel_tol=1e-5)
+    assert math.isclose(row["Tan(Delta)"], row["Eps''"] / row["Eps'"],
+                        rel_tol=1e-4)
+    assert row["Phi [Deg]"] < 0
+    assert math.isclose(row["Phi [Deg]"],
+                        -math.degrees(math.atan(w * rp * cp)), rel_tol=1e-5)
 
 
 def test_a_buffered_windeta_row_keeps_its_crlf_framing():
@@ -501,7 +539,7 @@ def test_a_buffered_windeta_row_keeps_its_crlf_framing():
         gui._save_cycle_to_files({"points": [point]})
         assert not gui._pending_rows
         raw = open(gui.windeta_filepaths[1000.0], "rb").read()
-    row = b"1.50000e+02\t1.30000e+01\t2.00000e+00"
+    row = b"1.50000e+02\t1.30000e+01\t2.00000e+00\t1.53846e-01\t-8.12538e+01"
     assert raw.split(b"\r\n")[4:] == [row, row, b""]
     assert b"\n" not in raw.replace(b"\r\n", b"")
     assert gui.freq_filepaths == {}
@@ -539,7 +577,9 @@ def test_start_describes_the_passive_thermometer_and_checks_output_first():
     assert "Ramp {" not in source            # no ramp of PICA's own
     assert (source.index("validate_output_settings(params)")
             < source.index("c0_from_params(params)")
-            < source.index("initialize_instruments(params)"))
+            < source.index("target=self._run_worker"))
+    # Connect/initialise run on the worker, never on the Tk thread.
+    assert "initialize_instruments" not in source
 
 
 def test_output_settings_are_checked_before_start():
@@ -815,6 +855,7 @@ def test_a_sweep_cut_short_by_stop_is_written_to_the_files():
             "heater": 5.0, "wall_time": mod.datetime.now()}, 12.0))
         gui.data_queue.put("KILL")
         gui.start_button = gui.scan_button = _Recorder()
+        gui._set_inputs_enabled = lambda enabled: None
         gui.backend = types.SimpleNamespace(
             close_instruments=lambda: closed.append(True))
         gui._close_after_stop = False
@@ -911,6 +952,598 @@ def test_a_reconnect_refusal_survives_a_close_that_raises():
     assert combined.lakeshore is None
     combined.close_instruments()
     assert bad_visa.sessions[0].traffic == [("query", "*IDN?")]
+
+
+# --- bug hunt fixes (27 Oct 2026) -------------------------------------------
+
+class _Text:
+    """Entry / Text stand-in: get() returns the text, config() records."""
+
+    def __init__(self, text=""):
+        self.text = text
+        self.states = []
+
+    def get(self, *a):
+        return self.text
+
+    def config(self, **k):
+        self.states.append(k.get("state"))
+
+
+def _start_gui(tmp, **texts):
+    """A bare GUI whose Start reaches the hardware step with the given box
+    texts; initialize_instruments records instead of opening anything."""
+    gui = _bare_gui()
+    gui.measurement_thread = None
+    gui.file_location_path = tmp
+    boxes = {"Sample Name": "S", "AC Bias": "1.0", "MTM": "0.5",
+             "Delay": "0", "Geometry": "1.0", "Thickness": "1.0"}
+    boxes.update(texts)
+    gui.entries = {k: _Text(v) for k, v in boxes.items()}
+    gui._parse_frequencies = lambda: [1000.0]
+    gui.var_zero_range = types.SimpleNamespace(get=lambda: True)
+    gui.fmt_pica_var = gui.fmt_windeta_var = types.SimpleNamespace(
+        get=lambda: True)
+    gui.geom_mode_var = types.SimpleNamespace(get=lambda: "area")
+    gui.wire_combobox = _Text("2")
+    gui.lakeshore_cb = _Text("GPIB0::12::INSTR")
+    gui.lcr_cb = _Text("GPIB0::10::INSTR")
+    gui.inits = []
+    gui.backend = types.SimpleNamespace(
+        initialize_instruments=gui.inits.append,
+        close_instruments=lambda: None)
+    return gui
+
+
+def _start_error(gui):
+    shown = []
+    box = types.SimpleNamespace(
+        showerror=lambda title, msg: shown.append(msg))
+    with patch.object(mod, "messagebox", box):
+        gui.start_measurement()
+    return shown[0] if shown else None
+
+
+def test_bad_boxes_are_refused_by_name_before_any_instrument():
+    cases = [({"Delay": "inf"}, "Delay per Freq"),
+             ({"Delay": "nan"}, "Delay per Freq"),
+             ({"Delay": "1e9"}, "Delay per Freq"),
+             ({"AC Bias": "1,0"}, 'AC Voltage (Vrms): "1,0"'),
+             ({"MTM": ""}, "Integration Time (s)"),
+             ({"Thickness": "nan"}, "Sample Thickness"),
+             ({"Geometry": "inf"}, "Electrode Area"),
+             ({"Sample Name": "a/b"}, "Sample Name"),
+             ({"Sample Name": "S:1"}, "Sample Name"),
+             ({"Sample Name": "S1."}, "Sample Name"),
+             ({"Sample Name": "S-α"}, "cp1252")]
+    with tempfile.TemporaryDirectory() as tmp:
+        for texts, want in cases:
+            gui = _start_gui(tmp, **texts)
+            msg = _start_error(gui)
+            assert msg and want in msg, (texts, msg)
+            assert gui.inits == [], texts
+            assert gui.statuses[-1].startswith("Status: START FAILED")
+        assert os.listdir(tmp) == []                 # no orphan files
+    gui = _start_gui(os.path.join(tmp, "unplugged"))
+    assert "Destination folder not found" in _start_error(gui)
+    assert gui.inits == []
+
+
+def test_a_bad_frequency_token_is_named():
+    gui = _bare_gui()
+    gui.freq_text = _Text("1000, 1e3x")
+    try:
+        gui._parse_frequencies()
+    except ValueError as exc:
+        assert '"1e3x"' in str(exc)
+    else:
+        raise AssertionError("accepted 1e3x")
+
+
+def test_nan_or_inf_geometry_is_refused():
+    for bad in (_out_params(thickness_mm=float("nan")),
+                _out_params(thickness_mm=float("inf")),
+                _out_params(diameter_mm=float("nan")),
+                _out_params(geometry_mode="area", area_mm2=float("inf"))):
+        for fn in (mod.validate_output_settings, mod.c0_from_params):
+            try:
+                fn(bad)
+            except ValueError:
+                continue
+            raise AssertionError(f"{fn.__name__} accepted {bad}")
+
+
+class _StopDuringDelay:
+    """stop_event whose wait() is where Stop arrives."""
+
+    def __init__(self, log):
+        self.log = log
+        self.stopped = False
+
+    def is_set(self):
+        return self.stopped
+
+    def wait(self, timeout):
+        self.log.append(("wait", timeout))
+        self.stopped = True
+        return True
+
+
+def test_stop_during_the_delay_measures_nothing_more():
+    fake = FakeAlpha()
+    combined = _combined(fake)
+    cycle = combined.measure_frequency_sweep(
+        [1000.0, 2000.0], 30, _StopDuringDelay(combined.lakeshore.calls))
+    assert cycle["points"] == []
+    assert "MST" not in fake.commands
+
+
+def test_each_point_reads_t_after_its_delay():
+    class _Wait:
+        def __init__(self, log):
+            self.log = log
+
+        def is_set(self):
+            return False
+
+        def wait(self, timeout):
+            self.log.append(("wait", timeout))
+            return False
+    combined = _combined(FakeAlpha({"ZRE?": "ZRE=1E5 -2E6 1000 2 1"}))
+    calls = combined.lakeshore.calls
+    combined.measure_frequency_sweep([1000.0], 5, _Wait(calls))
+    names = [c[0] for c in calls]
+    assert names.index("wait") < names.index("get_temperature"), names
+
+
+def test_a_failed_kill_is_reported_and_close_retries_range_0():
+    fake_visa = FakePyvisa()
+    with patch.object(mod, "pyvisa", fake_visa):
+        ls = mod.Lakeshore350_Backend("GPIB0::12::INSTR", passive_mode=True)
+    session = fake_visa.sessions[0]
+    combined = mod.Combined_Backend()
+    combined.lakeshore = ls
+    good_write = session.write
+    session.write = lambda cmd: (_ for _ in ()).throw(OSError("bus"))
+    with patch.object(mod.time, "sleep", lambda s: None):
+        assert combined.check_safety_kill(401.0) is True
+        assert combined.heater_off_confirmed is False
+        session.write = good_write
+        ls.close()       # passive run, but a kill fired: RANGE 1,0 again
+    assert session.writes == ["RANGE 1,0"]
+
+    gui = _bare_gui()
+    gui.backend = combined
+    gui._update_live_plots = lambda force=False: None
+    gui.stop_measurement = lambda from_user=True: None
+    gui._beep = lambda times=1: None
+    gui._handle_kill_event()
+    assert any("NOT CONFIRMED" in m for m in gui.logged)
+    assert "CHECK HEATER" in gui.statuses[-1]
+
+
+def test_the_kill_switch_works_during_reconnect_backoff():
+    h = _ReconnectHarness(OSError("Alpha off"))
+    h.backend.lakeshore = FakeLakeshore((401.0,))
+    h.backend.check_safety_kill = lambda t: t >= 400.0
+    assert h.run() is False
+    assert len(h.outcomes) == 1                  # no reconnect attempted
+    assert h.data_queue.get_nowait() == "KILL"
+
+
+def test_status_banner_keeps_how_the_run_ended():
+    gui = _bare_gui()
+    gui.backend = types.SimpleNamespace(SAFETY_KILL_TEMP_K=400.0,
+                                        heater_off_confirmed=True,
+                                        close_instruments=lambda: None)
+    gui._update_live_plots = lambda force=False: None
+    gui.stop_measurement = lambda from_user=True: None
+    gui._beep = lambda times=1: None
+    gui._handle_kill_event()
+    assert gui.statuses[-1] == "Status: SAFETY KILL (400 K)"
+    gui._handle_runtime_error(RuntimeError("status 6"))
+    assert gui.statuses[-1] == "Status: ERROR - see console"
+    # the finalize of an unattended stop never overwrites it
+    gui._set_keep_awake = lambda on: None
+    gui.start_button = gui.scan_button = _Recorder()
+    gui._set_inputs_enabled = lambda enabled: None
+    gui._drain_queue_at_stop = lambda: None
+    gui._close_after_stop = False
+    gui._finalize_stop(False)
+    assert gui.statuses[-1] == "Status: ERROR - see console"
+
+
+def test_run_settings_are_locked_during_a_run():
+    gui = _bare_gui()
+    gui.entries = {"Sample Name": _Text(), "Delay": _Text()}
+    gui.freq_text = _Text()
+    gui.geom_radios = [_Text(), _Text()]
+    gui.fmt_checks = [_Text(), _Text()]
+    gui.zero_range_check, gui.file_button = _Text(), _Text()
+    gui.wire_combobox, gui.lakeshore_cb, gui.lcr_cb = (
+        _Text(), _Text(), _Text())
+    gui.plot_freq_cb = _Text()
+    gui._set_inputs_enabled(False)
+    gui._set_inputs_enabled(True)
+    for w in (*gui.entries.values(), gui.freq_text, *gui.geom_radios,
+              *gui.fmt_checks, gui.zero_range_check, gui.file_button):
+        assert w.states == ["disabled", "normal"], w.states
+    assert gui.lcr_cb.states == ["disabled", "readonly"]
+    assert gui.plot_freq_cb.states == []         # live plot choice stays
+    src = inspect.getsource(mod.Integrated_CT_GUI.start_measurement)
+    assert "_set_inputs_enabled(False)" in src
+    src = inspect.getsource(mod.Integrated_CT_GUI._finalize_stop)
+    assert "_set_inputs_enabled(True)" in src
+
+
+def test_closing_waits_for_a_worker_left_in_reconnect():
+    gui = _bare_gui()
+    gui.is_running = gui.is_stabilizing = gui._stopping = False
+    alive = [True]
+    gui.measurement_thread = types.SimpleNamespace(
+        is_alive=lambda: alive[0])
+    pending, destroyed, closed = [], [], []
+    gui.root = types.SimpleNamespace(
+        after=lambda ms, fn: pending.append(fn),
+        destroy=lambda: destroyed.append(True))
+    gui.backend = types.SimpleNamespace(
+        close_instruments=lambda: closed.append(True))
+    gui._on_closing()
+    assert destroyed == [] and len(pending) == 1
+    alive[0] = False
+    pending.pop()()
+    assert closed == [True] and destroyed == [True]
+
+
+def test_a_same_name_t_log_is_never_truncated():
+    with tempfile.TemporaryDirectory() as tmp:
+        old = os.path.join(tmp, "S_T-log.txt")
+        with open(old, "w") as fh:
+            fh.write("run 1 history\n")
+        gui = _files(tmp, frequencies=[100000.0])
+        assert open(old).read() == "run 1 history\n"
+        assert gui.t_log_path != old
+
+
+def test_start_retries_last_runs_rows_before_dropping_them():
+    with tempfile.TemporaryDirectory() as tmp:
+        target = os.path.join(tmp, "old-1000Hz_pica_format.dat")
+        gui = _start_gui(tmp)
+        gui._pending_rows = mod.deque([(target, "row\n"),
+                                       (os.path.join(tmp, "gone", "x"),
+                                        "lost\n")])
+        gui._write_error_logged = True
+        gui.windeta_filepaths = {}
+
+        def _stop_here(params):
+            raise ValueError("stop the start here")
+        gui._create_per_frequency_files = _stop_here
+        # The retry now runs on CONNECTED, after the instruments answered.
+        gui.stop_event = threading.Event()
+        gui.is_stabilizing = True
+        gui._run_params = {"sample_name": "S"}
+        try:
+            gui._on_connected()
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("the file step was expected to stop it")
+        assert open(target).read() == "row\n"
+    assert not gui._pending_rows
+    assert any("1 row(s) from the previous run" in m for m in gui.logged)
+
+
+def test_auto_scale_never_hides_negative_points():
+    class _Ax:
+        def __init__(self):
+            self.scales = []
+
+        def set_yscale(self, s):
+            self.scales.append(s)
+
+        def __getattr__(self, name):
+            return lambda *a, **k: None
+    gui = _bare_gui()
+    gui._decade_ylims, gui._log_hidden_warned = {}, set()
+    gui.y_scale_var = types.SimpleNamespace(get=lambda: "auto")
+    ax = _Ax()
+    assert gui._apply_y_scale(ax, [1e-12, 1e-9, -1e-11], "cp") is False
+    assert ax.scales == ["linear"]
+    gui.y_scale_var = types.SimpleNamespace(get=lambda: "log")
+    assert gui._apply_y_scale(ax, [1e-12, 1e-9, -1e-11], "cp") is True
+    gui._apply_y_scale(ax, [1e-12, 1e-9, -1e-11], "cp")
+    assert len([m for m in gui.logged if "hides 1 point" in m]) == 1
+
+
+def test_one_temperature_still_gets_a_visible_x_range():
+    limits = []
+    gui = _bare_gui()
+    gui.plot_freq = 1000.0
+    gui.data_storage = {"cp": {1000.0: {"T": [80.0], "v": [1e-12]}}}
+    gui._apply_y_scale = lambda *a: False
+    gui.ax_main = types.SimpleNamespace(
+        set_xlim=lambda lo, hi: limits.append((lo, hi)))
+    gui._rescale_main_axis()
+    assert limits == [(79.5, 80.5)]
+
+
+def test_panel_theme_and_wheel_are_wired():
+    src = open(PATH, encoding="utf-8").read()
+    assert 'option_add("*Label.background"' in src
+    assert "'TRadiobutton'" in src and "'Graph.TRadiobutton'" in src
+    assert 'bind_all("<MouseWheel>"' in src
+
+
+# --- connect / initialise on the worker thread (27 Oct 2026) ---------------
+
+class _FakeThread:
+    """threading.Thread stand-in: records the target, never runs it."""
+    made = []
+
+    def __init__(self, target=None, args=(), daemon=None):
+        self.target, self.args = target, args
+        self.started = False
+        _FakeThread.made.append(self)
+
+    def start(self):
+        self.started = True
+
+    def is_alive(self):
+        return False
+
+
+def _connect_gui(**attrs):
+    """A bare GUI with the widgets the Start / stop paths touch."""
+    gui = _bare_gui()
+    gui.stop_event = threading.Event()
+    gui._files_ready = threading.Event()
+    gui.data_queue = queue.Queue()
+    gui._pending_rows = mod.deque()
+    gui._write_error_logged = False
+    gui._stopping = gui._close_after_stop = False
+    gui.is_running = gui.is_stabilizing = False
+    gui.frequencies = [1000.0]
+    gui.locks, gui.awake = [], []
+    gui._set_inputs_enabled = gui.locks.append
+    gui._set_keep_awake = gui.awake.append
+    gui._beep = lambda times=1: None
+    gui.start_button, gui.stop_button, gui.scan_button = (
+        _Text(), _Text(), _Text())
+    for k, v in attrs.items():
+        setattr(gui, k, v)
+    return gui
+
+
+def test_start_on_the_tk_thread_never_connects():
+    _FakeThread.made = []
+    afters = []
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _start_gui(tmp)
+        gui.stop_event = threading.Event()
+        gui._files_ready = threading.Event()
+        gui.data_storage = {}
+        gui._decade_ylims, gui._log_hidden_warned = set(), set()
+        gui.ax_main = gui.line_main = gui.line_sub1 = gui.line_sub2 = (
+            _Recorder())
+        gui.canvas = _Recorder()
+        gui.start_button, gui.stop_button, gui.scan_button = (
+            _Text(), _Text(), _Text())
+        gui.locks, gui.awake = [], []
+        gui._set_inputs_enabled = gui.locks.append
+        gui._set_keep_awake = gui.awake.append
+        gui.root = types.SimpleNamespace(
+            after=lambda ms, fn: afters.append(fn))
+        with patch.object(mod.threading, "Thread", _FakeThread), \
+                patch.object(mod, "messagebox", None):
+            gui.start_measurement()
+        files = os.listdir(tmp)
+    assert gui.inits == [], "Start must not connect on the Tk thread"
+    assert files == [], "files are created only after CONNECTED"
+    (thread,) = _FakeThread.made
+    assert thread.started and thread.target == gui._run_worker
+    assert thread.args[0]["lcr_visa"] == "GPIB0::10::INSTR"
+    assert gui.statuses[-1].startswith("Status: CONNECTING")
+    assert gui.locks == [False] and gui.awake == [True]
+    assert gui.is_stabilizing and not gui.is_running
+    assert gui.start_button.states[-1] == "disabled"
+    assert gui.stop_button.states[-1] == "normal"
+    assert afters == [gui._process_data_queue]
+
+
+def test_stop_during_the_alpha_reset_wait_ends_the_worker_quickly():
+    from alphaan_port_test_support import ALPHA_IDN, FakeRM, FakeVisaError
+    fake = FakeAlpha({"*IDN?": [ALPHA_IDN] + [
+        FakeVisaError(mod.VI_ERROR_TMO)] * 100000})
+    combined = mod.Combined_Backend()
+    combined.lcr = mod.AlphaAN_Backend.__new__(mod.AlphaAN_Backend)
+    combined.lcr.instrument = None
+    combined.lcr.params = {}
+    combined.lcr.rm = FakeRM(fake)
+    combined.lcr._task_may_be_running = False
+    visa = FakePyvisa()
+    gui = _connect_gui(backend=combined)
+    with patch.object(mod, "pyvisa", visa), \
+            patch.object(mod.time, "sleep", lambda s: None), \
+            patch("builtins.print", lambda *a, **k: None):
+        worker = threading.Thread(target=gui._run_worker,
+                                  args=(dict(PARAMS),), daemon=True)
+        worker.start()
+        deadline = time.monotonic() + 10.0
+        while (fake.commands.count("*IDN?") < 3
+               and time.monotonic() < deadline):
+            threading.Event().wait(0.01)   # time.sleep is patched out
+        assert "*RST" in fake.commands, "never reached the *RST wait"
+        stopped_at = time.monotonic()
+        gui.stop_event.set()                      # Stop pressed
+        worker.join(5.0)
+        took = time.monotonic() - stopped_at
+        assert not worker.is_alive() and took < 2.0, took
+        (session,) = visa.sessions
+        assert session.writes == ["RANGE 1,0"], session.writes  # zero range
+        assert "MODE=IMP" not in fake.commands
+        msgs = []
+        while not gui.data_queue.empty():
+            msgs.append(gui.data_queue.get_nowait())
+        assert all(isinstance(m, str) for m in msgs), msgs
+        assert any("Stopped while connecting" in m for m in msgs), msgs
+        # The normal stop path then closes what was opened, safely.
+        combined.close_instruments()
+    assert session.writes == ["RANGE 1,0", "RANGE 1,0"] and session.closed
+    assert not any(w.startswith(("*RST", "HTRSET", "RAMP", "SETP"))
+                   for w in session.writes), session.writes
+    # The Alpha was still rejoining: nothing but the rejoin *IDN? polls
+    # goes to it after the *RST, and the session is simply closed.
+    after = fake.commands[fake.commands.index("*RST") + 1:]
+    assert set(after) == {"*IDN?"}, after
+    assert fake.closed and combined.lcr.instrument is None
+
+
+class _GoneAfterReset(FakeAlpha):
+    """An Alpha that stops answering once *RST is written: every later
+    transfer hangs (64-bit Keysight VISA) for 0.5 s and then times out."""
+
+    def __init__(self):
+        super().__init__()
+        self.reset = False
+
+    def write(self, command):
+        if self.reset:
+            self.traffic.append(("write", command))
+            time.sleep(0.5)
+            from alphaan_port_test_support import FakeVisaError
+            raise FakeVisaError(mod.VI_ERROR_TMO)
+        super().write(command)
+        if command == "*RST":
+            self.reset = True
+
+    def query(self, command):
+        if self.reset:
+            self.traffic.append(("query", command))
+            from alphaan_port_test_support import FakeVisaError
+            if command != "*IDN?":
+                time.sleep(0.5)
+            raise FakeVisaError(mod.VI_ERROR_TMO)
+        return super().query(command)
+
+
+def test_stop_during_the_reset_rejoin_closes_without_talking_to_the_alpha():
+    fake = _GoneAfterReset()
+    backend, _ = connected_backend(mod, fake)
+    backend.stop_event = threading.Event()
+    timer = threading.Timer(0.2, backend.stop_event.set)    # Stop pressed
+    timer.start()
+    lines = []
+    try:
+        with patch("builtins.print", lambda *a, **k: lines.append(
+                " ".join(str(x) for x in a))):
+            try:
+                backend.initialize_instrument({})
+            except mod.StopRequested:
+                pass
+            else:
+                raise AssertionError("Stop must end the *RST rejoin wait")
+            assert backend._alpha_rebooting
+            started = time.monotonic()
+            backend.close_instrument()
+            took = time.monotonic() - started
+    finally:
+        timer.cancel()
+    assert took < 0.3, took
+    assert fake.commands == ["*RST"], fake.commands  # nothing after *RST
+    assert fake.closed and backend.instrument is None
+    assert not backend._alpha_rebooting
+    assert any("Alpha still resetting after *RST - closing the session "
+               "without shutdown commands" in m for m in lines), lines
+    backend.close_instrument()                  # idempotent, never raises
+
+
+def test_a_completed_rejoin_gets_the_normal_shutdown():
+    backend, fake = connected_backend(mod)
+    with patch.object(mod.time, "sleep", lambda s: None),             patch("builtins.print", lambda *a, **k: None):
+        backend._reset_and_set_impedance_mode()
+        assert not backend._alpha_rebooting
+        backend.close_instrument()
+    after = fake.commands[fake.commands.index("MODE=IMP") + 1:]
+    assert after == ["ACV=0", "ZCONSPL=0", "*RST"], after
+    assert fake.closed
+
+
+def test_a_connect_failure_resets_the_ui_and_shows_error():
+    def fail(params, stop_event=None):
+        raise ConnectionError("The Alpha did not answer")
+    closed, afters = [], []
+    gui = _connect_gui(
+        backend=types.SimpleNamespace(
+            initialize_instruments=fail, params={},
+            close_instruments=lambda: closed.append(True)),
+        is_stabilizing=True,
+        root=types.SimpleNamespace(after=lambda ms, fn: afters.append(fn)))
+    gui.measurement_thread = threading.Thread(
+        target=gui._run_worker, args=(dict(PARAMS),), daemon=True)
+    gui.measurement_thread.start()
+    gui.measurement_thread.join(5.0)
+    assert not gui.measurement_thread.is_alive()
+    shown = []
+    box = types.SimpleNamespace(
+        showerror=lambda *a: shown.append(("showerror", a)),
+        showinfo=lambda *a: shown.append(("showinfo", a)))
+    with patch.object(mod, "messagebox", box):
+        gui._process_data_queue()
+    assert any(s.startswith("Status: ERROR") and "did not answer" in s
+               for s in gui.statuses), gui.statuses
+    assert gui.statuses[-1].startswith("Status: ERROR")
+    assert any("ERROR during startup" in m and "Traceback" in m
+               for m in gui.logged)
+    assert gui.locks == [True] and closed == [True]
+    assert gui.awake == [False]
+    assert gui.start_button.states[-1] == "normal"
+    assert not (gui.is_running or gui.is_stabilizing)
+    assert gui.stop_event.is_set() and not gui._files_ready.is_set()
+    assert [c[0] for c in shown] == ["showerror"]   # at Start
+    assert "did not answer" in shown[0][1][1]
+    assert afters == [], "the pump must not keep running"
+
+
+def test_stop_before_connected_is_handled_creates_no_files():
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _connect_gui(file_location_path=tmp)
+        gui.stop_event.set()
+        gui._on_connected()
+        assert os.listdir(tmp) == []
+    assert not gui._files_ready.is_set() and not gui.is_running
+
+
+def test_the_worker_waits_for_the_files_before_the_first_sweep():
+    order = []
+    gui = _connect_gui(backend=types.SimpleNamespace(
+        initialize_instruments=lambda p, ev: order.append("init")))
+    gui._measurement_worker = lambda: order.append("run")
+    worker = threading.Thread(target=gui._run_worker, args=({},),
+                              daemon=True)
+    worker.start()
+    assert gui.data_queue.get(timeout=5.0) == "CONNECTED"
+    assert order == ["init"]                  # no sweep before the files
+    gui._files_ready.set()
+    worker.join(5.0)
+    assert order == ["init", "run"] and not worker.is_alive()
+
+
+def test_connected_creates_the_files_and_starts_the_run():
+    params = _out_params()
+    with tempfile.TemporaryDirectory() as tmp:
+        gui = _connect_gui(file_location_path=tmp, is_stabilizing=True,
+                           _run_params=params,
+                           frequencies=params["frequencies"],
+                           c0_farads=mod.c0_from_params(params),
+                           plot_freq=1000.0, ax_main=_Recorder(),
+                           canvas=_Recorder())
+        gui._populate_plot_freq_dropdown = lambda: None
+        gui._on_connected()
+        assert gui._files_ready.is_set()
+        assert gui.is_running and not gui.is_stabilizing
+        assert gui.statuses[-1] == "Status: RUNNING"
+        assert len(gui.freq_filepaths) == 2
+        assert all(os.path.exists(p) for p in gui.freq_filepaths.values())
 
 
 if __name__ == "__main__":

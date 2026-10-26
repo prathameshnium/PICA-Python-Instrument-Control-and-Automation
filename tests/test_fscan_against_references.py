@@ -339,15 +339,19 @@ def run_header_format():
             fscan.WINDETA_HEADER.split("\t")[6].strip().startswith("Zp'"),
         )
         check(
-            "PICA_HEADER order mirrors WINDETA_HEADER (Zp before Sig)",
-            fscan.PICA_HEADER.split("\t")[6:8] == ["Zp'", "Zp''"],
+            "PICA_HEADER is the Step Fscan LCR layout minus T_set (19)",
+            fscan.PICA_HEADER == (
+                "Frequency\tQ\tD\tG(1/Rp)\tB\tCp\tLp\tCs\tLs\tlZl\ttheta\t"
+                "chi\tR(Rs)\ttheta(deg.)\tRp\t1/lZl\tOmega\tCp''\tCs''"
+            ) and len(fscan.PICA_HEADER.split("\t")) == 19,
         )
 
-        # A written row: 11 x %.5e (WinDETA) and 13 (PICA, + Cp, G).
+        # A written row: 11 x %.5e (WinDETA) and 19 (PICA LCR layout).
         row = fscan.impedance_to_dielectric(1e5, -1e6, 20.0, gui.c0_farads)
         extra = fscan.loss_phase_cp_g(1e5, -1e6, 20.0)
-        gui._write_row(row, extra)
-        win_row, pica_row = fscan.file_rows(row, extra)
+        derived = fscan.derived_columns(20.0, 1e5, -1e6)
+        gui._write_row(row, extra, derived)
+        win_row, pica_row = fscan.file_rows(row, extra, derived)
         data_line = Path(gui.txt_filepath).read_text(
             encoding="utf-8"
         ).splitlines()[3]
@@ -360,8 +364,9 @@ def run_header_format():
             encoding="utf-8"
         ).splitlines()[-1]
         check(
-            "PICA data row is the WinDETA row plus Cp and G (13 values)",
-            len(pica_row) == 13 and pica_row[:11] == win_row
+            "PICA data row is Frequency + the 18 derived values (19)",
+            len(pica_row) == 19 and pica_row[0] == win_row[0]
+            and list(pica_row[1:]) == list(derived)
             and dat_line == "\t".join(f"{v:.5e}" for v in pica_row),
         )
 
@@ -391,7 +396,7 @@ def run_header_format():
         only_pica = base_params()
         only_pica["save_windeta"] = False
         gui._open_output_files(only_pica)
-        gui._write_row([1.0] * 9, [1.0] * 4)
+        gui._write_row([1.0] * 9, [1.0] * 4, [1.0] * 18)
         check(
             "unticked WinDETA format writes no .txt",
             gui.txt_filepath == ""
@@ -518,9 +523,9 @@ def dry_run_preset(preset_name):
         while not gui.data_queue.empty():
             kind, payload = gui.data_queue.get_nowait()
             if kind == "POINT":
-                _idx, row, extra, _ref = payload
+                _idx, row, extra, derived, _ref = payload
                 rows.append(row)
-                gui._write_row(row, extra)
+                gui._write_row(row, extra, derived)
             elif kind == "DONE":
                 done = True
             elif kind == "ERROR":

@@ -27,10 +27,12 @@ the same bus. The analyzer has DC bias (maximum not yet confirmed); this
 tool never sends DCV/DCE.
 
 Everything is printed and written to AlphaDiag_<date>_<time>.log next to
-this file. Send that log back.
+this file (or in the working / home folder if this one is read-only).
+Send that log back.
 '''
 import argparse
 import ctypes
+import math
 import os
 import platform
 import struct
@@ -57,17 +59,42 @@ ZRE_STATUS = {0: "invalid (buffer empty)", 1: "still in progress",
               "(reference)", 6: "signal source disconnected"}
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LOG_PATH = os.path.join(
-    HERE, f"AlphaDiag_{datetime.now():%Y%m%d_%H%M%S}.log")
-_log_file = open(LOG_PATH, "w", encoding="utf-8")
+LOG_NAME = f"AlphaDiag_{datetime.now():%Y%m%d_%H%M%S}.log"
+LOG_PATH = None                 # chosen by the first log() call
+_log_file = None
 T0 = time.monotonic()
+# Longest single --measure point allowed: it must finish inside the T300S
+# SRQ wait. Estimate = MTM + 3 signal periods.
+MEASURE_BUDGET_S = 250.0
+
+
+def open_log():
+    """Open the log next to this file, else in the working or home folder
+    (a read-only install folder must not kill the run before any output)."""
+    global LOG_PATH, _log_file
+    for folder in (HERE, os.getcwd(), os.path.expanduser("~")):
+        path = os.path.join(folder, LOG_NAME)
+        try:
+            _log_file = open(path, "w", encoding="utf-8")
+        except OSError:
+            continue
+        LOG_PATH = path
+        return path
+    LOG_PATH = ""                       # tried; console output only
+    return None
 
 
 def log(text=""):
     line = f"[{time.monotonic() - T0:8.3f}s] {text}" if text else ""
-    print(line)
-    _log_file.write(line + "\n")
-    _log_file.flush()
+    if _log_file is None and LOG_PATH is None:
+        open_log()
+    if _log_file is not None:
+        _log_file.write(line + "\n")
+        _log_file.flush()
+    try:
+        print(line)
+    except UnicodeEncodeError:          # redirected cp1252 console
+        print(line.encode("ascii", "backslashreplace").decode("ascii"))
 
 
 def section(title):
@@ -130,7 +157,8 @@ class Alpha:
 
     def __init__(self, g, board, pad):
         self.g = g
-        self.ud = g.ibdev(board, pad, 0, T10S, 1, 0)   # EOI on, no EOS
+        self.pad = pad
+        self.ud =g.ibdev(board, pad, 0, T10S, 1, 0)   # EOI on, no EOS
         log(f"ibdev(board={board}, pad={pad}, T10s, eot=1, eos=0) -> "
             f"ud={self.ud}" + ("" if self.ud >= 0 else
                                f"  FAILED iberr={g.err()}"))
@@ -153,7 +181,7 @@ class Alpha:
             return None
         raw = buf.raw[:self.g.cnt()]
         log(f"  READ  {raw!r} {sta_text(sta)} ({dt:.0f} ms)")
-        return raw.strip(b" \t\r\n\x00\x10").decode("ascii", "replace")
+        return raw.strip(b" \t\r\n\x00\x10").decode("ascii", "backslashreplace")
 
     def query(self, cmd):
         ok, _ = self.write(cmd)
@@ -287,12 +315,21 @@ def identify(alpha):
     log(f"IDN: {idn!r}")
     log(f"INTTYP: {inttyp!r}  (ZG4 = code 5)")
     alpha.poll()
-    return idn is not None
+    if idn is None:
+        return False
+    if "ALPHA" not in idn.upper():
+        # e.g. the E4991B at 17: never send *RST or set commands to it.
+        log(f"STOP: device at {alpha.pad} is not an Alpha (IDN={idn!r})")
+        return False
+    return True
 
 
 def reset_test(alpha, timeout_s=60):
     section("6. *RST RECOVERY TIMING")
-    alpha.write("*RST")
+    ok, err = alpha.write("*RST")
+    if not ok:
+        log(f"RESULT: *RST write failed iberr={err}")
+        return False
     t = time.monotonic()
     tries = 0
     while time.monotonic() - t < timeout_s:
@@ -300,11 +337,13 @@ def reset_test(alpha, timeout_s=60):
         tries += 1
         ok, err = alpha.write("*IDN?")
         if ok:
-            alpha.read()
-            log(f"RESULT: Alpha answered {time.monotonic() - t:.1f} s "
-                f"after *RST ({tries} attempts)")
-            return True
-        if err != 2:
+            if alpha.read() is not None:
+                log(f"RESULT: Alpha answered {time.monotonic() - t:.1f} s "
+                    f"after *RST ({tries} attempts)")
+                return True
+            continue                    # listening, still booting
+        # ENOL = not listening yet; EABO = addressed but not taking data.
+        if err not in (2, 6):
             log(f"RESULT: unexpected error iberr={err} while waiting")
             return False
     log(f"RESULT: no answer within {timeout_s} s after *RST")
@@ -318,20 +357,36 @@ def probe_unverified(alpha):
         log(f"  {cmd:10} -> {r!r}")
 
 
+def measure_problem(a):
+    """STOP line for an unusable --acv / --freq / --mtm, else None."""
+    if not (math.isfinite(a.acv) and 0 < a.acv <= 3.0):
+        return "STOP: --acv must be above 0 and <= 3 V here."
+    if not (math.isfinite(a.freq) and 3e-5 <= a.freq <= 4e6):
+        return "STOP: --freq must be 30 uHz..4 MHz here."
+    if not (math.isfinite(a.mtm) and a.mtm > 0):
+        return "STOP: --mtm must be above 0 s."
+    if a.mtm + 3.0 / a.freq > MEASURE_BUDGET_S:
+        return (f"STOP: --freq {a.freq:g} / --mtm {a.mtm:g} need over "
+                f"{MEASURE_BUDGET_S:.0f} s, past the 300 s SRQ wait.")
+    return None
+
+
 def measure(alpha, a):
+    """One point. Returns True once the *RST timing test has run."""
     section(f"8. ONE POINT: {a.freq:g} Hz, ACV={a.acv:g} V, MTM={a.mtm:g} s")
-    if a.acv > 3.0 or not 3e-5 <= a.freq <= 4e6:
-        log("STOP: ACV must be <= 3 V and freq 30 uHz..4 MHz here.")
-        return
+    problem = measure_problem(a)
+    if problem:
+        log(problem)
+        return False
     answer = input(f"Apply {a.acv:g} Vrms to the connected sample? "
                    "Type YES: ").strip()
     log(f"User answered {answer!r}")
     if answer != "YES":
         log("Skipped.")
-        return
+        return False
     try:
         if not reset_test(alpha):
-            return
+            return True
         time.sleep(1.0)
         for cmd in ("MODE=IMP", "INTTYP?", "ZREFMODE=-3", "ZLLCOR=1",
                     "ZSLCAL=1", f"FRS={a.wires}", "DRS=0 0",
@@ -340,14 +395,14 @@ def measure(alpha, a):
             r = alpha.query(cmd)
             if r is None or (cmd[-1] != "?" and r != "OK"):
                 log(f"STOP: {cmd} answered {r!r}")
-                return
+                return True
         alpha.poll()
         alpha.write("MST")
         if not alpha.wait_srq(T300S):
             log("No SRQ: aborting with MBK, then ZTSTAT?")
             alpha.query("MBK")
             alpha.query("ZTSTAT?")
-            return
+            return True
         alpha.poll()
         z = alpha.query("ZRE?")
         try:
@@ -357,6 +412,7 @@ def measure(alpha, a):
                 f"  ref={f[4]}")
         except Exception as e:
             log(f"Could not parse ZRE? reply {z!r}: {e}")
+        return True
     finally:
         log("Safe state:")
         alpha.query("ACV=0")
@@ -400,10 +456,9 @@ def main():
             return
         if a.probe_unverified:
             probe_unverified(alpha)
-        if a.reset_test and not a.measure:
+        ran_reset = a.measure and measure(alpha, a)
+        if a.reset_test and not ran_reset:
             reset_test(alpha)
-        if a.measure:
-            measure(alpha, a)
     finally:
         alpha.close()
 
@@ -416,7 +471,9 @@ if __name__ == "__main__":
         log("UNEXPECTED ERROR:\n" + traceback.format_exc())
     finally:
         log()
-        log(f"Log written to {LOG_PATH}")
-        _log_file.close()
+        log(f"Log written to {LOG_PATH}" if LOG_PATH else
+            "Log NOT written: no writable folder found")
+        if _log_file is not None:
+            _log_file.close()
         if os.name == "nt" and sys.stdin and sys.stdin.isatty():
             input("Press Enter to close...")

@@ -171,9 +171,23 @@ STB_TASK_DONE = 0x01     # Alpha: task finished (only checked after SRQ)
 STB_MAV = 0x10           # message available: a response is already waiting
 STB_RQS = 0x40           # service requested (SRQ raised)
 
+# Forced window close: the worker gets this long to abort (MBK) and park the
+# analyzer before the window goes; polled every CLOSE_POLL_MS. A REF or
+# load-short wait answers within one CAL_WAIT_SLICE_S slice, an open point
+# within one slice too; the rest covers MBK/ACV=0/ZCONSPL=0 acks.
+CLOSE_WAIT_S = 30.0
+CLOSE_POLL_MS = 200
+
 
 class CalibrationCancelled(RuntimeError):
-    """The operator pressed Cancel while a calibration task ran."""
+    """The operator pressed Cancel while a calibration task ran (or Stop
+    while an open-measurement point integrated). before_start: Cancel came
+    before the task command went out, so no stored data was touched."""
+
+    def __init__(self, message, before_start=False):
+        super().__init__(message)
+        self.before_start = before_start
+
 
 # Defaults for the open (empty-cell) measurement: the scan modules' own.
 DEFAULT_OPEN_ACV = 1.0
@@ -648,20 +662,27 @@ def parse_open_file(text):
     return meta, rows
 
 
-def measure_open_cell(backend, freqs, on_point=None, stop_event=None):
+def measure_open_cell(backend, freqs, on_point=None, stop_event=None,
+                      rows=None):
     """Measure the empty cell at every requested frequency.
 
     `backend` must already be initialised (initialize_instrument). Returns
     the list of open_row dicts. Status 6 (signal source disconnected) aborts
     with RuntimeError; any other non-valid status is kept in the row and
     flagged by its Status column. on_point(i, n, row) is called after each
-    point; a set stop_event ends the loop between points.
+    point; a set stop_event ends the loop between points, or aborts the
+    point in progress (MBK) and drops it. Pass `rows` (a list) to keep the
+    points already measured when a later point raises.
     """
-    rows = []
+    rows = [] if rows is None else rows
     for i, f in enumerate(freqs, start=1):
         if stop_event is not None and stop_event.is_set():
             break
-        zr, zi, f_actual, status, ref = backend.measure_point(f)
+        try:
+            zr, zi, f_actual, status, ref = backend.measure_point(
+                f, stop_event=stop_event)
+        except CalibrationCancelled:
+            break                 # Stop during the point: dropped
         if status in STATUS_FATAL:
             raise RuntimeError(
                 f"ZRE? status {status} at {f:g} Hz: {status_message(status)}. "
@@ -1005,6 +1026,51 @@ class AlphaAN_Backend:
                   f"(bit 0 not set).")
         return stb
 
+    def _wait_for_srq_stoppable(self, timeout_s, context, stop_event):
+        """_wait_for_srq for a measurement point that Stop can end: the
+        same SRQ wait, cut into CAL_WAIT_SLICE_S slices with stop_event
+        checked between them. Nothing is sent or serial-polled between
+        slices (no bus traffic while the point integrates). On Stop the
+        point is aborted with MBK and CalibrationCancelled is raised."""
+        inst = self.instrument
+        deadline = time.monotonic() + timeout_s
+        while True:
+            if stop_event.is_set():
+                state = self.abort_and_diagnose()
+                raise CalibrationCancelled(
+                    f"{context} stopped by the operator. Aborted (MBK). "
+                    f"ZTSTAT? reports: {state}.")
+            remaining = max(0.0, deadline - time.monotonic())
+            slice_ms = max(1, int(min(CAL_WAIT_SLICE_S, remaining) * 1000))
+            try:
+                inst.wait_for_srq(slice_ms)
+            except Exception as exc:
+                code = visa_error_code(exc)
+                slice_over = code is None or code == VI_ERROR_TMO
+                if slice_over and time.monotonic() < deadline:
+                    continue      # no SRQ in this slice: wait on
+                state = self.abort_and_diagnose()
+                raise TimeoutError(
+                    f"No SRQ within {timeout_s:.0f} s during {context}. "
+                    f"Aborted (MBK). ZTSTAT? reports: {state}. "
+                    f"Underlying: {exc}")
+            break
+        self._task_may_be_running = False
+        stb = inst.read_stb()
+        if not stb & 0x01:
+            print(f"  WARNING: SRQ during {context} with STB=0x{stb:02X} "
+                  f"(bit 0 not set).")
+        return stb
+
+    @staticmethod
+    def _raise_if_cancelled(stop_event, context):
+        """Cancel pressed before a calibration task command went out: stop
+        here, so a cancelled calibration never starts replacing data."""
+        if stop_event is not None and stop_event.is_set():
+            raise CalibrationCancelled(
+                f"{context} cancelled by the operator before it started; "
+                f"no calibration command was sent.", before_start=True)
+
     def _wait_for_cal_task(self, timeout_s, context, stop_event=None):
         """SRQ wait for a calibration task (REF, SL_SHORT, SL_100) that
         cannot hang: the wait runs in CAL_WAIT_SLICE_S slices, and between
@@ -1127,11 +1193,14 @@ class AlphaAN_Backend:
         if code != ZG4_INTERFACE_CODE:
             raise ConnectionError(f"ZG4 not present (INTTYP code {code}).")
 
+        # Cancel pressed during the *RST preamble: nothing is armed yet.
+        self._raise_if_cancelled(stop_event, "REF calibration")
         # REF_INIT acknowledges IMMEDIATELY (no SRQ) - it only arms the
         # calibration. REF is the actual task: its 'OK'/error ack is written
         # to the buffer only when the task finishes, signalled by SRQ.
         self._exec("ZRUNCAL=REF_INIT")
 
+        self._raise_if_cancelled(stop_event, "REF calibration")
         inst.read_stb()        # clear stale status before the task starts
         self._task_may_be_running = True
         inst.write("ZRUNCAL=REF")
@@ -1144,14 +1213,15 @@ class AlphaAN_Backend:
                 f"REF calibration finished with {ack!r} ({meaning})."
             )
 
-    def begin_load_short_calibration(self):
+    def begin_load_short_calibration(self, stop_event=None):
         """*RST, confirm the ZG4, then arm the load-short calibration.
 
         Same preamble as run_reference_calibration (the manual recommends
         *RST immediately before a calibration; it preserves the stored
         calibration tables). ZRUNCAL=SL_INIT acknowledges IMMEDIATELY, like
         REF_INIT. Command arguments from JUMP (see the module docstring);
-        not yet checked against the Alpha manual.
+        not yet checked against the Alpha manual. A set stop_event (Cancel
+        during the *RST preamble) raises CalibrationCancelled before SL_INIT.
         """
         inst = self.instrument
         self._reset_and_set_impedance_mode()
@@ -1160,6 +1230,7 @@ class AlphaAN_Backend:
         if code != ZG4_INTERFACE_CODE:
             raise ConnectionError(f"ZG4 not present (INTTYP code {code}).")
 
+        self._raise_if_cancelled(stop_event, "Load-short calibration")
         self._exec("ZRUNCAL=SL_INIT")
 
     def run_load_short_step(self, step, timeout_s=SRQ_TIMEOUT_SL_S,
@@ -1178,6 +1249,8 @@ class AlphaAN_Backend:
         if inst is None:
             raise ConnectionError("Instrument is not connected.")
 
+        self._raise_if_cancelled(stop_event,
+                                 f"Load-short calibration ({step})")
         inst.read_stb()        # clear stale status before the task starts
         self._task_may_be_running = True
         inst.write(f"ZRUNCAL={step}")
@@ -1251,11 +1324,14 @@ class AlphaAN_Backend:
 
     # --- per-point -------------------------------------------------------
 
-    def measure_point(self, freq, timeout_s=None):
+    def measure_point(self, freq, timeout_s=None, stop_event=None):
         """Set frequency, trigger one point, wait for SRQ, read the result.
 
         Returns (Zs', Zs'', f_actual, status, ref). The caller must use
         f_actual - not the requested frequency - for the conversion.
+        With a stop_event, Stop aborts the point within one wait slice
+        (MBK, CalibrationCancelled): a slow custom-list point or a long MTM
+        could otherwise hold the wait for an hour or more.
         """
         inst = self.instrument
         if inst is None:
@@ -1271,7 +1347,11 @@ class AlphaAN_Backend:
         # MST leaves NO buffered ack (unlike set commands): completion is
         # signalled by SRQ and the result is fetched with ZRE?.
         inst.write("MST")
-        self._wait_for_srq(timeout_s, f"measurement at {freq:.6g} Hz")
+        if stop_event is None:
+            self._wait_for_srq(timeout_s, f"measurement at {freq:.6g} Hz")
+        else:
+            self._wait_for_srq_stoppable(
+                timeout_s, f"measurement at {freq:.6g} Hz", stop_event)
 
         # ZRE? also clears status bit 0.
         return parse_zre(inst.query("ZRE?"))
@@ -1383,8 +1463,14 @@ class CalibrationGUI:
         self.plan = []                     # step indices chosen in step 2
         self.results = {}                  # what happened, for the Done screen
         self.sl_phase = 0                  # index into LOAD_SHORT_STEPS
+        # True from SL_INIT until SL_100 succeeds: the analyzer's load-short
+        # data may be half replaced (sl_phase is reset to 0 on a failure).
+        self.sl_dirty = False
         self.stop_event = threading.Event()
-        self._close_requested = False
+        self._close_warned = False         # first window-close click seen
+        self._close_requested = False      # forced close: abort and quit
+        self._close_after_id = None
+        self._close_deadline = 0.0
         self._release_pending = False      # park + release once idle
         self.step = 0
         self.logo_image = None
@@ -1683,7 +1769,9 @@ class CalibrationGUI:
         self.progress_ref.pack(anchor='w')
         row = tk.Frame(fr, bg=self.CLR_BG_DARK)
         row.pack(fill='x', pady=(10, 0))
-        ttk.Button(row, text="◀ Back", command=lambda: self._show_step(1)).pack(side='left')
+        self.btn_ref_back = ttk.Button(row, text="◀ Back",
+                                       command=lambda: self._show_step(1))
+        self.btn_ref_back.pack(side='left')
         self.btn_ref_go = ttk.Button(row, text="Continue: run REF now  ▶",
                                      style='Go.TButton', command=self._do_ref)
         self.btn_ref_go.pack(side='left', padx=(10, 0))
@@ -1839,6 +1927,10 @@ class CalibrationGUI:
             os.fsync(fh.fileno())
 
     def _browse(self):
+        if self.busy:
+            # The running step's files live in the current folder.
+            self.log("Busy: wait for the current step to finish.")
+            return
         p = filedialog.askdirectory()
         if p:
             self.dest_folder = p
@@ -2000,6 +2092,8 @@ class CalibrationGUI:
         elif kind == "slphase":
             self.sl_phase = payload
             self._show_sl_phase()
+        elif kind == "sldirty":
+            self.sl_dirty = payload
         elif kind == "refage":
             self.ref_age.config(text=payload)
         elif kind == "plot":
@@ -2020,6 +2114,10 @@ class CalibrationGUI:
             self.btn_open_stop.config(state='disabled')
             self.btn_ref_cancel.config(state='disabled')
             self.btn_sl_cancel.config(state='disabled')
+            self.btn_ref_back.config(state='normal')
+            self._close_warned = False     # the step ended; window still open
+            if self._close_requested:
+                self._release_pending = False   # the closing path parks it
             if self._release_pending:
                 self._release_pending = False
                 self._run_worker(self._worker_release)
@@ -2032,6 +2130,12 @@ class CalibrationGUI:
         if self.busy:
             self.log("Busy: wait for the current step to finish.")
             return
+        if not os.path.isdir(self.dest_folder):
+            self.paths = {}
+            self.log(f"ERROR: the folder {self.dest_folder} is not there "
+                     "(drive removed or share offline). Choose another folder.")
+            self._set_headline("Cannot write to the chosen folder.", ok=False)
+            return
         self.tag = "AlphaAN_Calibration_" + datetime.now().strftime("%Y%m%d_%H%M%S")
         base = os.path.join(self.dest_folder, self.tag)
         self.paths = {
@@ -2039,11 +2143,19 @@ class CalibrationGUI:
             "log": base + "_log.txt",
             "console": base + "_console.txt",
         }
-        self._durable_write(self.paths["console"], "Time\tW/Q/R/SRQ\tCommand\tReply\n")
-        for ln in self._console_buffer:
-            self._durable_append(self.paths["console"], ln)
-        self._console_buffer.clear()
-        self._durable_write(self.paths["log"], f"# {self.tag} log\n")
+        try:
+            self._durable_write(self.paths["console"],
+                                "Time\tW/Q/R/SRQ\tCommand\tReply\n")
+            for ln in self._console_buffer:
+                self._durable_append(self.paths["console"], ln)
+            self._console_buffer.clear()
+            self._durable_write(self.paths["log"], f"# {self.tag} log\n")
+        except OSError as e:
+            self.paths = {}            # log() must not try the dead files
+            self.log(f"ERROR: cannot write in {self.dest_folder}: {e}. "
+                     "Choose another folder.")
+            self._set_headline("Cannot write to the chosen folder.", ok=False)
+            return
         self.log(f"File set: {self.tag}_*.txt in {self.dest_folder}")
         self.results = {}
         self._run_worker(self._worker_connect, self._visa_addr())
@@ -2076,7 +2188,22 @@ class CalibrationGUI:
         self.btn_next1.config(state='normal')
 
     # ------------------------------------------------------------ step 2 -> plan
+    @staticmethod
+    def _parse_number(label, text, finite=False):
+        """float(text), or ValueError naming the input box."""
+        try:
+            value = float(str(text).strip())
+        except ValueError:
+            raise ValueError(f"{label}: {text!r} is not a number.") from None
+        if finite and not math.isfinite(value):
+            raise ValueError(f"{label}: {text!r} is not a finite number.")
+        return value
+
     def _go_plan(self):
+        if self.busy:
+            # A running step's 'advance' is judged against self.plan.
+            self.log("Busy: wait for the current step to finish.")
+            return
         if not self.connected:
             self.log("Connect first.")
             return
@@ -2088,13 +2215,16 @@ class CalibrationGUI:
         if self.do_open_var.get():
             try:
                 freqs = list(self._selected_open_freqs())
-                acv = float(self.acv_var.get())
-                mtm = float(self.mtm_var.get())
+                acv = self._parse_number("Open measurement AC level (Vrms)",
+                                         self.acv_var.get())
+                mtm = self._parse_number("Integration time MTM (s)",
+                                         self.mtm_var.get())
                 wires = self.wire_var.get()
                 # Checked here, BEFORE any open-measurement byte is sent
                 # (initialize_instrument checks again).
                 validate_alpha_parameters(freqs, acv, mtm, wires)
-                float(self.temp_var.get())
+                self._parse_number("Temperature (K)", self.temp_var.get(),
+                                   finite=True)
             except (ValueError, KeyError) as e:
                 self.log(f"Check the inputs: {e}")
                 return
@@ -2112,15 +2242,18 @@ class CalibrationGUI:
 
     def _skip(self, step):
         """Skip button. Refused while a step runs on the analyzer. Skipping
-        after the short part leaves the analyzer's load-short data half
-        replaced, so that is recorded as INCOMPLETE, not as skipped."""
+        once SL_INIT has gone out but before SL_100 succeeded leaves the
+        analyzer's load-short data half replaced, so that is recorded as
+        INCOMPLETE, not as skipped (sl_dirty: sl_phase is reset to 0 after a
+        failed or cancelled part, so it cannot tell)."""
         if self.busy:
             self.log("Busy: wait for the current step to finish.")
             return
-        if step == self.STEP_SL and self.sl_phase > 0:
-            self.log("WARNING: load-short INCOMPLETE. The short part is stored "
-                     "but the 100 Ohm part is not. Redo the load-short before "
-                     "any scan that uses ZSLCAL=1.")
+        if step == self.STEP_SL and (self.sl_dirty or self.sl_phase > 0):
+            self.log("WARNING: load-short INCOMPLETE. The load-short was "
+                     "started (ZRUNCAL=SL_INIT) but the 100 Ohm part did not "
+                     "finish, so the stored data may be half replaced. Redo "
+                     "the load-short before any scan that uses ZSLCAL=1.")
             self._set_headline("Load-short left INCOMPLETE. Redo it before "
                                "using ZSLCAL=1.", ok=False)
             try:
@@ -2129,8 +2262,9 @@ class CalibrationGUI:
                 pass
             self.sl_phase = 0
             self._show_sl_phase()
-            self._advance(step, "INCOMPLETE: short stored, 100 Ohm load not; "
-                                "redo load-short before any ZSLCAL=1 scan")
+            self._advance(step, "INCOMPLETE: started, 100 Ohm load part not "
+                                "stored; redo load-short before any ZSLCAL=1 "
+                                "scan")
             return
         self._advance(step, "skipped")
 
@@ -2174,6 +2308,7 @@ class CalibrationGUI:
             return
         self.stop_event.clear()
         self.btn_ref_cancel.config(state='normal')
+        self.btn_ref_back.config(state='disabled')   # re-enabled on idle
         self._run_worker(self._worker_ref)
 
     def _cancel_cal(self):
@@ -2187,7 +2322,7 @@ class CalibrationGUI:
         self.log("Cancel requested: aborting the calibration task (MBK) and "
                  "parking the analyzer…")
 
-    def _report_cancelled(self, what, progress_widget):
+    def _report_cancelled(self, what, progress_widget, before_start=False):
         """Worker side of Cancel: park, then tell the operator (no dialog)."""
         q = self.queue
         try:
@@ -2195,9 +2330,15 @@ class CalibrationGUI:
         except Exception:
             pass
         q.put(("progress", (progress_widget, f"{what} CANCELLED.")))
-        q.put(("log", f"{what} cancelled: task aborted (MBK), analyzer parked "
-                      "(ACV=0, ZCONSPL=0). Its stored data may be incomplete: "
-                      "run it again before relying on it, or Skip."))
+        if before_start:
+            q.put(("log", f"{what} cancelled before its calibration command "
+                          "was sent: the stored data is unchanged. Analyzer "
+                          "parked (ACV=0, ZCONSPL=0)."))
+        else:
+            q.put(("log", f"{what} cancelled: task aborted (MBK), analyzer "
+                          "parked (ACV=0, ZCONSPL=0). Its stored data may be "
+                          "incomplete: run it again before relying on it, or "
+                          "Skip."))
         q.put(("headline", (f"{what} cancelled. Run it again or Skip.", False)))
 
     def _worker_ref(self):
@@ -2210,10 +2351,11 @@ class CalibrationGUI:
         t0 = time.time()
         try:
             self.backend.run_reference_calibration(stop_event=self.stop_event)
-        except CalibrationCancelled:
+        except CalibrationCancelled as exc:
             if self._close_requested:
                 raise              # window closing: not a user Cancel
-            self._report_cancelled("REF calibration", self.progress_ref)
+            self._report_cancelled("REF calibration", self.progress_ref,
+                                   exc.before_start)
             return
         except Exception:
             q.put(("progress", (self.progress_ref, "REF FAILED. See the log.")))
@@ -2261,22 +2403,32 @@ class CalibrationGUI:
         q = self.queue
         step = LOAD_SHORT_STEPS[phase]
         label = LOAD_SHORT_LABELS[step]
-        if phase == 0:
-            q.put(("log", "Arming the load-short calibration (*RST, ZRUNCAL=SL_INIT)…"))
-            self.backend.begin_load_short_calibration()
-        q.put(("headline", (f"Load-short: calibrating with the {label}… hands away.", None)))
-        q.put(("progress", (self.progress_sl, f"ZRUNCAL={step} running…")))
-        q.put(("log", f"WRITE MOMENT: ZRUNCAL={step} — the analyzer now replaces "
-                      f"its stored load-short data ({label})."))
         t0 = time.time()
+        armed = phase > 0          # SL_INIT went out in an earlier part
         try:
+            if phase == 0:
+                q.put(("log", "Arming the load-short calibration (*RST, "
+                              "ZRUNCAL=SL_INIT)…"))
+                self.backend.begin_load_short_calibration(
+                    stop_event=self.stop_event)
+                # SL_INIT accepted: the stored data counts as half replaced
+                # until SL_100 succeeds (see _skip).
+                q.put(("sldirty", True))
+                armed = True
+            q.put(("headline", (f"Load-short: calibrating with the {label}… "
+                                "hands away.", None)))
+            q.put(("progress", (self.progress_sl, f"ZRUNCAL={step} running…")))
+            q.put(("log", f"WRITE MOMENT: ZRUNCAL={step} — the analyzer now "
+                          f"replaces its stored load-short data ({label})."))
+            t0 = time.time()
             self.backend.run_load_short_step(step, stop_event=self.stop_event)
-        except CalibrationCancelled:
+        except CalibrationCancelled as exc:
             # Start the load-short over from the short part next time.
             q.put(("slphase", 0))
             if self._close_requested:
                 raise              # window closing: not a user Cancel
-            self._report_cancelled(f"Load-short ({label})", self.progress_sl)
+            self._report_cancelled(f"Load-short ({label})", self.progress_sl,
+                                   exc.before_start and not armed)
             return
         except Exception:
             # Start the load-short over from the short part next time.
@@ -2297,6 +2449,7 @@ class CalibrationGUI:
             q.put(("headline", ("Load-short calibration stored. Disconnect the "
                                 "load standard.", True)))
             q.put(("slphase", 0))
+            q.put(("sldirty", False))      # both parts stored
             q.put(("advance", (self.STEP_SL, f"done at {stamp}")))
 
     # ------------------------------------------------------------ step 5: open
@@ -2313,7 +2466,8 @@ class CalibrationGUI:
 
     def _stop_open(self):
         self.stop_event.set()
-        self.log("Stop requested: the open measurement ends after this point.")
+        self.log("Stop requested: the point in progress is aborted (MBK) and "
+                 "the points measured so far are written.")
 
     def _worker_open(self, params, where, temp):
         q = self.queue
@@ -2334,23 +2488,41 @@ class CalibrationGUI:
                                 f"{row['c'] * 1e12:.4g} pF{flag}")))
             q.put(("plot", None))
 
+        # rows is ours, so the points measured before an error survive it.
+        rows, error = [], None
         try:
-            rows = measure_open_cell(self.backend, freqs, on_point, self.stop_event)
+            measure_open_cell(self.backend, freqs, on_point, self.stop_event,
+                              rows=rows)
+        except Exception as exc:
+            error = exc
         finally:
             self.backend.safe_state()
-        complete = len(rows) == len(freqs)
-        meta = {"written": datetime.now().isoformat(timespec='seconds'),
-                "idn": self.backend_idn(),
-                "acv_Vrms": f"{params['acv']:g}",
-                "mtm_s": f"{params['mtm']:g}",
-                "wire_mode": params["wire_mode"],
-                "instrument_settings": "ZREFMODE=-3 ZLLCOR=1 ZSLCAL=1 DRS=0 0",
-                "cell": ascii_text(where),
-                "temperature_K": ascii_text(temp),
-                "last_ref_cal": read_last_ref_cal() or "unknown",
-                "complete": "yes" if complete else
-                            f"no, stopped after {len(rows)} of {len(freqs)}"}
-        self._durable_write(self.paths["open"], format_open_file(rows, meta))
+        complete = error is None and len(rows) == len(freqs)
+        if error is not None:
+            state = (f"no, error after {len(rows)} of {len(freqs)}: "
+                     + ascii_text(str(error).splitlines()[0] if str(error)
+                                  else type(error).__name__))
+        elif complete:
+            state = "yes"
+        else:
+            state = f"no, stopped after {len(rows)} of {len(freqs)}"
+        if error is not None:
+            q.put(("progress", (self.progress_open,
+                                f"Open measurement FAILED after {len(rows)} "
+                                "points. See the log.")))
+            if rows:
+                try:
+                    self._durable_write(self.paths["open"], format_open_file(
+                        rows, self._open_meta(params, where, temp, state)))
+                    q.put(("log", f"Partial open data ({len(rows)} of "
+                                  f"{len(freqs)} points) written: "
+                                  f"{os.path.basename(self.paths['open'])}. "
+                                  "Do not use it as a full open correction."))
+                except OSError as w:
+                    q.put(("log", f"Could not write the partial open data: {w}"))
+            raise error
+        self._durable_write(self.paths["open"], format_open_file(
+            rows, self._open_meta(params, where, temp, state)))
         bad = sum(1 for r in rows if r["status"] != STATUS_RESULT_VALID)
         valid_c = sorted(r["c"] for r in rows
                          if r["status"] == STATUS_RESULT_VALID and math.isfinite(r["c"]))
@@ -2363,6 +2535,19 @@ class CalibrationGUI:
                             if complete else "Open measurement stopped.")))
         q.put(("headline", (f"Empty cell measured: {summary}.", bad == 0 and complete)))
         q.put(("advance", (self.STEP_OPEN, summary + ("" if complete else " (stopped)"))))
+
+    def _open_meta(self, params, where, temp, complete):
+        """Metadata block of the Zopen file; `complete` is its text."""
+        return {"written": datetime.now().isoformat(timespec='seconds'),
+                "idn": self.backend_idn(),
+                "acv_Vrms": f"{params['acv']:g}",
+                "mtm_s": f"{params['mtm']:g}",
+                "wire_mode": params["wire_mode"],
+                "instrument_settings": "ZREFMODE=-3 ZLLCOR=1 ZSLCAL=1 DRS=0 0",
+                "cell": ascii_text(where),
+                "temperature_K": ascii_text(temp),
+                "last_ref_cal": read_last_ref_cal() or "unknown",
+                "complete": complete}
 
     def backend_idn(self):
         return ascii_text(self.idn)
@@ -2403,9 +2588,26 @@ class CalibrationGUI:
                 "frequencies, AC level, integration time and wire mode.",
                 "Reconnect the sample before any sweep."]
         self._set_text(self.done_text, "\n".join(txt))
-        self._set_headline("Calibration finished. Reconnect the sample.", ok=True)
+        if self._results_have_warnings():
+            # A red headline set by the last step (INCOMPLETE, stopped,
+            # invalid points) must not turn green here.
+            self._set_headline("Calibration finished with warnings: see the "
+                               "list. Reconnect the sample.", ok=False)
+        else:
+            self._set_headline("Calibration finished. Reconnect the sample.",
+                               ok=True)
         self.log("Done. " + "; ".join(f"{k}: {v}" for k, v in self.results.items()))
         self._show_step(self.STEP_DONE)
+
+    def _results_have_warnings(self):
+        """True if any recorded outcome is not a clean 'done' or 'skipped':
+        INCOMPLETE load-short, a stopped open run, invalid open points."""
+        for outcome in self.results.values():
+            text = str(outcome).lower()
+            if any(w in text for w in ("incomplete", "stopped", "cancel",
+                                       "not valid", "fail", "error")):
+                return True
+        return False
 
     def _worker_release(self):
         self.backend.close_instrument()
@@ -2435,21 +2637,52 @@ class CalibrationGUI:
             self.log(f"Cannot open folder: {e}")
 
     def _on_closing(self):
-        if self.busy and not self._close_requested:
+        if self._close_requested:
+            return                         # already closing: waiting on it
+        if self.busy and not self._close_warned:
             self.log("A step is still running on the analyzer (a REF calibration "
                      "takes about 30 s); waiting for it is safer. Close again to "
                      "force: the analyzer is then aborted (MBK) and parked.")
-            self._close_requested = True   # second click closes
+            self._close_warned = True      # second click closes
             return
+        # Forced (or idle) close. The worker owns the VISA session while it
+        # lives: it aborts on stop_event and parks the analyzer itself (its
+        # error path calls safe_state). The Tk thread touches the analyzer
+        # only once the worker has finished (see _finish_close).
         self._close_requested = True
+        self._release_pending = False
         self.stop_event.set()
+        if self.worker is not None and self.worker.is_alive():
+            self.log(f"Closing: waiting up to {CLOSE_WAIT_S:.0f} s for the "
+                     "running step to abort and park the analyzer…")
+        self._close_deadline = time.monotonic() + CLOSE_WAIT_S
+        self._finish_close()
+
+    def _finish_close(self):
+        """Polled with a stored after id until the worker has gone, then
+        park and release the analyzer on this thread and destroy the root."""
+        self._close_after_id = None
+        alive = self.worker is not None and self.worker.is_alive()
+        if alive and time.monotonic() < self._close_deadline:
+            self._close_after_id = self.root.after(CLOSE_POLL_MS,
+                                                   self._finish_close)
+            return
         if self._poll_id is not None:
             try:
                 self.root.after_cancel(self._poll_id)
             except Exception:
                 pass
+            self._poll_id = None
         try:
-            self.backend.close_instrument()
+            if alive:
+                # Still blocked in a VISA call: two threads must not share
+                # the session, so it is left to the worker.
+                print(f"WARNING: the running step did not end within "
+                      f"{CLOSE_WAIT_S:.0f} s; closing without parking the "
+                      f"analyzer. Check it shows ACV=0 before touching the "
+                      f"sample.")
+            else:
+                self.backend.close_instrument()
         finally:
             self.root.destroy()
 

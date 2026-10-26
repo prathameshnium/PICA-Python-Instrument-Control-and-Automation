@@ -142,16 +142,44 @@ def test_plotter_reads_both_alpha_freqscan_output_formats():
     with tempfile.TemporaryDirectory() as d:
         gui = fscan_test.make_headless_gui(d)
         gui._open_output_files(fscan_test.base_params())
+        derived = [float(j + 1) for j in range(18)]
         for k in range(3):
             gui._write_row([20.0 * 1.4 ** k, 1e3, 2e2, 1e-4, 2e-5, 3e4, 4e5, 5e-6, -6e-7],
-                           [0.2, -89.9, 1e-9, 3e-5])
-        # WinDETA: Tan(Delta) after Eps'', Phi last (11); PICA adds Cp, G (13)
+                           [0.2, -89.9, 1e-9, 3e-5], derived)
+        # WinDETA: Tan(Delta) after Eps'', Phi last (11); PICA: Step Fscan
+        # LCR layout without T_set (19)
         for path, first, n in ((gui.txt_filepath, "Freq. [Hz]", 11),
-                               (gui.dat_filepath, "Frequency", 13)):
+                               (gui.dat_filepath, "Frequency", 19)):
             headers, _, data = reader._read_data_from_file(path)
             assert headers[0] == first and len(headers) == n, path
             assert data.shape == (3, n) and data[2, 0] == 39.2, path
-            assert data[0, 3] == 0.2 and data[0, 9] == -6e-7 and data[0, 10] == -89.9, path
+        headers, _, data = reader._read_data_from_file(gui.txt_filepath)
+        assert data[0, 3] == 0.2 and data[0, 9] == -6e-7 and data[0, 10] == -89.9
+        headers, _, data = reader._read_data_from_file(gui.dat_filepath)
+        assert headers[2] == "D" and headers[13] == "theta(deg.)" and headers[-1] == "Cs''"
+        assert list(data[1, 1:]) == derived
+
+
+def test_plotter_still_reads_older_alpha_freqscan_pica_files():
+    # .dat layouts written by earlier Fscan versions: 9 dielectric columns,
+    # then + Tan(Delta) and Phi (11), then + Cp and G (13)
+    reader = _plotter_reader()
+    old = ["Frequency", "Eps'", "Eps''", "Modulus'", "Modulus''", "Zp'", "Zp''",
+           "Sig'", "Sig''"]
+    layouts = (old, old[:3] + ["Tan(Delta)"] + old[3:] + ["Phi [Deg]"],
+               old[:3] + ["Tan(Delta)"] + old[3:] + ["Phi [Deg]", "Cp [F]", "G [S]"])
+    with tempfile.TemporaryDirectory() as d:
+        for cols in layouts:
+            n = len(cols)
+            path = os.path.join(d, f"old_{n}_pica_format.dat")
+            with open(path, "w", encoding="utf-8", newline="\r\n") as fh:
+                fh.write("# Sample: demo | ACV: 1.0 Vrms\n# Columns: old layout\n")
+                fh.write("\t".join(cols) + "\n")
+                for k in range(4):
+                    fh.write("\t".join(f"{(k + 1) * (j + 1):.5e}" for j in range(n)) + "\n")
+            headers, delim, data = reader._read_data_from_file(path)
+            assert headers == cols and delim == "\t", n
+            assert data.shape == (4, n) and data[3, n - 1] == 4.0 * n, n
 
 
 def test_plotter_reads_both_alpha_tscan_output_formats():
@@ -165,8 +193,8 @@ def test_plotter_reads_both_alpha_tscan_output_formats():
         gui._save_cycle_to_files({"points": [
             (300.0 + k, 1000.0, 1e5, -2e6, valid, 1000.0) for k in range(3)]})
         headers, _, data = reader._read_data_from_file(gui.windeta_filepaths[1000.0])
-        assert headers == ["Temp. [°C]", "Eps'", "Eps''"]
-        assert data.shape == (3, 3) and np.isclose(data[2, 0], 28.85)
+        assert headers == ["Temp. [°C]", "Eps'", "Eps''", "Tan(Delta)", "Phi [Deg]"]
+        assert data.shape == (3, 5) and np.isclose(data[2, 0], 28.85)
         headers, _, data = reader._read_data_from_file(gui.freq_filepaths[1000.0])
         assert headers[0] == "Temperature" and len(headers) == 19
         assert data.shape == (3, 19) and data[1, 0] == 301.0
@@ -182,7 +210,9 @@ def test_plotter_reads_both_alpha_step_freqscan_output_formats():
         for name in sorted(os.listdir(d)):
             headers, _, data = reader._read_data_from_file(os.path.join(d, name))
             if name.endswith("_windeta_format.txt"):
-                assert headers[0] == "Freq. [Hz]" and data.shape == (2, 9), name
+                # the Fscan's 11-column WinDETA layout
+                assert headers[0] == "Freq. [Hz]" and data.shape == (2, 11), name
+                assert headers[3] == "Tan(Delta)" and headers[10] == "Phi [Deg]", name
             else:
                 assert name.endswith("_pica_format.dat"), name
                 assert headers[0] == "Frequency" and data.shape == (2, 20), name
