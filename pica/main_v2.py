@@ -80,11 +80,13 @@ if _REPO_ROOT not in sys.path:
 # resolved script locations stay identical between v1 and v2.
 from pica.main import (
     resource_path,
-    run_script_process,
     launch_gpib_scanner,
     launch_plotter_utility,
     PICALauncherApp,
 )
+# The spawn target comes from a Tk-free module so a launched program does not
+# import tkinter, PIL and pica.main just to unpickle it (pica/spawn_target.py).
+from pica.spawn_target import run_script_process
 # What each program measures, which instruments it opens and what it asks
 # for -- the text behind the hover card in Advanced Options and the corpus
 # the Ctrl+F search ranks. Tk-free, so it is tested on its own.

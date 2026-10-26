@@ -436,7 +436,8 @@ def test_launch_script_accepts_and_forwards_argv():
 
 
 def test_run_script_process_puts_argv_into_sys_argv():
-    """v1's runner is what both launchers spawn; argv has to survive it."""
+    """v1's runner (v2 spawns its copy in pica/spawn_target.py); argv has
+    to survive it."""
     tree = ast.parse(V1_SOURCE)
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == "run_script_process":
@@ -444,6 +445,50 @@ def test_run_script_process_puts_argv_into_sys_argv():
             assert "sys" in body and "argv" in body
             return
     raise AssertionError("run_script_process not found in the v1 launcher")
+
+
+def test_v2_spawns_the_tk_free_runner():
+    """v2 must pickle pica.spawn_target.run_script_process, not pica.main's:
+    the spawned child imports whatever module defines the target."""
+    assert launcher.run_script_process.__module__ == "pica.spawn_target"
+
+
+def test_spawn_target_imports_no_tkinter_or_pil():
+    import subprocess
+    code = ("import sys; import pica.spawn_target; "
+            "bad = [m for m in ('tkinter', 'PIL', 'pica.main', 'pica.main_v2') "
+            "if m in sys.modules]; print(bad); sys.exit(1 if bad else 0)")
+    r = subprocess.run([sys.executable, "-c", code], cwd=REPO_ROOT,
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_spawn_target_runs_script_with_argv_in_its_own_folder(tmp_path=None):
+    import subprocess
+    import tempfile
+    folder = str(tmp_path) if tmp_path else tempfile.mkdtemp()
+    script = os.path.join(folder, "probe.py")
+    with open(script, "w") as f:
+        f.write("import os, sys\nprint(os.getcwd() == os.path.dirname("
+                "os.path.abspath(__file__)), sys.argv[1:], __name__)\n")
+    code = ("import sys; from pica.spawn_target import run_script_process; "
+            "run_script_process(sys.argv[1], ['a.txt', 'b.txt'])")
+    r = subprocess.run([sys.executable, "-c", code, script], cwd=REPO_ROOT,
+                       capture_output=True, text=True)
+    assert r.stdout.strip() == "True ['a.txt', 'b.txt'] __main__", r.stdout + r.stderr
+
+
+def test_run_pica_v2_imports_the_launcher_only_under_main_guard():
+    """With 'spawn' every launched module re-runs run_pica_v2.py as
+    __mp_main__; a top-level launcher import made each one load it."""
+    tree = ast.parse(open(os.path.join(REPO_ROOT, "run_pica_v2.py"),
+                          encoding="utf-8").read())
+    for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [a.name for a in node.names]
+            mod = getattr(node, "module", None) or ""
+            assert "pica" not in mod and not any("pica" in n for n in names), \
+                "run_pica_v2.py imports %s at top level" % (mod or names)
 
 
 if __name__ == "__main__":
