@@ -17,7 +17,7 @@
                    V = I R               -> 0.00564
                    f(x) = x^2 + 1
                    f(3)                  -> 10
-               "ans" is the value of the line above.
+               "ans" (or "_") is the value of the line above.
 
  SYNTAX:       ^ is a power (x^2); a number or a closing bracket followed by
                a name or "(" multiplies (2pi, 3(x+1), (a+b)(a-b)); the usual
@@ -257,7 +257,7 @@ def evaluate_lines(lines, degrees=False):
             if kind != 'empty':
                 out['latex'] = line_latex(kind, name, params, tree)
             if ans is not None:
-                names['ans'] = ans
+                names['ans'] = names['_'] = ans
             if kind == 'func':
                 if name in fns:
                     raise NameError(f"'{name}' is a built-in function")
@@ -304,7 +304,8 @@ def as_fraction(value, max_den=10000):
     if value == int(value):
         return None
     frac = Fraction(value).limit_denominator(max_den)
-    if abs(float(frac) - value) <= 1e-12 * max(1.0, abs(value)):
+    # Relative, not absolute: 1e-15 is not "0/1".
+    if frac and abs(float(frac) - value) <= 1e-12 * abs(value):
         return frac
     return None
 
@@ -339,6 +340,11 @@ def value_latex(value):
     if frac is not None:
         sign = '-' if frac < 0 else ''
         return f"{sign}\\frac{{{abs(frac.numerator)}}}{{{frac.denominator}}}"
+    return number_latex(value)
+
+
+def number_latex(value):
+    """The result as a typeset decimal, never a fraction."""
     text = format_number(value)
     m = re.fullmatch(r'(.*) × 10\^(-?\d+)', text)
     if m:
@@ -367,6 +373,8 @@ def _name_tex(name):
         return '\\' + name
     if name == 'inf':
         return r'\infty'
+    if name == '_':
+        return r'\_'
     base, _, sub = name.partition('_')
     base_tex = ('\\' + base) if base in _GREEK else (
         base if len(base) == 1 else r'\mathrm{' + base + '}')
@@ -667,9 +675,9 @@ class _Row:
         self.result = tk.Label(out, bg=CLR_PANEL2, fg=CLR_TEXT, anchor='e',
                                font=('Segoe UI', 12))
         self.result.pack(side='right')
-        self.decimal = tk.Label(out, bg=CLR_PANEL2, fg=CLR_TEXT_DIM, anchor='e',
-                                font=('Consolas', 10))
-        self.decimal.pack(side='right', padx=(0, 10))
+        self.fraction = tk.Label(out, bg=CLR_PANEL2, fg=CLR_TEXT_DIM, anchor='e',
+                                 font=('Consolas', 10))
+        self.fraction.pack(side='right', padx=(0, 10))
         self._images = []
         self._shown = None
         self.value = None
@@ -679,6 +687,7 @@ class _Row:
         e.bind("<Return>", lambda _e: app.new_row_after(self))
         e.bind("<KP_Enter>", lambda _e: app.new_row_after(self))
         e.bind("<Up>", lambda _e: app.move_focus(self, -1))
+        e.bind("<Shift-Up>", lambda _e: app.copy_line_above(self))
         e.bind("<Down>", lambda _e: app.move_focus(self, +1))
         e.bind("<BackSpace>", lambda _e: app.backspace(self))
         # Also replaces <KeyRelease> for this key, so it reschedules the update.
@@ -720,24 +729,29 @@ class _Row:
         if res['error']:
             self.result.configure(image="", text=res['error'], fg=CLR_HOVER,
                                   font=('Segoe UI', 10, 'italic'))
-            self.decimal.configure(text="")
+            self.fraction.configure(image="", text="")
             return
         if res['value'] is None:
             self.result.configure(image="", text="")
-            self.decimal.configure(text="")
+            self.fraction.configure(image="", text="")
             return
-        tex = "= " + value_latex(res['value'])
-        img = self._image(tex, 16, CLR_ACCENT)
+        # The decimal is the answer, shown large; the exact fraction, where
+        # the value is one, sits beside it smaller.
+        img = self._image("= " + number_latex(res['value']), 16, CLR_ACCENT)
         if img is not None:
             self.result.configure(image=img, text="")
         else:
             self.result.configure(image="", text="= " + format_number(res['value']),
                                   fg=CLR_ACCENT, font=('Segoe UI', 13, 'bold'))
-        # A fraction also gets its decimal, for reading off a meter.
-        if as_fraction(res['value']) is not None:
-            self.decimal.configure(text="≈ " + format_number(res['value']))
+        frac = as_fraction(res['value'])
+        if frac is None:
+            self.fraction.configure(image="", text="")
+            return
+        img = self._image("= " + value_latex(res['value']), 11, CLR_TEXT_DIM)
+        if img is not None:
+            self.fraction.configure(image=img, text="")
         else:
-            self.decimal.configure(text="")
+            self.fraction.configure(image="", text=f"= {frac}")
 
 
 class PICAQuickCalcApp:
@@ -921,6 +935,14 @@ class PICAQuickCalcApp:
         if 0 <= i < len(self.rows):
             self.rows[i].entry.focus_set()
             self.rows[i].entry.icursor('end')
+        return 'break'
+
+    def copy_line_above(self, row):
+        """Shift+Up: the text of the line above, typed in at the cursor."""
+        i = self.rows.index(row)
+        if i > 0:
+            row.entry.insert('insert', self.rows[i - 1].entry.get())
+            self.update_all()
         return 'break'
 
     def set_active(self, row):

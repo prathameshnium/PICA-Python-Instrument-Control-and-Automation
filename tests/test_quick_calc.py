@@ -48,6 +48,12 @@ def test_a_worksheet_carries_names_functions_and_ans():
     assert vals[7] == 5 and vals[8] == 10
 
 
+def test_underscore_is_the_line_above():
+    res = qc.evaluate_lines(["3 + 4", "", "_ * 2", "2_"])
+    assert [r['value'] for r in res] == [7, None, 14, 28]
+    assert res[2]['latex'] == r"\_ \cdot 2"
+
+
 def test_errors_stay_on_their_line():
     res = qc.evaluate_lines(["1/0", "y + 1", "2 + 2"])
     assert res[0]['error'] == "division by zero"
@@ -95,7 +101,8 @@ def test_a_simple_value_shows_as_a_fraction(value, frac):
     assert (f.numerator, f.denominator) == frac
 
 
-@pytest.mark.parametrize("value", [2 ** 0.5, 3.0, 7, float('inf'), 3.14159])
+@pytest.mark.parametrize("value", [2 ** 0.5, 3.0, 7, float('inf'), 3.14159,
+                                   1e-15, -3e-9, 1.6e-19])
 def test_other_values_are_not_forced_into_fractions(value):
     assert qc.as_fraction(value) is None
 
@@ -103,6 +110,8 @@ def test_other_values_are_not_forced_into_fractions(value):
 def test_result_typesetting():
     assert qc.value_latex(0.75) == r"\frac{3}{4}"
     assert qc.value_latex(-0.5) == r"-\frac{1}{2}"
+    assert qc.number_latex(0.75) == "0.75"
+    assert qc.value_latex(1e-15) == r"1 \times 10^{-15}"
     assert qc.value_latex(1e-9) == r"1 \times 10^{-9}"
     assert qc.value_latex(2 ** 100).startswith(r"1.2676506 \times 10^{30}")
 
@@ -169,6 +178,16 @@ assert abs(app.rows[1].value - 2.0) < 1e-12, app.rows[1].value
 # Both lines are typeset (an image, not the plain-text fallback).
 assert str(app.rows[0].math.cget("image")), "line 1 not typeset"
 assert str(app.rows[0].result.cget("image")), "result not typeset"
+# 1/2 is exact, so its fraction shows beside the decimal; 2 has none.
+assert str(app.rows[0].fraction.cget("image")), "fraction not shown"
+assert not str(app.rows[1].fraction.cget("image")), "whole number got a fraction"
+# Shift+Up types the line above in at the cursor.
+app.new_row_after(app.rows[1])
+app.rows[2].entry.insert(0, "2*")
+app.copy_line_above(app.rows[2])
+assert app.rows[2].entry.get() == "2*ans * 4", app.rows[2].entry.get()
+assert abs(app.rows[2].value - 16.0) < 1e-12, app.rows[2].value
+app.delete_row(app.rows[2])
 # The keypad's fraction key leaves the cursor in the numerator.
 app.set_active(app.rows[1])
 app.rows[1].entry.delete(0, "end")
