@@ -480,7 +480,7 @@ Upon launching PICA (`pica-gui`), click your measurement module in Advanced Opti
 
 ## Running Tests Locally
 
-**Test coverage:** the suite has 3,500+ tests, all run against mocked VISA instruments, so no hardware is needed. They cover **34% of the statements in `pica/`** (measured 2026-10-17 with `--cov=pica`, v1.0.7). The [Codecov](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation) badge measures the whole repository, so its figure differs.
+**Test coverage:** the suite has 4,400+ tests, all run against mocked VISA instruments, so no hardware is needed. They cover **39% of the statements in `pica/`** (measured 2026-10-27 with `--cov=pica`, v1.0.8). The [Codecov](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation) badge measures the whole repository, so its figure differs.
 
 To test a specific release, clone its tag into a fresh virtual environment and install from the clone. Do not also install from PyPI in the same environment, because the two installs replace each other. On Windows, clone into a short folder path, since some file paths in the repository are long.
 ```bash
