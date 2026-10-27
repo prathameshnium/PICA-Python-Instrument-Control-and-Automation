@@ -39,7 +39,7 @@
 
 ---
 
-> **v1.0.7:** Linux install guide, Keithley 2400 memristor modules, C-V module v2, launcher module search and hover cards. Install or upgrade via pip: `pip install --upgrade pica-suite`
+> **v1.0.8:** Novocontrol Alpha-AN C-V, calibration and temperature modules (experimental), a faster launcher and a smaller PyPI package (3.3 MB wheel, down from 9.9 MB). Install or upgrade via pip: `pip install --upgrade pica-suite`
 
 ---
 
@@ -73,7 +73,7 @@ The suite performs automated protocols including:
 ## Table of Contents
 
 - [Overview](#overview)
-- [What's New in v1.0.7](#whats-new-in-v107)
+- [What's New in v1.0.8](#whats-new-in-v108)
 - [Motivation](#motivation)
 - [Key Features](#key-features)
 - [Design and Implementation](#design-and-implementation)
@@ -93,24 +93,23 @@ The suite performs automated protocols including:
 
 ---
 
-## What's New in v1.0.7
+## What's New in v1.0.8
 
-**v1.0.7** (October 2026) is the latest release, available on PyPI and GitHub Releases.
+**v1.0.8** (October 2026) is the latest release, available on PyPI and GitHub Releases.
 
 ```bash
-pip install pica-suite==1.0.7
+pip install pica-suite==1.0.8
 # or upgrade from a previous version:
 pip install --upgrade pica-suite
 ```
 
-Highlights — *changes since v1.0.6*:
+Highlights — *changes since v1.0.7*:
 
-* **Linux documentation:** a Linux install guide (venv, tkinter, `pyvisa-py`, USB-TMC / serial / GPIB) and a "Linux report" issue template; running against real instruments on Linux is not yet verified.
-* **Memristor modules (Keithley 2400):** switching I-V sweep, retention and endurance programs, plus a read-only Memristor Analysis utility.
-* **C-V module v2 (Keysight E4980A):** rewritten sweep builder (bipolar, unipolar, ladder), bus-error retry and a separate event log.
-* **K6221 / 2182 I-V:** custom list sweeps (paste from the List Maker), µA units and zero-crossing fixes.
-* **Launcher v2 updates:** module search (`Ctrl+F`), hover cards in Advanced Options, View menu and an in-app viewer for the manual, README, change log and license.
-* **Packaging, CI & utilities:** cleaner wheel, wider CI matrix (Python 3.10-3.13, Linux GUI smoke test), Quick Calc typesetting, Time Utility event log.
+* **Novocontrol Alpha-AN (experimental):** C-V, calibration (REF, load-short, open), temperature-step frequency scans and temperature scans (Lakeshore 350 / 340, Cryo-con 34) with WinDETA-compatible files; a 64-bit VISA edition of the frequency scan, custom and E4980A frequency lists, and a reliable reconnect after `*RST`.
+* **Faster launcher:** heavy libraries load only when needed, so the window comes up sooner; `pica-gui` opens straight into Advanced Options, and the Instrument Status table fills in as each address answers.
+* **Smaller PyPI package:** the wheel is down to 3.3 MB from 9.9 MB in v1.0.7. README screenshots and unused logos no longer ship, and scipy is no longer a dependency, so a fresh install also downloads less.
+* **New tools:** Connected Devices and Drivers diagnostic (USB / COM / LAN, driver error codes), Plotter comment-line control and Excel / cp1252 file support.
+* **Wider CI:** tests on Python 3.10 to 3.15.
 
 For the full changelog, see [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -211,9 +210,9 @@ Beyond the measurement modules, PICA ships a growing set of standalone laborator
 * **VISA Instrument Scanner** — queries the GPIB/USB/Ethernet bus (`*IDN?`) to map connected instrument addresses.
 * **PICA Plotter Utility** — multi-file data plotting for comparison and analysis during or after measurements.
 * **SCPI Console** *(v1.0.6)* — interactive terminal for sending raw SCPI commands to any VISA instrument.
-* **Diagnostic Tools** — read-only checks of the Python environment, system drivers, communication interfaces, the Cryo-con 34 and the Novocontrol Alpha-AN, from the Launcher v2 Tools menu.
+* **Diagnostic Tools** — read-only checks of the Python environment, system drivers, communication interfaces, connected USB / COM / LAN devices *(v1.0.8)*, the Cryo-con 34 and the Novocontrol Alpha-AN, from the Launcher v2 Tools menu.
 * **PPMS helper utilities** *(v1.0.6)* — plotter, sequence visualizer, and time estimator for Quantum Design PPMS workflows.
-* **Calculators & helpers** — List Maker, Quick Calc, unit converter, MD-ratio calculator, PID simulator, Time Utility and the read-only Memristor Analysis *(v1.0.7)*.
+* **Calculators & helpers** — List Maker, Quick Calc, unit converter, Ohm's Law calculator *(v1.0.8)*, MD-ratio calculator, PID simulator, Time Utility and the read-only Memristor Analysis *(v1.0.7)*.
 
 ---
 
@@ -248,7 +247,7 @@ PICA is available on [PyPI](https://pypi.org/project/pica-suite/) and structured
 pip install pica-suite
 ```
 
-To upgrade to the latest version (currently **v1.0.7**):
+To upgrade to the latest version (currently **v1.0.8**):
 
 ```bash
 pip install --upgrade pica-suite
@@ -485,7 +484,7 @@ Upon launching PICA (`pica-gui`), click your measurement module in Advanced Opti
 
 To test a specific release, clone its tag into a fresh virtual environment and install from the clone. Do not also install from PyPI in the same environment, because the two installs replace each other. On Windows, clone into a short folder path, since some file paths in the repository are long.
 ```bash
-git clone --branch v1.0.7 https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
+git clone --branch v1.0.8 https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
 cd PICA-Python-Instrument-Control-and-Automation
 pip install -e .
 pip install -r requirements-dev.txt
@@ -531,7 +530,8 @@ For downloadable release builds, please visit the [releases page](https://github
 
 PICA evolved from simple offline scripts in 2022 to a full-stack automated suite.
 
-  * **v1.0.7 (Latest):** Linux install guide and issue template, Keithley 2400 memristor sweep / retention / endurance modules with a read-only analysis utility, C-V module v2, K6221/2182 custom-list I-V, launcher module search and hover cards, cleaner wheel. Available on [PyPI](https://pypi.org/project/pica-suite/).
+  * **v1.0.8 (Latest):** Novocontrol Alpha-AN C-V, calibration and temperature modules (experimental) with a 64-bit edition, faster launcher start, smaller PyPI package (3.3 MB wheel, from 9.9 MB; scipy dropped), Connected Devices diagnostic, Plotter encoding and comment-line fixes. Available on [PyPI](https://pypi.org/project/pica-suite/).
+  * **v1.0.7:** Linux install guide and issue template, Keithley 2400 memristor sweep / retention / endurance modules with a read-only analysis utility, C-V module v2, K6221/2182 custom-list I-V, launcher module search and hover cards, cleaner wheel. Available on [PyPI](https://pypi.org/project/pica-suite/).
   * **v1.0.6:** Advanced Lakeshore step control (adaptive ramp rates, low-temperature safety caps), Cryo-con 34 and Lakeshore 340 support, AC resistivity (SR830 / 197A), PPMS dielectric master protocol, Novocontrol Alpha-AN (experimental), I-V fixes, launcher v2, diagnostic tools and new utilities. Available on [PyPI](https://pypi.org/project/pica-suite/).
   * **v1.0.5:** E4980A frequency and temperature scan programs, Lakeshore 350 direct and step control, K6517B poling, new utilities (P-E plotter, calculators, unit converter) and core fixes.
   * **v1.0.4:** Documentation infrastructure release — Read the Docs integration, preprint page with automated PDF build, and CI/CD workflow updates.
@@ -577,10 +577,10 @@ If you use this software in your research, please cite it:
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
   title        = {{PICA: Advanced High-Precision Transport Measurement Automation with Python}},
   month        = oct,
-  day          = 17,
+  day          = 27,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {1.0.7},
+  version      = {1.0.8},
   doi          = {10.5281/zenodo.18377216},
   url          = {https://doi.org/10.5281/zenodo.18377216}
 }

@@ -11,9 +11,9 @@ authors:
     affiliation: "UGC-DAE Consortium for Scientific Research, Mumbai Centre, India; Savitribai Phule Pune University, Pune, India"
     email: "sudipm@csr.res.in"
 title: "PICA: Advanced High-Precision Transport Measurement Automation with Python"
-version: 1.0.7
+version: 1.0.8
 doi: 10.5281/zenodo.18377216
-date-released: 2026-10-17
+date-released: 2026-10-27
 url: "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
 repository-code: "https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation"
 license: MIT

@@ -4,20 +4,41 @@ All notable changes to PICA are documented here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-10-27
+
 ### Added
+- **Alpha-AN modules (experimental)**: C-V, calibration (REF, load-short, open), temperature-step frequency scan (Lakeshore 350 / 340), dielectric temperature scan with T control (Lakeshore 350 / 340) and T sensing (Lakeshore 350 / 340, Cryo-con 34), all writing WinDETA-compatible files. Not yet run on hardware.
 - **Alpha-AN frequency scan**: custom comma-separated frequency list (range-checked, 3e-5 Hz to 20 MHz) with a List Maker button; greyed out unless chosen.
 - **Alpha-AN frequency scan**: third preset, the E4980A list (377 pts, 40 Hz - 2 MHz); 115 pts stays the default.
-- **Alpha-AN modules (experimental)**: C-V, calibration (REF, load-short, open), temperature-step frequency scan (Lakeshore 350 / 340), dielectric temperature scan with T control (Lakeshore 350 / 340) and T sensing (Lakeshore 350 / 340, Cryo-con 34).
+- **Alpha-AN frequency scan, 64-bit edition**: runs through 64-bit VISA (Keysight or NI), next to the 32-bit `gpib-32.dll` edition.
 - **Alpha-AN temperature-step frequency scan**: frequency list dropdown (E4980A list by default, 115 pts, 40 pts or a custom list).
-- **Alpha-AN Diagnostics (read-only)**: one-button VISA check (Python bitness, programs holding the bus, VISA resources, `*IDN?` and `INTTYP?` at the given address) in the Diagnostic Tools.
+- **Alpha-AN modules**: a button that copies the console output, for pasting into a bug report.
+- **Alpha-AN Diagnostics (read-only)**: one-button VISA check (Python bitness, programs holding the bus, VISA resources, `*IDN?` and `INTTYP?` at the given address) in the Diagnostic Tools, now a small window instead of a console.
+- **Connected Devices and Drivers (read-only)**: new diagnostic for "I plugged it in and nothing sees it". Asks Windows about every USB / COM / LAN device (connected, driver installed, driver running, error code), lists COM ports with their owners and third-party driver packages, and reports which devices appeared or disappeared between two runs.
+- **Ohm's Law Calculator**: type any two of V, I and R, the third (and the power) is worked out as you type, each with its own unit picker.
+- **Plotter Utility**: "Comment lines at top" box, detected on load and editable per file, with an Auto button to go back to the detected count.
+- **Instrument Status**: a Secondary addresses Show / Hide switch hides the copies a Lakeshore 340 / 350 answers on all 31 GPIB secondary addresses (applies from the next Reload; off by default).
+- **Docs**: Programmatic Surface section in the User Manual, a Research Impact page, a Read the Docs badge and a uv install tip in the README.
 
 ### Changed
-- **Smaller install**: scipy is no longer a required dependency (PICA never imported it), and the README screenshots and unused logos no longer ship in the package.
-- **Alpha-AN frequency scan**: window shows the edition (32-bit or 64-bit); REF calibration explains itself before starting.
+- **Faster launcher start**: pyvisa, matplotlib and Pillow are imported only when first needed, the logos ship pre-scaled, the launcher window appears once, after its first layout, and a launched module no longer imports tkinter, Pillow and the launcher just to start.
+- **Instrument Status**: the scan table fills in as each address answers, with how long each one took, instead of after the whole scan.
+- **Smaller PyPI package**: the wheel is 3.3 MB, down from 9.9 MB in 1.0.7. The README screenshots and unused logos no longer ship in the package, and scipy is no longer a required dependency (PICA never imported it).
+- **New PICA icon** in the title bar and taskbar of every PICA window.
+- **Alpha-AN frequency scan**: window shows the edition (32-bit or 64-bit); REF calibration explains itself before starting; the per-point wait scales with the measurement time, so slow low-frequency points no longer time out.
 - **Launcher**: `pica-gui` and `python run_pica.py` now open launcher v2 as Advanced Options alone (every module on one screen, with the Instrument Status window). A Home button brings up Quick Select; closing Advanced Options quits; the standalone VISA/GPIB scanner is no longer auto-opened at startup. `python run_pica_v2.py` and `python -m pica.main_v2` still open on Quick Select.
 - **Classic launcher**: outdated, kept as the legacy launcher page (View > Legacy Launcher (v1, outdated), `legacy_stuff/run_pica_legacy.py` or `python -m pica.main`).
+- **Quick Calc**: matching brackets coloured by nesting level; matplotlib loads in the background so the window opens at once.
+- **Plotter Utility and PPMS helpers**: faster replots and file loading, same output.
+- **CI**: Windows test jobs on Python 3.14 and 3.15 as well (3.15 is a pre-release); third-party GitHub Actions pinned to a commit.
 
 ### Fixed
+- **Alpha-AN**: the first command after `*RST` is retried until the Alpha answers (1.4 s through NI-488.2, 4.1 s through 64-bit VISA on the lab PC) instead of failing; a read-only install folder no longer stops a run before any output (the log falls back to the working or home folder); `*RST` and set commands are never sent to a non-Alpha address such as the E4991B.
+- **Plotter Utility**: files re-saved from Excel (UTF-8 BOM, UTF-16) and Windows-native exports (cp1252, e.g. WinDETA) now load.
+- **Memristor sweep**: plot legend splits into columns after 25 entries instead of running off the plot.
+- **Pfeiffer TPG 361 logger**: a wrong port or baud rate no longer leaves the COM port busy for the next Start.
+- **Cryo-con 34 direct control**: corrected commands.
+- **Quick Calc**: very large numbers.
 - **Classic launcher layout**: module grid no longer runs off the right edge, and the info panel no longer takes half the screen.
 - **Launcher**: Advanced Options opened from Quick Select waits for the launcher's own bus scan before auto-opening the standalone scanner, so two processes never scan the bus at once.
 
@@ -320,7 +341,8 @@ Lab builds before the public release, under the old version numbering.
 -   **Collaboration Note:** The project's realization was significantly aided by colleagues (from UGC-DAE CSR,Mumbai) who assisted in rectifying technical issues and developing the necessary cryogenic probes and hardware fixtures required for measurements.
 -   **June 2022:** **Project Ideation.** Dr. Sudip Mukherjee (Principal Investigator) proposed the initiative for laboratory automation from manual methods to Python-based control. He provided critical roadmap materials, including reference videos, instrument handling protocols, and conceptual designs for the GUI layouts and hardware integration.
 
-[Unreleased]: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare/v1.0.7...HEAD
+[Unreleased]: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare/v1.0.8...HEAD
+[1.0.8]: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/compare/v1.0.4...v1.0.5

@@ -1,18 +1,18 @@
 ---
 myst:
   html_meta:
-    description: "Complete user manual for PICA v1.0.7 — installation, VISA/GPIB setup, safety, and every measurement module: ultra-low resistance (delta mode), I-V, high-resistance electrometry, pyroelectric current, dielectric spectroscopy, and temperature control."
+    description: "Complete user manual for PICA v1.0.8 — installation, VISA/GPIB setup, safety, and every measurement module: ultra-low resistance (delta mode), I-V, high-resistance electrometry, pyroelectric current, dielectric spectroscopy, and temperature control."
     keywords: "PICA user manual, PyVISA setup, NI-VISA, delta mode, Keithley 6221 2182, Keithley 2400, Keithley 6517B electrometer, Keysight E4980A LCR, Lakeshore 350, pyroelectric measurement, dielectric spectroscopy"
 ---
 
 # PICA: Advanced High-Precision Transport Measurement Automation with Python
 
-*Comprehensive Guide for Version 1.0.7*
+*Comprehensive Guide for Version 1.0.8*
 
 ---
 
 :::{note}
-**v1.0.7 is now live!** Linux install guide, Keithley 2400 memristor modules, C-V module v2, launcher module search and hover cards. Install or upgrade via pip:
+**v1.0.8 is now live!** Novocontrol Alpha-AN C-V, calibration and temperature modules (experimental), a faster launcher and a smaller PyPI package (3.3 MB wheel, down from 9.9 MB). Install or upgrade via pip:
 
 ```bash
 pip install --upgrade pica-suite
@@ -111,7 +111,7 @@ The 32-bit Novocontrol Alpha-AN frequency scan and the 32-bit GPIB scanner call 
 :::
 
 #### Software Dependencies
-1.  **Python 3.10+** (tested on 3.10 to 3.13).
+1.  **Python 3.10+** (tested on 3.10 to 3.15; 3.15 is a pre-release).
 2.  **Dependencies:** installed automatically by `pip install pica-suite` (NumPy, pandas, Matplotlib, PyVISA, PyVISA-py, PyMeasure, Pillow, psutil, zeroconf).
 
 :::{warning}
@@ -386,6 +386,8 @@ A standalone, multiprocessing-enabled tool for detailed data analysis. Unlike th
   * **Comparative Analysis:** Overlaying multiple `.csv` or `.dat` files.
   * **Live Updates:** Monitoring active experiments by auto-refreshing data from disk.
   * **Flexible Axis Control:** Toggling linear/log scales to analyze data spanning orders of magnitude.
+  * **Comment lines:** the number of comment lines at the top of a file is detected on load and shown in the *Comment lines at top* box; change it to re-read that file, or press **Auto** to go back to the detected count.
+  * **Any common encoding:** UTF-8, files re-saved from Excel (UTF-8 with BOM, UTF-16) and Windows-native exports such as WinDETA's (cp1252) load as they are.
 
 :::{figure} Images/screenshots/02_Plotter_Utility.png
 :alt: Plotter Utility
@@ -578,9 +580,14 @@ deliberate rescan. The window is the launcher's own VISA scanner:
 * the instruments the current Quick Select choice needs are marked with an
   accent bar.
 * below the chips, the **VISA / GPIB scan** table: every resource, what it was
-  identified as, and the raw reply. It is filled from the pass that lit the
-  dots — no address is opened twice to build it — and appears half a second
-  after the lights settle.
+  identified as, the raw reply and how long it took to answer. It is filled
+  from the pass that lit the dots — no address is opened twice to build it —
+  one row at a time as each address answers, so a slow scan shows where the
+  time goes.
+* **Secondary addresses: Show | Hide.** The Lakeshore 340 and 350 answer on
+  all 31 GPIB secondary addresses of their own (`GPIB0::12::5::INSTR` …).
+  *Hide* skips them; it applies from the next **Reload**, so switching it never
+  puts anything on the bus by itself. *Show* is the default.
 * **Full VISA / GPIB Scanner** opens the standalone scanner utility
   (§5.1), unchanged, for its address guide (the SCPI Console, in the Tools
   menu, is the place to send commands by hand). It is not opened at startup,
@@ -597,6 +604,25 @@ measurement is running it stays off the GPIB bus. Pressing Reload while any
 measurement started from the launcher is still running raises a confirmation
 first.
 :::
+
+### 5.6 Diagnostic Tools
+
+The launcher's **Tools** menu holds read-only checks for when an instrument
+does not show up. None of them sends a set command to an instrument.
+
+* **Python Environment Check:** installed packages and whether Python is 32- or 64-bit.
+* **System and Drivers:** NI-488.2, VISA and the DLLs PICA relies on.
+* **Communication Interfaces:** the GPIB, USB, serial and LAN interfaces this PC has.
+* **Connected Devices and Drivers** *(new in v1.0.8)*: one step further down,
+  for "I plugged it in and nothing sees it". For every USB, COM and LAN
+  device it asks Windows whether the device is connected, has a driver, and
+  whether that driver is running, with the Windows error code if not. It
+  also lists each COM port with the device that owns it, the third-party
+  driver packages installed (FTDI, NI, Keysight, Prolific, ...) and the LAN
+  neighbours Windows knows about. Press **Run Check** again after plugging
+  something in to see exactly which devices appeared or disappeared.
+* **Cryocon 34 Diagnostics** and **Novocontrol Alpha-AN Diagnostics:**
+  query-only surveys of those two instruments.
 
 ## 6. Supported Measurement Modules
 
@@ -1173,10 +1199,10 @@ The full preprint of the PICA software suite, detailing its design, implementati
   author       = {Deshmukh, Prathamesh Keshao and Mukherjee, Sudip},
   title        = {{PICA: Advanced High-Precision Transport Measurement Automation with Python}},
   month        = oct,
-  day          = 17,
+  day          = 27,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {1.0.7},
+  version      = {1.0.8},
   doi          = {10.5281/zenodo.18377216},
   url          = {https://doi.org/10.5281/zenodo.18377216}
 }
@@ -1234,7 +1260,7 @@ This project is licensed under the MIT License - see the [LICENSE](https://githu
 
 ## 15. Appendix A: Project File Structure
 
-For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.7; test files and assets abridged).
+For developers and advanced users, the following reference outlines the PICA directory structure (v1.0.8; test files and assets abridged).
 
 :::{note}
 To add a new module to the launcher, register its file in `SCRIPT_PATHS` in
@@ -1448,6 +1474,7 @@ PICA (Root Directory)/
             Function_Gen_AFG3022B_GUI.py
         utils/                  <-- Scanners, diagnostics, plotters and calculators
             Diagnostics_Comms_Interfaces_GUI.py
+            Diagnostics_Connected_Devices_GUI.py
             Diagnostics_Python_Env_GUI.py
             Diagnostics_System_Info_GUI.py
             GPIB_Instrument_Scanner_GUI.py
