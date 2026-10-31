@@ -34,9 +34,7 @@
 ===============================================================================
 '''
 import math
-import os
 import re
-import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 

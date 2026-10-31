@@ -39,7 +39,6 @@ import platform
 import queue
 import socket
 import struct
-import sys
 import threading
 import tkinter as tk
 import warnings as warnings_module

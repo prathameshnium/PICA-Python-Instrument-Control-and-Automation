@@ -4,10 +4,9 @@ Purpose: PE Hysteresis Plotter Utility (Part of PICA suite).
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext, Canvas
+from tkinter import ttk, filedialog, scrolledtext, Canvas
 import os
 import numpy as np  # column arrays for the parsed loops (pandas cost ~1.5 s at startup)
-import traceback
 from datetime import datetime
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
