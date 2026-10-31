@@ -516,7 +516,7 @@ def test_run_scripts_import_the_launcher_only_under_main_guard():
     """With 'spawn' every launched module re-runs the run_pica script as
     __mp_main__; a top-level launcher import made each one load it."""
     for script in ("run_pica.py", "run_pica_v2.py",
-                   os.path.join("legacy_stuff", "run_pica_legacy.py")):
+                   os.path.join("tools", "legacy_stuff", "run_pica_legacy.py")):
         tree = ast.parse(open(os.path.join(REPO_ROOT, script),
                               encoding="utf-8").read())
         for node in tree.body:

@@ -150,7 +150,7 @@ To make your new module accessible from the PICA launcher (`pica-gui`):
 
 1.  **Script path (`pica/main.py`):** add your script to the `SCRIPT_PATHS` dictionary (a display key mapped to `resource_path("vendor/.../Your_Module_GUI.py")`). The launcher reads its paths from this table, so this step is needed even though the classic launcher in that file is outdated.
 2.  **Launcher (`pica/main_v2.py`):** add the same key to the matching group in `CATALOG` (Advanced Options), to `QUICK_CATALOG` if it also belongs on Quick Select, and add a hover-card description for the same key to `MODULE_INFO` in `pica/module_info.py` (`tests/test_launcher_v2_search_and_hover.py` fails otherwise).
-3.  **Legacy launcher (optional):** to show it in the outdated classic launcher too (`legacy_stuff/run_pica_legacy.py`), add an entry `(button label, script key)` to the button list of the matching `self._create_suite_frame(...)` call in `create_launcher_panel` in `pica/main.py`. Add `'control'` or `'sensing'` as a third item if the module drives or only reads a temperature controller.
+3.  **Legacy launcher (optional):** to show it in the outdated classic launcher too (`tools/legacy_stuff/run_pica_legacy.py`), add an entry `(button label, script key)` to the button list of the matching `self._create_suite_frame(...)` call in `create_launcher_panel` in `pica/main.py`. Add `'control'` or `'sensing'` as a third item if the module drives or only reads a temperature controller.
 4.  Run the launcher tests (`python -B -m pytest tests/test_gui_module_registry.py tests/test_launcher_v2_wiring.py tests/test_launcher_v2_search_and_hover.py -p no:cacheprovider`) to check that every key points to a file that exists.
 
 #### 5. Test and Document

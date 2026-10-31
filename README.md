@@ -405,7 +405,7 @@ pica-gui
     > **Which launcher?** This one (Launcher v2) is the canonical launcher.
     > The classic launcher (`pica/main.py`) is outdated and kept as the legacy
     > launcher page: View > Legacy Launcher (v1, outdated), or
-    > `python legacy_stuff/run_pica_legacy.py`. `run_pica.py` and
+    > `python tools/legacy_stuff/run_pica_legacy.py`. `run_pica.py` and
     > `run_pica_v2.py` in the repository root only start the launcher from a
     > source checkout. `setup.py` and `PICA_Utils_Portable.spec` are build
     > files (packaging and the portable utilities `.exe`), not entry points.
@@ -536,9 +536,12 @@ PICA evolved from simple offline scripts in 2022 to a full-stack automated suite
   * **v1.0.5:** E4980A frequency and temperature scan programs, Lakeshore 350 direct and step control, K6517B poling, new utilities (P-E plotter, calculators, unit converter) and core fixes.
   * **v1.0.4:** Documentation infrastructure release — Read the Docs integration, preprint page with automated PDF build, and CI/CD workflow updates.
   * **v1.0.3:** GUI refreshed with the **Latte** theme — lighter, warmer, and less dark. First release published to PyPI.
-  * **v1.0.1 / v1.0.0 (Initial Public Release):** Version numbering was reset from legacy development builds (v17.0) to v1.0.0 to standardize the package for public distribution and citation.
+  * **v1.0.1 / v1.0.0 (Initial Public Release):** Version numbering was reset from legacy development builds (v17.0) to v1.0.0 to standardize the package for public distribution and citation. **v1.0.0 is the version submitted to JOSS.**
+
+Older entries below use the legacy development numbering (v13.0 to v17.0), which predates the v1.0.0 reset; they are not public releases.
+
   * **v17.0:** Professional directory restructuring, Semantic Versioning, and documentation overhaul.
-  * **v15.0:** JOSS submission preparation, CI/CD integration.
+  * **v15.0:** Groundwork for the later JOSS submission (documentation clean-up, CI/CD integration); the submission itself was made with v1.0.0.
   * **v13.0:** Transition to Multiprocessing and standardized GUI themes.
 
 The project's earlier history and foundational development are outlined below:

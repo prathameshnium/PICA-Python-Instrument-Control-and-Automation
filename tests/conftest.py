@@ -149,5 +149,5 @@ def mock_tkinter():
         # Keep real sys and warnings
         'sys': sys.modules['sys'], 
         'warnings': sys.modules['warnings'],
-    }) as patched_modules:
+    }):
         yield

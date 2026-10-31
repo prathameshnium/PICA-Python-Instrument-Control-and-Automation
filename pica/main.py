@@ -8,7 +8,7 @@
                `pica-gui`, run_pica.py and run_pica_v2.py all open now.
                Kept because main_v2 imports its shared helpers from here
                (SCRIPT_PATHS among them); open it with View > Legacy
-               Launcher, legacy_stuff/run_pica_legacy.py or
+               Launcher, tools/legacy_stuff/run_pica_legacy.py or
                python -m pica.main. A new module needs a SCRIPT_PATHS entry
                here plus a CATALOG (and QUICK_CATALOG) entry in main_v2.py.
 

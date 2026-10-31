@@ -10,7 +10,6 @@ No VISA hardware is needed. Runnable as plain python too.
 import importlib
 import os
 import sys
-import types
 
 import pytest
 

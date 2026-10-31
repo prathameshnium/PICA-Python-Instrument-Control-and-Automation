@@ -13,7 +13,6 @@ had been broken.
    cli.ALL_GUI_MODULES (the deeper instantiation test in
    test_gui_modules_initialization.py) nor in INSTANTIATION_EXCLUSIONS below.
 """
-import contextlib
 import importlib
 import pathlib
 import sys

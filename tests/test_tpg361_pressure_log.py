@@ -315,7 +315,7 @@ def test_port_labelling_never_drops_a_resource():
 
 
 def test_the_scan_result_always_carries_the_pressure_keys():
-    v2 = _v2()
+    _v2()
     v2_source = open(V2_PATH, encoding="utf-8").read()
     for key in ("'pressure'", "'pressure_units'", "'pressure_source'",
                 "'pressure_error'"):

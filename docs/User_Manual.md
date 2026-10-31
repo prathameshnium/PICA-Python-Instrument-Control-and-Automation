@@ -280,7 +280,7 @@ pica-gui
     This works after `pip install pica-suite`. From a source checkout,
     `python run_pica_v2.py` does the same.
     The classic launcher is outdated and kept as the legacy launcher page:
-    View > Legacy Launcher (v1, outdated), or `python legacy_stuff/run_pica_legacy.py`.
+    View > Legacy Launcher (v1, outdated), or `python tools/legacy_stuff/run_pica_legacy.py`.
 
 3.  **Command Line Interface (CLI)**
     For headless operation, without the GUI.
@@ -367,7 +367,7 @@ python -B -m pytest -p no:cacheprovider
 
 Reachable from the launcher's toolbar and Tools menu and from the modules, this utility scans for connected hardware. It uses `ResourceManager.list_resources()` to find devices and sends a standard `*IDN?` query to verify communication. This allows users to verify their hardware configuration before starting any experiment. The VISA scanner also includes an address guide (a reference table kept in the script, which a lab can edit to match its rack).
 
-The launcher (`pica-gui`) does not open it at startup: its own Instrument Status window already scans the bus, and a second process scanning at the same time is avoided. Advanced Options opened from Quick Select does open it about 1.5 s later, once the launcher's own scan has finished (§5.5). The outdated classic launcher (`python legacy_stuff/run_pica_legacy.py`) still opens it about half a second after startup. Checking the bus first is motivated by the fact that initiating a measurement without first verifying the instrument connection is highly likely to fail and may result in non-informative error messages, such as a VISA connection timeout.
+The launcher (`pica-gui`) does not open it at startup: its own Instrument Status window already scans the bus, and a second process scanning at the same time is avoided. Advanced Options opened from Quick Select does open it about 1.5 s later, once the launcher's own scan has finished (§5.5). The outdated classic launcher (`python tools/legacy_stuff/run_pica_legacy.py`) still opens it about half a second after startup. Checking the bus first is motivated by the fact that initiating a measurement without first verifying the instrument connection is highly likely to fail and may result in non-informative error messages, such as a VISA connection timeout.
 
 :::{figure} Images/screenshots/01_GPIB_Scanner.png
 :alt: GPIB Scanner
@@ -417,7 +417,7 @@ At the right end of the header bar, at the top of the window, two icon buttons o
 Launcher v2 is PICA's launcher (`pica-gui`). It replaces the classic
 launcher (`pica/main.py`), which is outdated and kept as the legacy launcher
 page (View > Legacy Launcher (v1, outdated), or
-`python legacy_stuff/run_pica_legacy.py`). It exists because PICA has two kinds
+`python tools/legacy_stuff/run_pica_legacy.py`). It exists because PICA has two kinds
 of user who want opposite things from it: someone meeting the instrument rack
 for the first time wants to be asked what they are measuring, and someone who
 runs the rack every day wants every module on one screen. v2 gives each a
@@ -527,7 +527,7 @@ written at startup, and every open view updates together.
 Window, Advanced Options (`Ctrl+Shift+A`), Search Modules (`Ctrl+F`) and
 Console, followed by the two other ways into PICA, the text-menu **PICA CLI**
 (opened in a terminal window) and the **Legacy Launcher (v1, outdated)**,
-the classic launcher (also `python legacy_stuff/run_pica_legacy.py`).
+the classic launcher (also `python tools/legacy_stuff/run_pica_legacy.py`).
 
 **PICA Utils (`Ctrl+U`, or Tools → PICA Utils…).** Every standalone utility
 in one window, grouped as Plotting, PPMS Utilities, Communication and
@@ -1140,7 +1140,7 @@ PICA is used through its GUI, not as a function library. There is no importable 
 | :--- | :--- |
 | `pica-gui` | The launcher (`pica.main_v2:main_advanced`), opened as Advanced Options alone: every module grouped by instrument. Home brings up Quick Select; closing Advanced Options quits. From a source checkout, `python run_pica.py` does the same. |
 | `python -m pica.main_v2` | The same launcher (`pica.main_v2:main`) opened on Quick Select (category, module, protocol in three steps). From a source checkout, `python run_pica_v2.py`. |
-| `python -m pica.main` or `python legacy_stuff/run_pica_legacy.py` | The outdated classic launcher (`pica.main:main`), kept as the legacy launcher page (also View > Legacy Launcher in the launcher). Lists every module grouped by instrument. |
+| `python -m pica.main` or `python tools/legacy_stuff/run_pica_legacy.py` | The outdated classic launcher (`pica.main:main`), kept as the legacy launcher page (also View > Legacy Launcher in the launcher). Lists every module grouped by instrument. |
 | `pica-cli` | A text menu (`pica.cli:main`) that runs a module as a subprocess with optional arguments. Kept for legacy headless use; the GUI launcher (`pica-gui`) is the maintained path. |
 | `python pica/<family>/<...>/<Module>_GUI.py` | Runs one module directly. Every module is its own program and imports nothing from `pica`. |
 | `pica.__version__` | The release number. It lives only in `pica/__init__.py`; `pyproject.toml` reads it from there. |
@@ -1290,13 +1290,13 @@ PICA (Root Directory)/
     codecov.yml
     tools/
         pica_utils_portable.py
+        legacy_stuff/
+            run_pica_legacy.py  <-- Classic launcher (outdated)
     pyproject.toml
     requirements-dev.txt
     requirements.txt
     run_pica.py             <-- Launcher, opens on Advanced Options (as pica-gui)
     run_pica_v2.py          <-- Launcher, opens on Quick Select
-    legacy_stuff/
-        run_pica_legacy.py  <-- Classic launcher (outdated)
     setup.py
     .github/
         workflows/

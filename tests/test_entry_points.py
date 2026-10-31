@@ -51,7 +51,7 @@ def test_legacy_launcher_main(mock_freeze_support, mock_set_start_method, mock_p
 @pytest.mark.parametrize("script, target, kwargs", [
     ("run_pica.py", "pica.main_v2.main", {"advanced": True}),   # v2, Advanced Options
     ("run_pica_v2.py", "pica.main_v2.main", {}),                # v2, Quick Select
-    ("legacy_stuff/run_pica_legacy.py", "pica.main.main", {}),             # outdated v1 launcher
+    ("tools/legacy_stuff/run_pica_legacy.py", "pica.main.main", {}),             # outdated v1 launcher
 ])
 @patch('multiprocessing.set_start_method')
 def test_run_pica_script(_mock_set_start_method, script, target, kwargs):

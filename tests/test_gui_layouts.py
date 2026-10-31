@@ -45,7 +45,7 @@ def safe_gui_environment():
     # We need to patch where the code IMPORTS it from.
     # Most GUI files likely do: from matplotlib.figure import Figure
     
-    with patch('matplotlib.figure.Figure', side_effect=SafeFigure) as MockFigClass, \
+    with patch('matplotlib.figure.Figure', side_effect=SafeFigure), \
          patch('matplotlib.pyplot.figure', return_value=SafeFigure()), \
          patch('matplotlib.backends.backend_tkagg.FigureCanvasTkAgg') as MockCanvas:
         

@@ -7,7 +7,6 @@ import pytest
 import os
 import ast
 import sys
-import importlib.util
 
 import warnings
 # 1. SETUP PROJECT PATH

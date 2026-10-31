@@ -21,7 +21,7 @@
                standalone scanner is not auto-opened. run_pica_v2.py and
                `python -m pica.main_v2` open it on Quick Select. The classic
                launcher (pica/main.py) is outdated, kept as View > Legacy
-               Launcher and legacy_stuff/run_pica_legacy.py.
+               Launcher and tools/legacy_stuff/run_pica_legacy.py.
 
  STATUS SAFETY (important):
                The launcher talks to the instruments ONLY at startup and when

@@ -27,7 +27,7 @@ All notable changes to PICA are documented here. The format follows [Keep a Chan
 - **New PICA icon** in the title bar and taskbar of every PICA window.
 - **Alpha-AN frequency scan**: window shows the edition (32-bit or 64-bit); REF calibration explains itself before starting; the per-point wait scales with the measurement time, so slow low-frequency points no longer time out.
 - **Launcher**: `pica-gui` and `python run_pica.py` now open launcher v2 as Advanced Options alone (every module on one screen, with the Instrument Status window). A Home button brings up Quick Select; closing Advanced Options quits; the standalone VISA/GPIB scanner is no longer auto-opened at startup. `python run_pica_v2.py` and `python -m pica.main_v2` still open on Quick Select.
-- **Classic launcher**: outdated, kept as the legacy launcher page (View > Legacy Launcher (v1, outdated), `legacy_stuff/run_pica_legacy.py` or `python -m pica.main`).
+- **Classic launcher**: outdated, kept as the legacy launcher page (View > Legacy Launcher (v1, outdated), `tools/legacy_stuff/run_pica_legacy.py` or `python -m pica.main`).
 - **Quick Calc**: matching brackets coloured by nesting level; matplotlib loads in the background so the window opens at once.
 - **Plotter Utility and PPMS helpers**: faster replots and file loading, same output.
 - **CI**: Windows test jobs on Python 3.14 and 3.15 as well (3.15 is a pre-release); third-party GitHub Actions pinned to a commit.

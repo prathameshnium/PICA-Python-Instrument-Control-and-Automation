@@ -8,7 +8,7 @@ import unittest
 import os
 import importlib
 import pytest
-from unittest.mock import MagicMock, patch, mock_open, PropertyMock
+from unittest.mock import MagicMock, patch, mock_open
 import sys
 
 class TestDeepSimulation(unittest.TestCase):

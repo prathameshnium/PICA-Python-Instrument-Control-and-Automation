@@ -6,7 +6,6 @@ Task Tests the legacy (v1, outdated) PICALauncherApp in pica/main.py, still reac
 import pytest
 import os
 import sys
-import tkinter as tk
 from unittest.mock import MagicMock, patch
 
 # Ensure the project root is in sys.path
