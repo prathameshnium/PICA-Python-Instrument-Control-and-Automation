@@ -67,11 +67,6 @@ import platform
 
 # --- Optional Packages ---
 try:
-    import winsound
-except ImportError:
-    pass
-
-try:
     from PIL import Image, ImageTk
     PIL_AVAILABLE = True
 except ImportError:

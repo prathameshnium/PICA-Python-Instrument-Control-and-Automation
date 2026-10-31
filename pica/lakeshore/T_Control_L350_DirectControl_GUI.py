@@ -2652,9 +2652,9 @@ class DirectControlGUI:
 
 if __name__ == '__main__':
     if not pyvisa:
-        # Show error in a simple dialog
-        import tkinter as tk
-        from tkinter import messagebox
+        # Show error in a simple dialog. A duplicate `import tkinter as tk` /
+        # `from tkinter import messagebox` was removed from here on 31 Oct 2026
+        # as redundant: both are already imported at the top of this file.
         root = tk.Tk()
         root.withdraw()
         messagebox.showerror(

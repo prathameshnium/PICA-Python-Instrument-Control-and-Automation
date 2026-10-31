@@ -178,15 +178,67 @@ def _in_git_work_tree():
     return out.returncode == 0 and out.stdout.strip() == "true"
 
 
+# Approved edits to the L350 originals (31 Oct 2026): redundant imports
+# removed, no behaviour change, and a comment left at each spot saying so.
+# Each entry lists the exact lines deleted and added; any other change
+# still fails the test.
+#   T_Control_L350_Step_GUI.py: the module-level `import winsound` block under
+#     "# --- Optional Packages ---" was never used, because _beep()._ring()
+#     imports winsound itself (Windows only, inside an except Exception).
+#   T_Control_L350_DirectControl_GUI.py: the __main__ block re-imported tk
+#     and messagebox, both already imported at the top of the file.
+# Once these edits are committed, HEAD contains them, the diff below is
+# empty again and this table is no longer consulted.
+APPROVED_EDITS = {
+    "lakeshore/T_Control_L350_Step_GUI.py": {
+        "removed": [
+            "try:",
+            "    import winsound",
+            "except ImportError:",
+            "    pass",
+            "",
+        ],
+        "added": [
+            "# A module-level `import winsound` (try/except ImportError) was removed from",
+            "# here on 31 Oct 2026 as redundant: it was never used, because _beep()._ring()",
+            "# imports winsound itself, on Windows only, inside an except Exception.",
+        ],
+    },
+    "lakeshore/T_Control_L350_DirectControl_GUI.py": {
+        "removed": [
+            "        # Show error in a simple dialog",
+            "        import tkinter as tk",
+            "        from tkinter import messagebox",
+        ],
+        "added": [
+            "        # Show error in a simple dialog. A duplicate `import tkinter as tk` /",
+            "        # `from tkinter import messagebox` was removed from here on 31 Oct 2026",
+            "        # as redundant: both are already imported at the top of this file.",
+        ],
+    },
+}
+
+
 @pytest.mark.skipif(not _in_git_work_tree(),
                     reason="needs a git checkout (sdist / ZIP has no history)")
 @pytest.mark.parametrize("l350,l340,kind", PAIRS, ids=[p[0] for p in PAIRS])
 def test_original_350_file_is_untouched(l350, l340, kind):
     out = subprocess.run(
-        ["git", "diff", "--stat", "HEAD", "--", os.path.join("pica", l350)],
+        ["git", "diff", "-U0", "HEAD", "--", os.path.join("pica", l350)],
         cwd=REPO_ROOT, capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
-    assert out.stdout.strip() == "", f"{l350} was modified:\n{out.stdout}"
+    if out.stdout.strip() == "":
+        return
+    lines = out.stdout.splitlines()
+    added = [ln[1:].rstrip("\r") for ln in lines
+             if ln.startswith("+") and not ln.startswith("+++")]
+    removed = [ln[1:].rstrip("\r") for ln in lines
+               if ln.startswith("-") and not ln.startswith("---")]
+    # Only the approved edits above may differ from HEAD, nothing else.
+    approved = APPROVED_EDITS.get(l350, {"removed": [], "added": []})
+    assert sorted(removed) == sorted(approved["removed"]) \
+        and sorted(added) == sorted(approved["added"]), \
+        f"{l350} was modified:\n{out.stdout}"
 
 
 def test_every_twin_is_registered_in_the_launchers():

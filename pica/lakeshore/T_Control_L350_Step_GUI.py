@@ -28,11 +28,9 @@ import csv
 import platform
 
 # --- Optional Packages ---
-try:
-    import winsound
-except ImportError:
-    pass
-
+# A module-level `import winsound` (try/except ImportError) was removed from
+# here on 31 Oct 2026 as redundant: it was never used, because _beep()._ring()
+# imports winsound itself, on Windows only, inside an except Exception.
 try:
     from PIL import Image, ImageTk
     PIL_AVAILABLE = True
