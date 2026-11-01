@@ -1,6 +1,6 @@
 # PICA: Advanced High-Precision Transport Measurement Automation with Python
 
-**Open-source Python suite for laboratory instrument control and automation** — GPIB/VISA & SCPI orchestration of Keithley, Keysight, Lakeshore, and Novocontrol instruments for cryogenic transport, resistivity, I-V, dielectric, and pyroelectric measurements.
+**Open-source Python suite for laboratory instrument control and automation** — GPIB/VISA & SCPI orchestration of Keithley, Keysight, Lakeshore, Cryo-con, and Novocontrol instruments for cryogenic transport, resistivity, I-V, dielectric, and pyroelectric measurements.
 
 **Documentation: [prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/)** · [User Manual](docs/User_Manual.md) · [PyPI](https://pypi.org/project/pica-suite/) · Install: `pip install pica-suite`
 
@@ -607,4 +607,4 @@ This project is licensed under the MIT License - see the [LICENSE file](LICENSE)
 
 ---
 
-<sub>**Keywords:** Python instrument control · laboratory automation · GPIB · PyVISA · SCPI · VISA · Keithley 2400 SourceMeter · Keithley 6221 current source · Keithley 2182 nanovoltmeter · Keithley 6517B electrometer · Keysight E4980A LCR meter · Lakeshore 350 temperature controller · Novocontrol Alpha-AN · broadband dielectric spectroscopy · PPMS · cryogenics · transport measurements · resistivity vs temperature · I-V characterization · delta mode · magnetocapacitance · pyroelectric current · condensed matter physics · materials characterization</sub>
+<sub>**Keywords:** Python instrument control · laboratory automation · GPIB · PyVISA · SCPI · VISA · Keithley 2400 SourceMeter · Keithley 6221 current source · Keithley 2182 nanovoltmeter · Keithley 6517B electrometer · Keysight E4980A LCR meter · Lakeshore 350 temperature controller · Lakeshore 340 temperature controller · Cryo-con 34 temperature controller · SR830 lock-in amplifier · Novocontrol Alpha-AN · broadband dielectric spectroscopy · impedance spectroscopy · C-V measurement · PPMS · cryogenics · temperature control · transport measurements · resistivity vs temperature · I-V characterization · delta mode · magnetocapacitance · pyroelectric current · condensed matter physics · materials characterization</sub>

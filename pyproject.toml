@@ -14,6 +14,31 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
+keywords = [
+    "instrument control",
+    "lab automation",
+    "measurement automation",
+    "pyvisa",
+    "pymeasure",
+    "gpib",
+    "scpi",
+    "condensed matter physics",
+    "materials science",
+    "cryogenics",
+    "electrical transport",
+    "resistivity",
+    "I-V characterization",
+    "dielectric spectroscopy",
+    "impedance spectroscopy",
+    "pyroelectric current",
+    "temperature control",
+    "Keithley",
+    "Keysight",
+    "Lakeshore",
+    "Cryo-con",
+    "Novocontrol",
+    "GUI",
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
