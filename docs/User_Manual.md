@@ -2,7 +2,7 @@
 myst:
   html_meta:
     description: "Complete user manual for PICA v1.0.8 — installation, VISA/GPIB setup, safety, and every measurement module: ultra-low resistance (delta mode), I-V, high-resistance electrometry, pyroelectric current, dielectric spectroscopy, and temperature control."
-    keywords: "PICA user manual, PyVISA setup, NI-VISA, delta mode, Keithley 6221 2182, Keithley 2400, Keithley 6517B electrometer, Keysight E4980A LCR, Lakeshore 350, Lakeshore 340, Cryo-con 34, Novocontrol Alpha-AN, GPIB, PPMS, pyroelectric measurement, dielectric spectroscopy, C-V measurement"
+    keywords: "PICA user manual, PyVISA setup, NI-VISA, delta mode, Keithley 6221 2182, Keithley 2400, Keithley 6517B electrometer, Keysight E4980A LCR, Lakeshore 350, Lakeshore 340, Cryo-con 34, Novocontrol Alpha-AN, GPIB, PPMS, pyroelectric measurement, dielectric spectroscopy, impedance spectroscopy, C-V measurement, resistivity measurement, I-V characterization, temperature control, laboratory automation, Python instrument control"
 ---
 
 # PICA: Advanced High-Precision Transport Measurement Automation with Python

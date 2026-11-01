@@ -2,7 +2,7 @@
 myst:
   html_meta:
     description: "PICA is an open-source Python suite for laboratory instrument control and automation — GPIB/VISA and SCPI orchestration of Keithley, Keysight, Lake Shore, Cryo-con, Novocontrol, Stanford Research, Tektronix and Pfeiffer instruments for cryogenic transport, resistivity, I-V, dielectric, and pyroelectric measurements."
-    keywords: "Python instrument control, laboratory automation, GPIB, PyVISA, SCPI, Keithley, Keysight E4980A, Lakeshore 350, cryogenics, transport measurements"
+    keywords: "PICA, Python instrument control, laboratory automation, lab automation software, measurement automation, open source, GPIB, PyVISA, PyMeasure, SCPI, Keithley, Keysight E4980A, Lakeshore 350, Cryo-con, Novocontrol, cryogenics, transport measurements, resistivity, I-V characterization, dielectric spectroscopy, impedance spectroscopy, pyroelectric current, temperature control, condensed matter physics, materials science"
 ---
 
 # PICA Documentation

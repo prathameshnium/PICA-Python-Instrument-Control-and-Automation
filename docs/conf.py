@@ -66,6 +66,8 @@ else:
 # sphinx-sitemap: html_baseurl already carries the language/version prefix on
 # RTD, so don't add another {lang}/{version} segment to sitemap entries
 sitemap_url_scheme = '{link}'
+# Search and the empty general index are thin pages that should not be indexed
+sitemap_excludes = ['search.html', 'genindex.html']
 
 # sphinxext-opengraph: og:title/description are derived per page; the image
 # lives at the site root because html_extra_path copies pica/assets there

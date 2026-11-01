@@ -76,3 +76,7 @@ Disallow: /assets/
 
 # Disallow crawling of the setup/build directory
 Disallow: /deployment/
+
+# Page sitemap built by sphinx-sitemap (Read the Docs serves this file at the
+# domain root, so crawlers find it here; GitHub Pages ignores a sub-path robots.txt)
+Sitemap: https://pica-python-instrument-control-and-automation.readthedocs.io/en/latest/sitemap.xml

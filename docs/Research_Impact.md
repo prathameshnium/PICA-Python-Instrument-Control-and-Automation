@@ -1,3 +1,10 @@
+---
+myst:
+  html_meta:
+    description: "Research output connected to PICA, the open-source Python instrument control suite developed at the UGC-DAE Consortium for Scientific Research, Mumbai Centre, where it runs the electrical transport and broadband dielectric spectroscopy user facilities."
+    keywords: "PICA research impact, PICA citations, UGC-DAE CSR Mumbai, user facility, electrical transport measurements, broadband dielectric spectroscopy, laboratory automation publications"
+---
+
 # Research Impact
 
 Research output connected to PICA, grouped by how PICA was involved.
