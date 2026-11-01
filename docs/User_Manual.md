@@ -1246,10 +1246,10 @@ The procedure for adding a new instrument module to PICA is described in the [CO
 :::
 
 - **Lead Developer:** [**Prathamesh Deshmukh**](https://www.researchgate.net/profile/Prathamesh-Deshmukh-6)
-- **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.csr.res.in/Faculty/profile/889/893/Dr.SudipMukherjee)
+- **Principal Investigator:** [**Dr. Sudip Mukherjee**](https://www.csr.res.in/Faculty/profile/889/893/Dr.SudipMukherjee) ([archived 1 Nov 2026](https://web.archive.org/web/20261101143946/https://www.csr.res.in/Faculty/profile/889/893/Dr.SudipMukherjee))
 - **Affiliation:** [UGC DAE Consortium for Scientific Research, Mumbai Centre](https://www.csr.res.in/Mumbai_Centre), Bhabha Atomic Research Centre, Mumbai, 400 085, Maharashtra, India
 
-*Note: at the centre, PICA runs the ITMS, which provides the Electrical Transport and Broadband Dielectric Spectrometer facilities listed on the [CSR Mumbai user facility portal](https://www.csruserportal.com/Intro/csrMumbaiFacilities).*
+*Note: at the centre, PICA runs the ITMS, which provides the Electrical Transport and Broadband Dielectric Spectrometer facilities listed on the [CSR Mumbai user facility portal](https://www.csruserportal.com/Intro/csrMumbaiFacilities) ([archived 1 Nov 2026](https://web.archive.org/web/20261101142758/https://www.csruserportal.com/Intro/csrMumbaiFacilities)).*
 
 ### Funding
 Financial support for this work was provided under SERB-CRG project grant No. CRG/2022/005676 from the Anusandhan National Research Foundation (ANRF).

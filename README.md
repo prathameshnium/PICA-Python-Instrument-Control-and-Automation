@@ -591,9 +591,9 @@ If you use this software in your research, please cite it:
 
 ## Authors & Funding
 
-This project is led by [**Prathamesh Deshmukh**](https://www.researchgate.net/profile/Prathamesh-Deshmukh-6) under the supervision of [**Dr. Sudip Mukherjee**](https://www.csr.res.in/Faculty/profile/889/893/Dr.SudipMukherjee) at the UGC-DAE Consortium for Scientific Research, Mumbai Centre, Bhabha Atomic Research Centre, Mumbai, 400 085, Maharashtra, India.
+This project is led by [**Prathamesh Deshmukh**](https://www.researchgate.net/profile/Prathamesh-Deshmukh-6) under the supervision of [**Dr. Sudip Mukherjee**](https://www.csr.res.in/Faculty/profile/889/893/Dr.SudipMukherjee) ([archived 1 Nov 2026](https://web.archive.org/web/20261101143946/https://www.csr.res.in/Faculty/profile/889/893/Dr.SudipMukherjee)) at the UGC-DAE Consortium for Scientific Research, Mumbai Centre, Bhabha Atomic Research Centre, Mumbai, 400 085, Maharashtra, India.
 
-*Note: at the centre, PICA runs the ITMS, which provides the Electrical Transport and Broadband Dielectric Spectrometer facilities listed on the [CSR Mumbai user facility portal](https://www.csruserportal.com/Intro/csrMumbaiFacilities).*
+*Note: at the centre, PICA runs the ITMS, which provides the Electrical Transport and Broadband Dielectric Spectrometer facilities listed on the [CSR Mumbai user facility portal](https://www.csruserportal.com/Intro/csrMumbaiFacilities) ([archived 1 Nov 2026](https://web.archive.org/web/20261101142758/https://www.csruserportal.com/Intro/csrMumbaiFacilities)).*
 
 We acknowledge the financial support provided under the **SERB-CRG project grant No. CRG/2022/005676** from the Anusandhan National Research Foundation (ANRF), a statutory body of the Department of Science and Technology (DST), Government of India.
 
