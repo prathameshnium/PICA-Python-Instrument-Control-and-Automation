@@ -14,7 +14,8 @@ PICA was developed at the
 [UGC-DAE Consortium for Scientific Research, Mumbai Centre](https://www.csr.res.in/Mumbai_Centre),
 where it runs the ITMS. The ITMS provides the **Electrical Transport** and
 **Broadband Dielectric Spectrometer** facilities listed on the centre's
-[user facility portal](https://www.csruserportal.com/Intro/csrMumbaiFacilities).
+[user facility portal](https://www.csruserportal.com/Intro/csrMumbaiFacilities)
+([archived 1 Nov 2026](https://web.archive.org/web/20261101142758/https://www.csruserportal.com/Intro/csrMumbaiFacilities)).
 
 ---
 
