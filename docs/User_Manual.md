@@ -404,7 +404,7 @@ The launcher opens on **Advanced Options**, which lists every measurement module
 python -m pica.utils.PID_Simulator_GUI
 ```
 
-**6. Run the test suite.** The tests drive the real module code against mocked instruments. They need a copy of the source:
+**6. Run the test suite.** The tests drive the real module code against mocked instruments. They need a copy of the source, installed in a fresh virtual environment (not the one from step 1, because the PyPI install and the source install replace each other; see [section 3.4](#34-development-dependencies-for-testing-optional)):
 
 ```bash
 git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git

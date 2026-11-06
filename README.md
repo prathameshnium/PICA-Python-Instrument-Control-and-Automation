@@ -296,10 +296,10 @@ pip install --upgrade pica-suite
     ```
     Then run the test suite to confirm the setup (see [Running Tests Locally](#running-tests-locally)):
     ```bash
-    pytest
+    python -B -m pytest -p no:cacheprovider
     ```
 
-    *Note: Ensure you have the NI-VISA drivers installed on your host machine to allow [`PyVISA`](https://github.com/pyvisa/pyvisa) to communicate with the hardware.*
+    *Note: NI-VISA is needed only to talk to real instruments through [`PyVISA`](https://github.com/pyvisa/pyvisa); the tests run without it.*
 
 ### Option 3: Installing on Linux
 
