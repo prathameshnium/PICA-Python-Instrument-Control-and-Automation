@@ -300,13 +300,36 @@ We **strongly recommend** new users utilize the PICA GUI for the most complete a
 
 ### 3.4 Development Dependencies for Testing (Optional)
 
-If you plan to contribute to PICA or run the test suite, you will need to install the development dependencies:
+This section is for working on PICA itself or running its test suite. Lab users who only run measurements do not need it. You need Python 3.10 or newer; the lab PCs run 3.10, so code must stay 3.10-compatible. No instruments and no VISA backend (NI-VISA) are needed: every instrument is mocked in the tests.
+
+**1. Get the source and make a virtual environment.** On Windows, clone into a short folder path (for example `C:\dev`), since some file paths in the repository are long. Use a fresh environment: do not also `pip install pica-suite` into it, because the two installs replace each other.
 
 ```bash
+git clone https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation.git
+cd PICA-Python-Instrument-Control-and-Automation
+python -m venv venv
+```
+
+Then activate it. Use the line for your shell:
+
+```text
+venv\Scripts\activate.bat            (Windows Command Prompt)
+venv\Scripts\Activate.ps1            (Windows PowerShell; if scripts are blocked, first run
+                                      Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass)
+source venv/Scripts/activate         (Git Bash)
+source venv/bin/activate             (Linux)
+```
+
+On Linux, first install the system packages from step 1 of [Installing on Linux](#installing-on-linux) (Tk is needed even for the tests), and use `python3 -m venv venv` in place of `python -m venv venv`. macOS is not tested.
+
+**2. Install PICA in editable mode with the development tools.** Edits to the source then take effect without reinstalling:
+
+```bash
+pip install -e .
 pip install -r requirements-dev.txt
 ```
 
-Run the test suite (all instruments are mocked, so no hardware is needed):
+**3. Run the test suite.**
 
 ```bash
 python -B -m pytest -p no:cacheprovider
@@ -317,6 +340,44 @@ To see the coverage percentage as well:
 ```bash
 python -B -m pytest --cov=pica --cov-report=term-missing -p no:cacheprovider
 ```
+
+The full suite takes a few minutes. It usually ends without a "N passed" line, so read the exit code instead: 0 means no test failed (skips are expected). Tests that open real windows are skipped unless `PICA_REAL_WINDOWS` is set to `1`. Expect many PICA windows to flash open and shut while they run:
+
+```powershell
+# Windows PowerShell (the variable stays set for this terminal session)
+$env:PICA_REAL_WINDOWS = "1"; python -B -m pytest -p no:cacheprovider
+```
+
+```bash
+# Linux or Git Bash
+PICA_REAL_WINDOWS=1 python -B -m pytest -p no:cacheprovider
+# Linux without a display, as in CI
+PICA_REAL_WINDOWS=1 xvfb-run --auto-servernum python -B -m pytest -p no:cacheprovider
+```
+
+To run one module's tests on their own (most test files also run as plain Python):
+
+```bash
+python -B -m pytest -p no:cacheprovider tests/test_iv_k2400_run_path.py
+python -B tests/test_iv_k2400_run_path.py
+```
+
+**4. Check style before a pull request.** CI runs `flake8` on pushes and pull requests to `main`. This is the check that fails the build (syntax errors and undefined names); `--extend-exclude` keeps a virtual environment inside the checkout out of the scan:
+
+```bash
+flake8 . --extend-exclude venv,.venv --count --select=E9,F63,F7,F82 --show-source --statistics
+```
+
+**5. Build this manual locally (optional).** The documentation site is built with Sphinx from the `docs/` folder:
+
+```bash
+pip install -r docs/requirements.txt
+sphinx-build -b html docs docs/_build/html
+```
+
+Then open `docs/_build/html/index.html` in a browser.
+
+Branch naming, the pull-request checklist and how to add a new instrument module are in [CONTRIBUTING.md](https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/blob/main/CONTRIBUTING.md).
 
 ### 3.5 Try PICA Without Instruments
 
