@@ -5,12 +5,12 @@ All notable changes to PICA are documented here. The format follows [Keep a Chan
 ## [Unreleased]
 
 ### Changed
-- **Quick Calc**: the decimal result is now the large answer, with the exact fraction (where there is one) shown smaller beside it; `_` works as a short name for `ans`; Shift+Up copies the line above.
 - **Docs**: User Manual 3.4 is now a full develop-from-source walkthrough (virtual environment per shell, Linux packages, editable install, tests, flake8, building the docs); the README says NI-VISA is not needed for the tests.
+- **Quick Calc**: the decimal result is now the large answer, with the exact fraction (where there is one) shown smaller beside it; `_` works as a short name for `ans`; Shift+Up copies the line above. a very small result (for example 1e-15) is no longer shown as the fraction 0/1.
 - **Classic launcher script** moved to `tools/legacy_stuff/run_pica_legacy.py`.
 
 ### Fixed
-- **Quick Calc**: a very small result (for example 1e-15) is no longer shown as the fraction 0/1.
+
 
 ## [1.0.8] - 2026-10-27
 
