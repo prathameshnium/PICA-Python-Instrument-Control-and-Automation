@@ -52,7 +52,7 @@ PICA provides an extensible, unified graphical user interface (GUI) for orchestr
 The suite performs automated protocols including:
 * Temperature-dependent wide-range resistance measurement ($10^{-8}$ - $10^{16}$ Ω, the combined specified range of the Keithley 6221/2182 delta system and the 6517B electrometer).
 * Current-voltage (I-V) characterisation.
-* Capacitance characterisation and magnetocapacitance studies (20 Hz - 2 MHz).
+* Capacitance/dielectric constant characterisation and magnetocapacitance/magnetodielectric studies (20 Hz - 2 MHz).
 * Pyroelectric current measurement (resolution $10^{-15}$ A).
 
 <p align="center">
@@ -165,7 +165,7 @@ These modules drive the following hardware. The ranges are those of the instrume
 | **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter + Lakeshore 350/340 | Semiconductors, oxides, general transport. | 100 µΩ - 200 MΩ |
 | **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** + Lakeshore 350/340 | Detecting subtle phase transitions. | 1 µΩ - 100 MΩ |
 | **High-Resistance** | **Keithley 6517B** Electrometer + Lakeshore 350/340 | High bandgap materials, polymers, & ceramics. | 1 Ω - 10 PΩ |
-| **Capacitance Analysis** | **Keysight E4980A** + Lakeshore 350/340 | C-V Analysis and Magnetocapacitance characterisation. | 20 Hz - 2 MHz |
+| **Capacitance / Dielectric Analysis** | **Keysight E4980A** + Lakeshore 350/340 | C-V analysis, dielectric constant and magnetocapacitance/magnetodielectric characterisation. | 20 Hz - 2 MHz |
 | **Pyroelectric** | **K6517B** + Lakeshore 350/340 | Current vs Temp (detecting Curie temperature). | $10^{-15}$ A Resolution |
 | **Broadband Dielectric Spectroscopy** *(experimental)* | **Novocontrol Alpha-AN** + ZG4 interface | Frequency scans, C-V, temperature-step and temperature scans of dielectric & impedance spectra, with WinDETA-compatible exports. | 20 Hz - 10 MHz |
 | **AC Transport** *(experimental)* | **Keithley 6221** + SR830 lock-in or Keithley 197A | Four-probe AC I-V, frequency scan and R-T. | |
@@ -607,4 +607,4 @@ This project is licensed under the MIT License - see the [LICENSE file](LICENSE)
 
 ---
 
-<sub>**Keywords:** Python instrument control · laboratory automation · GPIB · PyVISA · SCPI · VISA · Keithley 2400 SourceMeter · Keithley 6221 current source · Keithley 2182 nanovoltmeter · Keithley 6517B electrometer · Keysight E4980A LCR meter · Lakeshore 350 temperature controller · Lakeshore 340 temperature controller · Cryo-con 34 temperature controller · SR830 lock-in amplifier · Novocontrol Alpha-AN · broadband dielectric spectroscopy · impedance spectroscopy · C-V measurement · PPMS · cryogenics · temperature control · transport measurements · resistivity vs temperature · I-V characterization · delta mode · magnetocapacitance · pyroelectric current · condensed matter physics · materials characterization</sub>
+<sub>**Keywords:** Python instrument control · laboratory automation · GPIB · PyVISA · SCPI · VISA · Keithley 2400 SourceMeter · Keithley 6221 current source · Keithley 2182 nanovoltmeter · Keithley 6517B electrometer · Keysight E4980A LCR meter · Lakeshore 350 temperature controller · Lakeshore 340 temperature controller · Cryo-con 34 temperature controller · SR830 lock-in amplifier · Novocontrol Alpha-AN · broadband dielectric spectroscopy · impedance spectroscopy · C-V measurement · PPMS · cryogenics · temperature control · transport measurements · resistivity vs temperature · I-V characterization · delta mode · magnetocapacitance · magnetodielectric · pyroelectric current · condensed matter physics · materials characterization</sub>

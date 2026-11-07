@@ -61,7 +61,7 @@ pip install --upgrade pica-suite
 
 High-precision, low-noise transport measurements are essential for advancing research in spintronics and materials characterization. To enable such progress, highly precise and accurate automation software is required. PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and material samples. It runs on a standard Windows laboratory PC, and its installation, tests and windows are also verified on Linux.
 It provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analysers, and temperature controllers. Built on the robust Python scientific ecosystem, PICA leverages community standard libraries as an alternative to licensed commercial software for instrument control.
-The launcher starts each measurement module in its own process, so a hung instrument cannot freeze the launcher or the other modules, and most modules acquire data in a worker thread so their windows stay responsive. It performs automated protocols, including temperature-dependent wide range resistance measurement (10<sup>-8</sup> - 10<sup>16</sup> Ω, the combined specified range of the Keithley 6221/2182 delta system and the 6517B electrometer), current voltage (I-V) characterisation,  capacitance characterisation, and pyroelectric current measurement. Temperature is controlled or logged through a Lakeshore 350/340 or Cryo-con 34, and measurements can run inside a cryostat such as a PPMS, which sets the temperature and field while PICA reads the probe thermometer, without rewiring the setup between protocols.
+The launcher starts each measurement module in its own process, so a hung instrument cannot freeze the launcher or the other modules, and most modules acquire data in a worker thread so their windows stay responsive. It performs automated protocols, including temperature-dependent wide range resistance measurement (10<sup>-8</sup> - 10<sup>16</sup> Ω, the combined specified range of the Keithley 6221/2182 delta system and the 6517B electrometer), current voltage (I-V) characterisation, capacitance/dielectric constant characterisation, and pyroelectric current measurement. Temperature is controlled or logged through a Lakeshore 350/340 or Cryo-con 34, and measurements can run inside a cryostat such as a PPMS, which sets the temperature and field while PICA reads the probe thermometer, without rewiring the setup between protocols.
 
 ## 2. Design Philosophy & Architecture
 
@@ -695,7 +695,7 @@ The modules drive instruments whose specified ranges together span 24 orders of 
 | **Mid-Resistance (Standard)** | **Keithley 2400** SourceMeter + Lakeshore 350/340 | Semiconductors, oxides, general transport. | 100 µΩ - 200 MΩ |
 | **Mid-Resistance (High-Precision)** | **Keithley 2400** + **K2182** + Lakeshore 350/340 | Detecting subtle phase transitions. | 1 µΩ - 100 MΩ |
 | **High-Resistance** | **Keithley 6517B** Electrometer + Lakeshore 350/340 | High bandgap materials, polymers, & ceramics. | 1 Ω - 10 PΩ |
-| **Capacitance Analysis** | **Keysight E4980A** + Lakeshore 350/340 | C-V Analysis and Magnetocapacitance characterization. | 20 Hz - 2 MHz |
+| **Capacitance / Dielectric Analysis** | **Keysight E4980A** + Lakeshore 350/340 | C-V analysis, dielectric constant and magnetocapacitance/magnetodielectric characterization. | 20 Hz - 2 MHz |
 | **Broadband Dielectric** | **Novocontrol Alpha-AN** + ZG4 | Permittivity, electric modulus & AC conductivity (WinDETA-compatible). Experimental. | 20 Hz - 10 MHz |
 | **Memristor switching** | **Keithley 2400** | Switching I-V, retention and endurance of resistive-switching devices. | ±200 V source, hardware never-exceed voltage and current compliance set per run |
 | **Pyroelectric** | **K6517B** + Lakeshore 350/340 | Current vs Temp (detecting Curie temperature). | 10<sup>-15</sup> A Resolution |
@@ -704,7 +704,7 @@ The modules drive instruments whose specified ranges together span 24 orders of 
 
 PICA is designed to be versatile while being optimized for specific classes of instruments. The following modules represent the core capabilities of the suite, supporting a resistance scale spanning **24 orders of magnitude** (10 nΩ to 10 PΩ) depending on the hardware used.
 Pyroelectric measurement performed using an electrometer enables highly sensitive characterization of ferroelectric phase transitions by detecting extremely small pyroelectric currents, with a resolution on the order of 10<sup>-15</sup> A. The
-impedance analyzer enables the characterization of capacitance anomalies over the frequency range from 20 Hz to 2 MHz and is utilized for magnetocapacitance and photoinduced characterization across a wide variety of multiferroic systems. 
+impedance analyzer enables the characterization of dielectric anomalies over the frequency range from 20 Hz to 2 MHz and is utilized for magnetocapacitance/magnetodielectric and photoinduced characterization across a wide variety of multiferroic systems. 
 
 ### 6.1 Ultra Low Resistance Measurements
 
