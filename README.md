@@ -47,10 +47,10 @@
 
 High-precision, low-noise transport measurements are essential for advancing research in spintronics and materials characterisation. **PICA (Python-based Instrument Control and Automation)** is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and material samples. It runs on a standard Windows laboratory PC, and its installation, tests and windows are also verified on Linux.
 
-PICA provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments — current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analysers, and temperature controllers such as the **Keithley 6221, 2182, 2400, and 6517B**, the **Keysight E4980A LCR meter**, the **Lakeshore 350/340**, the **Cryo-con 34**, and (experimentally) the **Novocontrol Alpha-AN**. Built on the robust Python scientific ecosystem (PyVISA, NumPy, pandas, Matplotlib), PICA drives these instruments together from one interface.
+PICA provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments — current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analysers, and temperature controllers such as the **Keithley 6221, 2182, 2400, and 6517B**, the **Keysight E4980A LCR meter**, the **Lakeshore 350/340**, the **Cryo-con 34**, and (experimentally) the **Novocontrol Alpha-AN**. Built on the robust Python scientific ecosystem (PyVISA, NumPy, Matplotlib), PICA drives these instruments together from one interface.
 
 The suite performs automated protocols including:
-* Temperature-dependent wide-range resistance measurement ($10^{-8}$ - $10^{16}$ Ω).
+* Temperature-dependent wide-range resistance measurement ($10^{-8}$ - $10^{16}$ Ω, the combined specified range of the Keithley 6221/2182 delta system and the 6517B electrometer).
 * Current-voltage (I-V) characterisation.
 * Capacitance characterisation and magnetocapacitance studies (20 Hz - 2 MHz).
 * Pyroelectric current measurement (resolution $10^{-15}$ A).
@@ -142,16 +142,16 @@ PICA is built on a modular architecture characterised by self-contained modules,
 The launcher starts every measurement program in its own process with Python's standard `multiprocessing` library.
 * **Stability:** If an instrument hangs, only that program's process is affected. It can be closed without freezing the launcher or the other open programs, and data already written stays on disk.
 * **Responsiveness:** The `tkinter`-based frontend remains responsive for live `matplotlib` data plotting even while the backend waits for hardware triggers.
-* **Data Integrity:** Each data point is appended to the file as soon as it is measured, so a crash or power cut loses at most the point in progress.
+* **Data Integrity:** Each data point is appended to the file as soon as it is measured. Most modules flush after each point, so a program crash loses at most the point in progress; the newer modules also force it to disk (`os.fsync()`), so in those a power cut does too.
 
 ### Hardware Abstraction Layer
 PICA utilizes [**PyVISA**](https://github.com/pyvisa/pyvisa) to abstract low-level communication protocols (GPIB, USB, Ethernet). The software implements a strict initialization routine:
 1.  **Connection Verification:** A built-in "VISA Instrument Scanner" queries the bus (`*IDN?`) to map instrument addresses.
-2.  **Instrument Reset:** Modules that control an instrument reset it (`*RST` / `*CLS`) to a known state; read-only sensing modules never write to the thermometer.
+2.  **Instrument Reset:** Modules that control an instrument reset it (`*RST` / `*CLS`) to a known state. Sensing modules never set a temperature or start a ramp; some Lakeshore ones clear or reset the controller or switch its heater off on connect, and the Cryo-con 34 ones only query (two dielectric scans can send `STOP`).
 3.  **Shutdown:** On finish, Stop, error or window close, sources are switched off and heaters set to off.
 
 ### Testing and Simulation
-PICA includes a testing suite using `pytest` and `unittest.mock` to simulate VISA resources, allowing verification of backend logic streams and command sequences without constant access to physical instruments.
+PICA includes a `pytest` suite of about 4,500 tests that run the real module code against fake instruments (hand-written fakes and `unittest.mock`) recording every command sent, so backend logic and command sequences are checked without physical instruments.
 
 ---
 
@@ -465,7 +465,7 @@ Upon launching PICA (`pica-gui`), click your measurement module in Advanced Opti
     * **Setup:** Widen this panel first to view all experimental parameters.
     * **Parameters:** Specify the `Sample Name`, select the `File Storage Location`, and choose the `Instrument Address` (GPIB/VISA) via the dropdown selection box.
     * **Protocol:** Define measurement specific settings such as voltage/current limits, temperature step sizes, and delay times.
-    * **Console:** A scrollable log at the bottom provides a continuous, time-stamped stream of all operations and SCPI commands sent to the instruments.
+    * **Console:** A scrollable log at the bottom provides a continuous, time-stamped log of the module's readings, status and errors; the instrument commands can be read in the module's source file.
 
 2.  **Visualization (Plot Panel - Right):**
     * **Real-Time Monitoring:** Displays up to four simultaneous plots (e.g., Resistance vs. Temperature, Voltage vs. Current) updated in real-time.
@@ -480,7 +480,7 @@ Upon launching PICA (`pica-gui`), click your measurement module in Advanced Opti
 
 ## Running Tests Locally
 
-**Test coverage:** the suite has 4,400+ tests, all run against mocked VISA instruments, so no hardware is needed. They cover **39% of the statements in `pica/`** (measured 2026-10-27 with `--cov=pica`, v1.0.8). The [Codecov](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation) badge measures the whole repository, so its figure differs.
+**Test coverage:** the suite has about 4,500 tests and needs no hardware: instrument tests run against fake VISA instruments. They cover **39% of the statements in `pica/`** (measured 2026-10-27 with `--cov=pica`, v1.0.8). The [Codecov](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation) badge measures the whole repository, so its figure differs.
 
 To test a specific release, clone its tag into a fresh virtual environment and install from the clone. Do not also install from PyPI in the same environment, because the two installs replace each other. On Windows, clone into a short folder path, since some file paths in the repository are long.
 ```bash

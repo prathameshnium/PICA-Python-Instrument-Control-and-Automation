@@ -61,7 +61,7 @@ pip install --upgrade pica-suite
 
 High-precision, low-noise transport measurements are essential for advancing research in spintronics and materials characterization. To enable such progress, highly precise and accurate automation software is required. PICA (Python-based Instrument Control and Automation) is a modular, open-source software suite designed to automate advanced transport measurements for electronic devices and material samples. It runs on a standard Windows laboratory PC, and its installation, tests and windows are also verified on Linux.
 It provides an extensible, unified graphical user interface (GUI) for orchestrating high-precision instruments, specifically current source (DC/AC) units, nanovoltmeters, high resistance electrometers, impedance analysers, and temperature controllers. Built on the robust Python scientific ecosystem, PICA leverages community standard libraries as an alternative to licensed commercial software for instrument control.
-Using `threading` and `multiprocessing`, PICA drives these instruments together from one interface. It performs automated protocols, including temperature-dependent wide range resistance measurement (10<sup>-8</sup> - 10<sup>16</sup> Ω), current voltage (I-V) characterisation,  capacitance characterisation, and pyroelectric current measurement. Temperature is controlled or logged through a Lakeshore 350/340 or Cryo-con 34, and measurements can run inside a cryostat such as a PPMS while it sets the magnetic field, without rewiring the setup between protocols.
+The launcher starts each measurement module in its own process, so a hung instrument cannot freeze the launcher or the other modules, and most modules acquire data in a worker thread so their windows stay responsive. It performs automated protocols, including temperature-dependent wide range resistance measurement (10<sup>-8</sup> - 10<sup>16</sup> Ω, the combined specified range of the Keithley 6221/2182 delta system and the 6517B electrometer), current voltage (I-V) characterisation,  capacitance characterisation, and pyroelectric current measurement. Temperature is controlled or logged through a Lakeshore 350/340 or Cryo-con 34, and measurements can run inside a cryostat such as a PPMS, which sets the temperature and field while PICA reads the probe thermometer, without rewiring the setup between protocols.
 
 ## 2. Design Philosophy & Architecture
 
@@ -69,7 +69,7 @@ PICA was constructed on a core philosophy of **robustness, modularity, and acces
 
 ### 2.1 The Choice of Python
 Python was selected as the foundational language for PICA due to its ubiquity in the scientific community:
-* **Scientific Ecosystem:** Libraries like `NumPy` (array operations), `Pandas` (data structuring), and `Matplotlib` (publication-quality plotting) create a seamless workflow from acquisition to analysis.
+* **Scientific Ecosystem:** Libraries like `NumPy` (array operations), `Pandas` (used by the legacy CLI scripts), and `Matplotlib` (publication-quality plotting) create a seamless workflow from acquisition to analysis.
 * **PyVISA Integration:** The [`PyVISA`](https://github.com/pyvisa/pyvisa) library provides platform-independent wrappers for VISA drivers, allowing communication via simple, readable commands (e.g., ``instrument.query('*IDN?')``) rather than complex low-level protocols.
 * **Portability:** Python and PyVISA are available on Windows, Linux and macOS. PICA is validated with real instruments on Windows. On Linux, installation, tests and GUIs are verified, but measurements against real instruments are not yet (see [Installing on Linux](#installing-on-linux)).
 
@@ -466,7 +466,7 @@ To ensure the software is self-contained (useful for offline lab computers), PIC
 
 Each measurement module is a single window with two panels, the control panel on the left and the plot panel on the right, separated by a draggable divider. Upon launching a measurement module, it is recommended to first widen the control panel, as it is required for configuring all experimental parameters. Typical settings include specifying the sample file name, selecting the file storage location, choosing the instrument address via a selection box, and defining voltage and temperature step sizes, delays, and other experimental parameters.
 
-The control panel also contains a console located below the parameter settings. This console can be scrolled and provides a continuous log of all operations executed by the software. The right-hand plot panel is a simplified plotting interface that can display one to four plots, depending on the specific module. The plots are updated in real time, and some modules allow switching the axes to a logarithmic scale to improve data visualization. The plotting interface is intentionally kept minimalistic, with limited functionality, to reduce unnecessary user interaction with the measurement setup and to keep the measurement program simple by omitting nonessential features.
+The control panel also contains a console located below the parameter settings. This console can be scrolled and provides a continuous, time-stamped log of the module's readings, status and errors; the instrument commands themselves can be read in the module's single source file. The right-hand plot panel is a simplified plotting interface that can display one to four plots, depending on the specific module. The plots are updated in real time, and some modules allow switching the axes to a logarithmic scale to improve data visualization. The plotting interface is intentionally kept minimalistic, with limited functionality, to reduce unnecessary user interaction with the measurement setup and to keep the measurement program simple by omitting nonessential features.
 
 At the right end of the header bar, at the top of the window, two icon buttons open the [VISA Instrument Scanner](#51-visa-instrument-scanner) (📟) and the [PICA Plotter Utility](#52-pica-plotter-utility) (📈). Nearly every measurement module carries them (the Voltage Polling module has the scanner only), so rapid testing and diagnostics are one click away. The VISA/GPIB scanner allows the user to quickly verify whether instruments are properly connected and recognized by the system, while the plotter utility offers additional plotting capabilities beyond those available in the default plot window.
 
@@ -687,7 +687,7 @@ does not show up. None of them sends a set command to an instrument.
 
 ## 6. Supported Measurement Modules
 
-The system is currently validated with industry-standard hardware, covering a resistance range spanning 24 orders of magnitude, pyroelectric current measurements with 10<sup>-15</sup> A resolution, and capacitance characterisation from 20 Hz - 2 MHz.
+The modules drive instruments whose specified ranges together span 24 orders of magnitude in resistance (10 nΩ to 10 PΩ), with a pyroelectric current resolution of 10<sup>-15</sup> A and capacitance measured from 20 Hz to 2 MHz.
 
 | Module | Configuration / Instrument | Use Case | Range |
 | :--- | :--- | :--- | :--- |
