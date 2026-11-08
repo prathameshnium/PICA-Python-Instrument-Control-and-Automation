@@ -136,6 +136,12 @@ pip install pica-suite
 
 To upgrade an existing installation, run `pip install --upgrade pica-suite`.
 
+> **conda-forge (coming soon).** PICA has been submitted to conda-forge and is waiting for review. It cannot be installed with conda yet; use pip above until then. Once it is available:
+> ```bash
+> conda install -c conda-forge pica-suite
+> ```
+> conda installs PICA and its Python dependencies only. The VISA driver (NI-VISA or Keysight IO Libraries) is installed separately, as with pip.
+
 **Option B: install from source**
 
 1.  **Clone the Repository**
