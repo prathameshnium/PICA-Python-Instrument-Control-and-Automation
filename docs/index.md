@@ -24,7 +24,7 @@ PICA (**Python Instrument Control and Automation**) is a modular, open-source Py
 pip install pica-suite
 ```
 
-**conda-forge (coming soon):** PICA has been submitted to conda-forge and is waiting for review. Once it is available, `conda install -c conda-forge pica-suite` will also work. Until then, use pip.
+**conda-forge (coming soon):** PICA has been submitted to conda-forge ([review in progress](https://github.com/conda-forge/staged-recipes/pull/35555)). Once it is available, `conda install -c conda-forge pica-suite` will also work (Python 3.11 or newer). Until then, use pip.
 
 **Or install from source** (inside a clone of the repository):
 

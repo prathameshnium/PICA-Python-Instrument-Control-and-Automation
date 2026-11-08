@@ -8,8 +8,11 @@ All notable changes to PICA are documented here. The format follows [Keep a Chan
 - **Docs**: User Manual 3.4 is now a full develop-from-source walkthrough (virtual environment per shell, Linux packages, editable install, tests, flake8, building the docs); the README says NI-VISA is not needed for the tests.
 - **Quick Calc**: the decimal result is now the large answer, with the exact fraction (where there is one) shown smaller beside it; `_` works as a short name for `ans`; Shift+Up copies the line above. a very small result (for example 1e-15) is no longer shown as the fraction 0/1.
 - **Classic launcher script** moved to `tools/legacy_stuff/run_pica_legacy.py`.
+- **Docs**: README, User Manual and docs home page note that PICA has been submitted to conda-forge ([staged-recipes #35555](https://github.com/conda-forge/staged-recipes/pull/35555)); pip stays the install route until it is accepted.
 
 ### Fixed
+- **Source distribution**: Python bytecode caches (`*.pyc`, `__pycache__`) are excluded; 1.0.8's sdist shipped one by accident.
+- **Docs**: broken and outdated links fixed (project web page moved to GitHub Pages; PEP 8, Zenodo and Codecov links updated).
 
 
 ## [1.0.8] - 2026-10-27
