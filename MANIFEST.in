@@ -30,3 +30,8 @@ prune tests/__pycache__
 # sources: keep stale local copies out of the sdist.
 exclude pica/README.md pica/LICENSE pica/CHANGELOG.md pica/CONTRIBUTING.md
 prune pica/docs
+
+# Python bytecode caches are local build leftovers, never sources (1.0.8
+# shipped one by accident).
+global-exclude *.py[cod]
+prune **/__pycache__
