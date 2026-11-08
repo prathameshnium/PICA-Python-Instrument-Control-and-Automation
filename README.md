@@ -14,7 +14,7 @@
   <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/codeql.yml"><img src="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/codeql.yml/badge.svg" alt="CodeQL Analysis"></a>
   <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/draft-pdf.yml"><img src="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/draft-pdf.yml/badge.svg" alt="Draft PDF"></a>
   <a href="https://pica-python-instrument-control-and-automation.readthedocs.io/en/latest/"><img src="https://img.shields.io/readthedocs/pica-python-instrument-control-and-automation/latest?logo=readthedocs&logoColor=white" alt="Documentation Status"></a>
-  <a href="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation"><img src="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation/branch/main/graph/badge.svg" alt="Code Coverage"></a>
+  <a href="https://app.codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation"><img src="https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation/branch/main/graph/badge.svg" alt="Code Coverage"></a>
   <a href="https://pypi.org/project/pica-suite/"><img src="https://img.shields.io/pypi/pyversions/pica-suite?style=flat-square&logo=python&logoColor=white" alt="Supported Python versions"></a>
   <a href="https://github.com/prathameshnium/PICA-Python-Instrument-Control-and-Automation/actions/workflows/test.yml"><img src="https://img.shields.io/badge/CI%20tested-3.10%E2%80%933.15-brightgreen?style=flat-square&logo=python&logoColor=white" alt="Tested on Python 3.10 to 3.15"></a>
   <a href="https://doi.org/10.5281/zenodo.18377216"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.18377216.svg" alt="DOI"></a>
@@ -480,7 +480,7 @@ Upon launching PICA (`pica-gui`), click your measurement module in Advanced Opti
 
 ## Running Tests Locally
 
-**Test coverage:** the suite has about 4,500 tests and needs no hardware: instrument tests run against fake VISA instruments. They cover **39% of the statements in `pica/`** (measured 2026-10-27 with `--cov=pica`, v1.0.8). The [Codecov](https://codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation) badge measures the whole repository, so its figure differs.
+**Test coverage:** the suite has about 4,500 tests and needs no hardware: instrument tests run against fake VISA instruments. They cover **39% of the statements in `pica/`** (measured 2026-10-27 with `--cov=pica`, v1.0.8). The [Codecov](https://app.codecov.io/gh/prathameshnium/PICA-Python-Instrument-Control-and-Automation) badge measures the whole repository, so its figure differs.
 
 To test a specific release, clone its tag into a fresh virtual environment and install from the clone. Do not also install from PyPI in the same environment, because the two installs replace each other. On Windows, clone into a short folder path, since some file paths in the repository are long.
 ```bash
@@ -565,7 +565,7 @@ The project's earlier history and foundational development are outlined below:
 * **Instrument Manuals:** A list of instrument manuals is available in [docs/Instruments_Manuals_Lists.md](docs/Instruments_Manuals_Lists.md).
 * **Novocontrol GPIB Runbook:** Setup and troubleshooting guide for the Alpha-AN analyzer over GPIB in [docs/Novocontrol_GPIB_Runbook.md](docs/Novocontrol_GPIB_Runbook.md).
 * **GitLab Backup:** This project is manually backed up weekly to a [GitLab repository](https://gitlab.com/prathameshnium/pica-python-instrument-control-and-automation).
-* **Project Web Page:** [https://prathameshdeshmukh.site/pages/project-pica.html](https://prathameshdeshmukh.site/pages/project-pica.html).
+* **Project Web Page:** [https://prathameshnium.github.io/Prathamesh_Deshmukh_Academic_Portfolio/pages/project-pica.html](https://prathameshnium.github.io/Prathamesh_Deshmukh_Academic_Portfolio/pages/project-pica.html).
 * **Preprint:** Access the full preprint and related materials at [https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/publications/](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/publications/) or download the [PDF directly](https://prathameshnium.github.io/PICA-Python-Instrument-Control-and-Automation/publications/pica-paper.pdf) (alternate link at [Academia.edu](https://www.academia.edu/165176821/PICA_Advanced_High_Precision_Transport_Measurement_Automation_with_Python)).
 
 

@@ -76,7 +76,7 @@ Tests live in `tests/` (one test file per module). Every instrument is mocked, s
 
 ### Coding Style Guide
 
-PICA adheres to [PEP 8](https://www.python.org/dev/peps/pep-0008/) for Python code style. Please ensure your contributions follow these guidelines. CI runs `flake8` (syntax errors fail the build; style is reported with `--max-line-length=127`). Please do not run an auto-formatter such as `black` over existing files; it produces large unrelated diffs.
+PICA adheres to [PEP 8](https://peps.python.org/pep-0008/) for Python code style. Please ensure your contributions follow these guidelines. CI runs `flake8` (syntax errors fail the build; style is reported with `--max-line-length=127`). Please do not run an auto-formatter such as `black` over existing files; it produces large unrelated diffs.
 
 ### Implement your fix or feature
 
