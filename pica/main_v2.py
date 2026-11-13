@@ -31,6 +31,13 @@
                disturbed -- Reload therefore warns and asks for confirmation if
                any measurement launched from this window is still alive.
 
+               The one opt-in exception: a LONG PRESS (or right-click) on
+               Reload opens Continuous Logging, which reads the temperature
+               controller the last scan found and the pressure gauge every
+               N seconds into a CSV. It never repeats the bus scan, and it
+               skips the GPIB temperature read while a launched measurement
+               is running. Off until somebody presses Start.
+
                The scan identifies instruments by the content of their *IDN?
                reply rather than by address, so a re-addressed instrument is
                still found. The Novocontrol Alpha-AN is probed like any other
@@ -355,6 +362,10 @@ GAUGE_ENQ = b'\x05'
 GAUGE_TIMEOUT_MS = 1500
 GAUGE_TCP_PORT = 8000            # fixed on the TPG 36x Ethernet interface
 PFEIFFER_OUI = "00-A0-41"        # first three octets of every Pfeiffer MAC
+# Pre-filled in the setup dialog only (the lab's TPG 361 sits on COM3 via its
+# FTDI USB chip). It is NOT read until somebody presses Save: the gauge stays
+# opt-in, because COM3 on another PC may be anything at all.
+GAUGE_DEFAULT_PORT = "COM3"
 
 
 def normalise_gauge_resource(text):
@@ -472,15 +483,24 @@ def gauge_port_choices(resources):
     """
     try:
         from serial.tools import list_ports
-        descriptions = {p.device.upper(): p.description for p in list_ports.comports()}
+        ports = {p.device.upper(): p for p in list_ports.comports()}
     except Exception:
         return list(resources)
 
     out = []
     for res in resources:
         m = re.search(r'ASRL(?:COM)?(\d+)', res.upper())
-        desc = descriptions.get(f"COM{m.group(1)}") if m else None
-        out.append(f"{res} — {desc}" if desc else res)
+        p = ports.get(f"COM{m.group(1)}") if m else None
+        if p is None:
+            out.append(res)
+            continue
+        # The TPG 36x USB socket IS an FTDI FT232R (VID 0403), so an FTDI
+        # port is flagged as the likely gauge -- same rule as the module.
+        blob = f"{p.description} {getattr(p, 'manufacturer', '') or ''} " \
+               f"{getattr(p, 'hwid', '') or ''}".upper()
+        ftdi = "FTDI" in blob or "VID:PID=0403" in blob
+        out.append(f"{res} — {p.description}"
+                   + ("  [FTDI: likely the TPG]" if ftdi else ""))
     return out
 
 
@@ -558,6 +578,168 @@ def read_pressure_gauge(rm, gauge):
             except Exception:
                 pass
     return out
+
+
+# -----------------------------------------------------------------------------
+#  Continuous logging (long-press on Reload)
+# -----------------------------------------------------------------------------
+# Opt-in and off by default: a long press on any status strip's Reload button
+# opens a small window that reads the temperature and the pressure every N
+# seconds and appends them to a CSV file. It is NOT a repeated bus scan --
+# each tick reads only the temperature controller the last scan found
+# (KRDG? A / INPUT? A, the same queries the scan uses) and the configured
+# gauge (UNI / PR1). All of them are read-only queries.
+#
+# While a measurement launched from this window is running, the GPIB
+# temperature read is skipped (the row says why) so the launcher never
+# competes with the measurement for the bus. The gauge is on its own serial
+# port or socket and is still read; if the pressure-log module holds that
+# port, the row records the error and the next tick tries again.
+TP_LOG_DEFAULT_INTERVAL_S = 60
+TP_LOG_MIN_INTERVAL_S = 2
+TP_LOG_COLUMNS = ["Timestamp", "Elapsed_s", "Temperature", "T_Units",
+                  "T_Source", "Pressure", "P_Units", "P_Status"]
+
+
+def _ascii(text):
+    """Data-file text that survives a cp1252 lab PC: '·' -> '-', the rest
+    of anything non-ASCII -> '?'."""
+    return (str(text).replace("·", "-").replace("—", "-")
+            .encode("ascii", "replace").decode("ascii"))
+
+
+def read_temperature_snapshot(rm, detected):
+    """One temperature from whichever controller the last scan found.
+
+    Same priority and the same read-only queries as scan_instruments: a
+    Lakeshore 350, then a 340, then the Cryocon 34. Returns
+    (temperature, units, source, error); temperature is None on failure or
+    when no controller was found.
+    """
+    detected = detected or {}
+    for name in ("Lakeshore 350", "Lakeshore 340"):
+        res = detected.get(name)
+        if not res:
+            continue
+        inst = None
+        try:
+            inst = rm.open_resource(res)
+            inst.timeout = TEMP_TIMEOUT_MS
+            return (float(inst.query("KRDG? A").strip()), 'K',
+                    f"{name} · Input A", None)
+        except Exception as e:
+            return None, None, None, f"{name}: {str(e) or e.__class__.__name__}"
+        finally:
+            if inst is not None:
+                try:
+                    inst.close()
+                except Exception:
+                    pass
+    res = detected.get("Cryocon 34")
+    if res:
+        inst = None
+        try:
+            inst = rm.open_resource(res)
+            inst.timeout = TEMP_TIMEOUT_MS
+            temp = float(inst.query("INPUT? A").strip())
+            units = inst.query("INPUT A:UNITS?").strip().upper()[:1] or 'K'
+            return temp, units, "Cryocon 34 · Input A", None
+        except Exception as e:
+            return None, None, None, f"Cryocon 34: {str(e) or e.__class__.__name__}"
+        finally:
+            if inst is not None:
+                try:
+                    inst.close()
+                except Exception:
+                    pass
+    return None, None, None, "no temperature controller found by the last scan"
+
+
+def read_logging_snapshot(detected, gauge, read_temperature=True,
+                          temp_skip_reason="skipped"):
+    """Temperature + pressure for one logging tick. Runs in a worker thread;
+    touches no Tk object and never raises."""
+    snap = {'time': datetime.now(), 'temperature': None, 'temp_units': None,
+            'temp_source': None, 'temp_note': None, 'pressure': None,
+            'pressure_units': None, 'pressure_source': None,
+            'pressure_error': None}
+    if not PYVISA_AVAILABLE:
+        snap['temp_note'] = snap['pressure_error'] = "PyVISA not installed"
+        return snap
+    rm = None
+    try:
+        rm = _visa().ResourceManager()
+        if read_temperature:
+            (snap['temperature'], snap['temp_units'], snap['temp_source'],
+             snap['temp_note']) = read_temperature_snapshot(rm, detected)
+        else:
+            snap['temp_note'] = temp_skip_reason
+        if gauge:
+            reading = read_pressure_gauge(rm, gauge)
+            snap['pressure'] = reading['pressure']
+            snap['pressure_units'] = reading['units']
+            snap['pressure_source'] = reading['source']
+            snap['pressure_error'] = reading['error']
+        else:
+            snap['pressure_error'] = "no gauge configured"
+    except Exception as e:
+        snap['temp_note'] = snap['temp_note'] or f"VISA backend error: {e}"
+        snap['pressure_error'] = snap['pressure_error'] or f"VISA backend error: {e}"
+    finally:
+        if rm is not None:
+            try:
+                rm.close()
+            except Exception:
+                pass
+    return snap
+
+
+def tp_log_row(snap, started):
+    """One CSV row (list of str) for a logging snapshot."""
+    t = snap['temperature']
+    p = snap['pressure']
+    return [
+        snap['time'].strftime("%Y-%m-%d %H:%M:%S"),
+        f"{(snap['time'] - started).total_seconds():.1f}",
+        f"{t:.4f}" if t is not None else "NaN",
+        snap['temp_units'] or "",
+        _ascii(snap['temp_source'] or snap['temp_note'] or ""),
+        f"{p:.4E}" if p is not None else "NaN",
+        snap['pressure_units'] or "",
+        "OK" if p is not None else _ascii(snap['pressure_error'] or ""),
+    ]
+
+
+def start_tp_log_file(path, interval_s, gauge, started):
+    """Create the CSV with its ASCII header. Returns True on success."""
+    import csv
+    try:
+        with open(path, 'w', newline='', encoding='utf-8') as fh:
+            w = csv.writer(fh)
+            w.writerow([f"# PICA launcher continuous log - started "
+                        f"{started.strftime('%Y-%m-%d %H:%M:%S')}"])
+            w.writerow([f"# Interval: {interval_s:g} s"])
+            w.writerow([f"# Pressure gauge: "
+                        f"{_ascii(gauge['resource']) if gauge else 'none configured'}"])
+            w.writerow(TP_LOG_COLUMNS)
+            fh.flush()
+            os.fsync(fh.fileno())
+        return True
+    except Exception:
+        return False
+
+
+def append_tp_log_row(path, row):
+    """Append one row and force it to disk. Returns None or the error text."""
+    import csv
+    try:
+        with open(path, 'a', newline='', encoding='utf-8') as fh:
+            csv.writer(fh).writerow(row)
+            fh.flush()
+            os.fsync(fh.fileno())
+        return None
+    except Exception as e:
+        return str(e) or e.__class__.__name__
 
 
 def scan_row(resource, name, reply):
@@ -1938,6 +2120,13 @@ class PICALauncherV2:
         self._live_chips = set()
         self._blink_on = True
         self.launched_processes = []
+        # Continuous T/P logging (long press on Reload). None while off;
+        # otherwise a dict with the interval, file, pending after-id, etc.
+        self._tplog = None
+        self._tplog_win = None
+        self._tplog_ui = None
+        self._reload_press_after = None
+        self._reload_long_fired = False
         # Ctrl+F search: one index for every window, one panel per window
         # (built on first use), and what is on screen right now.
         self._search_index = build_search_index(
@@ -2306,9 +2495,16 @@ class PICALauncherV2:
 
         # Reload is packed to the right edge before anything elastic, so pack
         # reserves its width instead of letting the rest squeeze it out.
-        strip['reload_btn'] = ttk.Button(inner, text="⟳ Reload", style='Aux.TButton',
-                                         command=self.start_scan)
+        # A click rescans the bus; a long press (or right-click) opens the
+        # continuous temperature / pressure logging window instead.
+        strip['reload_btn'] = ttk.Button(inner, text=self._reload_text(),
+                                         style='Aux.TButton',
+                                         command=self._on_reload_click)
         strip['reload_btn'].pack(side='right', padx=(12, 0))
+        strip['reload_btn'].bind('<ButtonPress-1>', self._on_reload_press, add='+')
+        strip['reload_btn'].bind('<ButtonRelease-1>', self._on_reload_release, add='+')
+        strip['reload_btn'].bind('<Button-3>',
+                                 lambda e: self.open_continuous_logging(), add='+')
 
         if chip_names is None:
             strip['status_btn'] = ttk.Button(
@@ -2561,14 +2757,18 @@ class PICALauncherV2:
             strip['status_btn'].config(
                 text=f"⚡ Instrument Status   {n_found}/{n_known} on the bus{new_tail}")
 
+        # A continuous-logging tick refreshes the two readings without a bus
+        # scan; their "as of" is then the tick, not the scan.
+        as_of = r.get('readings_at') or r['timestamp']
         if strip.get('temp_value'):
             if r['temperature'] is not None:
                 units = r.get('temp_units', 'K')
                 strip['temp_value'].config(text=f"{r['temperature']:.2f} {units}")
-                strip['temp_sub'].config(text=f"{r['temp_source']} · as of {r['timestamp']}")
+                strip['temp_sub'].config(text=f"{r['temp_source']} · as of {as_of}")
             else:
                 strip['temp_value'].config(text="—")
-                strip['temp_sub'].config(text="no Lakeshore / Cryocon reading")
+                strip['temp_sub'].config(
+                    text=r.get('temp_note') or "no Lakeshore / Cryocon reading")
 
         if strip.get('pres_value'):
             if r.get('pressure') is not None:
@@ -2578,7 +2778,7 @@ class PICALauncherV2:
                 units = r.get('pressure_units') or "mbar"
                 strip['pres_value'].config(text=f"{r['pressure']:.1E} {units}")
                 strip['pres_sub'].config(
-                    text=f"{r['pressure_source']} · as of {r['timestamp']}")
+                    text=f"{r['pressure_source']} · as of {as_of}")
             elif r.get('pressure_error'):
                 # An underrange at the bottom of a pump-down is a state, not
                 # a failure, so whatever the gauge said goes in the sub-line
@@ -4337,6 +4537,341 @@ class PICALauncherV2:
             except tk.TclError:
                 pass
 
+    # ------------------------------------------------- continuous logging
+    # Long press (or right-click) on any Reload button opens this. A short
+    # click is still a one-shot bus scan, exactly as before.
+    RELOAD_LONG_PRESS_MS = 600
+
+    @staticmethod
+    def _fmt_interval(seconds):
+        """60 -> '1 min', 90 -> '90 s', 2.5 -> '2.5 s'."""
+        if seconds >= 60 and seconds % 60 == 0:
+            return f"{seconds / 60:g} min"
+        return f"{seconds:g} s"
+
+    def _reload_text(self):
+        lg = getattr(self, '_tplog', None)
+        if lg:
+            return f"⟳ Reload · logging every {self._fmt_interval(lg['interval_s'])}"
+        return "⟳ Reload"
+
+    def _paint_reload_buttons(self):
+        if self._scanning:
+            return          # "Scanning…" stays until the scan lands
+        for strip in self._strips:
+            btn = strip.get('reload_btn')
+            if btn is not None:
+                try:
+                    btn.config(text=self._reload_text())
+                except tk.TclError:
+                    pass
+
+    def _on_reload_press(self, event=None):
+        # Every press starts clean, so a long press whose release landed on
+        # the new window cannot swallow the next ordinary click.
+        self._reload_long_fired = False
+        self._cancel_reload_press()
+        self._reload_press_after = self.root.after(
+            self.RELOAD_LONG_PRESS_MS, self._on_reload_long_press)
+
+    def _cancel_reload_press(self):
+        if self._reload_press_after is not None:
+            try:
+                self.root.after_cancel(self._reload_press_after)
+            except tk.TclError:
+                pass
+            self._reload_press_after = None
+
+    def _on_reload_long_press(self):
+        self._reload_press_after = None
+        self._reload_long_fired = True
+        self.open_continuous_logging()
+
+    def _on_reload_release(self, event=None):
+        # Runs before the button's own release handling (widget bindings
+        # come ahead of the class binding), so a short press is cancelled
+        # here and _on_reload_click still sees the right flag.
+        self._cancel_reload_press()
+
+    def _on_reload_click(self):
+        if self._reload_long_fired:
+            self._reload_long_fired = False
+            return
+        self.start_scan()
+
+    def _default_tplog_path(self):
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return os.path.join(self._last_data_dir, f"PICA_TP_log_{stamp}.csv")
+
+    def open_continuous_logging(self):
+        """The continuous temperature / pressure logging window.
+
+        Sentence-style: "Read every [60] [seconds]", a file, Start / Stop.
+        Closing the window does NOT stop logging -- an overnight log must
+        survive somebody tidying the screen; long-press Reload to come back.
+        """
+        if self._tplog_win is not None:
+            try:
+                self._tplog_win.deiconify()
+                self._tplog_win.lift()
+                self._tplog_win.focus_force()
+                return
+            except tk.TclError:
+                self._tplog_win = None
+
+        win = tk.Toplevel(self.root)
+        self._tplog_win = win
+        win.title("PICA — Continuous Logging")
+        win.configure(bg=self.CLR_APP)
+        win.transient(self._dialog_master())
+        win.resizable(False, False)
+
+        def _close():
+            self._tplog_win = None
+            self._tplog_ui = None
+            win.destroy()
+        win.protocol("WM_DELETE_WINDOW", _close)
+
+        pad = tk.Frame(win, bg=self.CLR_APP)
+        pad.pack(fill='both', expand=True, padx=18, pady=16)
+        ttk.Label(pad, text="Log temperature and pressure",
+                  style='CardTitle.TLabel').pack(anchor='w')
+        ttk.Label(pad, style='Dim.TLabel', justify='left',
+                  text="Reads the temperature controller the last scan found and\n"
+                       "the pressure gauge, then writes one row to a CSV file.\n"
+                       "No bus scan is repeated. While a measurement launched\n"
+                       "from here is running, the temperature (GPIB) is skipped\n"
+                       "so the measurement is never disturbed.").pack(
+            anchor='w', pady=(2, 12))
+
+        lg = self._tplog
+        every = tk.Frame(pad, bg=self.CLR_APP)
+        every.pack(anchor='w', pady=(0, 10))
+        tk.Label(every, text="Read every", bg=self.CLR_APP, fg=self.CLR_TEXT,
+                 font=self.FONT_COMBO).pack(side='left')
+        if lg:
+            secs = lg['interval_s']
+            start_n, start_u = ((f"{secs / 60:g}", "minutes")
+                                if secs >= 60 and secs % 60 == 0
+                                else (f"{secs:g}", "seconds"))
+        else:
+            start_n, start_u = str(TP_LOG_DEFAULT_INTERVAL_S), "seconds"
+        n_var = tk.StringVar(value=start_n)
+        n_entry = ttk.Entry(every, textvariable=n_var, width=7,
+                            font=self.FONT_COMBO, justify='center')
+        n_entry.pack(side='left', padx=6)
+        u_var = tk.StringVar(value=start_u)
+        u_cb = ttk.Combobox(every, textvariable=u_var, state='readonly',
+                            values=("seconds", "minutes"), width=9,
+                            font=self.FONT_COMBO)
+        u_cb.pack(side='left')
+
+        save_var = tk.BooleanVar(value=True if not lg else bool(lg['path']))
+        save_chk = ttk.Checkbutton(pad, text="Save every reading to this CSV file:",
+                                   variable=save_var)
+        save_chk.pack(anchor='w')
+        file_row = tk.Frame(pad, bg=self.CLR_APP)
+        file_row.pack(fill='x', pady=(2, 12))
+        path_var = tk.StringVar(value=(lg['path'] if lg and lg['path']
+                                       else self._default_tplog_path()))
+        path_entry = ttk.Entry(file_row, textvariable=path_var, width=52,
+                               font=self.FONT_COMBO)
+        path_entry.pack(side='left', fill='x', expand=True)
+
+        def _browse():
+            chosen = filedialog.asksaveasfilename(
+                parent=win, title="Save the log as",
+                initialdir=os.path.dirname(path_var.get()) or self._last_data_dir,
+                initialfile=os.path.basename(path_var.get()),
+                defaultextension=".csv",
+                filetypes=[("CSV file", "*.csv"), ("All files", "*.*")])
+            if chosen:
+                path_var.set(chosen)
+        browse_btn = ttk.Button(file_row, text="Browse…", style='Aux.TButton',
+                                command=_browse)
+        browse_btn.pack(side='left', padx=(8, 0))
+
+        status_lbl = ttk.Label(pad, style='Dim.TLabel', justify='left', text="")
+        status_lbl.pack(anchor='w', pady=(0, 12))
+
+        row = tk.Frame(pad, bg=self.CLR_APP)
+        row.pack(fill='x')
+
+        def _start():
+            try:
+                n = float(n_var.get().strip())
+            except ValueError:
+                status_lbl.config(text="The interval must be a number.")
+                return
+            secs = n * 60 if u_var.get() == "minutes" else n
+            if secs < TP_LOG_MIN_INTERVAL_S:
+                status_lbl.config(
+                    text=f"The shortest interval is {TP_LOG_MIN_INTERVAL_S} s.")
+                return
+            path = None
+            if save_var.get():
+                path = os.path.abspath(path_var.get().strip() or
+                                       self._default_tplog_path())
+                if os.path.exists(path):
+                    # Never overwrite an earlier log.
+                    status_lbl.config(text="That file already exists — "
+                                           "choose another name.")
+                    return
+            self.start_continuous_logging(secs, path)
+            if self._tplog is None and path:
+                status_lbl.config(text=f"Could not create {path}.")
+
+        def _stop():
+            self.stop_continuous_logging()
+            path_var.set(self._default_tplog_path())
+
+        start_btn = ttk.Button(row, text="Start logging", style='Launch.TButton',
+                               command=_start)
+        start_btn.pack(side='left')
+        stop_btn = ttk.Button(row, text="Stop", style='Aux.TButton',
+                              command=_stop)
+        stop_btn.pack(side='left', padx=(8, 0))
+        ttk.Button(row, text="Close (keeps logging)", style='Aux.TButton',
+                   command=_close).pack(side='right')
+
+        self._tplog_ui = {'status': status_lbl, 'start': start_btn,
+                          'stop': stop_btn, 'inputs': (n_entry, u_cb, save_chk,
+                                                       path_entry, browse_btn)}
+        self._tplog_paint_status()
+
+    def _tplog_paint_status(self):
+        ui = getattr(self, '_tplog_ui', None)
+        if not ui:
+            return
+        lg = self._tplog
+        try:
+            ui['start'].config(state='disabled' if lg else 'normal')
+            ui['stop'].config(state='normal' if lg else 'disabled')
+            for w in ui['inputs']:
+                w.config(state='disabled' if lg else
+                         ('readonly' if isinstance(w, ttk.Combobox) else 'normal'))
+            if lg is None:
+                ui['status'].config(text="Not logging.")
+                return
+            where = (f"→ {os.path.basename(lg['path'])}" if lg['path']
+                     else "(screen only, no file)")
+            text = (f"Logging every {self._fmt_interval(lg['interval_s'])} since "
+                    f"{lg['started'].strftime('%H:%M:%S')} · {lg['rows']} row(s) "
+                    f"{where}")
+            if lg['last']:
+                text += f"\nLast: {lg['last']}"
+            ui['status'].config(text=text)
+        except tk.TclError:
+            self._tplog_ui = None
+
+    def start_continuous_logging(self, interval_s, path=None):
+        """Start the T/P logger. Idempotent: a running logger is stopped
+        first, so two after-chains can never run side by side."""
+        self.stop_continuous_logging(quiet=True)
+        started = datetime.now()
+        if path:
+            if not start_tp_log_file(path, interval_s, load_pressure_gauge(),
+                                     started):
+                self.log(f"Continuous logging NOT started: could not create {path}.")
+                self._tplog_paint_status()
+                return
+            self._last_data_dir = os.path.dirname(path)
+        self._tplog = {'interval_s': float(interval_s), 'path': path,
+                       'started': started, 'after': None, 'busy': False,
+                       'rows': 0, 'last': "", 'write_failed': False}
+        self.log(f"Continuous logging started: temperature + pressure every "
+                 f"{self._fmt_interval(float(interval_s))}"
+                 + (f", saved to {path}." if path else " (not saved to a file)."))
+        self._paint_reload_buttons()
+        self._tplog_paint_status()
+        self._tplog_tick()
+
+    def stop_continuous_logging(self, quiet=False):
+        lg = self._tplog
+        if lg is None:
+            return
+        self._tplog = None
+        if lg['after'] is not None:
+            try:
+                self.root.after_cancel(lg['after'])
+            except tk.TclError:
+                pass
+        if not quiet:
+            self.log(f"Continuous logging stopped after {lg['rows']} row(s)"
+                     + (f" — data in {lg['path']}." if lg['path'] else "."))
+        self._paint_reload_buttons()
+        self._tplog_paint_status()
+
+    def _tplog_tick(self):
+        lg = self._tplog
+        if lg is None:
+            return
+        # Next tick is booked first, so the cadence holds whatever this one
+        # costs; a tick that finds the last still in flight is skipped.
+        lg['after'] = self.root.after(int(lg['interval_s'] * 1000), self._tplog_tick)
+        if lg['busy'] or self._scanning:
+            return
+        lg['busy'] = True
+        self.launched_processes = [p for p in self.launched_processes if p.is_alive()]
+        read_t = not self.launched_processes
+        detected = dict((self._last_scan or {}).get('detected') or {})
+        gauge = load_pressure_gauge()
+        threading.Thread(target=self._tplog_worker,
+                         args=(lg, detected, gauge, read_t), daemon=True).start()
+
+    def _tplog_worker(self, lg, detected, gauge, read_t):
+        snap = read_logging_snapshot(
+            detected, gauge, read_temperature=read_t,
+            temp_skip_reason="skipped: a measurement is running")
+        try:
+            self.root.after(0, lambda: self._tplog_apply(lg, snap))
+        except RuntimeError:
+            pass            # launcher closed while the reading was in flight
+
+    def _tplog_apply(self, lg, snap):
+        lg['busy'] = False
+        if self._tplog is not lg:
+            return          # stopped (or restarted) while this was in flight
+        row = tp_log_row(snap, lg['started'])
+        if lg['path']:
+            err = append_tp_log_row(lg['path'], row)
+            if err:
+                # Logged once per run of failures, never a dialog: this
+                # runs unattended.
+                if not lg['write_failed']:
+                    self.log(f"WARNING: continuous log could not write to "
+                             f"{lg['path']}: {err}. Will keep trying.")
+                lg['write_failed'] = True
+            else:
+                if lg['write_failed']:
+                    self.log("Continuous log: writing to the file again.")
+                lg['write_failed'] = False
+                lg['rows'] += 1
+        else:
+            lg['rows'] += 1
+        t_txt = (f"{snap['temperature']:.2f} {snap['temp_units']}"
+                 if snap['temperature'] is not None
+                 else f"T — ({snap['temp_note']})")
+        p_txt = (f"{snap['pressure']:.2E} {snap['pressure_units']}"
+                 if snap['pressure'] is not None
+                 else f"P — ({snap['pressure_error']})")
+        lg['last'] = f"{snap['time'].strftime('%H:%M:%S')}  {t_txt}  ·  {p_txt}"
+
+        if self._last_scan is not None:
+            r = dict(self._last_scan)
+            r.update(temperature=snap['temperature'],
+                     temp_units=snap['temp_units'] or 'K',
+                     temp_source=snap['temp_source'],
+                     temp_note=snap['temp_note'],
+                     pressure=snap['pressure'],
+                     pressure_units=snap['pressure_units'],
+                     pressure_source=snap['pressure_source'],
+                     pressure_error=snap['pressure_error'],
+                     readings_at=snap['time'].strftime("%H:%M:%S"))
+            self._last_scan = r
+            self._refresh_strips()
+        self._tplog_paint_status()
+
     # ------------------------------------------------------- scan lifecycle
     def start_scan(self):
         """Trigger a one-shot instrument scan (startup or manual reload)."""
@@ -4485,7 +5020,7 @@ class PICALauncherV2:
         self._last_scan = r
         for strip in self._strips:
             if strip.get('reload_btn'):
-                strip['reload_btn'].config(state='normal', text="⟳ Reload")
+                strip['reload_btn'].config(state='normal', text=self._reload_text())
             if strip.get('raw_note'):
                 try:
                     strip['raw_note'].config(fg=self.CLR_TEXT_DIM)
@@ -4675,15 +5210,24 @@ class PICALauncherV2:
         """Name the address of the Pfeiffer TPG 361, or forget it again.
 
         This is the only place PICA is ever told about a serial or socket
-        instrument. The dialog offers the ASRL resources VISA can see but
-        opens none of them: picking one from the list is a choice, not a
-        probe, and the first thing ever sent down that port is the gauge's
-        own UNI at the next scan. An IP address (Ethernet, TCP 8000) or a
-        COM port VISA does not enumerate can be typed in by hand. "Find on
-        LAN" reads the ARP table for Pfeiffer MACs and offers those IPs --
-        it sends nothing to anything.
+        instrument. The first question is HOW the gauge is connected -- the
+        same two links the pressure-log module offers:
+
+          USB cable  -> the FTDI virtual COM port. "Scan for USB / Serial
+                        Ports" lists the ASRL resources VISA can see, FTDI
+                        first, and opens none of them. COM3 is pre-filled
+                        (the lab gauge's port) but nothing is read until
+                        Save.
+          Ethernet   -> an IP address on TCP port 8000. "Find on LAN" reads
+                        the ARP table for Pfeiffer MACs and sends nothing.
+
+        "Test connection" is the one button here that talks to the gauge:
+        one read-only UNI + PR1 exchange on the address as typed, in a
+        worker thread.
         """
         current = load_pressure_gauge() or {}
+        cur_res = current.get('resource', "")
+        on_lan = is_network_gauge(cur_res)
 
         win = tk.Toplevel(self.root)
         win.title("PICA — Pressure Gauge")
@@ -4697,21 +5241,95 @@ class PICALauncherV2:
         ttk.Label(pad, text="Pfeiffer TPG 361 SingleGauge",
                   style='CardTitle.TLabel').pack(anchor='w')
         ttk.Label(pad, style='Dim.TLabel', justify='left',
-                  text="USB or Ethernet — the gauge is never on GPIB, so it\n"
-                       "cannot be found by a bus scan. Name its address and the\n"
-                       "status strip reads the pressure on every scan; leave it\n"
-                       "empty and PICA never touches a serial port at all.\n"
-                       "USB: pick the FTDI 'USB Serial Port' below.\n"
-                       "Ethernet: type its IP (TCP port 8000 is implied), or\n"
-                       "press Find on LAN.").pack(
+                  text="The gauge is never on GPIB, so a bus scan cannot find it.\n"
+                       "Say how it is connected and where; once saved, the status\n"
+                       "strip reads the pressure on every scan. Clear it and PICA\n"
+                       "never touches a serial port at all.").pack(
             anchor='w', pady=(2, 12))
 
-        ttk.Label(pad, text="ADDRESS — COM port, IP address or VISA resource",
+        # ---- connection type ----------------------------------------------
+        ttk.Label(pad, text="HOW IS THE GAUGE CONNECTED?",
                   style='Faint.TLabel').pack(anchor='w')
-        port_var = tk.StringVar(value=current.get('resource', ""))
-        port_cb = ttk.Combobox(pad, textvariable=port_var, height=8,
-                               font=self.FONT_COMBO, width=34)
+        link_var = tk.StringVar(value='lan' if on_lan else 'usb')
+        link_row = tk.Frame(pad, bg=self.CLR_APP)
+        link_row.pack(anchor='w', pady=(2, 10))
+        ttk.Radiobutton(link_row, text="USB cable (FTDI COM port)",
+                        value='usb', variable=link_var).pack(side='left')
+        ttk.Radiobutton(link_row, text="Ethernet (LAN, TCP port 8000)",
+                        value='lan', variable=link_var).pack(side='left',
+                                                              padx=(16, 0))
+
+        body = tk.Frame(pad, bg=self.CLR_APP)
+        body.pack(fill='x')
+
+        # ---- USB / serial --------------------------------------------------
+        usb = tk.Frame(body, bg=self.CLR_APP)
+        ttk.Label(usb, text="COM PORT", style='Faint.TLabel').pack(anchor='w')
+        port_var = tk.StringVar(
+            value=cur_res if (cur_res and not on_lan) else GAUGE_DEFAULT_PORT)
+        port_cb = ttk.Combobox(usb, textvariable=port_var, height=8,
+                               font=self.FONT_COMBO, width=44)
         port_cb.pack(anchor='w', fill='x', ipady=3, pady=(2, 4))
+        usb_note = ttk.Label(usb, style='Dim.TLabel', justify='left', text="")
+
+        def _scan_serial():
+            """List the ASRL resources (opens none of them)."""
+            try:
+                rm = _visa().ResourceManager()
+                try:
+                    found = [r for r in rm.list_resources()
+                             if r.upper().startswith("ASRL")]
+                finally:
+                    rm.close()
+            except Exception as e:
+                self.log(f"Could not list serial resources: {e}")
+                return
+            choices = gauge_port_choices(found)
+            port_cb['values'] = choices
+            if not found:
+                usb_note.config(
+                    text="No serial ports on this computer. Plug the TPG 361\n"
+                         "in; if Device Manager shows code 28 on 'FT232R USB\n"
+                         "UART', install the FTDI VCP driver.")
+                usb_note.pack(anchor='w', pady=(0, 6))
+                self.log("No serial ports found — plug in the USB cable or "
+                         "install the FTDI VCP driver.")
+                return
+            usb_note.pack_forget()
+            # Swap a bare entry for its labelled choice, so the user sees
+            # "ASRL3::INSTR — USB Serial Port (COM3)  [FTDI...]".
+            typed = normalise_gauge_resource(
+                gauge_resource_from_choice(port_var.get())).upper()
+            match = [c for c in choices
+                     if gauge_resource_from_choice(c).upper() == typed]
+            if match:
+                port_var.set(match[0])
+            elif not typed:
+                port_var.set(choices[0])
+            self.log("Serial ports: " + "; ".join(choices))
+
+        ttk.Button(usb, text="Scan for USB / Serial Ports", style='Aux.TButton',
+                   command=_scan_serial).pack(anchor='w', pady=(0, 8))
+        ttk.Label(usb, text="BAUD RATE (TPG 36x factory default 9600)",
+                  style='Faint.TLabel').pack(anchor='w')
+        baud_var = tk.StringVar(value=str(current.get('baud', 9600)))
+        ttk.Combobox(usb, textvariable=baud_var, state='readonly',
+                     values=("9600", "19200", "38400", "57600", "115200"),
+                     font=self.FONT_COMBO, width=44).pack(
+            anchor='w', fill='x', ipady=3, pady=(2, 4))
+
+        # ---- Ethernet ------------------------------------------------------
+        lan = tk.Frame(body, bg=self.CLR_APP)
+        ttk.Label(lan, text="IP ADDRESS (TCP port 8000 is implied)",
+                  style='Faint.TLabel').pack(anchor='w')
+        ip_default = ""
+        if on_lan:
+            m = re.match(r'TCPIP\d*::([^:]+)::', cur_res, re.I)
+            ip_default = m.group(1) if m else cur_res
+        ip_var = tk.StringVar(value=ip_default)
+        ip_cb = ttk.Combobox(lan, textvariable=ip_var, height=8,
+                             font=self.FONT_COMBO, width=44)
+        ip_cb.pack(anchor='w', fill='x', ipady=3, pady=(2, 4))
 
         def _find_on_lan():
             try:
@@ -4727,51 +5345,85 @@ class PICALauncherV2:
                          "use Find on LAN in the pressure-log module, which "
                          "can sweep the subnet.")
                 return
-            choices = [f"TCPIP0::{ip}::{GAUGE_TCP_PORT}::SOCKET" for ip in hosts]
-            port_cb['values'] = list(choices) + list(port_cb['values'])
-            port_var.set(choices[0])
+            ip_cb['values'] = hosts
+            ip_var.set(hosts[0])
             self.log(f"Pfeiffer device(s) on the LAN: {', '.join(hosts)}. "
-                     "Save to read the gauge on the next scan.")
+                     "Test or Save.")
 
-        ttk.Button(pad, text="Find on LAN (ARP table, sends nothing)",
+        ttk.Button(lan, text="Find on LAN (ARP table, sends nothing)",
                    style='Aux.TButton', command=_find_on_lan).pack(
-            anchor='w', pady=(0, 10))
-        try:
-            rm = _visa().ResourceManager()
-            try:
-                found = [r for r in rm.list_resources()
-                         if r.upper().startswith("ASRL")]
-            finally:
-                rm.close()
-            port_cb['values'] = gauge_port_choices(found)
-            if not found:
-                # Said out loud rather than left as an empty dropdown: an
-                # empty list here means the cable or its USB-serial driver,
-                # not a PICA problem, and there is nothing to type either.
-                ttk.Label(pad, style='Dim.TLabel', justify='left',
-                          text="No serial ports on this computer. On USB, plug\n"
-                               "the TPG 361 in (or install the FTDI VCP driver)\n"
-                               "and reopen this window. On Ethernet, type its\n"
-                               "IP address above.").pack(anchor='w', pady=(0, 10))
-                self.log("No serial ports found — type an IP address for "
-                         "Ethernet, or plug in the USB cable.")
-        except Exception as e:
-            self.log(f"Could not list serial resources: {e}")
+            anchor='w', pady=(0, 4))
 
-        ttk.Label(pad, text="BAUD RATE (USB / serial only, ignored over Ethernet)",
-                  style='Faint.TLabel').pack(anchor='w')
-        baud_var = tk.StringVar(value=str(current.get('baud', 9600)))
-        baud_cb = ttk.Combobox(pad, textvariable=baud_var, state='readonly',
-                               values=("9600", "19200", "38400", "57600", "115200"),
-                               font=self.FONT_COMBO, width=34)
-        baud_cb.pack(anchor='w', fill='x', ipady=3, pady=(2, 16))
+        def _show_link(*_):
+            usb.pack_forget()
+            lan.pack_forget()
+            (lan if link_var.get() == 'lan' else usb).pack(fill='x')
+        link_var.trace_add('write', _show_link)
+        _show_link()
+
+        def _resource():
+            if link_var.get() == 'lan':
+                ip = ip_var.get().strip()
+                return normalise_gauge_resource(ip) if ip else ""
+            return normalise_gauge_resource(
+                gauge_resource_from_choice(port_var.get()))
+
+        # ---- test ------------------------------------------------------------
+        test_row = tk.Frame(pad, bg=self.CLR_APP)
+        test_row.pack(fill='x', pady=(10, 14))
+        test_lbl = ttk.Label(test_row, style='Dim.TLabel', text="")
+
+        def _test():
+            resource = _resource()
+            if not resource:
+                test_lbl.config(text="Enter an address first.")
+                return
+            if not PYVISA_AVAILABLE:
+                test_lbl.config(text="PyVISA not installed.")
+                return
+            gauge = {'resource': resource, 'baud': int(baud_var.get())}
+            test_btn.config(state='disabled')
+            test_lbl.config(text=f"Reading {resource}…")
+
+            def work():
+                try:
+                    rm = _visa().ResourceManager()
+                    try:
+                        r = read_pressure_gauge(rm, gauge)
+                    finally:
+                        rm.close()
+                except Exception as e:
+                    r = {'pressure': None, 'units': None,
+                         'error': str(e) or e.__class__.__name__}
+
+                def done():
+                    try:
+                        test_btn.config(state='normal')
+                        if r['pressure'] is not None:
+                            msg = (f"OK — {r['pressure']:.2E} {r['units']} "
+                                   f"on {resource}")
+                        else:
+                            msg = f"No reading on {resource}: {r['error']}"
+                        test_lbl.config(text=msg)
+                        self.log(f"Gauge test: {msg}")
+                    except tk.TclError:
+                        pass        # dialog closed while the test ran
+                try:
+                    self.root.after(0, done)
+                except RuntimeError:
+                    pass
+            threading.Thread(target=work, daemon=True).start()
+
+        test_btn = ttk.Button(test_row, text="Test connection (one read)",
+                              style='Aux.TButton', command=_test)
+        test_btn.pack(side='left')
+        test_lbl.pack(side='left', padx=(10, 0))
 
         row = tk.Frame(pad, bg=self.CLR_APP)
         row.pack(fill='x')
 
         def _save():
-            resource = normalise_gauge_resource(
-                gauge_resource_from_choice(port_var.get()))
+            resource = _resource()
             if not resource:
                 self.log("No address given — pressure gauge left unset.")
                 win.destroy()
@@ -4780,7 +5432,7 @@ class PICALauncherV2:
                 self.log("WARNING: could not save the gauge setting to disk. "
                          "It holds for this session only.")
             how = ("over Ethernet" if is_network_gauge(resource)
-                   else f"@ {baud_var.get()} baud")
+                   else f"over USB @ {baud_var.get()} baud")
             self.log(f"Pressure gauge set to {resource} {how}. "
                      "It is read on the next scan.")
             win.destroy()
@@ -4798,6 +5450,10 @@ class PICALauncherV2:
                    command=_clear).pack(side='left', padx=(8, 0))
         ttk.Button(row, text="Cancel", style='Aux.TButton',
                    command=win.destroy).pack(side='right')
+
+        # Fill the COM list straight away: listing opens nothing.
+        if not on_lan:
+            _scan_serial()
 
     def open_folder(self):
         """Open any folder in the system file browser."""

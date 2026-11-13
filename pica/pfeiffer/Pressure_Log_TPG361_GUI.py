@@ -520,6 +520,8 @@ class PressureMonitorGUI:
 
     # The controller's BAU parameter offers these five; USB / serial only.
     BAUD_RATES = ("9600", "19200", "38400", "57600", "115200")
+    # The lab TPG 361's FTDI USB port. Only pre-fills the address box.
+    DEFAULT_PORT = "COM3"
     # Per-host timeouts for the LAN search, kept short: 254 pings at 300 ms
     # on 32 threads is a few seconds, and an AYT to a Pfeiffer host that is
     # not a TPG (a turbo controller, say) must not hang the button.
@@ -847,6 +849,9 @@ class PressureMonitorGUI:
         # or an IP address (which VISA never enumerates), can be typed in
         # by hand -- "COM5", "192.168.1.50" and full VISA strings all work.
         self.port_cb = ttk.Combobox(frame, font=self.FONT_BASE)
+        # Pre-filled with the lab gauge's port (FTDI USB -> COM3). Nothing is
+        # opened until Start; overwrite it, or use Scan / Find, elsewhere.
+        self.port_cb.set(self.DEFAULT_PORT)
         self.port_cb.grid(row=5, column=0, padx=10, pady=(0, 0), sticky='ew')
         ttk.Label(frame, text="e.g.  COM5   |   192.168.1.50   |   ASRL5::INSTR",
                   font=self.FONT_SUB_LABEL).grid(
