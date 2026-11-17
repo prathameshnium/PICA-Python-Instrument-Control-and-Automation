@@ -289,9 +289,10 @@ def test_runs_continuously_until_stop_saving_every_point(tmp_path):
     on_disk = []
 
     def peek(w, item, points):
-        # The point is already on disk when the GUI hears about it
+        # The point is already on disk when the GUI hears about it (the
+        # worker may already have written later points too)
         _, rows = read_rows(w.master_path)
-        on_disk.append(len(rows) == len(points))
+        on_disk.append(len(rows) >= len(points))
 
     w, points, msgs, latency = _run(tmp_path, freqs, backend, 45, peek=peek)
     assert all(on_disk) and len(on_disk) == 45
