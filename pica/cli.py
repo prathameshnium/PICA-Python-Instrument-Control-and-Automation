@@ -86,6 +86,7 @@ ALL_GUI_MODULES = [
     "pica.keysight.Temprature_Scan_E4980A_GUI",
     "pica.keysight.Temprature_Scan_L340_E4980A_GUI",
     "pica.keysight.Temprature_Scan_Passive_E4980A_GUI",
+    "pica.keysight.Time_Scan_Dielectric_E4980A_GUI",
     # lakeshore
     "pica.lakeshore.Sensor_Curve_Loader_L340_L350_GUI",
     "pica.lakeshore.Sensor_Curve_Viewer_L340_GUI",

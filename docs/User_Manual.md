@@ -906,6 +906,8 @@ Capacitance-Voltage (C-V) characterization of a device or a sample using a Keysi
 **C-V module v2.0** (October 2026). Every C-V file is self-describing: the `#` header records the instrument identity and options, the sweep (mode, loop shape, step, cycles, hold and ramp settings, the hard 20 V cap), the frequency order with "file k of N", the LCR settings read back from the instrument, and one `waveform:` line in words. Each row carries `t_s`, a `Timestamp`, `Cycle`, `Segment`, the four monitors (`Vdc_mon`, `Idc_mon`, `Vac_mon`, `Iac_mon`), the raw `R_raw`, `X_raw` and `Status`, after the legacy columns. The 18 derived columns are NaN when the status is -1 or 1. The file ends with `# END reason=...`. Loop shapes: positive first, negative first, unipolar +/-, and a ladder (one bipolar cycle per listed amplitude, as in the memristor sweep module; the Cycle column is the ladder entry number). Frequencies are measured in the order typed. Bus errors are retried forever (1, 2, 5, 10, 30, 60 s, then every 60 s) with RETRY and RECONNECT lines in `<sample>_<ts>_CV_log.txt`; nothing modal appears during or after a run. The DC bias is a voltage source with no current compliance; `Idc_mon(A)` is the DC current through the sample. The plain script `CV_KE4980A_Simple_Instrument_Control.py` runs the same path without a window.
 :::
 
+**Dielectric Time Scan (continuous)** (`Time_Scan_Dielectric_E4980A_GUI.py`, launcher key "LCR Time Scan (Continuous)"). E4980A only, no thermometer: Start sweeps the frequency list over and over until Stop, and every point is time-stamped (date-time, epoch seconds, elapsed seconds) right after it is read. Temperature comes from the PPMS log and is matched afterwards by time stamp. The default list is 100 Hz to 2 kHz in 100 Hz steps (20 points); a custom or List Maker list is used exactly as typed. Files: one per frequency (`<sample>-<f>Hz.txt`), `<sample>_Master.txt` (every point in measurement order) and `<sample>_RunInfo.txt`, all written to disk after every point. VISA errors never end the run; the meter is reconnected and the same point repeated.
+
 ### 6.8 Broadband Dielectric Spectroscopy
 
 **Target Hardware:** Novocontrol Alpha-AN Impedance Analyzer with a ZG4 sample interface, over GPIB through VISA. *Status: experimental.*
@@ -1490,6 +1492,7 @@ PICA (Root Directory)/
             Temprature_Scan_Passive_CC34_E4980A_GUI.py
             Temprature_Scan_Passive_E4980A_GUI.py
             Temprature_Scan_Passive_L340_E4980A_GUI.py
+            Time_Scan_Dielectric_E4980A_GUI.py
             Instrument_Control/
                 CV_KE4980A_Simple_Instrument_Control.py
         lakeshore/              <-- Temperature control and sensing (L350 / L340)

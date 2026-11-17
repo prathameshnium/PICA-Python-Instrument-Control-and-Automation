@@ -547,6 +547,19 @@ for _key, _t in (("LCR Temp. Scan (T_Sensing)", _L350),
          ("The hardened edition: reconnects by itself and writes every point "
           "to disk as it goes." if _t == _CC34 else None))
 
+_add("LCR Time Scan (Continuous)",
+     "Dielectric response against time: the frequency list is swept over "
+     "and over from Start until Stop, every point time-stamped. No "
+     "thermometer is read; temperature is matched later from the PPMS log "
+     "by time stamp. Writes one file per frequency plus a master file.",
+     _LCR,
+     "sample name; AC and DC bias (V); delay per frequency (s); "
+     + _LCR_COMMON.replace("; LCR VISA address", "") +
+     "; frequencies (Hz, used exactly as typed; default 100 Hz to 2 kHz in "
+     "100 Hz steps); live plot frequency; LCR VISA address",
+     "Reconnects by itself after a VISA error and writes every point to "
+     "disk as it goes.")
+
 for _key, _t in (("LCR Temp. Step Freq. Scan (T_Control)", _L350),
                  ("LCR Temp. Step Freq. Scan (T_Control, L340)", _L340)):
     _add(_key,

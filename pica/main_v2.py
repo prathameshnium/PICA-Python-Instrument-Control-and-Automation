@@ -1200,6 +1200,7 @@ CATALOG = [
             ("Dielectric Temp. Scan (T Sensing, L350)", "LCR Temp. Scan (T_Sensing)", "sensing"),
             ("Dielectric Temp. Scan (T Sensing, L340)", "LCR Temp. Scan (T_Sensing, L340)", "sensing"),
             ("Dielectric Temp. Scan (T Sensing, Cryocon 34)", "LCR Temp. Scan (T_Sensing, CC34)", "sensing"),
+            ("Dielectric Time Scan (continuous, T from PPMS log)", "LCR Time Scan (Continuous)", None),
         ],
     },
     {
@@ -1690,6 +1691,12 @@ QUICK_CATALOG = [
                              "the thermometer. This is the hardened version: "
                              "it reconnects by itself and writes every point "
                              "to disk as it goes."},
+                    {'label': "Dielectric Time Scan (continuous)",
+                     'key': "LCR Time Scan (Continuous)", 'family': None,
+                     'desc': "The frequency list swept over and over from "
+                             "Start to Stop, every point time-stamped. No "
+                             "thermometer: temperature is matched later "
+                             "from the PPMS log."},
                     {'label': "Temp. Step Freq. Scan (T Control)",
                      'key': "LCR Temp. Step Freq. Scan (T_Control)",
                      'family': 'control',

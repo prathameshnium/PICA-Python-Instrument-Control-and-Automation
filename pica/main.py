@@ -290,6 +290,8 @@ class PICALauncherApp:
         "LCR Temp. Scan (T_Control)": resource_path("keysight/Temprature_Scan_E4980A_GUI.py"), # Already present
         "LCR Temp. Scan (T_Sensing)": resource_path("keysight/Temprature_Scan_Passive_E4980A_GUI.py"), # Already present
         "LCR Temp. Scan (T_Sensing, CC34)": resource_path("keysight/Temprature_Scan_Passive_CC34_E4980A_GUI.py"),
+        # Continuous time-stamped sweeps, E4980A only; T from the PPMS log.
+        "LCR Time Scan (Continuous)": resource_path("keysight/Time_Scan_Dielectric_E4980A_GUI.py"),
         "PPMS Sync Freq. Scan": resource_path("keysight/PPMS_Sync_Freq_Scan_E4980A_GUI.py"),
         "PPMS Sync Freq. Scan (CC34)": resource_path("keysight/PPMS_Sync_Freq_Scan_CC34_E4980A_GUI.py"),
         "PPMS Dielectric Master": resource_path("keysight/PPMS_Dielectric_Master_Tscan_Fscan_E4980A_GUI.py"),
@@ -957,6 +959,7 @@ class PICALauncherApp:
                                   ("Dielectric Temp. Scan (T_Sensing, L350)", "LCR Temp. Scan (T_Sensing)", "sensing"), # Already present
                                   ("Dielectric Temp. Scan (T_Sensing, L340)", "LCR Temp. Scan (T_Sensing, L340)", "sensing"),
                                   ("Dielectric Temp. Scan (T_Sensing, Cryocon 34)", "LCR Temp. Scan (T_Sensing, CC34)", "sensing"),
+                                  ("Dielectric Time Scan (continuous, T from PPMS log)", "LCR Time Scan (Continuous)"),
                                   ])
         self._create_suite_frame(right_col,
                                  'Broadband Dielectric Spectroscopy',
