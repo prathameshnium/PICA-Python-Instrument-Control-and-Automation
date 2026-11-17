@@ -321,7 +321,9 @@ def test_timestamps_monotonic_and_taken_after_reading(tmp_path):
     epochs = [r["epoch"] for r in recs]
     elapsed = [r["elapsed"] for r in recs]
     assert all(b > a for a, b in zip(epochs, epochs[1:]))
-    assert all(b > a for a, b in zip(elapsed, elapsed[1:]))
+    # >= not >: time.monotonic ticks every 15.6 ms on Windows, so two fast
+    # simulated points can share one value
+    assert all(b >= a for a, b in zip(elapsed, elapsed[1:]))
     for r, t_ret in zip(recs, backend.return_times):
         assert r["epoch"] >= t_ret                       # after the reading
         assert r["epoch"] - t_ret < 0.05
