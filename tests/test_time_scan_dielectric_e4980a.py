@@ -7,6 +7,7 @@ VISA/SCPI level. The GUI test opens a real Tk window and therefore only
 runs with PICA_REAL_WINDOWS=1 (e.g. under xvfb-run), per tests/conftest.py.
 """
 
+import importlib
 import math
 import os
 import queue
@@ -27,6 +28,15 @@ from pica.keysight import Time_Scan_Dielectric_E4980A_GUI as ts  # noqa: E402
 
 RP = 1.0e6       # ohm
 CP = 100e-12     # F
+
+
+@pytest.fixture(autouse=True)
+def _real_tkinter_for_window_tests(request):
+    """test_gui_modules_initialization.py reloads this module under a mocked
+    tkinter, which leaves `ts.tk` a MagicMock for the rest of the session.
+    Re-execute it against the real tkinter before each real-window test."""
+    if request.node.get_closest_marker("real_windows"):
+        importlib.reload(ts)
 
 
 def rc_parallel_RX(f, rp=RP, cp=CP):
