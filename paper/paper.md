@@ -69,7 +69,7 @@ The system is currently validated with the following hardware: the AC-DC current
 Modules for the Novocontrol Alpha-AN dielectric analyser, the Stanford Research SR830 lock-in amplifier and the Keithley 197A multimeter are under development.
 While the current implementation drives specific instruments, the underlying framework is highly customisable. Researchers using different hardware models need only replace the specific SCPI (Standard Commands for Programmable Instruments) commands with their instrument equivalent commands to utilise the suite.
 
-* **Operational Validation:** PICA's protocols are actively used for transport measurements at cryogenic temperature using a laboratory-built, custom-designed, multifunctional cryostatic probe in conjunction with the Physical Property Measurement System (PPMS, DynaCool, Quantum Design) (temperature range: 5 to 380 K; magnetic field: up to 14 T) at the UGC-DAE Consortium for Scientific Research, Mumbai Centre, validating the software's core architecture in a real-world research environment and providing a stable, tested foundation for the university and researchers to build upon.
+* **Operational Validation:** PICA's protocols are actively used for transport measurements at cryogenic temperature using a laboratory-built, custom-designed, multifunctional cryostatic probe in conjunction with the Physical Property Measurement System (PPMS, DynaCool, Quantum Design) (temperature range: 5 to 380 K; magnetic field: up to 14 T) at the UGC-DAE Consortium for Scientific Research, Mumbai Centre, where PICA runs the Electrical Transport and Broadband Dielectric Spectrometer facilities listed on the centre's [user facility portal](https://www.csruserportal.com/Intro/csrMumbaiFacilities) ([archived 1 Nov 2026](https://web.archive.org/web/20261101142758/https://www.csruserportal.com/Intro/csrMumbaiFacilities)), validating the software's core architecture in a real-world research environment and providing a stable, tested foundation for the university and researchers to build upon.
 
 
 # Software design
@@ -104,7 +104,7 @@ To ensure measurement reliability, all modules for validated hardware were thoro
 # AI usage disclosure
 
 The core instrument-control algorithms, measurement protocols and primary programs were designed and written by the authors before any AI assistance was used. In later development, Gemini (Google, model: gemini-2.5-pro) and Claude (Anthropic) assisted with code generation and refactoring, tests against mocked instruments, user-interface improvements and documentation. The authors defined every measurement protocol and its instrument-level control: command sequences, timing, ramp rates and shutdown behaviour. For new modules, the AI tools worked from existing hardware-verified PICA modules as reference implementations, so the suite itself served as their context. The correctness of hardware control can only be confirmed on the physical instruments, and every change was reviewed, run and understood by a maintainer.
-For this manuscript and the documentation, Gemini and Claude were used exclusively for linguistic and grammatical refinement. All AI-generated content was rigorously reviewed and validated by the authors, who retain full responsibility for the accuracy and integrity of this work.
+For this manuscript, Gemini and Claude were used only for language and grammar editing. All AI-generated content was rigorously reviewed and validated by the authors, who retain full responsibility for the accuracy and integrity of this work.
 
 # Acknowledgements
 
