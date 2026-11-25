@@ -34,7 +34,7 @@ where it runs the ITMS. The ITMS provides the **Electrical Transport** and
 | Measurement support: PICA used, data not published  | 0     |
 | Papers citing PICA                                  | 0     |
 
-*Last updated: 2026-10-21*
+*Last updated: 2026-11-26*
 
 <!--
 Entry template, newest first:
@@ -67,3 +67,17 @@ publication.
 Papers that cite PICA (software, preprint or Zenodo DOI).
 
 *None listed yet.*
+
+---
+
+## Software integrations
+
+Third-party projects that reuse PICA code. They are maintained by their own
+authors, not by PICA, and are listed here as software reuse, not research output.
+
+- **OpenMHS / OpenAI4S Device Market** (PKU-YuanGroup) wraps PICA's Cryo-con
+  Model 34 backend (with its simulated backend) as an MHS endpoint and MCP
+  server for AI lab assistants, pinned at PICA commit `17ce57d` (October 2026).
+  [Market listing](https://mhs.openai4s.org/market/labs/prathameshnium__pica-python-instrument-control-and-automation/) ·
+  [Registry record](https://mhs.openai4s.org/registry/repo/prathameshnium__pica-python-instrument-control-and-automation.html) ·
+  [Driver package](https://github.com/PKU-YuanGroup/OpenMHS/tree/main/MHS/drivers/labs/prathameshnium__pica-python-instrument-control-and-automation)
