@@ -219,10 +219,27 @@ APPROVED_EDITS = {
 }
 
 
+# L350 originals the user asked to have REWRITTEN (too large for a line
+# list). The diff check is skipped for them, but the module must carry the
+# marker below, so a rewrite cannot happen silently.
+#   27 Nov 2026: T_Control_L350_RangeControl_GUI.py v8 -> v9 (watts per heater
+#     range, LN2 PID presets, zone table, Output 2, MOUT, heater / sensor /
+#     display setup), made to match T_Control_L340_RangeControl_GUI.py.
+APPROVED_REWRITES = {
+    "lakeshore/T_Control_L350_RangeControl_GUI.py":
+        "REWRITTEN on 27 Nov 2026 at the user's request",
+}
+
+
 @pytest.mark.skipif(not _in_git_work_tree(),
                     reason="needs a git checkout (sdist / ZIP has no history)")
 @pytest.mark.parametrize("l350,l340,kind", PAIRS, ids=[p[0] for p in PAIRS])
 def test_original_350_file_is_untouched(l350, l340, kind):
+    if l350 in APPROVED_REWRITES:
+        src = open(_pica_path(l350), encoding="utf-8").read()
+        assert APPROVED_REWRITES[l350] in src, \
+            f"{l350} is an approved rewrite but lacks its marker comment"
+        return
     out = subprocess.run(
         ["git", "diff", "-U0", "HEAD", "--", os.path.join("pica", l350)],
         cwd=REPO_ROOT, capture_output=True, text=True)

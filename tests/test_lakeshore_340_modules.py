@@ -9,6 +9,7 @@ No VISA hardware is needed. Runnable as plain python too.
 """
 import importlib
 import os
+import subprocess
 import sys
 
 import pytest
@@ -52,6 +53,8 @@ class Fake340:
         self.incrv = {'A': 21, 'B': 1}
         self.zones = {}
         self.display = [2, 60, 1]
+        self.cdisp = [1, 25, 1, 1]     # loops shown, heater ohm, I/P, large
+        self.climi = 1.0
         self.dispfld = {}
         self.timeout = None
         self.read_termination = None
@@ -154,6 +157,18 @@ class Fake340:
         if name == 'CLIMIT?':
             v = self.climit[int(args[0])]
             return f"{v[0]:+.3E},{v[1]:.1f},{v[2]:.1f},{v[3]},{v[4]}"
+        if name == 'CDISP':
+            assert len(args) == 5 and int(args[0]) == 1, cmd
+            self.cdisp = [int(args[1]), int(args[2]), int(args[3]), int(args[4])]
+            return None
+        if name == 'CDISP?':
+            return ",".join(str(x) for x in self.cdisp)
+        if name == 'CLIMI':
+            assert len(args) == 1 and 0.1 <= float(args[0]) <= 2.0, cmd
+            self.climi = float(args[0])
+            return None
+        if name == 'CLIMI?':
+            return f"{self.climi:.3f}"
         if name == 'MODE':
             m = int(args[0])
             assert m in (1, 2, 3), f"340 MODE is 1/2/3, got '{cmd}'"
@@ -471,11 +486,144 @@ def test_ramp_status_and_stop(ramp):
     assert temp == pytest.approx(77.5) and htr == pytest.approx(12.5)
     assert setp == pytest.approx(300.0) and status == "temp overrange"
     assert "HTR?" in dev.writes
-    b.stop_ramp()
-    assert dev.writes[-2:] == ["RAMP 1,0,0", "RANGE 0"]
+    assert b.stop_ramp() == []
+    assert dev.writes[-2:] == ["RANGE 0", "RAMP 1,0,0"]       # heater off first
     assert dev.range == 0
     b.close()
     assert dev.closed
+
+
+def test_ramp_watts_follow_340_table_1_6(ramp):
+    assert ramp.loop1_full_power(4, 25) == pytest.approx(100.0)   # 2 A into 25 ohm
+    assert ramp.loop1_full_power(3, 25) == pytest.approx(25.0)    # 1 A
+    assert ramp.loop1_full_power(4, 10) == pytest.approx(40.0)
+    assert ramp.loop1_full_power(4, 50) == pytest.approx(50.0)    # 50 V compliance
+    assert ramp.loop1_full_power(5, 25, 0.5) == pytest.approx(6.25)
+    assert ramp.range_label(4, 25.0) == "4 - Medium (2.5 W)"
+    assert ramp.range_label(1, 100.0) == "1 - Very low (10 mW)"
+    assert all(name.startswith("CCR ") for name in ramp.PID_PRESETS)
+
+
+def test_ramp_heater_setup_reads_and_writes_without_touching_limits(ramp):
+    dev = Fake340()
+    b = _make_ramp_backend(ramp, dev)
+    b.connect("GPIB1::12::INSTR")
+    cfg = b.get_heater_setup()
+    assert cfg['max_current'] == 3 and cfg['resistance'] == 25.0
+    assert "CLIMI?" not in dev.writes          # only asked when the code is User
+    cmd = b.set_heater_setup(5, 1.5, 25, 2)
+    assert cmd == "CLIMIT 1,325.0,0.0,0.0,5,5; CLIMI 1.500; CDISP 1,1,25,2,1"
+    assert dev.climit[1] == [325.0, 0.0, 0.0, 5, 5]   # SP limit and max range kept
+    assert b.get_heater_setup()['user_current'] == 1.5
+    with pytest.raises(ValueError):
+        b.set_heater_setup(5, 2.5, 25, 1)
+    with pytest.raises(ValueError):
+        b.set_heater_setup(4, 0, 0, 1)
+
+
+def test_ramp_mout_input_and_display(ramp):
+    dev = Fake340()
+    b = _make_ramp_backend(ramp, dev)
+    b.connect("GPIB1::12::INSTR")
+    b.set_mout(12.5)
+    assert dev.mout[1] == 12.5 and b.get_mout() == 12.5
+    with pytest.raises(ValueError):
+        b.set_mout(-5)
+    assert b.set_input_type('A', 8) == "INTYPE A,8"
+    assert b.get_input_type('A') == 8
+    with pytest.raises(ValueError):
+        b.set_input_type('A', 0)               # Special is front-panel only
+    assert b.set_display_fields(3) == "DISPLAY 3"
+    assert b.set_display_field(2, 'B', 1) == "DISPFLD 2,B,1"
+    assert b.get_display_field(2) == ('B', 1)
+
+
+def _ramp_gui_scenario(tmp_path):
+    """Runs in a child interpreter (see the test below): a second Tk root in
+    the pytest process can fail to load init.tcl after an earlier one."""
+    import pathlib
+    import tkinter as tk
+    ramp = _load("T_Control_L340_RangeControl_GUI")
+    tmp_path = pathlib.Path(tmp_path)
+    os.chdir(tmp_path)
+    ramp.messagebox.showerror = lambda *a, **k: None
+    root = tk.Tk()
+    try:
+        gui = ramp.TempControlGUI(root)
+        dev = Fake340()
+        dev.temps['A'] = 45.0
+        dev.mout[1] = 30.0                    # leftover from the front panel
+        gui.backend.rm = FakeRM({"GPIB1::19::INSTR": dev})
+        gui.resource_labels = {"GPIB1::19::INSTR": "GPIB1::19::INSTR"}
+        gui.ls_cb.set("GPIB1::19::INSTR")
+        root.update()
+        assert gui.pid_mode_var.get() == 'zones'          # v1 default kept
+        assert str(gui.pid_w['range']['state']) == 'disabled'
+        gui._toggle_connect()
+        assert gui.backend.is_connected
+        assert not any(w.startswith(("RANGE ", "PID ", "SETP ", "CSET ", "MOUT "))
+                       for w in dev.writes), "Connect must only read"
+        assert gui.heater_cfg['known'] and gui._full_power() == pytest.approx(25.0)
+        gui.entries['target'].delete(0, 'end')
+        gui.entries['target'].insert(0, "60")
+        gui.entries['dwell'].delete(0, 'end')
+        gui.entries['dwell'].insert(0, "0")
+        dev.climit[1][4] = 5
+        gui.start_ramp()
+        assert gui.is_running, gui.console.get("1.0", "end")
+        assert dev.range == 4 and dev.pid[1] == (1.5, 4.0, 0.0)   # 45 K: the 20-50 K zone
+        assert dev.mout[1] == 0.0                          # leftover MOUT cleared
+        assert dev.ramp[1] == (1, 2.0) and dev.setp[1] == 60.0
+        dev.temps['A'] = 60.2
+        gui._monitoring_tick()
+        assert gui.active_zone == 2
+        gui._monitoring_tick()
+        assert not gui.is_running and dev.range == 0
+        files = os.listdir(tmp_path / "data")
+        assert len(files) == 1
+        (tmp_path / "data" / files[0]).read_text(encoding="utf-8").encode("ascii")
+
+        # A target above the CLIMIT setpoint limit is refused before any
+        # write: the loop is not even enabled.
+        dev.cset[1][2] = 0
+        dev.range = 3
+        dev.climit[1][0] = 50.0
+        dev.writes.clear()
+        gui.start_ramp()
+        assert not gui.is_running
+        assert not any(w.split()[0] in ("CSET", "CMODE", "RANGE", "SETP", "PID", "MOUT", "RAMP")
+                       for w in dev.writes), dev.writes
+        assert dev.cset[1][2] == 0 and dev.range == 3
+        dev.climit[1][0] = 325.0
+        dev.range = 0
+
+        # Order: heater off and setpoint pinned before the loop is enabled.
+        dev.climit[1][4] = 4
+        gui.zone_rows[-1]['range'].set("4")
+        dev.temps['A'] = 45.0
+        dev.writes.clear()
+        gui.start_ramp()
+        assert gui.is_running, gui.console.get("1.0", "end")
+        assert dev.writes.index("RANGE 0") < dev.writes.index("CSET 1,A,1,1") \
+            < dev.writes.index("SETP 1,45.000")
+        # A mid-run zone edit above the CLIMIT max range is refused, the old
+        # table stays.
+        gui.zone_rows[-1]['range'].set("5")
+        assert gui._apply_zone_table() is False
+        assert max(z[4] for z in gui.zones) == 4
+        gui.stop_ramp()
+        assert dev.range == 0
+        gui._cancel_poll()
+        gui.backend.close()
+    finally:
+        root.destroy()
+
+
+@pytest.mark.real_windows
+def test_ramp_gui_zone_run_end_to_end(tmp_path):
+    out = subprocess.run([sys.executable, __file__, "--ramp-gui-scenario", str(tmp_path)],
+                         capture_output=True, text=True, timeout=180)
+    assert out.returncode == 0, out.stdout + out.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -499,4 +647,7 @@ def test_modules_are_registered_in_cli_and_launchers():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) == 3 and sys.argv[1] == "--ramp-gui-scenario":
+        _ramp_gui_scenario(sys.argv[2])
+        sys.exit(0)
     sys.exit(pytest.main([__file__, "-v"]))
