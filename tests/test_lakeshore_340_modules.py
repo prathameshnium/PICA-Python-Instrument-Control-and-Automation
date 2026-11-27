@@ -215,6 +215,14 @@ class Fake340:
         if name == 'DISPFLD?':
             inp, src = self.dispfld.get(int(args[0]), ('A', 1))
             return f"{inp},{src}"
+        if name == 'CRVHDR?':
+            assert len(args) == 1 and 1 <= int(args[0]) <= 60, cmd
+            return {1: "DT-470,Standard C,2,+475.000,1",
+                    6: "PT-100,STANDARD,3,+800.000,2",
+                    21: "CX-1050,X999999,4,+325.000,1"}.get(
+                int(args[0]), "               ,          ,0,+000.000,0")
+        if name.startswith('CRV'):
+            raise AssertionError(f"curve write sent: '{cmd}'")
         raise AssertionError(f"Fake340 does not know '{cmd}' (350-only command?)")
 
 
@@ -414,7 +422,9 @@ def test_direct_identify_labels_errors_without_raising(direct):
                                      "T_Control_L340_RangeControl_GUI"])
 def test_zone_selection_and_generation(modname):
     m = _load(modname)
-    z = m.ZONE_DEFAULTS
+    # The Sep 2026 lab rule (still the Direct Control default; one pick
+    # away in the Range Control window, whose default is now CCR 1).
+    z = getattr(m, 'ZONES_LAB_RULE', m.ZONE_DEFAULTS)
     assert [row[0] for row in z] == [20.0, 50.0, 100.0, 310.0]
     assert z[-1][1:] == (0.5, 4.0, 0.0, 5)         # the tested CCR setting
     assert m.select_zone(z, 3.0) == 0
@@ -427,13 +437,47 @@ def test_zone_selection_and_generation(modname):
     for lower, upper in zip(z, z[1:]):
         assert lower[4] <= upper[4]
         assert lower[1] >= upper[1]
-    gen = m.generate_equal_zones(4)
+    gen = m.generate_equal_zones(4, template=z)
     assert [round(g[0], 2) for g in gen] == [79.75, 156.5, 233.25, 310.0]
     assert gen[0][1:] == (1.5, 4.0, 0.0, 4)         # 79.75 K falls in the 50-100 zone
     assert gen[-1][1:] == (0.5, 4.0, 0.0, 5)
-    assert m.generate_equal_zones(1) == [(310.0, 0.5, 4.0, 0.0, 5)]
+    assert m.generate_equal_zones(1, template=z) == [(310.0, 0.5, 4.0, 0.0, 5)]
     with pytest.raises(ValueError):
         m.generate_equal_zones(0)
+
+
+def test_ramp_ccr1_is_the_default_and_switches_without_a_power_jump(ramp):
+    z = ramp.ZONE_DEFAULTS
+    assert z is ramp.ZONES_CCR1 and ramp.DEFAULT_ZONE_SET in ramp.ZONE_SETS
+    assert z == ((8.0, 6.3, 2.0, 0.0, 4), (310.0, 2.0, 2.0, 0.0, 5))
+    assert z[0][1] == pytest.approx(ramp.bumpless_p(z[1][1], 5, 4), rel=0.01)
+    assert z[0][2] == z[1][2]                                   # same I
+    full = ramp.loop1_full_power(4, 25.0)                       # 2 A, 25 ohm: 100 W
+    amps = [(row[1] / 100) * (ramp.range_power(row[4], full) / 25.0) ** 0.5 for row in z]
+    assert amps[0] == pytest.approx(amps[1], rel=0.01)
+    assert ramp.PID_DEFAULT_PRESET.startswith("CCR 1")
+    caps, default = ramp.parse_rate_table(ramp.RATE_TABLE_DEFAULT)
+    assert caps == ((77.0, 0.3), (100.0, 0.5)) and default == 5.0
+    assert ramp.rate_cap_for(50, caps, default) == 0.3
+
+
+def test_ramp_curve_list_is_read_only(ramp):
+    import re
+    dev = Fake340()
+    b = ramp.Lakeshore340_Backend.__new__(ramp.Lakeshore340_Backend)
+    b.lakeshore, b.idn, b.rm = None, "", FakeRM({"GPIB1::19::INSTR": dev})
+    b.connect("GPIB1::19::INSTR")
+    dev.writes.clear()
+    heads = b.read_curve_headers()
+    assert sorted(heads) == [1, 6, 21]
+    assert dev.writes == [f"CRVHDR? {n}" for n in range(1, 61)]
+    assert [n for n in heads if ramp.curve_matches(3, heads[n])] == [6]     # Platinum 100
+    assert [n for n in heads if ramp.curve_matches(8, heads[n])] == [21]    # Cernox
+    assert [n for n in heads if ramp.curve_matches(1, heads[n])] == [1]     # Si diode
+    src = open(os.path.join(REPO_ROOT, "pica", "lakeshore",
+                            "T_Control_L340_RangeControl_GUI.py"), encoding="utf-8").read()
+    assert not re.search(r"CRV(DEL|PT|SAV)", src)
+    assert not re.search(r"CRVHDR(?!\?)", src), "only the CRVHDR? query may appear"
 
 
 # ---------------------------------------------------------------------------
@@ -559,6 +603,18 @@ def _ramp_gui_scenario(tmp_path):
         root.update()
         assert gui.pid_mode_var.get() == 'zones'          # v1 default kept
         assert str(gui.pid_w['range']['state']) == 'disabled'
+        assert [float(r['ub'].get()) for r in gui.zone_rows] == [8.0, 310.0]   # CCR 1
+        # The mouse wheel over a drop-down scrolls the panel, never the value.
+        before = gui.sens_type_var.get()
+        gui.sens_type_cb.event_generate('<MouseWheel>', delta=-120)
+        gui.zone_set_cb.event_generate('<MouseWheel>', delta=-120)
+        root.update()
+        assert gui.sens_type_var.get() == before
+        assert gui.zone_set_var.get() == ramp.DEFAULT_ZONE_SET
+        # The rest of this scenario uses the Sep 2026 lab-rule table.
+        gui.zone_set_var.set("Lab rule, Sep 2026")
+        gui._reset_zone_rows()
+        assert [float(r['ub'].get()) for r in gui.zone_rows] == [20.0, 50.0, 100.0, 310.0]
         gui._toggle_connect()
         assert gui.backend.is_connected
         assert not any(w.startswith(("RANGE ", "PID ", "SETP ", "CSET ", "MOUT "))
@@ -613,6 +669,55 @@ def _ramp_gui_scenario(tmp_path):
         assert max(z[4] for z in gui.zones) == 4
         gui.stop_ramp()
         assert dev.range == 0
+
+        # CCR 1: at a switch the write that lowers the heater power goes
+        # first; a heater stuck at 100 % below the setpoint is reported once.
+        dev.climit[1][4] = 5
+        gui.zone_set_var.set(ramp.DEFAULT_ZONE_SET)
+        gui._reset_zone_rows()
+        dev.temps['A'] = 20.0
+        gui.start_ramp()
+        assert gui.is_running, gui.console.get("1.0", "end")
+        assert dev.range == 5 and dev.pid[1] == (2.0, 2.0, 0.0)
+        dev.writes.clear()
+        dev.temps['A'] = 7.5
+        gui._monitoring_tick()
+        w = [x for x in dev.writes if x.startswith(("RANGE ", "PID 1,"))]
+        assert w == ["RANGE 4", "PID 1,6.3,2.0,0.0"], w
+        dev.writes.clear()
+        dev.temps['A'] = 9.0
+        gui._monitoring_tick()
+        w = [x for x in dev.writes if x.startswith(("RANGE ", "PID 1,"))]
+        assert w == ["PID 1,2.0,2.0,0.0", "RANGE 5"], w
+        dev.htr = 100.0
+        gui._monitoring_tick()
+        assert gui.sat_since is not None
+        gui.sat_since -= ramp.SATURATION_WARN_S + 1
+        gui._monitoring_tick()
+        gui._monitoring_tick()
+        assert gui.console.get("1.0", "end").count("heater at 100 %") == 1
+        gui.stop_ramp()
+
+        # Input -> sensor type -> curve from the list read from the 340.
+        ramp.messagebox.askyesno = lambda *a, **k: True
+        gui.sensor_edit_var.set(True)
+        gui.sens_input_var.set('A')
+        gui._read_sensor()
+        dev.writes.clear()
+        gui._read_curve_list()
+        assert all(w.startswith("CRVHDR? ") for w in dev.writes)
+        gui.sens_type_var.set(ramp.Lakeshore340_Backend.SENSOR_TYPES[3])   # Platinum 100
+        gui._refresh_curve_choices()
+        pt100 = "06 - PT-100 (STANDARD) to 800 K, ohm/K"
+        values = list(gui.sens_curve_cb['values'])
+        present = gui.sens_curve_var.get()               # the input's curve, named now
+        assert "press Read curve list" not in present
+        assert pt100 in values and not any(v.startswith("01 ") for v in values)
+        assert [v for v in values if v.startswith("21 ")] in ([], [present])
+        gui.sens_curve_var.set(pt100)
+        dev.writes.clear()
+        gui._send_sensor()
+        assert "INTYPE A,3" in dev.writes and "INCRV A,6" in dev.writes
         gui._cancel_poll()
         gui.backend.close()
     finally:

@@ -42,6 +42,11 @@ class Fake350:
         self.rdgst = {k: 0 for k in "ABCD"}
         self.htr = {1: 10.0, 2: 0.0}
         self.htrst = {1: 0, 2: 0}
+        # CRVHDR? replies; every other slot answers as an empty curve.
+        self.curves = {1: "DT-470,STANDARD,2,+475.000,1",
+                       6: "PT-100,STANDARD,3,+800.000,2",
+                       7: "PT-1000,STANDARD,3,+800.000,2",
+                       21: "CX-1050,X999999,4,+325.000,1"}
         self.timeout = None
         self.read_termination = None
         self.write_termination = None
@@ -132,6 +137,11 @@ class Fake350:
         if name == 'DISPFLD?':
             inp, u = self.dispfld.get(int(a[0]), (1, 1))
             return f"{inp},{u}"
+        if name == 'CRVHDR?':
+            assert len(a) == 1 and 1 <= int(a[0]) <= 59, cmd
+            return self.curves.get(int(a[0]), "               ,          ,0,+000.000,0")
+        if name.startswith('CRV'):
+            raise AssertionError(f"curve write sent: '{cmd}'")
         if name == 'KRDG?':
             return f"+{self.temps[a[0]]:.4f}"
         if name == 'RDGST?':
@@ -186,6 +196,8 @@ def test_output1_power_follows_manual_table_4_14(mod):
 
 
 def test_output2_and_ranges_are_decades(mod):
+    assert mod.OUT2_DEFAULT_RESISTANCE == 25.0                      # the lab heater
+    assert mod.out2_full_power() == pytest.approx(0.25)             # 0.1 A^2 x 25 ohm
     assert mod.out2_full_power(100) == pytest.approx(1.0)
     assert mod.out2_full_power(10) == pytest.approx(0.1)
     assert mod.out2_full_power(1000) == pytest.approx(0.1)
@@ -200,11 +212,68 @@ def test_output2_and_ranges_are_decades(mod):
     assert mod.heater_watts(50, 1.0, display_is_power=True) == pytest.approx(0.5)
 
 
-def test_presets_are_the_ln2_values_and_named_so(mod):
+def test_presets_are_named_for_their_system(mod):
     vals = set(mod.PID_PRESETS.values())
-    assert vals == {(0.2, 1.0, 0.0), (0.5, 4.0, 0.0), (20.0, 15.0, 0.0), (50.0, 20.0, 0.0)}
-    assert all(name.startswith("LN2 ") for name in mod.PID_PRESETS)
+    assert vals == {(2.0, 2.0, 0.0), (6.3, 2.0, 0.0),                       # CCR 1
+                    (0.2, 1.0, 0.0), (0.5, 4.0, 0.0), (20.0, 15.0, 0.0), (50.0, 20.0, 0.0)}
+    assert all(name.startswith(("CCR 1, ", "LN2 ")) for name in mod.PID_PRESETS)
     assert mod.PID_DEFAULT_PRESET in mod.PID_PRESETS
+    assert mod.PID_DEFAULT_PRESET.startswith("CCR 1")
+    for s in mod.SYSTEMS.values():
+        assert s['preset'] in mod.PID_PRESETS
+
+
+def test_ccr1_zones_switch_range_without_a_power_jump(mod):
+    z = mod.ZONES_CCR1
+    assert mod.ZONE_DEFAULTS is z and mod.DEFAULT_SYSTEM == 'CCR'
+    (b1, h1, low, _), (b2, h2, high, _) = z
+    assert (b1, b2, h1, h2) == (8.0, 350.0, 1, 1)
+    assert low == (6.3, 2.0, 0.0, 0.0, 4) and high == (2.0, 2.0, 0.0, 0.0, 5)
+    # Same I, P x sqrt(10) for one range lower: same current, same power.
+    assert low[1] == high[1]
+    assert low[0] == pytest.approx(mod.bumpless_p(high[0], 5, 4), rel=0.01)
+    full = mod.out1_full_power(1, 4)
+    amps = [(p / 100) * (mod.range_power(r, full) / 25.0) ** 0.5
+            for p, r in ((low[0], low[4]), (high[0], high[4]))]
+    assert amps[0] == pytest.approx(amps[1], rel=0.01)       # mA per K of error
+    assert mod.bumpless_p(1.0, 5, 3) == pytest.approx(10.0)
+    assert mod.bumpless_p(10.0, 3, 4) == pytest.approx(10 / 10 ** 0.5)
+    assert mod.bumpless_p(1.0, 5, 4, display_is_power=True) == pytest.approx(10.0)
+    assert mod.SYSTEMS['CCR']['max_temp'] > b2 and not mod.SYSTEMS['CCR']['ln2_checks']
+    assert mod.SYSTEMS['LN2']['ln2_checks']
+
+
+def test_rate_table_parsing(mod):
+    caps, default = mod.parse_rate_table(mod.RATE_TABLE_DEFAULT)
+    assert caps == mod.LN2_RATE_CAPS and default == mod.LN2_RATE_CAP_ELSE
+    assert mod.parse_rate_table("20:1; else:3 , 10:0.2") == (((10.0, 0.2), (20.0, 1.0)), 3.0)
+    assert mod.rate_cap_for(15, ((10.0, 0.2), (20.0, 1.0)), 3.0) == 1.0
+    for bad in ("77:0.3", "77-0.3, else:5", "77:0, else:5", "else:x"):
+        with pytest.raises(ValueError):
+            mod.parse_rate_table(bad)
+
+
+def test_curve_headers_are_only_queried(mod):
+    dev = Fake350()
+    b = _backend(mod, dev)
+    dev.writes.clear()
+    heads = b.read_curve_headers()
+    assert sorted(heads) == [1, 6, 7, 21]                    # empty slots skipped
+    assert heads[6] == {'name': 'PT-100', 'sn': 'STANDARD', 'format': 3,
+                        'limit': 800.0, 'coefficient': 2}
+    assert dev.writes == [f"CRVHDR? {n}" for n in range(1, 60)]
+    assert [n for n in heads if mod.curve_matches(2, heads[n])] == [6, 7]     # platinum
+    assert [n for n in heads if mod.curve_matches(1, heads[n])] == [1]        # diode
+    assert [n for n in heads if mod.curve_matches(3, heads[n])] == [21]       # NTC
+    assert mod.curve_label(6, heads[6]) == "06 - PT-100 (STANDARD) to 800 K, ohm/K"
+
+
+def test_module_never_writes_a_curve():
+    import re
+    path = os.path.join(REPO_ROOT, "pica", "lakeshore", "T_Control_L350_RangeControl_GUI.py")
+    src = open(path, encoding="utf-8").read()
+    assert not re.search(r"CRV(DEL|PT|SAV)", src)
+    assert not re.search(r"CRVHDR(?!\?)", src), "only the CRVHDR? query may appear"
 
 
 def test_rate_caps_and_zone_helpers(mod):
@@ -212,13 +281,16 @@ def test_rate_caps_and_zone_helpers(mod):
     assert mod.ln2_rate_cap(77.0) == 0.5          # "below" is strict
     assert mod.ln2_rate_cap(99.9) == 0.5
     assert mod.ln2_rate_cap(150) == 5.0
-    z = mod.ZONE_DEFAULTS
+    z = mod.ZONES_LN2
     assert mod.select_zone(z, 80) == 0 and mod.select_zone(z, 100.0) == 0
     assert mod.select_zone(z, 100.1) == 1 and mod.select_zone(z, 500) == 1
     assert z[0][2][:3] == (0.2, 1.0, 0.0)          # anti-windup below 100 K
-    gen = mod.generate_equal_zones(2, 80, 340)
+    gen = mod.generate_equal_zones(2, 80, 340, template=z)
     assert [g[0] for g in gen] == [210.0, 340.0]
     assert gen[0][1:] == z[1][1:]
+    c = mod.ZONE_DEFAULTS
+    assert mod.select_zone(c, 8.0) == 0 and mod.select_zone(c, 8.01) == 1
+    assert mod.generate_equal_zones(1, 4, 350)[0][1:] == c[1][1:]
     with pytest.raises(ValueError):
         mod.validate_pid(0.0, 1, 0)                # 350 P starts at 0.1
     with pytest.raises(ValueError):
@@ -323,6 +395,22 @@ def _gui_scenario(tmp_path):
         gui.ls_cb.set("GPIB0::12::INSTR")
         root.update()
 
+        # Defaults: CCR with the CCR 1 zone table in use.
+        assert gui.system == 'CCR' and gui.pid_mode_var.get() == 'zones'
+        assert [float(r['ub'].get()) for r in gui.zone_rows] == [8.0, 350.0]
+        assert gui.entries['max_temp'].get() == "355"
+        assert gui.out2_res_entry.get() == "25"
+        # The mouse wheel over a drop-down scrolls the panel, never the value.
+        before = gui.sens_type_var.get()
+        for cls in ('TCombobox', 'TSpinbox'):
+            assert root.bind_class(cls, '<MouseWheel>')
+        gui.sens_type_cb.event_generate('<MouseWheel>', delta=-120)
+        gui.input_cb.event_generate('<MouseWheel>', delta=120)
+        root.update()
+        assert gui.sens_type_var.get() == before and gui.input_var.get() == 'A'
+        gui.pid_mode_var.set('fixed')
+        gui._refresh_states()
+
         # Before connecting: nothing that talks to the instrument is live.
         assert str(gui.htr_send_btn['state']) == 'disabled'
         assert str(gui.load_pid_btn['state']) == 'disabled'
@@ -341,12 +429,22 @@ def _gui_scenario(tmp_path):
         assert gui.out_widgets[1]['p'].get() == "50"
         assert str(gui.out_widgets[1]['p']['state']) == 'normal'
 
+        # LN2 probe: its zone defaults, safety maximum and wind-up checks.
+        gui.system_var.set(mod.SYSTEMS['LN2']['label'])
+        gui._on_system_changed()
+        assert gui.system == 'LN2'
+        assert [float(r['ub'].get()) for r in gui.zone_rows] == [100.0, 340.0]
+        assert gui.entries['max_temp'].get() == "340"
+
         # Zone table: below 100 K Output 2, above it both.
         gui.pid_mode_var.set('zones')
         gui._refresh_states()
-        gui.zone_rows[0]['heater_var'].set("Out 2")
-        gui.zone_rows[1]['heater_var'].set("Both")
-        gui._refresh_states()
+        gui._set_zone_heater(gui.zone_rows[0], 2)
+        gui._set_zone_heater(gui.zone_rows[1], 3)
+        # Unticking the only heater of a zone is undone.
+        gui.zone_rows[0]['use'][2].set(False)
+        gui._on_zone_heater_toggled(gui.zone_rows[0], 2)
+        assert gui._zone_heater_code(gui.zone_rows[0]) == 2
         assert str(gui.zone_rows[0][1]['p']['state']) == 'disabled'
         assert str(gui.zone_rows[0][2]['p']['state']) == 'normal'
         gui.entries['target'].delete(0, 'end')
@@ -372,7 +470,7 @@ def _gui_scenario(tmp_path):
         assert dev.ramp[1] == (1, 0.5) and dev.ramp[2] == (1, 0.5)
         assert dev.setp == {1: 120.0, 2: 120.0}
         assert str(gui.start_button['state']) == 'disabled'
-        assert str(gui.zone_rows[0]['heater']['state']) == 'disabled'
+        assert str(gui.zone_rows[0]['heater'][2]['state']) == 'disabled'
 
         dev.temps['A'] = 101.0                            # crosses into zone 2
         gui._monitoring_tick()
@@ -394,7 +492,7 @@ def _gui_scenario(tmp_path):
         text.encode("ascii")                              # data file stays ASCII
 
         # Apply now cannot switch on an output this run did not set up.
-        gui.zone_rows[1]['heater_var'].set("Out 2")
+        gui._set_zone_heater(gui.zone_rows[1], 2)
         gui.start_ramp()
         assert gui.is_running and gui.run_outputs == (2,)
         gui.pid_mode_var.set('fixed')
@@ -432,6 +530,44 @@ def _gui_scenario(tmp_path):
                        for w in dev.writes), dev.writes
         mod.messagebox.askyesno = lambda *a, **k: True
 
+        # CCR: no below-100 K dialog; at a zone switch the write that lowers
+        # the heater power goes first; a heater stuck at 100 % is reported.
+        gui.system_var.set(mod.SYSTEMS['CCR']['label'])
+        gui._on_system_changed()
+        gui.pid_mode_var.set('zones')
+        gui._refresh_states()
+        gui.entries['target'].delete(0, 'end')
+        gui.entries['target'].insert(0, "30")
+        gui.entries['max_temp'].delete(0, 'end')
+        gui.entries['max_temp'].insert(0, "355")
+        gui.rate_cap_var.set(False)
+        dev.temps['A'] = 20.0
+        asked = []
+        mod.messagebox.askyesno = lambda *a, **k: asked.append(a) or True
+        gui.start_ramp()
+        assert gui.is_running and not asked, gui.console.get("1.0", "end")
+        assert dev.range[1] == 5 and dev.pid[1] == (2.0, 2.0, 0.0)
+        dev.writes.clear()
+        dev.temps['A'] = 7.5                                # into zone 1: range down
+        gui._monitoring_tick()
+        w = [x for x in dev.writes if x.startswith(("RANGE 1,", "PID 1,"))]
+        assert w == ["RANGE 1,4", "PID 1,6.3,2.0,0.0"], w
+        dev.writes.clear()
+        dev.temps['A'] = 9.0                                # back up: P first
+        gui._monitoring_tick()
+        w = [x for x in dev.writes if x.startswith(("RANGE 1,", "PID 1,"))]
+        assert w == ["PID 1,2.0,2.0,0.0", "RANGE 1,5"], w
+        dev.htr[1] = 100.0
+        gui._monitoring_tick()
+        assert gui.sat_since is not None
+        gui.sat_since -= mod.SATURATION_WARN_S + 1
+        gui._monitoring_tick()
+        gui._monitoring_tick()
+        assert gui.console.get("1.0", "end").count("heater at 100 %") == 1
+        dev.htr[1] = 10.0
+        gui.stop_ramp()
+        mod.messagebox.askyesno = lambda *a, **k: True
+
         # A data file that cannot be opened stops Start before any write.
         import shutil
         shutil.rmtree(tmp_path / "data")
@@ -451,6 +587,30 @@ def _gui_scenario(tmp_path):
         gui.sens_input_var.set('B')
         gui._refresh_states()
         assert str(gui.sens_send_btn['state']) == 'disabled'
+
+        # Input -> sensor type -> a curve from the list read from the 350.
+        gui.sens_input_var.set('A')
+        gui._read_sensor()
+        dev.writes.clear()
+        gui._read_curve_list()
+        assert all(w.startswith("CRVHDR? ") for w in dev.writes)
+        gui.sens_type_var.set(mod.Lakeshore350_Backend.SENSOR_TYPES[2])     # platinum
+        gui._on_sensor_type()
+        values = list(gui.sens_curve_cb['values'])
+        pt100 = "06 - PT-100 (STANDARD) to 800 K, ohm/K"
+        present = gui.sens_curve_var.get()               # the input's curve, named now
+        assert present.startswith("01 - DT-470")
+        assert pt100 in values and not any(v.startswith("21 ") for v in values)
+        assert [v for v in values if v.startswith("01 ")] == [present]
+        gui.sens_curve_var.set(pt100)
+        dev.writes.clear()
+        gui._send_sensor()
+        assert "INCRV A,6" in dev.writes and dev.intype['A'][0] == 2
+        assert not any(w.startswith("CRV") and not w.startswith("CRVHDR?") for w in dev.writes)
+        gui.sens_curve_var.set(mod.CURVE_KEEP)
+        dev.writes.clear()
+        gui._send_sensor()
+        assert not any(w.startswith("INCRV ") for w in dev.writes)
         gui._cancel_poll()
         gui.backend.close()
     finally:

@@ -1,15 +1,48 @@
 """
 Module: T_Control_L350_RangeControl_GUI.py
 Purpose: Single temperature ramp on a Lake Shore Model 350, with heater
-         ranges shown in watts, PID presets for the LN2-dewar probe, a PID
-         zone table, both heater outputs, and optional heater / sensor /
-         display setup.  v9.0.
+         ranges shown in watts, PID presets for a CCR (closed-cycle, 4-350 K)
+         and for the LN2-dewar probe, a PID zone table, both heater outputs,
+         and optional heater / sensor / display setup.  v9.1.
 
 REWRITTEN on 27 Nov 2026 at the user's request (was v8.0).  The L350
 originals are otherwise frozen; this file is listed in APPROVED_REWRITES in
 tests/test_lakeshore_340_siblings.py.  It is kept similar to
 T_Control_L340_RangeControl_GUI.py, so both are handled the same way; only
 the commands differ.
+
+v9.1 (28 Nov 2026): cryostat choice (CCR / LN2 probe) with the "CCR 1"
+zone table as the default; the mouse wheel scrolls the panel and never
+changes a drop-down; the rate limit is an editable table; the sensor panel
+picks input -> sensor type -> a curve from the list read from the
+instrument (read-only: curve headers are only queried, never written);
+Output 2 defaults to the lab's 25 ohm heater; a warning when a zone's
+heater sits at 100 % below the setpoint (its range is too small).
+
+CCR 1 (default zone table, untested in the lab: a starting point)
+-----------------------------------------------------------------
+  Up to 8 K    Output 1 range 4 (7.5 W)  P 6.3  I 2  D 0  MOUT 0
+  Up to 350 K  Output 1 range 5 (75 W)   P 2    I 2  D 0  MOUT 0
+  Why: the 350's integral term is P*I*integral(e) (manual 2.13), so it
+  scales with P.  One range step is 10x in power = sqrt(10) in current, so
+  dropping one range and multiplying P by sqrt(10) (I unchanged) keeps the
+  heater power the same at the switch: no sudden heating (assumes the
+  default Current heater display and that the 350 keeps integral(e), as the
+  manual's equation reads; check at the first 8 K crossing).  At a switch
+  the write that LOWERS the power goes first (RANGE before PID going down
+  a range, PID before RANGE going up), so the in-between state is a short
+  dip, never a 10x spike.  Zones switch on the MEASURED temperature, so a
+  zone's range must be able to heat past its own upper bound: range 4
+  tops out near 13-15 K on a 1 W (RDK-408D2 class) cold head, hence 8 K
+  with margin for mains frequency and first-stage load, and no range-3
+  zone (0.75 W cannot even hold 4.2 K on that head).  Copper's heat
+  capacity falls ~T^3 (about 4000x less at 4 K than at 300 K): the stage
+  is fast at low T and a slow integrator at high T, where I 2 (500 s)
+  damps better than I 4.  P 2 sits between the lab's tested 340 setting
+  (P 0.5 at 2 A = P 0.58 here) and the simulation's best (P 3).  From a
+  simulation of the 350 algorithm on 0.1 W and 1 W @ 4.2 K Sumitomo 4 K GM
+  cold heads with 15 % cold-head ripple, reviewed by a second (referee)
+  pass, 28 Nov 2026.
 
 How a run works
 ---------------
@@ -45,7 +78,8 @@ Heater outputs (manual 2.11.1, Tables 1-5, 1-6, 2-3, 3-3, 4-14)
   Output 1: main heater, 50 V compliance.  25 ohm setting -> up to 1.732 A,
             75 W; 50 ohm setting -> up to 1 A, 50 W.  Max current
             0.707 / 1 / 1.414 / 1.732 A or a user value (HTRSET).
-  Output 2: sample heater, 100 mA, 10 V -> 1 W into 100 ohm.
+  Output 2: sample heater, 100 mA, 10 V -> 1 W into 100 ohm, but only
+            0.25 W into the lab's 25 ohm heater (I^2 R = 0.1^2 x 25).
   Both have five ranges, each one decade lower in power than the next:
   range 5 = full power, range 4 = 1/10, ... range 1 = 1/10000.
 
@@ -71,8 +105,12 @@ Model 350 commands used (User's Manual, chapter 6):
   HTRSET 1,<res>,<max I>,<user I>,<I/P>                HTRSET? n
   INTYPE <in>,<type>,<auto>,<range>,<comp>,<units>,<exc>  INTYPE? <in>
   INCRV <in>,<curve>   DISPLAY <mode>,<fields>,<out>   DISPFLD <f>,<in>,<units>
+  CRVHDR? <curve>      curve list, query only (1-59)
   KRDG? <in>, RDGST? <in>, HTR? n, HTRST? n, *IDN?, *CLS
-  (*RST is never sent: it would reset the loop, setpoint and ramp.)
+  (*RST is never sent: it would reset the loop, setpoint and ramp.  No
+  curve is ever written or deleted: only INCRV picks which one an input
+  uses.  Changing an input's setup turns the heater range off (manual
+  4.5.1.5.8), so the sensor panel is locked during a run.)
 """
 
 import tkinter as tk
@@ -171,7 +209,7 @@ OUT1_COMPLIANCE_V = 50.0
 OUT1_USER_CURRENT_RANGE = (0.1, 1.732)
 OUT2_MAX_CURRENT = 0.1
 OUT2_COMPLIANCE_V = 10.0
-OUT2_DEFAULT_RESISTANCE = 100.0
+OUT2_DEFAULT_RESISTANCE = 25.0      # the lab's heaters are 25 ohm (0.25 W)
 
 
 def heater_max_power(current_a, resistance_ohm, compliance_v):
@@ -194,7 +232,7 @@ def out1_full_power(resistance_code, max_current_code, user_current=0.0):
 
 
 def out2_full_power(resistance_ohm=OUT2_DEFAULT_RESISTANCE):
-    """Output 2 power on range 5 (1 W into 100 ohm)."""
+    """Output 2 power on range 5 (1 W into 100 ohm, 0.25 W into 25 ohm)."""
     return heater_max_power(OUT2_MAX_CURRENT, float(resistance_ohm), OUT2_COMPLIANCE_V)
 
 
@@ -238,8 +276,28 @@ def heater_watts(percent, range_power_w, display_is_power):
 
 
 # -------------------------------------------------------------------------------
-# --- PID PRESETS, RATE LIMITS AND ZONES (LN2-dewar probe) ---
+# --- PID PRESETS, RATE LIMITS AND ZONES (CCR and LN2-dewar probe) ---
 # -------------------------------------------------------------------------------
+
+# One range step is 10x in power; with the default Current heater display
+# the PID output is a % of full-scale current, so one step is sqrt(10) in
+# output.  The integral term is P*I*integral(e) (manual 2.13), so scaling P
+# by this factor when the range changes keeps the heater power continuous.
+RANGE_STEP_CURRENT = 10 ** 0.5
+
+
+def bumpless_p(p, from_range, to_range, display_is_power=False):
+    """P for `to_range` that gives the same heater power as P on
+    `from_range` (I unchanged).  A lower range needs a higher P."""
+    step = 10.0 if display_is_power else RANGE_STEP_CURRENT
+    return p * step ** (int(from_range) - int(to_range))
+
+
+# CCR 1: the default for the Sumitomo 4 K CCR, 4-350 K (see the module
+# docstring).  A starting point to be tested in the lab, 28 Nov 2026.
+CCR1_BOUND_K = 8.0
+PID_CCR1_HIGH = (2.0, 2.0, 0.0)                                   # range 5
+PID_CCR1_LOW = (round(bumpless_p(2.0, 5, 4), 1), 2.0, 0.0)        # range 4: P 6.3
 
 # The 350's integral term scales with BOTH P and I, and the LN2 probe can
 # only cool passively, so below 100 K the wind-up must stay tiny or an
@@ -251,49 +309,132 @@ PID_SLOW = (0.5, 4.0, 0.0)
 PID_MEDIUM = (20.0, 15.0, 0.0)
 PID_FAST = (50.0, 20.0, 0.0)
 PID_PRESETS = {
+    "CCR 1, 8-350 K (P=2, I=2, D=0) - use range 5": PID_CCR1_HIGH,
+    "CCR 1, below 8 K (P=6.3, I=2, D=0) - use range 4": PID_CCR1_LOW,
     "LN2 Ultra-slow (P=0.2, I=1, D=0) - below 100 K": PID_ULTRA,
     "LN2 Slow (P=0.5, I=4, D=0) - winds up below 100 K": PID_SLOW,
     "LN2 Medium (P=20, I=15, D=0) - 100 K and above": PID_MEDIUM,
     "LN2 Fast (P=50, I=20, D=0) - large steps only": PID_FAST,
 }
 PID_CUSTOM = "Custom (type P, I, D)"
-PID_DEFAULT_PRESET = "LN2 Medium (P=20, I=15, D=0) - 100 K and above"
 
-# Lab ramp-rate guideline for the LN2 probe (5 Jul 2026), as in the Step
-# GUIs: below 77 K 0.3 K/min, below 100 K 0.5 K/min, else 5 K/min.
-# "Below" is strict.  Applied only when the checkbox is ticked.
+# Ramp-rate limit table "below T: max K/min, ..., else: max".  The default
+# is the LN2-probe guideline of 5 Jul 2026, the same table the Step
+# Frequency Scan (E4980A) windows use: below 77 K 0.3 K/min, below 100 K
+# 0.5 K/min, else 5 K/min.  "Below" is strict.  Off unless ticked.
+RATE_TABLE_DEFAULT = "77:0.3, 100:0.5, else:5"
 LN2_RATE_CAPS = ((77.0, 0.3), (100.0, 0.5))
 LN2_RATE_CAP_ELSE = 5.0
 
 # Heater outputs a zone or the fixed setting uses.
-HEATER_CHOICES = {1: "Out 1", 2: "Out 2", 3: "Both"}
 HEATER_OUTPUTS = {1: (1,), 2: (2,), 3: (1, 2)}
 FIXED_HEATER_LABELS = {
     1: "Output 1 only (main heater, up to 75 W)",
-    2: "Output 2 only (sample heater, up to 1 W)",
+    2: "Output 2 only (sample heater, 0.25 W into 25 ohm)",
     3: "Both outputs (each with its own PID and range)",
 }
 
 # Zone rows: (upper bound K, heater 1/2/3, out1, out2) where each output
 # is (P, I, D, MOUT %, range).  The first zone runs from 0 K up to its
-# bound; a temperature above the last bound uses the last zone.  Defaults:
-# the anti-windup PID below 100 K, Medium above, Output 1 on range 5 (the
-# v8 default).  Starting points, edit freely.
-ZONE_DEFAULTS = (
+# bound; a temperature above the last bound uses the last zone.  Output 2
+# values are only used when a row's heater is "Out 2" or "Both".
+ZONES_CCR1 = (
+    (CCR1_BOUND_K, 1, PID_CCR1_LOW + (0.0, 4), PID_CCR1_LOW + (0.0, 4)),
+    (350.0, 1, PID_CCR1_HIGH + (0.0, 5), PID_CCR1_HIGH + (0.0, 5)),
+)
+# LN2 probe: the anti-windup PID below 100 K, Medium above, range 5.
+ZONES_LN2 = (
     (100.0, 1, (0.2, 1.0, 0.0, 0.0, 5), (0.2, 1.0, 0.0, 0.0, 5)),
     (340.0, 1, (20.0, 15.0, 0.0, 0.0, 5), (20.0, 15.0, 0.0, 0.0, 5)),
 )
-ZONE_T_MIN = 77.0
-ZONE_T_MAX = 340.0
-HARD_TEMP_DEFAULT_K = 340.0   # lab kill limit for the LN2 probe
+
+# Cryostat choice: what each one changes.  'ln2_checks' = the below-100 K
+# wind-up warning at Start and the rate-limit reminder.
+SYSTEMS = {
+    'CCR': dict(label="CCR (closed cycle, 4-350 K)", zones=ZONES_CCR1,
+                zone_name="CCR 1", t_min=4.0, t_max=350.0, max_temp=355.0,
+                preset="CCR 1, 8-350 K (P=2, I=2, D=0) - use range 5",
+                ln2_checks=False),
+    'LN2': dict(label="LN2 dewar probe (77-340 K)", zones=ZONES_LN2,
+                zone_name="LN2 probe", t_min=77.0, t_max=340.0, max_temp=340.0,
+                preset="LN2 Medium (P=20, I=15, D=0) - 100 K and above",
+                ln2_checks=True),
+}
+DEFAULT_SYSTEM = 'CCR'
+ZONE_DEFAULTS = SYSTEMS[DEFAULT_SYSTEM]['zones']
+ZONE_T_MIN = SYSTEMS[DEFAULT_SYSTEM]['t_min']
+ZONE_T_MAX = SYSTEMS[DEFAULT_SYSTEM]['t_max']
+PID_DEFAULT_PRESET = SYSTEMS[DEFAULT_SYSTEM]['preset']
+HARD_TEMP_DEFAULT_K = SYSTEMS[DEFAULT_SYSTEM]['max_temp']
+
+# A zone whose heater sits at 100 % this long while the reading is below the
+# setpoint cannot reach its own upper bound: logged once per zone.
+SATURATION_WARN_S = 120.0
+
+
+def parse_rate_table(text):
+    """'77:0.3, 100:0.5, else:5' -> (((77.0, 0.3), (100.0, 0.5)), 5.0)."""
+    caps, default = [], None
+    for part in str(text).replace(';', ',').split(','):
+        part = part.strip()
+        if not part:
+            continue
+        key, sep, val = part.partition(':')
+        if not sep:
+            raise ValueError(f"'{part}' is not 'temperature:rate'")
+        rate = float(val)
+        if rate <= 0:
+            raise ValueError(f"rate in '{part}' must be positive")
+        if key.strip().lower() == 'else':
+            default = rate
+        else:
+            caps.append((float(key), rate))
+    if default is None:
+        raise ValueError("the table needs an 'else:<rate>' entry")
+    return tuple(sorted(caps)), default
+
+
+def rate_cap_for(coldest_k, caps, default):
+    """Rate cap (K/min) for the coldest temperature the ramp passes."""
+    for bound, cap in caps:
+        if coldest_k < bound:
+            return cap
+    return default
 
 
 def ln2_rate_cap(coldest_k):
-    """Rate cap (K/min) for the coldest temperature the ramp passes."""
-    for bound, cap in LN2_RATE_CAPS:
-        if coldest_k < bound:
-            return cap
-    return LN2_RATE_CAP_ELSE
+    """Rate cap of the LN2-probe guideline table."""
+    return rate_cap_for(coldest_k, LN2_RATE_CAPS, LN2_RATE_CAP_ELSE)
+
+
+# Curve headers (CRVHDR?): <format> 1 mV/K, 2 V/K, 3 ohm/K, 4 log ohm/K;
+# <coefficient> 1 negative, 2 positive.  Which curves suit which INTYPE
+# sensor type, as (format set, coefficient or None = either).
+CURVE_FORMATS = {1: "mV/K", 2: "V/K", 3: "ohm/K", 4: "log ohm/K"}
+CURVE_KEEP = "(keep the present curve)"
+CURVE_NONE = "00 - none (sensor units only)"
+CURVE_MATCH = {
+    1: ({1, 2}, None),       # diode
+    2: ({3}, 2),             # platinum (PTC) RTD
+    3: ({3, 4}, 1),          # NTC RTD (Cernox, RuOx, germanium)
+    4: ({1}, None),          # thermocouple
+    5: (None, None),         # capacitance: anything
+}
+
+
+def curve_matches(sensor_type, header):
+    """True if a curve header (dict from read_curve_headers) suits a type."""
+    formats, coeff = CURVE_MATCH.get(int(sensor_type), (None, None))
+    if formats is not None and header['format'] not in formats:
+        return False
+    return coeff is None or header['coefficient'] == coeff
+
+
+def curve_label(number, header):
+    """'06 - PT-100 (STANDARD) to 800 K, ohm/K'."""
+    sn = f" ({header['sn']})" if header['sn'] else ""
+    fmt = CURVE_FORMATS.get(header['format'], f"format {header['format']}")
+    return f"{int(number):02d} - {header['name']}{sn} to {header['limit']:g} K, {fmt}"
 
 
 def select_zone(zones, temperature):
@@ -624,6 +765,32 @@ class Lakeshore350_Backend:
     def get_input_curve(self, control_input):
         return int(float(self._query(f'INCRV? {control_input}')))
 
+    CURVE_NUMBERS = range(1, 60)     # 1-20 standard, 21-59 user
+
+    def get_curve_header(self, curve):
+        """CRVHDR? <curve> (query only) -> dict, or None for an empty slot."""
+        parts = [p.strip() for p in self._query(f'CRVHDR? {int(curve)}').split(',')]
+        if len(parts) < 5:
+            return None
+        try:
+            header = {'name': parts[0], 'sn': parts[1], 'format': int(float(parts[2])),
+                      'limit': float(parts[3]), 'coefficient': int(float(parts[4]))}
+        except ValueError:
+            return None
+        if not header['name'] or header['format'] == 0 or header['limit'] <= 0:
+            return None
+        return header
+
+    def read_curve_headers(self, curves=None):
+        """{curve: header} for every non-empty curve.  READ-ONLY: only the
+        CRVHDR? query is sent; no curve is ever written or deleted here."""
+        out = {}
+        for n in (self.CURVE_NUMBERS if curves is None else curves):
+            header = self.get_curve_header(n)
+            if header:
+                out[int(n)] = header
+        return out
+
     def set_input_curve(self, control_input, curve):
         if not 0 <= int(curve) <= 59:
             raise ValueError("curve must be 0 (none), 1-20 standard or 21-59 user")
@@ -718,7 +885,7 @@ class Lakeshore350_Backend:
 
 
 class TempControlGUI:
-    PROGRAM_VERSION = "9.0"
+    PROGRAM_VERSION = "9.1"
     LEFT_PANEL_WIDTH = 720
     IDLE_POLL_MS = 2000
     CLR_BG_DARK = '#B8A392'
@@ -774,10 +941,16 @@ class TempControlGUI:
         self.sensor_read_input = None
         self.display_read_ok = False
         self.out2_resistance = OUT2_DEFAULT_RESISTANCE
+        self.system = DEFAULT_SYSTEM
+        self.curve_headers = {}           # {curve: header} read with CRVHDR?
+        self.sat_since = None             # heater at 100 % below setpoint since
+        self.sat_warned = set()           # zones already warned about
         self._ui_ready = False
 
         self.setup_styles()
         self.create_widgets()           # sets _ui_ready when every widget exists
+        if self._ui_ready:
+            self._refresh_curve_choices()
         self._refresh_range_labels()
         self._refresh_states()
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -903,8 +1076,17 @@ class TempControlGUI:
         def _on_mousewheel(event):
             canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
 
+        def _wheel_scrolls_panel(event):
+            # Over a drop-down or spinbox the wheel scrolls the panel and
+            # never changes the selected value ('break' stops ttk's own
+            # wheel binding that would step through the values).
+            _on_mousewheel(event)
+            return 'break'
+
         canvas.bind('<Enter>', lambda e: canvas.bind_all('<MouseWheel>', _on_mousewheel))
         canvas.bind('<Leave>', lambda e: canvas.unbind_all('<MouseWheel>'))
+        for cls in ('TCombobox', 'TSpinbox'):
+            self.root.bind_class(cls, '<MouseWheel>', _wheel_scrolls_panel)
 
         frame.grid_columnconfigure(0, weight=1)
         self._create_info_panel(frame, 0)
@@ -939,7 +1121,8 @@ class TempControlGUI:
                   font=institute_font).grid(row=0, column=1, padx=10, pady=(14, 0), sticky='sw')
         ttk.Label(frame, text="Mumbai Centre", font=institute_font).grid(
             row=1, column=1, padx=10, sticky='nw')
-        ttk.Label(frame, text="Lake Shore Model 350 | Output 1 (75 W) + Output 2 (1 W) | LN2 probe",
+        ttk.Label(frame, text="Lake Shore Model 350 | Output 1 (75 W) + Output 2 (0.25 W, 25 ohm) "
+                              "| CCR or LN2 probe",
                   style='Muted.TLabel').grid(row=2, column=1, padx=10, pady=(0, 8), sticky='w')
 
     def _section(self, parent, grid_row, title):
@@ -1018,17 +1201,25 @@ class TempControlGUI:
         ttk.Label(row4, text="K").pack(side='left')
 
         self.rate_cap_var = tk.BooleanVar(value=False)
+        row5 = ttk.Frame(frame, style='Card.TFrame')
+        row5.grid(row=4, column=0, columnspan=4, sticky='w', padx=10, pady=(2, 0))
         self.rate_cap_cb = ttk.Checkbutton(
-            frame, variable=self.rate_cap_var, command=self._refresh_states,
-            text="Limit the rate for the LN2 probe: 0.3 K/min below 77 K, "
-                 "0.5 below 100 K, 5 above")
-        self.rate_cap_cb.grid(row=4, column=0, columnspan=4, sticky='w', padx=10, pady=(2, 0))
-        self.lbl_rate_hint = self._note(frame, "", 5)
+            row5, variable=self.rate_cap_var, command=self._refresh_states,
+            text="Limit the rate (below K: max K/min)")
+        self.rate_cap_cb.pack(side='left')
+        self.rate_table_entry = ttk.Entry(row5, width=24, font=self.FONT_TABLE)
+        self.rate_table_entry.insert(0, RATE_TABLE_DEFAULT)
+        self.rate_table_entry.pack(side='left', padx=4)
+        self._note(frame, "Default table = the LN2-probe guideline (5 Jul 2026, the same as the "
+                          "Step Frequency Scan windows);\nno CCR guideline exists yet. Off "
+                          "unless ticked.", 5)
+        self.lbl_rate_hint = self._note(frame, "", 6)
         for key in ('target', 'rate'):
             self.entries[key].bind('<KeyRelease>', lambda e: self._refresh_rate_hint())
+        self.rate_table_entry.bind('<KeyRelease>', lambda e: self._refresh_rate_hint())
 
         btns = ttk.Frame(frame, style='Card.TFrame')
-        btns.grid(row=6, column=0, columnspan=4, sticky='ew', padx=6, pady=(4, 8))
+        btns.grid(row=7, column=0, columnspan=4, sticky='ew', padx=6, pady=(4, 8))
         btns.grid_columnconfigure((0, 1), weight=1)
         self.start_button = ttk.Button(btns, text="Start Ramp", style='Start.TButton',
                                        command=self.start_ramp)
@@ -1047,18 +1238,28 @@ class TempControlGUI:
 
     def _create_pid_panel(self, parent, grid_row):
         frame = self._section(parent, grid_row, '3. Heater power and PID')
-        self.pid_mode_var = tk.StringVar(value='fixed')
+        sysf = ttk.Frame(frame, style='Card.TFrame')
+        sysf.grid(row=0, column=0, columnspan=4, sticky='w', padx=10, pady=(6, 0))
+        ttk.Label(sysf, text="Cryostat:").pack(side='left')
+        self.system_var = tk.StringVar(value=SYSTEMS[DEFAULT_SYSTEM]['label'])
+        self.system_cb = ttk.Combobox(sysf, textvariable=self.system_var, state='readonly',
+                                      values=[s['label'] for s in SYSTEMS.values()], width=30)
+        self.system_cb.pack(side='left', padx=6)
+        self.system_cb.bind('<<ComboboxSelected>>', lambda e: self._on_system_changed())
+        ttk.Label(sysf, text="sets the zone defaults, presets and safety maximum",
+                  style='Muted.TLabel').pack(side='left')
+        self.pid_mode_var = tk.StringVar(value='zones')
         ttk.Radiobutton(frame, text="One setting for the whole ramp", value='fixed',
                         variable=self.pid_mode_var, command=self._on_mode_changed).grid(
-            row=0, column=0, columnspan=2, sticky='w', padx=10, pady=(4, 0))
+            row=1, column=0, columnspan=2, sticky='w', padx=10, pady=(4, 0))
         ttk.Radiobutton(frame, text="Zone table: change with the measured temperature",
                         value='zones', variable=self.pid_mode_var,
                         command=self._on_mode_changed).grid(
-            row=0, column=2, columnspan=2, sticky='w', padx=10, pady=(4, 0))
+            row=1, column=2, columnspan=2, sticky='w', padx=10, pady=(4, 0))
 
         # ---- one setting ----
         fixed = ttk.LabelFrame(frame, text='One setting')
-        fixed.grid(row=1, column=0, columnspan=4, sticky='ew', padx=8, pady=6)
+        fixed.grid(row=2, column=0, columnspan=4, sticky='ew', padx=8, pady=6)
         fixed.grid_columnconfigure(1, weight=1)
         ttk.Label(fixed, text="Heater output:").grid(row=0, column=0, sticky='w', padx=8, pady=4)
         self.fixed_heater_var = tk.StringVar(value=FIXED_HEATER_LABELS[1])
@@ -1081,18 +1282,20 @@ class TempControlGUI:
         self.apply_fixed_btn.grid(row=0, column=1, sticky='ew', padx=4)
         self._note(fixed, "Manual output (MOUT) is a fixed heater % added on top of PID. "
                           "Leave 0 unless you know\nthe % that holds this temperature; "
-                          "too much makes the probe overshoot and it cannot cool back.",
+                          "too much overshoots (the LN2 probe cannot cool back).",
                    row=5, pady=(0, 6))
 
         # ---- zone table ----
         zf = ttk.LabelFrame(frame, text='Zone table')
-        zf.grid(row=2, column=0, columnspan=4, sticky='ew', padx=8, pady=6)
+        zf.grid(row=3, column=0, columnspan=4, sticky='ew', padx=8, pady=6)
         zf.grid_columnconfigure(0, weight=1)
         self.zone_frame = zf
         self._note(zf, "Each row runs up to its 'Up to' temperature (the first from 0 K; the last "
                        "also covers anything\nabove). The switch happens when the MEASURED "
-                       "temperature crosses a bound, no hysteresis.\nColumns of an output the "
-                       "row does not use are greyed out.", row=0, pady=(4, 2))
+                       "temperature crosses a bound, no hysteresis.\nHeaters on: tick Out 1, "
+                       "Out 2 (sample heater, 0.25 W into 25 ohm) or both, per zone.\nOne range lower = P x 3.16 (I the same) keeps the heater "
+                       "power the same at the switch.\nA zone's range must heat past its own "
+                       "'Up to' or the ramp stalls there.", row=0, pady=(4, 2))
         gen = ttk.Frame(zf, style='Card.TFrame')
         gen.grid(row=1, column=0, sticky='w', padx=10, pady=2)
         ttk.Label(gen, text="Make").pack(side='left')
@@ -1112,7 +1315,8 @@ class TempControlGUI:
 
         self.zone_table = ttk.Frame(zf, style='Card.TFrame')
         self.zone_table.grid(row=2, column=0, sticky='w', padx=8, pady=4)
-        heads = [("Up to K", 0, 1), ("Heater", 1, 1), ("Output 1", 2, 5), ("Output 2", 7, 5)]
+        heads = [("Up to K", 0, 1), ("Heaters on", 1, 1), ("Output 1 (main)", 2, 5),
+                 ("Output 2 (sample)", 7, 5)]
         for text, col, span in heads:
             ttk.Label(self.zone_table, text=text, style='Bold.TLabel').grid(
                 row=0, column=col, columnspan=span, pady=(0, 1))
@@ -1125,7 +1329,7 @@ class TempControlGUI:
         zb = ttk.Frame(zf, style='Card.TFrame')
         zb.grid(row=3, column=0, sticky='ew', padx=4, pady=(2, 4))
         zb.grid_columnconfigure((0, 1, 2), weight=1)
-        self.zone_add_btn = ttk.Button(zb, text="+ Add zone", command=lambda: self._add_zone_row())
+        self.zone_add_btn = ttk.Button(zb, text="+ Add zone", command=lambda: self._add_zone_row(*self._system()['zones'][-1]))
         self.zone_add_btn.grid(row=0, column=0, sticky='ew', padx=4)
         self.zone_del_btn = ttk.Button(zb, text="- Remove last", command=self._remove_zone_row)
         self.zone_del_btn.grid(row=0, column=1, sticky='ew', padx=4)
@@ -1207,7 +1411,7 @@ class TempControlGUI:
         self.lbl_htr_preview.grid(row=5, column=0, columnspan=4, sticky='w', padx=10, pady=(4, 0))
         self._note(frame, "Output 1 limits (manual Table 4-14): 25 ohm up to 1.732 A = 75 W; "
                           "50 ohm up to 1 A = 50 W.\nUser value: 0.1 A up to that limit. "
-                          "Output 2 is fixed at 100 mA / 10 V (1 W into 100 ohm).", row=6)
+                          "Output 2 is fixed at 100 mA / 10 V: 1 W into 100 ohm, 0.25 W into 25 ohm.", row=6)
         for wdg in (self.htr_res_cb, self.htr_cur_cb, self.htr_disp_cb):
             wdg.bind('<<ComboboxSelected>>', lambda e: self._refresh_states())
         for wdg in (self.htr_user_entry, self.out2_res_entry):
@@ -1244,6 +1448,26 @@ class TempControlGUI:
         self.sens_type_cb.grid(row=r, column=1, columnspan=3, sticky='w', padx=10, pady=3)
         self.sens_type_cb.bind('<<ComboboxSelected>>', lambda e: self._on_sensor_type())
         r += 1
+        ttk.Label(frame, text="Curve:").grid(row=r, column=0, sticky='w', padx=10, pady=3)
+        self.sens_curve_var = tk.StringVar(value=CURVE_KEEP)
+        self.sens_curve_cb = ttk.Combobox(frame, textvariable=self.sens_curve_var, state='readonly',
+                                          values=[CURVE_KEEP], width=44)
+        self.sens_curve_cb.grid(row=r, column=1, columnspan=3, sticky='w', padx=10, pady=3)
+        r += 1
+        cl = ttk.Frame(frame, style='Card.TFrame')
+        cl.grid(row=r, column=1, columnspan=3, sticky='w', padx=10, pady=(0, 3))
+        self.curve_list_btn = ttk.Button(cl, text="Read curve list",
+                                         command=self._read_curve_list)
+        self.curve_list_btn.pack(side='left')
+        self.curve_all_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(cl, text="show every curve, not only this type",
+                        variable=self.curve_all_var,
+                        command=self._refresh_curve_choices).pack(side='left', padx=8)
+        r += 1
+        self.lbl_curve_info = self._note(
+            frame, "Read-only: the list is read with CRVHDR? queries; no curve is written or "
+                   "deleted.\nSend only picks which stored curve the input uses (INCRV).", r)
+        r += 1
         ttk.Label(frame, text="Autorange:").grid(row=r, column=0, sticky='w', padx=10, pady=3)
         self.sens_auto_var = tk.StringVar(value="Off")
         self.sens_auto_cb = ttk.Combobox(frame, textvariable=self.sens_auto_var, state='readonly',
@@ -1275,13 +1499,6 @@ class TempControlGUI:
                                           values=list(B.UNITS.values()), width=14)
         self.sens_units_cb.grid(row=r, column=1, sticky='w', padx=10, pady=3)
         ttk.Label(frame, text="keep Kelvin: setpoints use these units",
-                  style='Muted.TLabel').grid(row=r, column=2, columnspan=2, sticky='w')
-        r += 1
-        ttk.Label(frame, text="Curve number:").grid(row=r, column=0, sticky='w', padx=10, pady=3)
-        self.sens_curve_entry = ttk.Entry(frame, width=6, font=self.FONT_TABLE, justify='center')
-        self.sens_curve_entry.insert(0, "")
-        self.sens_curve_entry.grid(row=r, column=1, sticky='w', padx=10, pady=3)
-        ttk.Label(frame, text="blank = leave the curve as it is",
                   style='Muted.TLabel').grid(row=r, column=2, columnspan=2, sticky='w')
         r += 1
         sb = ttk.Frame(frame, style='Card.TFrame')
@@ -1443,10 +1660,12 @@ class TempControlGUI:
             self._set_state(e, idle)
         self._set_state(self.input_cb, idle, readonly_when_on=True)
         self._set_state(self.rate_cap_cb, idle)
+        self._set_state(self.rate_table_entry, idle and self.rate_cap_var.get())
         self._set_state(self.start_button, idle)
         self._set_state(self.stop_button, running)
 
         # 3. heater and PID
+        self._set_state(self.system_cb, idle, readonly_when_on=True)
         used = HEATER_OUTPUTS[self._fixed_heater_code()]
         self._set_state(self.fixed_heater_cb, fixed and idle, readonly_when_on=True)
         for n, w in self.out_widgets.items():
@@ -1489,7 +1708,8 @@ class TempControlGUI:
         self._set_state(self.sens_comp_cb, edit_s and stype in (2, 3, 4, 5), readonly_when_on=True)
         self._set_state(self.sens_exc_cb, edit_s and stype == 3, readonly_when_on=True)
         self._set_state(self.sens_units_cb, edit_s and stype != 0, readonly_when_on=True)
-        self._set_state(self.sens_curve_entry, edit_s and stype != 0)
+        self._set_state(self.sens_curve_cb, edit_s and stype != 0, readonly_when_on=True)
+        self._set_state(self.curve_list_btn, connected and idle)
         self._set_state(self.sens_read_btn, connected and idle)
         self._set_state(self.sens_send_btn, connected and edit_s
                         and self.sensor_read_input == self.sens_input_var.get())
@@ -1521,7 +1741,8 @@ class TempControlGUI:
     def _refresh_zone_row(self, row, enabled):
         heater = self._zone_heater_code(row)
         self._set_state(row['ub'], enabled)
-        self._set_state(row['heater'], enabled and not self.is_running, readonly_when_on=True)
+        for cb in row['heater'].values():
+            self._set_state(cb, enabled and not self.is_running)
         for n in (1, 2):
             on = enabled and n in HEATER_OUTPUTS[heater]
             for key in ('p', 'i', 'd', 'mout'):
@@ -1535,20 +1756,24 @@ class TempControlGUI:
         except (ValueError, tk.TclError):
             self.lbl_rate_hint.config(text="")
             return
+        try:
+            caps, default = parse_rate_table(self.rate_table_entry.get())
+        except ValueError as e:
+            self.lbl_rate_hint.config(text=f"Rate table: {e}" if self.rate_cap_var.get() else "")
+            return
         coldest = target
         try:
             coldest = min(target, float(self.lbl_current_temp.cget('text').split()[0]))
         except (ValueError, IndexError):
             pass
-        cap = ln2_rate_cap(coldest)
+        cap = rate_cap_for(coldest, caps, default)
+        text = ""
         if rate > cap:
             if self.rate_cap_var.get():
                 text = f"The rate will be limited to {cap:g} K/min (coldest point {coldest:.0f} K)."
-            else:
-                text = (f"Note: LN2-probe guideline is {cap:g} K/min at {coldest:.0f} K; "
+            elif self._system()['ln2_checks']:
+                text = (f"Note: the table gives {cap:g} K/min at {coldest:.0f} K; "
                         "tick the box above to enforce it.")
-        else:
-            text = ""
         self.lbl_rate_hint.config(text=text)
 
     # ----------------------------------------------------- watt labels
@@ -1619,24 +1844,43 @@ class TempControlGUI:
     # ----------------------------------------------------- zone table
 
     def _zone_heater_code(self, row):
-        label = row['heater_var'].get()
-        return next((k for k, v in HEATER_CHOICES.items() if v == label), 1)
+        """1 = Output 1, 2 = Output 2, 3 = both, from the row's tick boxes."""
+        return (1 if row['use'][1].get() else 0) + (2 if row['use'][2].get() else 0) or 1
 
-    def _add_zone_row(self, upper=ZONE_T_MAX, heater=1, out1=(20.0, 15.0, 0.0, 0.0, 5),
-                      out2=(20.0, 15.0, 0.0, 0.0, 5)):
+    def _set_zone_heater(self, row, code):
+        """Tick the row's boxes for heater code 1, 2 or 3."""
+        code = int(code)
+        row['use'][1].set(code in (1, 3))
+        row['use'][2].set(code in (2, 3))
+        self._refresh_states()
+
+    def _on_zone_heater_toggled(self, row, n):
+        """A zone needs at least one heater: unticking the last one is undone."""
+        if not (row['use'][1].get() or row['use'][2].get()):
+            row['use'][n].set(True)
+            self.log("A zone needs at least one heater output ticked.")
+        self._refresh_states()
+
+    def _add_zone_row(self, upper=ZONE_T_MAX, heater=1, out1=PID_CCR1_HIGH + (0.0, 5),
+                      out2=PID_CCR1_HIGH + (0.0, 5)):
         r = len(self.zone_rows) + 2
         widgets = []
         ub = ttk.Entry(self.zone_table, width=6, font=self.FONT_TABLE, justify='center')
         ub.insert(0, f"{upper:g}")
         ub.grid(row=r, column=0, padx=2, pady=1)
         widgets.append(ub)
-        hv = tk.StringVar(value=HEATER_CHOICES[int(heater)])
-        hcb = ttk.Combobox(self.zone_table, textvariable=hv, state='readonly', width=5,
-                           values=list(HEATER_CHOICES.values()))
-        hcb.grid(row=r, column=1, padx=2, pady=1)
-        hcb.bind('<<ComboboxSelected>>', lambda e: self._refresh_states())
-        widgets.append(hcb)
-        row = {'ub': ub, 'heater_var': hv, 'heater': hcb, 'widgets': widgets}
+        # Which heaters this zone uses: one tick box per output.
+        hf = ttk.Frame(self.zone_table, style='Card.TFrame')
+        hf.grid(row=r, column=1, padx=2, pady=1)
+        widgets.append(hf)
+        row = {'ub': ub, 'use': {}, 'heater': {}, 'widgets': widgets}
+        for n in (1, 2):
+            var = tk.BooleanVar(value=n in HEATER_OUTPUTS[int(heater)])
+            cb = ttk.Checkbutton(hf, text=f"Out {n}", variable=var,
+                                 command=lambda rw=row, k=n: self._on_zone_heater_toggled(rw, k))
+            cb.pack(side='left', padx=(0, 2))
+            row['use'][n] = var
+            row['heater'][n] = cb
         for n, vals, col0 in ((1, out1, 2), (2, out2, 7)):
             cells = {}
             for k, (key, val, width) in enumerate((('p', vals[0], 5), ('i', vals[1], 5),
@@ -1670,18 +1914,48 @@ class TempControlGUI:
             for w in self.zone_rows.pop()['widgets']:
                 w.destroy()
 
-    def _reset_zone_rows(self):
+    def _system(self):
+        return SYSTEMS[self.system]
+
+    def _reset_zone_rows(self, quiet=False):
+        zones = self._system()['zones']
         self._clear_zone_rows()
-        for z in ZONE_DEFAULTS:
+        for z in zones:
             self._add_zone_row(*z)
-        self.zone_segments_var.set(str(len(ZONE_DEFAULTS)))
-        self.log("Zone table reset to the LN2-probe defaults.")
+        self.zone_segments_var.set(str(len(zones)))
+        if not quiet:
+            self.log(f"Zone table reset to the {self._system()['zone_name']} defaults.")
+
+    def _on_system_changed(self):
+        """Cryostat choice: zone defaults, presets, zone range and safety max."""
+        label = self.system_var.get()
+        key = next((k for k, s in SYSTEMS.items() if s['label'] == label), DEFAULT_SYSTEM)
+        if key == self.system or self.is_running:
+            self.system_var.set(self._system()['label'])
+            return
+        old, self.system = self._system(), key
+        new = self._system()
+        self._reset_zone_rows(quiet=True)
+        for entry, value in ((self.zone_tmin, new['t_min']), (self.zone_tmax, new['t_max'])):
+            entry.delete(0, 'end')
+            entry.insert(0, f"{value:g}")
+        if self.entries['max_temp'].get().strip() == f"{old['max_temp']:g}":
+            self.entries['max_temp'].delete(0, 'end')
+            self.entries['max_temp'].insert(0, f"{new['max_temp']:g}")
+        for n in self.out_widgets:
+            if self.out_widgets[n]['preset_var'].get() != PID_CUSTOM:
+                self.out_widgets[n]['preset_var'].set(new['preset'])
+                self._on_preset(n)
+        self.log(f"Cryostat: {new['label']}. Zone table = {new['zone_name']} defaults, "
+                 f"safety maximum {self.entries['max_temp'].get()} K"
+                 + (", below-100 K wind-up warning on." if new['ln2_checks'] else "."))
+        self._refresh_states()
 
     def _generate_zone_rows(self):
         try:
             n = int(self.zone_segments_var.get())
             t_min, t_max = float(self.zone_tmin.get()), float(self.zone_tmax.get())
-            zones = generate_equal_zones(n, t_min, t_max)
+            zones = generate_equal_zones(n, t_min, t_max, template=self._system()['zones'])
         except (ValueError, tk.TclError) as e:
             self.log(f"ERROR: cannot make zones: {e}")
             return
@@ -1747,9 +2021,22 @@ class TempControlGUI:
         return True
 
     def _send_output_settings(self, n, p, i, d, mout, rng):
-        self.backend.set_pid(n, p, i, d)
-        self.backend.set_mout(n, mout)
-        self.backend.set_heater_range(n, rng)
+        """PID, MOUT and range for one output.  The write that LOWERS the
+        heater power goes first: going down a range, RANGE before the
+        (higher) P; going up, the (lower) P before RANGE.  The in-between
+        state is then a short dip, never P x 3.16 on a 10x range."""
+        try:
+            old = self.backend.get_heater_range(n)
+        except Exception:
+            old = int(rng)
+        if int(rng) < old:
+            self.backend.set_heater_range(n, rng)
+            self.backend.set_pid(n, p, i, d)
+            self.backend.set_mout(n, mout)
+        else:
+            self.backend.set_pid(n, p, i, d)
+            self.backend.set_mout(n, mout)
+            self.backend.set_heater_range(n, rng)
 
     def _apply_zone_for_temperature(self, temp, force=False):
         if self.pid_mode_var.get() != 'zones' or not self.zones:
@@ -1905,7 +2192,71 @@ class TempControlGUI:
         self.sens_range_cb['values'] = ranges
         if self.sens_range_var.get() not in ranges:
             self.sens_range_var.set(ranges[0])
+        self._refresh_curve_choices()
         self._refresh_states()
+
+    def _curve_choice_label(self, number):
+        number = int(number)
+        if number == 0:
+            return CURVE_NONE
+        if number in self.curve_headers:
+            return curve_label(number, self.curve_headers[number])
+        return f"{number:02d} - (press Read curve list for its name)"
+
+    def _refresh_curve_choices(self):
+        """Curves that suit the chosen sensor type (all with the checkbox),
+        from the list read with CRVHDR?.  The selection is kept if it is
+        still offered."""
+        stype = self._sensor_type_code()
+        shown = [n for n, h in sorted(self.curve_headers.items())
+                 if self.curve_all_var.get() or curve_matches(stype, h)]
+        values = [CURVE_KEEP, CURVE_NONE] + [self._curve_choice_label(n) for n in shown]
+        current = self.sens_curve_var.get()
+        if current not in (CURVE_KEEP, CURVE_NONE):
+            try:                             # refresh its name once the list is read
+                current = self._curve_choice_label(int(current.split()[0]))
+                self.sens_curve_var.set(current)
+            except (ValueError, IndexError):
+                pass
+        if current not in values and current != CURVE_KEEP:
+            values.insert(2, current)        # e.g. the present curve of another type
+        self.sens_curve_cb['values'] = values
+        if not self.curve_headers:
+            self.lbl_curve_info.config(text="Press Read curve list (read-only, CRVHDR? 1-59) to "
+                                            "choose a curve by name.\nSend only picks which "
+                                            "stored curve the input uses (INCRV).")
+        else:
+            self.lbl_curve_info.config(
+                text=f"{len(shown)} of {len(self.curve_headers)} stored curves suit "
+                     f"{Lakeshore350_Backend.SENSOR_TYPES.get(stype)}. Read-only list; Send "
+                     "only picks one (INCRV).")
+
+    def _read_curve_list(self):
+        """Read every curve header (CRVHDR? 1-59).  Query only."""
+        self.log("Reading the curve list (CRVHDR? 1-59, read-only)...")
+        self.root.update_idletasks()
+        self._cancel_poll()
+        try:
+            self.curve_headers = self.backend.read_curve_headers()
+            self.log(f"{len(self.curve_headers)} stored curves: " + "; ".join(
+                f"{n}={h['name']}" for n, h in sorted(self.curve_headers.items())))
+        except Exception as e:
+            self.log(f"ERROR reading the curve list: {e}")
+        finally:
+            if self.backend.is_connected:
+                self._schedule_poll(300)
+        self._refresh_curve_choices()
+        self._refresh_states()
+
+    def _chosen_curve(self):
+        """Curve number to send, or None to leave the input's curve as it is."""
+        label = self.sens_curve_var.get()
+        if label == CURVE_KEEP:
+            return None
+        curve = int(label.split()[0])
+        if not 0 <= curve <= 59:
+            raise ValueError("curve must be 0-59")
+        return curve
 
     def _read_sensor(self):
         inp = self.sens_input_var.get()
@@ -1924,9 +2275,8 @@ class TempControlGUI:
         self.sens_comp_var.set("On" if t['compensation'] else "Off")
         self.sens_units_var.set(B.UNITS.get(t['units'], B.UNITS[1]))
         self.sens_exc_var.set(B.EXCITATION.get(t['excitation'], B.EXCITATION[1]))
-        self.sens_curve_entry.config(state='normal')
-        self.sens_curve_entry.delete(0, 'end')
-        self.sens_curve_entry.insert(0, str(curve))
+        self.sens_curve_var.set(self._curve_choice_label(curve))
+        self._refresh_curve_choices()
         self.sensor_read_input = inp
         self.log(f"Input {inp}: {B.SENSOR_TYPES.get(t['sensor'])}, range "
                  f"{self.sens_range_var.get()}, autorange {self.sens_auto_var.get()}, "
@@ -1943,21 +2293,25 @@ class TempControlGUI:
             rng = 0
         units = next(k for k, v in B.UNITS.items() if v == self.sens_units_var.get())
         exc = next(k for k, v in B.EXCITATION.items() if v == self.sens_exc_var.get())
-        curve_txt = self.sens_curve_entry.get().strip()
         try:
-            curve = int(curve_txt) if curve_txt else None
-            if curve is not None and not 0 <= curve <= 59:
-                raise ValueError("curve must be 0-59")
-        except ValueError as e:
-            self.log(f"ERROR: curve number: {e}")
+            curve = self._chosen_curve()
+        except (ValueError, IndexError) as e:
+            self.log(f"ERROR: curve: {e}")
             return
         warn = "" if units == 1 else ("\n\nUnits are not Kelvin: this window will refuse to "
                                       "ramp on this input until they are.")
+        header = self.curve_headers.get(curve) if curve else None
+        if header and not curve_matches(stype, header):
+            warn += (f"\n\nCurve {curve} ({header['name']}) is a "
+                     f"{CURVE_FORMATS.get(header['format'], '?')} curve and does not look "
+                     f"like a {B.SENSOR_TYPES[stype]} curve.")
+        curve_txt = '' if curve is None else f', curve {self._curve_choice_label(curve)}'
         if not self._ask("Send sensor input",
-                         f"Change input {inp} to {B.SENSOR_TYPES[stype]}"
-                         f"{'' if curve is None else f', curve {curve}'}?\n\nThis changes how the "
-                         f"input reads temperature. A wrong type or curve gives wrong readings "
-                         f"and wrong control.{warn}"):
+                         f"Change input {inp} to {B.SENSOR_TYPES[stype]}{curve_txt}?\n\n"
+                         "This changes how the input reads temperature. A wrong type or curve "
+                         "gives wrong readings and wrong control. The 350 also turns a heater "
+                         "controlling on this input off when its setup changes. No curve data "
+                         f"is changed.{warn}"):
             return
         try:
             cmd = self.backend.set_input_type(inp, stype, self.sens_auto_var.get() == "On",
@@ -2312,9 +2666,10 @@ class TempControlGUI:
 
     def _windup_warnings(self, temp_now, fixed):
         """LN2 probe: settings that wind up below 100 K (lab result 10 Jul
-        2026: an overshoot that never comes back).  Empty list = fine."""
+        2026: an overshoot that never comes back).  Empty list = fine.
+        Only for the LN2 cryostat choice: a CCR cools actively."""
         coldest = min(temp_now, self.params['setpoint'])
-        if coldest >= 100.0:
+        if coldest >= 100.0 or not self._system()['ln2_checks']:
             return []
         limit = PID_ULTRA[0] * PID_ULTRA[1]
         out = []
@@ -2392,9 +2747,10 @@ class TempControlGUI:
 
             rate = self.params['rate']
             if self.rate_cap_var.get():
-                cap = ln2_rate_cap(min(temp_now, self.params['setpoint']))
+                caps, default = parse_rate_table(self.rate_table_entry.get())
+                cap = rate_cap_for(min(temp_now, self.params['setpoint']), caps, default)
                 if rate > cap:
-                    self.log(f"Rate {rate:g} K/min limited to {cap:g} K/min (LN2 probe, coldest "
+                    self.log(f"Rate {rate:g} K/min limited to {cap:g} K/min (rate table, coldest "
                              f"point {min(temp_now, self.params['setpoint']):.1f} K).")
                     rate = cap
             self.params['rate'] = rate
@@ -2434,6 +2790,8 @@ class TempControlGUI:
             self.reached = False
             self.stable_since = None
             self.last_htr_error = {1: 0, 2: 0}
+            self.sat_since = None
+            self.sat_warned = set()
             for key in self.data_storage:
                 self.data_storage[key].clear()
             for line in (self.line_temp, self.line_setp, self.line_heater1, self.line_heater2):
@@ -2553,6 +2911,7 @@ class TempControlGUI:
             else:
                 self._apply_zone_for_temperature(temp)
                 self._csv_row(elapsed, setp, temp, htr, rng)
+                self._check_saturation(temp, setp, htr, rng)
 
             ds = self.data_storage
             ds['time'].append(elapsed)
@@ -2579,6 +2938,33 @@ class TempControlGUI:
             self.stop_ramp(reason="Ramp stopped after a runtime error.", heater_off=True,
                            banner="ERROR: RAMP STOPPED, HEATER OFF (see console)",
                            banner_color=self.CLR_ACCENT_RED)
+
+    def _check_saturation(self, temp, setp, htr, rng):
+        """Warn once per zone (console + data file, no dialog) when every
+        heater in use sits at 100 % while the reading is below the setpoint:
+        the range cannot heat past this point, so with zones on the MEASURED
+        temperature the run would stall here.  Nothing is changed."""
+        used = [n for n in self.run_outputs if rng[n] > 0]
+        if not used or temp >= setp - self.params['tol'] or \
+                any(htr[n] < 99.5 for n in used):
+            self.sat_since = None
+            return
+        now = time.time()
+        if self.sat_since is None:
+            self.sat_since = now
+            return
+        key = 'fixed' if self.active_zone is None else self.active_zone
+        if now - self.sat_since < SATURATION_WARN_S or key in self.sat_warned:
+            return
+        self.sat_warned.add(key)
+        where = "this setting" if key == 'fixed' else f"zone {key + 1}"
+        text = (f"WARNING: heater at 100 % for {now - self.sat_since:.0f} s at T={temp:.2f} K, "
+                f"below the setpoint {setp:.2f} K: the range of {where} "
+                f"(R{'/'.join(str(rng[n]) for n in used)}) cannot heat further. Use a higher "
+                "range, or lower this zone's 'Up to' below the temperature it can reach.")
+        self.log(text)
+        self._csv_note(text)
+        self._beep()
 
     def _arrival_check(self, temp):
         """Tolerance + dwell test. True if the run ended."""
